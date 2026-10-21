@@ -24,15 +24,19 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
+import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
-import { resolveRecordProjectIdentity } from './record-project-identity.ts'
+import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
+import { runUsageRecordValues } from './record-run-usage.ts'
+import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
 import type {
   RecordPayload as Payload,
   RecordPrincipal,
@@ -48,6 +52,8 @@ import {
 } from './record-sync-decision.ts'
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
+import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
+import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -63,29 +69,21 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   for (const [column, fill] of Object.entries(recordKinds[kind].laterAdded)) {
     if (!Object.hasOwn(parsed, column)) Object.assign(parsed, { [column]: fill })
   }
-  const keys = Object.keys(parsed).sort()
-  const expected = [...recordKinds[kind].columns].sort()
-  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
-    throw new OutboxRowError(`${kind} outbox payload has an unexpected column set`, 'payload')
-  }
+  assertRecordPayloadColumns(kind, parsed as Payload, recordKinds[kind].columns)
   return parsed as Payload
 }
 
 const date = (value: unknown) => new Date(String(value))
 const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const bigint = (value: unknown) => BigInt(String(value))
-const nullableBigint = (value: unknown) => (value == null ? null : bigint(value))
-const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
-
 function runValues(row: Payload, projectId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
     projectId,
     machineId: String(row.machineId),
-    localId: bigint(row.localId),
     startedByUserId: nullableString(row.startedByUserId),
     startedAt: date(row.startedAt),
     finishedAt: nullableDate(row.finishedAt),
@@ -101,8 +99,7 @@ function runValues(row: Payload, projectId: string | null) {
     latencyMs: nullableBigint(row.latencyMs),
     exitCode: nullableNumber(row.exitCode),
     outputBytes: nullableBigint(row.outputBytes),
-    vendorTokens: nullableBigint(row.vendorTokens),
-    vendorCostUsd: nullableNumber(row.vendorCostUsd),
+    ...runUsageRecordValues(row),
     probe: Boolean(row.probe),
     failureKind: nullableString(row.failureKind),
     status: String(row.status),
@@ -116,6 +113,7 @@ function runValues(row: Payload, projectId: string | null) {
     linesRemoved: nullableNumber(row.linesRemoved),
     testsRan: nullableNumber(row.testsRan),
     testsPassed: nullableNumber(row.testsPassed),
+    testsClaimDisagrees: row.testsClaimDisagrees == null ? null : Boolean(row.testsClaimDisagrees),
     deviations: nullableNumber(row.deviations),
     escalations: nullableNumber(row.escalations),
     stack: nullableString(row.stack),
@@ -141,6 +139,15 @@ function runValues(row: Payload, projectId: string | null) {
     workPreserved: Boolean(row.workPreserved),
     closeOutOutcome: nullableString(row.closeOutOutcome),
     closeOutDetail: nullableString(row.closeOutDetail),
+    provisioningKind: nullableString(row.provisioningKind),
+    provisioningMs: nullableBigint(row.provisioningMs),
+    provisioningPhases: jsonString(row.provisioningPhases),
+    provisioningEntries: nullableBigint(row.provisioningEntries),
+    provisioningEntriesLimited:
+      row.provisioningEntriesLimited == null ? null : Boolean(row.provisioningEntriesLimited),
+    provisioningHostLoad: jsonString(row.provisioningHostLoad),
+    provisioningOutcome: nullableString(row.provisioningOutcome),
+    provisioningEntryRoots: jsonString(row.provisioningEntryRoots),
     withheldFields: jsonString(row.withheldFields),
     createdAt: date(row.createdAt),
     updatedAt: date(row.updatedAt),
@@ -293,10 +300,15 @@ async function applyHostedUnvoid(
   `
 }
 
-async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal): Promise<void> {
+async function pushRun(
+  postgres: SQL,
+  row: Payload,
+  principal: RecordPrincipal,
+  projectIds?: ProjectResolutionCache,
+): Promise<void> {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const projectId = await projectRecordId(tx, row, principal)
+    const projectId = await projectRecordId(tx, row, principal, projectIds)
     const values = runValues(row, projectId)
     const existingOwned = await existingEvidenceOwned(
       tx,
@@ -333,11 +345,8 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
 
 function reviewValues(row: Payload, projectId: string | null) {
   return {
-    id: String(row.id),
-    spaceId: String(row.spaceId),
+    ...commonReviewRecordValues(row),
     projectId,
-    machineId: String(row.machineId),
-    localId: bigint(row.localId),
     recordedAt: date(row.recordedAt),
     completedAt: nullableDate(row.completedAt),
     tier: nullableNumber(row.tier),
@@ -350,9 +359,6 @@ function reviewValues(row: Payload, projectId: string | null) {
     commitMessage: nullableString(row.commitMessage),
     outdatedAt: nullableDate(row.outdatedAt),
     outdatedReason: nullableString(row.outdatedReason),
-    withheldFields: jsonString(row.withheldFields),
-    createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
   }
 }
 
@@ -365,7 +371,6 @@ function questionValues(row: Payload, projectId: string | null) {
     workflowCursorId: nullableBigint(row.workflowCursorId),
     projectId,
     machineId: String(row.machineId),
-    localId: bigint(row.localId),
     revision: Number(row.revision),
     askedAt: date(row.askedAt),
     question: String(row.question),
@@ -450,6 +455,7 @@ function reviewFindingValues(row: Payload) {
     rejectionCategory: nullableString(row.rejectionCategory),
     triagedSeverity: nullableString(row.triagedSeverity),
     triagedAt: nullableDate(row.triagedAt),
+    duplicateOfFindingId: nullableString(row.duplicateOfFindingId),
   }
 }
 
@@ -457,7 +463,6 @@ const landingCommonValues = (row: Payload) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
   machineId: String(row.machineId),
-  localId: bigint(row.localId),
   createdAt: date(row.createdAt),
   updatedAt: date(row.updatedAt),
 })
@@ -517,6 +522,9 @@ function landingReviewCarryValues(row: Payload, projectId: string | null) {
 }
 
 function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
+  if (!Array.isArray(row.reviewIds) || row.reviewIds.some((id) => !hasRecordIdShape(String(id)))) {
+    throw new Error('landing triage snapshot reviewIds must be an array of UUIDs')
+  }
   return {
     ...landingCommonValues(row),
     projectId,
@@ -524,7 +532,7 @@ function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
     tip: String(row.tip),
     tree: String(row.tree),
     prNumber: Number(row.prNumber),
-    reviewIds: row.reviewIds,
+    reviewIds: row.reviewIds.map(String),
     patchId: String(row.patchId),
     tier: Number(row.tier),
     lensRounds: Number(row.lensRounds),
@@ -566,30 +574,6 @@ function testFlakeValues(row: Payload) {
   }
 }
 
-async function projectRecordId(
-  tx: SQL,
-  row: Payload,
-  principal: RecordPrincipal,
-): Promise<string | null> {
-  const requestedId = nullableString(row.projectId)
-  const projectName = nullableString(row.projectName)
-  if (requestedId === null && projectName === null) return null
-  const resolved = await resolveRecordProjectIdentity(tx, {
-    projectId: requestedId,
-    projectName,
-    spaceId: principal.spaceId,
-  })
-  if (resolved.status !== 'found') {
-    throw new OutboxRowError(
-      requestedId
-        ? `record project ${requestedId} is absent from request space ${principal.spaceId}`
-        : `record project is absent: ${projectName}`,
-      'row-validation',
-    )
-  }
-  return resolved.project.id
-}
-
 const recordKinds = {
   run: {
     ...OUTBOX_PAYLOAD_CONTRACTS.run,
@@ -605,10 +589,15 @@ const recordKinds = {
   },
   question: {
     ...OUTBOX_PAYLOAD_CONTRACTS.question,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = questionValues(row, await projectRecordId(tx, row, principal))
+        const values = questionValues(row, await projectRecordId(tx, row, principal, projectIds))
         const existingOwned = await existingEvidenceOwned(
           tx,
           'question',
@@ -648,10 +637,15 @@ const recordKinds = {
   },
   review: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = reviewValues(row, await projectRecordId(tx, row, principal))
+        const values = reviewValues(row, await projectRecordId(tx, row, principal, projectIds))
         await existingEvidenceOwned(tx, 'review', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -668,7 +662,12 @@ const recordKinds = {
   },
   review_lens: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review_lens,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      _projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewLensValues(row)
@@ -708,12 +707,17 @@ const recordKinds = {
   },
   review_read: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review_read,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewReadRecordValues(
           row,
-          await projectRecordId(tx, row, principal),
+          await projectRecordId(tx, row, principal, projectIds),
           commonReviewRecordValues(row),
         )
         await existingEvidenceOwned(tx, 'review_read', values.id, values.machineId, principal)
@@ -732,15 +736,32 @@ const recordKinds = {
   },
   release: {
     ...OUTBOX_PAYLOAD_CONTRACTS.release,
-    push: (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
-      pushReleaseRecord(postgres, row, principal, projectRecordId, evidenceCollision),
+    push: (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
+      pushReleaseRecord(
+        postgres,
+        row,
+        principal,
+        (tx, releaseRow, releasePrincipal) =>
+          projectRecordId(tx, releaseRow, releasePrincipal, projectIds),
+        evidenceCollision,
+      ),
   },
   landing: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingValues(row, await projectRecordId(tx, row, principal))
+        const values = landingValues(row, await projectRecordId(tx, row, principal, projectIds))
         await existingEvidenceOwned(tx, 'landing', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -757,10 +778,18 @@ const recordKinds = {
   },
   landing_override: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing_override,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingOverrideValues(row, await projectRecordId(tx, row, principal))
+        const values = landingOverrideValues(
+          row,
+          await projectRecordId(tx, row, principal, projectIds),
+        )
         await existingEvidenceOwned(tx, 'landing_override', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -777,10 +806,18 @@ const recordKinds = {
   },
   landing_review_carry: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing_review_carry,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingReviewCarryValues(row, await projectRecordId(tx, row, principal))
+        const values = landingReviewCarryValues(
+          row,
+          await projectRecordId(tx, row, principal, projectIds),
+        )
         await existingEvidenceOwned(
           tx,
           'landing_review_carry',
@@ -803,10 +840,18 @@ const recordKinds = {
   },
   landing_triage_snapshot: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+    push: async (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = landingTriageSnapshotValues(row, await projectRecordId(tx, row, principal))
+        const values = landingTriageSnapshotValues(
+          row,
+          await projectRecordId(tx, row, principal, projectIds),
+        )
         await existingEvidenceOwned(
           tx,
           'landing_triage_snapshot',
@@ -867,12 +912,22 @@ const recordKinds = {
         requireOwnedUpsert(written, 'test_flake', values.id)
       }),
   },
+  branch_disposal: {
+    ...OUTBOX_PAYLOAD_CONTRACTS.branch_disposal,
+    push: (postgres, row, principal, projectIds) =>
+      pushBranchDisposal(postgres, row, principal, projectIds, existingEvidenceOwned),
+  },
 } as const satisfies Record<
   keyof typeof OUTBOX_PAYLOAD_CONTRACTS,
   {
     columns: readonly string[]
     laterAdded: Readonly<Record<string, unknown>>
-    push: (postgres: SQL, row: Payload, principal: RecordPrincipal) => Promise<unknown>
+    push: (
+      postgres: SQL,
+      row: Payload,
+      principal: RecordPrincipal,
+      projectIds?: ProjectResolutionCache,
+    ) => Promise<unknown>
   }
 >
 
@@ -881,6 +936,7 @@ async function pushHostedRow(input: {
   row: RecordSyncRequest['rows'][number]
   identity: RecordIdentity
   machineId: string
+  projectIds: ProjectResolutionCache
 }): Promise<RecordSyncRowResult> {
   const { postgres, row, identity } = input
   try {
@@ -919,9 +975,12 @@ async function pushHostedRow(input: {
       machineId: input.machineId,
       principal: rowPrincipal,
     })
-    await recordKinds[kind].push(postgres, record, rowPrincipal)
+    await recordKinds[kind].push(postgres, record, rowPrincipal, input.projectIds)
     return { id: row.id, status: 'synced' }
   } catch (error) {
+    if (error instanceof HostedApiUpgradeRequiredError) {
+      return { id: row.id, status: 'held', reason: error.message }
+    }
     const detail = outboxErrorDetail(error)
     if (outboxFailureDisposition(error) === 'row-fatal') {
       return { id: row.id, status: 'quarantined', reason: detail }
@@ -945,6 +1004,7 @@ export async function syncHostedRecord(input: {
       spaceId: activeSpaceId,
     })
     const results: RecordSyncRowResult[] = []
+    const projectIds: ProjectResolutionCache = new Map()
     for (const row of input.request.rows) {
       results.push(
         await pushHostedRow({
@@ -952,6 +1012,7 @@ export async function syncHostedRecord(input: {
           row,
           identity: input.identity,
           machineId: input.request.machine.id,
+          projectIds,
         }),
       )
     }

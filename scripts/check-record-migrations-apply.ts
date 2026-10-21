@@ -14,6 +14,11 @@ import {
   RECORD_PUBLIC_ROLE,
   RECORD_READER_ROLE,
 } from '../shared/record/schema.ts'
+import { proofProjectSpaceOwnershipDeclaration } from './check-record-project-space-ownership.ts'
+import {
+  applyHostedProjectCleanupProof,
+  seedHostedProjectCleanupProof,
+} from './record-hosted-project-cleanup-proof.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
@@ -47,6 +52,68 @@ const jsonbInvalidDocId = '01990000-0000-7000-8000-000000000027'
 const hubProjectMatchId = '01990000-0000-7000-8000-000000000050'
 const hubProjectMatchTaskId = '01990000-0000-7000-8000-000000000051'
 const hubProjectUnmatchedTaskId = '01990000-0000-7000-8000-000000000052'
+const crossSpaceProofSpaceId = '01990000-0000-7000-8000-000000000060'
+const crossSpaceProofUserId = '01990000-0000-7000-8000-000000000061'
+const sameSpaceSourceProjectId = '01990000-0000-7000-8000-000000000062'
+const sameSpaceTargetProjectId = '01990000-0000-7000-8000-000000000063'
+const otherSpaceProjectId = '01990000-0000-7000-8000-000000000064'
+const otherSpaceTargetProjectId = '01990000-0000-7000-8000-000000000066'
+
+const catalogueProofId = (n: number) => `01990000-0000-7000-8000-${n.toString().padStart(12, '0')}`
+
+type CatalogueFixture = {
+  projectSource: string
+  projectTarget: string
+  workflow: string
+  workflowVersion: string
+  workflowEvent: string
+  stepCatalogue: string
+  stepCatalogueVersion: string
+  stepCatalogueEvent: string
+  lens: string
+  lensRevision: string
+  lensProfile: string
+  lensProfileRevision: string
+  projectLensProfile: string
+  projectLensProfileRevision: string
+  portPair: string
+  portBaseline: string
+  portRef: string
+  portRefSource: string
+  portSkip: string
+}
+
+function catalogueFixture(
+  firstId: number,
+  projectSource: string,
+  projectTarget: string,
+): CatalogueFixture {
+  const ids = Array.from({ length: 17 }, (_, index) => catalogueProofId(firstId + index))
+  return {
+    projectSource,
+    projectTarget,
+    workflow: ids[0]!,
+    workflowVersion: ids[1]!,
+    workflowEvent: ids[2]!,
+    stepCatalogue: ids[3]!,
+    stepCatalogueVersion: ids[4]!,
+    stepCatalogueEvent: ids[5]!,
+    lens: ids[6]!,
+    lensRevision: ids[7]!,
+    lensProfile: ids[8]!,
+    lensProfileRevision: ids[9]!,
+    projectLensProfile: ids[10]!,
+    projectLensProfileRevision: ids[11]!,
+    portPair: ids[12]!,
+    portBaseline: ids[13]!,
+    portRef: ids[14]!,
+    portRefSource: ids[15]!,
+    portSkip: ids[16]!,
+  }
+}
+
+const sameSpaceCatalogue = catalogueFixture(100, sameSpaceSourceProjectId, sameSpaceTargetProjectId)
+const otherSpaceCatalogue = catalogueFixture(200, otherSpaceProjectId, otherSpaceTargetProjectId)
 
 class CheckFailure extends Error {}
 
@@ -79,7 +146,7 @@ function migrationFailure(
   )
 }
 
-async function provision(database: PGlite): Promise<void> {
+export async function provisionRecordDatabase(database: PGlite): Promise<void> {
   await database.exec(`
     CREATE ROLE ${RECORD_OWNER_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS;
     CREATE ROLE ${RECORD_ACTOR_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS;
@@ -101,7 +168,10 @@ async function provision(database: PGlite): Promise<void> {
   `)
 }
 
-async function applyMigration(transaction: Transaction, migration: MigrationMeta): Promise<void> {
+export async function applyRecordMigration(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
   for (const chunk of migration.sql) {
     try {
       await transaction.exec(chunk)
@@ -224,10 +294,13 @@ async function proofAudienceVocabularyBackfill(transaction: Transaction): Promis
     'SELECT id, audiences FROM doc WHERE id IN ($1, $2) ORDER BY id',
     [publicAudienceDocId, internalAudienceDocId],
   )
-  const revisions = await transaction.query<{ doc_id: string; audiences: string[] }>(
-    'SELECT doc_id, audiences FROM doc_revision WHERE doc_id IN ($1, $2) ORDER BY doc_id',
-    [publicAudienceDocId, internalAudienceDocId],
-  )
+  const revisions = await transaction.query<{
+    doc_id: string
+    audiences: string[]
+  }>('SELECT doc_id, audiences FROM doc_revision WHERE doc_id IN ($1, $2) ORDER BY doc_id', [
+    publicAudienceDocId,
+    internalAudienceDocId,
+  ])
   await transaction.exec(`
     SELECT set_config('app.space_id', '', true);
     SELECT set_config('app.user_id', '', true);
@@ -241,7 +314,10 @@ async function proofAudienceVocabularyBackfill(transaction: Transaction): Promis
       `DEV-1238 document audience vocabulary backfill produced ${JSON.stringify(docs.rows)}`,
     )
   }
-  const expectedRevisions = expected.map(({ id, audiences }) => ({ doc_id: id, audiences }))
+  const expectedRevisions = expected.map(({ id, audiences }) => ({
+    doc_id: id,
+    audiences,
+  }))
   if (JSON.stringify(revisions.rows) !== JSON.stringify(expectedRevisions)) {
     throw new CheckFailure(
       `DEV-1238 revision audience vocabulary backfill produced ${JSON.stringify(revisions.rows)}`,
@@ -276,7 +352,10 @@ async function seedBoardThreadAuthorBackfill(transaction: Transaction): Promise<
 
 async function proofBoardPurposeBackfill(transaction: Transaction): Promise<void> {
   await transaction.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
-  const result = await transaction.query<{ kind: string; purpose: string | null }>(`
+  const result = await transaction.query<{
+    kind: string
+    purpose: string | null
+  }>(`
     SELECT kind,purpose FROM board_message
     WHERE id IN ('${boardBackfillRootId}','${boardBackfillQuestionId}','${boardBackfillReplyId}')
     ORDER BY kind
@@ -358,16 +437,35 @@ async function proofDocJsonbArrayRepair(transaction: Transaction): Promise<void>
     ORDER BY doc_id
   `)
   const expectedDocs = [
-    { id: jsonbStringDocId, source_type: 'array', source_files: ['src/string.ts'], advanced: true },
-    { id: jsonbArrayDocId, source_type: 'array', source_files: ['src/array.ts'], advanced: false },
-    { id: jsonbInvalidDocId, source_type: 'string', source_files: 'not an array', advanced: false },
+    {
+      id: jsonbStringDocId,
+      source_type: 'array',
+      source_files: ['src/string.ts'],
+      advanced: true,
+    },
+    {
+      id: jsonbArrayDocId,
+      source_type: 'array',
+      source_files: ['src/array.ts'],
+      advanced: false,
+    },
+    {
+      id: jsonbInvalidDocId,
+      source_type: 'string',
+      source_files: 'not an array',
+      advanced: false,
+    },
   ]
   if (JSON.stringify(docs.rows) !== JSON.stringify(expectedDocs))
     throw new CheckFailure(`DEV-1303 document repair produced ${JSON.stringify(docs.rows)}`)
   const expectedRevisions = [
     { doc_id: jsonbStringDocId, related_type: 'array', source_type: 'array' },
     { doc_id: jsonbArrayDocId, related_type: 'array', source_type: 'array' },
-    { doc_id: jsonbInvalidDocId, related_type: 'string', source_type: 'string' },
+    {
+      doc_id: jsonbInvalidDocId,
+      related_type: 'string',
+      source_type: 'string',
+    },
   ]
   if (JSON.stringify(revisions.rows) !== JSON.stringify(expectedRevisions))
     throw new CheckFailure(`DEV-1303 revision repair produced ${JSON.stringify(revisions.rows)}`)
@@ -412,6 +510,297 @@ async function proofManagedCanonProjects(transaction: Transaction): Promise<void
   }
 }
 
+function catalogueFixtureSql(spaceId: string, fixture: CatalogueFixture, label: string): string {
+  return `
+    INSERT INTO workflow (id, space_id, slug, created_at)
+    VALUES ('${fixture.workflow}', '${spaceId}', '${label}-workflow', now());
+    INSERT INTO workflow_version
+      (id, space_id, workflow_id, n, status, definition, author, reason, created_at)
+    VALUES (
+      '${fixture.workflowVersion}', '${spaceId}', '${fixture.workflow}', 1, 'draft', '{}',
+      'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO workflow_event
+      (id, space_id, workflow_version_id, event, author, reason, at)
+    VALUES (
+      '${fixture.workflowEvent}', '${spaceId}', '${fixture.workflowVersion}', 'set',
+      'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO step_catalogue (id, space_id, slug, created_at)
+    VALUES ('${fixture.stepCatalogue}', '${spaceId}', '${label}-steps', now());
+    INSERT INTO step_catalogue_version
+      (id, space_id, catalogue_id, n, status, definition, author, reason, created_at)
+    VALUES (
+      '${fixture.stepCatalogueVersion}', '${spaceId}', '${fixture.stepCatalogue}', 1, 'draft',
+      '{}', 'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO step_catalogue_event
+      (id, space_id, catalogue_version_id, event, author, reason, at)
+    VALUES (
+      '${fixture.stepCatalogueEvent}', '${spaceId}', '${fixture.stepCatalogueVersion}', 'set',
+      'migration-check', 'same-space proof', now()
+    );
+    INSERT INTO lens
+      (id, space_id, key, title, question, excludes, slots, version)
+    VALUES (
+      '${fixture.lens}', '${spaceId}', '${label}-lens', 'Proof', 'Question?', '[]', '[]', 1
+    );
+    INSERT INTO lens_revision
+      (id, space_id, lens_id, version, prior_body, reason, at)
+    VALUES (
+      '${fixture.lensRevision}', '${spaceId}', '${fixture.lens}', 1, '{}',
+      'same-space proof', now()
+    );
+    INSERT INTO lens_profile
+      (id, space_id, lens_id, axis, name, version, body)
+    VALUES (
+      '${fixture.lensProfile}', '${spaceId}', '${fixture.lens}', 'framework', 'proof', 1, '{}'
+    );
+    INSERT INTO lens_profile_revision
+      (id, space_id, profile_id, version, prior_body, reason, at)
+    VALUES (
+      '${fixture.lensProfileRevision}', '${spaceId}', '${fixture.lensProfile}', 1, '{}',
+      'same-space proof', now()
+    );
+    INSERT INTO project_lens_profile
+      (id, space_id, project_id, lens_id, axis, profile_name, selected_version)
+    VALUES (
+      '${fixture.projectLensProfile}', '${spaceId}', '${fixture.projectSource}',
+      '${fixture.lens}', 'framework', 'proof', 1
+    );
+    INSERT INTO project_lens_profile_revision
+      (id, space_id, selection_id, prior_profile_name, prior_selected_version, reason, at)
+    VALUES (
+      '${fixture.projectLensProfileRevision}', '${spaceId}', '${fixture.projectLensProfile}',
+      'proof', 1, 'same-space proof', now()
+    );
+    INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at)
+    VALUES (
+      '${fixture.portPair}', '${spaceId}', '${fixture.projectSource}',
+      '${fixture.projectTarget}', now()
+    );
+    INSERT INTO port_baseline (id, space_id, pair_id)
+    VALUES ('${fixture.portBaseline}', '${spaceId}', '${fixture.portPair}');
+    INSERT INTO port_ref (id, space_id, task_key, target_project_id, note, created_at)
+    VALUES (
+      '${fixture.portRef}', '${spaceId}', '${label.toUpperCase()}-1',
+      '${fixture.projectTarget}', 'proof', now()
+    );
+    INSERT INTO port_ref_source
+      (id, space_id, ref_id, source_project_id, commits, paths, note)
+    VALUES (
+      '${fixture.portRefSource}', '${spaceId}', '${fixture.portRef}', '${fixture.projectSource}',
+      '[]', '[]', 'proof'
+    );
+    INSERT INTO port_skip (id, space_id, pair_id, candidate, reason, skipped_at)
+    VALUES (
+      '${fixture.portSkip}', '${spaceId}', '${fixture.portPair}', '${label}-candidate',
+      'proof', now()
+    );
+  `
+}
+
+async function expectCrossSpaceRefusal(
+  transaction: Transaction,
+  relation: string,
+  statement: string,
+): Promise<void> {
+  await transaction.exec('SAVEPOINT cross_space_refusal')
+  let refusal: unknown
+  try {
+    await transaction.exec(statement)
+  } catch (error) {
+    refusal = error
+  }
+  await transaction.exec('ROLLBACK TO SAVEPOINT cross_space_refusal')
+  await transaction.exec('RELEASE SAVEPOINT cross_space_refusal')
+  if (!refusal) throw new CheckFailure(`DEV-1388 cross-space ${relation} relation was accepted`)
+  const code =
+    typeof refusal === 'object' && refusal !== null && 'code' in refusal ? refusal.code : undefined
+  if (code !== '23503') {
+    throw new CheckFailure(
+      `DEV-1388 cross-space ${relation} relation produced unexpected SQLSTATE ${String(code)}: ${errorMessage(refusal)}`,
+    )
+  }
+}
+
+async function proofProjectRelationsStayWithinOneSpace(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    INSERT INTO "user" (id, email, name, created_at)
+    VALUES ('${crossSpaceProofUserId}', 'catalogue-space-proof@example.test', 'Catalogue proof', now());
+    SELECT set_config('app.space_id', '${crossSpaceProofSpaceId}', true);
+    SELECT set_config('app.user_id', '${crossSpaceProofUserId}', true);
+    INSERT INTO space (id, name, slug, created_at)
+    VALUES ('${crossSpaceProofSpaceId}', 'Catalogue proof', 'catalogue-proof', now());
+    INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
+    VALUES (
+      '01990000-0000-7000-8000-000000000067', '${crossSpaceProofSpaceId}',
+      '${crossSpaceProofUserId}', 'owner', 'write', now()
+    );
+    INSERT INTO project (id, space_id, name, created_at) VALUES
+      ('${otherSpaceProjectId}', '${crossSpaceProofSpaceId}', 'other-space-source', now()),
+      ('${otherSpaceTargetProjectId}', '${crossSpaceProofSpaceId}', 'other-space-target', now());
+    ${catalogueFixtureSql(crossSpaceProofSpaceId, otherSpaceCatalogue, 'other')}
+
+    SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
+    SELECT set_config('app.user_id', '${platformOperatorId}', true);
+    INSERT INTO project (id, space_id, name, created_at) VALUES
+      ('${sameSpaceSourceProjectId}', '${PLATFORM_SPACE_ID}', 'same-space-source', now()),
+      ('${sameSpaceTargetProjectId}', '${PLATFORM_SPACE_ID}', 'same-space-target', now());
+    ${catalogueFixtureSql(PLATFORM_SPACE_ID, sameSpaceCatalogue, 'same')}
+  `)
+
+  await proofSameSpaceCatalogueRelations(transaction)
+  for (const [relation, statement, allowed] of crossSpaceCatalogueRows()) {
+    if (allowed) await transaction.exec(statement)
+    else await expectCrossSpaceRefusal(transaction, relation, statement)
+  }
+}
+
+async function proofSameSpaceCatalogueRelations(transaction: Transaction): Promise<void> {
+  const rows = [
+    ['workflow_version', sameSpaceCatalogue.workflowVersion],
+    ['workflow_event', sameSpaceCatalogue.workflowEvent],
+    ['step_catalogue_version', sameSpaceCatalogue.stepCatalogueVersion],
+    ['step_catalogue_event', sameSpaceCatalogue.stepCatalogueEvent],
+    ['lens_revision', sameSpaceCatalogue.lensRevision],
+    ['lens_profile', sameSpaceCatalogue.lensProfile],
+    ['lens_profile_revision', sameSpaceCatalogue.lensProfileRevision],
+    ['project_lens_profile', sameSpaceCatalogue.projectLensProfile],
+    ['project_lens_profile_revision', sameSpaceCatalogue.projectLensProfileRevision],
+    ['port_pair', sameSpaceCatalogue.portPair],
+    ['port_baseline', sameSpaceCatalogue.portBaseline],
+    ['port_ref', sameSpaceCatalogue.portRef],
+    ['port_ref_source', sameSpaceCatalogue.portRefSource],
+    ['port_skip', sameSpaceCatalogue.portSkip],
+  ] as const
+  for (const [table, id] of rows) {
+    const accepted = await transaction.query<{ total: number }>(
+      `SELECT count(*)::int AS total FROM ${table} WHERE id = $1`,
+      [id],
+    )
+    if (accepted.rows[0]?.total !== 1) {
+      throw new CheckFailure(`DEV-1388 same-space ${table} relation was not accepted`)
+    }
+  }
+}
+
+function crossSpaceCatalogueRows(): readonly (readonly [string, string, boolean?])[] {
+  return [
+    [
+      'workflow version to workflow',
+      `INSERT INTO workflow_version (id, space_id, workflow_id, n, status, definition, author, reason, created_at, promoted_at, retired_at) VALUES ('${catalogueProofId(300)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflow}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
+    ],
+    [
+      'workflow event to version',
+      `INSERT INTO workflow_event (id, space_id, workflow_version_id, event, author, reason, session_id, at) VALUES ('${catalogueProofId(301)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.workflowVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
+    ],
+    [
+      'step catalogue version to catalogue',
+      `INSERT INTO step_catalogue_version (id, space_id, catalogue_id, n, status, definition, author, reason, created_at, promoted_at, retired_at) VALUES ('${catalogueProofId(302)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogue}', 2, 'draft', '{}', 'migration-check', 'proof', now(), NULL, NULL)`,
+    ],
+    [
+      'step catalogue event to version',
+      `INSERT INTO step_catalogue_event (id, space_id, catalogue_version_id, event, author, reason, session_id, at) VALUES ('${catalogueProofId(303)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.stepCatalogueVersion}', 'set', 'migration-check', 'proof', NULL, now())`,
+    ],
+    [
+      'lens revision to lens',
+      `INSERT INTO lens_revision (id, space_id, lens_id, version, prior_body, reason, session_id, at) VALUES ('${catalogueProofId(304)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 2, '{}', 'proof', NULL, now())`,
+    ],
+    [
+      'lens profile to lens',
+      `INSERT INTO lens_profile (id, space_id, lens_id, axis, name, version, body, enabled) VALUES ('${catalogueProofId(305)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross', 1, '{}', true)`,
+    ],
+    [
+      'lens profile revision to profile',
+      `INSERT INTO lens_profile_revision (id, space_id, profile_id, version, prior_body, reason, session_id, at) VALUES ('${catalogueProofId(306)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lensProfile}', 2, '{}', 'proof', NULL, now())`,
+    ],
+    [
+      'project lens profile to project',
+      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version) VALUES ('${catalogueProofId(307)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.lens}', 'architecture', 'cross-project', 1)`,
+    ],
+    [
+      'project lens profile to lens',
+      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version) VALUES ('${catalogueProofId(308)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross-lens', 1)`,
+    ],
+    [
+      'project lens profile revision to selection',
+      `INSERT INTO project_lens_profile_revision (id, space_id, selection_id, prior_profile_name, prior_selected_version, reason, session_id, at) VALUES ('${catalogueProofId(309)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectLensProfile}', 'proof', 1, 'proof', NULL, now())`,
+    ],
+    [
+      'port pair to source project',
+      `INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at) VALUES ('${catalogueProofId(310)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.projectTarget}', now())`,
+      true,
+    ],
+    [
+      'port pair to target project',
+      `INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at) VALUES ('${catalogueProofId(311)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.projectTarget}', now())`,
+    ],
+    [
+      'port baseline to pair',
+      `INSERT INTO port_baseline (id, space_id, pair_id, source_commit, scanned_at) VALUES ('${catalogueProofId(312)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', NULL, NULL)`,
+    ],
+    [
+      'port ref to project',
+      `INSERT INTO port_ref (id, space_id, task_key, target_project_id, note, created_at, resolved_at) VALUES ('${catalogueProofId(313)}', '${PLATFORM_SPACE_ID}', 'CROSS-1', '${otherSpaceCatalogue.projectTarget}', 'proof', now(), NULL)`,
+    ],
+    [
+      'port ref source to ref',
+      `INSERT INTO port_ref_source (id, space_id, ref_id, source_project_id, commits, paths, note) VALUES ('${catalogueProofId(314)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portRef}', '${sameSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
+    ],
+    [
+      'port ref source to project',
+      `INSERT INTO port_ref_source (id, space_id, ref_id, source_project_id, commits, paths, note) VALUES ('${catalogueProofId(315)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.portRef}', '${otherSpaceCatalogue.projectSource}', '[]', '[]', 'proof')`,
+      true,
+    ],
+    [
+      'port skip to pair',
+      `INSERT INTO port_skip (id, space_id, pair_id, candidate, reason, skipped_at) VALUES ('${catalogueProofId(316)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.portPair}', 'cross', 'proof', now())`,
+    ],
+  ] as const
+}
+
+async function proofCatalogueDefaultGrants(transaction: Transaction): Promise<void> {
+  const privileges = await transaction.query<{
+    table_name: string
+    actor_select: boolean
+    actor_insert: boolean
+    actor_update: boolean
+    actor_delete: boolean
+    reader_select: boolean
+  }>(`
+    SELECT
+      table_name,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'SELECT') AS actor_select,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'INSERT') AS actor_insert,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'UPDATE') AS actor_update,
+      has_table_privilege('${RECORD_ACTOR_ROLE}', table_name, 'DELETE') AS actor_delete,
+      has_table_privilege('${RECORD_READER_ROLE}', table_name, 'SELECT') AS reader_select
+    FROM unnest(ARRAY[
+      'workflow', 'workflow_version', 'workflow_event',
+      'step_catalogue', 'step_catalogue_version', 'step_catalogue_event',
+      'lens', 'lens_revision', 'lens_profile', 'lens_profile_revision',
+      'project_lens_profile', 'project_lens_profile_revision',
+      'port_doctrine', 'port_ref', 'port_ref_source', 'port_baseline', 'port_pair', 'port_skip'
+    ]) AS table_name
+  `)
+  const missing = privileges.rows.filter(
+    (row) =>
+      !row.actor_select ||
+      !row.actor_insert ||
+      !row.actor_update ||
+      !row.actor_delete ||
+      !row.reader_select,
+  )
+  if (missing.length > 0) {
+    throw new CheckFailure(
+      `DEV-1388 catalogue tables did not inherit record grants: ${missing
+        .map((row) => row.table_name)
+        .join(', ')}`,
+    )
+  }
+}
+
 async function seedHubProjectIdentityBackfill(transaction: Transaction): Promise<void> {
   await transaction.exec(`
     SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
@@ -436,7 +825,10 @@ async function hubProjectIdentityTaskRows(
   transaction: Transaction,
 ): Promise<{ id: string; project_id: string | null }[]> {
   await transaction.exec('ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;')
-  const result = await transaction.query<{ id: string; project_id: string | null }>(`
+  const result = await transaction.query<{
+    id: string
+    project_id: string | null
+  }>(`
     SELECT id::text AS id, project_id::text AS project_id FROM hub_task
     WHERE id IN ('${hubProjectMatchTaskId}', '${hubProjectUnmatchedTaskId}')
     ORDER BY key
@@ -478,7 +870,7 @@ async function applyAndProveMigration(
     throw new CheckFailure('DEV-1217 board notify migration does not use the exported channel')
   }
   await seedMigrationProof(transaction, migration.name)
-  await applyMigration(transaction, migration)
+  await applyRecordMigration(transaction, migration)
   if (migration.name === brokenDocBackfill && (await proofLatestRevision(transaction)) !== null) {
     throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
   }
@@ -502,6 +894,7 @@ async function applyAndProveMigration(
   if (migration.name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
   if (migration.name === hubProjectIdentityBackfill)
     await proofHubProjectIdentityBackfill(transaction)
+  await applyHostedProjectCleanupProof(transaction, migration)
 }
 
 async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {
@@ -510,6 +903,7 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
   if (name === docJsonbArrayRepair) await seedDocJsonbArrayRepair(transaction)
   if (name === hubProjectIdentityExpand) await seedHubProjectIdentityBackfill(transaction)
+  await seedHostedProjectCleanupProof(transaction, name)
 }
 
 async function proofBoardNotifications(database: PGlite): Promise<void> {
@@ -560,7 +954,7 @@ async function main(): Promise<void> {
       throw phaseFailure('starting PGlite', error)
     }
     try {
-      await provision(database)
+      await provisionRecordDatabase(database)
     } catch (error) {
       throw phaseFailure('provisioning PGlite', error)
     }
@@ -568,6 +962,9 @@ async function main(): Promise<void> {
       await database.transaction(async (transaction) => {
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
         await proofManagedCanonProjects(transaction)
+        await proofProjectRelationsStayWithinOneSpace(transaction)
+        await proofCatalogueDefaultGrants(transaction)
+        await proofProjectSpaceOwnershipDeclaration(transaction)
       })
       await proofBoardNotifications(database)
     } catch (error) {
@@ -589,9 +986,11 @@ async function main(): Promise<void> {
   console.log(`record migrations apply: ${applied} applied`)
 }
 
-try {
-  await main()
-} catch (error) {
-  console.error(errorMessage(error))
-  process.exitCode = 1
+if (import.meta.main) {
+  try {
+    await main()
+  } catch (error) {
+    console.error(errorMessage(error))
+    process.exitCode = 1
+  }
 }

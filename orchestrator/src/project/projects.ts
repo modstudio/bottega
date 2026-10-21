@@ -41,6 +41,7 @@ import {
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
+import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { autonomySettingsForStorage, validateAutonomySettings } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
@@ -60,6 +61,12 @@ import {
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
+import {
+  PROJECT_REFERENCES,
+  type ProjectReferenceCounts,
+  projectReferenceCounts,
+} from './project-reference-counts.ts'
+
 import type {
   MainStackConsumer,
   ProjectSettings,
@@ -70,9 +77,8 @@ import type {
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {
-  id: number
-  /** Hosted record identity; nullable until the one-time identity fill runs. */
-  recordId: string | null
+  /** Hosted record identity, minted locally when this install has no hosted record. */
+  recordId: string
   /** What it is called. Matches the directory name by default, not necessarily. */
   name: string
   /** Absolute path to its main checkout. */
@@ -103,16 +109,16 @@ export type Project = {
 
 export function resolveBranchRef(value: string): {
   branch: string
-  runId: number | null
+  runId: string | null
 } {
-  if (!/^\d+$/.test(value)) return { branch: value, runId: null }
-  const runId = Number(value)
-  const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as {
+  if (!classifyRunIdentifier(value)) return { branch: value, runId: null }
+  const recordId = resolveRunIdentifier(db(), value)
+  const row = db().query('SELECT branch FROM run WHERE record_id=?').get(recordId) as {
     branch: string | null
   } | null
-  if (!row) throw new Error(`no run ${runId}`)
-  if (!row.branch) throw new Error(`run ${runId} has no branch and cannot be landed`)
-  return { branch: row.branch, runId }
+  if (!row) throw new Error(`no run ${value}`)
+  if (!row.branch) throw new Error(`run ${value} has no branch and cannot be landed`)
+  return { branch: row.branch, runId: recordId }
 }
 
 /** Whether recorded facts prove that an absent tree has run-owned teardown. */
@@ -150,8 +156,7 @@ export function resolvedWorktreeTool(
 }
 
 function parse(row: {
-  id: number
-  record_id?: string | null
+  record_id: string
   name: string
   path: string
   stack: string | null
@@ -169,8 +174,7 @@ function parse(row: {
     settings = {}
   }
   return {
-    id: row.id,
-    recordId: row.record_id ?? null,
+    recordId: row.record_id,
     name: row.name,
     path: row.path,
     stack: row.stack,
@@ -192,13 +196,6 @@ export function projectRowByName(name: string, d = db()): Project | null {
     | Parameters<typeof parse>[0]
     | null
   return r ? parse(r) : null
-}
-
-function projectRowById(id: number, d = db()): Project | null {
-  const row = d.query('SELECT * FROM project WHERE id = ?').get(id) as
-    | Parameters<typeof parse>[0]
-    | null
-  return row ? parse(row) : null
 }
 
 export function projectByName(name: string, d = db()): Project | null {
@@ -269,7 +266,7 @@ export function stackAt(cwd: string): string | null {
 }
 
 export function upsertProject(p: {
-  recordId?: string | null
+  recordId: string
   name: string
   path: string
   stack?: string | null
@@ -284,21 +281,27 @@ export function upsertProject(p: {
 }
 
 /** Store the hosted identity once on the exact snapshotted row. */
-export function storeProjectRecordId(id: number, recordId: string): void {
-  writableDb()
-  const result = db()
-    .query('UPDATE project SET record_id=? WHERE id=? AND record_id IS NULL')
-    .run(recordId, id)
+export function storeProjectRecordId(
+  name: string,
+  recordId: string,
+  database: Database = writableDb(),
+): void {
+  const result = database
+    .query('UPDATE project SET record_id=? WHERE name=? AND record_id IS NULL')
+    .run(recordId, name)
   if (result.changes > 0) return
-  const project = projectRowById(id)
+  const project = database.query('SELECT name,record_id FROM project WHERE name=?').get(name) as {
+    name: string
+    record_id: string | null
+  } | null
   if (!project) {
     throw new Error(
-      `project row ${id} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+      `project ${name} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
     )
   }
-  if (project.recordId !== recordId) {
+  if (project.record_id !== recordId) {
     throw new Error(
-      `project ${project.name} already has hosted identity ${project.recordId}; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+      `project ${project.name} already has hosted identity ${project.record_id}; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
     )
   }
 }
@@ -317,7 +320,6 @@ export async function writeHostedProject(
   p: {
     recordId?: string | null
     name: string
-    previousName?: string
     path: string
     stack?: string | null
     canon?: boolean
@@ -345,7 +347,8 @@ export async function pushProjects(): Promise<string[]> {
       settings: project.settings,
       retiredAt: project.retiredAt,
     })
-    storeProjectRecordId(project.id, recordId)
+    if (project.recordId !== recordId)
+      throw new Error(`hosted project identity changed for ${project.name}`)
     names.push(project.name)
   }
   return names
@@ -360,55 +363,29 @@ export function setProjectRecordSpace(name: string, space: string): void {
   if (malformed.length) throw new Error(malformed.join('\n'))
   writableDb()
   db()
-    .query('UPDATE project SET settings=? WHERE id=?')
-    .run(JSON.stringify(projectSettingsForStorage(settings)), project.id)
+    .query('UPDATE project SET settings=? WHERE record_id=?')
+    .run(JSON.stringify(projectSettingsForStorage(settings)), project.recordId)
 }
 
 /** Local rename preconditions: existence, a non-empty target, and a free name. */
-export function assertProjectRename(currentName: string, nextName: string): { id: number } {
+export function assertProjectRename(currentName: string, nextName: string): { recordId: string } {
   if (!nextName.trim()) throw new Error('project --name must be non-empty')
   const current = projectByName(currentName)
   if (!current) throw new Error(`no project "${currentName}"`)
   if (currentName !== nextName && projectByName(nextName))
     throw new Error(`project "${nextName}" already exists`)
-  return { id: current.id }
+  return { recordId: current.recordId }
 }
 
-export type ProjectReferenceCounts = {
-  run: number
-  resource_claim: number
-  canon_pack: number
-  landing: number
-  landing_override: number
-  landing_review_carry: number
-  landing_triage_snapshot: number
-  review_read: number
-  doc: number
-  doc_revision: number
-  review: number
-}
-
-const REFERENCE_LABELS: { key: keyof ProjectReferenceCounts; label: string }[] = [
-  { key: 'run', label: 'run' },
-  { key: 'resource_claim', label: 'claim' },
-  { key: 'canon_pack', label: 'canon_pack' },
-  { key: 'landing', label: 'landing' },
-  { key: 'landing_override', label: 'landing_override' },
-  { key: 'landing_review_carry', label: 'landing_review_carry' },
-  { key: 'landing_triage_snapshot', label: 'landing_triage_snapshot' },
-  { key: 'review_read', label: 'review_read' },
-  { key: 'doc', label: 'doc' },
-  { key: 'doc_revision', label: 'doc_revision' },
-  { key: 'review', label: 'review' },
-]
+export type { ProjectReferenceCounts } from './project-reference-counts.ts'
 
 /** Two anchored lines, or null when the row may be deleted. */
 export function projectRemovalRefusal(
   name: string,
   counts: ProjectReferenceCounts,
 ): string[] | null {
-  const named = REFERENCE_LABELS.filter(({ key }) => counts[key] > 0).map(
-    ({ key, label }) => `${counts[key]} ${label}(s)`,
+  const named = PROJECT_REFERENCES.filter(([key]) => counts[key] > 0).map(
+    ([key, label]) => `${counts[key]} ${label}(s)`,
   )
   if (!named.length) return null
   return [
@@ -417,43 +394,21 @@ export function projectRemovalRefusal(
   ]
 }
 
-function projectReferenceCounts(projectId: number): ProjectReferenceCounts {
-  const count = (table: string) =>
-    (
-      db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=?`).get(projectId) as {
-        n: number
-      }
-    ).n
-  return {
-    run: count('run'),
-    resource_claim: count('resource_claim'),
-    canon_pack: count('canon_pack'),
-    landing: count('landing'),
-    landing_override: count('landing_override'),
-    landing_review_carry: count('landing_review_carry'),
-    landing_triage_snapshot: count('landing_triage_snapshot'),
-    review_read: count('review_read'),
-    doc: count('doc'),
-    doc_revision: count('doc_revision'),
-    review: count('review'),
-  }
-}
-
 export function removeProject(name: string): boolean {
   writableDb()
   const project = projectByName(name)
   if (!project) return false
-  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
+  const refusal = projectRemovalRefusal(name, projectReferenceCounts(db(), project.recordId))
   if (refusal) throw new Error(refusal.join('\n'))
-  return db().query('DELETE FROM project WHERE id = ?').run(project.id).changes > 0
+  return db().query('DELETE FROM project WHERE record_id = ?').run(project.recordId).changes > 0
 }
 
 export async function removeWrittenProject(name: string): Promise<boolean> {
   const project = projectByName(name)
   if (!project) return false
-  const refusal = projectRemovalRefusal(name, projectReferenceCounts(project.id))
+  const refusal = projectRemovalRefusal(name, projectReferenceCounts(db(), project.recordId))
   if (refusal) throw new Error(refusal.join('\n'))
-  await retireProjectInHostedRecord(name, project.settings)
+  await retireProjectInHostedRecord(project, project.settings)
   return removeProject(name)
 }
 
@@ -462,14 +417,14 @@ export function retireProject(name: string): 'retired' | 'already-retired' {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   if (project.retiredAt) return 'already-retired'
-  db().query('UPDATE project SET retired_at=? WHERE id=?').run(nowIso(), project.id)
+  db().query('UPDATE project SET retired_at=? WHERE record_id=?').run(nowIso(), project.recordId)
   return 'retired'
 }
 
 export async function retireWrittenProject(name: string): Promise<'retired' | 'already-retired'> {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
-  await retireProjectInHostedRecord(name, project.settings)
+  await retireProjectInHostedRecord(project, project.settings)
   return retireProject(name)
 }
 
@@ -478,7 +433,7 @@ export function unretireProject(name: string): boolean {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   if (!project.retiredAt) return false
-  db().query('UPDATE project SET retired_at=NULL WHERE id=?').run(project.id)
+  db().query('UPDATE project SET retired_at=NULL WHERE record_id=?').run(project.recordId)
   return true
 }
 
@@ -486,6 +441,7 @@ export async function unretireWrittenProject(name: string): Promise<boolean> {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   await writeHostedProject({
+    recordId: project.recordId,
     name: project.name,
     path: project.path,
     stack: project.stack,
@@ -600,6 +556,7 @@ type ProjectSettingsValidationContext = {
   projectNameAfterWrite?: string
   register?: Pick<Project, 'name' | 'settings'>[]
   enabledLensIds?: readonly string[]
+  enabledLensSpaceId?: string | null
 }
 
 function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationContext): string[] {
@@ -638,16 +595,27 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
 function reviewLensProblems(
   review: ProjectSettings['review'],
   enabledLensIds: readonly string[] | undefined,
+  enabledLensSpaceId: string | null | undefined,
 ): string[] {
   if (!review || !Array.isArray(review.lenses) || enabledLensIds === undefined) return []
   const enabled = new Set(enabledLensIds)
-  return review.lenses.flatMap((entry, index) =>
+  const remedy =
+    enabledLensSpaceId === undefined
+      ? `choose an enabled lens from ${PLATFORM_SLUG} review lens list`
+      : enabledLensSpaceId === null
+        ? 'choose an enabled lens from the local catalogue (no record space)'
+        : `choose an enabled lens in record space "${enabledLensSpaceId}"`
+  const problems = review.lenses.flatMap((entry, index) =>
     entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
-      ? [
-          `review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
-        ]
+      ? [`review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; ${remedy}`]
       : [],
   )
+  if (review.secondOpinion && !enabled.has(review.secondOpinion.lens)) {
+    problems.push(
+      `review.secondOpinion.lens: unknown or disabled lens "${review.secondOpinion.lens}"; ${remedy}`,
+    )
+  }
+  return problems
 }
 
 function readerToolServerProblems(server: string, names: unknown): string[] {
@@ -711,7 +679,7 @@ export function validateProjectSettings(
     ...projectSearchProblems(settings.search),
     ...keyPrefixProblems(settings.keyPrefixes, context),
     ...mainStackProblems(settings.mainStack),
-    ...reviewLensProblems(settings.review, context.enabledLensIds),
+    ...reviewLensProblems(settings.review, context.enabledLensIds, context.enabledLensSpaceId),
     ...mcpSettingsProblems(settings.mcp),
     ...focusedTestsProblems(settings.focusedTests),
   ]
@@ -1101,10 +1069,10 @@ export function undeclaredCommitHooks(project: Project): string | null {
  * project and looking straight at it, is a convenience they can correct.
  */
 export function sniffStack(path: string): string | null {
-  const has = (f: string) => Bun.spawnSync(['test', '-e', `${path}/${f}`]).exitCode === 0
+  const has = (f: string) => existsSync(join(path, f))
   const read = (f: string) => {
     try {
-      return Bun.spawnSync(['cat', `${path}/${f}`]).stdout.toString()
+      return readFileSync(join(path, f), 'utf8')
     } catch {
       return ''
     }

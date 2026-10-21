@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { forbiddenRichEditorDeclarations } from '../hub/web/src/docs/rich-style.ts'
+import { forbiddenRichEditorDeclarations } from '@bottega/hub-views/document-editor/rich-style'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const FILE = 'hub/web/src/styles/doc-editor-rich.css'
+const FILE = 'hub/views/src/styles/doc-editor-rich.css'
 
 const findings = forbiddenRichEditorDeclarations(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 if (!findings.length) {

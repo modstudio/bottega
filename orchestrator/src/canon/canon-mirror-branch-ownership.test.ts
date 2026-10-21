@@ -16,12 +16,14 @@ test('a reused local mirror branch at a foreign tip is refused', async () => {
     await registerManagedMirror(root, 'cm-foreign-branch')
     spawnFixtureGitSync(['branch', 'DEV-1002-canon-mirror', 'HEAD'], { cwd: root })
     const project = db()
-      .query<{ id: number }, []>("SELECT id FROM project WHERE name='cm-foreign-branch'")
+      .query<{ id: number }, []>(
+        "SELECT record_id AS id FROM project WHERE name='cm-foreign-branch'",
+      )
       .get()!
     db()
       .query(`INSERT INTO run
-        (record_id,started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
-        VALUES ('${newRecordId()}','2026-09-28','(architect)','canon-mirror','cm-foreign-branch',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','recorded-base','0123456789abcdef0123456789abcdef01234567')`)
+        (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
+        VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-28','(architect)','canon-mirror','cm-foreign-branch',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','recorded-base','0123456789abcdef0123456789abcdef01234567')`)
       .run(project.id)
     const result = await mirrorRepositoryCanon({
       project: 'cm-foreign-branch',

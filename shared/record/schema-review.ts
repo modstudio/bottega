@@ -1,6 +1,6 @@
 // concern: postgres-schema-review
 /** Knows the hosted review record shape. Must not know local review or synchronization behavior. */
-import { bigint, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
@@ -8,7 +8,6 @@ const machineIdentity = () =>
   uuid('machine_id')
     .notNull()
     .references(() => machine.id)
-const localIdentity = () => bigint('local_id', { mode: 'bigint' }).notNull()
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
 
@@ -19,7 +18,6 @@ export const review = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     tier: integer(),
@@ -36,10 +34,7 @@ export const review = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('review_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('review', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('review', table.spaceId)],
 )
 
 export const reviewLens = pgTable.withRLS(
@@ -50,7 +45,6 @@ export const reviewLens = pgTable.withRLS(
     reviewId: uuid('review_id').notNull(),
     runId: uuid('run_id').notNull(),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     lens: text().notNull(),
     agent: text().notNull(),
     model: text(),
@@ -71,10 +65,7 @@ export const reviewLens = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('review_lens_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('review_lens', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('review_lens', table.spaceId)],
 )
 
 export const reviewFinding = pgTable.withRLS(
@@ -85,7 +76,6 @@ export const reviewFinding = pgTable.withRLS(
     reviewId: uuid('review_id').notNull(),
     reviewLensId: uuid('review_lens_id').notNull(),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     ordinal: integer().notNull(),
     severity: text().notNull(),
     location: text().notNull(),
@@ -95,14 +85,12 @@ export const reviewFinding = pgTable.withRLS(
     rejectionCategory: text('rejection_category'),
     triagedSeverity: text('triaged_severity'),
     triagedAt: timestamp('triaged_at', { withTimezone: true }),
+    duplicateOfFindingId: uuid('duplicate_of_finding_id'),
     withheldFields: jsonb('withheld_fields'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('review_finding_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('review_finding', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('review_finding', table.spaceId)],
 )
 
 export const reviewRead = pgTable.withRLS(
@@ -112,7 +100,6 @@ export const reviewRead = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text().notNull(),
     patchId: text('patch_id').notNull(),
@@ -125,8 +112,5 @@ export const reviewRead = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('review_read_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('review_read', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('review_read', table.spaceId)],
 )

@@ -28,15 +28,30 @@ Operator docs are markdown facts about an installation, stored in `orch.db` rath
 
 `hooks/session-brief.py` fails open: it asks `bottega doc resumes` for the cwd and claims monitor conditions addressed to the starting session. When the resume list is non-empty it appends the list and one sentence — ask before loading on `startup`/`resume`, offer to resume on `clear`/`compact`/`fork`. It never fetches a brief body and never resumes anything itself. Addressed monitor conditions use at-least-once delivery: a hook reads without consuming, emits, and only then acknowledges, so interruption may repeat a notice but cannot lose one. Unowned findings remain in the monitor report. During a session `hooks/orch-heartbeat.sh` reads and acknowledges the same addressed stream. An architect's next tool call runs `hooks/board-interrupt.py`, which injects due acknowledgement-required board notices, and `hooks/board-ack-guard.py` holds Stop for an unacknowledged addressed notice up to `BOARD_ACK_STOP_BLOCKS`; both return immediately for workers and fail open. SessionStart, heartbeat, board interrupt and board acknowledgement guard are the delivery paths: the machine-wide monitor does not push into a harness channel. On any error, timeout, or missing binary the SessionStart hook exits `0`.
 
+An acknowledgement-required notice reaches only sessions already running when it was posted, and delivery stops once its acknowledgement deadline passes.
+
 # Resume briefs
 
 A long architect session loses its thread at a `/clear` or a compaction, so "where we are and what is next" lives outside the conversation, in the doc store, and is re-offered when a new session starts.
 
-A resume brief is a doc at `scope = resume`, `subject = <project>`, `slug = <epic>`. Status lives in the body's frontmatter, not in the address — a consumed brief keeps the same name so it stays readable. Frontmatter keys: `status` (`open` | `consumed`), `epic`, `project`, `written` (ISO `8601`), `consumed` (ISO `8601`, absent while open).
+A resume brief is a doc at `scope = resume`, `subject = <project>`, `slug = <epic>`. Status lives in the body's frontmatter, not in the address — a consumed brief keeps the same name so it stays readable. Frontmatter keys: `status` (`open` | `consumed`); `epic` or `task`, holding a tracker key (the epic's key, or the task's key when the work has no epic); `project`; `written` (ISO `8601`); `consumed` (ISO `8601`, absent while open). Writing an open brief refuses one without these keys or a `NEXT ACTION` line, or one that names a scratch location (`orchestrator/src/doc/doc-resume-write.ts`).
 
 **Writing.** At a task or epic boundary, draft the brief **in the conversation as markdown**, and write it only after the operator approves. Never draft-then-store-then-show; the approval must precede the write. Writes go through `set_doc`.
 
-**Brief contents.** Epic and task just finished; decisions made and the reasoning that produced them; open `orch` job ids and what each was asked to build; files and paths touched; and an explicit `NEXT ACTION` line.
+**Brief contents.** A brief carries only what the next session needs to take over the work. Keep a line only if the next session would act differently without it:
+- the epic and where it stands now;
+- the rulings still in force for the remaining work, each with the objection it overcame. A ruling that binds beyond the epic belongs in canon, not in a brief;
+- work in flight or held: open `orch` job ids and what each was asked to build, an unanswered question, an open quiet window;
+- pointers to the tasks, task documents and paths the next step uses;
+- an explicit `NEXT ACTION` line.
+
+Leave out what is recorded elsewhere or does not change the next step:
+- landed work and how it was reached, which git, the pull request and the task record already hold;
+- closed and scored runs and review rounds;
+- lessons and gotchas, which are filed as a note or proposed as canon; name one only if it will hit the next step;
+- specifications and designs restated in full; point to their task document instead.
+
+**Handoff material.** A brief names no scratch location: no session scratchpad, temporary directory or run artifact. A scratchpad is private to its session, and run output ages out after `KEEP_RUN_FILES_DAYS`. Before the brief is written, anything the next session needs beyond it goes on the epic's task as a task document (`bottega task doc new`). That includes a specification to build from, a survey or run result to build on, measurements still to take, and landing steps. The brief names that document by its task-document reference.
 
 **Resuming.** The SessionStart hook lists open briefs; it does not inject a body. The agent reads the list, asks which (or offers the single one), fetches it with `get_doc`, then marks it consumed with `set_doc` — flipping `status` and stamping `consumed`. Declining must not consume anything.
 

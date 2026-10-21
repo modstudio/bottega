@@ -1,19 +1,20 @@
+import { type OperatorWaitingItem, queryClient, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { waitingByRun } from '@bottega/hub-data/operator-waiting'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button, IconButton } from '@bottega/hub-ui/button'
+import { Companion } from '@bottega/hub-ui/companion'
+import { Input } from '@bottega/hub-ui/field/input'
+import { DisplayRow } from '@bottega/hub-ui/form-layout'
+import { Segmented } from '@bottega/hub-ui/segmented'
+import { duration, relativeTime } from '@bottega/hub-util/format'
+import { ReviewLensList } from '@bottega/hub-views/reviews'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { type ReviewLens, ReviewLensList } from '@/components/review-lenses'
-import { WaitingBadge } from '@/components/waiting-badge'
-import { duration, relativeTime } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { waitingByRun } from '@/lib/operator-waiting'
-import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Button, IconButton } from '@/ui/button/button'
-import { Companion } from '@/ui/companion/companion'
-import { Input } from '@/ui/field/input'
-import { DisplayRow } from '@/ui/form-layout/form-layout'
-import { Segmented } from '@/ui/segmented/segmented'
+import { WaitingBadge } from '@/routes/-waiting-badge'
+import type { RunDetailReviewLens } from '../../../../shared/review-presentation.ts'
 
 const DELIVERIES = ['none', 'partial', 'full'] as const
 const QUALITIES = ['wrong', 'mixed', 'right'] as const
@@ -43,7 +44,7 @@ type RunDetail = {
   note: string | null
   scored_at: string | null
   scoreAxes: readonly ('delivery' | 'quality' | 'fidelity')[]
-  reviews: ReviewLens[]
+  reviews: RunDetailReviewLens[]
 }
 type Verdict = {
   delivery: Delivery

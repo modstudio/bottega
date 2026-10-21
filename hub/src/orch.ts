@@ -57,8 +57,12 @@ import {
   OrchRunSchema,
   OrchStateSchema,
   OrchUnknownRunSchema,
+  type QuestionIdentity,
+  QuestionIdentityListSchema,
   type RulingListRow,
   RulingListSchema,
+  type RunIdentity,
+  RunIdentityListSchema,
 } from '../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
@@ -105,6 +109,7 @@ export type { BoardListInput, BoardPostInput } from './board-contract.ts'
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 const RUNS_DEADLINE_MS = 60_000
+const RUN_IDENTITY_MAP_DEADLINE_MS = 20_000
 
 /** Resolve the executable for every call made by a long-lived hub process. */
 export function resolveOrchExecutable(): string {
@@ -312,13 +317,25 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
 
+export async function readRunIdentityMap(): Promise<RunIdentity[]> {
+  return RunIdentityListSchema.parse(
+    JSON.parse(await orchProcess(['run', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
+  )
+}
+
+export async function readQuestionIdentityMap(): Promise<QuestionIdentity[]> {
+  return QuestionIdentityListSchema.parse(
+    JSON.parse(await orchProcess(['question', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
+  )
+}
+
 export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
   json(
     ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--since', since],
     RulingListSchema,
   )
 
-export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
+export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []
   return decodeRunsJson(
     await orchProcess(
@@ -339,7 +356,7 @@ export const claimWaitingNotifications = () =>
 
 export type WaitingRuling = { questionId: number; ruling: string }
 
-export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling[]): string[] => [
+export const answerWaitingArgv = (runId: string, rulings: readonly WaitingRuling[]): string[] => [
   'question',
   'answer',
   String(runId),
@@ -351,7 +368,7 @@ export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling
 ]
 
 export async function answerWaiting(
-  runId: number,
+  runId: string,
   rulings: readonly WaitingRuling[],
 ): Promise<AnswerWaitingResult> {
   return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
@@ -580,7 +597,7 @@ export async function score(
 export type DocRow = ContractDocRow
 
 const DocRowSchema = z.object({
-  id: z.number(),
+  record_id: z.string().uuid(),
   scope: z.enum(DOC_SCOPES),
   subject: z.string().nullable(),
   slug: z.string(),
@@ -588,7 +605,7 @@ const DocRowSchema = z.object({
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
   audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
-  parent_id: z.number().nullable(),
+  parent_record_id: z.string().uuid().nullable(),
   parent_slug: z.string().nullable(),
   position: z.number().int(),
   featured: z.boolean().default(false),

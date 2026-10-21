@@ -1,0 +1,46 @@
+import { variant } from '@bottega/hub-ui/text/variant'
+
+export const insightStyles = variant({
+  slots: {
+    tableFrame: 'overflow-x-auto border border-border-default',
+    muted: 'text-text-muted',
+    strong: 'font-semibold',
+    primary: 'text-text-primary',
+    status: 'text-status-text',
+    intro: 'mb-3 text-text-muted',
+    note: 'mt-5 max-w-4xl text-text-muted',
+    measure: 'max-w-[72ch] text-text-muted',
+    ratioNote: 'max-w-[72ch] mt-4 text-text-muted',
+    chart: 'mt-5 flex h-[280px] min-w-0 border border-border-default p-3',
+    axis: 'flex w-16 shrink-0 flex-col justify-between pb-7 text-right text-xs text-text-muted',
+    bars: 'ml-3 flex min-w-0 flex-1 items-end gap-2 overflow-x-auto border-b border-l border-border-default px-2',
+    barColumn: 'flex h-full min-w-10 flex-1 flex-col items-center justify-end',
+    bar: 'w-7 border border-chart-1',
+    barValue: 'mb-1 whitespace-nowrap text-xs text-text-muted',
+    barLabel: 'mt-1 text-xs text-text-muted',
+    value: '',
+    split: 'mt-5 grid gap-8 md:grid-cols-2',
+    subhead: 'mb-2 font-semibold text-text-muted',
+    lineItem: 'mb-2',
+    lineHead: 'flex justify-between',
+    lineTrack: 'h-1 bg-surface-sunken',
+    lineFill: 'h-full bg-chart-1',
+    detail: 'mt-3 text-text-muted',
+    badgeSpace: 'ml-2',
+    grid: 'grid gap-8 lg:grid-cols-2',
+    empty: 'p-6 text-center text-text-muted',
+    secondaryNote: 'mt-4 text-text-muted',
+    sparkline: 'flex h-6 items-end gap-px',
+    sparkBar: 'w-1.5 bg-chart-1',
+  },
+  variants: {
+    barKind: {
+      gap: {
+        bar: 'bg-[repeating-linear-gradient(135deg,transparent,transparent_3px,var(--border-default)_3px,var(--border-default)_5px)]',
+      },
+      today: { bar: 'bg-surface-sunken' },
+      complete: { bar: 'bg-chart-1' },
+    },
+    emphasis: { true: { value: 'font-semibold' }, false: { value: 'text-text-muted' } },
+  },
+})

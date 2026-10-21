@@ -105,11 +105,11 @@ test('lockfile group decision provisions equal content and installs changed or a
     entries,
   })
   expect(decideProvisionGroup(entries, 'branch', 'main')).toEqual({
-    action: 'install',
+    action: 'clone-and-install',
     entries: [{ ...entries[0]!, method: 'clone' }],
   })
   expect(decideProvisionGroup(entries, 'branch', null)).toEqual({
-    action: 'install',
+    action: 'clone-and-install',
     entries: [{ ...entries[0]!, method: 'clone' }],
   })
   expect(
@@ -117,6 +117,58 @@ test('lockfile group decision provisions equal content and installs changed or a
       (entry) => entry.method === 'link',
     ),
   ).toBeFalse()
+})
+
+test('an explicit install entry installs even when lockfile content matches', () => {
+  const entries = [
+    {
+      path: 'node_modules',
+      method: 'install' as const,
+      lockfile: 'bun.lock',
+      install: 'bun install --frozen-lockfile --ignore-scripts',
+    },
+  ]
+
+  expect(decideProvisionGroup(entries, 'same', 'same')).toEqual({
+    action: 'install',
+    entries,
+  })
+})
+
+test('an explicit install decision is exactly what provisioning executes', () => {
+  const { main, tree } = fixture()
+  mkdirSync(join(main, 'node_modules'))
+  writeFileSync(join(main, 'node_modules', 'from-main'), 'must not be copied')
+  const entries = [
+    {
+      path: 'node_modules',
+      method: 'install' as const,
+      required: true,
+      lockfile: 'bun.lock',
+      install: 'test ! -e node_modules && mkdir node_modules && touch node_modules/installed',
+    },
+  ]
+
+  expect(decideProvisionGroup(entries, null, null)).toEqual({ action: 'install', entries })
+  provisionWorktree(main, tree, entries)
+
+  expect(readFileSync(join(tree, 'node_modules', 'installed'), 'utf8')).toBe('')
+  expect(() => lstatSync(join(tree, 'node_modules', 'from-main'))).toThrow()
+})
+
+test('a successful install fails when a required declared path is missing', () => {
+  const { main, tree } = fixture()
+  expect(() =>
+    provisionWorktree(main, tree, [
+      {
+        path: 'node_modules',
+        method: 'install',
+        required: true,
+        lockfile: 'bun.lock',
+        install: 'true',
+      },
+    ]),
+  ).toThrow('required install provision "node_modules" is missing after running "true"')
 })
 
 test('install environment keeps only ordinary process context', () => {
@@ -216,7 +268,7 @@ test('existing target is left alone', () => {
 
 test('validation refuses malformed readonly provision declarations', () => {
   expect(validateReadonlyProvision([{ path: 'vendor', method: 'copy' }])).toEqual([
-    "worktree.readonly_provision method must be 'link' or 'clone'",
+    "worktree.readonly_provision method must be 'link', 'clone', or 'install'",
   ])
   expect(validateReadonlyProvision([{ path: '/vendor', method: 'clone' }])).toEqual([
     'worktree.readonly_provision path must be a non-empty relative path without ..',
@@ -239,6 +291,19 @@ test('validation refuses malformed readonly provision declarations', () => {
   expect(validateReadonlyProvision([{ path: 'vendor', method: 'clone', required: 'yes' }])).toEqual(
     ['worktree.readonly_provision required must be a boolean'],
   )
+  expect(validateReadonlyProvision([{ path: 'node_modules', method: 'install' }])).toEqual([
+    'worktree.readonly_provision install method requires lockfile and install',
+  ])
+  expect(
+    validateReadonlyProvision([
+      {
+        path: 'node_modules',
+        method: 'install',
+        lockfile: 'bun.lock',
+        install: 'bun install --frozen-lockfile --ignore-scripts',
+      },
+    ]),
+  ).toEqual([])
 })
 
 test('validation requires each lockfile group to agree on its install command', () => {
@@ -274,6 +339,27 @@ test('validation requires each lockfile group to agree on its install command', 
       },
     ]),
   ).toEqual([])
+})
+
+test('validation refuses a lockfile group that mixes install with link or clone', () => {
+  expect(
+    validateReadonlyProvision([
+      {
+        path: 'node_modules',
+        method: 'install',
+        lockfile: 'bun.lock',
+        install: 'bun install --frozen-lockfile',
+      },
+      {
+        path: 'packages/app/node_modules',
+        method: 'link',
+        lockfile: 'bun.lock',
+        install: 'bun install --frozen-lockfile',
+      },
+    ]),
+  ).toEqual([
+    'worktree.readonly_provision entries for lockfile "bun.lock" must not mix install paths [node_modules] with link or clone paths [packages/app/node_modules]',
+  ])
 })
 
 test('a path through a symlinked ancestor that leaves the tree is refused and creates nothing outside', () => {

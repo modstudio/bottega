@@ -7,7 +7,7 @@ import { workerGateToolingCondition, workerGateToolingConditions } from './monit
 test('worker gate tooling changes produce a run condition with paths and command', () => {
   expect(
     workerGateToolingCondition({
-      runId: 73,
+      runId: '73',
       startedAt: '2026-09-25T12:00:00.000Z',
       ownerSession: 'session-73',
       executions: [{ paths: ['package.json', 'scripts/gate'], command: 'bun run check' }],
@@ -27,7 +27,7 @@ test('worker gate tooling changes produce a run condition with paths and command
   })
   expect(
     workerGateToolingCondition({
-      runId: 73,
+      runId: '73',
       startedAt: '2026-09-25T12:00:00.000Z',
       ownerSession: null,
       executions: [{ paths: [], command: 'bun run check' }],
@@ -40,7 +40,7 @@ test('worker gate tooling changes produce a run condition with paths and command
 
 test('worker gate tooling changes clear only after admission, landing, or branch removal', () => {
   const facts = {
-    runId: 73,
+    runId: '73',
     startedAt: '2026-09-25T12:00:00.000Z',
     ownerSession: null,
     executions: [{ paths: ['package.json'], command: 'bun run check' }],
@@ -62,22 +62,22 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
   const project = (
     database
       .query(
-        `INSERT INTO project (name,path,stack,settings)
-         VALUES ('fixture','/missing/fixture','bun','{"trunk":"main"}') RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings)
+         VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'fixture','/missing/fixture','bun','{"trunk":"main"}') RETURNING record_id`,
       )
-      .get() as { id: number }
-  ).id
+      .get() as { record_id: string }
+  ).record_id
   const before = addRun({ agent: 'codex', job: 'implement', repo: 'fixture' })
   const after = addRun({ agent: 'codex', job: 'implement', repo: 'fixture' })
   database
-    .query('UPDATE run SET project_id=?,branch=?,minted_branch=? WHERE id=?')
+    .query('UPDATE run SET project_record_id=?,branch=?,minted_branch=? WHERE record_id=?')
     .run(project, 'DEV-before', 'DEV-before', before)
   database
-    .query('UPDATE run SET project_id=?,branch=?,minted_branch=? WHERE id=?')
+    .query('UPDATE run SET project_record_id=?,branch=?,minted_branch=? WHERE record_id=?')
     .run(project, 'DEV-after', 'DEV-after', after)
   const insertGate = database.query(
     `INSERT INTO gate_execution
-       (record_id, run_id,requested_at,started_at,finished_at,exit_code,tooling_paths,resolved_command)
+       (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,tooling_paths,resolved_command)
      VALUES (?, ?,'2026-09-25T11:59:00.000Z','2026-09-25T12:00:00.000Z',
              '2026-09-25T12:01:00.000Z',0,'["package.json"]','bun run check')`,
   )
@@ -85,7 +85,7 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
   insertGate.run(newRecordId(), after)
   const insertSnapshot = database.query(
     `INSERT INTO landing_triage_snapshot
-       (record_id,project,project_id,branch,tip,tree,review_ids,patch_id,tier,lens_rounds,
+       (record_id,project,project_record_id,branch,tip,tree,review_record_ids,patch_id,tier,lens_rounds,
         finding_count,at)
      VALUES (?,?,?,?,?,'tree','[]','patch',1,1,0,?)`,
   )

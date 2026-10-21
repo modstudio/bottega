@@ -7,7 +7,7 @@ import { db } from '../database/db.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 type WorkerGateToolingFacts = {
-  runId: number
+  runId: string
   startedAt: string
   ownerSession: string | null
   executions: { paths: string[]; command: string }[]
@@ -17,18 +17,18 @@ type WorkerGateToolingFacts = {
 }
 
 type AdapterFacts = WorkerGateToolingFacts & {
-  projectId: number | null
+  projectId: string | null
   project: string | null
   branch: string | null
 }
 
 type ToolingRow = {
-  run_id: number
+  run_record_id: string
   tooling_paths: string
   resolved_command: string | null
   started_at: string
   session_id: string | null
-  project_id: number | null
+  project_record_id: string | null
   project_name: string | null
   branch: string | null
   admitted: number
@@ -58,44 +58,41 @@ function toolingRows(database: Database): ToolingRow[] {
   return database
     .query(
       `WITH latest_tooling AS (
-         SELECT run_id,MAX(id) gate_id
+         SELECT run_record_id,MAX(id) gate_id
            FROM gate_execution
-          WHERE run_id IS NOT NULL AND tooling_paths <> '[]'
-          GROUP BY run_id
+          WHERE run_record_id IS NOT NULL AND tooling_paths <> '[]'
+          GROUP BY run_record_id
        )
-       SELECT g.run_id,g.tooling_paths,g.resolved_command,r.started_at,r.session_id,
-              p.id project_id,p.name project_name,COALESCE(r.minted_branch,r.branch) branch,
+       SELECT g.run_record_id,g.tooling_paths,g.resolved_command,r.started_at,r.session_id,
+              p.record_id project_record_id,p.name project_name,COALESCE(r.minted_branch,r.branch) branch,
               CASE WHEN latest_gate.finished_at IS NOT NULL AND EXISTS (
                 SELECT 1 FROM landing_triage_snapshot snapshot
-                 WHERE snapshot.project=p.name
+                 WHERE snapshot.project_record_id=p.record_id
                    AND snapshot.branch=COALESCE(r.minted_branch,r.branch)
                    AND snapshot.at>=latest_gate.finished_at
               ) THEN 1 ELSE 0 END admitted
        FROM gate_execution g
-       JOIN latest_tooling latest ON latest.run_id=g.run_id
+       JOIN latest_tooling latest ON latest.run_record_id=g.run_record_id
        JOIN gate_execution latest_gate ON latest_gate.id=latest.gate_id
-       JOIN run r ON r.id=g.run_id
-       LEFT JOIN project p ON p.id=COALESCE(
-         r.project_id,
-         (SELECT legacy.id FROM project legacy WHERE legacy.name=r.repo LIMIT 1)
-       )
-       WHERE g.run_id IS NOT NULL AND g.tooling_paths <> '[]' ORDER BY g.run_id,g.id`,
+       JOIN run r ON r.record_id=g.run_record_id
+       LEFT JOIN project p ON p.record_id=r.project_record_id
+       WHERE g.run_record_id IS NOT NULL AND g.tooling_paths <> '[]' ORDER BY g.run_record_id,g.id`,
     )
     .all() as ToolingRow[]
 }
 
-function factsByRun(rows: readonly ToolingRow[]): Map<number, AdapterFacts> {
-  const byRun = new Map<number, AdapterFacts>()
+function factsByRun(rows: readonly ToolingRow[]): Map<string, AdapterFacts> {
+  const byRun = new Map<string, AdapterFacts>()
   for (const row of rows) {
-    const facts = byRun.get(row.run_id) ?? {
-      runId: row.run_id,
+    const facts = byRun.get(row.run_record_id) ?? {
+      runId: row.run_record_id,
       startedAt: row.started_at,
       ownerSession: row.session_id,
       executions: [],
       admitted: row.admitted === 1,
       landed: false,
       branchExists: true,
-      projectId: row.project_id,
+      projectId: row.project_record_id,
       project: row.project_name,
       branch: row.branch,
     }
@@ -106,12 +103,12 @@ function factsByRun(rows: readonly ToolingRow[]): Map<number, AdapterFacts> {
         : [],
       command: row.resolved_command ?? '',
     })
-    byRun.set(row.run_id, facts)
+    byRun.set(row.run_record_id, facts)
   }
   return byRun
 }
 
-function unresolvedFacts(byRun: ReadonlyMap<number, AdapterFacts>): AdapterFacts[] {
+function unresolvedFacts(byRun: ReadonlyMap<string, AdapterFacts>): AdapterFacts[] {
   return [...byRun.values()].filter(
     (facts) =>
       !facts.admitted &&

@@ -17,7 +17,7 @@ import {
 } from './autonomy.ts'
 import { HOSTED_AUTONOMY_SCOPE_NAMES, resolveProjectAutonomy } from './autonomy-scopes.ts'
 import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
-import { productionStepCatalogue } from './step-catalogue.ts'
+import { showResolvedStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = `${PLATFORM_SLUG} machine config set`
 
@@ -184,7 +184,9 @@ async function architectSessionContext(
 ): Promise<ArchitectSessionContext> {
   const project = projectAt(cwd, dependencies.database)
   if (!project) return { registered: false }
-  const steps = catalogueStepsForAutonomy(productionStepCatalogue().definition.steps)
+  const steps = catalogueStepsForAutonomy(
+    showResolvedStepCatalogue(project.name, undefined, dependencies.database).definition.steps,
+  )
   const stateEnvironment = dependencies.stateEnvironment ?? process.env
   const cached = readSessionContextCache(project.name, stateEnvironment)
   const resolution = await resolveProjectAutonomy(

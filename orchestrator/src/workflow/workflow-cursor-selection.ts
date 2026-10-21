@@ -5,7 +5,7 @@ import { db } from '../database/db.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
-import { resolveWorkflowMode, showWorkflow } from './workflows.ts'
+import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
@@ -19,6 +19,17 @@ export type WorkflowCursorIdentity = {
 }
 
 export type WorkflowCursorContext = { session?: string | null; instance?: string }
+
+export function workflowCursorProjectScope(
+  options: { all?: boolean; project?: string; session?: string },
+  cwdProject: string | undefined,
+  cwd: string,
+): string | undefined {
+  if (options.all || (options.session && !options.project)) return undefined
+  if (options.project) return options.project
+  if (cwdProject) return cwdProject
+  throw new Error(`cannot list workflow cursors from ${cwd}: pass --project, --session or --all`)
+}
 
 export type SelectableCursorRow = {
   id: number
@@ -93,7 +104,8 @@ export function selectWorkflowCursor(
     return d
       .query(
         `SELECT * FROM workflow_cursor
-         WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+           AND workflow_slug=? AND mode_slug=? AND workflow_key=?
            AND instance_id='' ORDER BY id DESC LIMIT 1`,
       )
       .get(
@@ -107,7 +119,8 @@ export function selectWorkflowCursor(
   const rows = d
     .query(
       `SELECT * FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND workflow_key=''
          AND session_id=? AND state NOT IN ('done','abandoned') ORDER BY id`,
     )
     .all(identity.project, identity.workflow, identity.mode, ownerSession) as SelectableCursorRow[]
@@ -126,7 +139,8 @@ export function selectUntouchedKeylessWorkflowCursor(
   const rows = d
     .query(
       `SELECT * FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=''
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND workflow_key=''
          AND session_id=? AND state NOT IN ('done','abandoned')
          AND ordinal=0 ORDER BY id`,
     )
@@ -160,7 +174,8 @@ export function resolveWorkflowCursorMode(
   const rows = d
     .query(
       `SELECT DISTINCT mode_slug FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND workflow_key=?
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND workflow_key=?
          AND ${key ? "instance_id=''" : 'session_id=?'}
          AND state NOT IN ('done','abandoned') ORDER BY mode_slug`,
     )
@@ -173,7 +188,7 @@ export function resolveWorkflowCursorMode(
       `${caller} cannot resolve a mode for workflow "${slug}"; active cursor modes: ` +
         `${rows.map(({ mode_slug }) => mode_slug).join(', ')}; ${remedy}`,
     )
-  const definition = showWorkflow(slug, undefined, d).definition
+  const definition = showResolvedWorkflow(slug, undefined, project, d).definition
   const mode = resolveWorkflowMode(definition)
   if (mode) return mode.slug
   throw new Error(

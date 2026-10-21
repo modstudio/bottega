@@ -34,6 +34,8 @@ import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
+import { provisioningCommand } from '../monitor/provisioning-commands.ts'
+import { storageCommand } from '../monitor/storage-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
@@ -55,12 +57,17 @@ import {
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
+import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { registerLensCommands } from './lens.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
+const displayRunNumber = (recordId: string): number =>
+  (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
+    .number
 const presentation = {
   log,
   error: (...values: unknown[]) => console.error(...values),
@@ -69,15 +76,17 @@ const presentation = {
   },
   exit: (code: number): never => process.exit(code),
   now: Date.now,
-  printRunId: (id: number) => write(`${id}\n`),
+  printRunId: (id: string) => write(`${displayRunNumber(id)}\n`),
 }
 const scoreSuffix = (jobName: string) =>
   (JOBS[jobName]?.needs.writesRepo ? ' [drifted|partial|faithful]' : '') +
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
-const pairHint = (partner: { id: number; agent: string; reason?: string }) =>
-  `pair: run ${partner.id} (${partner.agent}) is comparable (${partner.reason ?? 'same task'}) — record with --better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
+const pairHint = (partner: { id: string; agent: string; reason?: string }) => {
+  const number = displayRunNumber(partner.id)
+  return `pair: run ${number} (${partner.agent}) is comparable (${partner.reason ?? 'same task'}) — record with --better-than ${number} | --worse-than ${number} | --same-as ${number}`
+}
 const runFlags = (options: OptionValues) => ({
   detach: Boolean(options.detach),
   follow: Boolean(options.follow),
@@ -149,6 +158,25 @@ const describedCommand = (program: Command, name: string, description: string) =
 
 function registerMachineAttentionCommands(program: Command): void {
   program
+    .command('provisioning')
+    .description('report worker-tree provisioning cost or run resources')
+    .option('--project <name>', 'limit samples to one project')
+    .option('--since <duration>', 'limit samples by age')
+    .option('--resources', 'report run CPU time and peak memory instead')
+    .option('--json', 'write the report as JSON')
+    .allowExcessArguments(false)
+    .action((options) =>
+      provisioningCommand(
+        {
+          project: options.project,
+          since: options.since,
+          json: Boolean(options.json),
+          resources: Boolean(options.resources),
+        },
+        { write: writeStdout },
+      ),
+    )
+  program
     .command('setup-ask')
     .description('install the live worker question channel')
     .allowExcessArguments(false)
@@ -184,11 +212,17 @@ function registerMachineAttentionCommands(program: Command): void {
       ),
     )
   program
+    .command('storage')
+    .description('measure run, worktree, store, and volume storage')
+    .option('--json', 'write the storage report as JSON')
+    .allowExcessArguments(false)
+    .action((options) => storageCommand(Boolean(options.json), { write: writeStdout }))
+  program
     .command('reclaim <kind> [subject]')
     .description('reclaim one classified stale resource')
     .option('--dry-run', 'report the reclamation without applying it')
     .allowExcessArguments(false)
-    .action((kind, subject, options) =>
+    .action(async (kind, subject, options) =>
       reclaimCommand(kind, subject, Boolean(options.dryRun), presentation),
     )
 }
@@ -238,6 +272,38 @@ function registerTreeCommands(program: Command): void {
     .option('--path <tree>', 'select the worktree to reseed', process.cwd())
     .allowExcessArguments(false)
     .action((seed, options) => treeReseedCommand(options.path, seed, { log }))
+  tree
+    .command('ship-cleanup <branch>')
+    .description('remove ephemeral resources for a landed branch')
+    .allowExcessArguments(false)
+    .action((branch) => {
+      const report = shipCleanup(branch)
+      log(formatShipCleanup(report))
+      if (!report.verdict.clean) process.exitCode = SHIP_CLEANUP_RESIDUE_EXIT_CODE
+    })
+}
+
+function registerAgentCommands(program: Command): void {
+  describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
+    .option('--harness <value>', 'set the agent harness')
+    .option('--backend <value>', 'set the model backend')
+    .option('--model <value>', 'set the model identifier')
+    .option('--base-url <value>', 'set the model endpoint URL')
+    .option('--api-key-secret <value>', 'set the sealed key holding the endpoint API key')
+    .option('--clear-api-key-secret', 'clear the endpoint API key reference')
+    .option('--context-tokens <value>', 'set the served context window')
+    .option('--billing <value>', 'set the billing class')
+    .option(
+      '--route-metered <value>',
+      "allow automatic read-only routing to this metered agent; spend limits live in the provider key's own settings",
+    )
+    .option('--jobs <value>', 'allow these comma-separated jobs or any')
+    .option('--prefer <value>', 'prefer these comma-separated jobs')
+    .option('--max-concurrent <value>', 'limit concurrent runs for this agent')
+    .option('--enabled <value>', 'enable or disable the agent')
+    .option('--reason <value>', 'record why the agent is disabled')
+    .option('--json', 'write the agent listing as JSON')
+    .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
@@ -558,19 +624,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
     .action((options) => jobsCommand(Boolean(options.json), presentation))
-  describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
-    .option('--harness <value>', 'set the agent harness')
-    .option('--backend <value>', 'set the model backend')
-    .option('--model <value>', 'set the model identifier')
-    .option('--base-url <value>', 'set the model endpoint URL')
-    .option('--context-tokens <value>', 'set the served context window')
-    .option('--jobs <value>', 'allow these comma-separated jobs or any')
-    .option('--prefer <value>', 'prefer these comma-separated jobs')
-    .option('--max-concurrent <value>', 'limit concurrent runs for this agent')
-    .option('--enabled <value>', 'enable or disable the agent')
-    .option('--reason <value>', 'record why the agent is disabled')
-    .option('--json', 'write the agent listing as JSON')
-    .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
+  registerAgentCommands(program)
   describedCommand(program, 'agents', 'list agents and their readiness')
     .option('--json', 'write agent capabilities as JSON')
     .allowExcessArguments(false)

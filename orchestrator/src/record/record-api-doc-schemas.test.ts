@@ -21,6 +21,7 @@ test('doc imports require audience sets and allow the service to mint the id', (
     },
     revisions: [
       {
+        id: '01990000-0000-7000-8000-000000000098',
         ...shared,
         op: 'create',
         author: 'legacy-client',

@@ -19,7 +19,7 @@ test('runs --unscored uses the shared definition of an owed judgment', () => {
   addRun({ agent: 'grok', job: 'craft', status: 'running', session: 'owed-session' })
   const parent = addRun({ agent: 'grok', job: 'craft', status: 'failed', session: 'owed-session' })
   addRun({ agent: 'grok', job: 'craft', parent, turn: 2, session: 'owed-session' })
-  expect(pendingForSession('owed-session').map((row) => row.id)).toEqual([wanted])
+  expect(pendingForSession('owed-session').map((row) => row.record_id)).toEqual([wanted])
 })
 
 describe('the activity window', () => {
@@ -27,7 +27,7 @@ describe('the activity window', () => {
   function agedRun(days: number, o: { agent: string; job: string; status?: string }) {
     const id = addRun(o)
     db()
-      .query('UPDATE run SET started_at=? WHERE id=?')
+      .query('UPDATE run SET started_at=? WHERE record_id=?')
       .run(new Date(Date.now() - days * 86_400_000).toISOString(), id)
     return id
   }
@@ -44,7 +44,7 @@ describe('the activity window', () => {
   test('the scored counter excludes judgments on not-evidence runs', () => {
     score(agedRun(0, { agent: 'grok', job: 'craft' }), 'full', 'right')
     const interrupted = agedRun(0, { agent: 'grok', job: 'craft', status: 'failed' })
-    db().query("UPDATE run SET failure_kind='interrupted' WHERE id=?").run(interrupted)
+    db().query("UPDATE run SET failure_kind='interrupted' WHERE record_id=?").run(interrupted)
     score(interrupted, 'none')
 
     expect((state(null).totals as { scored: number }).scored).toBe(1)
@@ -55,7 +55,7 @@ describe('the activity window', () => {
     const voided = agedRun(0, { agent: 'grok', job: 'craft' })
     score(voided, 'full', 'right')
     db()
-      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
+      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`)
       .run(voided)
 
     expect(state(null).totals as { scored: number; voided: number }).toEqual(
@@ -67,7 +67,7 @@ describe('the activity window', () => {
     score(agedRun(0, { agent: 'grok', job: 'craft' }), 'full', 'right')
     const noVerdict = agedRun(0, { agent: 'grok', job: 'craft' })
     db()
-      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
+      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`)
       .run(noVerdict)
 
     expect(state(null).totals as { runs: number; scored: number; voided: number }).toEqual(
@@ -108,7 +108,7 @@ describe('evidence totals', () => {
   test('doctor excludes scores on not-evidence runs from its scored count', () => {
     score(addRun({ agent: 'codex', job: 'file-question' }), 'full', 'right')
     const excluded = addRun({ agent: 'codex', job: 'file-question', status: 'failed' })
-    db().query("UPDATE run SET failure_kind='interrupted' WHERE id=?").run(excluded)
+    db().query("UPDATE run SET failure_kind='interrupted' WHERE record_id=?").run(excluded)
     score(excluded, 'none')
     expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 0, unscored: 0 })
   })
@@ -118,7 +118,7 @@ describe('evidence totals', () => {
     score(kept, 'full', 'right')
     score(voided, 'full', 'right')
     db()
-      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
+      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`)
       .run(voided)
     expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 })
   })
@@ -127,7 +127,7 @@ describe('evidence totals', () => {
     const voided = addRun({ agent: 'codex', job: 'file-question' })
     score(kept, 'full', 'right')
     db()
-      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
+      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`)
       .run(voided)
     expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 })
     expect(state(null).totals).toMatchObject({ runs: 2, scored: 1, voided: 1 })
@@ -136,7 +136,7 @@ describe('evidence totals', () => {
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'failed' })
     db()
       .query(
-        `UPDATE run SET failure_kind='interrupted',evidence_excluded='voided with orch score --void' WHERE id=?`,
+        `UPDATE run SET failure_kind='interrupted',evidence_excluded='voided with orch score --void' WHERE record_id=?`,
       )
       .run(id)
     expect(runTotals()).toMatchObject({ runs: 1, scored: 0, voided: 1, unscored: 0 })
@@ -148,7 +148,7 @@ describe('evidence totals', () => {
     expect(
       db()
         .query(
-          'SELECT root.id root_id,latest.id latest_id,s.run_id scored_id FROM run root JOIN run latest ON latest.parent_run_id=root.id JOIN score s ON s.run_id=root.id WHERE root.id=?',
+          'SELECT root.record_id root_id,latest.record_id latest_id,s.run_record_id scored_id FROM run root JOIN run latest ON latest.parent_run_record_id=root.record_id JOIN score s ON s.run_record_id=root.record_id WHERE root.record_id=?',
         )
         .get(root),
     ).toEqual({ root_id: root, latest_id: child, scored_id: root })
@@ -159,11 +159,11 @@ describe('session scoping', () => {
   test("only this session's own unscored runs are raised", () => {
     const mine = addRun({ agent: 'grok', job: 'craft' })
     const theirs = addRun({ agent: 'grok', job: 'craft' })
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('session-A', mine)
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('session-B', theirs)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('session-A', mine)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('session-B', theirs)
 
     const pending = pendingForSession('session-A')
-    expect(pending.map((r) => r.id)).toEqual([mine])
+    expect(pending.map((r) => r.record_id)).toEqual([mine])
   })
 
   test('with no session id, nothing is claimed', () => {
@@ -172,7 +172,7 @@ describe('session scoping', () => {
 
   test('a scored run drops off the backlog', () => {
     const id = addRun({ agent: 'grok', job: 'craft' })
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('s', id)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('s', id)
     expect(pendingForSession('s')).toHaveLength(1)
     score(id, 'full', 'right')
     expect(pendingForSession('s')).toHaveLength(0)
@@ -182,7 +182,7 @@ describe('session scoping', () => {
 test('a quota failure is retained but its successful retry is the only evidence', () => {
   const first = addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'quota' })
   const second = addRun({ agent: 'codex', job: 'craft' })
-  db().query('UPDATE run SET retry_of=? WHERE id=?').run(first, second)
+  db().query('UPDATE run SET retry_of_record_id=? WHERE record_id=?').run(first, second)
   score(second, 'full', 'right')
   expect(candidates('craft').find((row) => row.agent === 'codex')).toMatchObject({
     failures: 0,
@@ -194,8 +194,10 @@ test('a quota failure is retained but its successful retry is the only evidence'
 test('a retry is linked to what it re-attempts', () => {
   const first = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
   const second = addRun({ agent: 'codex', job: 'review-lens' })
-  db().query('UPDATE run SET retry_of=? WHERE id=?').run(first, second)
-  expect(db().query('SELECT retry_of FROM run WHERE id=?').get(second)).toEqual({ retry_of: first })
+  db().query('UPDATE run SET retry_of_record_id=? WHERE record_id=?').run(first, second)
+  expect(db().query('SELECT retry_of_record_id FROM run WHERE record_id=?').get(second)).toEqual({
+    retry_of_record_id: first,
+  })
 })
 
 test('a scored collision is kept as a verdict and dropped from routing', () => {
@@ -205,7 +207,9 @@ test('a scored collision is kept as a verdict and dropped from routing', () => {
   const b = addRun({ agent: 'codex', job: 'review-lens' })
   score(a, 'none')
   score(b, 'none')
-  db().query("UPDATE run SET evidence_excluded='shared an output file' WHERE id IN (?,?)").run(a, b)
+  db()
+    .query("UPDATE run SET evidence_excluded='shared an output file' WHERE record_id IN (?,?)")
+    .run(a, b)
   expect(candidates('review-lens').find((row) => row.agent === 'codex')).toMatchObject({
     scored: 1,
     evidence: 1,
@@ -220,12 +224,14 @@ test('the backfill stamps every member of a colliding group, and no unique path'
   const a = addRun({ agent: 'codex', job: 'review-lens' })
   const b = addRun({ agent: 'codex', job: 'review-lens' })
   const c = addRun({ agent: 'codex', job: 'review-lens' })
-  db().query('UPDATE run SET output_path=? WHERE id IN (?,?)').run(shared, a, b)
-  db().query('UPDATE run SET output_path=? WHERE id=?').run(unique, c)
+  db().query('UPDATE run SET output_path=? WHERE record_id IN (?,?)').run(shared, a, b)
+  db().query('UPDATE run SET output_path=? WHERE record_id=?').run(unique, c)
   expect(excludeSharedOutputRuns(db())).toBe(2)
   expect(
     db()
-      .query('SELECT id,evidence_excluded why FROM run WHERE id IN (?,?,?) ORDER BY id')
+      .query(
+        'SELECT record_id AS id,evidence_excluded why FROM run WHERE record_id IN (?,?,?) ORDER BY number',
+      )
       .all(a, b, c),
   ).toEqual([
     { id: a, why: SHARED_OUTPUT_REASON },
@@ -238,10 +244,10 @@ test('a reason already written is left alone', () => {
   const shared = join(dir, 'already.txt')
   const a = addRun({ agent: 'codex', job: 'review-lens' })
   const b = addRun({ agent: 'codex', job: 'review-lens' })
-  db().query('UPDATE run SET output_path=? WHERE id IN (?,?)').run(shared, a, b)
-  db().query("UPDATE run SET evidence_excluded='already set' WHERE id=?").run(a)
+  db().query('UPDATE run SET output_path=? WHERE record_id IN (?,?)').run(shared, a, b)
+  db().query("UPDATE run SET evidence_excluded='already set' WHERE record_id=?").run(a)
   expect(excludeSharedOutputRuns(db())).toBe(1)
-  expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(a)).toEqual({
+  expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(a)).toEqual({
     evidence_excluded: 'already set',
   })
 })

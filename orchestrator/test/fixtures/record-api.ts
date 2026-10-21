@@ -30,6 +30,35 @@ function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
   return { listInvitations: async () => [] }
 }
 
+function idleLensDeps() {
+  const unused = async () => {
+    throw new Error('hosted lens catalogue is unused in this fixture')
+  }
+  return {
+    listLensCatalogue: async () => [],
+    upsertLens: unused,
+    upsertLensProfile: unused,
+    selectProjectLensProfile: unused,
+  }
+}
+function idleWorkflowDeps() {
+  const unused = async () => {
+    throw new Error('hosted workflow catalogue is unused in this fixture')
+  }
+  return {
+    listWorkflowCatalogue: async () => [],
+    draftWorkflow: unused,
+    promoteWorkflow: unused,
+    retireWorkflow: unused,
+  }
+}
+function idlePortDeps() {
+  const unused = async () => {
+    throw new Error('hosted port catalogue is unused in this fixture')
+  }
+  return { listPortCatalogue: async () => [], writePort: unused }
+}
+
 function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
@@ -59,7 +88,17 @@ function idleBoardDeps(): RecordBoardDeps {
 }
 
 export function idleRecordApiDeps() {
-  return { ...idleIdentityAndSpaceDeps(), ...idleBoardDeps() }
+  return {
+    clientAddresses: {
+      recordApiUrl: 'https://api.example.test',
+      hubHostedUrl: 'https://app.example.test',
+    },
+    ...idleIdentityAndSpaceDeps(),
+    ...idleBoardDeps(),
+    ...idleLensDeps(),
+    ...idleWorkflowDeps(),
+    ...idlePortDeps(),
+  }
 }
 
 const subject = {
@@ -179,6 +218,16 @@ export function unusedBoardClientMethods(): Pick<
   | 'defineProjectSubject'
   | 'reorderProjectSubjects'
   | 'retireProjectSubject'
+  | 'listLensCatalogue'
+  | 'upsertLens'
+  | 'upsertLensProfile'
+  | 'selectProjectLensProfile'
+  | 'listWorkflowCatalogue'
+  | 'draftWorkflow'
+  | 'promoteWorkflow'
+  | 'retireWorkflow'
+  | 'listPortCatalogue'
+  | 'writePort'
 > {
   return {
     listPublicDocs: unusedBoard,
@@ -209,6 +258,16 @@ export function unusedBoardClientMethods(): Pick<
     defineProjectSubject: unusedSubject,
     reorderProjectSubjects: unusedSubject,
     retireProjectSubject: unusedSubject,
+    listLensCatalogue: async () => ({ items: [], nextCursor: null }),
+    upsertLens: unusedSubject,
+    upsertLensProfile: unusedSubject,
+    selectProjectLensProfile: unusedSubject,
+    listWorkflowCatalogue: async () => ({ items: [], nextCursor: null }),
+    draftWorkflow: unusedSubject,
+    promoteWorkflow: unusedSubject,
+    retireWorkflow: unusedSubject,
+    listPortCatalogue: async () => ({ items: [], nextCursor: null }),
+    writePort: unusedSubject,
   }
 }
 
@@ -242,6 +301,36 @@ export function createMemoryRecordApiClient(): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    async listLensCatalogue() {
+      return { items: [], nextCursor: null }
+    },
+    async upsertLens() {
+      throw new Error('hosted lens catalogue is unused in this fixture')
+    },
+    async upsertLensProfile() {
+      throw new Error('hosted lens catalogue is unused in this fixture')
+    },
+    async selectProjectLensProfile() {
+      throw new Error('hosted lens catalogue is unused in this fixture')
+    },
+    async listWorkflowCatalogue() {
+      return { items: [], nextCursor: null }
+    },
+    async draftWorkflow() {
+      throw new Error('hosted workflow catalogue is unused in this fixture')
+    },
+    async promoteWorkflow() {
+      throw new Error('hosted workflow catalogue is unused in this fixture')
+    },
+    async retireWorkflow() {
+      throw new Error('hosted workflow catalogue is unused in this fixture')
+    },
+    async listPortCatalogue() {
+      return { items: [], nextCursor: null }
+    },
+    async writePort() {
+      throw new Error('hosted port catalogue is unused in this fixture')
+    },
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')
     },

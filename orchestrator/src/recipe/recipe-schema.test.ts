@@ -108,9 +108,18 @@ describe('tracked recipe refusal rules', () => {
         provision: [
           { path: 'node_modules', method: 'link', required: true },
           { path: 'vendor', method: 'clone' },
+          {
+            path: 'installed',
+            method: 'install',
+            lockfile: 'bun.lock',
+            install: 'bun install --frozen-lockfile',
+          },
         ],
       }).success,
     ).toBe(true)
+    expect(
+      messages({ create: [], provision: [{ path: 'installed', method: 'install' }] }).join('\n'),
+    ).toContain('install provision requires lockfile and install')
     expect(
       messages({ create: [], provision: [{ path: '../vendor', method: 'clone' }] }).join('\n'),
     ).toContain('provision path')
@@ -131,6 +140,52 @@ describe('tracked recipe refusal rules', () => {
         ],
       }).join('\n'),
     ).toContain('provision path must be unique')
+  })
+
+  test('refuses a lockfile group that mixes install with link or clone', () => {
+    expect(
+      messages({
+        create: [],
+        provision: [
+          {
+            path: 'node_modules',
+            method: 'install',
+            lockfile: 'bun.lock',
+            install: 'bun install --frozen-lockfile',
+          },
+          {
+            path: 'packages/app/node_modules',
+            method: 'link',
+            lockfile: 'bun.lock',
+            install: 'bun install --frozen-lockfile',
+          },
+        ],
+      }).join('\n'),
+    ).toContain(
+      'provision entries for lockfile "bun.lock" must not mix install paths [node_modules] with link or clone paths [packages/app/node_modules]',
+    )
+  })
+
+  test('requires one install command throughout a lockfile group', () => {
+    expect(
+      messages({
+        create: [],
+        provision: [
+          {
+            path: 'node_modules',
+            method: 'link',
+            lockfile: 'bun.lock',
+            install: 'bun install --frozen-lockfile',
+          },
+          {
+            path: 'packages/app/node_modules',
+            method: 'clone',
+            lockfile: 'bun.lock',
+            install: 'bun install',
+          },
+        ],
+      }).join('\n'),
+    ).toContain('provision entries for lockfile "bun.lock" must agree on install')
   })
 
   test('refuses an unknown key', () => {

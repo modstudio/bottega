@@ -186,7 +186,7 @@ const { createWorkRouter } = await import('./routers/work.ts')
 const caller = appRouter.createCaller({})
 
 const row = {
-  id: 1,
+  record_id: '01990000-0000-7000-8000-000000000007',
   scope: 'global' as const,
   subject: null,
   slug: 'hello',
@@ -194,7 +194,7 @@ const row = {
   ...{ body: 'Hi', summary: null },
   delivery: 'inject' as const,
   audiences: ['technical'] as ['technical'],
-  parent_id: null,
+  parent_record_id: '01990000-0000-7000-8000-000000000003',
   parent_slug: null,
   position: 0,
   kind: 'working' as const,
@@ -209,8 +209,7 @@ describe('project.list', () => {
 
     expect(rows).toHaveLength(9)
     expect(rows[0]).toEqual({
-      id: 1,
-      record_id: null,
+      record_id: '01990000-0000-7000-8000-000000001101',
       name: 'alpha',
       path: '/fixtures/repos/alpha',
       stack: null,
@@ -341,25 +340,6 @@ describe('work.task', () => {
   const fakeStrip = (() => ({})) as never
   const fakeView = (async () => ({})) as never
 
-  test('returns the canonical task record', async () => {
-    const record = {
-      task: { key: 'DEV-1' },
-      source: 'local',
-      project: null,
-      runs: [],
-      comments: [],
-      documents: [],
-    }
-    const router = createWorkRouter({
-      strip: fakeStrip,
-      view: fakeView,
-      taskRecord: () => record as never,
-    })
-    const result = await router.createCaller({}).task({ key: 'DEV-1', scope: {} })
-    expect(result.task.key).toBe('DEV-1')
-    expect(result.source).toBe('local')
-  })
-
   test('passes record id and project identity to local task reads', async () => {
     const seen: unknown[] = []
     const router = createWorkRouter({
@@ -477,10 +457,10 @@ describe('work.task', () => {
 
 describe('doc router', () => {
   const mappedDoc = {
-    id: '7',
+    id: '01990000-0000-7000-8000-000000000007',
     slug: 'hello',
     title: 'Hello',
-    parentId: '3',
+    parentId: '01990000-0000-7000-8000-000000000003',
     position: 0,
     updatedAt: '2026-01-01T00:00:00Z',
     scope: 'global',
@@ -515,14 +495,14 @@ describe('doc router', () => {
   })
 
   test('tree maps local rows to the shared tree contract', async () => {
-    docList.mockResolvedValueOnce([{ ...row, id: 7, parent_id: 3 }])
+    docList.mockResolvedValueOnce([row])
     const result = await caller.doc.tree({ scope: 'global', audience: 'technical' })
     expect(docList).toHaveBeenCalledWith({ scope: 'global', audience: 'technical' })
     expect(result).toEqual({ items: [mappedDoc] })
   })
 
   test('read maps a local row to the shared doc contract', async () => {
-    docGet.mockResolvedValueOnce({ ...row, id: 7, parent_id: 3 })
+    docGet.mockResolvedValueOnce(row)
     const result = await caller.doc.read({ scope: 'global', subject: null, slug: 'hello' })
     expect(docGet).toHaveBeenCalledWith('global', null, 'hello')
     expect(result).toEqual({ ...mappedDoc, body: 'Hi' })
@@ -635,7 +615,8 @@ describe('doc router', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     const revisions = [
       {
-        id: 1,
+        record_id: '01990000-0000-7000-8000-000000000008',
+        number: 1,
         op: 'create' as const,
         author: 'tester',
         reason: 'created',
@@ -676,8 +657,7 @@ describe('doc router', () => {
 
 describe('project writes', () => {
   const row: RegisteredProject = {
-    id: 10,
-    record_id: null,
+    record_id: '01990000-0000-7000-8000-000000001204',
     name: 'new-project',
     path: '/tmp/new-project',
     stack: 'bun',

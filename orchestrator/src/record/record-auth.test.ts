@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import {
   activeMembershipSpace,
   ensurePersonalSpace,
+  noSpaceBuiltIns,
   type PersonalSpace,
   recordAllowedOrigins,
   recordAuth,
@@ -27,7 +28,14 @@ afterAll(() => {
 })
 
 test('auth instance builds without connecting to a database', () => {
-  const auth = recordAuth('postgres://record.invalid/database')
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    process.env,
+    undefined,
+    undefined,
+    undefined,
+    noSpaceBuiltIns,
+  )
   const api = auth.api
   expect(api.signInEmail).toBeFunction()
   expect(api.requestPasswordReset).toBeFunction()
@@ -52,6 +60,8 @@ test('password reset links use the configured hosted hub and the injected sender
     async (input) => {
       sent = input
     },
+    undefined,
+    noSpaceBuiltIns,
   )
   const hook = auth.options.emailAndPassword?.sendResetPassword
   await hook?.({ user: { email: 'reader@example.test' } as never, token: 'token-one', url: '' })
@@ -74,6 +84,7 @@ test('organization invitations use the seven-day lifetime and configured hosted 
     async (input) => {
       sent = input
     },
+    noSpaceBuiltIns,
   )
   const organizationOptions = auth.options.plugins?.find(
     (plugin) => plugin.id === 'organization',

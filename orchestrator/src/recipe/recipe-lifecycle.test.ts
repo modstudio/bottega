@@ -125,7 +125,7 @@ describe('tracked recipe lifecycle planning', () => {
         main: '/main',
         label: 'orch.run=2',
         treeExists: true,
-        compose: { projectName: 'Example App', rootRunId: 2 },
+        compose: { projectName: 'Example App', rootRunId: '2' },
         allocations: {
           index: 3,
           ports: { web: 21002 },

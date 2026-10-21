@@ -3,6 +3,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
 registerStandardRuntime()
@@ -20,7 +21,6 @@ import {
 import { resolveLens } from '../lens/lenses.ts'
 import {
   addDoctrineRule,
-  addPair,
   addSkip,
   baselineForPair,
   ledgerRef,
@@ -31,11 +31,12 @@ import {
   removeLedgerRef,
   resolveLedgerRef,
   retireDoctrineRule,
-  setBaseline,
+  setBaselineForProjects,
   setLedgerRef,
 } from '../porting/porting.ts'
 import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
+import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import {
@@ -56,7 +57,7 @@ import {
 import {
   composeWorkflow,
   getWorkflowStep,
-  listWorkflows,
+  listResolvedWorkflows,
   workflowModeStepLists,
 } from '../workflow/workflows.ts'
 import { fileNote, hubOutput } from './hub-notes.ts'
@@ -67,6 +68,8 @@ import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
+import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
+import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 const text = (value: unknown, isError = false) => ({
   content: [
@@ -81,25 +84,8 @@ const requiredReportField = (field: string, belongs: string) =>
     .trim()
     .min(1, `${field} is required: ${belongs}`)
 
-const nextWorkflowStepInputSchema = z.object({
-  slug: z.string().trim().min(1),
-  project: z.string().trim().min(1),
-  mode: z.string().trim().min(1).optional(),
-  args: z.record(z.string(), z.string()).optional(),
-  note: z.string().trim().min(1),
-  ruling: z.number().int().positive().optional(),
-  self_ruling: z.string().trim().min(1).optional(),
-  self_ruling_basis: z.string().optional(),
-  question: z.string().trim().min(1).optional(),
-  review: z.number().int().positive().optional(),
-  gate: z.number().int().positive().optional(),
-  run: z.number().int().positive().optional(),
-  artifact: z.string().trim().min(1).optional(),
-  task: z.string().trim().min(1).optional(),
-  cursor: z.number().int().positive().optional(),
-  defer: z.string().trim().min(1).optional(),
-  satisfies: z.number().int().positive().optional(),
-})
+const workflowRunEvidence = (run: string | number | undefined) =>
+  run === undefined ? undefined : resolveRunIdentifier(db(), run)
 
 const reporterFields = {
   reporter_kind: z
@@ -193,7 +179,6 @@ export function fileIssueTaskKey(stdout: string, project: Project): string {
 }
 
 type WorkerReporter = {
-  id: number
   record_id: string
   job: string
   agent: string
@@ -201,9 +186,9 @@ type WorkerReporter = {
   launch_key: string | null
 }
 
-const workerReporter = (runId: number) =>
+const workerReporter = (runId: string) =>
   db()
-    .query('SELECT id, record_id, job, agent, launch_cwd, launch_key FROM run WHERE id=?')
+    .query('SELECT record_id, job, agent, launch_cwd, launch_key FROM run WHERE record_id=?')
     .get(runId) as WorkerReporter | null
 
 function registeredProject(name: string) {
@@ -212,16 +197,90 @@ function registeredProject(name: string) {
   return project
 }
 
-function registeredPair(source: string, target: string, create = false) {
+async function advanceWorkflow({
+  slug,
+  project,
+  mode,
+  args,
+  note,
+  outcome,
+  ruling,
+  self_ruling,
+  self_ruling_basis,
+  question,
+  review,
+  gate,
+  run,
+  artifact,
+  task,
+  defer,
+  satisfies,
+  cursor,
+}: z.infer<typeof nextWorkflowStepInputSchema>) {
+  if (self_ruling_basis !== undefined && self_ruling === undefined)
+    throw new Error(
+      'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
+    )
+  const workflowArgs = args ?? {}
+  const context = mcpWorkflowCursorContext()
+  const resolvedReview = review === undefined ? undefined : resolveReviewIdentifier(db(), review)
+  return text(
+    nextWorkflowStep(
+      slug,
+      project,
+      resolveWorkflowCursorMode(
+        slug,
+        project,
+        mode,
+        workflowArgs,
+        context,
+        'next_workflow_step',
+        'pass the mode argument',
+        undefined,
+        cursor,
+      ),
+      workflowArgs,
+      note,
+      context,
+      undefined,
+      {
+        ruling,
+        review: resolvedReview,
+        gate,
+        run: workflowRunEvidence(run),
+        artifact,
+        task,
+        defer,
+        satisfies,
+      },
+      undefined,
+      cursor,
+      self_ruling === undefined
+        ? undefined
+        : {
+            ruling: self_ruling,
+            basis: self_ruling_basis ?? '',
+            question,
+            channel: 'mcp',
+          },
+      outcome,
+    ),
+  )
+}
+
+function registeredPair(source: string, target: string) {
   const sourceProject = registeredProject(source)
   const targetProject = registeredProject(target)
-  if (sourceProject.id === targetProject.id) {
+  if (sourceProject.recordId === targetProject.recordId) {
     throw new Error('a port source and target must be different projects')
   }
-  const pair =
-    pairByProjects(sourceProject.id, targetProject.id) ??
-    (create ? addPair(sourceProject.id, targetProject.id) : null)
+  const pair = pairByProjects(sourceProject.recordId, targetProject.recordId) ?? null
   return { sourceProject, targetProject, pair }
+}
+
+async function setNamedPortBaseline(source: string, target: string, commit: string | null) {
+  const { sourceProject, targetProject } = registeredPair(source, target)
+  return setBaselineForProjects(sourceProject.recordId, targetProject.recordId, commit)
 }
 
 const ledgerSourceSchema = z.object({
@@ -242,7 +301,7 @@ export async function fileIssue(
   let worker: WorkerReporter | null = null
   let reporterId: string | number = session ?? ''
   if (reporter.kind === 'session' && !session) {
-    const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+    const runId = resolveRunIdentifier(db(), process.env.ORCH_RUN_ID ?? '')
     const token = process.env.ORCH_RUN_TOKEN ?? ''
     if (!strictlyAuthenticatedWorkerRun(runId, token)) {
       throw new Error('cannot file issue: the reporting session is not available')
@@ -251,7 +310,7 @@ export async function fileIssue(
     if (!worker?.launch_cwd) {
       throw new Error('cannot file issue: the reporting worker has no project origin')
     }
-    reporterId = `run:${worker.id}`
+    reporterId = `run:${worker.record_id}`
   } else if (reporter.kind === 'monitor') {
     const invocation = db()
       .query('SELECT id FROM monitor_invocation WHERE id=?')
@@ -287,7 +346,7 @@ export async function fileIssue(
   const filedFields = [
     ...(worker
       ? [
-          `Filed by orch run ${worker.id} (${worker.job}, ${worker.agent}) while working ${
+          `Filed by orch run ${worker.record_id} (${worker.job}, ${worker.agent}) while working ${
             worker.launch_key ?? 'with no task key'
           }`,
         ]
@@ -372,7 +431,6 @@ export async function fileIssue(
     title_shortened: titleShortened,
     reporter: worker ? 'worker' : reporter.kind,
     reporter_id: reporterId,
-    worker_run_id: worker?.id ?? null,
     worker_run_record_id: worker?.record_id ?? null,
     ...(worker ? { origin: worker.launch_key } : {}),
     monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null,
@@ -416,7 +474,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description: 'List workflow identities and their production and draft versions.',
     },
-    async () => text(listWorkflows()),
+    async () => text(listResolvedWorkflows(resolveMcpWorkflowSpace(process.cwd()).spaceId)),
   )
 
   server.registerTool(
@@ -481,7 +539,7 @@ export function createDocsMcpServer(): McpServer {
       const preliminary = composeWorkflow(slug, project, effectiveMode, args ?? {})
       const stepSlug = effectiveMode
         ? step
-        : resolveWorkflowStepReference(step, workflowModeStepLists(slug))
+        : resolveWorkflowStepReference(step, workflowModeStepLists(slug, project))
       const preliminaryStep = effectiveMode
         ? undefined
         : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode })
@@ -533,64 +591,7 @@ export function createDocsMcpServer(): McpServer {
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
-    async ({
-      slug,
-      project,
-      mode,
-      args,
-      note,
-      ruling,
-      self_ruling,
-      self_ruling_basis,
-      question,
-      review,
-      gate,
-      run,
-      artifact,
-      task,
-      defer,
-      satisfies,
-      cursor,
-    }) => {
-      if (self_ruling_basis !== undefined && self_ruling === undefined)
-        throw new Error(
-          'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
-        )
-      const workflowArgs = args ?? {}
-      const context = mcpWorkflowCursorContext()
-      return text(
-        nextWorkflowStep(
-          slug,
-          project,
-          resolveWorkflowCursorMode(
-            slug,
-            project,
-            mode,
-            workflowArgs,
-            context,
-            'next_workflow_step',
-            'pass the mode argument',
-            undefined,
-            cursor,
-          ),
-          workflowArgs,
-          note,
-          context,
-          undefined,
-          { ruling, review, gate, run, artifact, task, defer, satisfies },
-          undefined,
-          cursor,
-          self_ruling === undefined
-            ? undefined
-            : {
-                ruling: self_ruling,
-                basis: self_ruling_basis ?? '',
-                question,
-                channel: 'mcp',
-              },
-        ),
-      )
-    },
+    advanceWorkflow,
   )
 
   server.registerTool(
@@ -739,9 +740,9 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Get one review with all lenses, grading flags, findings, evidence, and pin state.',
-      inputSchema: z.object({ id: z.number().int().positive() }),
+      inputSchema: z.object({ id: z.union([z.number().int().positive(), z.uuid()]) }),
     },
-    async ({ id }) => text(getReview(id)),
+    async ({ id }) => text(getReview(resolveReviewIdentifier(db(), id))),
   )
 
   server.registerTool(
@@ -771,7 +772,7 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ source, target }) => {
       const { pair } = registeredPair(source, target)
-      return text(pair ? { pair, baseline: baselineForPair(pair.id) } : null)
+      return text(pair ? { pair, baseline: baselineForPair(pair.record_id) } : null)
     },
   )
 
@@ -785,10 +786,8 @@ export function createDocsMcpServer(): McpServer {
         source_commit: z.string().nullable(),
       }),
     },
-    async ({ source, target, source_commit }) => {
-      const { pair } = registeredPair(source, target, true)
-      return text({ pair, baseline: setBaseline(pair!.id, source_commit) })
-    },
+    async ({ source, target, source_commit }) =>
+      text(await setNamedPortBaseline(source, target, source_commit)),
   )
 
   server.registerTool(
@@ -799,7 +798,7 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ source, target }) => {
       const { pair } = registeredPair(source, target)
-      return text(pair ? listSkips(pair.id) : [])
+      return text(pair ? listSkips(pair.record_id) : [])
     },
   )
 
@@ -818,7 +817,7 @@ export function createDocsMcpServer(): McpServer {
       const { pair } = registeredPair(source, target)
       if (!pair)
         throw new Error(`no port pair from "${source}" to "${target}"; set its baseline first`)
-      return text(addSkip(pair.id, candidate, reason))
+      return text(await addSkip(pair.record_id, candidate, reason))
     },
   )
 
@@ -837,7 +836,7 @@ export function createDocsMcpServer(): McpServer {
       description: 'Look up the source provenance recorded for a target task key.',
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
-    async ({ project, task_key }) => text(ledgerRef(registeredProject(project).id, task_key)),
+    async ({ project, task_key }) => text(ledgerRef(registeredProject(project).recordId, task_key)),
   )
 
   server.registerTool(
@@ -853,12 +852,12 @@ export function createDocsMcpServer(): McpServer {
     },
     async ({ project, task_key, note, sources }) =>
       text(
-        setLedgerRef({
+        await setLedgerRef({
           taskKey: task_key,
-          targetProjectId: registeredProject(project).id,
+          targetProjectId: registeredProject(project).recordId,
           note,
           sources: sources.map((source) => ({
-            source_project_id: registeredProject(source.project).id,
+            source_project_record_id: registeredProject(source.project).recordId,
             commits: source.commits,
             paths: source.paths,
             note: source.note,
@@ -874,7 +873,7 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) => {
-      const ref = resolveLedgerRef(registeredProject(project).id, task_key)
+      const ref = await resolveLedgerRef(registeredProject(project).recordId, task_key)
       if (!ref) throw new Error(`no port ledger ref for task "${project}:${task_key}"`)
       return text(ref)
     },
@@ -888,7 +887,7 @@ export function createDocsMcpServer(): McpServer {
       inputSchema: z.object({ project: z.string(), task_key: z.string() }),
     },
     async ({ project, task_key }) =>
-      text({ removed: removeLedgerRef(registeredProject(project).id, task_key) }),
+      text({ removed: await removeLedgerRef(registeredProject(project).recordId, task_key) }),
   )
 
   server.registerTool(
@@ -911,7 +910,7 @@ export function createDocsMcpServer(): McpServer {
         body: z.string(),
       }),
     },
-    async ({ number, title, body }) => text(addDoctrineRule(number, title, body)),
+    async ({ number, title, body }) => text(await addDoctrineRule(number, title, body)),
   )
 
   server.registerTool(
@@ -920,7 +919,7 @@ export function createDocsMcpServer(): McpServer {
       description: 'Retire a doctrine rule without freeing its stable number.',
       inputSchema: z.object({ number: z.number().int().positive() }),
     },
-    async ({ number }) => text({ retired: retireDoctrineRule(number) }),
+    async ({ number }) => text({ retired: await retireDoctrineRule(number) }),
   )
 
   server.registerTool(

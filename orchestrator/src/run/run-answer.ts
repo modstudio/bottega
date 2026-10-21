@@ -60,8 +60,10 @@ import {
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
-import { runRecordId } from './run-identifier.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
+
+const RUN_STATUS_SQL = 'SELECT status FROM run WHERE record_id = ?'
+
 import {
   decideRetryConversation,
   previousAttemptTaskPointer,
@@ -99,21 +101,27 @@ function incompleteRulingsRefusal(
 
 function answerResult(
   outcome: AnswerWaitingResult['outcome'],
-  runId: number,
-  recordId: string,
-  resumedAs: number | null,
+  runId: string,
+  runNumber: number,
+  resumedAs: string | null,
 ): AnswerWaitingResult {
+  const resumedNumber =
+    resumedAs === null
+      ? null
+      : (db()
+          .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+          .get(resumedAs)?.number ?? null)
   return {
     outcome,
-    run_id: runId,
-    record_id: recordId,
-    resumed_as: resumedAs,
-    resumed_record_id: resumedAs === null ? null : runRecordId(db(), resumedAs),
+    run_record_id: runId,
+    run_number: runNumber,
+    resumed_record_id: resumedAs,
+    resumed_number: resumedNumber,
   }
 }
 
 export type AnswerRunInput = {
-  rulings: string | { questionId: number; text: string }[]
+  rulings: string | { questionId: string; text: string }[]
   allowPartialRecordOnly?: boolean
   fromOperator: boolean
   channel: AnswerChannel
@@ -122,16 +130,33 @@ export type AnswerRunInput = {
   flags: RunFlags
 }
 type OpenQuestion = {
-  id: number
+  record_id: string
+  number: number
   question: string
   awaiting_operator_at: string | null
-  owner_id: number
+  owner_id: string
   owner_status: string
   owner_pid: number | null
 }
+type AnsweredQuestion = { number: number; record_id: string; question: string; answer: string }
+
+type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
+
+function answeredQuestion(question: OpenQuestion, answer: string): AnsweredQuestion {
+  return {
+    number: question.number,
+    record_id: question.record_id,
+    question: question.question,
+    answer,
+  }
+}
+
+function wrongQuestionChain(questionId: string, rootRecordId: string): string {
+  return `--q${questionId} belongs to run ${rootRecordId}, not this chain`
+}
 
 type AnswerRootRow = {
-  id: number
+  number: number
   record_id: string
   agent: string
   job: string
@@ -143,23 +168,23 @@ type AnswerRootRow = {
   status: string
   session_id: string | null
   turn: number
-  parent_run_id: number | null
+  parent_run_record_id: string | null
   worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
   evidence_excluded: string | null
   repo: string | null
   launch_key: string | null
 }
 
-function answerRoot(requestedId: number): AnswerRootRow | null {
+function answerRoot(requestedId: string): AnswerRootRow | null {
   return db()
     .query(
-      `SELECT root.id, root.record_id, root.agent, root.job, root.cwd, root.worktree, root.branch,
+      `SELECT root.record_id, root.number, root.record_id, root.agent, root.job, root.cwd, root.worktree, root.branch,
           root.base_commit, root.vendor_session, root.status, root.session_id,
-          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
+          root.turn, root.parent_run_record_id, root.worktree_source, root.evidence_excluded, root.repo,
           root.launch_key
      FROM run requested
-     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-    WHERE requested.id = ?`,
+     JOIN run root ON root.record_id = COALESCE(requested.parent_run_record_id, requested.record_id)
+    WHERE requested.record_id = ?`,
     )
     .get(requestedId) as AnswerRootRow | null
 }
@@ -174,7 +199,7 @@ function answeredBy(
 }
 
 function requireAnswerAuthority(
-  requestedId: number,
+  requestedId: string,
   channel: AnswerChannel,
   fromOperator: boolean,
   dashboardAuthorized: boolean,
@@ -207,21 +232,21 @@ function requireAnswerAuthority(
   )
 }
 
-function readOpenQuestions(id: number, status: string): OpenQuestion[] {
+function readOpenQuestions(id: string, status: string): OpenQuestion[] {
   const open = db()
     .query(
-      `SELECT q.id, q.question, q.awaiting_operator_at,
-              r.id owner_id, r.status owner_status, r.pid owner_pid
-     FROM question q JOIN run r ON r.id = q.run_id
-    WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}
-    ORDER BY q.id`,
+      `SELECT q.record_id,q.number,q.question,q.awaiting_operator_at,
+              r.record_id owner_id, r.status owner_status, r.pid owner_pid
+     FROM question q JOIN run r ON r.record_id = q.run_record_id
+    WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
+    ORDER BY q.number`,
     )
     .all(id, id) as OpenQuestion[]
   if (open.length) return open
   const asked = db()
     .query(
-      `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-      WHERE r.id = ? OR r.parent_run_id = ?`,
+      `SELECT COUNT(*) n FROM question q JOIN run r ON r.record_id = q.run_record_id
+      WHERE r.record_id = ? OR r.parent_run_record_id = ?`,
     )
     .get(id, id) as { n: number }
   throw new Error(
@@ -232,7 +257,7 @@ function readOpenQuestions(id: number, status: string): OpenQuestion[] {
 }
 
 function requireAnswerableLiveness(
-  id: number,
+  id: string,
   row: { status: string; evidence_excluded: string | null },
   open: OpenQuestion[],
 ): void {
@@ -249,7 +274,7 @@ function requireAnswerableLiveness(
 }
 
 function reportUnownedAdoption(
-  id: number,
+  id: string,
   owner: string | null,
   callerSession: string | null,
   ownerAuthorized: boolean,
@@ -272,84 +297,87 @@ async function refuseUserRuling(
   if (refusal) throw new Error(refusal)
 }
 
-function requireAnswerRun<Row>(row: Row | null, requestedId: number): Row {
+function requireAnswerRun<Row>(row: Row | null, requestedId: string): Row {
   if (!row) throw new Error(`no run ${requestedId}`)
   return row
 }
 
 function latestRetryTurn(
-  id: number,
-  rootId: number,
+  id: string,
+  rootId: string,
   hasRecordedRulings: boolean,
-): { id: number; status: string } {
+): { record_id: string; status: string } {
   const latest = db()
     .query(
-      `SELECT id,status FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
+      `SELECT record_id,status FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as { id: number; status: string }
+    .get(rootId, rootId) as { record_id: string; status: string }
   if (latest.status !== 'asking' || hasRecordedRulings) return latest
   const questions = db()
     .query(
-      `SELECT q.id,q.question FROM question q JOIN run r ON r.id=q.run_id
-       WHERE (r.id=? OR r.parent_run_id=?) AND ${questionOpenSql('q')} ORDER BY q.id`,
+      `SELECT q.number,q.question FROM question q JOIN run r ON r.record_id=q.run_record_id
+       WHERE (r.record_id=? OR r.parent_run_record_id=?) AND ${questionOpenSql('q')} ORDER BY q.number`,
     )
-    .all(rootId, rootId) as { id: number; question: string }[]
+    .all(rootId, rootId) as { number: number; question: string }[]
   throw new Error(
-    `run ${id} is asking with open questions: ${questions.map((q) => `q${q.id}: ${q.question}`).join('; ')}. ` +
+    `run ${id} is asking with open questions: ${questions.map((q) => `q${q.number}: ${q.question}`).join('; ')}. ` +
       `Answer them, or ${PLATFORM_SLUG} run abandon ${id}`,
   )
 }
 
+type RetryRunRow = {
+  record_id: string
+  root_record_id: string
+  agent: string
+  job: string
+  cwd: string | null
+  root_cwd: string | null
+  root_base_commit: string | null
+  prompt_path: string | null
+  probe: number
+  status: string
+  failure_kind: string | null
+  mcp: number | null
+  mcp_error: string | null
+  schema_path: string | null
+  model: string | null
+  lens: string | null
+  launch_cwd: string | null
+  launch_seed: string | null
+  launch_key: string | null
+  launch_base: string | null
+  no_failover: number
+  keep_tree: number
+  keep_tree_until: string | null
+  keep_tree_reason: string | null
+  started_at: string
+  repo: string | null
+  project_record_id: string | null
+  branch_kept: string | null
+  agent_explicit: number
+  branch_kept_tip: string | null
+}
+
 export async function retryRun(
-  id: number,
+  id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
   helpers: RunAnswerHelpers,
 ): Promise<void> {
   let retryAuthority = authorizeRunMutation(id, 'retry')
   const row = db()
     .query(
-      `SELECT requested.id, COALESCE(requested.parent_run_id,requested.id) root_id,
+      `SELECT requested.record_id, COALESCE(requested.parent_run_record_id,requested.record_id) root_record_id,
           requested.agent, requested.job, requested.cwd, requested.prompt_path,
           requested.probe, requested.status, requested.failure_kind, requested.mcp, requested.mcp_error,
           requested.schema_path, requested.model, requested.lens, requested.launch_cwd,
           requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover,
           requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
-          requested.started_at, root.repo, root.project_id, root.cwd root_cwd,
-          root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip
-     FROM run requested JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
-     WHERE requested.id = ?`,
+          requested.started_at, root.repo, root.project_record_id, root.cwd root_cwd,
+          root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip, root.agent_explicit
+     FROM run requested JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
+     WHERE requested.record_id = ?`,
     )
-    .get(id) as {
-    id: number
-    root_id: number
-    agent: string
-    job: string
-    cwd: string | null
-    root_cwd: string | null
-    root_base_commit: string | null
-    prompt_path: string | null
-    probe: number
-    status: string
-    failure_kind: string | null
-    mcp: number | null
-    mcp_error: string | null
-    schema_path: string | null
-    model: string | null
-    lens: string | null
-    launch_cwd: string | null
-    launch_seed: string | null
-    launch_key: string | null
-    launch_base: string | null
-    no_failover: number
-    keep_tree: number
-    keep_tree_until: string | null
-    keep_tree_reason: string | null
-    started_at: string
-    repo: string | null
-    project_id: number | null
-    branch_kept: string | null
-    branch_kept_tip: string | null
-  } | null
+    .get(id) as RetryRunRow | null
   if (!row) throw new Error(`no run ${id}`)
   assertAgentWorkRun(id, row.job, 'retried')
   // A writing job already has a worktree and a vendor session. Retry would
@@ -357,13 +385,13 @@ export async function retryRun(
   // partial edit. Continue the same conversation in the same tree instead.
   const recordedRulings = db()
     .query(
-      `SELECT q.id, q.question, q.answer
-     FROM question q JOIN run owner ON owner.id = q.run_id
-    WHERE (owner.id = ? OR owner.parent_run_id = ?)
+      `SELECT q.number,q.record_id,q.question,q.answer
+     FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+    WHERE (owner.record_id = ? OR owner.parent_run_record_id = ?)
       AND q.delivery_pending_at IS NOT NULL AND q.answer IS NOT NULL
-    ORDER BY q.id`,
+    ORDER BY q.number`,
     )
-    .all(row.root_id, row.root_id) as { id: number; question: string; answer: string }[]
+    .all(row.root_record_id, row.root_record_id) as RecordedRuling[]
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
   const agent = options.agent ?? row.agent
@@ -390,19 +418,19 @@ export async function retryRun(
         `after ${KEEP_RUN_FILES_DAYS} days. Nothing to re-send.`,
     )
   }
-  const latestTurn = latestRetryTurn(id, row.root_id, recordedRulings.length > 0)
+  const latestTurn = latestRetryTurn(id, row.root_record_id, recordedRulings.length > 0)
   const latestCheckout = db()
     .query(
       `SELECT cwd,worktree,base_commit FROM run
-       WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
+       WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
-    .get(row.root_id, row.root_id) as {
+    .get(row.root_record_id, row.root_record_id) as {
     cwd: string | null
     worktree: string | null
     base_commit: string | null
   }
   const checkout = requireContinuationCheckout({
-    rootId: row.root_id,
+    rootId: row.root_record_id,
     operation: 'retried',
     requiresRepo: readsRepo,
     latestCwd: latestCheckout.cwd,
@@ -412,18 +440,18 @@ export async function retryRun(
   const continuationInstructions = continuationInstructionsForFreshRetry(
     writesRepo,
     id,
-    row.root_id,
+    row.root_record_id,
   )
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
   const workspace = writesRepo
     ? resolveWritingRetryWorkspace({
         id,
-        rootId: row.root_id,
+        rootId: row.root_record_id,
         job: row.job,
         launchKey: row.launch_key,
         repo: row.repo,
-        projectId: row.project_id,
+        projectId: row.project_record_id,
         branchKept: row.branch_kept,
         branchKeptTip: row.branch_kept_tip,
         strandedRecordOnly: recordedRulings.length > 0 && latestTurn.status === 'asking',
@@ -439,7 +467,7 @@ export async function retryRun(
     return adoptRunMutation(retryAuthority, 'retry')
   })
   const retryTree = resolveRetryTree({
-    rootId: row.root_id,
+    rootId: row.root_record_id,
     projectName: row.repo,
     projectPath: checkout.project?.path ?? null,
     readsRepo,
@@ -462,23 +490,24 @@ export async function retryRun(
         rulings: renderedRulings,
         commit: workspace.commit,
         taskPointer: previousAttemptTaskPointer({
-          checkpoint: latestCheckpoint(db(), row.root_id)?.task_pointer ?? null,
-          latestScratch: readTaskPointer(runScratchDir(latestTurn.id)),
-          rootScratch: readTaskPointer(runScratchDir(row.root_id)),
+          checkpoint: latestCheckpoint(db(), row.root_record_id)?.task_pointer ?? null,
+          latestScratch: readTaskPointer(runScratchDir(latestTurn.record_id)),
+          rootScratch: readTaskPointer(runScratchDir(row.root_record_id)),
         }),
       })
     : renderedRulings
       ? `${originalPrompt}\n\n---\n\n${renderedRulings}`
       : originalPrompt
-  const dispatchState = readDispatchState(row.root_id)
-  const resumeLaunch = resumeLaunchForRoot(row.root_id)
-  let newId: number
+  const dispatchState = readDispatchState(row.root_record_id)
+  const resumeLaunch = resumeLaunchForRoot(row.root_record_id)
+  let newId: string
   try {
     newId = await (helpers.dispatch ?? detach)(
       row.job,
       retryPrompt,
       {
         agent,
+        agentExplicit: Boolean(options.agent || row.agent_explicit),
         schema: row.schema_path ?? undefined,
         mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
         model: retryModelForAgent(row.agent, row.model, agent, options.model),
@@ -492,7 +521,7 @@ export async function retryRun(
         base: resumeLaunch.base,
         launchBase: row.launch_base ?? undefined,
         noFailover: !!row.no_failover,
-        transport: chainTransport(row.root_id) ?? undefined,
+        transport: chainTransport(row.root_record_id) ?? undefined,
         keepTree: row.keep_tree
           ? (() => {
               const decision = keepTreeHold({
@@ -516,7 +545,7 @@ export async function retryRun(
         resume: workspace
           ? {
               kind: 'retry-root',
-              parent: row.root_id,
+              parent: row.root_record_id,
               agent,
               retireAsking: recordedRulings.length > 0 && latestTurn.status === 'asking',
               turn: 1,
@@ -530,7 +559,7 @@ export async function retryRun(
     )
   } catch (error) {
     appendQuestionDeliveries(
-      recordedRulings.map((ruling) => ruling.id),
+      recordedRulings.map((ruling) => ruling.record_id),
       {
         runId: null,
         mode: QUESTION_DELIVERY_MODE_RETRY,
@@ -543,7 +572,7 @@ export async function retryRun(
   }
   if (recordedRulings.length) {
     appendQuestionDeliveries(
-      recordedRulings.map((ruling) => ruling.id),
+      recordedRulings.map((ruling) => ruling.record_id),
       {
         runId: newId,
         mode: QUESTION_DELIVERY_MODE_RETRY,
@@ -567,13 +596,13 @@ export async function retryRun(
  * guessing does not get used.
  */
 export async function answerRun(
-  requestedId: number,
+  requestedId: string,
   input: AnswerRunInput,
   helpers: RunAnswerHelpers,
 ): Promise<AnswerWaitingResult> {
   const row = requireAnswerRun(answerRoot(requestedId), requestedId)
   await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
-  const id = row.id
+  const id = row.record_id
   refuseEscapedChain(id)
   writableDb()
   let answerAuthority = runMutationActor(requestedId)
@@ -586,7 +615,6 @@ export async function answerRun(
   )
   if (authorityDecision.kind === 'allow-as-operator')
     answerAuthority = { ...answerAuthority, actor: authorityDecision.actor }
-
   /**
    * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.
    *
@@ -637,7 +665,7 @@ export async function answerRun(
   const stopped = open.filter((q) => !live.includes(q))
   if (live.length && stopped.length) {
     const list = (questions: typeof open) =>
-      questions.map((q) => `q${q.id} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
+      questions.map((q) => `q${q.number} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
     throw new Error(
       `run ${id} has questions owned by both live and stopped turns. ` +
         `Live: ${list(live)}. Stopped: ${list(stopped)}. Refusing to rule; inspect the run chain.`,
@@ -650,18 +678,20 @@ export async function answerRun(
     !ownersLive &&
     !stopped.every((q) => q.owner_status === 'asking' || q.owner_status === 'running')
   ) {
-    const states = stopped.map((q) => `q${q.id} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
+    const states = stopped
+      .map((q) => `q${q.number} (run ${q.owner_id}, ${q.owner_status})`)
+      .join(', ')
     throw new Error(`run ${id} has questions whose owners are not waiting: ${states}`)
   }
 
   const latest = db()
     .query(
-      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
-     FROM run WHERE id = ? OR parent_run_id = ?
+      `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+     FROM run WHERE record_id = ? OR parent_run_record_id = ?
     ORDER BY turn DESC LIMIT 1`,
     )
     .get(id, id) as {
-    id: number
+    record_id: string
     agent: string
     vendor_session: string | null
     turn: number
@@ -675,12 +705,12 @@ export async function answerRun(
     ? latest
     : (db()
         .query(
-          `SELECT id, agent, vendor_session, turn
-         FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
+          `SELECT record_id, agent, vendor_session, turn
+         FROM run WHERE (record_id = ? OR parent_run_record_id = ?) AND vendor_session IS NOT NULL
         ORDER BY turn DESC LIMIT 1`,
         )
         .get(id, id) as {
-        id: number
+        record_id: string
         agent: string
         vendor_session: string
         turn: number
@@ -689,7 +719,7 @@ export async function answerRun(
 
   // The CLI adapter resolves positional, file, and stdin sources before the
   // service boundary. Other adapters supply validated ruling text directly.
-  const answers: { id: number; question: string; answer: string }[] = []
+  const answers: AnsweredQuestion[] = []
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
   const rulingFrom = (text: string): string => {
     if (!text.trim())
@@ -710,29 +740,30 @@ export async function answerRun(
   }
   if (Array.isArray(input.rulings)) {
     const invalid: string[] = []
-    const seen = new Set<number>()
+    const seen = new Set<string>()
     for (const ruling of input.rulings) {
       if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
       seen.add(ruling.questionId)
-      if (open.some((q) => q.id === ruling.questionId)) continue
+      if (open.some((q) => q.record_id === ruling.questionId)) continue
       const named = db()
         .query(
-          `SELECT q.id, q.answered_at, r.id AS run_id,
-              COALESCE(r.parent_run_id, r.id) AS root_id
-         FROM question q JOIN run r ON r.id = q.run_id WHERE q.id = ?`,
+          `SELECT q.record_id,q.number,q.answered_at,r.record_id AS run_record_id,
+              COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
+         FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
         )
         .get(ruling.questionId) as {
-        id: number
+        record_id: string
+        number: number
         answered_at: string | null
-        run_id: number
-        root_id: number
+        run_record_id: string
+        root_record_id: string
       } | null
       if (!named) {
         invalid.push(`--q${ruling.questionId} names no question`)
-      } else if (named.root_id !== id) {
-        invalid.push(`--q${ruling.questionId} belongs to run ${named.root_id}, not this chain`)
+      } else if (named.root_record_id !== id) {
+        invalid.push(wrongQuestionChain(ruling.questionId, named.root_record_id))
       } else if (named.answered_at) {
-        invalid.push(`--q${ruling.questionId} on run ${named.run_id} is already closed`)
+        invalid.push(`--q${ruling.questionId} on run ${named.run_record_id} is already closed`)
       } else {
         invalid.push(`--q${ruling.questionId} is not open on this chain`)
       }
@@ -744,23 +775,19 @@ export async function answerRun(
       )
     }
     for (const q of open) {
-      const ruling = input.rulings.find((item) => item.questionId === q.id)
+      const ruling = input.rulings.find((item) => item.questionId === q.record_id)
       if (!ruling) continue
-      answers.push({ id: q.id, question: q.question, answer: rulingFrom(ruling.text) })
+      answers.push(answeredQuestion(q, rulingFrom(ruling.text)))
     }
   } else {
     if (!input.rulings) {
       throw new Error(
         `run ${id} is waiting on ${open.length} question(s). ` +
-          `Rule with: ${PLATFORM_SLUG} question answer ${id} --q${open[0]!.id} "<ruling>", ` +
+          `Rule with: ${PLATFORM_SLUG} question answer ${id} --q${open[0]!.number} "<ruling>", ` +
           'or pass a ruling via --file or stdin.',
       )
     } else {
-      answers.push({
-        id: open[0]!.id,
-        question: open[0]!.question,
-        answer: rulingFrom(input.rulings),
-      })
+      answers.push(answeredQuestion(open[0]!, rulingFrom(input.rulings)))
     }
   }
   const incomplete = incompleteRulingsRefusal(open.length, answers.length, input, ownersLive)
@@ -785,9 +812,9 @@ export async function answerRun(
       const assembled = Buffer.byteLength(packed, 'utf8')
       if (assembled > assembledLimit) {
         const shrink = [...answers]
-          .map((a) => ({ id: a.id, bytes: Buffer.byteLength(a.answer, 'utf8') }))
-          .sort((a, b) => b.bytes - a.bytes || a.id - b.id)
-          .map((a) => `--q${a.id} (${a.bytes} bytes)`)
+          .map((a) => ({ number: a.number, bytes: Buffer.byteLength(a.answer, 'utf8') }))
+          .sort((a, b) => b.bytes - a.bytes || a.number - b.number)
+          .map((a) => `--q${a.number} (${a.bytes} bytes)`)
           .join(', ')
         throw new Error(
           `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +
@@ -813,7 +840,7 @@ export async function answerRun(
     `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?, revision=revision+1,
           delivery_pending_at=?, awaiting_operator_at=NULL
-    WHERE id=?`,
+    WHERE record_id=?`,
   )
   const answeringIdentity = answeredBy(
     authorityDecision.kind === 'allow-as-operator',
@@ -833,14 +860,14 @@ export async function answerRun(
         answererKindFromAnsweredBy(answeringIdentity),
         input.channel,
         ownersLive ? null : now,
-        answer.id,
+        answer.record_id,
       )
-      enqueueQuestionRecord(db(), answer.id)
+      enqueueQuestionRecord(db(), answer.record_id)
     })
-    if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
+    if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
     if (skipResume) {
       appendQuestionDeliveries(
-        answers.map((answer) => answer.id),
+        answers.map((answer) => answer.record_id),
         {
           runId: null,
           mode: QUESTION_DELIVERY_MODE_RECORD_ONLY,
@@ -850,8 +877,8 @@ export async function answerRun(
       )
     } else if (ownersLive) {
       for (const answer of answers) {
-        const owner = open.find((question) => question.id === answer.id)!
-        appendQuestionDeliveries([answer.id], {
+        const owner = open.find((question) => question.record_id === answer.record_id)!
+        appendQuestionDeliveries([answer.record_id], {
           runId: owner.owner_id,
           mode: QUESTION_DELIVERY_MODE_LIVE,
           outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
@@ -869,7 +896,7 @@ export async function answerRun(
           `The run remains asking; use ${PLATFORM_SLUG} run retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
           `or ${PLATFORM_SLUG} run abandon ${id}.`,
       )
-    return answerResult('recorded', id, row.record_id, null)
+    return answerResult('recorded', id, row.number, null)
   }
 
   if (ownersLive) {
@@ -881,7 +908,7 @@ export async function answerRun(
         `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
           `pick this up from its ask_orchestrator call.`,
       )
-    return answerResult('delivered-live', id, row.record_id, null)
+    return answerResult('delivered-live', id, row.number, null)
   }
 
   const worktreePath = latest.worktree ?? row.worktree
@@ -896,7 +923,7 @@ export async function answerRun(
    * was killed. This command was the last place still doing what the canon's
    * own section says loses the work.
    */
-  let childId: number
+  let childId: string
   try {
     childId = await (helpers.dispatch ?? detach)(row.job, rulingPrompt(answers), {
       cwd: checkout!.cwd,
@@ -928,7 +955,7 @@ export async function answerRun(
     const error = (e as Error).message
     writeTransaction(() => {
       appendQuestionDeliveries(
-        open.map((question) => question.id),
+        open.map((question) => question.record_id),
         {
           runId: null,
           mode: QUESTION_DELIVERY_MODE_RESUME,
@@ -944,10 +971,10 @@ export async function answerRun(
             SET answer=NULL, answered_at=NULL, answered_by=NULL, answerer_kind=NULL,
                 revision=revision+1,
                 answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
-          WHERE id=?`,
+          WHERE record_id=?`,
           )
-          .run(q.awaiting_operator_at, q.id)
-        enqueueQuestionRecord(db(), q.id)
+          .run(q.awaiting_operator_at, q.record_id)
+        enqueueQuestionRecord(db(), q.record_id)
       }
     })
     throw new Error(
@@ -955,7 +982,7 @@ export async function answerRun(
     )
   }
   appendQuestionDeliveries(
-    open.map((question) => question.id),
+    open.map((question) => question.record_id),
     {
       runId: childId,
       mode: QUESTION_DELIVERY_MODE_RESUME,
@@ -975,12 +1002,12 @@ export async function answerRun(
           `\n  --follow            to watch it here instead`,
       )
     }
-    return answerResult('resumed', id, row.record_id, childId)
+    return answerResult('resumed', id, row.number, childId)
   }
   const resumedStatus = await follow(childId, input.flags.quiet, false, helpers.presentation)
   if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
     const failed = db()
-      .query(`SELECT status, error, failure_kind, exit_code FROM run WHERE id=?`)
+      .query(`SELECT status, error, failure_kind, exit_code FROM run WHERE record_id=?`)
       .get(childId) as {
       status: string
       error: string | null
@@ -992,11 +1019,11 @@ export async function answerRun(
         `${failureReason(failed)}\nRetry it with: ${PLATFORM_SLUG} run continue ${id}`,
     )
   }
-  const done = db().query('SELECT status FROM run WHERE id = ?').get(id) as { status: string }
+  const done = db().query(RUN_STATUS_SQL).get(id) as { status: string }
   console.error(
     done.status === 'asking'
       ? `\n  STILL ASKING — ${PLATFORM_SLUG} question inbox`
       : `\n  ${PLATFORM_SLUG} run diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
   )
-  return answerResult('resumed', id, row.record_id, childId)
+  return answerResult('resumed', id, row.number, childId)
 }

@@ -6,7 +6,7 @@ import { sessionId } from '../database/db.ts'
 import { unrecordedPairsForSession } from '../score/duel.ts'
 import { pendingForSession } from './evidence-query.ts'
 export function pendingCommand(
-  pairHint: (partner: { id: number; agent: string; reason?: string }) => string,
+  pairHint: (partner: { id: string; agent: string; reason?: string }) => string,
   presentation: { log(value: string): void; setExitCode(code: number): void },
 ): void {
   const rows = pendingForSession(sessionId())
@@ -30,14 +30,14 @@ function renderRows(
   presentation.log(`${rows.length} run${rows.length === 1 ? '' : 's'} you made are unscored:\n`)
   for (const row of rows)
     presentation.log(
-      `  ${PLATFORM_SLUG} score ${row.id} <none|partial|full> [wrong|mixed|right]   # ${row.agent}/${row.job}  ${row.prompt_head.slice(0, 40)}${row.rescore ? '  rescore' : ''}`,
+      `  ${PLATFORM_SLUG} score ${row.record_id} <none|partial|full> [wrong|mixed|right]   # ${row.agent}/${row.job}  ${row.prompt_head.slice(0, 40)}${row.rescore ? '  rescore' : ''}`,
     )
 }
 
 function renderPairs(
   pairs: ReturnType<typeof unrecordedPairsForSession>,
   afterRows: boolean,
-  pairHint: (partner: { id: number; agent: string; reason?: string }) => string,
+  pairHint: (partner: { id: string; agent: string; reason?: string }) => string,
   presentation: { log(value: string): void },
 ): void {
   if (!pairs.length) return

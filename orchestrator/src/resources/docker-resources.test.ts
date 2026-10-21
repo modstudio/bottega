@@ -1,7 +1,9 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import {
   classifiedDockerResources,
   type DockerResource,
@@ -19,9 +21,18 @@ afterEach(() => {
   mock.restore()
 })
 
-test('the canonical run label round-trips only numeric values', () => {
-  expect(orchRunLabel(4242)).toBe('orch.run=4242')
-  expect(runIdFromLabels({ 'orch.run': '4242' })).toBe(4242)
+const owner = () => {
+  const id = addRun({ agent: 'codex', job: 'implement' })
+  const recordId = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(id)!.record_id
+  return { id, recordId }
+}
+
+test('the canonical run label round-trips only UUID values', () => {
+  const recordId = '42424242-4242-4424-8424-424242424242'
+  expect(orchRunLabel(recordId)).toBe(`orch.run=${recordId}`)
+  expect(runIdFromLabels({ 'orch.run': recordId })).toBe(recordId)
   expect(runIdFromLabels(undefined)).toBeNull()
   expect(runIdFromLabels({})).toBeNull()
   expect(runIdFromLabels({ 'orch.run': '' })).toBeNull()
@@ -29,18 +40,33 @@ test('the canonical run label round-trips only numeric values', () => {
   expect(runIdFromLabels({ unrelated: '4242' })).toBeNull()
 })
 
-test('resource attribution preserves names and gives a valid label precedence', () => {
-  expect(dockerRunResource('orch-17')).toEqual({ runId: 17 })
-  expect(dockerRunResource('starship_wt_feature', { 'orch.run': '17' })).toEqual({ runId: 17 })
+test('resource attribution uses only a UUID label', () => {
+  const recordId = '17171717-1717-4717-8717-171717171717'
+  expect(dockerRunResource('orch-17')).toBeNull()
+  expect(dockerRunResource('starship_wt_feature', { 'orch.run': recordId })).toEqual({
+    runRecordId: recordId,
+  })
   expect(dockerRunResource('starship_wt_feature')).toBeNull()
-  expect(dockerRunResource('orch-17', { 'orch.run': '18' })).toEqual({ runId: 18 })
+  expect(dockerRunResource('orch-17', { 'orch.run': recordId })).toEqual({ runRecordId: recordId })
 })
 
 test('a compose working directory can be the only run identity', () => {
+  const run = owner()
+  const root = mkdtempSync(join(tmpdir(), 'docker-marker-'))
+  const worktree = join(root, 'orch-7391')
+  mkdirSync(worktree)
+  const projectRecordId = '17171717-1717-4717-8717-171717171718'
+  db()
+    .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectRecordId, 'docker-fixture', '/repo', '{}')
+  db()
+    .query('UPDATE run SET project_record_id=? WHERE record_id=?')
+    .run(projectRecordId, run.recordId)
+  writeFileSync(join(worktree, '.orch-run'), `${run.recordId}\n/repo\nsource: git\n`)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     if (command.startsWith('docker ps -a --format'))
-      return result('database\t\tadanim\t/Users/shmuel/Projects/adanim/.claude/worktrees/orch-7391')
+      return result(`database\t\tadanim\t${worktree}`)
     if (command.startsWith('docker volume ls --format')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
     return result('', 1, `unexpected command: ${command}`)
@@ -52,7 +78,7 @@ test('a compose working directory can be the only run identity', () => {
       {
         name: 'database',
         composeProject: 'adanim',
-        workingDir: '/Users/shmuel/Projects/adanim/.claude/worktrees/orch-7391',
+        workingDir: worktree,
         runAttributed: true,
         mainCheckout: false,
       },
@@ -61,13 +87,39 @@ test('a compose working directory can be the only run identity', () => {
       {
         kind: 'container',
         name: 'database',
-        runId: 7391,
+        runId: run.recordId,
         composeProject: 'adanim',
-        workingDir: '/Users/shmuel/Projects/adanim/.claude/worktrees/orch-7391',
+        workingDir: worktree,
         mainCheckout: false,
       },
     ],
   })
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('a compose marker for another repository is never attributed', () => {
+  const run = owner()
+  const root = mkdtempSync(join(tmpdir(), 'docker-marker-mismatch-'))
+  const worktree = join(root, 'orch-7392')
+  mkdirSync(worktree)
+  const projectRecordId = '17171717-1717-4717-8717-171717171719'
+  db()
+    .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectRecordId, 'docker-mismatch', '/right-repo', '{}')
+  db()
+    .query('UPDATE run SET project_record_id=? WHERE record_id=?')
+    .run(projectRecordId, run.recordId)
+  writeFileSync(join(worktree, '.orch-run'), `${run.recordId}\n/wrong-repo\nsource: git\n`)
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    if (command.startsWith('docker ps -a --format'))
+      return result(`database\t\tadanim\t${worktree}`)
+    if (command.startsWith('docker volume ls --format')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('', 1, `unexpected command: ${command}`)
+  }) as typeof Bun.spawnSync)
+  expect(dockerRunResources()).toMatchObject({ ascertainable: true, resources: [] })
+  rmSync(root, { recursive: true, force: true })
 })
 
 test('an unattributed worktree resource inherits its Compose project main-checkout guard', () => {
@@ -165,17 +217,22 @@ test('unattributed Compose volumes and networks retain project identity and main
 })
 
 test('container, volume, and network inventory attribute project names from labels', () => {
+  const container = owner()
+  const volume = owner()
+  const network = owner()
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
-    if (command.startsWith('docker ps -a --format')) return result('starship_wt_feature\t17')
-    if (command.startsWith('docker volume ls --format')) return result('stopal_database\t18')
+    if (command.startsWith('docker ps -a --format'))
+      return result(`starship_wt_feature\t${container.recordId}`)
+    if (command.startsWith('docker volume ls --format'))
+      return result(`stopal_database\t${volume.recordId}`)
     if (command === 'docker network ls --format {{.Name}}') return result('adanim_default')
     if (command === 'docker network inspect adanim_default') {
       return result(
         JSON.stringify([
           {
             Name: 'adanim_default',
-            Labels: { 'orch.run': '19' },
+            Labels: { 'orch.run': network.recordId },
           },
         ]),
       )
@@ -189,7 +246,7 @@ test('container, volume, and network inventory attribute project names from labe
       {
         kind: 'container',
         name: 'starship_wt_feature',
-        runId: 17,
+        runId: container.id,
         composeProject: null,
         workingDir: null,
         mainCheckout: false,
@@ -197,7 +254,7 @@ test('container, volume, and network inventory attribute project names from labe
       {
         kind: 'volume',
         name: 'stopal_database',
-        runId: 18,
+        runId: volume.id,
         composeProject: null,
         workingDir: null,
         mainCheckout: false,
@@ -205,7 +262,7 @@ test('container, volume, and network inventory attribute project names from labe
       {
         kind: 'network',
         name: 'adanim_default',
-        runId: 19,
+        runId: network.id,
         composeProject: null,
         workingDir: null,
         mainCheckout: false,
@@ -219,7 +276,7 @@ test('container, volume, and network inventory attribute project names from labe
         name: 'adanim_default',
         createdAt: null,
         workingDir: null,
-        runId: 19,
+        runId: network.id,
         composeProject: null,
       },
     ],
@@ -274,13 +331,25 @@ test('the default Docker inventory timeout retries once with the longer load bou
 })
 
 test('run teardown removes containers, networks, and volumes idempotently for one run', () => {
+  const run = owner()
+  const other = owner()
   let containers = ['app-orch-51-web', 'app-orch-52-web']
   let volumes = ['app_orch-51_data', 'app_orch-52_data']
   const removals: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
-    if (command.startsWith('docker ps -a --format')) return result(containers.join('\n'))
-    if (command.startsWith('docker volume ls --format')) return result(volumes.join('\n'))
+    if (command.startsWith('docker ps -a --format'))
+      return result(
+        containers
+          .map((name) => `${name}\t${name.includes('51') ? run.recordId : other.recordId}`)
+          .join('\n'),
+      )
+    if (command.startsWith('docker volume ls --format'))
+      return result(
+        volumes
+          .map((name) => `${name}\t${name.includes('51') ? run.recordId : other.recordId}`)
+          .join('\n'),
+      )
     if (/^docker (?:rm|network rm|volume rm) /.test(command)) removals.push(command)
     if (command === 'docker network ls --format {{.Name}}') return result('')
     if (command === 'docker rm -f app-orch-51-web') containers = containers.slice(1)
@@ -288,22 +357,22 @@ test('run teardown removes containers, networks, and volumes idempotently for on
     return result('')
   }) as typeof Bun.spawnSync)
 
-  teardownRunResources(51)
-  teardownRunResources(51)
+  teardownRunResources(run.recordId)
+  teardownRunResources(run.recordId)
   expect(removals).toEqual(['docker rm -f app-orch-51-web', 'docker volume rm app_orch-51_data'])
 })
 
 test('reporting distinguishes leaked resources from terminal resources in a retained tree', () => {
   const dir = mkdtempSync(join(tmpdir(), 'orch-retained-report-'))
   const resources: DockerResource[] = [
-    { kind: 'container', name: 'app-orch-91-web', runId: 91 },
-    { kind: 'volume', name: 'app_orch-92_data', runId: 92 },
+    { kind: 'container', name: 'app-orch-91-web', runId: '91' },
+    { kind: 'volume', name: 'app_orch-92_data', runId: '92' },
   ]
   try {
     expect(
       classifiedDockerResources(resources, [
-        { id: 91, repo: 'app', worktree: dir, status: 'ok' },
-        { id: 92, repo: 'app', worktree: join(dir, 'gone'), status: 'failed' },
+        { record_id: '91', repo: 'app', worktree: dir, status: 'ok' },
+        { record_id: '92', repo: 'app', worktree: join(dir, 'gone'), status: 'failed' },
       ]).map(({ condition }) => condition),
     ).toEqual(['retained-worktree-resources', 'leaked'])
   } finally {
@@ -312,20 +381,22 @@ test('reporting distinguishes leaked resources from terminal resources in a reta
 })
 
 test('an absent tree with pending recorded teardown is retained for close-out', () => {
+  const retainedRun = '93939393-9393-4939-8939-939393939393'
+  const leakedRun = '94949494-9494-4949-8949-949494949494'
   const resources: DockerResource[] = [
-    { kind: 'container', name: 'app-orch-93-web', runId: 93 },
-    { kind: 'container', name: 'app-orch-94-web', runId: 94 },
+    { kind: 'container', name: 'app-orch-93-web', runId: retainedRun },
+    { kind: 'container', name: 'app-orch-94-web', runId: leakedRun },
   ]
   expect(
     classifiedDockerResources(resources, [
       {
-        id: 93,
+        record_id: retainedRun,
         repo: 'app',
         worktree: '/gone/orch-93',
         status: 'ok',
         absentTreeTeardown: true,
       },
-      { id: 94, repo: 'app', worktree: '/gone/orch-94', status: 'ok' },
+      { record_id: leakedRun, repo: 'app', worktree: '/gone/orch-94', status: 'ok' },
     ]).map(({ condition }) => condition),
   ).toEqual(['retained-worktree-resources', 'leaked'])
 })
@@ -344,7 +415,7 @@ test('an unavailable inventory prevents teardown of partially inventoried resour
     return result('', 1, 'Cannot connect to the Docker daemon')
   }) as typeof Bun.spawnSync)
 
-  expect(teardownRunResources(61)).toEqual(
+  expect(teardownRunResources('61')).toEqual(
     expect.objectContaining({
       complete: false,
       removed: 0,
@@ -362,13 +433,13 @@ test('the removal adapter refuses a main-checkout-labeled resource', () => {
     commands.push(args.join(' '))
     return result('')
   }) as typeof Bun.spawnSync)
-  const teardown = teardownRunResources(70, {
+  const teardown = teardownRunResources('70', {
     ascertainable: true,
     resources: [
       {
         kind: 'volume',
         name: 'main_data',
-        runId: 70,
+        runId: '70',
         workingDir: '/projects/app',
         composeProject: 'app',
         mainCheckout: true,
@@ -393,7 +464,7 @@ test('an already-removed resource is an idempotent success without an error log'
     return result('', 1, 'Error response from daemon: No such container: app-orch-71-web')
   }) as typeof Bun.spawnSync)
 
-  teardownRunResources(71)
+  teardownRunResources('71')
   expect(errors).toEqual([])
 })
 

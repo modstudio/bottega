@@ -18,11 +18,13 @@ import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
-import { nowIso, sessionId } from '../database/db.ts'
-import { appendRunEvent } from '../events.ts'
+import { db, sessionId } from '../database/db.ts'
+import { recordRunWarning } from '../events.ts'
+import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -33,14 +35,16 @@ import {
 import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
+import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
-  assertAcpAllowed,
   assertAcpReady,
   resolveTransportName,
   selectAgentForTransport,
+  type TransportName,
 } from '../transport/transport.ts'
 import {
   callerDrift,
@@ -48,14 +52,34 @@ import {
   isWorktreeRelativeRef,
   resolveBase,
 } from '../worktree/worktree-caller.ts'
-import { dispatchCommand } from './dispatch-commands.ts'
+import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts } from './dispatch-preflight.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey } from './task-key-lookup.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
+}
+
+function earlierReviewRejections(
+  project: string,
+  cwd: string,
+  explicitBranch: string | null,
+): ReviewFindingMemory {
+  return {
+    project,
+    branch: reviewMemoryBranch(branchOf(cwd), explicitBranch),
+    rows: reviewFindingMemoryRows(project),
+  }
+}
+
+async function lookupTaskKey(project: string, key: string) {
+  const registered = projectByName(project)
+  if (!registered)
+    return { state: 'unreachable' as const, condition: `project ${project} is not registered` }
+  return lookupProjectTaskKey(registered, key)
 }
 
 type CallerCheckoutDecision = {
@@ -174,11 +198,11 @@ function resolveCallerCheckout(
   )
 }
 
-async function modelForDistinct(id: number): Promise<string> {
+async function modelForDistinct(id: string): Promise<string> {
   const { db } = await import('../database/db.ts')
   const until = Date.now() + 5_000
   while (true) {
-    const row = db().query('SELECT model, status FROM run WHERE id=?').get(id) as {
+    const row = db().query('SELECT model, status FROM run WHERE record_id=?').get(id) as {
       model: string | null
       status: string
     } | null
@@ -198,9 +222,9 @@ async function routeConstraints(
   for (const name of avoid) if (!AGENTS[name]) throw new Error(`unknown agent "${name}" in --avoid`)
   const ids = agent
     ? []
-    : (flagValue(argv, 'distinct-from')?.split(',').filter(Boolean) ?? []).map(Number)
-  if (ids.some((id) => !Number.isInteger(id) || id <= 0))
-    throw new Error('--distinct-from expects comma-separated run ids')
+    : (flagValue(argv, 'distinct-from')?.split(',').filter(Boolean) ?? []).map((id) =>
+        resolveRunIdentifier(db(), id),
+      )
   if (agent && avoid.includes(agent))
     throw new Error(`--agent ${agent} contradicts --avoid ${agent}`)
   return { avoid, distinctModels: await Promise.all(ids.map(modelForDistinct)) }
@@ -296,8 +320,12 @@ const scoreSuffix = (jobName: string) =>
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
-const scoreHint = (id: number, jobName: string, parent: number | null) =>
-  `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
+const runNumber = (id: string) =>
+  (db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }).number
+const scoreHint = (id: string, jobName: string, parent: string | null) => {
+  const number = runNumber(parent ?? id)
+  return `${PLATFORM_SLUG} score ${number} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."`
+}
 const duration = (ms: number | null | undefined) => {
   if (ms == null) return '—'
   const seconds = ms / 1000
@@ -308,6 +336,10 @@ const duration = (ms: number | null | undefined) => {
 }
 const argvResumeLimit = (agentName: string) =>
   AGENTS[agentName]?.resumeArgv ? resumePromptByteLimit(AGENTS[agentName]!) : undefined
+const selectedAgentOptions = (transport: TransportName, agent: string | undefined) => ({
+  agent: selectAgentForTransport(transport, agent),
+  agentExplicit: Boolean(agent),
+})
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
@@ -329,11 +361,11 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport =
         !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
     if (transport === 'acp') {
-      assertAcpAllowed(jobName, flag('agent'), selected)
+      assertAcpPolicyAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')), true)
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
-      agent: selectAgentForTransport(transport, flag('agent')),
+      ...selectedAgentOptions(transport, flag('agent')),
       transport,
       transportExplicit: explicit,
       ...(await routeConstraints(argv, flag('agent'))),
@@ -398,22 +430,17 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       implicitReviewWarning,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
-      lookupTaskKey: async (project, key) => {
-        const registered = projectByName(project)
-        if (!registered) {
-          return { state: 'unreachable', condition: `project ${project} is not registered` }
-        }
-        return lookupProjectTaskKey(registered, key)
-      },
-      recordRunWarning: (runId, warning) =>
-        appendRunEvent(runId, { ts: nowIso(), type: 'text', text: warning }),
+      lookupTaskKey,
+      recordRunWarning,
+      earlierReviewRejections,
       detach,
+      runNumber,
       follow: (id, quiet) =>
         followRun(id, quiet, true, {
           dur: duration,
           scoreHint,
           argvResumeLimit,
-          printRunId: presentation.printRunId,
+          printRunId: (runRecordId) => presentation.printRunId(runNumber(runRecordId)),
         }),
     },
   )
@@ -430,7 +457,13 @@ export async function pickPreviewCommand(
     warnCallerDrift(presentation.cwd(), undefined, presentation.error)
   const transport = resolveTransportName(flag('transport'))
   if (transport === 'acp')
-    assertAcpAllowed(jobName, flag('agent'), flag('agent') ? AGENTS[flag('agent')!] : undefined)
+    assertAcpPolicyAllowed(
+      jobName,
+      flag('agent'),
+      flag('agent') ? AGENTS[flag('agent')!] : undefined,
+      Boolean(flag('agent')),
+      true,
+    )
   pickCommand(
     {
       jobName,

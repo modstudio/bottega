@@ -12,7 +12,7 @@ import {
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { setDoc } from '../doc/docs.ts'
+import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
@@ -51,6 +51,12 @@ function relayByIdentifier(
   return text({ question_id: relayed.id, record_id: relayed.recordId })
 }
 
+const relayQuestionTool = async (input: {
+  run_record_id: string | number
+  question_id?: string | number
+  note: string
+}) => relayByIdentifier(input.run_record_id, input.question_id, input.note)
+
 async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {
   return ListOpenQuestionsResultSchema.parse({
     questions: (await queryInbox({ scope: 'session' })).questions,
@@ -59,13 +65,15 @@ async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {
 }
 
 const presentation = {
-  printRunId: (_id: number) => {},
+  printRunId: (_id: string) => {},
 }
 
 const rulingFileStores: RulingFileStores = {
   writeDoc: async (input) => {
     const doc = await setDoc(input)
-    return { id: doc.id, revision: doc.revision }
+    const revision = doc.revision ? getDocRevision(doc.revision) : null
+    if (!revision) throw new Error('filed ruling document has no revision')
+    return { id: doc.record_id, revision: revision.record_id, revisionNumber: revision.number }
   },
   fileNote,
 }
@@ -81,13 +89,12 @@ export function registerOperatorTools(server: McpServer): void {
     },
     async () => structured(await listOpenQuestions()),
   )
-
   server.registerTool(
     'answer_questions',
     {
       description: 'Answer every open question on a run and resume it detached by default.',
       inputSchema: z.object({
-        run_id: identifier,
+        run_record_id: identifier,
         rulings: z
           .array(
             z
@@ -103,9 +110,9 @@ export function registerOperatorTools(server: McpServer): void {
       }),
       outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
     },
-    async ({ run_id, rulings, from_operator, record_only }) => {
+    async ({ run_record_id, rulings, from_operator, record_only }) => {
       const result = await answerRun(
-        localRunId(run_id),
+        localRunId(run_record_id),
         {
           rulings: rulings.map(({ question_id, ruling }) => ({
             questionId: localQuestionId(question_id),
@@ -182,11 +189,11 @@ export function registerOperatorTools(server: McpServer): void {
     {
       description: 'Mark an open run question as waiting on the operator.',
       inputSchema: z.object({
-        run_id: identifier,
+        run_record_id: identifier,
         question_id: identifier.optional(),
         note: z.string().trim().min(1),
       }),
     },
-    async ({ run_id, question_id, note }) => relayByIdentifier(run_id, question_id, note),
+    relayQuestionTool,
   )
 }

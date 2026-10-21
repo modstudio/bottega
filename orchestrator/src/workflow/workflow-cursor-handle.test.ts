@@ -1,6 +1,6 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
@@ -10,7 +10,7 @@ import {
 import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { promoteWorkflow, setWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const context = { session: 'session-one' }
 const ports: FloorEvidencePorts = {
@@ -29,13 +29,12 @@ const ports: FloorEvidencePorts = {
   },
 }
 
-function database(): Database {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run(
     'fixture',
     '/fixture',
     'bun',
@@ -46,11 +45,10 @@ function database(): Database {
       tracker: { protocol: 'hub' },
     }),
   )
-  return d
-}
+})
 
 function installKeylessWorkflow(d: Database, slug: string): void {
-  const draft = setWorkflow(
+  const draft = setWorkflowLocal(
     slug,
     {
       title: 'Keyless fixture',
@@ -62,7 +60,7 @@ function installKeylessWorkflow(d: Database, slug: string): void {
     'test',
     d,
   )
-  promoteWorkflow(slug, draft.n, 'test fixture', 'test', d)
+  promoteWorkflowLocal(slug, draft.n, 'test fixture', 'test', d)
 }
 
 test('two keyless runs in one session have distinct handles and advance independently', () => {

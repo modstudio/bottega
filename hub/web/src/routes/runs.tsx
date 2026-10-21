@@ -1,25 +1,27 @@
+import { trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { waitingByRun } from '@bottega/hub-data/operator-waiting'
+import { useWindowState, type WindowHours } from '@bottega/hub-data/window'
+import { Badge } from '@bottega/hub-ui/badge'
+import { LiveDot } from '@bottega/hub-ui/badge/live-dot'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { useNow } from '@bottega/hub-ui/dom/clock'
+import { useDebounced } from '@bottega/hub-ui/dom/use-debounced'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { Identifier } from '@bottega/hub-ui/identifier'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { PAGE_SIZES, type PageSize } from '@bottega/hub-ui/pagination'
+import { StatRow, StatTile } from '@bottega/hub-ui/stat'
+import { collectedTime, compactTokens, duration } from '@bottega/hub-util/format'
+import { ProjectMark } from '@bottega/hub-views/project-colors'
+import { verdictTone } from '@bottega/hub-views/status-look/verdict-tone'
 import { keepPreviousData, type UseQueryOptions, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { useState } from 'react'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { ProjectMark, useWindowFilters, WindowControl } from '@/components/design-system'
-import { WaitingBadge } from '@/components/waiting-badge'
-import { useNow } from '@/lib/clock'
-import { useDetailPanel } from '@/lib/detail-panel'
-import { collectedTime, compactTokens, duration } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { waitingByRun } from '@/lib/operator-waiting'
-import { useDebounced } from '@/lib/use-debounced'
-import { verdictTone } from '@/lib/verdict-tone'
-import { useWindowState, type WindowHours } from '@/lib/window'
-import { trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { LiveDot } from '@/ui/badge/live-dot'
-import { Identifier } from '@/ui/identifier/identifier'
-import { PageHeader } from '@/ui/page-header/page-header'
-import { PAGE_SIZES, type PageSize } from '@/ui/pagination/pagination'
-import { StatRow, StatTile } from '@/ui/stat/stat'
+import { type ReactNode, useState } from 'react'
+import { useDetailPanel } from '@/routes/-detail-panel'
+import { WaitingBadge } from '@/routes/-waiting-badge'
+import { useWindowFilters, WindowControl } from '@/routes/-window-controls'
 
 /** The strings the server prints for a run; search on the server matches exactly these. */
 type RunDisplay = {
@@ -166,10 +168,286 @@ function spansSpaces(rows: { space?: string }[]) {
 }
 
 function spaceColumn<Row extends { space?: string }>(show: boolean): CollectionColumn<Row>[] {
-  return show ? [{ id: 'space', label: 'Space', render: (row) => row.space ?? '-' }] : []
+  return show
+    ? [{ id: 'space', label: 'Space', phone: 'line', render: (row) => row.space ?? '-' }]
+    : []
+}
+
+type WaitingRuns = ReturnType<typeof waitingByRun>
+
+function liveRunColumns({
+  showSpace,
+  waitingRuns,
+  now,
+  dataUpdatedAt,
+}: {
+  showSpace: boolean
+  waitingRuns: WaitingRuns
+  now: number
+  dataUpdatedAt: number
+}): CollectionColumn<LiveRow>[] {
+  return [
+    {
+      id: 'agent',
+      label: 'Agent',
+      phone: 'title',
+      render: (row) => (
+        <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
+          <LiveDot />
+          {row.agent}
+          {waitingRuns.get(String(row.id)) ? (
+            <WaitingBadge item={waitingRuns.get(String(row.id))!} />
+          ) : null}
+        </span>
+      ),
+    },
+    ...spaceColumn<LiveRow>(showSpace),
+    {
+      id: 'job',
+      label: 'Job',
+      phone: 'line',
+      render: (row) => <span className="text-text-muted">{row.job}</span>,
+    },
+    {
+      id: 'project',
+      label: 'Project',
+      phone: 'line',
+      render: (row) => <ProjectMark name={row.repo} />,
+    },
+    {
+      id: 'elapsed',
+      label: 'Elapsed',
+      phone: 'aside',
+      numeric: true,
+      render: (row) => fmtMs(row.elapsedMs + Math.max(0, now - dataUpdatedAt)),
+    },
+    {
+      id: 'prompt',
+      label: 'Prompt',
+      phone: 'more',
+      phoneRender: (row) => <span className="text-text-muted">{row.display.prompt}</span>,
+      render: (row) => (
+        <span className="block max-w-lg truncate text-text-muted">{row.display.prompt}</span>
+      ),
+    },
+  ]
+}
+
+function completedRunColumns(
+  showSpace: boolean,
+  waitingRuns: WaitingRuns,
+  now: number,
+): CollectionColumn<RunRow>[] {
+  return [
+    ...spaceColumn<RunRow>(showSpace),
+    {
+      id: 'project',
+      label: 'Project',
+      phone: 'line',
+      render: (row) => <ProjectMark name={row.project} />,
+    },
+    {
+      id: 'task',
+      label: 'Task',
+      phone: 'title',
+      render: (row) => (row.task ? <Identifier>{row.task}</Identifier> : '-'),
+    },
+    { id: 'agent', label: 'Agent', phone: 'line', render: (row) => row.agent },
+    {
+      id: 'job',
+      label: 'Job',
+      phone: 'line',
+      render: (row) => (
+        <span className="text-text-muted">
+          {row.job || '-'}
+          {row.lens ? ` ${row.lens}` : ''}
+          {row.probe ? ' probe' : ''}
+        </span>
+      ),
+    },
+    {
+      id: 'took',
+      label: 'Took',
+      phone: 'line',
+      numeric: true,
+      render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.display.took),
+    },
+    {
+      id: 'verdict',
+      label: 'Verdict',
+      phone: 'aside',
+      render: (row) =>
+        waitingRuns.get(String(row.id)) ? (
+          <WaitingBadge item={waitingRuns.get(String(row.id))!} />
+        ) : (
+          <Verdict row={row} />
+        ),
+    },
+    {
+      id: 'tokens',
+      label: 'Tokens',
+      phone: 'more',
+      numeric: true,
+      priority: 'low',
+      render: (row) => row.display.tokens,
+    },
+    {
+      id: 'cost',
+      label: 'Cost',
+      phone: 'more',
+      numeric: true,
+      priority: 'low',
+      render: (row) => row.display.cost,
+    },
+    { id: 'started', label: 'Started', phone: 'line', render: (row) => row.display.started },
+    {
+      id: 'open',
+      label: '',
+      render: () => <ChevronRight size={14} className="text-text-muted" />,
+    },
+  ]
+}
+
+function RunsSummary({ data }: { data: RunsPayload['data'] }) {
+  return (
+    <StatRow>
+      {statCards(data).map(([figure, label, hint], index) => (
+        <StatTile
+          key={label}
+          figure={figure}
+          label={label}
+          hint={hint}
+          live={index === 1 && data.live.length > 0}
+        />
+      ))}
+      <StatTile
+        label="agents"
+        hint="one figure over agents that count tokens differently"
+        breakdown={[
+          {
+            label: `runs, all agents · ${combinedTokens(data.vendors)} tokens`,
+            value: data.totals.runs.toLocaleString(),
+          },
+          ...data.vendors.map((vendor) => ({
+            label: `${vendor.agent} tokens · ${vendor.runs.toLocaleString()} runs`,
+            value: vendor.tokens == null ? '-' : compactTokens(vendor.tokens),
+          })),
+        ]}
+      />
+    </StatRow>
+  )
+}
+
+function RunningNow({
+  phone,
+  data,
+  filtered,
+  rows,
+  columns,
+  search,
+  onSearch,
+  filters,
+  filtersActive,
+  onOpen,
+}: {
+  phone: boolean
+  data: RunsPayload['data']
+  filtered: boolean
+  rows: LiveRow[]
+  columns: CollectionColumn<LiveRow>[]
+  search: string
+  onSearch(value: string): void
+  filters: ReactNode
+  filtersActive: number
+  onOpen(row: LiveRow): void
+}) {
+  return (
+    <Collection
+      title="Running now"
+      count={rows.length}
+      scope={phone ? <WindowControl /> : undefined}
+      summary={phone ? <RunsSummary data={data} /> : undefined}
+      search={
+        phone ? { query: search, onQueryChange: onSearch, placeholder: 'Search runs' } : undefined
+      }
+      filters={phone ? filters : undefined}
+      filtersActive={phone ? filtersActive : undefined}
+      columns={columns}
+      rows={rows}
+      getKey={(row) => row.id}
+      onOpen={onOpen}
+      empty={{
+        title: filtered
+          ? 'Nothing running matches these filters.'
+          : 'No delegated run is executing.',
+        hint: filtered
+          ? 'Clear the filters or widen the window.'
+          : 'A run appears here while its agent is executing.',
+      }}
+    />
+  )
+}
+
+function RunHistory({
+  phone,
+  data,
+  search,
+  onSearch,
+  filters,
+  filtersActive,
+  panel,
+  selectedKey,
+  columns,
+  rows,
+  onPage,
+  onPageSize,
+  onOpen,
+}: {
+  phone: boolean
+  data: RunsPayload['data']
+  search: string
+  onSearch(value: string): void
+  filters: ReactNode
+  filtersActive: number
+  panel: ReactNode
+  selectedKey?: string
+  columns: CollectionColumn<RunRow>[]
+  rows: RunRow[]
+  onPage(page: number): void
+  onPageSize(size: PageSize): void
+  onOpen(row: RunRow): void
+}) {
+  return (
+    <div className="mt-7">
+      <Collection
+        title="Runs"
+        count={data.matched}
+        paging={{
+          page: Math.floor(data.offset / data.limit) + 1,
+          pageSize: data.limit,
+          total: data.matched,
+          onPageChange: onPage,
+          onPageSizeChange: onPageSize,
+        }}
+        search={
+          phone ? undefined : { query: search, onQueryChange: onSearch, placeholder: 'Search runs' }
+        }
+        filters={phone ? undefined : filters}
+        filtersActive={phone ? undefined : filtersActive}
+        panel={panel}
+        selectedKey={selectedKey}
+        columns={columns}
+        rows={rows}
+        getKey={(row) => row.id}
+        onOpen={onOpen}
+        empty={{ title: 'No runs in this window.', hint: 'Widen the window to see earlier runs.' }}
+      />
+    </div>
+  )
 }
 
 function RunsList() {
+  const phone = useMediaQuery(PHONE_QUERY)
   const navigate = useNavigate()
   const panel = useDetailPanel()
   const openId = useParams({ strict: false }).id
@@ -204,104 +482,18 @@ function RunsList() {
     agents: data?.facets.agents,
     onOpenChange: menuChanged,
   })
-  const cards = data ? statCards(data) : []
   // The server applies search and paging; these are the rows to draw.
   const liveRows = data?.live ?? []
   const runRows = data?.rows ?? []
   const waitingRuns = waitingByRun([...liveRows, ...runRows], waiting.data ?? [])
   const showSpace = spansSpaces([...liveRows, ...runRows])
-  const liveColumns: CollectionColumn<LiveRow>[] = [
-    {
-      id: 'agent',
-      label: 'Agent',
-      render: (row) => (
-        <span data-tone="success" className="inline-flex items-center gap-2 text-status-text">
-          <LiveDot />
-          {row.agent}
-          {waitingRuns.get(String(row.id)) ? (
-            <WaitingBadge item={waitingRuns.get(String(row.id))!} />
-          ) : null}
-        </span>
-      ),
-    },
-    ...spaceColumn<LiveRow>(showSpace),
-    {
-      id: 'job',
-      label: 'Job',
-      render: (row) => <span className="text-text-muted">{row.job}</span>,
-    },
-    { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.repo} /> },
-    {
-      id: 'elapsed',
-      label: 'Elapsed',
-      numeric: true,
-      render: (row) => fmtMs(row.elapsedMs + Math.max(0, now - query.dataUpdatedAt)),
-    },
-    {
-      id: 'prompt',
-      label: 'Prompt',
-      render: (row) => (
-        <span className="block max-w-lg truncate text-text-muted">{row.display.prompt}</span>
-      ),
-    },
-  ]
-  const runColumns: CollectionColumn<RunRow>[] = [
-    ...spaceColumn<RunRow>(showSpace),
-    { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.project} /> },
-    {
-      id: 'task',
-      label: 'Task',
-      render: (row) => (row.task ? <Identifier>{row.task}</Identifier> : '-'),
-    },
-    { id: 'agent', label: 'Agent', render: (row) => row.agent },
-    {
-      id: 'job',
-      label: 'Job',
-      render: (row) => (
-        <span className="text-text-muted">
-          {row.job || '-'}
-          {row.lens ? ` ${row.lens}` : ''}
-          {row.probe ? ' probe' : ''}
-        </span>
-      ),
-    },
-    {
-      id: 'took',
-      label: 'Took',
-      numeric: true,
-      render: (row) => (row.running ? fmtMs(now - new Date(row.at).getTime()) : row.display.took),
-    },
-    {
-      id: 'verdict',
-      label: 'Verdict',
-      render: (row) =>
-        waitingRuns.get(String(row.id)) ? (
-          <WaitingBadge item={waitingRuns.get(String(row.id))!} />
-        ) : (
-          <Verdict row={row} />
-        ),
-    },
-    {
-      id: 'tokens',
-      label: 'Tokens',
-      numeric: true,
-      priority: 'low',
-      render: (row) => row.display.tokens,
-    },
-    {
-      id: 'cost',
-      label: 'Cost',
-      numeric: true,
-      priority: 'low',
-      render: (row) => row.display.cost,
-    },
-    { id: 'started', label: 'Started', render: (row) => row.display.started },
-    {
-      id: 'open',
-      label: '',
-      render: () => <ChevronRight size={14} className="text-text-muted" />,
-    },
-  ]
+  const liveColumns = liveRunColumns({
+    showSpace,
+    waitingRuns,
+    now,
+    dataUpdatedAt: query.dataUpdatedAt,
+  })
+  const runColumns = completedRunColumns(showSpace, waitingRuns, now)
 
   return (
     <section>
@@ -313,7 +505,7 @@ function RunsList() {
             : 'Loading runs...'
         }
         subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined}
-        actions={<WindowControl />}
+        actions={phone ? undefined : <WindowControl />}
       />
       {query.isPending ? <p className="text-text-muted">Loading runs...</p> : null}
       {query.error ? (
@@ -323,89 +515,50 @@ function RunsList() {
       ) : null}
       {payload && data ? (
         <>
-          <StatRow>
-            {cards.map(([figure, label, hint], index) => (
-              <StatTile
-                key={label}
-                figure={figure}
-                label={label}
-                hint={hint}
-                live={index === 1 && data.live.length > 0}
-              />
-            ))}
-            <StatTile
-              label="agents"
-              hint="one figure over agents that count tokens differently"
-              breakdown={[
-                {
-                  label: `runs, all agents · ${combinedTokens(data.vendors)} tokens`,
-                  value: data.totals.runs.toLocaleString(),
-                },
-                ...data.vendors.map((vendor) => ({
-                  label: `${vendor.agent} tokens · ${vendor.runs.toLocaleString()} runs`,
-                  value: vendor.tokens == null ? '-' : compactTokens(vendor.tokens),
-                })),
-              ]}
-            />
-          </StatRow>
+          {phone ? null : <RunsSummary data={data} />}
           {filtered ? (
             <p className="mb-4 text-text-muted">
               the counters above count the whole window; the filter applies to the tables below.
             </p>
           ) : null}
-          <Collection
-            title="Running now"
-            count={liveRows.length}
-            columns={liveColumns}
+          <RunningNow
+            {...{
+              phone,
+              data,
+              filtered,
+              search,
+              onSearch: setSearch,
+              filters: filters.controls,
+              filtersActive: filters.active,
+            }}
             rows={liveRows}
-            getKey={(row) => row.id}
+            columns={liveColumns}
             onOpen={(row) =>
               void navigate({ to: '/runs/$id', params: { id: String(row.id) }, resetScroll: false })
             }
-            empty={{
-              title: filtered
-                ? 'Nothing running matches these filters.'
-                : 'No delegated run is executing.',
-              hint: filtered
-                ? 'Clear the filters or widen the window.'
-                : 'A run appears here while its agent is executing.',
-            }}
           />
-          <div className="mt-7">
-            <Collection
-              title="Runs"
-              count={data.matched}
-              paging={{
-                page: Math.floor(data.offset / data.limit) + 1,
-                pageSize: data.limit,
-                total: data.matched,
-                onPageChange: setPage,
-                onPageSizeChange: (size) => {
-                  setPageSize(size)
-                  setPage(1)
-                },
-              }}
-              search={{ query: search, onQueryChange: setSearch, placeholder: 'Search runs' }}
-              filters={filters.controls}
-              filtersActive={filters.active}
-              panel={panel}
-              selectedKey={openId}
-              columns={runColumns}
-              rows={runRows}
-              getKey={(row) => row.id}
-              onOpen={(row) =>
-                void navigate({
-                  to: '/runs/$id',
-                  params: { id: String(row.id) },
-                  resetScroll: false,
-                })
-              }
-              empty={{
-                title: 'No runs in this window.',
-                hint: 'Widen the window to see earlier runs.',
-              }}
-            />
-          </div>
+          <RunHistory
+            {...{
+              phone,
+              data,
+              search,
+              onSearch: setSearch,
+              filters: filters.controls,
+              filtersActive: filters.active,
+              panel,
+              columns: runColumns,
+              rows: runRows,
+            }}
+            selectedKey={openId}
+            onPage={setPage}
+            onPageSize={(size) => {
+              setPageSize(size)
+              setPage(1)
+            }}
+            onOpen={(row) =>
+              void navigate({ to: '/runs/$id', params: { id: String(row.id) }, resetScroll: false })
+            }
+          />
           <p className="mt-4 max-w-4xl text-text-muted">
             <strong className="text-text-primary">
               Scoring is the only thing that measures whether delegation works.

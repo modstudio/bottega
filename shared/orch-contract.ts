@@ -105,7 +105,7 @@ export const OperatorWaitingItemSchema = z
     kind: z.enum(['question', 'workflow'] satisfies [OperatorInboxKind, ...OperatorInboxKind[]]),
     id: z.number().int().positive(),
     question_record_id: z.string().uuid(),
-    run_id: z.number().int().positive().nullable(),
+    run_number: z.number().int().positive().nullable(),
     run_record_id: z.string().uuid().nullable(),
     project: z.string().nullable(),
     task_key: z.string().nullable(),
@@ -131,10 +131,10 @@ export const ClaimedOperatorNotificationSchema = OperatorWaitingItemSchema.exten
 export const AnswerWaitingResultSchema = z
   .object({
     outcome: z.enum(['resumed', 'delivered-live', 'recorded']),
-    run_id: z.number().int().positive(),
-    record_id: z.string().uuid(),
-    resumed_as: z.number().int().positive().nullable(),
+    run_record_id: z.string().uuid(),
+    run_number: z.number().int().positive(),
     resumed_record_id: z.string().uuid().nullable(),
+    resumed_number: z.number().int().positive().nullable(),
   })
   .strict()
 
@@ -142,8 +142,8 @@ const OpenQuestionSchema = z
   .object({
     question_id: z.number().int().positive(),
     question_record_id: z.string().uuid(),
-    run_id: z.number().int().positive(),
     run_record_id: z.string().uuid(),
+    run_number: z.number().int().positive(),
     answer_id: z.number().int().positive(),
     answer_record_id: z.string().uuid(),
     job: z.string(),
@@ -217,8 +217,7 @@ const OrchTrackerSettingsSchema = z
 
 export const OrchProjectSchema = z
   .object({
-    id: z.number().int(),
-    record_id: z.string().uuid().nullable(),
+    record_id: z.string().uuid(),
     name: z.string(),
     path: z.string(),
     stack: nullableString,
@@ -236,13 +235,13 @@ export const OrchProjectSchema = z
       })
       .passthrough(),
   })
-  .passthrough()
+  .strip()
 
 export const OrchProjectListSchema = z.array(OrchProjectSchema)
 
 const OrchTurnSchema = z
   .object({
-    id: z.number().int(),
+    number: z.number().int().positive(),
     record_id: z.string().uuid(),
     started_at: z.iso.datetime(),
     latency_ms: nullableNumber,
@@ -257,7 +256,7 @@ const OrchQuestionSchema = z
   .object({
     id: z.number().int(),
     record_id: z.string().uuid(),
-    run_id: z.number().int(),
+    run_number: z.number().int(),
     run_record_id: z.string().uuid(),
     asked_at: z.iso.datetime(),
     answered_at: z.iso.datetime().nullable(),
@@ -273,7 +272,7 @@ const OrchQuestionSchema = z
           id: z.number().int(),
           question_id: z.number().int(),
           question_record_id: z.string().uuid(),
-          run_id: z.number().int().nullable(),
+          run_number: z.number().int().nullable(),
           run_record_id: z.string().uuid().nullable(),
           mode: z.enum(QUESTION_DELIVERY_MODE_VALUES),
           outcome: z.enum(QUESTION_DELIVERY_OUTCOME_VALUES),
@@ -289,7 +288,7 @@ const RulingListRowSchema = z
   .object({
     id: z.number().int().positive(),
     record_id: z.string().uuid(),
-    run_id: z.number().int().positive().nullable(),
+    run_number: z.number().int().positive().nullable(),
     run_record_id: z.string().uuid().nullable(),
     workflow_cursor_id: z.number().int().positive().nullable(),
     workflow_key: nullableString,
@@ -324,7 +323,7 @@ export type RulingListRow = z.infer<typeof RulingListRowSchema>
 
 export const OrchRunSchema = z
   .object({
-    id: z.number().int(),
+    number: z.number().int().positive(),
     record_id: z.string().uuid(),
     started_at: z.iso.datetime(),
     agent: z.string(),
@@ -343,7 +342,7 @@ export const OrchRunSchema = z
     status: z.string(),
     delivery: nullableString.optional(),
     quality: nullableString.optional(),
-    retry_of: z.number().int().nullable().optional(),
+    retry_record_id: z.string().uuid().nullable().optional(),
     turns: z.array(OrchTurnSchema).optional(),
     questions: z.array(OrchQuestionSchema),
     launch_key: nullableString.optional(),
@@ -351,13 +350,20 @@ export const OrchRunSchema = z
   })
   .passthrough()
   .superRefine((run, context) => {
-    const published = new Set((run.turns ?? []).map((turn) => turn.id))
-    published.add(run.id)
+    if ('retry_of' in run) {
+      context.addIssue({
+        code: 'custom',
+        path: ['retry_of'],
+        message: 'retry_of is retired; publish retry_record_id',
+      })
+    }
+    const published = new Set((run.turns ?? []).map((turn) => turn.record_id))
+    published.add(run.record_id)
     run.questions.forEach((question, index) => {
-      if (!published.has(question.run_id)) {
+      if (!published.has(question.run_record_id)) {
         context.addIssue({
           code: 'custom',
-          path: ['questions', index, 'run_id'],
+          path: ['questions', index, 'run_record_id'],
           message: 'question owner is not present in the published run chain',
         })
       }
@@ -366,7 +372,8 @@ export const OrchRunSchema = z
 
 export const OrchUnknownRunSchema = z
   .object({
-    id: z.number().int(),
+    number: z.number().int().positive().optional(),
+    record_id: z.string().uuid().optional(),
     status: z.literal('unknown'),
     unknown: z.literal(true),
   })
@@ -381,6 +388,24 @@ export const OrchRunEnvelopeSchema = z
     data: OrchRunLineDataSchema,
   })
   .strict()
+
+const RunIdentitySchema = z
+  .object({
+    number: z.number().int().positive(),
+    record_id: z.string().uuid(),
+  })
+  .strict()
+export const RunIdentityListSchema = z.array(RunIdentitySchema)
+export type RunIdentity = z.infer<typeof RunIdentitySchema>
+
+const QuestionIdentitySchema = z
+  .object({
+    number: z.number().int().positive(),
+    record_id: z.string().uuid(),
+  })
+  .strict()
+export const QuestionIdentityListSchema = z.array(QuestionIdentitySchema)
+export type QuestionIdentity = z.infer<typeof QuestionIdentitySchema>
 
 const guideCandidate = z
   .object({
@@ -561,7 +586,8 @@ export const HarnessHealthSchema = z.object({
         z.object({
           text: z.string(),
           count: z.number().int().positive(),
-          exampleRunId: z.number().int(),
+          exampleRunRecordId: z.string().uuid(),
+          exampleRunNumber: z.number().int(),
         }),
       ),
       sparkline: z.array(

@@ -4,13 +4,13 @@ import { deferredWorkerMessageNotice } from './mailbox-notice.ts'
 
 describe('worker message delivery wording', () => {
   test('warns and gives the continuation remedy when the transport cannot inject', () => {
-    expect(deferredWorkerMessageNotice(4935, false)).toBe(
+    expect(deferredWorkerMessageNotice('4935', false)).toBe(
       'It will NOT reach the running turn unless the worker polls check_orchestrator_messages. ' +
         `It is queued for the next turn's prompt. Once this turn ends, run "${PLATFORM_SLUG} run continue 4935". The continuation will deliver it after restoring the recorded checkout, or refuse before creating a turn and tell you to dispatch a new run.`,
     )
   })
 
   test('leaves output unchanged when the transport can inject', () => {
-    expect(deferredWorkerMessageNotice(4935, true)).toBe('')
+    expect(deferredWorkerMessageNotice('4935', true)).toBe('')
   })
 })

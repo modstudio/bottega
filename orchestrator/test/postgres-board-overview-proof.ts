@@ -72,6 +72,7 @@ export function registerBoardOverviewProof(input: ProofInput): void {
           body: `body-${label}`,
           expiresAt: input.expiresAt,
           authorSession: input.caseSession(`overview-${label}`),
+          ...(audience === `project:${PROJECT}` ? { projectId: IDS.project } : {}),
           ...extra,
         }),
       }),

@@ -20,6 +20,7 @@ const release: ReleaseSettings = {
   ],
   mergeMethod: 'squash',
   requiredChecks: ['gate'],
+  mergeQueue: true,
   observationWindowHours: 24,
 }
 
@@ -32,6 +33,32 @@ const signals: SignalsSettings = {
 }
 
 describe('project workflow injection', () => {
+  test.each([
+    [
+      'a review state and review-record command',
+      { in_review: 'review' },
+      'bun run review:log --findings {findings}',
+      { state: 'in_review', floor: 'recorded-artifact' },
+    ],
+    [
+      'a review state without a review-record command',
+      { in_review: 'review' },
+      undefined,
+      { state: 'in_review', floor: 'tracker-transition' },
+    ],
+    ['no review state', { todo: 'open' }, undefined, { state: 'none', floor: 'recorded-artifact' }],
+  ] as const)('resolves the in-review stage for %s', (_shape, states, record, expected) => {
+    const tracker = resolveInjection(
+      {
+        name: 'fixture',
+        stack: 'node',
+        settings: { tracker: { protocol: 'cursor-mcp', states }, review: { lenses: [], record } },
+      },
+      ['tracker'],
+    ).tracker
+    expect(tracker.inReview).toEqual(expected)
+  })
+
   test('validates generated-reference settings at the register edge', () => {
     expect(
       validateProjectSettings({
@@ -103,16 +130,29 @@ describe('project workflow injection', () => {
         {
           review: {
             lenses: [
-              { lens: 'correctness' },
+              { lens: 'correctness', basis: 'yield evidence' },
               { lens: 'migration-safety', paths: ['**/migrations/**'] },
               { lens: 'craft', minTier: 2 },
             ],
+            secondOpinion: { lens: 'craft', basis: 'escaped defect evidence' },
+            risk: {
+              paths: [{ pattern: '^shared/', tier: 3, reason: 'shared schema', basis: 'incident' }],
+              unlisted: 1,
+            },
           },
         },
         undefined,
         { enabledLensIds: ['correctness', 'migration-safety', 'craft'] },
       ),
     ).toEqual([])
+    expect(
+      validateProjectSettings({
+        review: {
+          lenses: [],
+          secondOpinion: { lens: 'correctness', unexpected: true },
+        },
+      } as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([expect.stringContaining('review.secondOpinion: Unrecognized key')])
     expect(
       validateProjectSettings({
         review: {
@@ -155,6 +195,19 @@ describe('project workflow injection', () => {
     ).toEqual([
       `review.lenses.0.lens: unknown or disabled lens "nope"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
     ])
+
+    const invalidRiskPattern = validateProjectSettings({
+      review: {
+        lenses: [],
+        risk: {
+          paths: [{ pattern: '[', tier: 2, reason: 'product source' }],
+          unlisted: 1,
+        },
+      },
+    }).join('\n')
+    expect(invalidRiskPattern).toContain('review.risk.paths.0.pattern')
+    expect(invalidRiskPattern).toContain('does not compile')
+    expect(invalidRiskPattern).toContain('replace it with a valid regular expression')
   })
 
   test('refuses unknown and repeated PHP policy rules with the register remedy', () => {
@@ -309,8 +362,7 @@ describe('project workflow injection', () => {
 
   test('resolves every requested fact with its stored type', () => {
     const project: Project = {
-      id: 1,
-      recordId: null,
+      recordId: '01990000-0000-7000-8000-000000001214',
       name: 'fixture',
       path: '/fixture',
       stack: 'node',
@@ -692,8 +744,7 @@ describe('project workflow injection', () => {
 
   test('one refusal names every missing fact and its project update command', () => {
     const project: Project = {
-      id: 1,
-      recordId: null,
+      recordId: '01990000-0000-7000-8000-000000001214',
       name: 'fixture',
       path: '/fixture',
       stack: null,

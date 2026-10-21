@@ -104,7 +104,9 @@ describe('who may judge a run', () => {
         expect(adopted.owner).toBe('session-A')
         expect(
           db()
-            .query('SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=?')
+            .query(
+              'SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_record_id=?',
+            )
             .get(id),
         ).toEqual({
           action: 'adopt',
@@ -113,8 +115,8 @@ describe('who may judge a run', () => {
         })
         expect(
           db()
-            .query<{ record_id: string }, [number]>(
-              'SELECT record_id FROM run_mutation_audit WHERE run_id=?',
+            .query<{ record_id: string }, [string]>(
+              'SELECT record_id FROM run_mutation_audit WHERE run_record_id=?',
             )
             .get(id)?.record_id,
         ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)

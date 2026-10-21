@@ -1,13 +1,13 @@
+import { type JobRow, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { Companion } from '@bottega/hub-ui/companion'
+import { DisplayRow } from '@bottega/hub-ui/form-layout'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { SnapshotEmpty, SnapshotHeader } from '@bottega/hub-views/snapshot'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
-import { isHostedMode } from '@/lib/hub-mode'
-import { type JobRow, trpc } from '@/trpc/client'
-import { Companion } from '@/ui/companion/companion'
-import { DisplayRow } from '@/ui/form-layout/form-layout'
-import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/jobs')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -17,10 +17,20 @@ export const Route = createFileRoute('/jobs')({
 })
 
 const columns: CollectionColumn<JobRow>[] = [
-  { id: 'name', label: 'Job', render: (row) => <strong>{row.name}</strong> },
-  { id: 'what', label: 'What', render: (row) => <span className="">{row.what}</span> },
-  { id: 'needs', label: 'Needs', render: (row) => Object.keys(row.needs).join(', ') || '-' },
-  { id: 'prefer', label: 'Prefers', render: (row) => row.prefer.join(', ') },
+  { id: 'name', label: 'Job', phone: 'title', render: (row) => <strong>{row.name}</strong> },
+  {
+    id: 'what',
+    label: 'What',
+    phone: 'line',
+    render: (row) => <span className="">{row.what}</span>,
+  },
+  {
+    id: 'needs',
+    label: 'Needs',
+    phone: 'aside',
+    render: (row) => Object.keys(row.needs).join(', ') || '-',
+  },
+  { id: 'prefer', label: 'Prefers', phone: 'more', render: (row) => row.prefer.join(', ') },
 ]
 
 function JobsPage() {

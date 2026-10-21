@@ -15,7 +15,7 @@ describe('harness health', () => {
       startedAt: '2026-09-07T11:00:00.000Z',
     })
     db()
-      .query('UPDATE run SET error=? WHERE id=?')
+      .query('UPDATE run SET error=? WHERE record_id=?')
       .run('Selected model is at capacity. Please try a different model.', run)
 
     const capacity = harnessHealth(1, db(), now).classes.find((row) => row.kind === 'capacity')
@@ -36,7 +36,7 @@ describe('harness health', () => {
       startedAt: '2026-09-07T11:00:00.000Z',
     })
     db()
-      .query('UPDATE run SET review_provenance=?, provenance_status=? WHERE id=?')
+      .query('UPDATE run SET review_provenance=?, provenance_status=? WHERE record_id=?')
       .run(
         JSON.stringify({
           substitutes: ['mirror for requested MCP'],
@@ -46,7 +46,7 @@ describe('harness health', () => {
         substituted,
       )
     db()
-      .query('UPDATE run SET review_provenance=?, provenance_status=? WHERE id=?')
+      .query('UPDATE run SET review_provenance=?, provenance_status=? WHERE record_id=?')
       .run(JSON.stringify({ substitutes: [], could_not_verify: [] }), 'silent', silent)
     expect(harnessHealth(1, db(), now).provenance).toEqual([
       { agent: 'grok', substituted: 1, silent: 1 },
@@ -75,7 +75,7 @@ describe('harness health', () => {
       startedAt: '2026-09-07T09:00:00.000Z',
     })
     db()
-      .query('UPDATE run SET confinement=? WHERE id=?')
+      .query('UPDATE run SET confinement=? WHERE record_id=?')
       .run(
         JSON.stringify({
           classification: 'overlapping',
@@ -84,7 +84,7 @@ describe('harness health', () => {
         overlapping,
       )
     db()
-      .query('UPDATE run SET confinement=? WHERE id=?')
+      .query('UPDATE run SET confinement=? WHERE record_id=?')
       .run(
         JSON.stringify({
           classification: 'non_overlapping',
@@ -93,7 +93,7 @@ describe('harness health', () => {
         completed,
       )
     db()
-      .query('UPDATE run SET confinement=? WHERE id=?')
+      .query('UPDATE run SET confinement=? WHERE record_id=?')
       .run(
         JSON.stringify({
           classification: 'edit_commit_cycle',

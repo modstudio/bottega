@@ -18,13 +18,7 @@ import {
   freezeCheckouts,
   overlappingError,
 } from '../confinement/confinement.ts'
-import {
-  parseReaderOutput,
-  type ReplyDialect,
-  type ReviewReply,
-  type realQuestions,
-  type WorkerReply,
-} from '../contract/contract.ts'
+import type { ReaderReply, ReviewReply, realQuestions, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
 import { type classify, FAILS_OVER } from '../failure/failure.ts'
@@ -33,11 +27,13 @@ import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
+import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
+import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
@@ -47,16 +43,23 @@ import {
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 import {
+  namedRunArtifactPaths,
   persistRunArtifacts,
   persistTerminalSnapshot,
   runArtifactsDir,
+  runScratchDir,
   runTerminalReplyPath,
   type TerminalSnapshot,
 } from './run-artifacts.ts'
-import { resolveRootFromLastTurn } from './run-liveness.ts'
+import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+import { observedTestOutcome } from './run-test-outcome.ts'
+import { runUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
+
+const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
+
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
@@ -69,14 +72,14 @@ type TerminalOptions = {
   job: string
   resume?: {
     kind: 'continue' | 'fresh-session' | 'retry-root'
-    parent: number
+    parent: string
     turn: number
   }
 }
 
 function closeTerminalQuestions(
   database: Database,
-  rootId: number,
+  rootId: string,
   status: string,
   failureKind: ReturnType<typeof classify> | null,
 ): void {
@@ -88,11 +91,12 @@ function closeTerminalQuestions(
 export function finalizeTerminalChain(
   database: Database,
   input: {
-    runId: number
-    parentRunId: number | null
+    runId: string
+    parentRunId: string | null
     status: string
     failureKind: ReturnType<typeof classify> | null
     error: string | null
+    record: [machineId: string, finishedAt: string]
   },
 ): void {
   const rootId = input.parentRunId ?? input.runId
@@ -100,12 +104,14 @@ export function finalizeTerminalChain(
     database
       .query(
         `UPDATE run SET status='asking', error=?, failure_kind=NULL
-        WHERE id=? AND parent_run_id IS NULL AND status NOT IN ('stopped', 'stale')`,
+        WHERE record_id=? AND parent_run_record_id IS NULL AND status NOT IN ('stopped', 'stale')`,
       )
       .run(input.error, input.parentRunId)
   }
   closeTerminalQuestions(database, rootId, input.status, input.failureKind)
-  if (input.parentRunId !== null) resolveRootFromLastTurn(database, input.parentRunId)
+  if (input.parentRunId !== null) {
+    rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record)
+  }
   if (
     input.status !== 'asking' &&
     input.status !== 'running' &&
@@ -121,13 +127,52 @@ type TerminalMcpRuling = {
   requiredFailure: string | null
 } | null
 
+export function recordArtifactPersistenceFailure(
+  database: Database,
+  input: {
+    runId: string
+    parentRunId: string | null
+    error: string | null
+    machineId: string
+    finishedAt: string
+  },
+): void {
+  writeTransaction(() => {
+    database
+      .query(
+        `UPDATE run SET
+           error=CASE WHEN status='stopped' THEN error ELSE ? END
+         WHERE record_id=?`,
+      )
+      .run(input.error, input.runId)
+    enqueueRunRecord(database, input.runId, input.machineId, input.finishedAt)
+    if (input.parentRunId !== null) {
+      rollUpRootAndEnqueue(database, input.parentRunId, null, input.machineId, input.finishedAt)
+    }
+  }, database)
+}
+
+function reviewHidesGap(
+  review: ReviewReply | null,
+  input: Pick<TerminalInput, 'mcpMode' | 'mcpRuling'>,
+  wrongProjectTool: string | null,
+): boolean {
+  return Boolean(
+    review &&
+      review.provenance.could_not_verify.length === 0 &&
+      (review.provenance.substitutes.length > 0 ||
+        (input.mcpMode !== null && input.mcpRuling?.connected !== 1) ||
+        wrongProjectTool),
+  )
+}
+
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
-  idleTimer: ReturnType<typeof setInterval> | null
+  resourceObserver: RunResourceObserver | null
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   askLoopback: AskLoopback | null
-  claim: { id: number }
+  claim: { id: string; number: number }
   writesJob: boolean
   worktree: Worktree | null
   launchKey: string | null
@@ -153,7 +198,7 @@ export type TerminalInput = {
   checkReviewedCommit: boolean
   output: string
   confinementEvent: ConfinementEvent | null
-  resolvedDialect: ReplyDialect
+  parsedReply: ReaderReply | ReviewReply | null
   runProjectName: string | null
   mcpConnection: McpConnection | null
   mcpMode: McpMode | null
@@ -166,6 +211,7 @@ export type TerminalInput = {
   exitCode: number
   vendorTokens: number | null
   costUsd: number | null
+  vendorUsage: VendorUsage
   effectiveModel: string | null
   resolvedSession: string | null
   name: string
@@ -231,16 +277,16 @@ export function artifactPersistenceOutcome<FailureKind extends string>(input: {
 export function recordTerminalReviewEvidence(
   database: Database,
   input: {
-    runId: number
+    runId: string
     parsedReview: ReviewReply | null
     status: string
     failureKind: ReturnType<typeof classify> | null
   },
-): number | null {
+): string | null {
   if (!input.parsedReview || (input.status !== 'ok' && input.failureKind !== 'escaped')) {
     return null
   }
-  const row = database.query('SELECT probe FROM run WHERE id=?').get(input.runId) as {
+  const row = database.query('SELECT probe FROM run WHERE record_id=?').get(input.runId) as {
     probe: number | null
   } | null
   if (row?.probe) return null
@@ -288,30 +334,76 @@ function applyRequiredMcpFailure(
 
 function recordTerminalMcpEvidence(
   database: Database,
-  runId: number,
+  runId: string,
   ruling: TerminalMcpRuling,
 ): void {
   if (!ruling) return
   database
-    .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE id=?')
+    .query('UPDATE run SET mcp_connected=?, mcp_error=? WHERE record_id=?')
     .run(ruling.connected, ruling.error, runId)
 }
 
-function recordedReviewedHead(runId: number, required: boolean): string | null {
+function runResourceColumnValues(usage: RunResourceUsage | null) {
+  return [
+    usage?.cpuMs ?? null,
+    usage?.peakRssBytes ?? null,
+    usage?.samples ?? null,
+    usage?.source ?? null,
+  ]
+}
+
+/** The terminal resource write shared by finalization and its schema contract test. */
+export function writeTerminalRunResourceUsage(
+  database: Database,
+  runId: string,
+  usage: RunResourceUsage | null,
+): void {
+  database
+    .query(
+      `UPDATE run SET resource_cpu_ms=?, resource_peak_rss_bytes=?, resource_samples=?, resource_source=?
+        WHERE record_id=?`,
+    )
+    .run(...runResourceColumnValues(usage), runId)
+}
+
+function clearRunTimers(
+  timer: ReturnType<typeof setTimeout> | null,
+  checkpointTimer: ReturnType<typeof setInterval> | null,
+): void {
+  if (timer) clearTimeout(timer)
+  if (checkpointTimer) clearInterval(checkpointTimer)
+}
+
+function persistTerminalArtifacts(
+  id: string,
+  readerReply: ReaderReply | null,
+  output: string,
+  worktree: Worktree | null,
+  changes: Changes | null,
+): void {
+  persistRunArtifacts(
+    id,
+    namedRunArtifactPaths(readerReply, output, runScratchDir(id), runArtifactsDir(id)),
+    worktree,
+    changes,
+  )
+}
+
+function recordedReviewedHead(runId: string, required: boolean): string | null {
   if (!required) return null
   return (
     (
-      db().query('SELECT head_commit FROM run WHERE id=?').get(runId) as {
+      db().query('SELECT head_commit FROM run WHERE record_id=?').get(runId) as {
         head_commit: string | null
       } | null
     )?.head_commit ?? null
   )
 }
 
-function insertBlockerRows(runId: number, rows: BlockerRow[], at: string): void {
+function insertBlockerRows(runId: string, rows: BlockerRow[], at: string): void {
   if (!rows.length) return
   const q = db().query(
-    `INSERT INTO blocker (record_id,run_id,at,what,why,impact,source,kind) VALUES (?,?,?,?,?,?,?,?)`,
+    `INSERT INTO blocker (record_id,run_record_id,at,what,why,impact,source,kind) VALUES (?,?,?,?,?,?,?,?)`,
   )
   for (const r of rows) q.run(newRecordId(), runId, at, r.what, r.why, r.impact, r.source, r.kind)
 }
@@ -320,7 +412,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
     checkpointTimer,
-    idleTimer,
+    resourceObserver,
     proc,
     askLoopback,
     claim,
@@ -349,10 +441,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     checkReviewedCommit,
     output,
     confinementEvent,
-    resolvedDialect,
+    parsedReply,
     runProjectName,
     mcpConnection,
-    mcpMode,
     declaredDeliverables,
     mcpSetupHeader,
     outPath,
@@ -362,6 +453,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     exitCode,
     vendorTokens,
     costUsd,
+    vendorUsage,
     effectiveModel,
     resolvedSession,
     name,
@@ -369,9 +461,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     mcpRuling,
     workerEvents,
   } = input
-  if (timer) clearTimeout(timer)
-  if (checkpointTimer) clearInterval(checkpointTimer)
-  if (idleTimer) clearInterval(idleTimer)
+  clearRunTimers(timer, checkpointTimer)
+  const resourceUsage = resourceObserver?.stop() ?? null
   if (proc) {
     live.delete(proc)
     liveCheckpoints.delete(proc)
@@ -379,7 +470,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
-
   const preserveAtTerminal = shouldCheckpointAtTerminal({
     writesJob,
     hasWorktree: Boolean(worktree),
@@ -397,12 +487,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       final: true,
     })
     if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {
-      db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
+      db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
     }
     if (checkpoint.error)
       console.error(`orch: run ${claim.id} final checkpoint failed: ${checkpoint.error}`)
   }
-
   let frozenAfter: import('../confinement/confinement.ts').FrozenCheckout[] = []
   try {
     const afterFreeze = freezeCheckouts(watchedCheckouts)
@@ -459,7 +548,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
 
   if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
     const startedAt = db()
-      .query('SELECT started_at, head_commit FROM run WHERE id=?')
+      .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
       .get(claim.id) as { started_at: string; head_commit: string | null } | null
     confinementEvent = classifyDivergence({
       before: frozenBefore,
@@ -489,10 +578,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   })
   ;({ status, failureKind, error } = vendorTermination.outcome)
   acceptedQuestions = vendorTermination.acceptedQuestions
-  let parsedReview: ReviewReply | null = null
-  if (requestedJob.findings && output && (status === 'ok' || confinementEvent)) {
-    parsedReview = resolvedDialect.parse(output).reply as ReviewReply | null
-  }
+  const readerReply = isReaderJob(opts.job) ? (parsedReply as ReaderReply | null) : null
+  const parsedReview =
+    requestedJob.findings && output && (status === 'ok' || confinementEvent)
+      ? (parsedReply as ReviewReply | null)
+      : null
   const ownProject = runProjectName ? projectByName(runProjectName) : undefined
   const ownMcpServer =
     mcpConnection?.server ??
@@ -522,7 +612,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       declaredDeliverables,
       readerReply:
         status === 'ok' && isReaderJob(opts.job) && declaredDeliverables.length
-          ? parseReaderOutput(output)
+          ? readerReply
           : null,
     },
   )
@@ -534,8 +624,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ;({ status, error, failureKind } = applyPrematureFinalFailure(
     { status, error, failureKind },
     terminalPrematureFinalRefusal({
-      readerJob: isReaderJob(opts.job),
-      output,
+      readerReply,
       parsedReview,
       contract,
       measuredFiles: changes?.files ?? null,
@@ -574,7 +663,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
      * repeating verbatim from its own tool call.
      */
     const existingQuestionTexts = (
-      db().query('SELECT question FROM question WHERE run_id = ?').all(claim.id) as {
+      db().query('SELECT question FROM question WHERE run_record_id = ?').all(claim.id) as {
         question: string
       }[]
     ).map((row) => row.question)
@@ -622,6 +711,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     // Never let recording a blocker fail a run that otherwise succeeded.
     console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
   }
+  const testOutcome = writesJob
+    ? observedTestOutcome(db(), claim.id, contract?.tests ?? null)
+    : null
   const terminalSnapshot: TerminalSnapshot = {
     status,
     error,
@@ -633,6 +725,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     latencyMs: Date.now() - started,
     vendorTokens,
     vendorCostUsd: costUsd,
+    ...runUsageColumns(vendorUsage),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -641,25 +734,15 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     changedPaths: writesJob && changes ? JSON.stringify(changes.files) : null,
     linesAdded: writesJob ? (changes?.insertions ?? null) : null,
     linesRemoved: writesJob ? (changes?.deletions ?? null) : null,
-    testsRan: writesJob ? (contract?.tests ? (contract.tests.ran ? 1 : 0) : null) : null,
-    testsPassed: writesJob
-      ? contract?.tests?.passed === undefined
-        ? null
-        : contract.tests.passed
-          ? 1
-          : 0
-      : null,
+    testsRan: testOutcome ? (testOutcome.ran ? 1 : 0) : null,
+    testsPassed: testOutcome?.passed == null ? null : testOutcome.passed ? 1 : 0,
+    testsClaimDisagrees: testOutcome ? (testOutcome.claimDisagrees ? 1 : 0) : null,
     deviations: writesJob ? (contract?.deviations?.length ?? null) : null,
     escalations: writesJob ? acceptedQuestions.length : null,
   }
   persistTerminalSnapshot(claim.id, terminalSnapshot)
   const reviewProvenance = parsedReview ? JSON.stringify(parsedReview.provenance) : null
-  const provenanceSilent =
-    parsedReview &&
-    parsedReview.provenance.could_not_verify.length === 0 &&
-    (parsedReview.provenance.substitutes.length > 0 ||
-      (mcpMode !== null && mcpRuling?.connected !== 1) ||
-      Boolean(provenanceWrongProjectTool))
+  const provenanceSilent = reviewHidesGap(parsedReview, input, provenanceWrongProjectTool)
   const localMachineId = machineId()
   const writeTerminalRow = () =>
     writeTransaction(() => {
@@ -667,13 +750,15 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                        vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
+                        vendor_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                        vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
+                        host_wait_since=NULL,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
                         review_provenance=?, provenance_status=?,
-                        unreconciled=0 WHERE id=?`,
+                        unreconciled=0 WHERE record_id=?`,
         )
         .run(
           Date.now() - started,
@@ -683,6 +768,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           promptPath,
           vendorTokens,
           costUsd,
+          ...runUsageColumnValues(runUsageColumns(vendorUsage)),
           effectiveModel,
           status,
           error,
@@ -694,6 +780,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           provenanceSilent ? 'silent' : null,
           claim.id,
         )
+
+      writeTerminalRunResourceUsage(db(), claim.id, resourceUsage)
 
       recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
 
@@ -711,15 +799,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         db()
           .query(
             `UPDATE run SET files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
-                          tests_ran=?, tests_passed=?, deviations=?, escalations=? WHERE id=?`,
+                          tests_ran=?, tests_passed=?, tests_claim_disagrees=?, deviations=?, escalations=?
+             WHERE record_id=?`,
           )
           .run(
             changes?.files.length ?? null,
             changes ? JSON.stringify(changes.files) : null,
             changes?.insertions ?? null,
             changes?.deletions ?? null,
-            contract?.tests ? (contract.tests.ran ? 1 : 0) : null,
-            contract?.tests?.passed === undefined ? null : contract.tests.passed ? 1 : 0,
+            testOutcome!.ran ? 1 : 0,
+            testOutcome!.passed == null ? null : testOutcome!.passed ? 1 : 0,
+            testOutcome!.claimDisagrees ? 1 : 0,
             contract?.deviations?.length ?? null,
             acceptedQuestions.length,
             claim.id,
@@ -751,10 +841,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       // answer.
       finalizeTerminalChain(db(), {
         runId: claim.id,
-        parentRunId: identity.parent_run_id,
+        parentRunId: identity.parent_run_record_id,
         status,
         failureKind,
         error,
+        record: [localMachineId, finishedAt],
       })
       // A parsed findings reply is the review event. Capture it in the same
       // terminal transaction so a successful lens cannot exist in the gap
@@ -762,7 +853,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       // recorded. Manual `bottega review record` remains the recovery path for
       // historical or otherwise uncaptured outputs.
       recordTerminalReviewEvidence(db(), {
-        runId: identity.parent_run_id ?? claim.id,
+        runId: identity.parent_run_record_id ?? claim.id,
         parsedReview,
         status,
         failureKind,
@@ -780,7 +871,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       try {
         db()
           .query(
-            `UPDATE run SET unreconciled=1, error=? WHERE id=? AND status IN ('running','asking')`,
+            `UPDATE run SET unreconciled=1, error=? WHERE record_id=? AND status IN ('running','asking')`,
           )
           .run(
             `unreconciled: reply at ${runTerminalReplyPath(claim.id)}; ` +
@@ -793,7 +884,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
-  const recorded = db().query('SELECT status, failure_kind FROM run WHERE id=?').get(claim.id) as {
+  const recorded = db().query(TERMINAL_STATUS_SQL).get(claim.id) as {
     status: string
     failure_kind: string | null
   } | null
@@ -825,12 +916,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
 
   try {
-    persistRunArtifacts(
-      claim.id,
-      isReaderJob(opts.job) ? (parseReaderOutput(output)?.files_written ?? null) : null,
-      worktree,
-      changes,
-    )
+    persistTerminalArtifacts(claim.id, readerReply, output, worktree, changes)
   } catch (e) {
     artifactsPersisted = false
     const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
@@ -840,15 +926,13 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       failureKind,
       persistenceError,
     }))
-    db()
-      .query(
-        `UPDATE run SET
-           error=CASE WHEN status='stopped' THEN error ELSE ? END
-         WHERE id=?`,
-      )
-      .run(error, claim.id)
-    const identity = claimIdentity(opts.resume)
-    if (identity.parent_run_id !== null) resolveRootFromLastTurn(db(), identity.parent_run_id)
+    recordArtifactPersistenceFailure(db(), {
+      runId: claim.id,
+      parentRunId: claimIdentity(opts.resume).parent_run_record_id,
+      error,
+      machineId: localMachineId,
+      finishedAt: nowIso(),
+    })
     teardownTerminalRunResources(db(), claim.id)
     console.error(`orch: ${error}`)
   }

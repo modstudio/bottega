@@ -1,13 +1,13 @@
+import { type AgentRow, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { Companion } from '@bottega/hub-ui/companion'
+import { DisplayRow } from '@bottega/hub-ui/form-layout'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { SnapshotEmpty, SnapshotHeader } from '@bottega/hub-views/snapshot'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { SnapshotEmpty, SnapshotHeader } from '@/components/hosted-snapshot'
-import { isHostedMode } from '@/lib/hub-mode'
-import { type AgentRow, trpc } from '@/trpc/client'
-import { Companion } from '@/ui/companion/companion'
-import { DisplayRow } from '@/ui/form-layout/form-layout'
-import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/agents')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -18,18 +18,24 @@ export const Route = createFileRoute('/agents')({
 
 const finite = (value: number | null) => (value == null ? 'unbounded' : value.toLocaleString())
 const columns: CollectionColumn<AgentRow>[] = [
-  { id: 'name', label: 'Agent', render: (row) => <strong>{row.name}</strong> },
-  { id: 'model', label: 'Model', render: (row) => row.model },
+  { id: 'name', label: 'Agent', phone: 'title', render: (row) => <strong>{row.name}</strong> },
+  { id: 'model', label: 'Model', phone: 'aside', render: (row) => row.model },
   {
     id: 'caps',
     label: 'Capabilities',
+    phone: 'line',
     render: (row) =>
       Object.entries(row.caps)
         .filter(([, has]) => has)
         .map(([name]) => name)
         .join(', '),
   },
-  { id: 'timeout', label: 'Timeout', render: (row) => `${row.timeoutMs / 60_000} min` },
+  {
+    id: 'timeout',
+    label: 'Timeout',
+    phone: 'more',
+    render: (row) => `${row.timeoutMs / 60_000} min`,
+  },
 ]
 
 function AgentsPage() {

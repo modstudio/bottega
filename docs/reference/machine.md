@@ -29,6 +29,7 @@ upkeep of this machine
 - [bottega machine legacy-calls](#bottega-machine-legacy-calls)
 - [bottega machine migrate](#bottega-machine-migrate)
 - [bottega machine monitor](#bottega-machine-monitor)
+- [bottega machine provisioning](#bottega-machine-provisioning)
 - [bottega machine reclaim](#bottega-machine-reclaim)
 - [bottega machine reclaim-fixture-questions](#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](#bottega-machine-reclassify-failures)
@@ -55,6 +56,7 @@ upkeep of this machine
 - [bottega machine setup facts](#bottega-machine-setup-facts)
 - [bottega machine setup plan](#bottega-machine-setup-plan)
 - [bottega machine setup-ask](#bottega-machine-setup-ask)
+- [bottega machine storage](#bottega-machine-storage)
 - [bottega machine sweep](#bottega-machine-sweep)
 
 ## bottega machine
@@ -72,6 +74,7 @@ upkeep of this machine
 - [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
 - [bottega machine migrate](./machine.md#bottega-machine-migrate)
 - [bottega machine monitor](./machine.md#bottega-machine-monitor)
+- [bottega machine provisioning](./machine.md#bottega-machine-provisioning)
 - [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
 - [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
@@ -79,6 +82,7 @@ upkeep of this machine
 - [bottega machine settings](./machine.md#bottega-machine-settings)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
 - [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
+- [bottega machine storage](./machine.md#bottega-machine-storage)
 - [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine blockers
@@ -407,6 +411,23 @@ inspect machine conditions that need attention
 - `--notices`: claim undelivered monitor notices for this session
 - `--skip-board-refresh`: claim notices without refreshing the board
 - `--json`: write the monitor result as JSON
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine provisioning
+
+**Synopsis:** `bottega machine provisioning [--project <name>] [--since <duration>] [--resources] [--json]`
+
+report worker-tree provisioning cost or run resources
+
+### Options
+
+- `--project <name>`: limit samples to one project
+- `--since <duration>`: limit samples by age
+- `--resources`: report run CPU time and peak memory instead
+- `--json`: write the report as JSON
 
 ### Related
 
@@ -803,9 +824,23 @@ install the live worker question channel
 
 - [bottega machine](./machine.md#bottega-machine)
 
+## bottega machine storage
+
+**Synopsis:** `bottega machine storage [--json]`
+
+measure run, worktree, store, and volume storage
+
+### Options
+
+- `--json`: write the storage report as JSON
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
 ## bottega machine sweep
 
-**Synopsis:** `bottega machine sweep [--project <value>] [--force] [--dry-run]`
+**Synopsis:** `bottega machine sweep [--project <value>] [--force] [--dry-run] [--verbose]`
 
 release terminal runs and reclaim safe stale resources
 
@@ -814,6 +849,7 @@ release terminal runs and reclaim safe stale resources
 - `--project <value>`: registered project whose resources are swept
 - `--force`: continue despite a project sweep failure
 - `--dry-run`: report releases without applying them
+- `--verbose`: list every kept run artifact
 
 ### Related
 

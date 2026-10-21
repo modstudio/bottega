@@ -1,12 +1,13 @@
 // concern: record-api
 /** Owns the hosted JSON surface. Must not know SQL, local execution, or deployment. */
 
-import type { Context } from 'hono'
-import { Hono } from 'hono'
+import { type Context, Hono } from 'hono'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
+import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -22,11 +23,17 @@ import {
   type RecordInvitationRouteDeps,
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
+import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
+import {
+  type RecordWorkflowRouteDeps,
+  registerRecordWorkflowRoutes,
+} from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
@@ -56,11 +63,7 @@ import {
   type RecordDocOrderInput,
   type RecordDocRevision,
 } from './record-docs.ts'
-import {
-  type RecordProject,
-  RecordProjectError,
-  type RecordProjectUpsertInput,
-} from './record-projects.ts'
+import { RecordProjectError, type RecordProjectUpsertInput } from './record-projects.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,
@@ -79,24 +82,21 @@ import type {
   RecordSettingsPermissionResult,
 } from './record-settings.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
-import type { RecordScore } from './record-verdicts.ts'
-import { RecordVerdictError } from './record-verdicts.ts'
+import { type RecordScore, RecordVerdictError } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
-type ApiEnvironment = {
-  Variables: { identity: RecordIdentity; destinationSpaceId?: string }
-}
+type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-type RecordDocMutationInput = {
-  id: string
-  reason: string
-  author: string
-  expectedRevision?: string
-  generator?: DocGenerator
-}
-type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordSyncRouteDeps & RecordApiDeps
+type Deps = RecordSubjectRouteDeps &
+  RecordReleaseRouteDeps &
+  RecordSyncRouteDeps &
+  RecordLensRouteDeps &
+  RecordPortRouteDeps &
+  RecordWorkflowRouteDeps &
+  RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
+  clientAddresses: RecordClientAddresses
   recordUrl: string
   allowedOrigins?: string[]
   auth: { handler(request: Request): Response | Promise<Response> }
@@ -124,7 +124,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
   readReview(input: Tenant & { id: string }): Promise<Record<string, unknown> | null>
   readProjects(input: Tenant): Promise<RecordProject[]>
   upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
-  retireProject(input: Tenant & { name: string }): Promise<{ name: string }>
+  retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
   listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
   listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
   readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>
@@ -157,9 +157,11 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
   reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
-  deleteDoc(input: Tenant & RecordDocMutationInput): Promise<{ id: string; revisionId: string }>
+  deleteDoc(
+    input: Tenant & z.infer<typeof docWriteContextSchema> & { id: string },
+  ): Promise<{ id: string; revisionId: string }>
   consumeDoc(
-    input: Tenant & RecordDocMutationInput,
+    input: Parameters<RecordApiDeps['deleteDoc']>[0],
   ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
   restoreDoc(
     input: Tenant & {
@@ -279,11 +281,31 @@ const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` t
 
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
+const catalogueRoutes = [
+  registerRecordLensRoutes,
+  registerRecordPortRoutes,
+  registerRecordWorkflowRoutes,
+]
 
 function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
   registerRecordInvitationRoute(app, deps)
   registerRecordSyncRoute(app, deps)
 }
+
+const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
+const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
+const jsonWrap = (wrap: ConfigWrapInput) => ({
+  ...wrap,
+  enc: encoded(wrap.enc),
+  ciphertext: encoded(wrap.ciphertext),
+})
+const inputWrap = (wrap: z.infer<typeof wrapSchema>): ConfigWrapInput => ({
+  ...wrap,
+  enc: decoded(wrap.enc),
+  ciphertext: decoded(wrap.ciphertext),
+})
+const configAddress = z.object({ environment: z.string().min(1), scope: configScopeSchema })
+const configList = z.object({ environment: z.string().min(1).optional() })
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
@@ -442,23 +464,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     throw error
   }
   registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
-  const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-  const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
-  const jsonWrap = (wrap: ConfigWrapInput) => ({
-    ...wrap,
-    enc: encoded(wrap.enc),
-    ciphertext: encoded(wrap.ciphertext),
-  })
-  const inputWrap = (wrap: z.infer<typeof wrapSchema>): ConfigWrapInput => ({
-    ...wrap,
-    enc: decoded(wrap.enc),
-    ciphertext: decoded(wrap.ciphertext),
-  })
-  const configAddress = z.object({
-    environment: z.string().min(1),
-    scope: configScopeSchema,
-  })
-  const configList = z.object({ environment: z.string().min(1).optional() })
+  for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
   const configBody = z.object({
     environment: z.string().min(1),
     scope: configScopeSchema,

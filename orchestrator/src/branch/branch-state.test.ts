@@ -60,6 +60,7 @@ function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}
     patchEquivalent: null,
     pullRequestCommitCheck: null,
     recordedLanding: null,
+    containingBranch: null,
     laterTurnBranches: [],
     superseded: false,
     ...overrides,
@@ -232,6 +233,13 @@ describe('run branch state decision', () => {
     ).toEqual({
       state: 'landed',
       landedBy: { type: 'turn', branch: 'DEV-616-orch-4240' },
+    })
+  })
+
+  test('containment landing names the branch carrying the proof', () => {
+    expect(decide({ containingBranch: 'DEV-616-task' })).toEqual({
+      state: 'landed',
+      landedBy: { type: 'contained', branch: 'DEV-616-task' },
     })
   })
 

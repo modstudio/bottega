@@ -4,11 +4,12 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { projects, type WorktreeTool } from '../project/projects.ts'
-import { dockerRunResources, orchRunLabel } from '../resources/docker-resources.ts'
+import { dockerRunResources, orchRunLabelForRun } from '../resources/docker-resources.ts'
 import {
   claimDatabaseName,
   claimIndex,
@@ -19,15 +20,16 @@ import {
   releaseRecipeAllocationClaims,
   settleClaims,
 } from '../resources/resource-claims.ts'
+import {
+  appendProvisioningPhases,
+  cloneProvisionRecorder,
+  measureProvisioningPhase,
+} from '../worktree/provisioning-measurement.ts'
 import { type ProvisionSkip, provisionWorktree } from '../worktree/worktree-provision.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type ComposeSpawn, createCompose, downCompose } from './compose-provision.ts'
 import { composeProjectName } from './compose-provision-plan.ts'
-import {
-  createProvisionedDatabases,
-  type DatabaseOwnership,
-  dropProvisionedDatabases,
-} from './database-provision.ts'
+import { createProvisionedDatabases, dropProvisionedDatabases } from './database-provision.ts'
 import {
   compensationPlan,
   destroyPlan,
@@ -36,6 +38,7 @@ import {
   sharedDeclarations,
   snapshotlessTeardown,
   teardownVars,
+  trackedTeardownFailure,
 } from './recipe-lifecycle.ts'
 import { loadRecipeAtBase } from './recipe-loader.ts'
 import {
@@ -51,24 +54,28 @@ import {
   type StepResult,
 } from './recipe-step.ts'
 import { databaseUrlSecrets, writeTrackedEnvFiles } from './tracked-env-files.ts'
+import {
+  startTrackedTeardownMainStack,
+  stopTrackedTeardownMainStack,
+} from './tracked-recipe-main-stack.ts'
+import type {
+  AllocationAttempt,
+  RecipeAllocations,
+  RecipeSnapshot,
+} from './tracked-recipe-types.ts'
+import {
+  buildTrackedWorktreeAddArgv,
+  type TrackedWorktreeAddInput,
+} from './tracked-worktree-add.ts'
 
-export type RecipeSnapshot = {
-  source: { path: string; commit: string }
-  recipe: TrackedRecipe
-  allocations?: RecipeAllocations
-  databaseOwnership?: DatabaseOwnership
-  composeOwnership?: boolean
-}
-export type RecipeAllocations = {
-  index: number
-  ports: Record<string, number>
-  databases: Record<string, string>
-  strings: Record<string, string>
-}
-export type AllocationAttempt = { allocations: RecipeAllocations; insertedClaimIds: number[] }
+export type {
+  AllocationAttempt,
+  RecipeAllocations,
+  RecipeSnapshot,
+} from './tracked-recipe-types.ts'
 export type TrackedAllocator = {
   allocate(input: {
-    runId: number
+    runId: string
     recipe: TrackedRecipe
     staticVars: Record<string, string>
   }): AllocationAttempt
@@ -76,8 +83,47 @@ export type TrackedAllocator = {
 }
 type StepRunner = (step: Step, context: StepContext) => StepResult
 
+function provisionTrackedDependencies(
+  input: TrackedCreateInput,
+  path: string,
+  snapshot: RecipeSnapshot,
+) {
+  return measureProvisioningPhase(input.runId, 'dependency', 'declared dependencies', () =>
+    provisionWorktree(
+      input.repoRoot,
+      path,
+      snapshot.recipe.provision ?? [],
+      `tracked recipe "${snapshot.source.path}"`,
+      undefined,
+      cloneProvisionRecorder(input.runId),
+    ),
+  )
+}
+
+function recordTrackedCreateSteps(runId: string, results: readonly StepResult[]): void {
+  appendProvisioningPhases(
+    runId,
+    results.map((result) => ({
+      phase: 'create',
+      name: result.name,
+      durationMs: result.durationMs,
+    })),
+  )
+}
+
+function writeTrackedEnvironment(
+  input: TrackedCreateInput,
+  recipe: TrackedRecipe,
+  context: StepContext,
+  secrets: Record<string, string>,
+): StepResult | null {
+  return measureProvisioningPhase(input.runId, 'env', 'env files', () =>
+    writeTrackedEnvFiles(recipe, context, input.repoRoot, secrets),
+  )
+}
+
 function composeContext(input: {
-  runId: number
+  runId: string
   treeRoot: string
   commandRoot?: string
   treeExists?: boolean
@@ -89,17 +135,17 @@ function composeContext(input: {
         commandRoot?: string
         treeExists?: boolean
         projectName: string
-        rootRunId: number
+        rootRunId: string
         mainComposeProjects: string[]
       }
     }
   | { ok: false; failure: StepResult } {
   const owner = db()
     .query(
-      `SELECT COALESCE(r.parent_run_id,r.id) root_run_id,p.name project_name
-       FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+      `SELECT COALESCE(r.parent_run_record_id,r.record_id) root_run_record_id,p.name project_name
+       FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
-    .get(input.runId) as { root_run_id: number; project_name: string } | null
+    .get(input.runId) as { root_run_record_id: string; project_name: string } | null
   if (!owner) {
     return {
       ok: false,
@@ -142,7 +188,7 @@ function composeContext(input: {
     context: {
       ...input,
       projectName: owner.project_name,
-      rootRunId: owner.root_run_id,
+      rootRunId: owner.root_run_record_id,
       mainComposeProjects: [...mainComposeProjects],
     },
   }
@@ -154,20 +200,20 @@ export const trackedAllocator: TrackedAllocator = {
       const database = db()
       const owner = database
         .query(
-          `SELECT COALESCE(parent_run_id,id) root_run_id,project_id
-           FROM run WHERE id=?`,
+          `SELECT COALESCE(parent_run_record_id,record_id) root_run_record_id,project_record_id
+           FROM run WHERE record_id=?`,
         )
-        .get(input.runId) as { root_run_id: number; project_id: number | null } | null
-      if (!owner?.project_id) {
+        .get(input.runId) as { root_run_record_id: string; project_record_id: string | null } | null
+      if (!owner?.project_record_id) {
         throw new Error(`tracked recipe allocation for run ${input.runId} requires a project`)
       }
       const before = (
         database.query('SELECT COALESCE(MAX(id),0) id FROM resource_claim').get() as { id: number }
       ).id
       const identity = {
-        rootRunId: owner.root_run_id,
+        rootRunId: owner.root_run_record_id,
         runId: input.runId,
-        projectId: owner.project_id,
+        projectId: owner.project_record_id,
         claimedAt: nowIso(),
       }
       const index = claimIndex(database, identity)
@@ -195,10 +241,10 @@ export const trackedAllocator: TrackedAllocator = {
         database
           .query(
             `SELECT id FROM resource_claim
-             WHERE id>? AND root_run_id=? AND run_id=? AND kind IN ('port','index','string','database')
+             WHERE id>? AND root_run_record_id=? AND run_record_id=? AND kind IN ('port','index','string','database')
              ORDER BY id`,
           )
-          .all(before, owner.root_run_id, input.runId) as { id: number }[]
+          .all(before, owner.root_run_record_id, input.runId) as { id: number }[]
       ).map((row) => row.id)
       return { allocations: { index, ports, databases, strings }, insertedClaimIds }
     })
@@ -296,10 +342,10 @@ export function trackedRecipeNotes(tool: WorktreeTool, repoRoot: string): string
 
 export function recipeAllocationEnvironment(
   allocations: RecipeAllocations | undefined,
-  rootRunId?: number,
+  rootRunId?: string,
 ): Record<string, string> {
   const environment: Record<string, string> = {}
-  if (rootRunId !== undefined) environment.ORCH_RUN_LABEL = orchRunLabel(rootRunId)
+  if (rootRunId !== undefined) environment.ORCH_RUN_LABEL = orchRunLabelForRun(rootRunId)
   if (!allocations) return environment
   environment.ORCH_INDEX = String(allocations.index)
   for (const [name, port] of Object.entries(allocations.ports)) {
@@ -317,13 +363,13 @@ export function recipeAllocationEnvironment(
 export function trackedRecipeVars(
   staticVars: Record<string, string>,
   allocations: RecipeAllocations,
-  rootRunId: number,
+  rootRunId: string,
   compose?: { projectName: string },
 ): Record<string, string> {
   const vars: Record<string, string> = {
     ...staticVars,
     index: String(allocations.index),
-    label: orchRunLabel(rootRunId),
+    label: orchRunLabelForRun(rootRunId),
     tree_exists: 'true',
     ...(compose ? { 'compose.project': composeProjectName(compose.projectName, rootRunId) } : {}),
   }
@@ -342,13 +388,13 @@ export function trackedRecipeVars(
 function composeVariableIdentity(
   recipe: TrackedRecipe,
   projectName: string | null | undefined,
-  rootRunId: number | undefined,
-): { projectName: string; rootRunId: number } | undefined {
+  rootRunId: string | undefined,
+): { projectName: string; rootRunId: string } | undefined {
   if (!recipe.compose || !projectName || rootRunId === undefined) return undefined
   return { projectName, rootRunId }
 }
 
-export function trackedRecipeEnvironment(runId: number): Record<string, string> {
+export function trackedRecipeEnvironment(runId: string): Record<string, string> {
   const stored = readSnapshot(runId)
   return recipeAllocationEnvironment(stored.snapshot?.allocations, stored.rootRunId)
 }
@@ -358,17 +404,20 @@ export function executeTrackedCreateSteps(
   context: StepContext,
   runStep: StepRunner,
   runUndo: StepRunner,
-): { failure: StepResult | null; compensation: StepResult[] } {
+): { failure: StepResult | null; compensation: StepResult[]; results: StepResult[] } {
+  const results: StepResult[] = []
   for (const [index, step] of recipe.create.entries()) {
     const failure = runStep(step, context)
+    results.push(failure)
     if (failure.status !== 'ok') {
       return {
         failure,
         compensation: compensationPlan(recipe, index).map((item) => runUndo(item, context)),
+        results,
       }
     }
   }
-  return { failure: null, compensation: [] }
+  return { failure: null, compensation: [], results }
 }
 
 export function executeTrackedRefreshSteps(
@@ -405,11 +454,11 @@ export function executeTrackedPreSteps(
   }
 }
 
-function writeSnapshot(runId: number, snapshot: RecipeSnapshot): void {
+function writeSnapshot(runId: string, snapshot: RecipeSnapshot): void {
   db()
     .query(
       `UPDATE run SET recipe_snapshot=?, resource_teardown='pending'
-       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+       WHERE record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .run(JSON.stringify(snapshot), runId)
 }
@@ -420,34 +469,34 @@ function recordedRecipe(recipe: TrackedRecipe): TrackedRecipe {
   return recorded
 }
 
-function liveDatabaseClaims(runId: number): number {
+function liveDatabaseClaims(runId: string): number {
   return (
     db()
       .query(
         `SELECT COUNT(*) count FROM resource_claim
-         WHERE root_run_id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+         WHERE root_run_record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
            AND kind='database' AND state='claimed'`,
       )
       .get(runId) as { count: number }
   ).count
 }
 
-export function readSnapshot(runId: number): {
+export function readSnapshot(runId: string): {
   snapshot: RecipeSnapshot | null
   key: string | null
   seed: string | null
-  rootRunId: number
+  rootRunId: string
   projectName: string | null
 } {
   const row = db()
     .query(
-      `SELECT r.id root_run_id,r.recipe_snapshot snapshot,r.launch_key key,r.launch_seed seed,
+      `SELECT r.record_id root_run_record_id,r.recipe_snapshot snapshot,r.launch_key key,r.launch_seed seed,
               p.name project_name
-       FROM run r LEFT JOIN project p ON p.id=r.project_id
-       WHERE r.id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+       FROM run r LEFT JOIN project p ON p.record_id=r.project_record_id
+       WHERE r.record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .get(runId) as {
-    root_run_id: number
+    root_run_record_id: string
     snapshot: string | null
     key: string | null
     seed: string | null
@@ -457,7 +506,7 @@ export function readSnapshot(runId: number): {
     snapshot: row?.snapshot ? (JSON.parse(row.snapshot) as RecipeSnapshot) : null,
     key: row?.key ?? null,
     seed: row?.seed ?? null,
-    rootRunId: row?.root_run_id ?? runId,
+    rootRunId: row?.root_run_record_id ?? runId,
     projectName: row?.project_name ?? null,
   }
 }
@@ -465,7 +514,7 @@ export function readSnapshot(runId: number): {
 export type TrackedCreateInput = {
   tool: WorktreeTool
   repoRoot: string
-  runId: number
+  runId: string
   seed?: string
   key?: string
   baseRef?: string
@@ -558,10 +607,12 @@ function failTrackedCreation(input: {
       writeTransaction(() => {
         const database = db()
         const run = database
-          .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-          .get(input.createInput.runId) as { root_id: number } | null
+          .query(
+            'SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?',
+          )
+          .get(input.createInput.runId) as { root_id: string } | null
         database
-          .query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
+          .query('UPDATE run SET worktree=NULL WHERE record_id=? AND worktree=?')
           .run(input.createInput.runId, input.worktree.path)
         if (run) {
           settleClaims(database, {
@@ -640,26 +691,22 @@ function createTrackedCompose(input: {
   return prepared.context
 }
 
-/** Build the one git worktree-add shape used by every tracked creation form. */
-export function trackedWorktreeAddArgv(input: {
-  branch: string
-  path: string
-  base: string
-  detached: boolean
-  existingBranch: boolean
-  relativePaths?: boolean
-}): string[] {
-  return [
-    'worktree',
-    'add',
-    ...(input.relativePaths ? ['--relative-paths'] : []),
-    ...(input.detached ? ['--detach'] : input.existingBranch ? [] : ['-b', input.branch]),
-    input.path,
-    input.existingBranch && !input.detached ? input.branch : input.base,
-  ]
+function prepareTrackedWorktreeAdd(input: TrackedCreateInput, branch: string, path: string): void {
+  mkdirSync(dirname(path), { recursive: true })
+  if (!input.detached && !input.existingBranch) {
+    assertBranchRefMayBeCreated(input.repoRoot, branch)
+  }
 }
 
-/** Missing optional sources are expected; retain diagnostics for every other skip. */
+/** Build the one git worktree-add shape used by every tracked creation form. */
+export function trackedWorktreeAddArgv(input: TrackedWorktreeAddInput): string[] {
+  return buildTrackedWorktreeAddArgv(input)
+}
+
+/**
+ * Missing optional sources are expected; retain diagnostics for every other
+ * provisioning skip.
+ */
 function reportedProvisionSkips(skipped: readonly ProvisionSkip[]): ProvisionSkip[] {
   return skipped.filter((entry) => entry.reason !== 'missing source')
 }
@@ -679,7 +726,7 @@ export function createTrackedRecipe(
   const { base, snapshot, vars } = prepared
 
   try {
-    mkdirSync(dirname(path), { recursive: true })
+    prepareTrackedWorktreeAdd(input, branch, path) // branch-ref-guard: assertBranchRefMayBeCreated
     git(
       trackedWorktreeAddArgv({
         branch,
@@ -707,12 +754,7 @@ export function createTrackedRecipe(
   input.attribute(worktree)
   const context = { treeRoot: path, vars }
   try {
-    const skipped = provisionWorktree(
-      input.repoRoot,
-      path,
-      prepared.recipe.provision ?? [],
-      `tracked recipe "${snapshot.source.path}"`,
-    )
+    const skipped = provisionTrackedDependencies(input, path, snapshot)
     for (const entry of reportedProvisionSkips(skipped)) {
       console.error(`orch: provision skipped "${entry.path}": ${entry.reason}`)
     }
@@ -753,7 +795,7 @@ export function createTrackedRecipe(
       creation: { failure: urls.result, compensation: [] },
     })
   }
-  const envFailure = writeTrackedEnvFiles(prepared.recipe, context, input.repoRoot, urls.secrets)
+  const envFailure = writeTrackedEnvironment(input, prepared.recipe, context, urls.secrets)
   if (envFailure) {
     failTrackedCreation({
       createInput: input,
@@ -764,21 +806,25 @@ export function createTrackedRecipe(
       creation: { failure: envFailure, compensation: [] },
     })
   }
-  const preparedComposeContext = createTrackedCompose({
-    createInput: input,
-    worktree,
-    recipe: prepared.recipe,
-    snapshot,
-    allocationAttempt: prepared.allocationAttempt,
-    allocator,
-    spawn: composeSpawn,
-  })
+  const preparedComposeContext = measureProvisioningPhase(input.runId, 'compose', 'compose', () =>
+    createTrackedCompose({
+      createInput: input,
+      worktree,
+      recipe: prepared.recipe,
+      snapshot,
+      allocationAttempt: prepared.allocationAttempt,
+      allocator,
+      spawn: composeSpawn,
+    }),
+  )
   const databaseContext = {
     projectRoot: input.repoRoot,
     treeRoot: path,
     allocations: prepared.snapshot.allocations!.databases,
   }
-  const databases = createProvisionedDatabases(prepared.recipe, databaseContext)
+  const databases = measureProvisioningPhase(input.runId, 'database', 'provisioned databases', () =>
+    createProvisionedDatabases(prepared.recipe, databaseContext),
+  )
   snapshot.databaseOwnership = databases.ownership
   if (databases.failure) {
     failTrackedCreation({
@@ -799,6 +845,7 @@ export function createTrackedRecipe(
     })
   }
   const creation = executeTrackedCreateSteps(prepared.recipe, context, runStep, runUndo)
+  recordTrackedCreateSteps(input.runId, creation.results)
   if (creation.failure) {
     failTrackedCreation({
       createInput: input,
@@ -820,7 +867,7 @@ export function createTrackedRecipe(
   }
   writeSnapshot(input.runId, snapshot)
   try {
-    input.verify(worktree)
+    measureProvisioningPhase(input.runId, 'verify', 'worktree', () => input.verify(worktree))
   } catch (error) {
     input.removeProvisioned(worktree)
     settleCreateTimeBranchCleanup(worktree, input.runId)
@@ -829,16 +876,123 @@ export function createTrackedRecipe(
   return worktree
 }
 
+function settleTrackedTeardown(runId: string): void {
+  writeTransaction(() => {
+    const owner = db()
+      .query(
+        'SELECT COALESCE(parent_run_record_id,record_id) root_run_record_id FROM run WHERE record_id=?',
+      )
+      .get(runId) as { root_run_record_id: string } | null
+    if (!owner) return
+    settleClaims(db(), {
+      rootRunId: owner.root_run_record_id,
+      kind: 'database',
+      state: 'released',
+      settledAt: nowIso(),
+      detail: 'tracked recipe teardown completed',
+    })
+    db()
+      .query(
+        "UPDATE run SET resource_teardown='done' WHERE record_id=? AND resource_teardown='pending'",
+      )
+      .run(owner.root_run_record_id)
+  })
+}
+
+function runTrackedTeardown(input: {
+  runId: string
+  worktree: Worktree
+  stored: {
+    snapshot: RecipeSnapshot
+    key: string | null
+    seed: string | null
+    rootRunId?: string
+    projectName?: string | null
+  }
+  treeExists: boolean
+  runStep: StepRunner
+  runUndo: StepRunner
+}): { results: StepResult[]; stopFailure: string | null; stopNote: string | null } {
+  const { runId, worktree, stored, treeExists, runStep, runUndo } = input
+  let mainStack: ReturnType<typeof startTrackedTeardownMainStack> | null = null
+  let temporaryCwd: string | null = null
+  const results: StepResult[] = []
+  let stopFailure: string | null = null
+  let stopNote: string | null = null
+  try {
+    mainStack = startTrackedTeardownMainStack(worktree)
+    const vars = teardownVars({
+      path: worktree.path,
+      branch: worktree.branch,
+      base: stored.snapshot.source.commit,
+      key: stored.key,
+      seed: stored.seed,
+      main: worktree.repoRoot,
+      label: orchRunLabelForRun(stored.rootRunId ?? readSnapshot(runId).rootRunId),
+      treeExists,
+      allocations: stored.snapshot.allocations,
+      compose: composeVariableIdentity(
+        stored.snapshot.recipe,
+        stored.projectName,
+        stored.rootRunId,
+      ),
+    })
+    temporaryCwd = treeExists ? null : mkdtempSync(join(tmpdir(), 'orch-teardown-'))
+    const context = { treeRoot: temporaryCwd ?? worktree.path, vars }
+    results.push(...serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context)))
+    for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
+      results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
+    results.push(
+      ...dropProvisionedDatabases(
+        stored.snapshot.recipe,
+        {
+          projectRoot: worktree.repoRoot,
+          treeRoot: worktree.path,
+          commandRoot: context.treeRoot,
+          allocations: stored.snapshot.allocations?.databases ?? {},
+        },
+        stored.snapshot.databaseOwnership,
+      ),
+    )
+    if (stored.snapshot.recipe.compose) {
+      const preparedComposeContext = composeContext({
+        runId,
+        treeRoot: worktree.path,
+        commandRoot: context.treeRoot,
+        treeExists,
+      })
+      results.push(
+        preparedComposeContext.ok
+          ? downCompose(
+              stored.snapshot.recipe,
+              preparedComposeContext.context,
+              stored.snapshot.composeOwnership,
+            )
+          : preparedComposeContext.failure,
+      )
+    }
+    for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
+  } finally {
+    if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })
+    if (mainStack) {
+      const stopped = stopTrackedTeardownMainStack(mainStack)
+      stopFailure = stopped.failure
+      stopNote = stopped.note
+    }
+  }
+  return { results, stopFailure, stopNote }
+}
+
 export function teardownTrackedRecipe(
   input: {
-    runId: number
+    runId: string
     worktree: Worktree
     remove(): { removed: boolean; detail: string }
     stored?: {
       snapshot: RecipeSnapshot | null
       key: string | null
       seed: string | null
-      rootRunId?: number
+      rootRunId?: string
       projectName?: string | null
     }
     treeExists?: boolean
@@ -865,81 +1019,17 @@ export function teardownTrackedRecipe(
       : removal
   }
   const treeExists = input.treeExists ?? existsSync(input.worktree.path)
-  const vars = teardownVars({
-    path: input.worktree.path,
-    branch: input.worktree.branch,
-    base: stored.snapshot.source.commit,
-    key: stored.key,
-    seed: stored.seed,
-    main: input.worktree.repoRoot,
-    label: orchRunLabel(stored.rootRunId ?? readSnapshot(input.runId).rootRunId),
+  const { results, stopFailure, stopNote } = runTrackedTeardown({
+    runId: input.runId,
+    worktree: input.worktree,
+    stored: { ...stored, snapshot: stored.snapshot },
     treeExists,
-    allocations: stored.snapshot.allocations,
-    compose: composeVariableIdentity(stored.snapshot.recipe, stored.projectName, stored.rootRunId),
+    runStep,
+    runUndo,
   })
-  const temporaryCwd = treeExists ? null : mkdtempSync(join(tmpdir(), 'orch-teardown-'))
-  const context = { treeRoot: temporaryCwd ?? input.worktree.path, vars }
-  let results: StepResult[]
-  try {
-    results = serveUndoPlan(stored.snapshot.recipe).map((step) => runUndo(step, context))
-    for (const { step, phase } of destroyPlan(stored.snapshot.recipe))
-      results.push(phase === 'run' ? runStep(step, context) : runUndo(step, context))
-    results.push(
-      ...dropProvisionedDatabases(
-        stored.snapshot.recipe,
-        {
-          projectRoot: input.worktree.repoRoot,
-          treeRoot: input.worktree.path,
-          commandRoot: context.treeRoot,
-          allocations: stored.snapshot.allocations?.databases ?? {},
-        },
-        stored.snapshot.databaseOwnership,
-      ),
-    )
-    if (stored.snapshot.recipe.compose) {
-      const preparedComposeContext = composeContext({
-        runId: input.runId,
-        treeRoot: input.worktree.path,
-        commandRoot: context.treeRoot,
-        treeExists,
-      })
-      results.push(
-        preparedComposeContext.ok
-          ? downCompose(
-              stored.snapshot.recipe,
-              preparedComposeContext.context,
-              stored.snapshot.composeOwnership,
-            )
-          : preparedComposeContext.failure,
-      )
-    }
-    for (const step of stored.snapshot.recipe.verifyDown ?? []) results.push(runStep(step, context))
-  } finally {
-    if (temporaryCwd) rmSync(temporaryCwd, { recursive: true, force: true })
-  }
-  const failed = lifecycleFailure(results)
-  if (failed) {
-    return {
-      removed: false,
-      detail: `recipe teardown failed at "${failed.name}" (${failed.phase}): ${failed.detail}`,
-    }
-  }
-  writeTransaction(() => {
-    const owner = db()
-      .query('SELECT COALESCE(parent_run_id,id) root_run_id FROM run WHERE id=?')
-      .get(input.runId) as { root_run_id: number } | null
-    if (owner) {
-      settleClaims(db(), {
-        rootRunId: owner.root_run_id,
-        kind: 'database',
-        state: 'released',
-        settledAt: nowIso(),
-        detail: 'tracked recipe teardown completed',
-      })
-      db()
-        .query("UPDATE run SET resource_teardown='done' WHERE id=? AND resource_teardown='pending'")
-        .run(owner.root_run_id)
-    }
-  })
-  return input.remove()
+  const failure = trackedTeardownFailure(results, stopFailure, stopNote)
+  if (failure) return { removed: false, detail: failure }
+  settleTrackedTeardown(input.runId)
+  const removal = input.remove()
+  return stopNote ? { ...removal, detail: `${removal.detail}; ${stopNote}` } : removal
 }

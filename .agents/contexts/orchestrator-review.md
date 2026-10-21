@@ -30,6 +30,8 @@ A project that keeps its own review evidence declares the command that writes it
 
 Reviews are recorded when they happen and begin incomplete. Triage is a later act by the architect: each finding becomes accepted, modified, rejected, or skipped, and a review may be completed only after every finding is triaged. Thus an untriaged review remains visible rather than becoming indistinguishable from one that never ran.
 
+A findings lens carries bounded rejected findings from every earlier completed review round on the same project branch, suppresses them while their locations are unchanged, and re-judges them only when the code changed or new evidence reopens the ruling.
+
 A findings run records that incomplete review itself when its parsed reply terminalises. `bottega score` is the close-out verb: it records the score, review grades, finding triage, review completion and any pair verdict together. A pair means the same task: root runs with the same job and identical caller-prompt hash, and for findings work the same lens; their input trees must also match when both runs recorded one.
 
 **Evidence identity is one tuple:** the caller prompt (`spec_sha`), the change (stable patch-id plus touched path set), the lens, and the effective model. Gates, pair offers, voids, reminders and routing each consume the dimensions relevant to their question from that tuple; none substitutes bound-prompt hash, tree identity, agent name or row status for one of them.
@@ -45,6 +47,8 @@ Precision measures false positives among findings raised. It says nothing about 
 `bottega run start` detaches so concurrent review can run.
 
 Review breadth follows a tier computed as the higher of risk and cognitive size (`review-tier.ts:classifyReviewTier`). Risk comes from the surface touched, never from line count. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Bottega's mapping from change shape and tier to lenses is its `review` register setting, read with `bottega review tier`.
+
+When a project's review declaration requests a second opinion at the applicable tier, run that lens again after its first result on the same tip with `--distinct-from` naming the first run so a different model produces the second result, and count both results toward the review.
 
 The round ceiling and when to re-lens are always-on canon in `.agents/rules/20-build-and-buy.md`. Small and formatting findings are fixed inline in the same round, without re-review. Speculation is dropped in triage as `below-bar`; file it only when it is high or critical, or observed in a real run.
 
@@ -72,7 +76,7 @@ The project's review declaration decides the applicable lenses, and the always-o
 
 ## Admission
 
-Run the local gate on the reviewed branch, push it, and open a GitHub pull request. GitHub is the admission queue and squash-merge folds checkpoint commits. Merge conflicts, including migration-journal collisions, are resolved in the branch and gated again. Merge on GitHub; afterwards the main checkout pulls the landing branch and runs migrations. Carry a still-valid review pin rather than re-lensing it. Rebase a branch that has fallen behind trunk in the same breath as its resume or lens dispatch; the harness refuses a stale caller. A red gate is a real finding: fix it or report it, without a retry path that can turn the same failure green.
+Run the local gate on the reviewed branch, push it, and open a GitHub pull request. CI runs the suite and GitHub's merge queue admits the pull request, squash-merging so checkpoint commits fold. Merge conflicts, including migration-journal collisions, are resolved in the branch and gated again. Merge on GitHub; afterwards the main checkout pulls the landing branch and runs migrations. Carry a still-valid review pin rather than re-lensing it. Rebase a branch that has fallen behind trunk in the same breath as its resume or lens dispatch; the harness refuses a stale caller. A red gate is a real finding: fix it or report it, without a retry path that can turn the same failure green.
 
 ## End
 

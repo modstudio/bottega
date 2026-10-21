@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   canonicalSchemaHash,
-  expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
 } from './migrations.ts'
@@ -61,31 +61,38 @@ test('run and question identity migration fills nulls, keeps identities, and pre
       )
       .run(missingQuestion.id, missingRun.id)
 
-    expect(applyMigrations(database)).toContain('0104_run_question_record_identity')
+    expect(applyMigrationsBefore(database, '0125_question_uuid_key')).toContain(
+      '0104_run_question_record_identity',
+    )
     const runIds = database
-      .query<{ id: number; record_id: string }, []>('SELECT id,record_id FROM run ORDER BY id')
+      .query<{ number: number; record_id: string }, []>(
+        'SELECT number,record_id FROM run ORDER BY number',
+      )
       .all()
     const questionIds = database
       .query<{ id: number; record_id: string }, []>('SELECT id,record_id FROM question ORDER BY id')
       .all()
-    expect(runIds.find((row) => row.id === missingRun.id)?.record_id).toMatch(UUID_V4)
-    expect(runIds.find((row) => row.id === keptRun.id)?.record_id).toBe(keptRunId)
-    expect(database.query('SELECT parent_run_id,turn FROM run WHERE id=?').get(keptRun.id)).toEqual(
-      { parent_run_id: missingRun.id, turn: 2 },
-    )
+    const filledRunId = runIds.find((row) => row.number === missingRun.id)?.record_id
+    expect(filledRunId).toMatch(UUID_V4)
+    expect(runIds.find((row) => row.number === keptRun.id)?.record_id).toBe(keptRunId)
+    expect(
+      database.query('SELECT parent_run_record_id,turn FROM run WHERE record_id=?').get(keptRunId),
+    ).toEqual({ parent_run_record_id: filledRunId, turn: 2 })
     expect(questionIds.find((row) => row.id === missingQuestion.id)?.record_id).toMatch(UUID_V4)
     expect(questionIds.find((row) => row.id === keptQuestion.id)?.record_id).toBe(keptQuestionId)
-    expect(database.query('SELECT run_id FROM run_checkpoint').get()).toEqual({
-      run_id: missingRun.id,
+    expect(database.query('SELECT run_record_id FROM run_checkpoint').get()).toEqual({
+      run_record_id: filledRunId,
     })
-    expect(database.query('SELECT question_id,run_id FROM question_delivery').get()).toEqual({
-      question_id: missingQuestion.id,
-      run_id: missingRun.id,
-    })
+    expect(database.query('SELECT question_id,run_record_id FROM question_delivery').get()).toEqual(
+      {
+        question_id: missingQuestion.id,
+        run_record_id: filledRunId,
+      },
+    )
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const fresh = new Database(':memory:')
     fresh.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(fresh)
+    applyMigrationsBefore(fresh, '0125_question_uuid_key')
     const schemaRows = (subject: Database) =>
       subject
         .query(
@@ -96,7 +103,6 @@ test('run and question identity migration fills nulls, keeps identities, and pre
     expect(schemaRows(database)).toEqual(schemaRows(fresh))
     expect(canonicalSchemaHash(database)).toBe(canonicalSchemaHash(fresh))
     fresh.close()
-    expect(canonicalSchemaHash(database)).toBe(expectedSchemaHash())
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

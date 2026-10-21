@@ -5,15 +5,10 @@ import { readRunsById } from './orch.ts'
 import { indexRunAnswers, runRef } from './reconcile.ts'
 
 const FIXTURE_SESSIONS = new Set(['sess-a', 'sess-b', 'sess-old', 'sess-probe'])
+const fixtureRunRecordId = (id: number) => `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
 const FIXTURE_INTERVAL_REFS = new Set([
-  'orch:9103',
-  'orch:9105',
-  'orch:9108',
-  'orch:9201',
-  'orch:9401',
-  'orch:9901',
-  'orch:10001',
-  'orch:9301:turn:9302',
+  ...[9103, 9105, 9108, 9201, 9401, 9901, 10001].map((id) => `orch:${fixtureRunRecordId(id)}`),
+  `orch:${fixtureRunRecordId(9301)}:turn:${fixtureRunRecordId(9302)}`,
 ])
 const FIXTURE_TASKS = [
   { key: 'ALP-899', project: 'alpha', title: 'No assignment field' },
@@ -25,6 +20,7 @@ const FIXTURE_TASKS = [
 ] as const
 
 export type FixtureQuestion = {
+  record_id: string
   question_id: number
   run_ref: string
   root_ref: string
@@ -61,7 +57,7 @@ export function fixtureQuestionsWithoutRuns(
 
 export function fixtureIntervalsWithoutRuns(
   intervals: FixtureInterval[],
-  answersById: ReadonlyMap<number, unknown>,
+  answersById: ReadonlyMap<string, unknown>,
 ): FixtureInterval[] {
   return intervals.filter((interval) => {
     if (interval.source !== 'orch') return false
@@ -95,7 +91,7 @@ export async function reclaimFixtureQuestions(
   const database = db()
   const questions = database
     .query(
-      'SELECT question_id,run_ref,root_ref,task_key,session_id FROM question ORDER BY question_id',
+      'SELECT record_id,number question_id,run_ref,root_ref,task_key,session_id FROM question ORDER BY number',
     )
     .all() as FixtureQuestion[]
   const refs = new Set(
@@ -145,8 +141,8 @@ export async function reclaimFixtureQuestions(
       .all() as FixtureTask[]
     selectedTasks = fixtureTasksToReclaim(tasks, registeredProjects)
     if (selected.length || selectedIntervals.length || selectedTasks.length) {
-      const removeQuestion = connection.query('DELETE FROM question WHERE question_id=?')
-      for (const row of selected) removeQuestion.run(row.question_id)
+      const removeQuestion = connection.query('DELETE FROM question WHERE record_id=?')
+      for (const row of selected) removeQuestion.run(row.record_id)
       const removeInterval = connection.query('DELETE FROM interval WHERE record_id=?')
       for (const interval of selectedIntervals) removeInterval.run(interval.record_id)
       const removeTask = connection.query('DELETE FROM task WHERE record_id=?')

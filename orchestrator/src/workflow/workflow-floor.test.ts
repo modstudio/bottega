@@ -2,11 +2,14 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   catalogueFloors,
+  decideCloseFloors,
   decideFloorSatisfaction,
   type Floor,
   type FloorSatisfactionInput,
+  mayCloseOnAgentSelfRuling,
   type OpenObligation,
   parseArtifactRef,
+  reentryBoundRefusal,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 
@@ -40,17 +43,18 @@ const answeredRuling: ValidatedEvidence = {
   },
 }
 const gradedReview: ValidatedEvidence = {
-  review: { id: 4, allFindingsDisposed: true, allLensesGraded: true },
+  review: { recordId: 'review-4', number: 4, allFindingsDisposed: true, allLensesGraded: true },
 }
 const passingGate: ValidatedEvidence = {
   gate: { id: 2, finished: true, exitCode: 0, project: 'fixture', commit: 'abc' },
   tree: { project: 'fixture', commit: 'abc' },
 }
-const passingRun: ValidatedEvidence = { run: { id: 8, terminal: true, exitCode: 0 } }
+const passingRun: ValidatedEvidence = { run: { id: '8', terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
   exec: {
     id: 4,
+    command: `${PLATFORM_SLUG} pr create`,
     exitCode: 0,
     sessionMatches: true,
     sessionAdoptedCursor: false,
@@ -76,6 +80,75 @@ const decide = (input: Partial<FloorSatisfactionInput> & Pick<FloorSatisfactionI
     openObligations: [],
     ...input,
   })
+
+test('a ruling outcome replaces ordinary floors with a ruling floor', () => {
+  const step = {
+    floor: ['recorded-artifact'] as const,
+    rulingOutcomes: ['fix'],
+    operatorRuling: false,
+  }
+  expect(decideCloseFloors(step, 'fix').map((floor) => floor.kind)).toEqual(['ruling'])
+  expect(decideCloseFloors(step, 'clear').map((floor) => floor.kind)).toEqual(['recorded-artifact'])
+  expect(decideCloseFloors(step, 'clear', true).map((floor) => floor.kind)).toEqual(['ruling'])
+  expect(mayCloseOnAgentSelfRuling(step, 'fix')).toBe(true)
+  expect(mayCloseOnAgentSelfRuling(step, 'clear')).toBe(false)
+  expect(mayCloseOnAgentSelfRuling(step, 'clear', true)).toBe(true)
+  expect(mayCloseOnAgentSelfRuling({ ...step, operatorRuling: true }, 'fix')).toBe(false)
+})
+
+test('an outcome-specific exit code replaces the command-exit default for that close', () => {
+  const step = {
+    floor: ['command-exit', 'recorded-artifact'] as const,
+    expectedExitCodes: { merged: 0, 'merged-with-residue': 20 },
+  }
+  expect(decideCloseFloors(step, 'merged')[0]?.expectedExitCode).toBe(0)
+  expect(decideCloseFloors(step, 'merged-with-residue')[0]?.expectedExitCode).toBe(20)
+  expect(decideCloseFloors(step, undefined)[0]?.expectedExitCode).toBe(0)
+})
+
+test('the re-entry bound refusal names await and a non-re-entering outcome', () => {
+  expect(reentryBoundRefusal('changed', ['changed', 'clean'])).toContain(
+    `${PLATFORM_SLUG} workflow await`,
+  )
+  expect(reentryBoundRefusal('changed', ['changed', 'clean'])).toContain(
+    'close with a non-re-entering outcome (clean)',
+  )
+})
+
+test('a re-entry bound accepts only a ruling answered after the last re-entry', () => {
+  const after = '2026-10-20T12:00:00.000Z'
+  const bound = (answeredAt: string | null): ValidatedEvidence => ({
+    ruling: {
+      id: 9,
+      answered: true,
+      answeredByOperator: false,
+      boundToCursor: true,
+      boundToStep: true,
+      answeredAt,
+    },
+  })
+  expect(
+    decide({
+      floors: [ruling],
+      evidence: bound('2026-10-20T12:00:00.001Z'),
+      freshRulingAfter: after,
+    }),
+  ).toMatchObject({ action: 'allow' })
+  expect(decide({ floors: [ruling], evidence: bound(after), freshRulingAfter: after }).action).toBe(
+    'refuse',
+  )
+  expect(
+    decide({
+      floors: [ruling],
+      evidence: bound('2026-10-20T11:59:59.999Z'),
+      freshRulingAfter: after,
+    }).action,
+  ).toBe('refuse')
+  expect(decide({ floors: [ruling], evidence: gradedReview, freshRulingAfter: after }).action).toBe(
+    'refuse',
+  )
+  expect(decide({ floors: [ruling], evidence: gradedReview }).action).toBe('allow')
+})
 
 test('note-only enforcement closes without evidence', () => {
   expect(decide({ floors: [ruling], enforcement: 'note-only' })).toEqual({
@@ -105,7 +178,8 @@ test('an unfinished review round refusal names every unfinished review id', () =
       floors: [ruling],
       evidence: {
         review: {
-          id: 4,
+          recordId: 'review-4',
+          number: 4,
           allFindingsDisposed: true,
           allLensesGraded: false,
           unfinishedReviewIds: [5, 7],
@@ -221,19 +295,19 @@ test('a terminal run with the expected exit satisfies command-exit', () => {
 test('a run offered to an artifact floor names the same run artifact form', () => {
   const decision = decide({
     floors: [artifact],
-    evidence: { runOffered: 8, run: { id: 8, terminal: true, exitCode: 0 } },
+    evidence: { runOffered: 8, run: { id: '8', terminal: true, exitCode: 0 } },
   })
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
 test('a run artifact offered to a command floor names the same run command form', () => {
   const decision = decide({
     floors: [commandExit],
-    evidence: { artifactRunOffered: 8, artifact: { ref: '8', exists: true } },
+    evidence: { artifactRunOffered: '8', artifact: { ref: '8', exists: true } },
   })
   expect(decision).toEqual({
     action: 'refuse',
@@ -257,6 +331,7 @@ test('an exec with the expected exit satisfies command-exit', () => {
       evidence: {
         exec: {
           id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
           exitCode: 1,
           sessionMatches: true,
           sessionAdoptedCursor: false,
@@ -267,12 +342,108 @@ test('an exec with the expected exit satisfies command-exit', () => {
   ).toBe('refuse')
 })
 
+test('a failed exec cannot use the recorded-artifact alternative on a command-exit step', () => {
+  expect(
+    decide({
+      floors: [commandExit, artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: {
+          id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
+      },
+    }),
+  ).toEqual({
+    action: 'refuse',
+    message: `command-exit evidence exec:4 command \`${PLATFORM_SLUG} pr create\` exited 1; rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
+  })
+})
+
+test('a passing gate wins over a failed exec recorded as an artifact', () => {
+  expect(
+    decide({
+      floors: [commandExit, artifact],
+      evidence: {
+        ...passingGate,
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('a passing terminal run wins over a failed exec recorded as an artifact', () => {
+  expect(
+    decide({
+      floors: [commandExit, artifact],
+      evidence: {
+        ...passingRun,
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('an incidental failed exec does not prevent deferral of command-exit', () => {
+  expect(
+    decide({
+      floors: [deferrableExit],
+      evidence: {
+        deferReason: 'merge after landing',
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }),
+  ).toMatchObject({
+    action: 'allow',
+    defer: { floor: 'command-exit', reason: 'merge after landing' },
+  })
+})
+
+test('an exec matching a nonzero expected exit satisfies command-exit', () => {
+  expect(
+    decide({
+      floors: [{ ...commandExit, expectedExitCode: 1 }, artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('a failed exec remains valid for a recorded-artifact-only step', () => {
+  expect(
+    decide({
+      floors: [artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: {
+          id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
 test('an exec from another session is refused with the rerun remedy', () => {
   const decision = decide({
     floors: [commandExit],
     evidence: {
       exec: {
         id: 4,
+        command: 'true',
         exitCode: 0,
         sessionMatches: false,
         sessionAdoptedCursor: false,
@@ -293,6 +464,7 @@ test("an adopting session's exec satisfies command-exit", () => {
       evidence: {
         exec: {
           id: 4,
+          command: 'true',
           exitCode: 0,
           sessionMatches: false,
           sessionAdoptedCursor: true,
@@ -309,6 +481,7 @@ test('an exec older than the active step is refused with the rerun remedy', () =
     evidence: {
       exec: {
         id: 4,
+        command: 'true',
         exitCode: 0,
         sessionMatches: true,
         sessionAdoptedCursor: false,
@@ -790,8 +963,11 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('task:DEV-977')).toEqual({ kind: 'task', key: 'DEV-977' })
   expect(parseArtifactRef('probe:12')).toEqual({ kind: 'probe', id: 12 })
   expect(parseArtifactRef('exec:13')).toEqual({ kind: 'exec', id: 13 })
-  expect(parseArtifactRef('doc:3')).toEqual({ kind: 'doc', id: 3 })
-  expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: 8 })
+  expect(parseArtifactRef(`doc:project/${PLATFORM_SLUG}/uuid-keys`)).toEqual({
+    kind: 'doc',
+    address: `project/${PLATFORM_SLUG}/uuid-keys`,
+  })
+  expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: '8' })
   expect(parseArtifactRef('attached-text:14')).toEqual({ kind: 'attached-text', id: 14 })
   expect(parseArtifactRef('https://github.com/acme/app/pull/15')).toEqual({
     kind: 'pull-request',

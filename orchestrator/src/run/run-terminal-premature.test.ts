@@ -39,8 +39,7 @@ describe('premature final terminal integration', () => {
   test('does not classify a done writer when its diff was not measured', () => {
     expect(
       terminalPrematureFinalRefusal({
-        readerJob: false,
-        output: '',
+        readerReply: null,
         parsedReview: null,
         contract: {
           status: 'done',

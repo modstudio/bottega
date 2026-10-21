@@ -15,15 +15,19 @@ import { claimNotices, postNotice, reapBoardMessages } from './board-service.ts'
 
 function fixtureProject() {
   const cwd = resolve(import.meta.dir, '../../..')
-  db().query("INSERT INTO project(name,path,settings) VALUES ('claims',?,'{}')").run(cwd)
+  db()
+    .query(
+      "INSERT INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'claims',?,'{}')",
+    )
+    .run(cwd)
   return { cwd, project: 'claims' }
 }
 
 function presence(session: string, task: string | null, clock: number) {
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,'claude-code','architect','test','claims','/tmp',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES (?,'claude-code','architect','test','claims',(SELECT record_id FROM project WHERE name='claims'),'/tmp',?,?)`,
     )
     .run(session, task, new Date(clock).toISOString())
 }
@@ -37,11 +41,7 @@ test('a created claim carries a version-7 record id', () => {
   const clock = Date.now()
   presence('id-holder', null, clock)
   const taken = takeClaim({ subject: 'path:src/**' }, env('id-holder'), clock, cwd)
-  expect(
-    db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_claim WHERE id=?')
-      .get(taken.id)?.record_id,
-  ).toMatch(UUID_V7)
+  expect(taken.recordId).toMatch(UUID_V7)
 })
 
 test('a conflicting take is refused and tells the holder with an interrupting notice', () => {
@@ -64,11 +64,11 @@ test('a lapsed claim is taken over, linked, closed, and its holder is told', () 
   const first = takeClaim({ subject: 'resource:gpu', durationMs: 1 }, env('holder'), clock, cwd)
   const next = takeClaim({ subject: 'resource:gpu' }, env('other'), clock + 2, cwd)
   expect(next.action).toBe('taken-over')
-  expect(next.previousClaimIds).toEqual([first.id])
+  expect(next.previousClaimRecordIds).toEqual([first.recordId])
   expect(listClaims(undefined, true, env('holder'), clock + 2, cwd).claims[0]).toMatchObject({
-    id: first.id,
+    recordId: first.recordId,
     closeReason: 'lapsed',
-    supersededByClaimId: next.id,
+    supersededByClaimRecordId: next.recordId,
   })
   expect(claimNoticesFor('holder', clock + 3)).toHaveLength(1)
 })
@@ -95,8 +95,8 @@ test('a holder may take an overlapping path claim without closing or notifying i
   const broad = takeClaim({ subject: 'path:src/**' }, env('holder'), clock + 1, cwd)
   expect(broad.action).toBe('taken')
   expect(listClaims(undefined, false, env('holder'), clock + 1, cwd).claims).toEqual([
-    expect.objectContaining({ id: narrow.id, live: true }),
-    expect.objectContaining({ id: broad.id, live: true }),
+    expect.objectContaining({ recordId: narrow.recordId, live: true }),
+    expect.objectContaining({ recordId: broad.recordId, live: true }),
   ])
   expect(claimNoticesFor('holder', clock + 2)).toEqual([])
 })
@@ -112,7 +112,7 @@ test('an overlapping take ignores the holder own claim but refuses and tells ano
     /claim conflicts with: session other/,
   )
   expect(listClaims(undefined, false, env('holder'), clock + 1, cwd).claims).toContainEqual(
-    expect.objectContaining({ id: own.id, live: true }),
+    expect.objectContaining({ recordId: own.recordId, live: true }),
   )
   expect(claimNoticesFor('holder', clock + 2)).toEqual([])
   expect(claimNoticesFor('other', clock + 2)).toHaveLength(1)
@@ -136,11 +136,11 @@ test('a broad path takeover closes and links every stale conflict', () => {
     cwd,
   )
   const broad = takeClaim({ subject: 'path:src/**' }, env('requester'), clock + 2, cwd)
-  expect(broad.previousClaimIds).toEqual([first.id, second.id])
+  expect(broad.previousClaimRecordIds).toEqual([first.recordId, second.recordId])
   const history = listClaims(undefined, true, env('requester'), clock + 2, cwd).claims
-  expect(history.slice(0, 2).map((claim) => claim.supersededByClaimId)).toEqual([
-    broad.id,
-    broad.id,
+  expect(history.slice(0, 2).map((claim) => claim.supersededByClaimRecordId)).toEqual([
+    broad.recordId,
+    broad.recordId,
   ])
   expect(claimNoticesFor('first-holder', clock + 3)).toHaveLength(1)
   expect(claimNoticesFor('second-holder', clock + 3)).toHaveLength(1)
@@ -149,25 +149,25 @@ test('a broad path takeover closes and links every stale conflict', () => {
 test('a tied claim follows the chain latest turn and renewal restarts its lease', () => {
   const { cwd } = fixtureProject()
   const clock = Date.now()
-  const root = db()
+  const runId = newRecordId()
+  db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
-    .run(new Date(clock).toISOString())
-  const runId = Number(root.lastInsertRowid)
+    .run(runId, new Date(clock).toISOString())
   const claim = takeClaim({ subject: 'task:DEV-1', runId }, env('holder'), clock, cwd)
-  const renewed = renewClaim(claim.id, env('holder'), clock + 100)
+  const renewed = renewClaim(claim.recordId, env('holder'), clock + 100)
   expect(Date.parse(renewed.lapsesAt)).toBe(Date.parse(claim.lapsesAt) + 100)
-  db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+  db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
   expect(listClaims(undefined, false, env('holder'), clock + 101, cwd).claims).toEqual([])
   const next = takeClaim({ subject: 'task:DEV-1' }, env('other'), clock + 101, cwd)
   expect(next.action).toBe('taken-over')
   expect(listClaims(undefined, true, env('holder'), clock + 101, cwd).claims[0]).toMatchObject({
-    id: claim.id,
+    recordId: claim.recordId,
     closeReason: 'run-ended',
-    supersededByClaimId: next.id,
+    supersededByClaimRecordId: next.recordId,
   })
 })
 
@@ -176,10 +176,10 @@ test('a foreign architect cannot release, and release-task closes only that task
   const clock = Date.now()
   const first = takeClaim({ subject: 'task:DEV-1' }, env('holder'), clock, cwd)
   takeClaim({ subject: 'task:DEV-2' }, env('other'), clock, cwd)
-  expect(() => releaseClaim(first.id, env('other'), clock + 1)).toThrow(/holder or operator/)
+  expect(() => releaseClaim(first.recordId, env('other'), clock + 1)).toThrow(/holder or operator/)
   expect(releaseTaskClaims('DEV-1', project, {}, clock + 2)).toEqual({ released: 1 })
   expect(listClaims(project, true, {}, clock + 2).claims).toEqual([
-    expect.objectContaining({ id: first.id, closeReason: 'task-closed' }),
+    expect.objectContaining({ recordId: first.recordId, closeReason: 'task-closed' }),
     expect.objectContaining({ subject: { kind: 'task', value: 'DEV-2' }, live: true }),
   ])
 })
@@ -190,7 +190,7 @@ test('an architect environment may release task claims', () => {
   const claim = takeClaim({ subject: 'task:DEV-1' }, env('holder'), clock, cwd)
   expect(releaseTaskClaims('DEV-1', project, env('architect'), clock + 1)).toEqual({ released: 1 })
   expect(listClaims(undefined, true, env('architect'), clock + 1, cwd).claims[0]).toMatchObject({
-    id: claim.id,
+    recordId: claim.recordId,
     closeReason: 'task-closed',
   })
 })
@@ -218,7 +218,9 @@ test('claims survive board message reaping', () => {
   const clock = Date.now()
   const claim = takeClaim({ subject: 'resource:durable evidence' }, env('holder'), clock, cwd)
   reapBoardMessages(clock + 100 * 24 * 60 * 60 * 1000)
-  expect(listClaims(undefined, true, env('holder'), clock + 1, cwd).claims[0]!.id).toBe(claim.id)
+  expect(listClaims(undefined, true, env('holder'), clock + 1, cwd).claims[0]!.recordId).toBe(
+    claim.recordId,
+  )
 })
 
 test('task audience reaches its claim holder, current architect, and live launch key only', () => {
@@ -234,10 +236,11 @@ test('task audience reaches its claim holder, current architect, and live launch
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')
+       RETURNING record_id`,
     )
-    .run(new Date(clock).toISOString())
+    .get(new Date(clock).toISOString()) as { record_id: string }
   const posted = postNotice(
     { audience: 'task:DEV-9', title: 'Task notice', body: 'Coordination fact.' },
     {},
@@ -247,12 +250,14 @@ test('task audience reaches its claim holder, current architect, and live launch
   expect(posted.reached).toBe(3)
   expect(
     db()
-      .query('SELECT reader_session FROM board_receipt WHERE message_id=? ORDER BY reader_session')
-      .all(posted.id),
+      .query(
+        'SELECT reader_session FROM board_receipt WHERE message_record_id=? ORDER BY reader_session',
+      )
+      .all(posted.recordId),
   ).toEqual([
     { reader_session: 'claim-holder' },
     { reader_session: 'current-task' },
-    { reader_session: `run:${Number(run.lastInsertRowid)}` },
+    { reader_session: `run:${run.record_id}` },
   ])
 })
 
@@ -281,16 +286,16 @@ test('a stale architect presence with a live task claim reaches only that task a
 test('a task claim tied to an ended chain does not put its holder in the task audience', () => {
   const { cwd } = fixtureProject()
   const clock = Date.now()
-  const root = db()
+  const runId = newRecordId()
+  db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
-    .run(new Date(clock).toISOString())
-  const runId = Number(root.lastInsertRowid)
+    .run(runId, new Date(clock).toISOString())
   takeClaim({ subject: 'task:DEV-9', runId }, env('holder'), clock, cwd)
-  db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+  db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
   const posted = postNotice(
     {
       audience: 'task:DEV-9',

@@ -50,10 +50,10 @@ describe('reclassify-failures', () => {
       kind: 'other',
       startedAt,
     })
-    db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, successful)
-    db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, failed)
-    db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, nullKind)
-    db().query('UPDATE run SET error=? WHERE id=?').run('abandoned by architect', unrelated)
+    db().query('UPDATE run SET error=? WHERE record_id=?').run(quotaError, successful)
+    db().query('UPDATE run SET error=? WHERE record_id=?').run(quotaError, failed)
+    db().query('UPDATE run SET error=? WHERE record_id=?').run(quotaError, nullKind)
+    db().query('UPDATE run SET error=? WHERE record_id=?').run('abandoned by architect', unrelated)
 
     const before = candidates('review-lens').find((c) => c.agent === 'grok')!
     expect(before.failures).toBe(2)
@@ -61,25 +61,33 @@ describe('reclassify-failures', () => {
 
     const dry = runCli('reclassify-failures', '--dry-run')
     expect(dry.exitCode).toBe(0)
-    expect(db().query('SELECT failure_kind FROM run WHERE id=?').get(failed)).toEqual({
+    expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(failed)).toEqual({
       failure_kind: 'other',
     })
 
     const applied = runCli('reclassify-failures')
     expect(applied.exitCode).toBe(0)
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failed)).toEqual({
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(failed),
+    ).toEqual({
       status: 'failed',
       failure_kind: 'quota',
     })
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(successful)).toEqual({
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(successful),
+    ).toEqual({
       status: 'ok',
       failure_kind: 'other',
     })
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(nullKind)).toEqual({
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(nullKind),
+    ).toEqual({
       status: 'failed',
       failure_kind: 'quota',
     })
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(unrelated)).toEqual({
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(unrelated),
+    ).toEqual({
       status: 'stale',
       failure_kind: 'other',
     })
@@ -91,7 +99,7 @@ describe('reclassify-failures', () => {
 
     const again = runCli('reclassify-failures')
     expect(again.exitCode).toBe(0)
-    expect(db().query('SELECT failure_kind FROM run WHERE id=?').get(failed)).toEqual({
+    expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(failed)).toEqual({
       failure_kind: 'quota',
     })
   }, 20_000)

@@ -6,10 +6,17 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
+import {
+  formatShipCleanup,
+  type ShipCleanupReport,
+  shipCleanup,
+} from '../ship-cleanup/ship-cleanup.ts'
+import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import {
   decideMergeAdmission,
@@ -20,6 +27,15 @@ import {
   type PullRequestCheck,
 } from './merge-decision.ts'
 import {
+  interpretMergeQueue,
+  MERGE_QUEUE_WAIT_MS,
+  type MergeQueueObservation,
+  type MergeQueueWaitState,
+  mergeQueueEnqueueFailureRemedy,
+  stepMergeQueueWait,
+} from './merge-queue-decision.ts'
+import { enqueuePullRequest, githubMergeQueueState } from './merge-queue-forge.ts'
+import {
   admissionDecision,
   type PullRequestChange,
   recordMergeAdmission,
@@ -28,6 +44,7 @@ import {
 } from './pr-admission.ts'
 
 export type PullRequestMergeFacts = {
+  nodeId: string
   number: number
   headCommit: string
   headBranch: string
@@ -56,7 +73,12 @@ export type PullRequestMergeAdapter = {
     decision: AdmissionDecision,
     prNumber: number,
     database: Database,
-  ): number | null
+  ): string | null
+  recordLandings?(
+    change: PullRequestChange,
+    pullRequest: PullRequestMergeFacts,
+    database: Database,
+  ): void
   merge(
     cwd: string,
     number: number,
@@ -64,6 +86,22 @@ export type PullRequestMergeAdapter = {
     subject: string,
     headCommit: string,
   ): string
+  queueState(cwd: string, nodeId: string): MergeQueueObservation
+  enqueue(cwd: string, number: number, headCommit: string): void
+  now(): number
+  wait(milliseconds: number): void
+  shipCleanup?(
+    project: string,
+    branch: string,
+    prNumber: number,
+    database: Database,
+  ): ShipCleanupReport
+}
+
+export const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
+export type PullRequestMergeOutcome = {
+  output: string
+  exitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE
 }
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
@@ -103,6 +141,7 @@ function parsed<T>(value: string, label: string): T {
 const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   view(cwd, target) {
     const value = parsed<{
+      id?: unknown
       number?: unknown
       headRefOid?: unknown
       headRefName?: unknown
@@ -118,13 +157,14 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
           'view',
           target,
           '--json',
-          'number,headRefOid,headRefName,baseRefName,title,state',
+          'id,number,headRefOid,headRefName,baseRefName,title,state',
         ],
         'pull-request lookup',
       ),
       'pull-request lookup',
     )
     if (
+      typeof value.id !== 'string' ||
       !Number.isSafeInteger(value.number) ||
       typeof value.headRefOid !== 'string' ||
       typeof value.headRefName !== 'string' ||
@@ -135,6 +175,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       throw new Error('pull-request lookup returned an unexpected JSON shape')
     }
     return {
+      nodeId: value.id,
       number: Number(value.number),
       headCommit: value.headRefOid,
       headBranch: value.headRefName,
@@ -201,6 +242,14 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   recordAdmission(change, decision, prNumber, database) {
     return recordMergeAdmission(change, decision, prNumber, database)
   },
+  recordLandings(change, pullRequest) {
+    recordMergeBranchLandings({
+      project: change.project,
+      taskBranch: pullRequest.headBranch,
+      admittedHead: pullRequest.headCommit,
+      number: pullRequest.number,
+    })
+  },
   merge(cwd, number, method, subject, headCommit) {
     successful(
       cwd,
@@ -230,12 +279,26 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     }
     return value.mergeCommit.oid
   },
+  queueState(cwd, nodeId) {
+    return githubMergeQueueState(cwd, nodeId)
+  },
+  enqueue(cwd, number, headCommit) {
+    enqueuePullRequest(cwd, number, headCommit)
+  },
+  now: Date.now,
+  wait(milliseconds) {
+    Bun.sleepSync(milliseconds)
+  },
+  shipCleanup(project, branch, _prNumber, database) {
+    return shipCleanup(branch, { project, confirmedLanded: true, database })
+  },
 }
 
 function collectMergeProof(
   pullRequest: PullRequestMergeFacts,
   landingBranch: string,
   requiredChecks: readonly string[],
+  mergeQueue: boolean,
   cwd: string,
   adapter: PullRequestMergeAdapter,
   database: Database,
@@ -261,10 +324,13 @@ function collectMergeProof(
       headCommit: pullRequest.headCommit,
       currentHeadCommit,
       landingBranch,
+      mergeQueue,
       gate: { recorded: false },
     }
   }
-  const landingState = adapter.landingState(cwd, pullRequest.headCommit, landingBranch)
+  const landingState = mergeQueue
+    ? { remoteLandingTip: '', mergeBase: '' }
+    : adapter.landingState(cwd, pullRequest.headCommit, landingBranch)
   const currentHeadCommit = adapter.view(cwd, String(pullRequest.number)).headCommit
   return {
     kind: 'local-gate',
@@ -272,10 +338,55 @@ function collectMergeProof(
     headCommit: pullRequest.headCommit,
     currentHeadCommit,
     landingBranch,
+    mergeQueue,
     gate: {
       recorded: true,
       ...landingState,
     },
+  }
+}
+
+function waitForQueuedMerge(
+  pullRequest: PullRequestMergeFacts,
+  cwd: string,
+  adapter: PullRequestMergeAdapter,
+): string {
+  const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
+  let waitState: MergeQueueWaitState = {
+    enqueueSubmitted: false,
+    activeEntryObserved: false,
+    dequeueObservedAt: null,
+  }
+  while (true) {
+    const state = interpretMergeQueue(adapter.queueState(cwd, pullRequest.nodeId))
+    const now = adapter.now()
+    const step = stepMergeQueueWait(pullRequest.number, waitState, state, now, deadline)
+    waitState = step.state
+    const action = step.action
+    if (action.action === 'complete') return action.mergeCommit
+    if (action.action === 'refuse') {
+      throw new Error(`refusing merge: ${action.refusal}; cleared by: ${action.remedy}`)
+    }
+    if (action.action === 'enqueue') {
+      enqueueForMergeQueue(pullRequest, cwd, adapter)
+      continue
+    }
+    adapter.wait(action.delay)
+  }
+}
+
+function enqueueForMergeQueue(
+  pullRequest: PullRequestMergeFacts,
+  cwd: string,
+  adapter: PullRequestMergeAdapter,
+): void {
+  try {
+    adapter.enqueue(cwd, pullRequest.number, pullRequest.headCommit)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(
+      `refusing merge: pull request #${pullRequest.number} could not be added to the merge queue: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
+    )
   }
 }
 
@@ -322,12 +433,50 @@ function collectMergeAdmission(
   }
 }
 
+function mergedPullRequestOutput(input: {
+  adapter: PullRequestMergeAdapter
+  database: Database
+  project: string
+  branch: string
+  prNumber: number
+  mergeCommit: string
+  landingRecordingError?: string
+}): PullRequestMergeOutcome {
+  if (input.landingRecordingError) {
+    return {
+      output: `${input.mergeCommit}\nlanding recording failed for ${input.branch}: ${input.landingRecordingError}; cleanup was not run`,
+      exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
+    }
+  }
+  if (!input.adapter.shipCleanup) return { output: input.mergeCommit, exitCode: 0 }
+  try {
+    const report = input.adapter.shipCleanup(
+      input.project,
+      input.branch,
+      input.prNumber,
+      input.database,
+    )
+    return {
+      output: `${input.mergeCommit}\n${formatShipCleanup(report)}`,
+      exitCode: report.verdict.clean ? 0 : MERGED_WITH_RESIDUE_EXIT_CODE,
+    }
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    return {
+      output:
+        `${input.mergeCommit}\nship cleanup failed for ${input.branch}: ${detail}; ` +
+        `retry: ${PLATFORM_SLUG} tree ship-cleanup ${input.branch}`,
+      exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
+    }
+  }
+}
+
 export function mergePullRequest(
   target: string,
   cwd = process.cwd(),
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
   database: Database = writableDb(),
-): string {
+): PullRequestMergeOutcome {
   const project = projectAt(cwd, database)
   if (!project) {
     throw new Error(
@@ -342,8 +491,11 @@ export function mergePullRequest(
     )
   }
 
+  let pullRequest: PullRequestMergeFacts
+  let mergeCommit: string
+  let admittedChange: PullRequestChange
   try {
-    const pullRequest = adapter.view(cwd, target)
+    pullRequest = adapter.view(cwd, target)
     const identityDecision = decidePullRequestIdentity({
       number: pullRequest.number,
       state: pullRequest.state,
@@ -357,10 +509,12 @@ export function mergePullRequest(
     if (!admission.decision.admitted) {
       throw new Error(`refusing merge: ${admission.decision.refusal}`)
     }
+    admittedChange = admission.checked!.change
     const input = collectMergeProof(
       pullRequest,
       landingBranch,
       release.requiredChecks,
+      release.mergeQueue ?? false,
       cwd,
       adapter,
       database,
@@ -373,14 +527,18 @@ export function mergePullRequest(
       pullRequest.number,
       database,
     )
-    const subject = `${pullRequest.title} (#${pullRequest.number})`
-    return adapter.merge(
-      cwd,
-      pullRequest.number,
-      release.mergeMethod,
-      subject,
-      pullRequest.headCommit,
-    )
+    if (release.mergeQueue) {
+      mergeCommit = waitForQueuedMerge(pullRequest, cwd, adapter)
+    } else {
+      const subject = `${pullRequest.title} (#${pullRequest.number})`
+      mergeCommit = adapter.merge(
+        cwd,
+        pullRequest.number,
+        release.mergeMethod,
+        subject,
+        pullRequest.headCommit,
+      )
+    }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
     if (message.startsWith('refusing merge:')) throw cause
@@ -388,4 +546,19 @@ export function mergePullRequest(
       `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
     )
   }
+  let landingRecordingError: string | undefined
+  try {
+    adapter.recordLandings?.(admittedChange!, pullRequest, database)
+  } catch (cause) {
+    landingRecordingError = cause instanceof Error ? cause.message : String(cause)
+  }
+  return mergedPullRequestOutput({
+    adapter,
+    database,
+    project: project.name,
+    branch: pullRequest.headBranch,
+    prNumber: pullRequest.number,
+    mergeCommit,
+    landingRecordingError,
+  })
 }

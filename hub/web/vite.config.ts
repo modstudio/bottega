@@ -21,16 +21,26 @@ try {
 export default defineConfig({
   base: '/',
   plugins: [tanstackRouter({ target: 'react', autoCodeSplitting: true }), react(), tailwindcss()],
-  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      // codemirror-lang-mermaid imports @lezer/common without declaring it.
+      '@lezer/common': path.resolve(__dirname, '../views/node_modules/@lezer/common'),
+    },
+  },
   server: {
-    proxy: Object.fromEntries(
-      ['/trpc', '/api'].map((route) => [
-        route,
-        {
-          target: `http://127.0.0.1:${hubPort}`,
-          changeOrigin: true,
-        },
-      ]),
-    ),
+    proxy: {
+      ...Object.fromEntries(
+        ['/trpc', '/api'].map((route) => [
+          route,
+          {
+            target: `http://127.0.0.1:${hubPort}`,
+            changeOrigin: true,
+          },
+        ]),
+      ),
+      // The login link signs the dev page in; its redirect is built from the Host it sees.
+      '/login': { target: `http://127.0.0.1:${hubPort}` },
+    },
   },
 })

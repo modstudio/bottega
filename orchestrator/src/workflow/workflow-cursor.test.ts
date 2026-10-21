@@ -1,11 +1,11 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
@@ -22,15 +22,14 @@ import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { promoteWorkflow, setWorkflow, showWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run(
     'fixture',
     '/fixture',
     'bun',
@@ -41,8 +40,7 @@ const database = () => {
       tracker: { protocol: 'hub' },
     }),
   )
-  return d
-}
+})
 
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
@@ -91,7 +89,7 @@ function installEvidence(
     (
       d
         .query<{ id: number }, []>(
-          `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+          `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
          VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/tmp/work','abc') RETURNING id`,
         )
         .get() as { id: number }
@@ -109,15 +107,25 @@ function installEvidence(
   const taskKey = key || 'DEV-822'
   d.query(
     `INSERT OR IGNORE INTO branch_landing_record
-      (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-     VALUES (?,?,?,?,?,?,?,?)`,
-  ).run(newRecordId(), project, `${taskKey}-work`, 'abc', 1, 'def', '2026-09-01', '2026-09-01')
+      (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+     VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?)`,
+  ).run(
+    newRecordId(),
+    project,
+    project,
+    `${taskKey}-work`,
+    'abc',
+    1,
+    'def',
+    '2026-09-01',
+    '2026-09-01',
+  )
   const ruling = d
-    .query<{ id: number }, (string | number | null)[]>(
+    .query<{ number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
+        (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
          workflow_step_ordinal,workflow_step_slug)
-       VALUES ('${newRecordId()}',?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING number`,
     )
     .get(
       row.id,
@@ -127,8 +135,8 @@ function installEvidence(
       '2026-09-01',
       row.ordinal + 1,
       row.step_slug,
-    ) as { id: number }
-  return { gate, artifact: `probe:${probe}`, ruling: ruling.id, task: taskKey }
+    ) as { number: number }
+  return { gate, artifact: `probe:${probe}`, ruling: ruling.number, task: taskKey }
 }
 
 function closeStep(
@@ -206,7 +214,7 @@ describe('workflow cursor adapter', () => {
 
   test('next advances with a rebound argument from the pinned workflow and records the event', () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'rebind-fixture',
       {
         title: 'Rebind fixture',
@@ -229,7 +237,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('rebind-fixture', draft.n, 'test fixture', 'test', d)
+    promoteWorkflowLocal('rebind-fixture', draft.n, 'test fixture', 'test', d)
     composeWorkflowWithCursor(
       'rebind-fixture',
       'fixture',
@@ -285,8 +293,8 @@ describe('workflow cursor adapter', () => {
         },
       ],
     }
-    const original = setWorkflow('policy-fixture', definition, 'test fixture', 'test', d)
-    promoteWorkflow('policy-fixture', original.n, 'test fixture', 'test', d)
+    const original = setWorkflowLocal('policy-fixture', definition, 'test fixture', 'test', d)
+    promoteWorkflowLocal('policy-fixture', original.n, 'test fixture', 'test', d)
     composeWorkflowWithCursor(
       'policy-fixture',
       'fixture',
@@ -295,7 +303,7 @@ describe('workflow cursor adapter', () => {
       context,
       d,
     )
-    const current = setWorkflow(
+    const current = setWorkflowLocal(
       'policy-fixture',
       {
         ...definition,
@@ -307,7 +315,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('policy-fixture', current.n, 'test fixture', 'test', d)
+    promoteWorkflowLocal('policy-fixture', current.n, 'test fixture', 'test', d)
 
     expect(
       closeStep(
@@ -526,7 +534,7 @@ describe('workflow cursor adapter', () => {
 
   test('keyless cursor finish text names its mode', () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'keyless-fixture',
       {
         title: 'Keyless fixture',
@@ -545,7 +553,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('keyless-fixture', draft.n, 'test fixture', 'test', d)
+    promoteWorkflowLocal('keyless-fixture', draft.n, 'test fixture', 'test', d)
     const keylessArgs = {}
     const keylessContext = { session: 'keyless-session' }
     const composition = composeWorkflowWithCursor(
@@ -844,7 +852,7 @@ describe('workflow cursor adapter', () => {
     getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
     closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const currentCatalogue = productionStepCatalogue(d).definition
-    const catalogueDraft = setStepCatalogue(
+    const catalogueDraft = setStepCatalogueLocal(
       {
         steps: currentCatalogue.steps,
         sequences: [{ slug: 'later', title: 'Later', steps: ['close'] }],
@@ -853,9 +861,9 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteStepCatalogue(catalogueDraft.n, 'publish', 'test', d)
-    const current = showWorkflow('flow', undefined, d).definition
-    const draft = setWorkflow(
+    promoteStepCatalogueLocal(catalogueDraft.n, 'publish', 'test', d)
+    const current = showResolvedWorkflow('flow', undefined, null, d).definition
+    const draft = setWorkflowLocal(
       'flow',
       {
         ...current,
@@ -867,7 +875,7 @@ describe('workflow cursor adapter', () => {
       'test',
       d,
     )
-    promoteWorkflow('flow', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('flow', draft.n, 'publish', 'test', d)
 
     expect(
       getWorkflowStepWithCursor('flow', 'fixture', '2', args, 'default', context, d).slug,

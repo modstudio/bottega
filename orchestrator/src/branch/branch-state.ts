@@ -14,6 +14,17 @@ export function pullRequestCarriesKey(
 
 export type PatchEquivalentForm = 'commits' | 'individual' | 'squash'
 
+export function branchMatchesFilter(
+  branch: string,
+  key: string,
+  filter: { branch?: string; key?: string },
+): boolean {
+  return (
+    (filter.branch === undefined || branch === filter.branch) &&
+    (filter.key === undefined || key === filter.key)
+  )
+}
+
 type RecordedBranchLanding = {
   number: number
   mergeCommit: string | null
@@ -65,6 +76,10 @@ export type BranchLanding =
       state: 'landed'
       landedBy: { type: 'turn'; branch: string }
     }
+  | {
+      state: 'landed'
+      landedBy: { type: 'contained'; branch: string }
+    }
   | { state: 'empty' | 'superseded' | 'unlanded' }
   | { state: 'unknown'; error?: string }
 
@@ -96,6 +111,7 @@ export function decideBranchState(input: {
   patchEquivalent: PatchEquivalentForm | null
   pullRequestCommitCheck: PullRequestCommitCheck
   recordedLanding: StoredRecordedBranchLanding | null
+  containingBranch: string | null
   laterTurnBranches: readonly LaterTurnBranch[]
   superseded: boolean
 }): BranchStateDecision {
@@ -135,6 +151,12 @@ export function decideBranchState(input: {
       landedBy: { type: 'pr-commits', number: input.pullRequestCommitCheck.number },
     })
   }
+  if (input.containingBranch) {
+    return decide({
+      state: 'landed',
+      landedBy: { type: 'contained', branch: input.containingBranch },
+    })
+  }
   const landedTurn = input.laterTurnBranches.find(
     (candidate) => candidate.state.state === 'landed' && candidate.state.landedBy.type !== 'turn',
   )
@@ -152,9 +174,22 @@ export function decideBranchState(input: {
   return decide({ state: 'unlanded' })
 }
 
-type PruneEligibility =
+export type PruneEligibility =
   | { eligible: true }
   | { eligible: false; reason: 'state' | 'checked-out' | 'live' | 'tip-moved' }
+
+type PruneEligibilityReason = Extract<PruneEligibility, { eligible: false }>['reason']
+
+export type BranchPruneKeptReason =
+  | PruneEligibilityReason
+  | 'held'
+  | 'protected'
+  | 'unlanded'
+  | 'unknown'
+  | `base of live run ${string} (${string})`
+  | 'tip could not be rechecked'
+  | `registered ${ProtectedBranchKind}`
+  | 'deletion failed'
 
 export function isPruneSafeLandingState(
   state: BranchLanding['state'],

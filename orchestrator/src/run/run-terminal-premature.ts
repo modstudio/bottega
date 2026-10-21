@@ -3,7 +3,7 @@
  * Adapts parsed terminal replies and measured execution facts to the pure
  * premature-final policy. It must not persist or route an outcome.
  */
-import { parseReaderOutput, type ReviewReply, type WorkerReply } from '../contract/contract.ts'
+import type { ReaderReply, ReviewReply, WorkerReply } from '../contract/contract.ts'
 import {
   decidePrematureFinal,
   type PrematureFinalRefusal,
@@ -12,8 +12,7 @@ import {
 import type { OutcomeStatus } from '../outcome.ts'
 
 export function terminalPrematureFinalRefusal(input: {
-  readerJob: boolean
-  output: string
+  readerReply: ReaderReply | null
   parsedReview: ReviewReply | null
   contract: WorkerReply | null
   measuredFiles: readonly string[] | null
@@ -22,7 +21,7 @@ export function terminalPrematureFinalRefusal(input: {
   exitCode: number
   latencyMs: number
 }): PrematureFinalRefusal | null {
-  const readerReply = input.readerJob ? parseReaderOutput(input.output) : null
+  const readerReply = input.readerReply
   let replyShape: PrematureFinalReplyShape = 'other'
   if (
     readerReply?.deliverables.length &&

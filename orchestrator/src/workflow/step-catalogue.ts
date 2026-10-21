@@ -3,10 +3,15 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
-import { db, writableDb } from '../database/db.ts'
+import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { type AutonomyValue, autonomyStages, autonomyValues } from './autonomy.ts'
 import type {
   CatalogueSequence,
@@ -16,16 +21,19 @@ import type {
 } from './step-catalogue-definition.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
-import { type FloorKind, floorKinds, isFloorKind } from './workflow-floor.ts'
+import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import { inspectWorkflowSteps, validateCatalogueSequences } from './workflow-step-sequences.ts'
+import {
+  inspectWorkflowSteps,
+  validateCatalogueSequences,
+  workflowConditionErrors,
+} from './workflow-step-sequences.ts'
 
 export type {
   CatalogueSequence,
   CatalogueStep,
   StepCatalogueDefinition,
 } from './step-catalogue-definition.ts'
-export type { FloorKind }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -41,6 +49,9 @@ export function validateStepCatalogue(value: unknown): string[] {
       continue
     }
     validateIdentity(item, seen, errors)
+    validateOutcomes(item, errors)
+    validateRulingOutcomes(item, errors)
+    validateReenter(item, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
     validateDispatchPrompts(item, errors)
@@ -56,6 +67,53 @@ export function validateStepCatalogue(value: unknown): string[] {
     ),
   )
   return [...new Set(errors)]
+}
+
+function validateOutcomes(item: Record<string, unknown>, errors: string[]): void {
+  if (item.outcomes === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!Array.isArray(item.outcomes) || item.outcomes.length === 0) {
+    errors.push(`step "${slug}" outcomes must be a non-empty array`)
+    return
+  }
+  if (item.outcomes.some((outcome) => typeof outcome !== 'string' || !SLUG.test(outcome)))
+    errors.push(`step "${slug}" outcomes must be well-formed slugs`)
+  if (new Set(item.outcomes).size !== item.outcomes.length)
+    errors.push(`step "${slug}" outcomes must be unique`)
+}
+
+function validateRulingOutcomes(item: Record<string, unknown>, errors: string[]): void {
+  if (item.rulingOutcomes === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!Array.isArray(item.rulingOutcomes) || item.rulingOutcomes.length === 0) {
+    errors.push(`step "${slug}" rulingOutcomes must be a non-empty array`)
+    return
+  }
+  const outcomes = new Set(Array.isArray(item.outcomes) ? item.outcomes : [])
+  if (
+    new Set(item.rulingOutcomes).size !== item.rulingOutcomes.length ||
+    item.rulingOutcomes.some((outcome) => typeof outcome !== 'string' || !outcomes.has(outcome))
+  )
+    errors.push(`step "${slug}" rulingOutcomes must be a non-empty unique subset of outcomes`)
+}
+
+function validateReenter(item: Record<string, unknown>, errors: string[]): void {
+  if (item.reenter === undefined) return
+  const slug = String(item.slug ?? '')
+  if (
+    !object(item.reenter) ||
+    Object.keys(item.reenter).length !== 2 ||
+    typeof item.reenter.to !== 'string' ||
+    typeof item.reenter.outcome !== 'string'
+  ) {
+    errors.push(`step "${slug}" reenter must be { to, outcome }`)
+    return
+  }
+  if (!SLUG.test(item.reenter.to))
+    errors.push(`step "${slug}" reenter.to must be a well-formed slug`)
+  const outcomes = Array.isArray(item.outcomes) ? item.outcomes : []
+  if (!outcomes.includes(item.reenter.outcome))
+    errors.push(`step "${slug}" reenter.outcome must be one of the step's outcomes`)
 }
 
 function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]): void {
@@ -215,6 +273,24 @@ function validateExpectedStatus(item: Record<string, unknown>, errors: string[])
     )
 }
 
+function validateExpectedExitCodes(item: Record<string, unknown>, errors: string[]): void {
+  if (item.expectedExitCodes === undefined) return
+  const slug = String(item.slug ?? '')
+  if (!object(item.expectedExitCodes) || Object.keys(item.expectedExitCodes).length === 0) {
+    errors.push(`step "${slug}" expectedExitCodes must be a non-empty object`)
+    return
+  }
+  if (!Array.isArray(item.floor) || !item.floor.includes('command-exit'))
+    errors.push(`step "${slug}" expectedExitCodes requires a command-exit floor`)
+  const outcomes = new Set(Array.isArray(item.outcomes) ? item.outcomes : [])
+  for (const [outcome, exitCode] of Object.entries(item.expectedExitCodes)) {
+    if (!outcomes.has(outcome))
+      errors.push(`step "${slug}" expectedExitCodes key "${outcome}" is not a step outcome`)
+    if (!Number.isInteger(exitCode) || (exitCode as number) < 0)
+      errors.push(`step "${slug}" expectedExitCodes.${outcome} must be a non-negative integer`)
+  }
+}
+
 function validateFloor(item: Record<string, unknown>, errors: string[]): void {
   const slug = String(item.slug ?? '')
   if (!Array.isArray(item.floor) || item.floor.length === 0) {
@@ -232,9 +308,31 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
     errors.push(`step "${slug}" requirePullRequest must be a boolean`)
   if (item.operatorRuling !== undefined && typeof item.operatorRuling !== 'boolean')
     errors.push(`step "${slug}" operatorRuling must be a boolean`)
-  if (item.operatorRuling === true && !floor.includes('ruling') && !floor.some(isFloorPlaceholder))
+  if (
+    item.operatorRuling === true &&
+    !floor.some(isFloorPlaceholder) &&
+    ![
+      mayCloseOnAgentSelfRuling({ floor, operatorRuling: false }, undefined),
+      ...(Array.isArray(item.rulingOutcomes)
+        ? item.rulingOutcomes.map((outcome) =>
+            mayCloseOnAgentSelfRuling(
+              {
+                floor,
+                rulingOutcomes: (item.rulingOutcomes as unknown[]).map(String),
+                operatorRuling: false,
+              },
+              String(outcome),
+            ),
+          )
+        : []),
+      object(item.reenter)
+        ? mayCloseOnAgentSelfRuling({ floor, operatorRuling: false }, undefined, true)
+        : false,
+    ].some(Boolean)
+  )
     errors.push(`step "${slug}" operatorRuling requires a ruling floor`)
   validateCommandEvidence(item, floor, errors)
+  validateExpectedExitCodes(item, errors)
   validateExpectedStatus(item, errors)
 }
 
@@ -297,6 +395,10 @@ const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
   },
 })
 const CATALOGUE = 'shared'
+function assertCatalogueWriteAllowed(operation: string): void {
+  const refusal = workerStoreWriteRefusal('workflow', operation, process.env)
+  if (refusal) throw new Error(refusal)
+}
 
 const compatibleCatalogue = <T extends { definition: StepCatalogueDefinition }>(row: T): T => ({
   ...row,
@@ -309,13 +411,121 @@ export const showStepCatalogue = (n?: number, d: Database = db()) =>
   compatibleCatalogue(lifecycle.show(CATALOGUE, n, d))
 export const productionStepCatalogue = (d: Database = db()) =>
   compatibleCatalogue(lifecycle.production(CATALOGUE, d))
+export function selectedStepCatalogue(
+  n: number | undefined,
+  d: Database,
+  spaceId: string | null,
+): ReturnType<typeof showStepCatalogue> {
+  const suffix = n === undefined ? "AND v.status='production'" : 'AND v.n=?'
+  const row = d
+    .query(
+      `SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.id=v.catalogue_id WHERE i.slug=? AND i.space_id IS ? ${suffix}`,
+    )
+    .get(...(n === undefined ? [CATALOGUE, spaceId] : [CATALOGUE, spaceId, n])) as {
+    definition: string
+    [key: string]: unknown
+  } | null
+  if (!row)
+    throw new Error(
+      `step catalogue has no ${n === undefined ? 'production version' : `version ${n}`}${spaceId === null ? '' : ` in hosted space ${spaceId}`}${n === undefined ? '; promote one' : ''}`,
+    )
+  return compatibleCatalogue({
+    ...row,
+    definition: JSON.parse(row.definition) as StepCatalogueDefinition,
+  }) as ReturnType<typeof showStepCatalogue>
+}
 export const setStepCatalogue = (
   definition: unknown,
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
+) => {
+  assertCatalogueWriteAllowed('set step catalogue')
+  return catalogueDraft('set', definition, undefined, reason, author, d)
+}
+export const setStepCatalogueLocal = (
+  definition: unknown,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
 ) => lifecycle.write(CATALOGUE, definition, reason, author, 'set', d)
+const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
+async function activeSpace(d?: Database, project?: string) {
+  const identity = await recordApiClient().whoami()
+  const spaceId = project && d ? effectiveProjectSpace(d, project) : identity.activeSpaceId
+  if (!spaceId) throw new Error('record session has no active space')
+  return spaceId
+}
+function catalogueDraft(
+  event: 'set' | 'fork' | 'import',
+  definition: unknown,
+  from: number | undefined,
+  reason: string | undefined,
+  author: string | undefined,
+  d: Database,
+  project?: string,
+  onHostedWrite?: (n: number) => void,
+) {
+  return applyRecordWriteAuthority({
+    local: () => lifecycle.write(CATALOGUE, definition, reason, author, event, d),
+    hosted: async () => {
+      requireCatalogue(definition)
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace(d, project)
+      const result = await recordApiClient().draftWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          event,
+          ...(event === 'fork'
+            ? { from: from ?? null }
+            : { definition: JSON.stringify(definition) }),
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      onHostedWrite?.(result.versions.at(-1)!.n)
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(result.versions.at(-1)!.n, d, spaceId)
+    },
+  })
+}
 export const forkStepCatalogue = (
+  from: number | undefined,
+  reason: string | undefined,
+  project: string,
+  author?: string,
+  d: Database = writableDb(),
+) => {
+  assertCatalogueWriteAllowed('fork step catalogue')
+  return applyRecordWriteAuthority({
+    local: () => {
+      const source = selectedStepCatalogue(from, d, effectiveProjectSpace(d, project))
+      return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
+    },
+    hosted: async () => {
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace(d, project)
+      const result = await recordApiClient().draftWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          event: 'fork',
+          from: from ?? null,
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(result.versions.at(-1)!.n, d, spaceId)
+    },
+  })
+}
+export const forkStepCatalogueLocal = (
   from: number | undefined,
   reason: string | undefined,
   author?: string,
@@ -329,8 +539,49 @@ export const retireStepCatalogue = (
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
+) => {
+  assertCatalogueWriteAllowed('retire step catalogue')
+  return applyRecordWriteAuthority({
+    local: () => lifecycle.retire(CATALOGUE, n, reason, author, d),
+    hosted: async () => {
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace(),
+        current = d
+          .query<{ n: number }, [string]>(
+            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
+          )
+          .get(spaceId)
+      const result = await recordApiClient().retireWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          n,
+          expectedProductionVersion: current?.n ?? null,
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
+      )
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(n, d, spaceId)
+    },
+  })
+}
+const retireStepCatalogueLocal = (
+  n: number,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
 ) => lifecycle.retire(CATALOGUE, n, reason, author, d)
-export const stepCatalogueVersions = (d: Database = db()) => lifecycle.versions(CATALOGUE, d)
+export function showResolvedStepCatalogue(project: string | null, n?: number, d: Database = db()) {
+  return selectedStepCatalogue(n, d, effectiveProjectSpace(d, project))
+}
+
+export function resolvedStepCatalogueVersions(project: string | null, d: Database = db()) {
+  const spaceId = effectiveProjectSpace(d, project)
+  return lifecycle.versions(CATALOGUE, d, spaceId)
+}
 
 type ProductionWorkflowDefinition = {
   modes?: { slug?: string; steps?: WorkflowModeStep[] }[]
@@ -358,6 +609,12 @@ function catalogueModePromotionErrors(
     errors.push(
       `${workflowSlug} mode ${mode.slug ?? ''}: duplicate steps ${proposed.duplicateSteps.join(', ')}`,
     )
+  else if (proposed.invalidOmissions.length) {
+    const invalid = proposed.invalidOmissions[0]!
+    errors.push(
+      `${workflowSlug} mode ${mode.slug ?? ''}: sequence "${invalid.sequence}" cannot omit non-member step "${invalid.step}"`,
+    )
+  }
   return errors
 }
 
@@ -371,9 +628,20 @@ function cataloguePromotionReferenceErrors(
   return rows.flatMap((row) => {
     const workflow = JSON.parse(row.definition) as ProductionWorkflowDefinition
     if (workflow.steps) return [] // Legacy inline versions remain valid history and self-contained.
-    return (workflow.modes ?? []).flatMap((mode) =>
-      catalogueModePromotionErrors(row.slug, mode, available, currentSequences, proposedSequences),
-    )
+    return (workflow.modes ?? []).flatMap((mode) => [
+      ...catalogueModePromotionErrors(
+        row.slug,
+        mode,
+        available,
+        currentSequences,
+        proposedSequences,
+      ),
+      ...workflowConditionErrors(
+        mode.slug ?? '',
+        inspectWorkflowSteps(mode.steps ?? [], proposedSequences, available).detailed,
+        definition.steps,
+      ),
+    ])
   })
 }
 
@@ -383,27 +651,79 @@ export function promoteStepCatalogue(
   author?: string,
   d: Database = writableDb(),
 ) {
-  return lifecycle.promote(CATALOGUE, n, reason, author, d, (definition, database) => {
-    const currentSequences = productionStepCatalogue(database).definition.sequences ?? []
-    const rows = database
-      .query(
-        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id WHERE v.status='production'`,
+  assertCatalogueWriteAllowed('promote step catalogue')
+  return applyRecordWriteAuthority({
+    local: () => promoteStepCatalogueLocal(n, reason, author, d),
+    hosted: async () => {
+      if (!reason?.trim()) throw new Error('reason is required')
+      const spaceId = await activeSpace(),
+        target = selectedStepCatalogue(n, d, spaceId),
+        current = d
+          .query<{ n: number }, [string]>(
+            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
+          )
+          .get(spaceId)
+      cataloguePromotionPreflight(target.definition, d, spaceId)
+      const result = await recordApiClient().promoteWorkflow!(
+        {
+          kind: 'step_catalogue',
+          slug: CATALOGUE,
+          n,
+          expectedProductionVersion: current?.n ?? null,
+          author: writeAuthor(author),
+          reason: reason.trim(),
+          sessionId: sessionId(),
+        },
+        { destinationSpaceId: spaceId },
       )
-      .all() as { slug: string; definition: string }[]
-    const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
-    const workflows = rows.map((row) => ({
-      slug: row.slug,
-      definition: JSON.parse(row.definition) as WorkflowDefinition,
-    }))
-    if (missing.length)
-      throw new Error(
-        `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
-      )
-    const refusal = renderCheckRefusal(
-      checkWorkflowRendering(workflows, definition, projects(undefined, database)),
-    )
-    if (refusal) throw new Error(refusal)
+      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
+      return selectedStepCatalogue(n, d, spaceId)
+    },
   })
+}
+export function promoteStepCatalogueLocal(
+  n: number,
+  reason: string | undefined,
+  author: string | undefined,
+  d: Database = writableDb(),
+) {
+  return lifecycle.promote(CATALOGUE, n, reason, author, d, (definition, database) => {
+    cataloguePromotionPreflight(definition, database, null)
+  })
+}
+function cataloguePromotionPreflight(
+  definition: StepCatalogueDefinition,
+  d: Database,
+  spaceId: string | null,
+): void {
+  const current = d
+    .query<{ definition: string }, [string | null]>(
+      `SELECT v.definition FROM step_catalogue c JOIN step_catalogue_version v ON v.catalogue_id=c.id
+       WHERE c.slug='shared' AND c.space_id IS ? AND v.status='production'`,
+    )
+    .get(spaceId)
+  const currentSequences = current
+    ? ((JSON.parse(current.definition) as StepCatalogueDefinition).sequences ?? [])
+    : []
+  const rows = d
+    .query(
+      `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+       WHERE v.status='production' AND w.space_id IS ?`,
+    )
+    .all(spaceId) as { slug: string; definition: string }[]
+  const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
+  if (missing.length)
+    throw new Error(
+      `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
+    )
+  const workflows = rows.map((row) => ({
+    slug: row.slug,
+    definition: JSON.parse(row.definition) as WorkflowDefinition,
+  }))
+  const refusal = renderCheckRefusal(
+    checkWorkflowRendering(workflows, definition, projects(undefined, d)),
+  )
+  if (refusal) throw new Error(refusal)
 }
 
 export function importStepCatalogue(
@@ -411,6 +731,23 @@ export function importStepCatalogue(
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
+  project?: string,
+  onHostedWrite?: (n: number) => void,
 ) {
-  return lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
+  assertCatalogueWriteAllowed('import step catalogue')
+  return catalogueDraft('import', definition, undefined, reason, author, d, project, onHostedWrite)
+}
+const importStepCatalogueLocal = (
+  definition: unknown,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
+) => lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
+
+export const stepCatalogueLocalLifecycle = {
+  set: setStepCatalogueLocal,
+  promote: promoteStepCatalogueLocal,
+  retire: retireStepCatalogueLocal,
+  fork: forkStepCatalogueLocal,
+  import: importStepCatalogueLocal,
 }

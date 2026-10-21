@@ -51,6 +51,8 @@ const ALLOWED = new Set([
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.
   'scripts/architecture-release.ts',
+  // The UI architecture manifest names workspace packages to enforce their boundaries.
+  'scripts/architecture-ui-layers.ts',
   // Shell recipes invoke the front-door executable by its PATH name and cannot import the slug.
   'local-stack/bin/gx10-install.sh',
   'ops/bin/projects-morning-refresh.sh',
@@ -65,12 +67,15 @@ const ALLOWED = new Set([
   'orchestrator/hooks/board_hook_common.py',
   'orchestrator/hooks/git-guard.py',
   'orchestrator/hooks/heartbeat-guard.py',
+  'orchestrator/hooks/heartbeat-decision.py',
   'orchestrator/hooks/heartbeat-remind.py',
+  'orchestrator/hooks/hub-import-guard.py',
   'orchestrator/hooks/orch-heartbeat.sh',
   'orchestrator/hooks/protect-main-checkout.py',
   'orchestrator/hooks/score-reminder.py',
   'orchestrator/hooks/session-brief.py',
   'orchestrator/hooks/test-substance-guard.py',
+  'orchestrator/hooks/test_heartbeat_decision.py',
   'orchestrator/hooks/test_heartbeat_remind.py',
   'orchestrator/hooks/test_session_brief_context.py',
   'orchestrator/hooks/workflow-cursor-reminder.py',
@@ -93,6 +98,9 @@ for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: RO
   const src = readFileSync(`${ROOT}/${rel}`, 'utf8')
   src.split('\n').forEach((line, i) => {
     if (!NAME.test(line)) return
+    // A workspace import names the package protocol declared in package.json; source cannot
+    // interpolate an imported brand constant into a module specifier.
+    if (/['"]@bottega\/hub-(?:data|site|ui|util|views)\//.test(line.trim())) return
     // A comment is prose: see the header. `*` covers block-comment
     // continuation lines, which is how most of these are written.
     const t = line.trim()

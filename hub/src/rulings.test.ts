@@ -1,5 +1,10 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
+import {
+  fixtureRecordId,
+  ingestRunFixtures,
+  resetFixtureStore,
+  runFixture,
+} from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { listOpenRulings, measureRulings, rulingsPayload, rulingsStaleAfter } from './rulings.ts'
 
@@ -31,13 +36,21 @@ describe('run ingest', () => {
 
     const stored = db()
       .query(
-        `SELECT question_id, run_ref, root_ref FROM question
-        WHERE question_id IN (20, 21) ORDER BY question_id`,
+        `SELECT number, run_ref, root_ref FROM question
+        WHERE number IN (20, 21) ORDER BY number`,
       )
-      .all() as { question_id: number; run_ref: string; root_ref: string }[]
+      .all() as { number: number; run_ref: string; root_ref: string }[]
     expect(stored).toEqual([
-      { question_id: 20, run_ref: 'orch:9301:turn:9301', root_ref: 'orch:9301' },
-      { question_id: 21, run_ref: 'orch:9301:turn:9302', root_ref: 'orch:9301' },
+      {
+        number: 20,
+        run_ref: `orch:${fixtureRecordId(9301)}:turn:${fixtureRecordId(9301)}`,
+        root_ref: `orch:${fixtureRecordId(9301)}`,
+      },
+      {
+        number: 21,
+        run_ref: `orch:${fixtureRecordId(9301)}:turn:${fixtureRecordId(9302)}`,
+        root_ref: `orch:${fixtureRecordId(9301)}`,
+      },
     ])
 
     const clock = Date.parse('2026-09-04T20:00:00.000Z')
@@ -84,7 +97,7 @@ describe('run ingest', () => {
       }),
     )
 
-    const row = db().query(`SELECT answered_at FROM question WHERE question_id = 31`).get() as {
+    const row = db().query(`SELECT answered_at FROM question WHERE number = 31`).get() as {
       answered_at: string
     }
     expect(row.answered_at).toBe('2026-09-04T19:20:00.000Z')
@@ -116,7 +129,7 @@ describe('run ingest', () => {
     )
 
     expect(
-      db().query(`SELECT closed_at, close_reason FROM question WHERE question_id = 35`).get(),
+      db().query(`SELECT closed_at, close_reason FROM question WHERE number = 35`).get(),
     ).toEqual({
       closed_at: '2026-09-04T19:20:00.000Z',
       close_reason: 'run closed',
@@ -147,7 +160,7 @@ describe('run ingest', () => {
       }),
     )
     const stored = db()
-      .query(`SELECT asked_at, answered_at, session_id FROM question WHERE question_id = 41`)
+      .query(`SELECT asked_at, answered_at, session_id FROM question WHERE number = 41`)
       .get() as { asked_at: string; answered_at: string | null; session_id: string }
     expect(stored).toEqual({
       asked_at: '2026-09-04T19:55:00.000Z',
@@ -173,12 +186,12 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT question_id, task_key, session_id, asked_at, answered_at
+          `SELECT number, task_key, session_id, asked_at, answered_at
          FROM question WHERE session_id = 'sess-probe'`,
         )
         .get(),
     ).toEqual({
-      question_id: 4,
+      number: 4,
       task_key: 'DEV-3000',
       session_id: 'sess-probe',
       asked_at: '2026-09-04T19:00:00.000Z',

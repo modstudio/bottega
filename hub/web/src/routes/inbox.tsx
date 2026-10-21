@@ -1,13 +1,13 @@
+import { trpc } from '@bottega/hub-data/client'
+import { type WaitingInboxEntry, waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { Identifier } from '@bottega/hub-ui/identifier'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { relativeTime } from '@bottega/hub-util/format'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { relativeTime } from '@/lib/format'
-import { type WaitingInboxEntry, waitingInboxEntries } from '@/lib/operator-waiting'
-import { trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Identifier } from '@/ui/identifier/identifier'
-import { PageHeader } from '@/ui/page-header/page-header'
 
 export const Route = createFileRoute('/inbox')({ component: InboxPage })
 
@@ -21,15 +21,22 @@ function InboxPage() {
   const navigate = useNavigate()
   const waiting = useWaiting()
   const columns: CollectionColumn<WaitingItem>[] = [
-    { id: 'project', label: 'Project', render: (item) => item.project ?? 'no project' },
+    {
+      id: 'project',
+      label: 'Project',
+      phone: 'line',
+      render: (item) => item.project ?? 'no project',
+    },
     {
       id: 'task',
       label: 'Task',
+      phone: 'line',
       render: (item) => (item.task_key ? <Identifier>{item.task_key}</Identifier> : '-'),
     },
     {
       id: 'question',
       label: 'Question',
+      phone: 'title',
       grow: true,
       render: (item) => (
         <span className="block max-w-2xl truncate">
@@ -42,11 +49,13 @@ function InboxPage() {
     {
       id: 'waited',
       label: 'Waiting',
+      phone: 'line',
       render: (item) => relativeTime(item.waiting_since),
     },
     {
       id: 'kind',
       label: 'Kind',
+      phone: 'aside',
       render: (item) => <Badge>{item.kind}</Badge>,
     },
     {

@@ -12,18 +12,20 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
   const repository = `/repo/${project}`
   const branch = `DEV-1128-orch-${runId}`
   const ref = `refs/heads/${branch}`
-  upsertProject({ name: project, path: repository })
+  upsertProject({ recordId: newRecordId(), name: project, path: repository })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: string }
   ).id
   db()
-    .query('UPDATE run SET repo=?,project_id=?,cwd=?,branch_kept=?,branch_kept_tip=? WHERE id=?')
+    .query(
+      'UPDATE run SET repo=?,project_record_id=?,cwd=?,branch_kept=?,branch_kept_tip=? WHERE record_id=?',
+    )
     .run(project, projectId, repository, branch, tip, runId)
   const claimId = Number(
     db()
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?,?,?,'branch',?,'claimed',?)`,
       )
       .run(newRecordId(), runId, runId, projectId, ref, nowIso()).lastInsertRowid,
@@ -33,7 +35,9 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
 
 function markKeptOnAnotherTurn(tip: string | null) {
   const fixture = keptBranchClaim()
-  db().query('UPDATE run SET branch_kept=NULL,branch_kept_tip=NULL WHERE id=?').run(fixture.runId)
+  db()
+    .query('UPDATE run SET branch_kept=NULL,branch_kept_tip=NULL WHERE record_id=?')
+    .run(fixture.runId)
   const keptTurnId = addRun({
     agent: 'codex',
     job: 'implement',
@@ -42,7 +46,7 @@ function markKeptOnAnotherTurn(tip: string | null) {
     turn: 2,
   })
   db()
-    .query('UPDATE run SET branch_kept=?,branch_kept_tip=? WHERE id=?')
+    .query('UPDATE run SET branch_kept=?,branch_kept_tip=? WHERE record_id=?')
     .run(fixture.branch, tip, keptTurnId)
   return { ...fixture, tip, keptTurnId }
 }
@@ -274,16 +278,16 @@ test('kept-branch dry runs change nothing and print each prospective action', ()
 test('sweep dry-run lists absent and kept claims without changing either row', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-reconciliation-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db()
-    .query('UPDATE run SET repo=?,project_id=?,cwd=? WHERE id=?')
+    .query('UPDATE run SET repo=?,project_record_id=?,cwd=? WHERE record_id=?')
     .run(project, projectId, `/repo/${project}`, runId)
   const insert = db().query(
     `INSERT INTO resource_claim
-     (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?, ?,?,?,'worktree',?,'claimed',?)`,
   )
   const absent = Number(
@@ -328,14 +332,16 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
 test('reconciling an absent worktree leaves its dependent port claimed', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-cascade-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
-  db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(project, projectId, runId)
   const insert = db().query(
     `INSERT INTO resource_claim
-     (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?, ?,?,?,?,?,'claimed',?)`,
   )
   insert.run(newRecordId(), runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
@@ -358,7 +364,9 @@ test('reconciling an absent worktree leaves its dependent port claimed', () => {
   })
 
   expect(
-    db().query('SELECT kind,state FROM resource_claim WHERE root_run_id=? ORDER BY id').all(runId),
+    db()
+      .query('SELECT kind,state FROM resource_claim WHERE root_run_record_id=? ORDER BY id')
+      .all(runId),
   ).toEqual([
     { kind: 'worktree', state: 'absent' },
     { kind: 'port', state: 'claimed' },
@@ -368,14 +376,16 @@ test('reconciling an absent worktree leaves its dependent port claimed', () => {
 test('an absent worktree does not release allocations shared with a present worktree', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-multiple-trees-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
-  db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(project, projectId, runId)
   const insert = db().query(
     `INSERT INTO resource_claim
-     (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?, ?,?,?,?,?,'claimed',?)`,
   )
   insert.run(newRecordId(), runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
@@ -402,7 +412,9 @@ test('an absent worktree does not release allocations shared with a present work
 
   expect(
     db()
-      .query('SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_id=? ORDER BY id')
+      .query(
+        'SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_record_id=? ORDER BY id',
+      )
       .all(runId),
   ).toEqual([
     { kind: 'worktree', allocation_key: '/absent-tree', state: 'absent' },
@@ -416,16 +428,18 @@ test('an absent worktree does not release allocations shared with a present work
 test('a guard that changes before locked settlement leaves the claim claimed', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `claim-race-${runId}`
-  upsertProject({ name: project, path: `/repo/${project}` })
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
-  db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(project, projectId, runId)
   const claimId = Number(
     db()
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?,?,?,'worktree','/absent-tree','claimed',?)`,
       )
       .run(newRecordId(), runId, runId, projectId, nowIso()).lastInsertRowid,
@@ -445,7 +459,7 @@ test('a guard that changes before locked settlement leaves the claim claimed', (
       pidAlive: () => false,
     },
     synchronize: (_row, reconcile) => {
-      db().query("UPDATE run SET status='running' WHERE id=?").run(runId)
+      db().query("UPDATE run SET status='running' WHERE record_id=?").run(runId)
       reconcile()
     },
   })
@@ -460,13 +474,15 @@ test('an unregistered missing worktree probes a present ref in its owning reposi
   const repository = `/scratch/repository-${runId}`
   const worktree = `${repository}/.claude/worktrees/orch-${runId}`
   db()
-    .query('UPDATE run SET repo=NULL,project_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?')
+    .query(
+      'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
+    )
     .run(worktree, worktree, repository, runId)
   const claimId = Number(
     db()
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?, ?, NULL, 'branch', ?, 'claimed', ?)`,
       )
       .run(newRecordId(), runId, runId, `refs/heads/DEV-991-${runId}`, nowIso()).lastInsertRowid,
@@ -501,13 +517,15 @@ test('an unregistered claim settles absent when its owning repository root is go
   const repository = `/scratch/gone-repository-${runId}`
   const worktree = `${repository}/.claude/worktrees/orch-${runId}`
   db()
-    .query('UPDATE run SET repo=NULL,project_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE id=?')
+    .query(
+      'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
+    )
     .run(worktree, worktree, repository, runId)
   const claimId = Number(
     db()
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?, ?, NULL, 'retained_ref', ?, 'claimed', ?)`,
       )
       .run(newRecordId(), runId, runId, `refs/orch/retained/${runId}`, nowIso()).lastInsertRowid,

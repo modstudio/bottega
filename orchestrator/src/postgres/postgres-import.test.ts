@@ -15,6 +15,7 @@ import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
   bearerHeaders,
+  noSpaceBuiltIns,
   RECORD_SESSION_KEY,
   recordAuth,
   setActiveRecordSpaceForSession,
@@ -129,7 +130,14 @@ realPostgres('project import against copied live SQLite data', () => {
         'member', 'pending', now() + interval '1 day', now()
       FROM "user" ORDER BY created_at LIMIT 1
     `
-    const signedUp = await recordAuth(actorUrl!).api.signUpEmail({
+    const signedUp = await recordAuth(
+      actorUrl!,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    ).api.signUpEmail({
       body: {
         email: 'live-copy@example.test',
         name: 'Live Copy',
@@ -214,7 +222,10 @@ realPostgres('project import against copied live SQLite data', () => {
         })),
     )
 
-    const imported = (await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]
+    const sourceNames = new Set(sourceProjects.map(({ name }) => name))
+    const imported = ((await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]).filter(
+      ({ name }) => sourceNames.has(name),
+    )
     expect(imported).toHaveLength(sourceProjects.length)
     expectPreservedProjectIds(sourceProjects, imported)
     const columnForSetting: Record<string, string> = {
@@ -380,7 +391,7 @@ realPostgres('project import against copied live SQLite data', () => {
       writeFileSync(configPath, testMachineConfig)
     }
     console.log(
-      `live-copy backfill: enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
+      `live-copy backfill: enqueued ${backfill.enqueued}, refreshed-roots ${backfill.refreshedRoots}, skipped-live ${backfill.skippedLive}`,
     )
     console.log(`live-copy score backfill: enqueued ${scoreBackfill}`)
     console.log(

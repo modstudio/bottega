@@ -1,5 +1,6 @@
+import type { SQL } from 'bun'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
-import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import {
   computeMeasures,
   type MeasureInterval,
@@ -65,7 +66,7 @@ function asEvent(row: RawEvent): MeasureStatusEvent {
 }
 
 export async function loadHostedMeasureRows(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   window: MeasureWindow,
 ) {
@@ -75,7 +76,7 @@ export async function loadHostedMeasureRows(
       SELECT t.id AS task_id, e.task_key, t.project, p.id AS project_id, e.at, e.to_status
       FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
-      LEFT JOIN project p ON p.space_id=t.space_id AND p.name=t.project AND p.retired_at IS NULL
+      LEFT JOIN project p ON p.id=t.project_id AND p.retired_at IS NULL
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${window.from}::timestamptz AND e.at < ${window.to}::timestamptz
         AND e.to_status='done'`,
@@ -87,7 +88,7 @@ export async function loadHostedMeasureRows(
         i.vendor_tokens, i.vendor_cost_usd
       FROM hub_interval i
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
-      LEFT JOIN project p ON p.space_id=i.space_id AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
+      LEFT JOIN project p ON p.id=COALESCE(t.project_id,i.project_id) AND p.retired_at IS NULL
       WHERE i.start_at < ${window.to}::timestamptz AND i.end_at >= ${window.from}::timestamptz`,
     )
     const earlier = shippedIds.length
@@ -97,7 +98,7 @@ export async function loadHostedMeasureRows(
             i.vendor_tokens, i.vendor_cost_usd
           FROM hub_interval i
           JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
-          LEFT JOIN project p ON p.space_id=i.space_id AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
+          LEFT JOIN project p ON p.id=COALESCE(t.project_id,i.project_id) AND p.retired_at IS NULL
           WHERE t.id IN ${tx(shippedIds)} AND i.start_at < ${window.from}::timestamptz`,
         )
       : []
@@ -106,7 +107,7 @@ export async function loadHostedMeasureRows(
 }
 
 export async function hostedMeasures(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   window: MeasureWindow,
   scope: MeasureScope,
@@ -122,7 +123,7 @@ export type HostedMeasurePerson = { userId: string; name: string; email: string 
 
 /** Members with attributed evidence in this window; this is not a user directory. */
 export async function hostedMeasurePeople(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   window: MeasureWindow,
   project?: string,
@@ -130,7 +131,8 @@ export async function hostedMeasurePeople(
   return withHostedTenant(databaseUrl, identity, async (tx) =>
     rows<{ user_id: string; name: string; email: string }>(
       await tx`
-      SELECT DISTINCT u.id AS user_id,u.name,u.email
+      SELECT DISTINCT u.id AS user_id,u.name,u.email,
+        COALESCE(NULLIF(u.name,''),u.email) AS sort_name
       FROM hub_interval i
       JOIN membership m ON m.space_id=i.space_id AND m.user_id=i.user_id
       JOIN "user" u ON u.id=m.user_id
@@ -138,7 +140,7 @@ export async function hostedMeasurePeople(
         AND i.user_id IS NOT NULL
         AND i.start_at < ${window.to}::timestamptz AND i.end_at >= ${window.from}::timestamptz
         AND (${project ?? null}::text IS NULL OR i.project_name=${project ?? null})
-      ORDER BY COALESCE(NULLIF(u.name,''),u.email),u.email,u.id`,
+      ORDER BY sort_name,u.email,u.id`,
     ).map((row) => ({ userId: row.user_id, name: row.name || row.email, email: row.email })),
   )
 }

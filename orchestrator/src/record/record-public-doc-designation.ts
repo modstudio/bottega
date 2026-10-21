@@ -90,14 +90,14 @@ async function withPublicDocOwnerSession<T>(
 
 async function lookupTarget(
   tx: SQL,
-  input: { spaceSlug: string; projectName: string },
+  input: { spaceSlug: string; projectId: string },
 ): Promise<{ spaceId: string | null; projectId: string | null; alreadyDesignated: boolean }> {
   const spaces = await tx`SELECT id FROM space WHERE slug=${input.spaceSlug}`
   const spaceId = spaces[0]?.id ? String(spaces[0].id) : null
   if (!spaceId) return { spaceId: null, projectId: null, alreadyDesignated: false }
   await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
   const projects = await tx`
-    SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${input.projectName}
+    SELECT id FROM project WHERE space_id=${spaceId}::uuid AND id=${input.projectId}::uuid
   `
   const projectId = projects[0]?.id ? String(projects[0].id) : null
   if (!projectId) return { spaceId, projectId: null, alreadyDesignated: false }
@@ -109,13 +109,19 @@ async function lookupTarget(
 }
 
 export async function designatePublicDocProject(
-  input: { actorUrl: string; ownerUrl: string; spaceSlug: string; projectName: string },
+  input: {
+    actorUrl: string
+    ownerUrl: string
+    spaceSlug: string
+    projectName: string
+    projectId: string
+  },
   dependencies: DesignationDependencies = defaultDependencies,
 ): Promise<{ changed: boolean; spaceId: string; projectId: string }> {
   return withPublicDocOwnerSession(input, dependencies, async (tx) => {
     const target = await lookupTarget(tx, {
       spaceSlug: input.spaceSlug,
-      projectName: input.projectName,
+      projectId: input.projectId,
     })
     const facts = {
       action: 'designate' as const,
@@ -139,13 +145,19 @@ export async function designatePublicDocProject(
 }
 
 export async function clearPublicDocProject(
-  input: { actorUrl: string; ownerUrl: string; spaceSlug: string; projectName: string },
+  input: {
+    actorUrl: string
+    ownerUrl: string
+    spaceSlug: string
+    projectName: string
+    projectId: string
+  },
   dependencies: DesignationDependencies = defaultDependencies,
 ): Promise<{ spaceId: string; projectId: string }> {
   return withPublicDocOwnerSession(input, dependencies, async (tx) => {
     const target = await lookupTarget(tx, {
       spaceSlug: input.spaceSlug,
-      projectName: input.projectName,
+      projectId: input.projectId,
     })
     const facts = {
       action: 'clear' as const,

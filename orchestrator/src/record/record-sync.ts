@@ -18,7 +18,6 @@ import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineName } from './machine-identity.ts'
 import {
   deferOutboxRow,
-  markOutboxRowSynced,
   outboxParentIdentityKey,
   outboxRowIsEligible,
   outboxRowPlannedParentKeys,
@@ -36,12 +35,11 @@ import {
   type RecordSyncRequestRow,
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
-import {
-  type RecordSyncBatchDependency,
-  recordSyncResultTreatments,
-} from './record-sync-result-decision.ts'
+import type { RecordSyncBatchDependency } from './record-sync-result-decision.ts'
+import { applyRecordSyncBatchResults } from './record-sync-results.ts'
 import type {
   BlockedOutboxRow,
+  HeldRecordSyncRows,
   OutboxRow,
   Payload,
   RecordSyncOptions,
@@ -81,22 +79,41 @@ function parsedPayload(source: string): Payload | null {
   }
 }
 
+function runProjectName(local: Database, runRecordId: unknown): string | null {
+  if (runRecordId == null) return null
+  return (
+    local
+      .query<{ name: string }, [string]>(
+        'SELECT project.name FROM run JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?',
+      )
+      .get(String(runRecordId))?.name ?? null
+  )
+}
+
+function landingProjectName(local: Database, landingRecordId: unknown): string | null {
+  if (landingRecordId == null) return null
+  return (
+    local
+      .query<{ name: string }, [string]>(
+        'SELECT project.name FROM landing JOIN project ON project.record_id=landing.project_record_id WHERE landing.record_id=?',
+      )
+      .get(String(landingRecordId))?.name ?? null
+  )
+}
+
 function outboxProjectName(kind: string, record: Payload | null, local: Database): string | null {
   if (typeof record?.projectName === 'string' && record.projectName) return record.projectName
   if (kind === 'score' && record) {
-    return (
-      local
-        .query<{ name: string }, [string]>(
-          'SELECT project.name FROM run JOIN project ON project.id=run.project_id WHERE run.record_id=?',
-        )
-        .get(String(record.id))?.name ?? null
-    )
+    return runProjectName(local, record.id)
+  }
+  if (kind === 'contention' && record) {
+    return runProjectName(local, record.runId) ?? landingProjectName(local, record.landingId)
   }
   if ((kind === 'review_lens' || kind === 'review_finding') && record) {
     return (
       local
         .query<{ name: string }, [string]>(
-          'SELECT project.name FROM review JOIN project ON project.id=review.project_id WHERE review.record_id=?',
+          'SELECT project.name FROM review JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?',
         )
         .get(String(record.reviewId))?.name ?? null
     )
@@ -150,6 +167,7 @@ type PlannedBatchRow =
 type PreparedOutboxRow = {
   row: OutboxRow
   parsed: Payload | null
+  payload: string
   payloadBytes: number
 }
 
@@ -186,7 +204,7 @@ function planBatchRow(
     request: {
       id: row.id,
       kind: row.kind,
-      payload: row.payload,
+      payload: candidate.payload,
       spaceHint: membership?.spaceId ?? declared,
     },
   }
@@ -204,12 +222,72 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
       const [rightPhase, rightId] = outboxOrder(right.kind, right.id)
       return leftPhase - rightPhase || leftId - rightId
     })
-    .map((row) => ({
-      row,
-      parsed: parsedPayload(row.payload),
-      payloadBytes: utf8Bytes(row.payload),
-    }))
+    .map((row) => {
+      const parsed = parsedPayload(row.payload)
+      const payload = payloadWithProjectIdentity(local, row, parsed)
+      return {
+        row,
+        parsed: parsedPayload(payload),
+        payload,
+        payloadBytes: utf8Bytes(payload),
+      }
+    })
   return new Set(rows)
+}
+
+function sourceProjectRecordId(local: Database, row: OutboxRow): string | null | undefined {
+  const queries: Partial<Record<string, string>> = {
+    run: `SELECT project.record_id FROM run
+      LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
+    score: `SELECT project.record_id FROM run
+      LEFT JOIN project ON project.record_id=run.project_record_id WHERE run.record_id=?`,
+    question: `SELECT project.record_id FROM question
+      LEFT JOIN run ON run.record_id=question.run_record_id
+      LEFT JOIN project ON project.record_id=run.project_record_id WHERE question.record_id=?`,
+    review: `SELECT project.record_id FROM review
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
+    review_lens: `SELECT project.record_id FROM review_lens
+      JOIN review ON review.record_id=review_lens.review_record_id
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_lens.record_id=?`,
+    review_finding: `SELECT project.record_id FROM review_finding
+      JOIN review ON review.record_id=review_finding.review_record_id
+      LEFT JOIN project ON project.record_id=review.project_record_id WHERE review_finding.record_id=?`,
+    review_read: `SELECT project.record_id FROM review_read
+      LEFT JOIN project ON project.record_id=review_read.project_record_id WHERE review_read.record_id=?`,
+    landing: `SELECT project.record_id FROM landing
+      LEFT JOIN project ON project.record_id=landing.project_record_id WHERE landing.record_id=?`,
+    landing_override: `SELECT project.record_id FROM landing_override
+      LEFT JOIN project ON project.record_id=landing_override.project_record_id
+      WHERE landing_override.record_id=?`,
+    landing_review_carry: `SELECT project.record_id FROM landing_review_carry
+      LEFT JOIN project ON project.record_id=landing_review_carry.project_record_id
+      WHERE landing_review_carry.record_id=?`,
+    landing_triage_snapshot: `SELECT project.record_id FROM landing_triage_snapshot
+      LEFT JOIN project ON project.record_id=landing_triage_snapshot.project_record_id
+      WHERE landing_triage_snapshot.record_id=?`,
+    release: `SELECT project.record_id FROM release_ledger
+      LEFT JOIN project ON project.record_id=release_ledger.project_record_id WHERE release_ledger.record_id=?`,
+  }
+  const query = queries[row.kind]
+  if (!query) return undefined
+  return (
+    local.query<{ record_id: string | null }, [string]>(query).get(row.row_id)?.record_id ?? null
+  )
+}
+
+function payloadWithProjectIdentity(
+  local: Database,
+  row: OutboxRow,
+  parsed: Payload | null,
+): string {
+  if (!parsed || parsed.projectId != null || parsed.projectName == null) return row.payload
+  const projectId = sourceProjectRecordId(local, row)
+  if (projectId === undefined) return row.payload
+  return JSON.stringify({
+    ...parsed,
+    projectId,
+    ...(projectId ? {} : { projectName: null }),
+  })
 }
 
 function quarantineOversizedRow(input: {
@@ -399,75 +477,6 @@ function nextBatch(input: {
   return { request: { machine, rows }, localRows, dependencies, quarantined }
 }
 
-function validateBatchResults(batch: RecordSyncRequestRow[], response: RecordSyncResponse): void {
-  if (response.results.length !== batch.length)
-    throw new Error('record sync response did not contain one result per requested row')
-  for (let index = 0; index < batch.length; index++) {
-    const row = batch[index]!
-    const result = response.results[index]!
-    if (result === null || typeof result !== 'object')
-      throw new Error('record sync response contained an invalid row result')
-    if (result.id !== row.id)
-      throw new Error('record sync response order did not match the request')
-    if (!['synced', 'quarantined', 'deferred'].includes(result.status))
-      throw new Error('record sync response contained an invalid row status')
-    if (
-      (result.status === 'quarantined' || result.status === 'deferred') &&
-      (typeof result.reason !== 'string' || !result.reason.trim())
-    ) {
-      throw new Error('record sync response contained an invalid row reason')
-    }
-    if (
-      result.status === 'deferred' &&
-      (typeof result.spaceId !== 'string' || !result.spaceId.trim())
-    ) {
-      throw new Error('record sync response contained an invalid deferred space')
-    }
-  }
-}
-
-function applyBatchResults(input: {
-  local: Database
-  batch: RecordSyncRequestRow[]
-  localRows: Map<number, OutboxRow>
-  dependencies: RecordSyncBatchDependency[]
-  response: RecordSyncResponse
-  attempted: Set<number>
-  readOnlyDeferred: Map<string, number>
-  now: () => string
-}): { pushed: number; failed: number } {
-  validateBatchResults(input.batch, input.response)
-  const treatments = recordSyncResultTreatments(input.dependencies, input.response.results)
-  let pushed = 0
-  let failed = 0
-  for (let index = 0; index < input.batch.length; index++) {
-    const row = input.batch[index]!
-    const result = input.response.results[index]!
-    const treatment = treatments[index]!
-    input.attempted.add(row.id)
-    if (treatment.treatment === 'pending') continue
-    if (result.status === 'synced') {
-      markOutboxRowSynced(input.local, input.localRows.get(row.id)!, input.now())
-      pushed++
-    } else if (result.status === 'quarantined') {
-      quarantineOutboxRow(input.local, row.id, row.payload, result.reason, input.now())
-      failed++
-    } else {
-      input.local
-        .query(
-          `UPDATE outbox SET attempts=attempts+1,last_error=? WHERE id=? AND payload=?
-           AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
-        )
-        .run(result.reason, row.id, row.payload)
-      input.readOnlyDeferred.set(
-        result.spaceId,
-        (input.readOnlyDeferred.get(result.spaceId) ?? 0) + 1,
-      )
-    }
-  }
-  return { pushed, failed }
-}
-
 function noBatchRemaining(rowCount: number, sentBatch: boolean): boolean {
   return rowCount === 0 && sentBatch
 }
@@ -478,6 +487,7 @@ async function sendSyncBatch(input: {
   local: Database
   attempted: Set<number>
   readOnlyDeferred: Map<string, number>
+  held: Map<string, HeldRecordSyncRows>
   now: () => string
 }): Promise<{ pushed: number; failed: number }> {
   let response: RecordSyncResponse
@@ -486,7 +496,7 @@ async function sendSyncBatch(input: {
   } catch (error) {
     syncRouteError(error)
   }
-  return applyBatchResults({
+  return applyRecordSyncBatchResults({
     local: input.local,
     batch: input.batch.request.rows,
     localRows: input.batch.localRows,
@@ -494,8 +504,18 @@ async function sendSyncBatch(input: {
     response,
     attempted: input.attempted,
     readOnlyDeferred: input.readOnlyDeferred,
+    held: input.held,
     now: input.now,
   })
+}
+
+async function ensureActiveSpaceBuiltIns(
+  client: Pick<ReturnType<typeof recordApiClient>, 'whoami' | 'ensureSpaceBuiltIns'>,
+): Promise<Awaited<ReturnType<typeof client.whoami>>> {
+  const session = await client.whoami()
+  if (session.activeSpaceId && client.ensureSpaceBuiltIns)
+    await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
+  return session
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
@@ -526,12 +546,13 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const session = await client.whoami()
+  const session = await ensureActiveSpaceBuiltIns(client)
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
   let failed = 0
   const readOnlyDeferred = new Map<string, number>()
+  const held = new Map<string, HeldRecordSyncRows>()
   const attempted = new Set<number>()
   const candidates = preparePendingRows(writableLocal)
   let sentBatch = false
@@ -554,6 +575,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       local: writableLocal,
       attempted,
       readOnlyDeferred,
+      held,
       now: options.now ?? nowIso,
     })
     sentBatch = true
@@ -570,6 +592,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     configured: true,
     quarantined: quarantinedOutboxRows(writableLocal),
     blocked,
+    ...(held.size ? { held: [...held.values()] } : {}),
     ...(readOnlyDeferred.size
       ? {
           readOnlyDeferred: [...readOnlyDeferred].map(([spaceId, count]) => ({

@@ -42,8 +42,8 @@ const docReorderProcedure = t.procedure
     z.object({
       scope,
       subject,
-      parentId: z.string().nullable(),
-      orderedIds: z.array(z.string()),
+      parentRecordId: z.string().uuid().nullable(),
+      orderedRecordIds: z.array(z.string().uuid()),
     }),
   )
   .mutation(({ input }) => fromOrch(() => docReorder(input), true))
@@ -148,7 +148,7 @@ export const docRouter = t.router({
         scope,
         subject,
         slug: z.string(),
-        revisionId: z.number().int().positive(),
+        revisionId: z.union([z.number().int().positive(), z.string().uuid()]),
         audience: z.enum(DOC_AUDIENCES).optional(),
       }),
     )

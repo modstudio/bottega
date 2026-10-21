@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   claimCreationDecision,
@@ -22,6 +23,21 @@ import {
   settledStateForWorktreeResource,
   stringClaimDecision,
 } from './resource-claims.ts'
+
+function resourceRun(projectRecordId: string | null = null, parent?: string): string {
+  const recordId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    ...(parent === undefined ? {} : { parent, turn: 2 }),
+  })
+  if (projectRecordId !== null) {
+    db()
+      .query('UPDATE run SET project_record_id=? WHERE record_id=?')
+      .run(projectRecordId, recordId)
+  }
+  return recordId
+}
 
 describe('resource claim decisions', () => {
   const releasableSandbox = {
@@ -67,13 +83,13 @@ describe('resource claim decisions', () => {
   })
 
   test('a sandbox directory is recorded once per conversation root', () => {
-    expect(claimCreationDecision(null, 41)).toBe('record')
-    expect(claimCreationDecision(41, 41)).toBe('duplicate')
+    expect(claimCreationDecision(null, '41')).toBe('record')
+    expect(claimCreationDecision('41', '41')).toBe('duplicate')
   })
 
   test('a port held by another conversation is a collision', () => {
-    expect(claimCreationDecision(41, 42)).toBe('collision')
-    expect(claimCreationDecision(42, 42)).toBe('duplicate')
+    expect(claimCreationDecision('41', '42')).toBe('collision')
+    expect(claimCreationDecision('42', '42')).toBe('duplicate')
   })
 
   test('the lowest free port selects the band start when the band is empty', () => {
@@ -108,23 +124,18 @@ describe('resource claim decisions', () => {
     expect(() =>
       fillStringAllocationTemplate('cookie', '{name}-{index}', { name: 'tree' }),
     ).toThrow('unavailable placeholder {index} in string allocation "cookie"')
-    expect(stringClaimDecision('held', 2, 1)).toBe('reuse')
-    expect(stringClaimDecision(null, 1, 1)).toBe('reuse')
-    expect(stringClaimDecision(null, 2, 1)).toBe('collision')
-    expect(stringClaimDecision(null, null, 1)).toBe('claim')
+    expect(stringClaimDecision('held', '2', '1')).toBe('reuse')
+    expect(stringClaimDecision(null, '1', '1')).toBe('reuse')
+    expect(stringClaimDecision(null, '2', '1')).toBe('collision')
+    expect(stringClaimDecision(null, null, '1')).toBe('claim')
   })
 
   test('database allocation reserves the lowest port and reuses it on a later turn', () => {
     const database = db()
-    const insertRun = database.query(
-      `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,parent_run_id,turn)
-       VALUES (?,?,'codex','implement','sha',1,'port allocation','running',?,?)`,
-    )
-    const root = Number(insertRun.run(newRecordId(), nowIso(), null, 1).lastInsertRowid)
-    const turn = Number(insertRun.run(newRecordId(), nowIso(), root, 2).lastInsertRowid)
-    const anotherRoot = Number(insertRun.run(newRecordId(), nowIso(), null, 1).lastInsertRowid)
-    const allocate = (rootRunId: number, runId: number) =>
+    const root = resourceRun()
+    const turn = resourceRun(null, root)
+    const anotherRoot = resourceRun()
+    const allocate = (rootRunId: string, runId: string) =>
       writeTransaction(
         () =>
           claimRecipePort(database, {
@@ -143,7 +154,7 @@ describe('resource claim decisions', () => {
     expect(recipePortClaimForRun(database, turn)).toBe(23000)
     database
       .query(
-        "UPDATE resource_claim SET state='released',settled_at=? WHERE root_run_id=? AND kind='port'",
+        "UPDATE resource_claim SET state='released',settled_at=? WHERE root_run_record_id=? AND kind='port'",
       )
       .run(nowIso(), root)
     expect(recipePortClaimForRun(database, turn)).toBe(23000)
@@ -156,14 +167,9 @@ describe('resource claim decisions', () => {
 
   test('database allocation reports a full band and its live claim count', () => {
     const database = db()
-    const insertRun = database.query(
-      `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES (?,?,'codex','implement','sha',1,'full port band','running',1)`,
-    )
-    const first = Number(insertRun.run(newRecordId(), nowIso()).lastInsertRowid)
-    const second = Number(insertRun.run(newRecordId(), nowIso()).lastInsertRowid)
-    const allocate = (rootRunId: number) =>
+    const first = resourceRun()
+    const second = resourceRun()
+    const allocate = (rootRunId: string) =>
       writeTransaction(
         () =>
           claimRecipePort(database, {
@@ -189,15 +195,7 @@ describe('resource claim decisions', () => {
 
   test('named and anonymous recipe ports reuse only the matching identity', () => {
     const database = db()
-    const root = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'named ports','running',1)`,
-        )
-        .run(nowIso()).lastInsertRowid,
-    )
+    const root = resourceRun()
     const claim = (name?: string) =>
       writeTransaction(
         () =>
@@ -221,24 +219,16 @@ describe('resource claim decisions', () => {
 
   test('project indexes are stable per root and reusable after release', () => {
     const database = db()
-    const projectOne = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('one','/one',1)").run()
-        .lastInsertRowid,
+    const insertProject = database.query<{ record_id: string }, [string, string]>(
+      'INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,1) RETURNING record_id',
     )
-    const projectTwo = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('two','/two',1)").run()
-        .lastInsertRowid,
-    )
-    const insertRun = database.query(
-      `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES (?,?,'codex','implement','sha',1,'index allocation','running',?,1)`,
-    )
-    const first = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
-    const second = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
-    const otherProject = Number(insertRun.run(newRecordId(), nowIso(), projectTwo).lastInsertRowid)
-    const third = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
-    const claim = (rootRunId: number, projectId: number) =>
+    const projectOne = insertProject.get('one', '/one')!.record_id
+    const projectTwo = insertProject.get('two', '/two')!.record_id
+    const first = resourceRun(projectOne)
+    const second = resourceRun(projectOne)
+    const otherProject = resourceRun(projectTwo)
+    const third = resourceRun(projectOne)
+    const claim = (rootRunId: string, projectId: string) =>
       writeTransaction(
         () =>
           claimIndex(database, {
@@ -255,25 +245,23 @@ describe('resource claim decisions', () => {
     expect(claim(second, projectOne)).toBe(2)
     expect(claim(otherProject, projectTwo)).toBe(1)
     database
-      .query("UPDATE resource_claim SET state='released' WHERE root_run_id=? AND kind='index'")
+      .query(
+        "UPDATE resource_claim SET state='released' WHERE root_run_record_id=? AND kind='index'",
+      )
       .run(first)
     expect(claim(third, projectOne)).toBe(1)
   })
 
   test('string claims reuse by root and name and refuse another root holding the value', () => {
     const database = db()
-    const projectId = Number(
-      database.query("INSERT INTO project(name,path,canon) VALUES ('strings','/strings',1)").run()
-        .lastInsertRowid,
-    )
-    const insertRun = database.query(
-      `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES (?,?,'codex','implement','sha',1,'string allocation','running',?,1)`,
-    )
-    const first = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
-    const second = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
-    const claim = (rootRunId: number, value: string) =>
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'strings','/strings',1) RETURNING record_id",
+      )
+      .get()!.record_id
+    const first = resourceRun(projectId)
+    const second = resourceRun(projectId)
+    const claim = (rootRunId: string, value: string) =>
       writeTransaction(
         () =>
           claimString(database, {
@@ -296,19 +284,14 @@ describe('resource claim decisions', () => {
 
   test('database claims reuse by root and name and collide only within an engine', () => {
     const database = db()
-    const projectId = Number(
-      database
-        .query("INSERT INTO project(name,path,canon) VALUES ('databases','/databases',1)")
-        .run().lastInsertRowid,
-    )
-    const insertRun = database.query(
-      `INSERT INTO run
-       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES (?,?,'codex','implement','sha',1,'database allocation','running',?,1)`,
-    )
-    const first = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
-    const second = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
-    const claim = (rootRunId: number, engine: string, value: string) =>
+    const projectId = database
+      .query<{ record_id: string }, []>(
+        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'databases','/databases',1) RETURNING record_id",
+      )
+      .get()!.record_id
+    const first = resourceRun(projectId)
+    const second = resourceRun(projectId)
+    const claim = (rootRunId: string, engine: string, value: string) =>
       writeTransaction(
         () =>
           claimDatabaseName(database, {
@@ -333,18 +316,10 @@ describe('resource claim decisions', () => {
 
   test('worktree settlement releases index and string claims unless the tree is retained', () => {
     const database = db()
-    const root = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'settlement','running',1)`,
-        )
-        .run(nowIso()).lastInsertRowid,
-    )
+    const root = resourceRun()
     const insertClaim = database.query(
       `INSERT INTO resource_claim
-       (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+       (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
        VALUES (?, ?,? ,?,?,'claimed',?)`,
     )
     insertClaim.run(newRecordId(), root, root, 'worktree', '/tree', nowIso())
@@ -375,18 +350,10 @@ describe('resource claim decisions', () => {
 
   test('failed creation releases only claim ids inserted by that attempt', () => {
     const database = db()
-    const root = Number(
-      database
-        .query(
-          `INSERT INTO run
-           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-           VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'failure release','running',1)`,
-        )
-        .run(nowIso()).lastInsertRowid,
-    )
+    const root = resourceRun()
     const insert = database.query(
       `INSERT INTO resource_claim
-       (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+       (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
        VALUES (?, ?,?,?,?, 'claimed',?)`,
     )
     const previousId = Number(
@@ -400,7 +367,7 @@ describe('resource claim decisions', () => {
       database
         .query(
           `INSERT INTO resource_claim
-           (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+           (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
            VALUES (?, ?,?,'database','postgres:app_1','claimed',?)`,
         )
         .run(newRecordId(), root, root, nowIso()).lastInsertRowid,

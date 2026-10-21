@@ -1,11 +1,13 @@
 import { categorizeFile } from '../../../shared/file-kind.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import type { ReviewRiskMap } from '../project/project-injection.ts'
 
 export type ReviewTier = {
   tier: 0 | 1 | 2 | 3
   risk: 0 | 1 | 2 | 3
   size: 0 | 1 | 2 | 3
   reasons: string[]
+  riskBasis: string | null
 }
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
@@ -65,13 +67,11 @@ export function resolveTierRange(
   return { from: facts.mergeBase, to: facts.to.commit! }
 }
 
-type ReviewHotPath = {
-  tier: 1 | 2 | 3
+type CompiledReviewRiskPath = Omit<ReviewRiskMap['paths'][number], 'pattern'> & {
   pattern: RegExp
-  reason: string
 }
 
-const AGENT_INSTRUCTION_PATHS: readonly ReviewHotPath[] = [
+const AGENT_INSTRUCTION_PATHS: readonly CompiledReviewRiskPath[] = [
   { tier: 1, pattern: /^\.claude\/skills\//, reason: 'agent skill' },
   { tier: 1, pattern: /^\.agents\/skills\//, reason: 'agent skill' },
   {
@@ -79,21 +79,6 @@ const AGENT_INSTRUCTION_PATHS: readonly ReviewHotPath[] = [
     pattern: /^\.agents\/(?:workflow-steps|workflows)\//,
     reason: 'workflow instructions',
   },
-]
-
-const REVIEW_HOT_PATHS: readonly ReviewHotPath[] = [
-  { tier: 3, pattern: /^orchestrator\/src\/database\/db\.ts$/, reason: 'schema and DDL' },
-  { tier: 3, pattern: /^orchestrator\/src\/landing\.ts$/, reason: 'landing safety' },
-  { tier: 3, pattern: /^orchestrator\/src\/worktree\.ts$/, reason: 'worktree lifecycle' },
-  { tier: 3, pattern: /^orchestrator\/src\/run\.ts$/, reason: 'run execution' },
-  { tier: 3, pattern: /^orchestrator\/hooks\//, reason: 'repository hooks' },
-  { tier: 3, pattern: /^\.githooks\//, reason: 'repository hooks' },
-  { tier: 3, pattern: /^\.claude\/settings\.json$/, reason: 'agent settings' },
-  { tier: 3, pattern: /^shared\//, reason: 'cross-concern shared code' },
-  { tier: 2, pattern: /^orchestrator\/src\//, reason: 'orchestrator source' },
-  { tier: 2, pattern: /^hub\/src\//, reason: 'hub backend source' },
-  { tier: 1, pattern: /^hub\/web\//, reason: 'hub web surface' },
-  ...AGENT_INSTRUCTION_PATHS,
 ]
 
 const isOrdinaryConfig = (path: string) => {
@@ -113,25 +98,60 @@ const isReviewExcluded = (path: string) => {
   )
 }
 
-export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTier {
+type FileRisk = { tier: 0 | 1 | 2 | 3; reason: string; basis: string | null }
+
+function fileRisk(
+  path: string,
+  riskPaths: readonly CompiledReviewRiskPath[] | undefined,
+  declaredUnlisted: 0 | 1 | 2 | undefined,
+): FileRisk | null {
+  if (isReviewExcluded(path)) return null
+  const match =
+    AGENT_INSTRUCTION_PATHS.find((entry) => entry.pattern.test(path)) ??
+    riskPaths?.find((entry) => entry.pattern.test(path))
+  if (match)
+    return { tier: match.tier, reason: `${path} (${match.reason})`, basis: match.basis ?? null }
+  const kind = categorizeFile(path)
+  if (kind !== 'product' || isOrdinaryConfig(path)) return null
+  const tier = declaredUnlisted ?? 2
+  const applied =
+    declaredUnlisted === undefined
+      ? 'fail-closed default risk 2 applied'
+      : `project unlisted risk ${declaredUnlisted} applied`
+  return { tier, reason: `unlisted product path ${path} (${applied})`, basis: null }
+}
+
+function classifyRisk(
+  files: readonly ReviewTierFile[],
+  riskMap: ReviewRiskMap | undefined,
+): { risk: 0 | 1 | 2 | 3; reason: string; basis: string | null } {
+  const riskPaths = riskMap?.paths.map((entry) => ({
+    ...entry,
+    pattern: new RegExp(entry.pattern),
+  }))
   let risk: 0 | 1 | 2 | 3 = 0
-  let riskReason =
-    input.files.length === 0
+  let reason =
+    files.length === 0
       ? 'risk 0: no branch-side change'
       : 'risk 0: only documentation, tests, fixtures, or configuration paths'
-  for (const file of input.files) {
-    const kind = categorizeFile(file.path)
-    if (isReviewExcluded(file.path)) continue
-    const match = REVIEW_HOT_PATHS.find((entry) => entry.pattern.test(file.path))
-    const ordinaryConfig = isOrdinaryConfig(file.path)
-    const candidate = match?.tier ?? (kind === 'product' && !ordinaryConfig ? 2 : 0)
-    if (candidate > risk) {
-      risk = candidate
-      riskReason = match
-        ? `risk ${candidate}: ${file.path} (${match.reason})`
-        : `risk 2: unlisted product path ${file.path}`
-    }
+  let classified = false
+  let basis: string | null = null
+  for (const file of files) {
+    const candidate = fileRisk(file.path, riskPaths, riskMap?.unlisted)
+    if (!candidate || (classified && candidate.tier <= risk)) continue
+    risk = candidate.tier
+    reason = `risk ${candidate.tier}: ${candidate.reason}`
+    basis = candidate.basis
+    classified = true
   }
+  return { risk, reason, basis }
+}
+
+export function classifyReviewTier(input: {
+  files: ReviewTierFile[]
+  risk?: ReviewRiskMap
+}): ReviewTier {
+  const { risk, reason: riskReason, basis: riskBasis } = classifyRisk(input.files, input.risk)
 
   const productFiles = input.files.filter(
     (file) =>
@@ -148,7 +168,7 @@ export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTi
     size = (size + 1) as 1 | 2 | 3
     reasons[1] = `size ${size}: ${productLines} product lines across ${productFiles.length} product files (more than 8 raises size one tier)`
   }
-  return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons }
+  return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons, riskBasis }
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {

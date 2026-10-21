@@ -5,10 +5,17 @@
  */
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { tryWriteContention, writeTransaction } from '../database/db.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
+import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
+import {
+  pullRecordCataloguesForSpace,
+  RecordCataloguePullError,
+} from '../record/record-cache-catalogues.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
+import { projectAddDecision } from './project-add-record.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
@@ -39,8 +46,8 @@ type ProjectFlags = {
 }
 type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
 
-const enabledLensIds = (): string[] =>
-  listLenses()
+const enabledLensIds = (spaceId: string | null): string[] =>
+  listLenses(db(), spaceId)
     .filter((lens) => lens.enabled)
     .map((lens) => lens.id)
 
@@ -133,40 +140,79 @@ export type AddProjectInput = {
   canon: boolean
   settings: ProjectSettings
   allowIncomplete: boolean
+  stackWasRequested?: boolean
+  selectedSpace?: string
+}
+
+async function pullProjectAddCatalogues(
+  input: AddProjectInput,
+  targetSpace: { id: string; label: string },
+): Promise<void> {
+  try {
+    await pullRecordCataloguesForSpace(db(), targetSpace.id)
+  } catch (error) {
+    if (!(error instanceof RecordCataloguePullError)) throw error
+    const retry = `${PLATFORM_SLUG} project add ${JSON.stringify(input.path)} --name ${JSON.stringify(input.name)}${input.selectedSpace ? ` --space ${JSON.stringify(input.selectedSpace)}` : ''}`
+    throw new Error(
+      `failed to pull ${error.stream} catalogue for record space ${targetSpace.label}: ${error.message}\ncleared by: restore access to that hosted stream, then retry \`${retry}\``,
+      { cause: error },
+    )
+  }
 }
 
 export async function addProject(
   input: AddProjectInput,
   requireMembership: (space: string) => Promise<unknown>,
-): Promise<{ project: Project; wasRetired: boolean }> {
+): Promise<{ project: Project; wasRetired: boolean; adoptedSpace?: string }> {
   if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
   const malformed = validateProjectSettings(input.settings, input.path, {
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
     currentProjectName: input.name,
     register: projects(),
-    enabledLensIds: enabledLensIds(),
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
   await validateDeclaredSpace(input.settings, requireMembership)
+  const resolved = await projectAddDecision({
+    name: input.name,
+    requestedStack: input.stack,
+    stackWasRequested: input.stackWasRequested === true,
+    requestedSettings: input.settings,
+    selectedSpace: input.selectedSpace,
+  })
+  const { decision, targetSpace } = resolved
+  if (decision.kind === 'refuse') throw new Error(decision.reason)
+  if (targetSpace) await pullProjectAddCatalogues(input, targetSpace)
   const candidate = {
-    id: 0,
-    recordId: null,
+    recordId: decision.kind === 'adopt' ? decision.recordId : newRecordId(),
     name: input.name,
     path: input.path,
-    stack: input.stack,
+    stack: decision.kind === 'adopt' ? decision.stack : input.stack,
     canon: input.canon,
     retiredAt: null,
-    settings: input.settings,
+    settings: decision.settings,
   }
+  const adoptedMalformed = validateProjectSettings(candidate.settings, input.path, {
+    validateKeyPrefixes: Object.hasOwn(candidate.settings, 'keyPrefixes'),
+    currentProjectName: input.name,
+    register: projects(),
+    enabledLensIds: enabledLensIds(targetSpace?.id ?? null),
+  })
+  if (adoptedMalformed.length) throw new Error(adoptedMalformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
-  const recordId = await writeHostedProject(candidate)
+  const recordId =
+    decision.kind === 'adopt' ? decision.recordId : await writeHostedProject(candidate)
   upsertProject({ ...candidate, recordId })
+  if (targetSpace) rememberProjectSpace(db(), input.name, targetSpace.id)
   const project = projectByName(input.name)
   if (!project) throw new Error(`project ${input.name} was not registered`)
-  return { project, wasRetired }
+  return {
+    project,
+    wasRetired,
+    ...(decision.kind === 'adopt' ? { adoptedSpace: decision.space } : {}),
+  }
 }
 
 async function addProjectCommand(
@@ -190,7 +236,7 @@ async function addProjectCommand(
       throw new Error(`--settings must be JSON: ${e}`)
     }
   }
-  const { project, wasRetired } = await addProject(
+  const { project, wasRetired, adoptedSpace } = await addProject(
     {
       path,
       name,
@@ -198,6 +244,8 @@ async function addProjectCommand(
       canon: !has('no-canon'),
       settings,
       allowIncomplete: has('allow-incomplete'),
+      stackWasRequested: has('stack'),
+      selectedSpace: flag('space'),
     },
     requireMembership,
   )
@@ -205,7 +253,9 @@ async function addProjectCommand(
     presentation.log(JSON.stringify(listedProjectJson(project)))
     return
   }
-  if (wasRetired) {
+  if (adoptedSpace) {
+    presentation.log(`adopted ${name} from record space ${adoptedSpace}  ${path}`)
+  } else if (wasRetired) {
     presentation.log(`un-retired ${name}`)
   } else {
     presentation.log(
@@ -258,11 +308,13 @@ function validatedFillCandidate(current: Project, input: FillAbsentProjectInput)
     throw new Error(`cannot fill stack for ${input.name}: stack is no longer absent`)
   }
   const settings = fillAbsentSettings(current, input)
+  const lensSpaceId = effectiveProjectSpace(db(), current.name)
   const malformed = validateProjectSettings(settings, current.path, {
     validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
     currentProjectName: current.name,
     register: projects(),
-    enabledLensIds: enabledLensIds(),
+    enabledLensIds: enabledLensIds(lensSpaceId),
+    enabledLensSpaceId: lensSpaceId,
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
   const candidate = {
@@ -307,8 +359,8 @@ function fillCandidate(current: Project, input: FillAbsentProjectInput): FillCan
 async function writeHostedFillCandidate(
   snapshot: Project,
   candidate: FillCandidate,
-): Promise<string | null> {
-  if (!candidate.project) return null
+): Promise<string> {
+  if (!candidate.project) return snapshot.recordId
   const destination = await hostedProjectDestination(
     candidate.project.name,
     candidate.project.settings,
@@ -422,13 +474,7 @@ async function persistSetProject(
   destinationSpaceId?: string,
 ): Promise<void> {
   const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
-  const recordId = await writeHostedProject(
-    {
-      ...candidate,
-      previousName: renamed ? currentName : undefined,
-    },
-    destinationSpaceId,
-  )
+  const recordId = await writeHostedProject(candidate, destinationSpaceId)
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
   persistLocalProjectSet(renamed, currentName, nextName, { ...candidate, recordId })
   if (previousTrunk === nextTrunk) return
@@ -463,7 +509,6 @@ async function setProjectCommand(
   }
   const nextName = flags.flag('name') ?? name
   const candidate = {
-    id: project.id,
     recordId: project.recordId,
     name: nextName,
     path: flags.flag('path') ?? project.path,
@@ -472,6 +517,7 @@ async function setProjectCommand(
     retiredAt: project.retiredAt,
     settings,
   }
+  const lensSpaceId = effectiveProjectSpace(db(), name)
   const malformed = validateProjectSettings(candidate.settings, candidate.path, {
     validateKeyPrefixes:
       writesKeyPrefixes(flags.flag('settings')) ||
@@ -479,7 +525,8 @@ async function setProjectCommand(
     currentProjectName: name,
     projectNameAfterWrite: nextName,
     register: projects(),
-    enabledLensIds: enabledLensIds(),
+    enabledLensIds: enabledLensIds(lensSpaceId),
+    enabledLensSpaceId: lensSpaceId,
   }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
   if (malformed.length) throw new Error(malformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
@@ -577,7 +624,7 @@ export async function projectCommand(
         `${PLATFORM_SLUG} project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT`,
       )
     const version = versionText === undefined ? undefined : Number(versionText)
-    const result = selectProjectProfile({
+    const result = await selectProjectProfile({
       project: name,
       axis,
       name: profile,

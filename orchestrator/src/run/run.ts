@@ -5,7 +5,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
-import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
+import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
+import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
@@ -34,11 +35,10 @@ import {
 } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
-import { assessEvidencePrompt } from '../evidence/evidence.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
-import { isReaderJob, job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
+import { job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -55,8 +55,9 @@ import {
   storedMcpProbe,
 } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
+import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
-import { signedInRecordUserId } from '../record/record-attribution.ts'
+import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
@@ -81,17 +82,19 @@ import {
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxLaunchArgv,
+  sandboxReasonPrefix,
   selectReadonlySandbox,
 } from '../sandbox/sandbox.ts'
 import {
-  assertAcpAllowed,
   assertAcpReady,
+  EMPTY_VENDOR_USAGE,
   selectAgentForTransport,
   type TransportName,
 } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
+import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -101,8 +104,10 @@ import {
 } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
+import { callerWatch } from './run-caller-watch.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import { runEvidence } from './run-evidence-context.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
   provisionWriterSharedGitRoots,
@@ -115,6 +120,7 @@ import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
+import { codexMcpMode } from './run-mcp-mode.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -128,7 +134,9 @@ import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
-import { finishRun } from './run-terminal.ts'
+import { rootRunRecordId } from './run-root-record.ts'
+import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
+import { finishRun, type TerminalInput } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
 import { renderTaskRulings } from './task-rulings.ts'
@@ -168,16 +176,6 @@ function workerMcpLaunchScope(input: {
   }
 }
 
-async function startedByForRun(reserveId: number | undefined): Promise<string | null> {
-  if (reserveId !== undefined) return null
-  return signedInRecordUserId()
-}
-
-function codexMcpMode(usingMcp: boolean, writesJob: boolean): false | 'reader' | 'writer' {
-  if (!usingMcp) return false
-  return writesJob ? 'writer' : 'reader'
-}
-
 const CANON_SOURCE_PROMPT_RESERVE_BYTES =
   Math.max(
     ...(['live database', 'mirror', 'unknown'] as CanonSource[]).map((source) =>
@@ -185,10 +183,22 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
     ),
   ) + 2
 
+const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
+
+function confinementSkipLines(failures: FreezeFailure[]): string[] {
+  return failures.map(
+    (failure) =>
+      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
+      `fix the register with ${PLATFORM_SLUG} project set`,
+  )
+}
+
 export async function run(opts: {
   job: string
   prompt: string
   agent?: string
+  /** True only when the caller selected the agent rather than routing it. */
+  agentExplicit?: boolean
   schemaPath?: string
   mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
@@ -208,7 +218,7 @@ export async function run(opts: {
   /** Explicit routing attribution when the caller is outside the registered project. */
   repo?: string
   /** The run this one re-attempts, for `bottega run retry`. */
-  retryOf?: number
+  retryOf?: string
   noFailover?: boolean
   noWaitCapacity?: boolean
   ownerSession?: string | null
@@ -249,7 +259,7 @@ export async function run(opts: {
    * claims a placeholder row, hands the id over, and this fills it in once the
    * agent is picked.
    */
-  reserveId?: number
+  reserveId?: string
   /**
    * Continue a worker that stopped to ask, instead of starting a new one.
    *
@@ -276,12 +286,12 @@ export async function run(opts: {
 }): Promise<RunResult> {
   writableDb()
   enableSchemaReload(() => {})
-  const startedByUserId = await startedByForRun(opts.reserveId)
+  const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
   const resume = resumeFacts(
     opts.resume?.kind ?? null,
-    opts.reserveId ?? 0,
+    opts.reserveId ?? '',
     opts.resume?.parent ?? null,
   )
   const inheritedDispatch =
@@ -314,8 +324,7 @@ export async function run(opts: {
     resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry)
   const implicitReview = implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
   const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
-  // Programmatic callers get the same ordering guarantee as the CLI: a bad
-  // ref is refused before a run row or worktree exists.
+  // Programmatic callers also refuse a bad ref before a run row or worktree exists.
   if (opts.base) {
     const internalRepositoryFailover = opts.automaticFailover && requestedJob.needs.readsRepo
     if (opts.job !== 'implement' && opts.job !== 'fix' && !internalRepositoryFailover) {
@@ -347,8 +356,7 @@ export async function run(opts: {
   // endpoint is healthy, and when it is not it replaces a run that was going to
   // fail anyway.
   //
-  // Awaited before pick() so the router sees the result, and cached for the
-  // process so a fan-out probes once rather than per run.
+  // Awaited before pick() and cached so a fan-out probes once rather than per run.
   const health = await ensureLocalHealth()
   // Down, so ask it to come back — and then carry on without it.
   //
@@ -372,7 +380,7 @@ export async function run(opts: {
    * The caller's prompt is stored unwrapped at prompt_path so `bottega run retry` can
    * re-send it and wrap once. The bound text — preamble plus prompt — is what
    * the agent is actually sent, hashed and routed, and is written beside it as
-   * `.bound.txt`. Wrapping it further down would send a payload the database
+   * `bound-prompt.txt`. Wrapping it further down would send a payload the database
    * no longer described.
    *
    * Whether a contract is required is derived from `writesRepo`: changing
@@ -412,9 +420,8 @@ export async function run(opts: {
   })
   const originalPrompt = opts.prompt
   const resolvedDialect = resolveReplyDialect(requestedJob)
-  const generatedSchema = resolvedDialect.schema
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
-  const runProjectId = runProjectName ? (projectByName(runProjectName)?.id ?? null) : null
+  const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
   if (resume.isFirstTurn) {
     try {
@@ -423,32 +430,25 @@ export async function run(opts: {
     } catch (cause) {
       const message = (cause as Error).message
       let failedId = opts.reserveId
-      if (failedId)
-        db()
-          .query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
-          .run(message, failedId)
-      else
-        failedId = (
-          db()
-            .query(
-              `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING id`,
-            )
-            .get(
-              ...[newRecordId(), nowIso()],
-              opts.job,
-              runProjectName,
-              runProjectId,
-              callerCwd,
-              sha(originalPrompt),
-              sha(originalPrompt),
-              Buffer.byteLength(originalPrompt),
-              originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
-              opts.ownerSession ?? sessionId(),
-              message,
-              storedMcpRequest(mcpRequest),
-              startedByUserId,
-            ) as { id: number }
-        ).id
+      if (failedId) recordRunStartupFailure(failedId, cause)
+      else {
+        failedId = recordNeverStartedRunFailure({
+          recordId: newRecordId(),
+          error: cause,
+          job: opts.job,
+          repo: runProjectName,
+          projectRecordId: runProjectId,
+          cwd: callerCwd,
+          promptSha: sha(originalPrompt),
+          specSha: sha(originalPrompt),
+          promptBytes: Buffer.byteLength(originalPrompt),
+          promptHead: originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
+          sessionId: opts.ownerSession ?? sessionId(),
+          mcp: storedMcpRequest(mcpRequest),
+          startedByUserId,
+          agentExplicit: Number(Boolean(opts.agentExplicit)),
+        })
+      }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
         runId: failedId,
       })
@@ -477,7 +477,6 @@ export async function run(opts: {
           taskRulings: rulingsSection,
           spec: originalPrompt,
         })
-
   prompt = bindReviewInstructions({
     prompt,
     findings: Boolean(requestedJob.findings),
@@ -489,12 +488,7 @@ export async function run(opts: {
     lens: opts.lens,
     repo: runProjectName,
   })
-  const evidencePrompt = assessEvidencePrompt({
-    findingsJob: Boolean(requestedJob.findings),
-    verifyClaimJob: opts.job === 'verify-claim',
-    readerJob: isReaderJob(opts.job),
-    declaredDeliverables,
-  })
+  const evidencePrompt = runEvidence(opts.job, Boolean(requestedJob.findings), declaredDeliverables)
   if (evidencePrompt.readerInstruction && resume.isFirstTurn) {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
@@ -504,7 +498,7 @@ export async function run(opts: {
       opts.job,
       selectAgentForTransport(requestedTransport, opts.agent),
       Buffer.byteLength(prompt) +
-        replyFileBytes(replySchemaName, runScratchDir(Number.MAX_SAFE_INTEGER)) +
+        replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID)) +
         (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
         (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
       true,
@@ -543,7 +537,7 @@ export async function run(opts: {
       timeoutMinutes,
     )
   } catch (e) {
-    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+    recordRunStartupFailure(opts.reserveId, e)
     throw e
   }
   if (resume.isFirstTurn) {
@@ -554,17 +548,17 @@ export async function run(opts: {
   }
   if (transportName === 'acp') {
     try {
-      assertAcpAllowed(opts.job, name, a)
+      assertAcpPolicyAllowed(opts.job, a.name, a, opts.agentExplicit, resume.isFirstTurn)
       assertAcpReady(name, a)
     } catch (e) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+      recordRunStartupFailure(opts.reserveId, e)
       throw e
     }
   }
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+      recordRunStartupFailure(opts.reserveId, versionRefusal)
       throw new Error(versionRefusal)
     }
   }
@@ -578,8 +572,7 @@ export async function run(opts: {
     }
     prompt += `\n\n${suffix}`
   }
-
-  let { deferredCwdMcpPreflight, mcpConnection } = prepareRunMcpPreflight({
+  let { deferredCwdMcpPlan, mcpConnection } = prepareRunMcpPreflight({
     mcpRequest,
     callerCwd,
     projectName: runProjectName ?? undefined,
@@ -595,22 +588,18 @@ export async function run(opts: {
     agentHasMcp: a.caps.mcp,
   })
   if (attachmentRuling.refusalReason) {
-    // A routing mismatch must not convert the reserved placeholder into a failed row.
-    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+    recordRunStartupFailure(opts.reserveId, attachmentRuling.refusalReason)
     throw new Error(attachmentRuling.refusalReason)
   }
-
   const mcpMode = attachmentRuling.mcpMode
   let usingMcp = attachmentRuling.usingMcp
   // Every repository job gets writable scratch; only `writesJob` requests a diff.
   const writes = repoJob
-
   // Minted before the spawn when the agent lets us choose, so the resume handle
   // exists even for a worker that dies mid-turn. codex and qwen name their own
   // and are read back afterwards instead.
   const vendorSession: string | null =
     opts.resume?.kind === 'continue' ? (opts.resume.session ?? null) : (a.mintSession?.() ?? null)
-
   mkdirSync(RUNS_DIR, { recursive: true })
   pruneRuns(RUNS_DIR)
   /**
@@ -633,9 +622,10 @@ export async function run(opts: {
   const unique = opts.reserveId ?? `x${randomUUID().slice(0, 8)}`
   const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
   const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
-  const outPath = paths.output
+  let outPath = paths.output
   let {
     promptPath,
+    outputPath: claimedOutputPath,
     originalSchemaPath,
     textReplyContract,
     schemaPath,
@@ -663,10 +653,9 @@ export async function run(opts: {
   } = await claimRun({
     opts,
     runsDir: RUNS_DIR,
-    paths,
     stamp,
     name,
-    generatedSchema,
+    generatedSchema: resolvedDialect.schema,
     originalPrompt,
     prompt,
     callerCwd,
@@ -691,17 +680,17 @@ export async function run(opts: {
     implicitReview,
     coverageBase,
     readOnlyBase,
-    deferredCwdMcpPreflight,
+    deferredCwdMcpPlan,
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionId),
+    carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
   })
+  outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
-
   // A reader clone keeps all writable Git metadata inside its own tree. Its
   // hooks live outside that root so the worker cannot disable the push guard.
   // Writers remain linked worktrees and retain their existing shared roots.
@@ -746,7 +735,7 @@ export async function run(opts: {
       project: projectAt(callerCwd),
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
-      localBaseUrl: modelHostUrl(),
+      baseUrl: a.baseUrl,
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })
@@ -754,9 +743,10 @@ export async function run(opts: {
       agent: a,
       sandbox: sandboxSelection.sandbox,
       runDir: sandboxRunDir,
-      runId: claim.id,
+      runNumber: claim.number,
+      runRecordId: claim.recordId,
       runToken,
-      environment: gitConfigEnvironment ?? {},
+      environment: { ...(gitConfigEnvironment ?? {}), ...(await resolveEndpointApiKeyEnv(a)) },
       grokEnvironment: grokMcpEnvironment,
       includeStore: repoJob,
       codexMcpScope,
@@ -771,30 +761,23 @@ export async function run(opts: {
   } catch (e) {
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
-    db()
-      .query(
-        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-      )
-      .run(why, Date.now() - started, claim.id)
-    teardownTerminalRunResources(db(), claim.id)
+    try {
+      recordRunStartupFailure(claim.id, e, started)
+    } finally {
+      teardownTerminalRunResources(db(), claim.id)
+    }
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
   mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
   const sandboxRouteReason = sandboxSelection.reason
-    ? `${reason}; sandbox host: ${sandboxSelection.reason}`
+    ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
     : reason
   writeTransaction(() => {
     db()
-      .query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
+      .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
       .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
     if (hasRunScopedHome) {
-      const rootRunId = (
-        db()
-          .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-          .get(claim.id) as {
-          root_id: number
-        }
-      ).root_id
+      const rootRunId = rootRunRecordId(claim.id)
       recordSandboxDirectoryClaim(db(), {
         rootRunId,
         runId: claim.id,
@@ -805,11 +788,10 @@ export async function run(opts: {
     }
   })
   if (sandboxSelection.reason) {
-    const header = `sandbox host: ${sandboxSelection.reason}`
+    const header = `${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     console.error(`orch: run ${claim.id} ${header}`)
   }
-
   if (mcpMode && mcpServerName) {
     const probeConfig = mcpLaunch.config[mcpServerName]
     if (probeConfig?.url || probeConfig?.command) {
@@ -839,7 +821,7 @@ export async function run(opts: {
           projectAt(callerCwd)?.name ?? null,
         )
         db()
-          .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE id=?')
+          .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE record_id=?')
           .run(
             storedMcpProbe(probe),
             probeRuling.callEvidence.connected,
@@ -867,20 +849,22 @@ export async function run(opts: {
         if (probeRuling.failedConnection) {
           mcpConnection = probeRuling.failedConnection
           db()
-            .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`)
+            .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE record_id=?`)
             .run(mcpConnection.error, claim.id)
           usingMcp = false
         }
       } catch (error) {
-        if ((error as { runId?: number }).runId === claim.id) throw error
+        if ((error as { runId?: string }).runId === claim.id) throw error
         const why = String((error as Error)?.message ?? error)
-        db()
-          .query(
-            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-          )
-          .run(why, Date.now() - started, claim.id)
-        await resetSandbox()
-        teardownTerminalRunResources(db(), claim.id)
+        try {
+          recordRunStartupFailure(claim.id, error, started)
+        } finally {
+          try {
+            await resetSandbox()
+          } finally {
+            teardownTerminalRunResources(db(), claim.id)
+          }
+        }
         throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
           runId: claim.id,
         })
@@ -891,23 +875,24 @@ export async function run(opts: {
       if (mismatch) {
         mcpConnection = mismatch.connection
         db()
-          .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE id=?')
+          .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE record_id=?')
           .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
         if (mismatch.refusalReason) {
           const why = mismatch.refusalReason
-          db()
-            .query(
-              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-            )
-            .run(why, Date.now() - started, claim.id)
-          teardownTerminalRunResources(db(), claim.id)
+          try {
+            recordRunStartupFailure(claim.id, why, started)
+          } finally {
+            teardownTerminalRunResources(db(), claim.id)
+          }
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
             runId: claim.id,
           })
         }
         mcpConnection = mismatch.continuedConnection
         usingMcp = false
-        db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
+        db()
+          .query('UPDATE run SET mcp_error=? WHERE record_id=?')
+          .run(mcpConnection.error, claim.id)
       }
     }
   }
@@ -918,7 +903,6 @@ export async function run(opts: {
   }
 
   bindSignals()
-
   // Declared out here because the `finally` has to be able to write a terminal
   // row whatever happened inside: the row is already claiming to be running, and
   // the one thing worse than a failed run is one that never says it stopped.
@@ -928,7 +912,7 @@ export async function run(opts: {
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
-  let idleTimer: ReturnType<typeof setInterval> | null = null
+  let resourceObserver: RunResourceObserver | null = null
   let idleUnkillable = false
   let idleTreePids: number[] = []
   let idleTreePgid: number | null = null
@@ -936,6 +920,7 @@ export async function run(opts: {
   let output = ''
   let vendorTokens: number | null = null
   let costUsd: number | null = null
+  let vendorUsage = EMPTY_VENDOR_USAGE
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let contract: WorkerReply | null = null
@@ -960,21 +945,17 @@ export async function run(opts: {
   const callerCheckout = callerProject
     ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
     : null
-  const callerWatch =
-    callerCheckout && callerCheckout !== isolatedCwd
-      ? [{ project: callerProject!.name, path: callerCheckout }]
-      : []
-  const candidates = checkoutWatchSet(callerWatch, worktree?.path, runProjectName)
+  const candidates = checkoutWatchSet(
+    callerWatch(callerCheckout, isolatedCwd, callerProject),
+    worktree?.path,
+    runProjectName,
+  )
   const beforeFreeze = freezeCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   // A detached child's stderr reaches nobody, so the skip also rides the output
   // header that `bottega run result` prints (lens run 2290): the register is stale and
   // the project unwatched on every later run until somebody reads this.
-  const skipLines = skipped.map(
-    (failure) =>
-      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
-      `fix the register with ${PLATFORM_SLUG} project set`,
-  )
+  const skipLines = confinementSkipLines(skipped)
   for (const line of skipLines) console.error(line)
   if (skipLines.length) {
     mcpSetupHeader = mcpSetupHeader
@@ -997,7 +978,7 @@ export async function run(opts: {
       proc,
       timer,
       checkpointTimer,
-      idleTimer,
+      resourceObserver,
       idleUnkillable,
       idleTreePids,
       idleTreePgid,
@@ -1005,6 +986,7 @@ export async function run(opts: {
       output,
       vendorTokens,
       costUsd,
+      vendorUsage,
       resolvedSession,
       effectiveModel,
       contract,
@@ -1049,8 +1031,8 @@ export async function run(opts: {
       writableRoots,
       gitConfigEnvironment,
       sandboxRunDir,
-      grokMcpEnvironment,
       recipeEnvironment,
+      launchEnvironment: mcpEnvironment,
       scratchDir,
       writesJob,
       codexSandbox,
@@ -1079,7 +1061,7 @@ export async function run(opts: {
       } = await finishRun({
         timer,
         checkpointTimer,
-        idleTimer,
+        resourceObserver,
         proc,
         askLoopback,
         claim,
@@ -1108,7 +1090,7 @@ export async function run(opts: {
         checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
         output,
         confinementEvent,
-        resolvedDialect,
+        parsedReply: resolvedDialect.parse(output).reply as TerminalInput['parsedReply'],
         runProjectName,
         mcpConnection,
         mcpMode,
@@ -1121,6 +1103,7 @@ export async function run(opts: {
         exitCode,
         vendorTokens,
         costUsd,
+        vendorUsage,
         effectiveModel,
         resolvedSession,
         name,

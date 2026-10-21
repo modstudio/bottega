@@ -3,16 +3,19 @@ import { constants as osConstants } from 'node:os'
 import { execa } from 'execa'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
+import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
+  EMPTY_VENDOR_USAGE,
   type NormalizedEvent,
   outcomeFromTransport,
   registerTransport,
   type TransportHandle,
   type TransportResult,
   type TransportStartOpts,
+  type VendorUsage,
 } from './transport.ts'
 import { cliResultEvents } from './transport-result-events.ts'
 
@@ -20,6 +23,14 @@ import { cliResultEvents } from './transport-result-events.ts'
 function parseVendorTokens(blob: string): number | null {
   const m = blob.match(/tokens used\s*\n?\s*([\d,]+)/i)
   return m ? Number(m[1]!.replace(/,/g, '')) : null
+}
+
+function cliUsage(estimatedCostUsd: number | null) {
+  const vendorUsage: VendorUsage =
+    estimatedCostUsd === null
+      ? EMPTY_VENDOR_USAGE
+      : { ...EMPTY_VENDOR_USAGE, estimatedCostUsd, costSource: 'estimated' }
+  return { costUsd: null, vendorUsage }
 }
 
 async function readStdoutLines(
@@ -46,6 +57,30 @@ async function readStdoutLines(
     onLine(buf)
   }
   return stdout
+}
+
+function spawnCliChild(
+  launchArgv: string[],
+  opts: TransportStartOpts,
+  stdinPrompt: string | undefined,
+) {
+  return lowerRunChildPriority(
+    execa(launchArgv[0]!, launchArgv.slice(1), {
+      cwd: opts.cwd,
+      env: opts.env,
+      stdin: stdinPrompt !== undefined ? 'pipe' : 'ignore',
+      input: stdinPrompt,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      detached: true,
+      cleanup: true,
+      killSignal: 'SIGTERM',
+      extendEnv: false,
+      forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS,
+      reject: false,
+    }),
+    opts.onWarning,
+  )
 }
 
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
@@ -76,20 +111,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     ? await sandboxLaunchArgv(opts.srt.profile, bin, argv)
     : [bin, ...argv]
   const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
-  const p = execa(launchArgv[0]!, launchArgv.slice(1), {
-    cwd: opts.cwd,
-    env: opts.env,
-    stdin: stdinPrompt !== undefined ? 'pipe' : 'ignore',
-    input: stdinPrompt,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    detached: true,
-    cleanup: true,
-    killSignal: 'SIGTERM',
-    extendEnv: false,
-    forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS,
-    reject: false,
-  })
+  const p = spawnCliChild(launchArgv, opts, stdinPrompt)
 
   let cancelled = false
   let collected: Promise<TransportResult> | null = null
@@ -124,7 +146,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const reply = opts.agent.parseReply?.(stdout)
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
-        const costUsd = reply?.costUsd ?? null
+        const usage = cliUsage(reply?.costUsd ?? null)
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -150,7 +172,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const terminalEvents: NormalizedEvent[] = []
         if (sessionId) terminalEvents.push({ kind: 'session', sessionId })
         if (output) terminalEvents.push({ kind: 'text', text: output })
-        if (tokens !== null) terminalEvents.push({ kind: 'usage', tokens, costUsd })
+        if (tokens !== null) terminalEvents.push({ kind: 'usage', tokens, costUsd: usage.costUsd })
         if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
         if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })
         const events = cliResultEvents(liveEvents, terminalEvents)
@@ -169,7 +191,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           raw: stdout,
           parsed: reply ?? null,
           tokens,
-          costUsd,
+          ...usage,
           sessionId,
           stopReason,
           error: replyError,

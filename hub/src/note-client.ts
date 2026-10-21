@@ -2,7 +2,8 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
-import type { HostedTask } from './hosted-tasks.ts'
+import type { HostedComment, HostedTask } from './hosted-tasks.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
   assertProjectNoteCounters,
@@ -15,6 +16,15 @@ const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
+class HostedNoteRequestError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+export const isMissingHostedNote = (cause: unknown) =>
+  cause instanceof HostedNoteRequestError && cause.status === 404
 async function request<T>(
   path: string,
   method: string,
@@ -25,7 +35,7 @@ async function request<T>(
     const identity = await hostedTaskIdentity(options)
     if (options.recordSpace !== identity.activeSpaceId) assertTargetSpaceNotes(identity)
   }
-  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
   const token = options.token ?? readRecordSessionToken()
@@ -55,7 +65,8 @@ async function request<T>(
     )
   const value = bodyResult.value as Record<string, unknown> | null
   if (!response.ok)
-    throw new Error(
+    throw new HostedNoteRequestError(
+      response.status,
       `hosted hub refused the write (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,
     )
   return value as T
@@ -69,7 +80,7 @@ export const hostedCreateNote = async (body: unknown, options?: Options) => {
   return request<HostedNote>('/v1/notes', 'POST', body, options)
 }
 export const hostedPromoteNote = (recordId: string, task: string | undefined, options?: Options) =>
-  request<{ note: HostedNote; task: HostedTask | null }>(
+  request<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null }>(
     `/v1/notes/${recordId}/promote`,
     'POST',
     task ? { task } : {},
@@ -86,6 +97,7 @@ export async function hostedNoteChanges(cursor: string | null, options?: Options
     acknowledgements: HostedAcknowledgement[]
     projectCounters: Array<{ project: string; next: number }>
     cursor: string
+    more?: boolean
   }>(`/v1/notes?${query}`, 'GET', undefined, options)
 }
 export const hostedMirrorNotes = async (body: unknown, options?: Options) => {

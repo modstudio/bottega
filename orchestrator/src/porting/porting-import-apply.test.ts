@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { getDoc, listDocRevisions, listDocs } from '../doc/docs.ts'
 import { projects, upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
 import {
   baselineForPair,
   ledgerRef,
@@ -10,21 +12,27 @@ import {
   listSkips,
   type PortPair,
 } from './porting.ts'
-import { applyImport, ImportRefusalError, planImport, sourceCoverage } from './porting-import.ts'
+import { buildHostedPortImports } from './porting-hosted-import.ts'
+import { applyImport, planImport, sourceCoverage } from './porting-import.ts'
+import { ImportRefusalError } from './porting-import-contract.ts'
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .query(
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY created_at,record_id',
+    )
     .all() as PortPair[]
 
 describe('port importer', () => {
   const registered = () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'alpha-invented',
       path: '/w/alpha-invented',
       settings: { keyPrefixes: ['ALP'] },
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'beta-invented',
       path: '/w/beta-invented',
       settings: { keyPrefixes: ['BET'] },
@@ -134,19 +142,49 @@ describe('port importer', () => {
     )
   })
   test('splits declared multi-sources, preserves qualifiers, and resolves targets from port pairs', () => {
-    upsertProject({ name: 'alpha-invented', path: '/w/a', settings: { keyPrefixes: ['ALP'] } })
-    upsertProject({ name: 'beta-invented', path: '/w/b', settings: { keyPrefixes: ['DUP'] } })
-    upsertProject({ name: 'gamma-invented', path: '/w/c', settings: { keyPrefixes: ['DUP'] } })
-    upsertProject({ name: 'target-invented', path: '/w/target', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha-invented',
+      path: '/w/a',
+      settings: { keyPrefixes: ['ALP'] },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'beta-invented',
+      path: '/w/b',
+      settings: { keyPrefixes: ['DUP'] },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'gamma-invented',
+      path: '/w/c',
+      settings: { keyPrefixes: ['DUP'] },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'target-invented',
+      path: '/w/target',
+      settings: {},
+    })
     const refs = JSON.stringify({
-      'ALP-1': { source: 'alpha-invented + beta-invented', commits: [], paths: [], notes: '' },
+      'ALP-1': {
+        source: 'alpha-invented + beta-invented',
+        commits: [],
+        paths: [],
+        notes: '',
+      },
       'ALP-2': {
         source: 'alpha-invented (concept); new mechanism',
         commits: [],
         paths: [],
         notes: '',
       },
-      'ALP-3': { source: 'missing-invented (unknown)', commits: [], paths: [], notes: '' },
+      'ALP-3': {
+        source: 'missing-invented (unknown)',
+        commits: [],
+        paths: [],
+        notes: '',
+      },
       'NONE-2': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
       'DUP-3': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
     })
@@ -155,8 +193,14 @@ describe('port importer', () => {
         refs,
         state: JSON.stringify({
           pairs: {
-            'alpha-invented->target-invented': { lastPortedSha: 'a', skipped: [] },
-            'beta-invented->target-invented': { lastPortedSha: 'b', skipped: [] },
+            'alpha-invented->target-invented': {
+              lastPortedSha: 'a',
+              skipped: [],
+            },
+            'beta-invented->target-invented': {
+              lastPortedSha: 'b',
+              skipped: [],
+            },
           },
         }),
       }),
@@ -165,10 +209,10 @@ describe('port importer', () => {
     expect(
       plan.refs
         .find((ref) => ref.taskKey === 'ALP-1')
-        ?.sources.map((source) => source.source_project_id),
+        ?.sources.map((source) => source.source_project_record_id),
     ).toEqual([
-      projects().find((p) => p.name === 'alpha-invented')!.id,
-      projects().find((p) => p.name === 'beta-invented')!.id,
+      projects().find((p) => p.name === 'alpha-invented')!.recordId,
+      projects().find((p) => p.name === 'beta-invented')!.recordId,
     ])
     expect(plan.refs.find((ref) => ref.taskKey === 'ALP-2')?.sources[0]?.note).toBe(
       ' (concept); new mechanism',
@@ -186,7 +230,12 @@ describe('port importer', () => {
     const nonStringSource = planImport(
       fixture({
         refs: JSON.stringify({
-          'ALP-4': { source: ['alpha-invented'], commits: [], paths: [], notes: '' },
+          'ALP-4': {
+            source: ['alpha-invented'],
+            commits: [],
+            paths: [],
+            notes: '',
+          },
         }),
       }),
       projects(),
@@ -194,6 +243,29 @@ describe('port importer', () => {
     expect(nonStringSource.refusals.find((issue) => issue.where === 'refs.json ALP-4')?.why).toBe(
       'source must name registered projects',
     )
+  })
+  test('hosted planning emits cross-space port items into the target space', () => {
+    const registeredProjects = registered()
+    const alpha = registeredProjects.find((project) => project.name === 'alpha-invented')!
+    const beta = registeredProjects.find((project) => project.name === 'beta-invented')!
+    rememberProjectSpace(db(), alpha.name, 'space-alpha')
+    rememberProjectSpace(db(), beta.name, 'space-beta')
+    const plan = planImport(fixture(), registeredProjects)
+    const imports = buildHostedPortImports(db(), registeredProjects, plan, 'space-beta')
+    const target = imports.get('space-beta')!
+    expect(target.port_pair).toHaveLength(1)
+    expect(target.port_baseline).toHaveLength(1)
+    expect(target.port_baseline[0]!.scannedAt).toBe('2026-01-01T00:00:00.000Z')
+    expect(target.port_skip).toHaveLength(1)
+    expect(target.port_ref).toHaveLength(1)
+    expect(target.port_ref_source).toEqual([
+      expect.objectContaining({
+        sourceProjectId: alpha.recordId,
+        spaceId: 'space-beta',
+      }),
+    ])
+    expect(imports.get('space-alpha')).toBeUndefined()
+    expect(plan.exclusions).toEqual([])
   })
   test('records the deliberately unimported register-derived sections as one exclusion', () => {
     const source = fixture({
@@ -296,10 +368,18 @@ describe('port importer', () => {
     plan.doctrine.push({ ...plan.doctrine[0]!, title: 'Duplicate' })
     await expect(applyImport(plan)).rejects.toThrow()
     expect(listPairs()).toEqual([])
-    expect(db().query('SELECT COUNT(*) n FROM port_baseline').get()).toEqual({ n: 0 })
-    expect(db().query('SELECT COUNT(*) n FROM port_skip').get()).toEqual({ n: 0 })
-    expect(db().query('SELECT COUNT(*) n FROM port_ref').get()).toEqual({ n: 0 })
-    expect(db().query('SELECT COUNT(*) n FROM port_ref_source').get()).toEqual({ n: 0 })
+    expect(db().query('SELECT COUNT(*) n FROM port_baseline').get()).toEqual({
+      n: 0,
+    })
+    expect(db().query('SELECT COUNT(*) n FROM port_skip').get()).toEqual({
+      n: 0,
+    })
+    expect(db().query('SELECT COUNT(*) n FROM port_ref').get()).toEqual({
+      n: 0,
+    })
+    expect(db().query('SELECT COUNT(*) n FROM port_ref_source').get()).toEqual({
+      n: 0,
+    })
     expect(listDoctrineRules()).toEqual([])
     expect(listDocs().filter((doc) => doc.slug.startsWith('port-'))).toEqual([])
   })
@@ -307,17 +387,20 @@ describe('port importer', () => {
     const original = planImport(fixture(), registered())
     await applyImport(original)
     const priorPair = listPairs()
-    const priorBaseline = baselineForPair(priorPair[0]!.id)
-    const priorSkips = listSkips(priorPair[0]!.id)
-    const targetProjectId = priorPair[0]!.target_project_id
+    const priorBaseline = baselineForPair(priorPair[0]!.record_id)
+    const priorSkips = listSkips(priorPair[0]!.record_id)
+    const targetProjectId = priorPair[0]!.target_project_record_id
     const priorRef = ledgerRef(targetProjectId, 'BET-7')
     const priorDoc = getDoc('global', null, 'port-category-map')
     const replacement = planImport(fixture(), projects())
-    replacement.doctrine.push({ ...replacement.doctrine[0]!, title: 'Duplicate' })
+    replacement.doctrine.push({
+      ...replacement.doctrine[0]!,
+      title: 'Duplicate',
+    })
     await expect(applyImport(replacement, { replace: true })).rejects.toThrow()
     expect(listPairs()).toEqual(priorPair)
-    expect(baselineForPair(priorPair[0]!.id)).toEqual(priorBaseline)
-    expect(listSkips(priorPair[0]!.id)).toEqual(priorSkips)
+    expect(baselineForPair(priorPair[0]!.record_id)).toEqual(priorBaseline)
+    expect(listSkips(priorPair[0]!.record_id)).toEqual(priorSkips)
     expect(ledgerRef(targetProjectId, 'BET-7')).toEqual(priorRef)
     expect(getDoc('global', null, 'port-category-map')).toEqual(priorDoc)
     expect(listDoctrineRules()).toHaveLength(1)
@@ -339,11 +422,13 @@ describe('worker port import refusal', () => {
 
   test('port import and replacement allow an architect caller and refuse a worker caller', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'worker-source-invented',
       path: '/w/worker-source-invented',
       settings: { keyPrefixes: ['WRS'] },
     })
     upsertProject({
+      recordId: newRecordId(),
       name: 'worker-target-invented',
       path: '/w/worker-target-invented',
       settings: { keyPrefixes: ['WRT'] },

@@ -21,7 +21,6 @@ export const question = pgTable.withRLS(
     machineId: uuid('machine_id')
       .notNull()
       .references(() => machine.id),
-    localId: bigint('local_id', { mode: 'bigint' }).notNull(),
     revision: integer().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true }).notNull(),
     question: text().notNull(),
@@ -52,10 +51,7 @@ export const question = pgTable.withRLS(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
-  (table) => [
-    unique('question_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('question', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('question', table.spaceId)],
 )
 
 export const questionMutationAudit = pgTable.withRLS(

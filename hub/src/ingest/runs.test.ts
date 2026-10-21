@@ -3,6 +3,7 @@ import { engagedMs, human } from '../../../shared/interval.ts'
 import {
   at,
   collectRunsAt,
+  fixtureRecordId,
   ingestRunFixtures,
   ingestStdout,
   questionFixture,
@@ -10,11 +11,138 @@ import {
   runFixture,
 } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
-import { chainVendorTokens, executionSpans } from './runs.ts'
+import { runRef } from '../run-ref.ts'
+import { chainVendorTokens, convertLegacyRunRefs, executionSpans } from './runs.ts'
 
 beforeAll(resetFixtureStore)
 
+const ref = (id: number) => `orch:${fixtureRecordId(id)}`
+const turnRef = (root: number, turn: number) => `${ref(root)}:turn:${fixtureRecordId(turn)}`
+const identityMap = (run: ReturnType<typeof runFixture>) => [
+  { number: run.number, record_id: run.record_id },
+  ...(run.turns ?? []).map((turn) => ({ number: turn.number, record_id: turn.record_id })),
+]
+
 describe('run ingest', () => {
+  test('numeric refs convert across every hub table and one unmapped value rolls back', async () => {
+    const run = runFixture({
+      id: 9080,
+      turns: [runFixture({ id: 9081, turn: 2 })],
+      questions: [
+        questionFixture({
+          id: 9080,
+          run_id: 9081,
+          deliveries: [
+            {
+              id: 1,
+              question_id: 9080,
+              run_id: 9081,
+              mode: 'resume',
+              outcome: 'delivered',
+              at: '2026-09-04T19:04:00.000Z',
+              error: null,
+            },
+          ],
+        }),
+      ],
+    })
+    await ingestRunFixtures(run)
+    const intervalRef = turnRef(9080, 9081)
+    const original = db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM interval WHERE ref=?')
+      .get(intervalRef)!.record_id
+    const report = writeTransaction((conn) => {
+      conn.query('UPDATE interval SET ref=? WHERE ref=?').run('orch:9080:turn:9081', intervalRef)
+      conn
+        .query('UPDATE question SET run_ref=?,root_ref=? WHERE number=?')
+        .run('orch:9080:turn:9081', 'orch:9080', 9080)
+      conn
+        .query(
+          'UPDATE question_delivery SET run_ref=? WHERE question_record_id=(SELECT record_id FROM question WHERE number=?)',
+        )
+        .run('orch:9080:turn:9081', 9080)
+      return convertLegacyRunRefs(conn, identityMap(run))
+    })
+    expect(report).toEqual({ interval: 1, question: 2, question_delivery: 1 })
+    expect(
+      db()
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM interval WHERE ref=?')
+        .get(intervalRef)?.record_id,
+    ).toBe(original)
+    expect(db().query('SELECT run_ref,root_ref FROM question WHERE number=?').get(9080)).toEqual({
+      run_ref: turnRef(9080, 9081),
+      root_ref: ref(9080),
+    })
+    expect(
+      db()
+        .query(
+          'SELECT run_ref FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE number=?)',
+        )
+        .get(9080),
+    ).toEqual({ run_ref: turnRef(9080, 9081) })
+
+    expect(() =>
+      writeTransaction((conn) => {
+        conn.query('UPDATE interval SET ref=? WHERE ref=?').run('orch:9080:turn:9081', intervalRef)
+        conn.query('UPDATE question SET root_ref=? WHERE number=?').run('orch:99999', 9080)
+        return convertLegacyRunRefs(conn, identityMap(run))
+      }),
+    ).toThrow('numeric run refs have no orchestrator UUID mapping')
+    expect(
+      db()
+        .query<{ ref: string }, [string]>('SELECT ref FROM interval WHERE record_id=?')
+        .get(original),
+    ).toEqual({ ref: intervalRef })
+    expect(db().query('SELECT root_ref FROM question WHERE number=?').get(9080)).toEqual({
+      root_ref: ref(9080),
+    })
+    writeTransaction((conn) => {
+      conn.query('DELETE FROM question WHERE number=?').run(9080)
+      conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9080)}%`)
+    })
+  })
+  test('legacy conversion is fed by the narrow run identity mapping', async () => {
+    const run = runFixture({
+      id: 9082,
+      turns: [runFixture({ id: 9083, turn: 2 })],
+      questions: [questionFixture({ id: 9082, run_id: 9083 })],
+    })
+    await ingestRunFixtures(run)
+    writeTransaction((conn) => {
+      conn
+        .query('UPDATE interval SET ref=? WHERE ref=?')
+        .run('orch:9082:turn:9083', turnRef(9082, 9083))
+      conn
+        .query('UPDATE question SET run_ref=?,root_ref=? WHERE number=?')
+        .run('orch:9082:turn:9083', 'orch:9082', 9082)
+    })
+
+    await ingestStdout(JSON.stringify(run), '[]', JSON.stringify(identityMap(run)))
+
+    expect(db().query('SELECT run_ref,root_ref FROM question WHERE number=?').get(9082)).toEqual({
+      run_ref: turnRef(9082, 9083),
+      root_ref: ref(9082),
+    })
+    writeTransaction((conn) => {
+      conn.query('DELETE FROM question WHERE number=?').run(9082)
+      conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9082)}%`)
+    })
+  })
+  test('the interval writer and UUID ref parser round-trip root and turn identities', async () => {
+    await ingestRunFixtures(
+      runFixture({
+        id: 9090,
+        turns: [runFixture({ id: 9090, turn: 1 }), runFixture({ id: 9091, turn: 2 })],
+      }),
+    )
+    const refs = db()
+      .query<{ ref: string }, []>("SELECT ref FROM interval WHERE source='orch' ORDER BY ref")
+      .all()
+    expect(refs.map(({ ref }) => runRef(ref))).toEqual([
+      { root: fixtureRecordId(9090), turn: fixtureRecordId(9090) },
+      { root: fixtureRecordId(9090), turn: fixtureRecordId(9091) },
+    ])
+  })
   test('workflow rulings ingest with nullable run provenance', async () => {
     await ingestStdout(
       '',
@@ -22,7 +150,7 @@ describe('run ingest', () => {
         {
           id: 8001,
           record_id: '00000000-0000-4000-8000-000000008001',
-          run_id: null,
+          run_number: null,
           run_record_id: null,
           workflow_cursor_id: 7001,
           workflow_key: 'DEV-964',
@@ -57,7 +185,7 @@ describe('run ingest', () => {
       db()
         .query(
           `SELECT run_ref,root_ref,workflow_cursor_id,workflow_key,project,asked_via
-           FROM question WHERE question_id=8001`,
+           FROM question WHERE number=8001`,
         )
         .get(),
     ).toEqual({
@@ -81,7 +209,7 @@ describe('run ingest', () => {
     )
     const first = db()
       .query<{ record_id: string }, []>(
-        `SELECT record_id FROM interval WHERE source = 'orch' AND ref = 'orch:9100'`,
+        `SELECT record_id FROM interval WHERE source = 'orch' AND ref = '${ref(9100)}'`,
       )
       .get()
     if (!first) throw new Error('expected an interval after the first collect')
@@ -96,7 +224,7 @@ describe('run ingest', () => {
     expect(
       db()
         .query<{ record_id: string }, []>(
-          `SELECT record_id FROM interval WHERE source = 'orch' AND ref = 'orch:9100'`,
+          `SELECT record_id FROM interval WHERE source = 'orch' AND ref = '${ref(9100)}'`,
         )
         .all(),
     ).toEqual([first])
@@ -114,7 +242,7 @@ describe('run ingest', () => {
     expect(
       db()
         .query<{ project: string; task_key: string }, []>(
-          `SELECT project,task_key FROM interval WHERE source='orch' AND ref='orch:9199'`,
+          `SELECT project,task_key FROM interval WHERE source='orch' AND ref='${ref(9199)}'`,
         )
         .all(),
     ).toEqual([{ project: 'alpha', task_key: 'ALP-118' }])
@@ -134,7 +262,7 @@ describe('run ingest', () => {
 
     const intervals = db()
       .query(
-        `SELECT agent, start_at, open FROM interval WHERE source = 'orch' AND ref = 'orch:9101'`,
+        `SELECT agent, start_at, open FROM interval WHERE source = 'orch' AND ref = '${ref(9101)}'`,
       )
       .all() as { agent: string; start_at: string; open: number }[]
     expect(intervals).toEqual([
@@ -151,7 +279,7 @@ describe('run ingest', () => {
     const result = await ingestRunFixtures(runFixture({ id: 9102, status: 'stale' }))
 
     const intervals = db()
-      .query(`SELECT open FROM interval WHERE source = 'orch' AND ref = 'orch:9102'`)
+      .query(`SELECT open FROM interval WHERE source = 'orch' AND ref = '${ref(9102)}'`)
       .all() as { open: number }[]
     expect(intervals).toEqual([{ open: 0 }])
     expect(result).toEqual({ rows: 0, skipped: 1 })
@@ -161,7 +289,7 @@ describe('run ingest', () => {
     const result = await ingestRunFixtures(runFixture({ id: 9103 }))
 
     const interval = db()
-      .query(`SELECT open FROM interval WHERE source = 'orch' AND ref = 'orch:9103'`)
+      .query(`SELECT open FROM interval WHERE source = 'orch' AND ref = '${ref(9103)}'`)
       .get() as { open: number }
     expect(interval.open).toBe(1)
     expect(result).toEqual({ rows: 1, skipped: 0 })
@@ -172,7 +300,7 @@ describe('run ingest', () => {
     await ingestRunFixtures(
       runFixture({
         id: 9105,
-        retry_of: 9104,
+        retry_record_id: fixtureRecordId(9104),
         started_at: '2026-09-03T00:01:00.000Z',
       }),
     )
@@ -180,13 +308,13 @@ describe('run ingest', () => {
     const intervals = db()
       .query(
         `SELECT ref, open FROM interval
-        WHERE source = 'orch' AND ref IN ('orch:9104', 'orch:9105')
+        WHERE source = 'orch' AND ref IN ('${ref(9104)}', '${ref(9105)}')
         ORDER BY ref`,
       )
       .all() as { ref: string; open: number }[]
     expect(intervals).toEqual([
-      { ref: 'orch:9104', open: 0 },
-      { ref: 'orch:9105', open: 1 },
+      { ref: ref(9104), open: 0 },
+      { ref: ref(9105), open: 1 },
     ])
   })
 
@@ -206,13 +334,13 @@ describe('run ingest', () => {
     await ingestRunFixtures(
       runFixture({
         id: 9108,
-        retry_of: 9107,
+        retry_record_id: fixtureRecordId(9107),
         started_at: '2026-09-03T00:01:00.000Z',
       }),
     )
 
     const prior = db()
-      .query(`SELECT open FROM interval WHERE source = 'orch' AND ref = 'orch:9106:turn:9107'`)
+      .query(`SELECT open FROM interval WHERE source = 'orch' AND ref = '${turnRef(9106, 9107)}'`)
       .get() as { open: number }
     expect(prior.open).toBe(0)
   })
@@ -230,7 +358,7 @@ describe('run ingest', () => {
     await ingestRunFixtures(runFixture({ id: 9110, turns: [readable] }))
     const before = db()
       .query<{ record_id: string }, []>(
-        `SELECT record_id FROM interval WHERE source='orch' AND ref='orch:9110:turn:9110'`,
+        `SELECT record_id FROM interval WHERE source='orch' AND ref='${turnRef(9110, 9110)}'`,
       )
       .get()!
 
@@ -239,14 +367,16 @@ describe('run ingest', () => {
     expect(
       db()
         .query<{ record_id: string }, []>(
-          `SELECT record_id FROM interval WHERE source='orch' AND ref='orch:9110:turn:9110'`,
+          `SELECT record_id FROM interval WHERE source='orch' AND ref='${turnRef(9110, 9110)}'`,
         )
         .get(),
     ).toEqual(before)
 
     await ingestRunFixtures(runFixture({ id: 9110, turns: [] }))
     expect(
-      db().query(`SELECT 1 FROM interval WHERE source='orch' AND ref='orch:9110:turn:9110'`).get(),
+      db()
+        .query(`SELECT 1 FROM interval WHERE source='orch' AND ref='${turnRef(9110, 9110)}'`)
+        .get(),
     ).toBeNull()
   })
 
@@ -294,12 +424,12 @@ describe('run ingest', () => {
     const intervals = db()
       .query(
         `SELECT start_at, end_at, vendor_tokens, ref FROM interval
-        WHERE source = 'orch' AND ref LIKE 'orch:1168%' ORDER BY start_at`,
+        WHERE source = 'orch' AND ref LIKE '${ref(1168)}%' ORDER BY start_at`,
       )
       .all() as { start_at: string; end_at: string; vendor_tokens: number; ref: string }[]
     expect(result).toEqual({ rows: 5, skipped: 0 })
     expect(intervals).toHaveLength(5)
-    expect(intervals.every((row) => row.ref.startsWith('orch:1168:turn:'))).toBe(true)
+    expect(intervals.every((row) => row.ref.startsWith(`${ref(1168)}:turn:`))).toBe(true)
     let vendorTokens = 0
     for (const row of intervals) vendorTokens += row.vendor_tokens
     expect(vendorTokens).toBe(11_798_623)
@@ -322,12 +452,12 @@ describe('run ingest', () => {
     await ingestRunFixtures(runFixture({ id: 9211 }))
     expect(
       db()
-        .query(`SELECT user_id FROM interval WHERE source = 'orch' AND ref = 'orch:9210'`)
+        .query(`SELECT user_id FROM interval WHERE source = 'orch' AND ref = '${ref(9210)}'`)
         .get() as { user_id: string | null },
     ).toEqual({ user_id: starter })
     expect(
       db()
-        .query(`SELECT user_id FROM interval WHERE source = 'orch' AND ref = 'orch:9211'`)
+        .query(`SELECT user_id FROM interval WHERE source = 'orch' AND ref = '${ref(9211)}'`)
         .get() as { user_id: string | null },
     ).toEqual({ user_id: null })
   })
@@ -351,17 +481,17 @@ describe('run ingest', () => {
     expect(result).toEqual({ rows: 1, skipped: 0 })
 
     const interval = db()
-      .query(`SELECT session_id FROM interval WHERE source = 'orch' AND ref = 'orch:9201'`)
+      .query(`SELECT session_id FROM interval WHERE source = 'orch' AND ref = '${ref(9201)}'`)
       .get() as { session_id: string }
     expect(interval.session_id).toBe('sess-a')
 
     const questions = db()
       .query(
-        `SELECT question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at
-         FROM question WHERE root_ref = 'orch:9201' ORDER BY question_id`,
+        `SELECT number, run_ref, root_ref, task_key, session_id, asked_at, answered_at
+         FROM question WHERE root_ref = '${ref(9201)}' ORDER BY number`,
       )
       .all() as {
-      question_id: number
+      number: number
       run_ref: string
       root_ref: string
       task_key: string | null
@@ -371,18 +501,18 @@ describe('run ingest', () => {
     }[]
     expect(questions).toEqual([
       {
-        question_id: 11,
-        run_ref: 'orch:9201',
-        root_ref: 'orch:9201',
+        number: 11,
+        run_ref: ref(9201),
+        root_ref: ref(9201),
         task_key: 'ALP-118',
         session_id: 'sess-a',
         asked_at: '2026-09-04T19:00:00.000Z',
         answered_at: null,
       },
       {
-        question_id: 12,
-        run_ref: 'orch:9201',
-        root_ref: 'orch:9201',
+        number: 12,
+        run_ref: ref(9201),
+        root_ref: ref(9201),
         task_key: 'ALP-118',
         session_id: 'sess-a',
         asked_at: '2026-09-04T18:00:00.000Z',
@@ -443,7 +573,7 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT asked_via, answerer_kind, answer_channel, overturned_at FROM question WHERE question_id = 50`,
+          `SELECT asked_via, answerer_kind, answer_channel, overturned_at FROM question WHERE number = 50`,
         )
         .get(),
     ).toEqual({
@@ -455,20 +585,20 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT run_ref, mode, outcome, at, error FROM question_delivery
-           WHERE question_id = 50 ORDER BY at`,
+          `SELECT d.run_ref, d.mode, d.outcome, d.at, d.error FROM question_delivery d
+           JOIN question q ON q.record_id=d.question_record_id WHERE q.number = 50 ORDER BY d.at`,
         )
         .all(),
     ).toEqual([
       {
-        run_ref: 'orch:9250:turn:9251',
+        run_ref: turnRef(9250, 9251),
         mode: 'resume',
         outcome: 'failed',
         at: '2026-09-04T19:02:00.000Z',
         error: 'resume failed',
       },
       {
-        run_ref: 'orch:9260',
+        run_ref: ref(9260),
         mode: 'retry',
         outcome: 'delivered',
         at: '2026-09-04T19:03:00.000Z',
@@ -483,7 +613,7 @@ describe('run ingest', () => {
           id: 3,
           question_id: 50,
           question_record_id: base.questions[0]!.record_id,
-          run_id: null,
+          run_number: null,
           run_record_id: null,
           mode: 'record-only' as const,
           outcome: 'delivered' as const,
@@ -496,7 +626,8 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT run_ref, mode, outcome, at, error FROM question_delivery WHERE question_id = 50`,
+          `SELECT d.run_ref, d.mode, d.outcome, d.at, d.error FROM question_delivery d
+           JOIN question q ON q.record_id=d.question_record_id WHERE q.number = 50`,
         )
         .all(),
     ).toEqual([
@@ -552,21 +683,22 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT question_id,run_ref,mode,outcome,error FROM question_delivery
-           WHERE question_id IN (61,62) ORDER BY question_id`,
+          `SELECT q.number,d.run_ref,d.mode,d.outcome,d.error FROM question_delivery d
+           JOIN question q ON q.record_id=d.question_record_id
+           WHERE q.number IN (61,62) ORDER BY q.number`,
         )
         .all(),
     ).toEqual([
       {
-        question_id: 61,
+        number: 61,
         run_ref: null,
         mode: 'record-only',
         outcome: 'retired',
         error: 'chain-terminal',
       },
       {
-        question_id: 62,
-        run_ref: 'orch:9270',
+        number: 62,
+        run_ref: ref(9270),
         mode: 'live',
         outcome: 'delivered',
         error: null,
@@ -584,7 +716,7 @@ describe('run ingest', () => {
     )
     const beforeQuestions = (db().query(`SELECT COUNT(*) n FROM question`).get() as { n: number }).n
 
-    await expect(ingestStdout('{"probe":1}\n')).rejects.toThrow('line 1 missing id')
+    await expect(ingestStdout('{"probe":1}\n')).rejects.toThrow('line 1 missing number')
     expect(collectRunsAt()).toBe(prior)
     expect((db().query(`SELECT COUNT(*) n FROM question`).get() as { n: number }).n).toBe(
       beforeQuestions,
@@ -645,7 +777,7 @@ describe('run ingest', () => {
       ),
     ).rejects.toThrow('line 1 missing questions[0].answered_at')
     expect(collectRunsAt()).toBe(prior)
-    expect(db().query(`SELECT 1 FROM question WHERE question_id = 71`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE number = 71`).get()).toBeNull()
   })
 
   test('an invalid asked_at refuses the batch', async () => {
@@ -659,10 +791,10 @@ describe('run ingest', () => {
       ),
     ).rejects.toThrow('line 1 missing questions[0].asked_at')
     expect(collectRunsAt()).toBe(prior)
-    expect(db().query(`SELECT 1 FROM question WHERE question_id = 72`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE number = 72`).get()).toBeNull()
   })
 
-  test('a run_id outside the published root and turns refuses the batch', async () => {
+  test('a run_number outside the published root and turns refuses the batch', async () => {
     const prior = collectRunsAt()
     await expect(
       ingestRunFixtures(
@@ -673,8 +805,8 @@ describe('run ingest', () => {
           ],
         }),
       ),
-    ).rejects.toThrow('line 1 missing questions[0].run_id')
+    ).rejects.toThrow('line 1 missing questions[0].run_record_id')
     expect(collectRunsAt()).toBe(prior)
-    expect(db().query(`SELECT 1 FROM question WHERE question_id = 73`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE number = 73`).get()).toBeNull()
   })
 })

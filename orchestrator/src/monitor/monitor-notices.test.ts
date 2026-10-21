@@ -34,8 +34,8 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_CACHE_OWNER_KEY, userId)
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','monitor-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
   const local = postNotice(
@@ -99,7 +99,7 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
   })
   const delivery = await claimMonitorNoticesWithHosted(session)
   expect(delivery.notices.map((row) => row.noticeId)).toEqual([
-    `board:${local.id}`,
+    `board:${local.number}`,
     `board:${hosted.id}`,
   ])
   expect(delivery.warning).toContain('monitor refresh offline')
@@ -134,8 +134,8 @@ test('session-start monitor skips hosted refresh while the heartbeat monitor ref
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','monitor-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
   let changesCalls = 0
@@ -157,8 +157,8 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','monitor-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
   const invocation = (
@@ -201,11 +201,11 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   })
 
   await expect(
-    markMonitorNoticesDeliveredWithHosted(session, [
-      `condition:${condition}`,
-      `board:${local.id}`,
-      'board:not-an-id',
-    ]),
+    markMonitorNoticesDeliveredWithHosted(
+      session,
+      [`condition:${condition}`, `board:${local.number}`, 'board:not-an-id'],
+      new Date().toISOString(),
+    ),
   ).resolves.toBeUndefined()
   expect(hostedCalls).toBe(0)
   expect(
@@ -215,7 +215,9 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   })
   expect(
     db()
-      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(local.id, session),
+      .query(
+        'SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(local.recordId, session),
   ).toEqual({ delivered_at: expect.any(String) })
 })

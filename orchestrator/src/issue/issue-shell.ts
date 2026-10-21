@@ -5,7 +5,8 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
-import { isGroupKillablePgid, sampleProcesses, terminateProcessGroup } from '../idle-kill.ts'
+import { isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
+import { sampleProcesses } from '../process-resource-sampler.ts'
 import {
   createSandboxRuntimeConfig,
   READONLY_LENS_DENY_SOCKETS,

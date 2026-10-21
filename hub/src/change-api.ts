@@ -8,6 +8,7 @@ import {
 } from './hosted-changes.ts'
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { parseIdentitySetRequest } from './identity-set-contract.ts'
 import {
@@ -19,7 +20,6 @@ import {
 const TEST_REFUSAL =
   'hub change API refuses real identity and database clients unless stubs are injected in tests'
 
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedChanges
@@ -89,7 +89,7 @@ function pushInput(
 
 async function pushResponse(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
   who: ChangeIdentity,
 ): Promise<Response> {
@@ -113,7 +113,11 @@ async function pushResponse(
   }
 }
 
-async function identityWho(request: Request, config: Config, dependencies: Dependencies) {
+async function identityWho(
+  request: Request,
+  config: HostedRouteConfig,
+  dependencies: Dependencies,
+) {
   return taskSpaceIdentity(
     request,
     config.recordApiUrl,
@@ -141,7 +145,7 @@ function refusedSpaceResponse(space: string) {
 async function identitySetResponse(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
 ): Promise<Response> {
   if (request.method !== 'GET') return new Response('not found', { status: 404 })
@@ -166,7 +170,7 @@ async function identitySetResponse(
 async function changeLogResponse(
   request: Request,
   url: URL,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
 ): Promise<Response> {
   if (request.method !== 'GET' && request.method !== 'POST')
@@ -192,7 +196,7 @@ async function changeLogResponse(
 
 export async function changeApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)

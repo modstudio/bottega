@@ -1,4 +1,10 @@
-import { declaredProjectSpace, projectWriteDecisionFor } from './hosted-write-mode.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
+import {
+  declaredProjectSpace,
+  type ProjectWriteDecision,
+  projectWriteDecisionFor,
+  type TaskWriteMode,
+} from './hosted-write-mode.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { projects } from './projects.ts'
 import type { TaskFetch } from './task-client.ts'
@@ -20,15 +26,19 @@ export function hostedTaskWriteOptions(projectName: string, options?: HostedTask
   return recordSpace ? { ...options, recordSpace } : options
 }
 
-export function taskWriteMode(
+export function taskWriteDecision(
   projectName: string,
   hosted?: HostedTaskWriteOptions,
-): 'hosted-configured' | 'local-authoritative' {
-  const decision = projectWriteDecisionFor(
+): ProjectWriteDecision {
+  return projectWriteDecisionFor(
     registeredTaskProject(projectName),
     readInstallBinding(),
-    hosted?.baseUrl ?? process.env.HUB_HOSTED_URL,
+    hosted?.baseUrl ?? resolveHostedUrl(),
   )
+}
+
+export function taskWriteMode(projectName: string, hosted?: HostedTaskWriteOptions): TaskWriteMode {
+  const decision = taskWriteDecision(projectName, hosted)
   if (decision.mode === 'refused') throw new Error(decision.reason)
   return decision.mode
 }

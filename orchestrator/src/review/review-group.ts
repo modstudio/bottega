@@ -14,15 +14,36 @@ export type ChangeGroup = {
 }
 
 export type TriageReviewRow = {
-  reviewId: number
+  reviewRecordId: string
+  reviewNumber: number
   recordedAt: string
   completedAt: string | null
   tier: 0 | 1 | 2 | 3 | null
   patchId: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
-  lenses: readonly { id: number; graded: boolean }[]
-  findings: readonly { id: number; ordinal: number; disposition: string | null }[]
+  lenses: readonly {
+    recordId: string
+    runId?: string
+    lens?: string
+    model?: string | null
+    graded: boolean
+  }[]
+  findings: readonly { recordId: string; ordinal: number; disposition: string | null }[]
+}
+
+export function reviewLensGraded(lens: {
+  reproduced: string | null
+  coverage: string | null
+  limits: string | null
+  overlap: string | null
+}): boolean {
+  return (
+    lens.reproduced !== null &&
+    lens.coverage !== null &&
+    lens.limits !== null &&
+    lens.overlap !== null
+  )
 }
 
 /** The triage floor shared by workflow evidence and project review recording. */
@@ -56,13 +77,18 @@ type ChangeGroupOperations = {
     base: string,
     tip: string,
   ): { patchId: string; paths: string[]; message: string } | null
-  tier(cwd: string, base: string, tip: string): ReviewTier
+  tier(
+    cwd: string,
+    base: string,
+    tip: string,
+    risk: NonNullable<Project['settings']['review']>['risk'],
+  ): ReviewTier
 }
 
 const changeGroupOperations: ChangeGroupOperations = {
   mergeBase: resolveReviewMergeBase,
   identity: measureChangeIdentity,
-  tier: (cwd, base, tip) => classifyReviewTier({ files: diffNumstat(cwd, base, tip) }),
+  tier: (cwd, base, tip, risk) => classifyReviewTier({ files: diffNumstat(cwd, base, tip), risk }),
 }
 
 export const serializePathSet = (paths: readonly string[]): string =>
@@ -77,8 +103,10 @@ export function branchRunOwnerSession(
   const row = database
     .query<{ session_id: string | null }, [string, string, string]>(
       `SELECT session_id FROM run
-        WHERE parent_run_id IS NULL AND repo=? AND (branch=? OR minted_branch=?)
-        ORDER BY id DESC LIMIT 1`,
+        WHERE parent_run_record_id IS NULL
+          AND project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND (branch=? OR minted_branch=?)
+        ORDER BY number DESC LIMIT 1`,
     )
     .get(project, branch, branch)
   return row?.session_id ?? null
@@ -101,7 +129,7 @@ export function measureReviewChange(
     patchId: identity.patchId,
     pathSet: identity.paths,
     base,
-    tier: operations.tier(cwd, base, tip),
+    tier: operations.tier(cwd, base, tip, project.settings.review?.risk),
     message: identity.message,
   }
 }
@@ -142,7 +170,7 @@ function reviewsForChangeGroup(
 export function reviewsForTriage(
   database: Database,
   group: ChangeGroup,
-  includeReviewId?: number,
+  includeReviewId?: string,
 ): { reviews: TriageReviewRow[]; branchReviews: TriageReviewRow[] } {
   const branchReviews = reviewsForBranch(database, group.project, group.branch, includeReviewId)
   return {
@@ -156,42 +184,47 @@ function reviewsForBranch(
   database: Database,
   project: string,
   branch: string,
-  includeReviewId?: number,
+  includeReviewId?: string,
 ): TriageReviewRow[] {
   const rows = database
     .query<
       {
-        review_id: number
+        review_record_id: string
+        review_number: number
         recorded_at: string
         completed_at: string | null
         tier: 0 | 1 | 2 | 3 | null
         patch_id: string | null
         path_set: string | null
-        lens_id: number
+        lens_id: string
+        run_record_id: string
         lens: string
+        model: string | null
         reproduced: string | null
         coverage: string | null
         limits: string | null
         overlap: string | null
-        finding_id: number | null
+        finding_id: string | null
         ordinal: number | null
         disposition: string | null
       },
-      [string, string, number | null]
+      [string, string, string | null]
     >(
-      `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,
-              rl.id lens_id,rl.lens,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
-              rf.id finding_id,rf.ordinal,rf.disposition
-         FROM review r JOIN review_lens rl ON rl.review_id=r.id
-         JOIN run ON run.id=rl.run_id
-         LEFT JOIN review_finding rf ON rf.review_id=r.id
-        WHERE run.repo=? AND (run.branch=? OR r.id=?) ORDER BY r.id DESC,rl.id,rf.id`,
+      `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,
+              rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
+              rf.record_id finding_id,rf.ordinal,rf.disposition
+         FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
+         JOIN run ON run.record_id=rl.run_record_id
+         LEFT JOIN review_finding rf ON rf.review_record_id=r.record_id
+        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND (run.branch=? OR r.record_id=?) ORDER BY r.number DESC,rl.record_id,rf.ordinal`,
     )
     .all(project, branch, includeReviewId ?? null)
-  const reviews = new Map<number, TriageReviewRow>()
+  const reviews = new Map<string, TriageReviewRow>()
   for (const row of rows) {
-    const review = reviews.get(row.review_id) ?? {
-      reviewId: row.review_id,
+    const review = reviews.get(row.review_record_id) ?? {
+      reviewRecordId: row.review_record_id,
+      reviewNumber: row.review_number,
       recordedAt: row.recorded_at,
       completedAt: row.completed_at,
       tier: row.tier,
@@ -204,27 +237,36 @@ function reviewsForBranch(
     if (!review.lensIdentities.includes(row.lens)) {
       ;(review.lensIdentities as string[]).push(row.lens)
     }
-    if (!review.lenses.some((lens) => lens.id === row.lens_id)) {
-      ;(review.lenses as { id: number; graded: boolean }[]).push({
-        id: row.lens_id,
-        graded:
-          row.reproduced !== null &&
-          row.coverage !== null &&
-          row.limits !== null &&
-          row.overlap !== null,
+    if (!review.lenses.some((lens) => lens.recordId === row.lens_id)) {
+      ;(
+        review.lenses as {
+          recordId: string
+          runId: string
+          lens: string
+          model: string | null
+          graded: boolean
+        }[]
+      ).push({
+        recordId: row.lens_id,
+        runId: row.run_record_id,
+        lens: row.lens,
+        model: row.model,
+        graded: reviewLensGraded(row),
       })
     }
     if (
       row.finding_id !== null &&
-      !review.findings.some((finding) => finding.id === row.finding_id)
+      !review.findings.some((finding) => finding.recordId === row.finding_id)
     ) {
-      ;(review.findings as { id: number; ordinal: number; disposition: string | null }[]).push({
-        id: row.finding_id,
+      ;(
+        review.findings as { recordId: string; ordinal: number; disposition: string | null }[]
+      ).push({
+        recordId: row.finding_id,
         ordinal: row.ordinal!,
         disposition: row.disposition,
       })
     }
-    reviews.set(row.review_id, review)
+    reviews.set(row.review_record_id, review)
   }
   return [...reviews.values()]
 }

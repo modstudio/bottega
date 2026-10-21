@@ -41,7 +41,7 @@ function deliveredDetail(row: {
 }
 
 function landingNoticeDetail(row: {
-  id: number
+  record_id: string
   branch: string
   status: string
   started_at: string
@@ -66,7 +66,7 @@ function landingNoticeDetail(row: {
         ? 'LANDING-REBASE-REQUIRED'
         : 'LANDING-INSTALL-FAILED'
   const branch = row.branch.replace(/[\t\r\n]/g, ' ')
-  return `${event} ${row.id}/${branch} ${duration}; inspect with '${PLATFORM_SLUG} tree branch'`
+  return `${event} ${row.record_id}/${branch} ${duration}; inspect with '${PLATFORM_SLUG} tree branch'`
 }
 
 function recordStalledRunSubjects(
@@ -104,7 +104,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
   if (kinds.has('asking-run')) {
     record(
       'asking-run',
-      askingRuns().map((run) => `run:${run.id}`),
+      askingRuns().map((run) => `run:${run.record_id}`),
     )
   }
   if (kinds.has('dead-running-process')) {
@@ -135,7 +135,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
           kind,
           closeOuts
             .filter((run) => run.close_out_outcome === outcome)
-            .map((run) => `run:${run.id}`),
+            .map((run) => `run:${run.record_id}`),
         )
       }
     }
@@ -143,7 +143,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
   if (kinds.has('unscored-run')) {
     record(
       'unscored-run',
-      unscoredRuns().map((run) => `run:${run.id}`),
+      unscoredRuns().map((run) => `run:${run.record_id}`),
     )
   }
   return current
@@ -158,7 +158,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
               c.issue_key, c.severity, c.owner_session_id,
               r.status run_status, r.repo run_project
          FROM monitor_condition c
-         LEFT JOIN run r ON c.subject=('run:' || r.id)
+         LEFT JOIN run r ON c.subject=('run:' || r.record_id)
         WHERE c.owner_session_id=? AND c.delivered_at IS NULL
           AND c.id = (
             SELECT MAX(newest.id) FROM monitor_condition newest
@@ -201,14 +201,14 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     }))
   const landings = db()
     .query(
-      `SELECT id, branch, status, started_at, finished_at, session_id
+      `SELECT record_id, branch, status, started_at, finished_at, session_id
        FROM landing
       WHERE session_id=? AND heartbeat_delivered_at IS NULL
         AND status IN ('refused','rebase_required','install_failed')
-      ORDER BY id`,
+      ORDER BY record_id`,
     )
     .all(ownerSession) as {
-    id: number
+    record_id: string
     branch: string
     status: string
     started_at: string
@@ -219,9 +219,9 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     ...conditions,
     ...landings.map(
       (row): MonitorNotice => ({
-        noticeId: `landing:${row.id}`,
+        noticeId: `landing:${row.record_id}`,
         kind: `landing-${row.status.replaceAll('_', '-')}`,
-        subject: `landing:${row.id}`,
+        subject: `landing:${row.record_id}`,
         since: row.finished_at ?? row.started_at,
         ageMs: null,
         detail: landingNoticeDetail(row),
@@ -281,7 +281,12 @@ export function markMonitorNoticesDelivered(
   })
   if (
     !parsed.length ||
-    parsed.some(({ source, id }) => source !== 'board' && !/^[1-9]\d*$/.test(id))
+    parsed.some(
+      ({ source, id }) =>
+        (source === 'condition' && !/^[1-9]\d*$/.test(id)) ||
+        (source === 'landing' &&
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)),
+    )
   ) {
     throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
   }
@@ -294,14 +299,14 @@ export function markMonitorNoticesDelivered(
       parsed.filter(({ source }) => source === 'condition').map(({ id }) => Number(id)),
     )
     const landings = new Set(
-      parsed.filter(({ source }) => source === 'landing').map(({ id }) => Number(id)),
+      parsed.filter(({ source }) => source === 'landing').map(({ id }) => id),
     )
     // A receipt may stamp a landing only when that source-qualified landing token
     // came from the claim that produced the emission. Equal ids in other sources do not qualify.
     for (const id of conditions) mark.run(deliveredAt, id, ownerSession)
     const markLanding = database.query(
       `UPDATE landing SET heartbeat_delivered_at=?
-        WHERE id=? AND session_id=? AND heartbeat_delivered_at IS NULL
+        WHERE record_id=? AND session_id=? AND heartbeat_delivered_at IS NULL
           AND status IN ('refused','rebase_required','install_failed')`,
     )
     for (const id of landings) markLanding.run(deliveredAt, id, ownerSession)

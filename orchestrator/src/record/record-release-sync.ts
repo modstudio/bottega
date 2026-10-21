@@ -18,7 +18,6 @@ function releaseValues(row: Payload, projectId: string | null) {
     spaceId: String(row.spaceId),
     projectId,
     machineId: String(row.machineId),
-    localId: BigInt(String(row.localId)),
     rung: String(row.rung),
     candidateCommit: String(row.candidateCommit),
     liveCommitBefore: nullableString(row.liveCommitBefore),

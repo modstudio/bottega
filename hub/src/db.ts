@@ -1,27 +1,35 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { classifyCaller } from '../../shared/caller-classification.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
-import { isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
+import { installRoot, isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
 import { machineId, storedMachineId } from '../../shared/machine-config.ts'
+import type { QuestionIdentity } from '../../shared/orch-contract.ts'
 import {
   legacyStoreRefusal,
+  realPathForPotentialPath,
   resolveHubDatabase,
   type StateEnvironment,
+  temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
+import { decideStoreAccess, type StoreAccessDecision } from '../../shared/store-access.ts'
+import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
 import {
   applyMigrations,
   migrationRefusal,
+  pendingMigrationTags,
   readUserVersion,
   staleWriteRefusal,
 } from './migrations.ts'
 
 export type { Project } from './projects.ts'
 
-const checkout = fileURLToPath(new URL('../..', import.meta.url))
+const checkout = installRoot()
 type HubRuntime = {
   mainCheckout: string | null
   linkedCheckout: boolean
@@ -49,12 +57,40 @@ export function resolveHubRuntime(
     ),
   }
 }
-
 const runtime = resolveHubRuntime(checkout, process.env)
 const linkedCheckout = runtime.linkedCheckout
 const livePath = runtime.livePath
 const legacyPath = runtime.legacyPath
 export const DB_PATH = livePath
+
+const RESTRICTED_ACTOR_WRITE_REFUSAL =
+  'refusing to write hub rows to the shared store from a worker, linked worktree, or borrowed clone\n' +
+  'invariant: A restricted process reads the shared hub store and never writes or migrates it.\n' +
+  'cleared by: run the command as an operator from the main checkout, or set HUB_DB to a temporary scratch copy'
+
+/** Gather hub-specific path and caller facts for the shared store-access decision. */
+export function hubStoreAccess(
+  restrictedActor: boolean,
+  path: string,
+  temporaryDirectory = tmpdir(),
+  walOrShmSidecarPresent = existsSync(`${path}-wal`) || existsSync(`${path}-shm`),
+): StoreAccessDecision {
+  return decideStoreAccess({
+    restrictedActor,
+    storePathUnderTemporaryRoot: temporaryStateStoreMigrationAllowed(
+      realPathForPotentialPath(path),
+      realPathForPotentialPath(temporaryDirectory),
+    ),
+    walOrShmSidecarPresent,
+  })
+}
+
+const restrictedActor = linkedCheckout || classifyCaller(process.env).kind === 'worker'
+
+function assertHubStoreWritable(): void {
+  if (hubStoreAccess(restrictedActor, DB_PATH).writesRefused)
+    throw new Error(RESTRICTED_ACTOR_WRITE_REFUSAL)
+}
 
 function legacyDatabaseRefusal(): string | null {
   if (process.env.HUB_DB || !legacyPath) return null
@@ -70,23 +106,6 @@ function legacyDatabaseRefusal(): string | null {
       destinationStore: DB_PATH,
     },
   )
-}
-
-/** A test process never falls back to the live hub store; production still does. */
-export function decideHubDatabasePath(
-  isTestProcess: boolean,
-  hubDb: string | undefined,
-  liveStore: string | null,
-): string | null {
-  if (hubDb) return hubDb
-  if (isTestProcess) {
-    throw new Error(
-      `test process refuses hub database: HUB_DB resolved <unset>; live store is ${liveStore ?? '<none>'}\n` +
-        'invariant: A test suite never falls back to the live hub database.\n' +
-        'cleared by: set HUB_DB to a scratch store before importing hub/src/db.ts',
-    )
-  }
-  return liveStore
 }
 
 function authorizedHubInstallation(): boolean {
@@ -108,6 +127,11 @@ export function implicitHubDatabaseCreationRefusal(
   path = DB_PATH,
 ): string | null {
   if (explicitPath) return missingHubDatabaseMessage(path)
+  const scratchAllowed = temporaryStateStoreMigrationAllowed(
+    realPathForPotentialPath(path),
+    realPathForPotentialPath(tmpdir()),
+  )
+  if (linked && scratchAllowed) return null
   if (linked) {
     return (
       `refusing to initialize the hub store from a linked worktree: ${path}\n` +
@@ -123,7 +147,17 @@ export function existingDefaultStoreMigrationRefusal(
   explicitPath: boolean,
   authorized: boolean,
   path = DB_PATH,
+  linked = linkedCheckout,
 ): string | null {
+  if (
+    linked &&
+    temporaryStateStoreMigrationAllowed(
+      realPathForPotentialPath(path),
+      realPathForPotentialPath(tmpdir()),
+    )
+  ) {
+    return null
+  }
   return explicitPath || authorized ? null : unauthorizedHubMigrationMessage(path)
 }
 
@@ -178,30 +212,42 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 export function db(): Database {
   if (handle) return refuseOrReloadStaleSchema(handle, false)
   // bun test sets NODE_ENV=test; an unset HUB_DB must not fall back to the live store.
-  decideHubDatabasePath(process.env.NODE_ENV === 'test', process.env.HUB_DB, livePath)
+  assertTestHubDatabasePath()
   requireDatabase()
-  const d = new Database(DB_PATH!, { readwrite: true, create: false })
+  const access = hubStoreAccess(restrictedActor, DB_PATH)
+  const databasePath =
+    access.openMode === 'read-only-immutable'
+      ? `${pathToFileURL(DB_PATH).href}?immutable=1`
+      : DB_PATH
+  const d =
+    access.openMode === 'read-write'
+      ? new Database(databasePath, { readwrite: true, create: false })
+      : new Database(databasePath, { readonly: true })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(d)
   if (refused) {
     d.close()
     throw new Error(refused)
   }
-  d.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-    PRAGMA wal_autocheckpoint = 100;
-    PRAGMA journal_size_limit = 1048576;
-    PRAGMA query_only = ON;
-  `)
+  if (access.openMode === 'read-write') {
+    d.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA wal_autocheckpoint = 100;
+      PRAGMA journal_size_limit = 1048576;
+      PRAGMA query_only = ON;
+    `)
+  }
   handle = d
   openedUserVersion = readUserVersion(d)
   return d
 }
 
 /** Open the only sanctioned multi-statement write transaction. */
-export function writeTransaction<T>(fn: (conn: Database) => T, database: Database = db()): T {
-  const conn = refuseOrReloadStaleSchema(database, true)
+export function writeTransaction<T>(fn: (conn: Database) => T, database?: Database): T {
+  assertHubStoreWritable()
+  const target = database ?? db()
+  const conn = refuseOrReloadStaleSchema(target, true)
   const depth = writeDepth.get(conn) ?? 0
   if (depth === 0) conn.exec('PRAGMA query_only = OFF')
   writeDepth.set(conn, depth + 1)
@@ -234,12 +280,30 @@ export function formatMigrationRepairSummary(
   return `task_identity_migration_repairs: ${repairs.map((repair) => `${repair.reason}=${repair.count}`).join(', ')}`
 }
 
-/** The only production path that creates or changes the hub schema. */
-export function migrateDatabase(): {
+type MigrationResult = {
   path: string
   versions: string[]
   repairs: { reason: string; count: number }[]
-} {
+}
+
+export async function questionIdentitiesForMigrations(
+  d: Database,
+  readQuestionIdentities: () => Promise<readonly QuestionIdentity[]>,
+): Promise<readonly QuestionIdentity[]> {
+  if (!pendingMigrationTags(d).includes('0036_question_uuid_key')) return []
+  try {
+    return await readQuestionIdentities()
+  } catch (error) {
+    throw new Error(
+      `refusing question UUID migration: could not obtain the orchestrator identity map; ` +
+        `run ${PLATFORM_SLUG} machine migrate\n${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+function openMigrationDatabase(): { database: Database; create: boolean } {
+  if (hubStoreAccess(restrictedActor, DB_PATH).migrationsRefused)
+    throw new Error(RESTRICTED_ACTOR_WRITE_REFUSAL)
   const refusal = legacyDatabaseRefusal()
   if (refusal) throw new Error(refusal)
   const create = !existsSync(DB_PATH)
@@ -252,39 +316,70 @@ export function migrateDatabase(): {
     : null
   if (authorizationRefusal) throw new Error(authorizationRefusal)
   if (create) mkdirSync(dirname(DB_PATH), { recursive: true })
-  const d = new Database(DB_PATH, { readwrite: true, create })
+  const database = new Database(DB_PATH, { readwrite: true, create })
+  database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  return { database, create }
+}
+
+function migrateOpenDatabase(
+  d: Database,
+  create: boolean,
+  questionIdentities: readonly QuestionIdentity[],
+): MigrationResult {
+  const repairCounts = () => {
+    const exists = d
+      .query<{ count: number }, []>(
+        "SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='task_identity_migration_repairs'",
+      )
+      .get()?.count
+    return new Map(
+      exists
+        ? d
+            .query<{ reason: string; count: number }, []>(
+              `SELECT reason,COUNT(*) count FROM task_identity_migration_repairs
+               GROUP BY reason ORDER BY reason`,
+            )
+            .all()
+            .map((row) => [row.reason, row.count] as const)
+        : [],
+    )
+  }
+  const before = repairCounts()
+  const identity = create ? machineId() : storedMachineId()
+  if (!identity)
+    throw new Error(
+      `refusing to migrate hub before carrying over the machine identity; run ${PLATFORM_SLUG} machine migrate`,
+    )
+  const versions = applyMigrations(d, undefined, { machine_id: identity }, questionIdentities)
+  const repairs = [...repairCounts()]
+    .map(([reason, count]) => ({ reason, count: count - (before.get(reason) ?? 0) }))
+    .filter((row) => row.count > 0)
+  return { path: DB_PATH, versions, repairs }
+}
+
+/** The only production path that creates or changes the hub schema. */
+export function migrateDatabase(
+  questionIdentities: readonly QuestionIdentity[] = [],
+): MigrationResult {
+  const { database, create } = openMigrationDatabase()
   try {
-    d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-    const repairCounts = () => {
-      const exists = d
-        .query<{ count: number }, []>(
-          "SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='task_identity_migration_repairs'",
-        )
-        .get()?.count
-      return new Map(
-        exists
-          ? d
-              .query<{ reason: string; count: number }, []>(
-                `SELECT reason,COUNT(*) count FROM task_identity_migration_repairs
-                 GROUP BY reason ORDER BY reason`,
-              )
-              .all()
-              .map((row) => [row.reason, row.count] as const)
-          : [],
-      )
-    }
-    const before = repairCounts()
-    const identity = create ? machineId() : storedMachineId()
-    if (!identity)
-      throw new Error(
-        `refusing to migrate hub before carrying over the machine identity; run ${PLATFORM_SLUG} machine migrate`,
-      )
-    const versions = applyMigrations(d, undefined, { machine_id: identity })
-    const repairs = [...repairCounts()]
-      .map(([reason, count]) => ({ reason, count: count - (before.get(reason) ?? 0) }))
-      .filter((row) => row.count > 0)
-    return { path: DB_PATH, versions, repairs }
+    return migrateOpenDatabase(database, create, questionIdentities)
   } finally {
-    d.close()
+    database.close()
+  }
+}
+
+export async function migrateDatabaseWithQuestionIdentityMap(
+  readQuestionIdentities: () => Promise<readonly QuestionIdentity[]>,
+): Promise<MigrationResult> {
+  const { database, create } = openMigrationDatabase()
+  try {
+    const questionIdentities = await questionIdentitiesForMigrations(
+      database,
+      readQuestionIdentities,
+    )
+    return migrateOpenDatabase(database, create, questionIdentities)
+  } finally {
+    database.close()
   }
 }

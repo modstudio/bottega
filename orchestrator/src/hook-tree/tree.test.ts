@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -19,7 +20,7 @@ test('hook-tree seed request carries the command-line seed', () => {
 test('tree remove directs an ordinary run through close-out', () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const path = `/no-such-ordinary-tree-${id}`
-  db().query('UPDATE run SET worktree=?, cwd=? WHERE id=?').run(path, path, id)
+  db().query('UPDATE run SET worktree=?, cwd=? WHERE record_id=?').run(path, path, id)
 
   expect(() => removeHookTree(path)).toThrow(`${PLATFORM_SLUG} run close-out ${id}`)
 })
@@ -27,7 +28,7 @@ test('tree remove directs an ordinary run through close-out', () => {
 test('tree remove gives an unrecorded project path a git removal command', () => {
   const main = '/projects/hook-tree-removal'
   const path = `${main}/.claude/worktrees/unrecorded-tree`
-  upsertProject({ name: 'hook-tree-removal', path: main, settings: {} })
+  upsertProject({ recordId: newRecordId(), name: 'hook-tree-removal', path: main, settings: {} })
 
   expect(() => removeHookTree(path)).toThrow(`git -C ${main} worktree remove ${path}`)
 })

@@ -5,6 +5,7 @@ import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
 import {
   abandonCommand,
   attachCommand,
@@ -13,7 +14,6 @@ import {
   composeCommand,
   cursorsCommand,
   execCommand,
-  forkCatalogueCommand,
   forkWorkflowCommand,
   hydrateCommand,
   importCommand,
@@ -80,10 +80,14 @@ function workflowRegistration(
   return { workflow, workflowPresentation, handlerOptions, output }
 }
 
-function registerWorkflowDefinitions({ workflow, output }: WorkflowRegistration): void {
+function registerWorkflowDefinitions({
+  workflow,
+  output,
+  handlerOptions,
+}: WorkflowRegistration): void {
   jsonOption(workflow.command('list').description('list workflow definitions'))
     .allowExcessArguments(false)
-    .action((options) => listWorkflowCommand(output(options)))
+    .action((options) => listWorkflowCommand(output(options), handlerOptions))
 
   jsonOption(
     workflow
@@ -93,7 +97,7 @@ function registerWorkflowDefinitions({ workflow, output }: WorkflowRegistration)
   )
     .allowExcessArguments(false)
     .action((slug, options) =>
-      showWorkflowCommand(workflowArgv('show', [slug], options), output(options)),
+      showWorkflowCommand(workflowArgv('show', [slug], options), output(options), handlerOptions),
     )
 
   jsonOption(
@@ -115,6 +119,7 @@ function registerWorkflowDefinitions({ workflow, output }: WorkflowRegistration)
 function registerWorkflowVersions({
   workflow,
   workflowPresentation,
+  handlerOptions,
   output,
 }: WorkflowRegistration): void {
   for (const [verb, description, handler] of [
@@ -150,7 +155,11 @@ function registerWorkflowVersions({
   jsonOption(workflow.command('versions <workflow>').description('list versions of a workflow'))
     .allowExcessArguments(false)
     .action((slug, options) =>
-      workflowVersionsCommand(workflowArgv('versions', [slug], options), output(options)),
+      workflowVersionsCommand(
+        workflowArgv('versions', [slug], options),
+        output(options),
+        handlerOptions,
+      ),
     )
 
   jsonOption(
@@ -233,6 +242,7 @@ function registerWorkflowAdvancement({
       .option('--mode <value>', 'select this workflow mode')
       .option('--project <value>', 'select this registered project')
       .option('--note <value>', 'record how the current step was completed')
+      .option('--outcome <value>', 'record the current step outcome')
       .option('--question <value>', 'record the self-ruling question')
       .option('--self-ruling <value>', 'record the self-ruling answer')
       .option('--basis <value>', 'record the basis for a self-ruling')
@@ -360,6 +370,7 @@ function registerWorkflowChildCommands({
 function registerWorkflowTreeCommands({
   workflow,
   workflowPresentation,
+  handlerOptions,
   output,
 }: WorkflowRegistration): void {
   workflow
@@ -368,7 +379,12 @@ function registerWorkflowTreeCommands({
     .option('--cwd <value>', 'select the project worktree to hydrate')
     .option('--check', 'report drift without writing files')
     .allowExcessArguments(false)
-    .action((options) => hydrateCommand(workflowArgv('hydrate', [], options), workflowPresentation))
+    .action((options) =>
+      hydrateCommand(workflowArgv('hydrate', [], options), workflowPresentation, {
+        ...handlerOptions,
+        cwd: options.cwd ?? handlerOptions.cwd,
+      }),
+    )
 
   jsonOption(
     authorOption(
@@ -381,10 +397,19 @@ function registerWorkflowTreeCommands({
     ),
   )
     .allowExcessArguments(false)
-    .action((options) => importCommand(workflowArgv('import', [], options), output(options)))
+    .action((options) =>
+      importCommand(workflowArgv('import', [], options), output(options), {
+        ...handlerOptions,
+        cwd: options.cwd ?? handlerOptions.cwd,
+      }),
+    )
 }
 
-function registerWorkflowCatalogue({ workflow, output }: WorkflowRegistration): void {
+function registerWorkflowCatalogue({
+  workflow,
+  output,
+  handlerOptions,
+}: WorkflowRegistration): void {
   const catalogue = workflow
     .command('catalogue')
     .description('inspect and change the workflow step catalogue')
@@ -409,7 +434,11 @@ function registerWorkflowCatalogue({ workflow, output }: WorkflowRegistration): 
   )
     .allowExcessArguments(false)
     .action((options) =>
-      showCatalogueCommand(productArgv('catalogue', ['show'], options), output(options)),
+      showCatalogueCommand(
+        productArgv('catalogue', ['show'], options),
+        output(options),
+        handlerOptions,
+      ),
     )
   jsonOption(
     authorOption(
@@ -449,11 +478,15 @@ function registerWorkflowCatalogue({ workflow, output }: WorkflowRegistration): 
   )
     .allowExcessArguments(false)
     .action((options) =>
-      forkCatalogueCommand(productArgv('catalogue', ['fork'], options), output(options)),
+      forkCatalogueCommand(
+        productArgv('catalogue', ['fork'], options),
+        output(options),
+        handlerOptions,
+      ),
     )
   jsonOption(catalogue.command('versions').description('list step catalogue versions'))
     .allowExcessArguments(false)
-    .action((options) => catalogueVersionsCommand(output(options)))
+    .action((options) => catalogueVersionsCommand(output(options), handlerOptions))
 }
 
 export function registerWorkflowCommands(

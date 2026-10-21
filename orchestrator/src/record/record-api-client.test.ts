@@ -14,7 +14,6 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import {
-  classifyBoardStreamResponse,
   recordApiBaseUrl,
   recordApiClient,
   recordApiSignIn,
@@ -23,6 +22,7 @@ import {
   recordIdentityResponse,
   recordInvitationListResponse,
 } from './record-api-client.ts'
+import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
 
 describe('record HTTP authentication responses', () => {
   test('sign-in posts without an Origin and prefers the bearer response header', async () => {
@@ -253,6 +253,7 @@ describe('record API client test safety', () => {
       const destination = { destinationSpaceId: 'stable-space-id' }
       await client.upsertProject(
         {
+          id: '01990000-0000-7000-8000-000000000001',
           name: 'known',
           path: '/repo/known',
           stack: null,

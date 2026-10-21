@@ -1,25 +1,65 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { db } from '../database/db.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
+import {
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+  type WorkflowDefinition,
+} from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
 import { bindWorkflowPromptArguments, workflowPromptDefinitions } from './mcp-prompts.ts'
+import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 const workflow = (
   slug: string,
-  arguments_: WorkflowDefinition['arguments'],
+  workflowArguments: WorkflowDefinition['arguments'],
 ): { slug: string; definition: WorkflowDefinition } => ({
   slug,
   definition: {
     title: 'Ship task',
     description: 'Ship one task.',
-    arguments: arguments_,
+    arguments: workflowArguments,
     modes: [
       { slug: 'fast', title: 'Fast', default: true, steps: ['implement'] },
       { slug: 'careful', title: 'Careful', steps: ['plan', 'implement'] },
     ],
   },
+})
+
+describe('MCP workflow space', () => {
+  test('a registered cwd project takes precedence over the remembered active space', () => {
+    const local = db()
+    const project = 'prompt-space-project'
+    const projectPath = process.cwd()
+    const projectSpace = newRecordId()
+    const activeSpace = newRecordId()
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: projectPath,
+      stack: 'bun',
+      settings: {},
+    })
+    rememberProjectSpace(local, project, projectSpace)
+    rememberActiveRecordSpace(local, activeSpace)
+
+    expect(resolveMcpWorkflowSpace(`${projectPath}/child`, local).spaceId).toBe(projectSpace)
+    removeProject(project)
+  })
+
+  test('an unregistered cwd uses the remembered active space', () => {
+    const local = db()
+    const activeSpace = newRecordId()
+    rememberActiveRecordSpace(local, activeSpace)
+
+    expect(resolveMcpWorkflowSpace('/fixture/outside-every-project', local).spaceId).toBe(
+      activeSpace,
+    )
+  })
 })
 
 describe('workflow prompt definitions', () => {
@@ -183,6 +223,11 @@ describe('workflow prompt argument binding', () => {
 
 describe('workflow prompts on the wire', () => {
   afterEach(() => {
+    db()
+      .query(
+        "DELETE FROM workflow_cursor WHERE project_record_id=(SELECT record_id FROM project WHERE name='prompt-fixture')",
+      )
+      .run()
     removeProject('prompt-fixture')
   })
 
@@ -197,7 +242,7 @@ describe('workflow prompts on the wire', () => {
 
   const installPlanTask = () => {
     const slug = 'plan-task'
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       slug,
       {
         title: 'Plan a task',
@@ -213,7 +258,7 @@ describe('workflow prompts on the wire', () => {
       'test plan-task prompt',
       'test',
     )
-    promoteWorkflow(slug, draft.n, 'publish test plan-task prompt', 'test')
+    promoteWorkflowLocal(slug, draft.n, 'publish test plan-task prompt', 'test')
   }
 
   test('advertised-requiredness mutation: a workflow-required argument reaches the client optional and described', async () => {
@@ -229,6 +274,7 @@ describe('workflow prompts on the wire', () => {
 
   test('blank-argument mutation: blank values count as omitted, so composition asks for the missing argument', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',
@@ -252,12 +298,13 @@ describe('workflow prompts on the wire', () => {
   test('a prompt with no default mode lists its arguments and exact next calls', async () => {
     const slug = 'prompt-mode-chooser'
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',
       settings: { gate: 'true', docs: { protocol: 'orch-docs' } },
     })
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       slug,
       {
         title: 'Choose prompt mode',
@@ -271,7 +318,7 @@ describe('workflow prompts on the wire', () => {
       'test prompt mode chooser',
       'test',
     )
-    promoteWorkflow(slug, draft.n, 'publish test prompt', 'test')
+    promoteWorkflowLocal(slug, draft.n, 'publish test prompt', 'test')
     const client = await connected()
     const result = await client.getPrompt({
       name: slug,
@@ -291,6 +338,7 @@ describe('workflow prompts on the wire', () => {
 
   test('plan-task rereads a positional key and carries it through the mode menu', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',
@@ -312,6 +360,7 @@ describe('workflow prompts on the wire', () => {
 
   test('plan-task leaves a correct named map unchanged', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'prompt-fixture',
       path: process.cwd(),
       stack: 'node',

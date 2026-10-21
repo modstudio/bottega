@@ -7,7 +7,7 @@ import type { ResumeKind } from './run-resume-kind.ts'
 
 export type RunResumeOptions = {
   kind: ResumeKind
-  parent: number
+  parent: string
   agent: string
   session?: string
   retireAsking?: boolean

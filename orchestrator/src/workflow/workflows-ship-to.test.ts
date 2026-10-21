@@ -1,14 +1,19 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
-import { composeWorkflow, getWorkflowStep, promoteWorkflow, setWorkflow } from './workflows.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+} from './workflows.ts'
 
 const release = {
   rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
@@ -17,12 +22,11 @@ const release = {
   observationWindowHours: 24,
 }
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run(
     'fixture',
     '/fixture',
     'bun',
@@ -33,8 +37,7 @@ const database = () => {
       tracker: { protocol: 'hub' },
     }),
   )
-  return d
-}
+})
 
 const publishShipToFixture = (
   d: Database,
@@ -42,7 +45,7 @@ const publishShipToFixture = (
   floor?: string,
 ) => {
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       steps: [
         ...current.steps,
@@ -68,8 +71,8 @@ const publishShipToFixture = (
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish', 'test', d)
-  const workflow = setWorkflow(
+  promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+  const workflow = setWorkflowLocal(
     'ship-to-fixture',
     {
       title: 'Ship-to fixture',
@@ -88,7 +91,7 @@ const publishShipToFixture = (
     'test',
     d,
   )
-  promoteWorkflow('ship-to-fixture', workflow.n, 'publish', 'test', d)
+  promoteWorkflowLocal('ship-to-fixture', workflow.n, 'publish', 'test', d)
 }
 
 const shipToAutonomy = (level: 'branch' | 'trunk' | 'production') => ({

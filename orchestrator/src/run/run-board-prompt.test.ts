@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -18,11 +21,27 @@ import {
   appendInitialRunBoardPrompt,
   BOARD_PACK_MAX_CHARS,
   BOARD_PACK_MAX_NOTICES,
+  persistBoundPrompt,
   prepareLaterRunBoardPrompt,
   renderRunBoardSection,
 } from './run-board-prompt.ts'
 
 const createdAt = new Date(Date.now() - 1_000).toISOString()
+
+test('persisting a board-bound prompt leaves the original prompt unchanged', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'bound-prompt-'))
+  const promptPath = join(directory, 'prompt.txt')
+  writeFileSync(promptPath, 'original')
+  const run = db()
+    .query<{ id: string }, []>(`INSERT INTO run
+    (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,turn)
+    VALUES (lower(hex(randomblob(4))) || '-0000-7000-8000-' || lower(hex(randomblob(6))),(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','implement','sha','spec',8,'head','running',1)
+    RETURNING record_id AS id`)
+    .get()!
+  persistBoundPrompt(promptPath, 'original\n\nnotice', run.id)
+  expect(readFileSync(promptPath, 'utf8')).toBe('original')
+  expect(readFileSync(join(directory, 'bound-prompt.txt'), 'utf8')).toContain('notice')
+})
 
 beforeEach(() => {
   process.env.ORCH_RECORD_API_URL = 'https://record.test'
@@ -45,29 +64,29 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key)
-       VALUES ('${newRecordId()}',?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH')
-       RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH')
+       RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const posted = postNotice(
     { audience: `run:${run.id}`, title: 'At dispatch', body: 'Delivered once.' },
     {},
     clock,
   )
   const bound = await appendInitialRunBoardPrompt('PROMPT', run.id)
-  expect(bound.noticeIds).toEqual([String(posted.id)])
-  markLocalRunNoticesDelivered(run.id, bound.noticeIds.map(Number), clock + 1)
+  expect(bound.noticeIds).toEqual([String(posted.number)])
+  markLocalRunNoticesDelivered(run.id, [posted.recordId], clock + 1)
   expect(claimRunNotices(run.id, false, clock + 2)).toEqual([])
 })
 
 test('dispatch and later-turn injection each combine hosted and local once with a refresh warning', async () => {
   const root = db()
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1) RETURNING id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T11:00:00.000Z') as { id: number }
+    .get('2026-10-05T11:00:00.000Z') as { id: string }
   const hosted = (id = newRecordId()): HostedBoardMessage => ({
     id,
     kind: 'notice',
@@ -135,7 +154,7 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     Date.parse(createdAt),
   )
   const initial = await appendInitialRunBoardPrompt('PROMPT', root.id)
-  expect(initial.noticeIds).toEqual([String(firstLocal.id), firstHosted.id])
+  expect(initial.noticeIds).toEqual([String(firstLocal.number), firstHosted.id])
   expect(initial.prompt).toContain('Local prompt')
   expect(initial.prompt).toContain('Hosted prompt')
   expect(initial.prompt).not.toContain('local prompt body')
@@ -157,7 +176,7 @@ test('dispatch and later-turn injection each combine hosted and local once with 
     Date.parse(createdAt) + 1_000,
   )
   const later = await prepareLaterRunBoardPrompt(root.id, true, [], 'NEXT')
-  expect(later.notices.map((row) => row.id)).toEqual([String(laterLocal.id), laterHosted.id])
+  expect(later.notices.map((row) => row.id)).toEqual([String(laterLocal.number), laterHosted.id])
   expect(later.prompt).toContain('Local later')
   expect(later.prompt).toContain('Hosted prompt')
   expect(later.prompt).not.toContain('local later body')

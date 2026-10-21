@@ -37,16 +37,15 @@ test('board reach heartbeat migration preserves rows and emission uniqueness', (
     expect(
       database
         .query(
-          `SELECT id,message_source,message_id,reader_session,reader_project,delivery_point,
+          `SELECT message_source,message_record_id,reader_session,reader_project,delivery_point,
                   blocked_stop,audience,acknowledgement_required,purpose,posted_at,expires_at,
                   session_started_at,posting_timing,concern,recorded_at,emission_id
            FROM board_reach_delivery`,
         )
         .get(),
     ).toEqual({
-      id: 1,
       message_source: 'hosted',
-      message_id: 'message-1',
+      message_record_id: 'message-1',
       reader_session: 'reader-1',
       reader_project: 'project-1',
       delivery_point: 'stop',
@@ -64,7 +63,7 @@ test('board reach heartbeat migration preserves rows and emission uniqueness', (
     })
     const insert = database.query(
       `INSERT INTO board_reach_delivery
-       (message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
+       (message_source,message_record_id,reader_session,reader_project,delivery_point,blocked_stop,
         audience,acknowledgement_required,posted_at,session_started_at,posting_timing,concern,
         recorded_at,emission_id,record_id)
        VALUES ('hosted','message-1','reader-2','project-2','heartbeat-monitor',0,

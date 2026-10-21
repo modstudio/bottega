@@ -4,8 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { WORKER_ENVIRONMENT_MARKERS } from '../../../shared/caller-classification.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { WORKER_ENVIRONMENT_MARKERS } from '../caller-classification.ts'
 import { shouldExpireUnjudgedOwner } from '../cleanup/cleanup-sweep-decisions.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
@@ -45,7 +46,7 @@ const flags = {
 const presentation = {
   log: (..._values: unknown[]) => {},
   error: (..._values: unknown[]) => {},
-  pairHint: (partner: { id: number }) => `pair ${partner.id}`,
+  pairHint: (partner: { id: string }) => `pair ${partner.id}`,
 }
 const judgmentOptions = {
   words: ['full', 'right'],
@@ -85,7 +86,7 @@ test('a plain terminal owns, lists, scores, and judges its fixture runs', async 
 test('a plain terminal adopts an ownerless run on its first score', async () => {
   const id = addRun({ agent: 'codex', job: 'file-question', session: null })
   await scoreRun(id, flags, { ...judgmentOptions, dashboardAuthorized: false }, presentation)
-  expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
+  expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
     session_id: sessionId(),
   })
 })
@@ -121,8 +122,17 @@ test('operator authority covers answer, continue, tell, review read, and sweep l
     const id = addRun({ agent: 'codex', job: 'implement', session: owner })
     expect(adoptRunMutation(authorizeRunMutation(id, action), action).actor).toBe(owner)
   }
+  db()
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(newRecordId())
   const reviewId = addRun({ agent: 'codex', job: 'implement', session: owner, repo: 'fixture' })
-  db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-1105-operator', reviewId)
+  db()
+    .query(
+      "UPDATE run SET branch='DEV-1105-operator',project_record_id=(SELECT record_id FROM project WHERE name='fixture') WHERE record_id=?",
+    )
+    .run(reviewId)
   expect(requireBranchRunOwner(db(), 'fixture', 'DEV-1105-operator', owner)).toBe(owner)
 
   recordSessionSeen(owner, '2026-10-05T12:00:00.000Z')

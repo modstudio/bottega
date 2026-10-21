@@ -79,7 +79,7 @@ describe('document revision author', () => {
     expect(
       db()
         .query<{ author: string; session_id: string | null }, [string]>(
-          'SELECT author, session_id FROM doc_revision WHERE slug=? ORDER BY id',
+          'SELECT author, session_id FROM doc_revision WHERE slug=? ORDER BY number',
         )
         .all(created.slug),
     ).toEqual([

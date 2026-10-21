@@ -33,6 +33,7 @@ function proposeSetup(
 }
 
 const machine = {
+  recordApiUrl: 'https://api.example.test',
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
 } as SetupFacts
@@ -57,6 +58,14 @@ function machineWithMcp(
     ) as SetupFacts['harnesses'],
   }
 }
+
+test('mentions record use when no hosted record address is configured', () => {
+  const plan = proposeSetup({ ...machine, recordApiUrl: null }, [], [], [])
+  expect(plan.notices).toContainEqual({
+    message: 'hosted record address is not configured',
+    fix: `${PLATFORM_SLUG} record use <address>`,
+  })
+})
 
 const orchServer = {
   name: 'orch' as const,
@@ -87,8 +96,7 @@ function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
 
 function registered(settings: Project['settings'], overrides: Partial<Project> = {}): Project {
   return {
-    id: 1,
-    recordId: null,
+    recordId: '01990000-0000-7000-8000-000000001214',
     name: 'alpha-project',
     path: '/repos/alpha-project',
     stack: 'node',

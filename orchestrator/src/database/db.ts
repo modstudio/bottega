@@ -7,6 +7,8 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { decideStoreAccess } from '../../../shared/store-access.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
@@ -20,10 +22,13 @@ import {
   implicitDatabaseCreationRefusal,
   legacyDatabaseRefusal,
   linkedWorktreeDatabaseInitializationMessage,
+  linkedWorktreeMigrationAllowed,
 } from './database-location.ts'
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   applyMigrations,
+  applyMigrationsBefore,
+  type BeforeMigrationApply,
   migrationRefusal,
   readUserVersion,
   staleWriteRefusal,
@@ -94,11 +99,21 @@ function sameStore(a: string, b: string): boolean {
  * a linked binary may read the main store under any name and never writes it.
  * ORCH_DB_WRITE=1 is the operator's explicit, recorded insistence.
  */
-export const linkedWorktreeReadOnly =
+const restrictedLinkedWorktreeActor =
   DATABASE_RESOLUTION.linkedWorktreeBinary &&
   process.env.ORCH_DB_WRITE !== '1' &&
   (DATABASE_RESOLUTION.method !== 'ORCH_DB' ||
     sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
+
+function orchestratorStoreAccess(walOrShmSidecarPresent: boolean) {
+  return decideStoreAccess({
+    restrictedActor: restrictedLinkedWorktreeActor,
+    storePathUnderTemporaryRoot: linkedWorktreeMigrationAllowed(DB_PATH),
+    walOrShmSidecarPresent,
+  })
+}
+
+export const linkedWorktreeReadOnly = orchestratorStoreAccess(false).writesRefused
 
 let registeredStoreWriteProtected = false
 
@@ -112,7 +127,13 @@ export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
  */
 export function openReadOnlyDatabase(path = DB_PATH): Database {
   const sidecarsExist = existsSync(`${path}-wal`) || existsSync(`${path}-shm`)
-  const readOnlyPath = sidecarsExist ? path : `${pathToFileURL(path).href}?immutable=1`
+  const access = decideStoreAccess({
+    restrictedActor: true,
+    storePathUnderTemporaryRoot: false,
+    walOrShmSidecarPresent: sidecarsExist,
+  })
+  const readOnlyPath =
+    access.openMode === 'read-only-immutable' ? `${pathToFileURL(path).href}?immutable=1` : path
   return new Database(readOnlyPath, { readonly: true })
 }
 
@@ -206,14 +227,17 @@ export function db(writable = false): Database {
   if (legacyRefusal) throw new Error(legacyRefusal)
   ensureDatabase()
   requireOpenHooksForWritableMode()
-  const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
-  const readOnlyPath =
-    linkedWorktreeReadOnly && !sidecarsExist
+  const access = orchestratorStoreAccess(
+    existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`),
+  )
+  const databasePath =
+    access.openMode === 'read-only-immutable'
       ? `${pathToFileURL(DB_PATH).href}?immutable=1`
       : DB_PATH
-  const d = linkedWorktreeReadOnly
-    ? new Database(readOnlyPath, { readonly: true })
-    : new Database(DB_PATH, { readwrite: true, create: false })
+  const d =
+    access.openMode === 'read-write'
+      ? new Database(databasePath, { readwrite: true, create: false })
+      : new Database(databasePath, { readonly: true })
   // Several `bottega run start` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record
@@ -381,8 +405,9 @@ function seedProjects(d: Database): void {
   const rows = d
     .query(
       `SELECT repo, cwd FROM run r
-      WHERE repo IS NOT NULL AND cwd IS NOT NULL
-        AND id = (SELECT MAX(id) FROM run x WHERE x.repo = r.repo AND x.cwd IS NOT NULL)`,
+      WHERE project_record_id IS NOT NULL AND cwd IS NOT NULL
+        AND number = (SELECT MAX(number) FROM run x
+                       WHERE x.project_record_id = r.project_record_id AND x.cwd IS NOT NULL)`,
     )
     .all() as { repo: string; cwd: string }[]
   for (const { repo, cwd } of rows) {
@@ -391,9 +416,9 @@ function seedProjects(d: Database): void {
     const path = at === -1 ? cwd : parts.slice(0, at + 1).join('/')
     try {
       d.query(
-        `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,1,'{}')
+        `INSERT INTO project (record_id, name, path, stack, canon, settings) VALUES (?,?,?,?,1,'{}')
          ON CONFLICT(name) DO NOTHING`,
-      ).run(repo, path, null)
+      ).run(newRecordId(), repo, path, null)
     } catch {
       /* one malformed historical row does not block the remaining seed */
     }
@@ -401,7 +426,12 @@ function seedProjects(d: Database): void {
 }
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
-export function migrateDatabase(): { path: string; versions: string[] } {
+export function migrateDatabase(
+  input: { beforeMigration?: string; beforeApply?: BeforeMigrationApply } = {},
+): {
+  path: string
+  versions: string[]
+} {
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
   const create = !existsSync(DB_PATH)
@@ -412,10 +442,13 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   registeredOpenHooks()
   if (create) {
     const created = createDatabasePrivately(DB_PATH, (database) => {
-      const versions = applyMigrations(database)
+      const versions = input.beforeMigration
+        ? applyMigrationsBefore(database, input.beforeMigration)
+        : applyMigrations(database, undefined, input.beforeApply)
       writeTransaction(() => initializeDefaultLocalProject(database, true), database)
       seedProjects(database)
-      runOpenHooks('afterInitialize', database)
+      // Seeding and hygiene assume the current schema, so a partial migration skips them.
+      if (!input.beforeMigration) runOpenHooks('afterInitialize', database)
       return versions
     })
     if (!created.published) {
@@ -436,27 +469,42 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   const d = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-    const versions = applyMigrations(d)
+    const versions = input.beforeMigration
+      ? applyMigrationsBefore(d, input.beforeMigration)
+      : applyMigrations(d, undefined, input.beforeApply)
     writeTransaction(() => initializeDefaultLocalProject(d, false), d)
     seedProjects(d)
-    runOpenHooks('afterInitialize', d)
+    if (!input.beforeMigration) runOpenHooks('afterInitialize', d)
     return { path: DB_PATH, versions }
   } finally {
     d.close()
   }
 }
 
+/** Give machine migrate a handle while the store is intentionally mid-journal. */
+export async function withDatabaseForMigrationStep<T>(
+  action: (database: Database) => Promise<T>,
+): Promise<T> {
+  const database = new Database(DB_PATH, { readwrite: true, create: false })
+  try {
+    database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    return await action(database)
+  } finally {
+    database.close()
+  }
+}
+
 /** One-time maintenance pass for roots whose original caller prompt remains on disk. */
 export function backfillSpecSha(): { updated: number; missing: number } {
-  if (DATABASE_RESOLUTION.linkedWorktreeBinary)
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary && !linkedWorktreeMigrationAllowed(DB_PATH))
     throw new Error(linkedWorktreeDatabaseInitializationMessage())
   const database = writableDb()
   const roots = database
     .query(
-      `SELECT id, prompt_path FROM run
-      WHERE parent_run_id IS NULL AND spec_sha IS NULL AND prompt_path IS NOT NULL`,
+      `SELECT record_id, prompt_path FROM run
+      WHERE parent_run_record_id IS NULL AND spec_sha IS NULL AND prompt_path IS NOT NULL`,
     )
-    .all() as { id: number; prompt_path: string }[]
+    .all() as { record_id: string; prompt_path: string }[]
   let updated = 0
   let missing = 0
   writeTransaction(() => {
@@ -468,8 +516,8 @@ export function backfillSpecSha(): { updated: number; missing: number } {
       const prompt = readFileSync(root.prompt_path)
       const specSha = createHash('sha256').update(prompt).digest('hex').slice(0, 16)
       updated += database
-        .query('UPDATE run SET spec_sha=? WHERE id=? AND spec_sha IS NULL')
-        .run(specSha, root.id).changes
+        .query('UPDATE run SET spec_sha=? WHERE record_id=? AND spec_sha IS NULL')
+        .run(specSha, root.record_id).changes
     }
   }, database)
   return { updated, missing }
@@ -529,12 +577,12 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
  * command that actually tells you what to do about it — reported none.
  */
 /**
- * `parent_run_id IS NULL` is what keeps a conversation one thing to judge.
+ * `parent_run_record_id IS NULL` is what keeps a conversation one thing to judge.
  *
  * A worker that asks two questions produces three rows, and only the first is
  * the unit of work — the other two are turns inside it. Asking for a verdict on
  * each would demand three judgments for one implementation, and would let an
  * agent reach the routing threshold by being inquisitive rather than by being
  * good. The root row carries the chain's outcome (see the roll-up in run.ts
- * and resolveRootFromLastTurn), so scoring the root scores the whole thing.
+ * and rollUpRootAndEnqueue), so scoring the root scores the whole thing.
  */

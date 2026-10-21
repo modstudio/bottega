@@ -9,13 +9,13 @@ const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).repla
 
 test('a passing gate belongs to the exact project', () => {
   const candidates = [
-    { id: 3, projectId: 2, cwd: null },
+    { id: 3, projectId: 'project-2', cwd: null },
     { id: 2, projectId: null, cwd: '/projects/fixture/worktree' },
-    { id: 1, projectId: 1, cwd: null },
+    { id: 1, projectId: 'project-1', cwd: null },
   ]
-  expect(selectPassingGateId(candidates, 1, () => 1)).toBe(2)
-  expect(selectPassingGateId(candidates, 1, () => 2)).toBe(1)
-  expect(selectPassingGateId(candidates, 4, () => 2)).toBeNull()
+  expect(selectPassingGateId(candidates, 'project-1', () => 'project-1')).toBe(2)
+  expect(selectPassingGateId(candidates, 'project-1', () => 'project-2')).toBe(1)
+  expect(selectPassingGateId(candidates, 'project-4', () => 'project-2')).toBeNull()
 })
 
 test('the hook result is one line for either outcome', () => {
@@ -31,12 +31,9 @@ test('a timed-out zero-exit gate is not a passing gate', () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
-    'fixture',
-    repositoryPath,
-    'bun',
-    '{}',
-  )
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run('fixture', repositoryPath, 'bun', '{}')
   const commit = 'a'.repeat(40)
   const gate = d
     .query(

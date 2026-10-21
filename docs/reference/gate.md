@@ -8,6 +8,9 @@ gates and mechanical checks
 - [bottega gate check](#bottega-gate-check)
 - [bottega gate enforcement](#bottega-gate-enforcement)
 - [bottega gate help](#bottega-gate-help)
+- [bottega gate hub-import](#bottega-gate-hub-import)
+- [bottega gate hub-import help](#bottega-gate-hub-import-help)
+- [bottega gate hub-import judge](#bottega-gate-hub-import-judge)
 - [bottega gate passed](#bottega-gate-passed)
 - [bottega gate ratchet](#bottega-gate-ratchet)
 - [bottega gate run](#bottega-gate-run)
@@ -26,6 +29,7 @@ gates and mechanical checks
 - [bottega gate check](./gate.md#bottega-gate-check)
 - [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
 - [bottega gate help](./gate.md#bottega-gate-help)
+- [bottega gate hub-import](./gate.md#bottega-gate-hub-import)
 - [bottega gate passed](./gate.md#bottega-gate-passed)
 - [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
 - [bottega gate run](./gate.md#bottega-gate-run)
@@ -76,6 +80,43 @@ display help for command
 ### Related
 
 - [bottega gate](./gate.md#bottega-gate)
+
+## bottega gate hub-import
+
+**Synopsis:** `bottega gate hub-import`
+
+judge whether a proposed hub edit respects import boundaries
+
+### Related
+
+- [bottega gate](./gate.md#bottega-gate)
+- [bottega gate hub-import help](./gate.md#bottega-gate-hub-import-help)
+- [bottega gate hub-import judge](./gate.md#bottega-gate-hub-import-judge)
+
+## bottega gate hub-import help
+
+**Synopsis:** `bottega gate hub-import help [command]`
+
+display help for command
+
+### Related
+
+- [bottega gate hub-import](./gate.md#bottega-gate-hub-import)
+
+## bottega gate hub-import judge
+
+**Synopsis:** `bottega gate hub-import judge [--tool-input] [--deadline-ms <epoch-ms>]`
+
+read and judge one proposed hub editor payload from standard input
+
+### Options
+
+- `--tool-input`: read an editor tool payload
+- `--deadline-ms <epoch-ms>`: absolute hook deadline in epoch milliseconds
+
+### Related
+
+- [bottega gate hub-import](./gate.md#bottega-gate-hub-import)
 
 ## bottega gate passed
 

@@ -243,9 +243,9 @@ export function listOpenRulings(now = Date.now()): OpenRuling[] {
       },
       []
     >(
-      `SELECT question_id, task_key, session_id, asked_at FROM question
+      `SELECT number question_id, task_key, session_id, asked_at FROM question
       WHERE answered_at IS NULL AND closed_at IS NULL
-      ORDER BY task_key IS NULL, task_key, question_id`,
+      ORDER BY task_key IS NULL, task_key, number`,
     )
     .all()
   return rows.map((row) => {
@@ -267,11 +267,14 @@ export function rulingsPayload(now = Date.now()) {
 export function rulingsStatsPayload(days = DEFAULT_STATS_DAYS, now = Date.now()) {
   const questionRows = db()
     .query<RulingMeasureQuestion, []>(
-      `SELECT question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at, closed_at FROM question`,
+      `SELECT number question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at, closed_at FROM question`,
     )
     .all()
   const deliveryRows = db()
-    .query<RulingMeasureDelivery, []>(`SELECT question_id, mode, outcome FROM question_delivery`)
+    .query<RulingMeasureDelivery, []>(
+      `SELECT q.number question_id,d.mode,d.outcome FROM question_delivery d
+       JOIN question q ON q.record_id=d.question_record_id`,
+    )
     .all()
   const staleAfter = rulingsStaleAfter()
   return {

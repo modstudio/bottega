@@ -4,8 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -20,7 +20,8 @@ function database(): Database {
   applyMigrations(d)
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
+    newRecordId(),
     'fixture',
     '/fixture',
     'bun',
@@ -32,7 +33,7 @@ function database(): Database {
     }),
   )
   const current = productionStepCatalogue(d).definition
-  const draft = setStepCatalogue(
+  const draft = setStepCatalogueLocal(
     {
       ...current,
       steps: current.steps.map((step) =>
@@ -43,7 +44,7 @@ function database(): Database {
     'test',
     d,
   )
-  promoteStepCatalogue(draft.n, 'publish pull-request evidence fixture', 'test', d)
+  promoteStepCatalogueLocal(draft.n, 'publish pull-request evidence fixture', 'test', d)
   return d
 }
 
@@ -63,14 +64,15 @@ test('open-pr does not advance from a review-lens run artifact', () => {
       },
     ]),
   )
-  const projectId = (d.query("SELECT id FROM project WHERE name='fixture'").get() as { id: number })
-    .id
+  const projectId = (
+    d.query("SELECT record_id FROM project WHERE name='fixture'").get() as { record_id: string }
+  ).record_id
   const run = d
-    .query<{ id: number }, (string | number)[]>(
+    .query<{ number: number }, (string | number)[]>(
       `INSERT INTO run
-        (record_id,started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,
+        (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,
          status,exit_code,launch_key,branch)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,?,?,?,?,?,?,?) RETURNING number`,
     )
     .get(
       newRecordId(),
@@ -97,7 +99,7 @@ test('open-pr does not advance from a review-lens run artifact', () => {
       'opened pull request',
       context,
       d,
-      { artifact: String(run.id) },
+      { artifact: String(run.number) },
       { runHasArtifacts: () => true, resolveTreeCommit: () => 'abc' },
     ),
   ).toThrow('floor recorded-artifact is unmet')

@@ -25,11 +25,11 @@ export const questionAwaitingOperator = (cause: WaitingCause): boolean =>
   !cause.answered && (cause.rulings === 'user' || cause.relayed)
 
 export async function initialQuestionWaitingAt(
-  runId: number,
+  runId: string,
   at: string,
   d: Database = db(),
 ): Promise<string | null> {
-  const row = d.query('SELECT repo, launch_key FROM run WHERE id=?').get(runId) as {
+  const row = d.query('SELECT repo, launch_key FROM run WHERE record_id=?').get(runId) as {
     repo: string | null
     launch_key: string | null
   } | null
@@ -55,19 +55,32 @@ function notificationDetails(item: OperatorWaitingItem): OperatorNotification {
 /** Atomically claim each currently waiting episode once, optionally narrowed for direct delivery. */
 export function claimOperatorNotifications(
   d: Database = db(),
-  only?: { kind: OperatorInboxKind; id: number },
+  only?: { kind: OperatorInboxKind; id: string | number },
 ): ClaimedOperatorNotification[] {
   return writeTransaction(() => {
-    const items = operatorWaitingWithEpisodes(d).filter(
-      ({ item }) => !only || (item.kind === only.kind && item.id === only.id),
-    )
+    const items = operatorWaitingWithEpisodes(d).filter(({ item }) => {
+      if (!only || item.kind !== only.kind) return !only
+      return item.kind === 'question'
+        ? item.question_record_id === only.id
+        : String(item.id) === String(only.id)
+    })
     const claimed: ClaimedOperatorNotification[] = []
     const insert = d.query(
-      `INSERT OR IGNORE INTO operator_notification (record_id,kind,item_id,episode,notified_at)
-       VALUES (?,?,?,?,?)`,
+      `INSERT OR IGNORE INTO operator_notification
+       (record_id,kind,item_id,question_record_id,episode,notified_at) VALUES (?,?,?,?,?,?)`,
     )
     for (const { item, episode } of items) {
-      if (insert.run(newRecordId(), item.kind, item.id, episode, nowIso()).changes !== 1) continue
+      if (
+        insert.run(
+          newRecordId(),
+          item.kind,
+          item.kind === 'workflow' ? item.id : null,
+          item.kind === 'question' ? item.question_record_id : null,
+          episode,
+          nowIso(),
+        ).changes !== 1
+      )
+        continue
       claimed.push({ ...item, notification: notificationDetails(item) })
     }
     return claimed
@@ -77,7 +90,7 @@ export function claimOperatorNotifications(
 /** Claim and send from trusted in-process paths; delivery failure cannot fail the mutation. */
 export function notifyWaitingItem(
   kind: OperatorInboxKind,
-  id: number,
+  id: string | number,
   d: Database,
   send: typeof sendOperatorNotification = sendOperatorNotification,
 ): void {
@@ -88,15 +101,16 @@ export function notifyWaitingItem(
   }
 }
 
-function openQuestions(runId: number, d: Database) {
+function openQuestions(runId: string, d: Database) {
   const authority = authorizeRunMutation(runId, 'relay')
   const rows = d
     .query(
-      `SELECT q.id, q.answered_at, q.closed_at FROM question q JOIN run owner ON owner.id=q.run_id
-       WHERE (owner.id=? OR owner.parent_run_id=?) ORDER BY q.id`,
+      `SELECT q.record_id,q.number,q.answered_at,q.closed_at FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+       WHERE (owner.record_id=? OR owner.parent_run_record_id=?) ORDER BY q.number`,
     )
     .all(authority.rootId, authority.rootId) as {
-    id: number
+    record_id: string
+    number: number
     answered_at: string | null
     closed_at: string | null
   }[]
@@ -104,15 +118,15 @@ function openQuestions(runId: number, d: Database) {
 }
 
 export function relayQuestion(
-  runId: number,
-  questionId: number | undefined,
+  runId: string,
+  questionId: string | undefined,
   note: string,
   d: Database = db(),
-  notify: (kind: OperatorInboxKind, id: number, d: Database) => void = notifyWaitingItem,
+  notify: (kind: OperatorInboxKind, id: string | number, d: Database) => void = notifyWaitingItem,
 ): { id: number; recordId: string } {
   let { authority, rows } = openQuestions(runId, d)
   if (questionId !== undefined) {
-    const named = rows.find((row) => row.id === questionId)
+    const named = rows.find((row) => row.record_id === questionId)
     if (!named) throw new Error(`question ${questionId} does not belong to run ${authority.rootId}`)
     if (named.answered_at) throw new Error(`question ${questionId} is already answered`)
     if (named.closed_at) throw new Error(`question ${questionId} is already closed`)
@@ -125,7 +139,7 @@ export function relayQuestion(
         `run ${authority.rootId} has ${rows.length} open questions; select one question`,
       )
   }
-  const id = rows[0]!.id
+  const selected = rows[0]!
   writeTransaction(() => {
     authority = adoptRunMutation(authority, 'relay', d)
     const at = nowIso()
@@ -133,18 +147,15 @@ export function relayQuestion(
       .query(
         `UPDATE question SET awaiting_operator_at=COALESCE(awaiting_operator_at,?), relayed_by=?,
           revision=revision+1
-         WHERE id=? AND ${questionOpenSql('question')}`,
+         WHERE record_id=? AND ${questionOpenSql('question')}`,
       )
-      .run(at, authority.actor, id)
-    if (changed.changes !== 1) throw new Error(`question ${id} is already answered`)
+      .run(at, authority.actor, selected.record_id)
+    if (changed.changes !== 1) throw new Error(`question ${selected.number} is already answered`)
     auditRunMutation(authority, 'relay', note, d)
-    enqueueQuestionRecord(d, id)
+    enqueueQuestionRecord(d, selected.record_id)
   }, d)
-  notify('question', id, d)
-  const recordId = d
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM question WHERE id=?')
-    .get(id)!.record_id
-  return { id, recordId }
+  notify('question', selected.record_id, d)
+  return { id: selected.number, recordId: selected.record_id }
 }
 
 const shellWord = (value: string) =>
@@ -155,15 +166,15 @@ function operatorWaitingWithEpisodes(
 ): Array<{ item: OperatorWaitingItem; episode: string }> {
   const questions = d
     .query(
-      `SELECT q.id,q.record_id question_record_id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
-              r.repo project,r.launch_key task_key,COALESCE(r.parent_run_id,r.id) root_id,
+      `SELECT q.number,q.record_id question_record_id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
+              r.repo project,r.launch_key task_key,root.number root_number,
               root.record_id root_record_id
-       FROM question q JOIN run r ON r.id=q.run_id
-       JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)
+       FROM question q JOIN run r ON r.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
        WHERE q.awaiting_operator_at IS NOT NULL AND ${questionOpenSql('q')}`,
     )
     .all() as Array<{
-    id: number
+    number: number
     question_record_id: string
     question: string
     options: string | null
@@ -172,7 +183,7 @@ function operatorWaitingWithEpisodes(
     awaiting_operator_at: string
     project: string | null
     task_key: string | null
-    root_id: number
+    root_number: number
     root_record_id: string
   }>
   const workflows = d
@@ -199,9 +210,9 @@ function operatorWaitingWithEpisodes(
       episode: row.awaiting_operator_at,
       item: {
         kind: 'question' as const,
-        id: row.id,
+        id: row.number,
         question_record_id: row.question_record_id,
-        run_id: row.root_id,
+        run_number: row.root_number,
         run_record_id: row.root_record_id,
         project: row.project,
         task_key: row.task_key,
@@ -212,7 +223,7 @@ function operatorWaitingWithEpisodes(
         why: row.why,
         waiting_since: row.awaiting_operator_at,
         episode: row.awaiting_operator_at,
-        answer_command: `${PLATFORM_SLUG} question answer ${row.root_id} --q${row.id} --from-operator "<ruling>"`,
+        answer_command: `${PLATFORM_SLUG} question answer ${row.root_number} --q${row.number} --from-operator "<ruling>"`,
       },
     })),
     ...workflows.map((row) => {
@@ -226,7 +237,7 @@ function operatorWaitingWithEpisodes(
           kind: 'workflow' as const,
           id: row.id,
           question_record_id: row.question_record_id,
-          run_id: null,
+          run_number: null,
           run_record_id: null,
           project: row.project,
           task_key: row.task_key,

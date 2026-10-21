@@ -1,0 +1,35 @@
+{
+  "name": "@bottega/hub-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./board": "./src/board.tsx",
+    "./chrome": "./src/chrome.tsx",
+    "./context": "./src/context.tsx",
+    "./doc-store": "./src/doc-store.tsx",
+    "./home": "./src/home.tsx",
+    "./navigation": "./src/navigation.tsx",
+    "./orchestration": "./src/orchestration.tsx",
+    "./review": "./src/review.tsx",
+    "./run-showcase": "./src/run-showcase.tsx",
+    "./shared": "./src/shared.tsx",
+    "./site": "./src/site.css",
+    "./workers": "./src/workers.tsx",
+    "./workflows": "./src/workflows.tsx"
+  },
+  "dependencies": {
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react-dom": "^19.3.1",
+    "typescript": "^6.0.3"
+  }
+}

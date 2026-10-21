@@ -71,7 +71,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
   boundary(
     'run-prelaunch-refusal-boundary',
     'orchestrator/src/run/run-prelaunch-refusal.ts',
-    ['../database/db.ts', '../resources/resource-ownership.ts'],
+    ['../database/db.ts', '../resources/resource-ownership.ts', './run-startup-failure.ts'],
     'Keep unstarted-run refusal as the single owner of its failure write and teardown.',
   ),
 ]

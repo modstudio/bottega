@@ -22,6 +22,11 @@ export type HostedChangeRequestOptions = {
   tables: string
 }
 
+export type HostedPreparedPage = {
+  apply: Array<(conn: Database) => void>
+  skippedForAbsentParent: ReadonlySet<string>
+}
+
 export type HostedChangeFamily = {
   cursorPrefix: string
   tables: string
@@ -29,11 +34,14 @@ export type HostedChangeFamily = {
     registered: readonly RegisteredTaskSpace[],
     identity: TaskDestinationIdentity,
   ) => string[]
-  fullPull: (options: HostedChangeRequestOptions) => Promise<(conn: Database) => void>
+  fullPull: (
+    cursor: string | null,
+    options: HostedChangeRequestOptions,
+  ) => Promise<{ cursor: string; more: boolean; apply: (conn: Database) => void }>
   preparePage?: (
     page: HostedSpaceChangePage,
     options: HostedChangeRequestOptions,
-  ) => Promise<Array<(conn: Database) => void>>
+  ) => Promise<HostedPreparedPage>
   tableOrder: (table: string) => number
   accepts: (table: string) => boolean
   machineRow: (conn: Database, table: string, id: string) => Record<string, unknown> | null
@@ -41,5 +49,6 @@ export type HostedChangeFamily = {
   apply: (conn: Database, table: string, row: NonNullable<HostedSpaceChange['row']>) => void
   delete: (conn: Database, table: string, id: string) => void
   finish?: (conn: Database) => void
+  reportAbsentParentSkips?: true
   failureLabel: string
 }

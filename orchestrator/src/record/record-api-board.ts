@@ -97,7 +97,7 @@ const takeClaimSchema = z
   .object({
     id: idSchema,
     project: z.string().min(1),
-    projectId: idSchema.nullable().optional(),
+    projectId: idSchema,
     subject: headerValueSchema.min(1),
     durationMs: z.number().int().positive().optional(),
     runId: idSchema.nullable().optional(),
@@ -109,11 +109,11 @@ const holderBody = z.object({ holderSession: sessionSchema }).strict()
 const releaseTaskSchema = z
   .object({
     project: z.string().min(1),
-    projectId: idSchema.nullable().optional(),
+    projectId: idSchema,
     key: z.string().min(1),
   })
   .strict()
-const claimListSchema = z.object({ project: z.string().min(1), projectId: idSchema.optional() })
+const claimListSchema = z.object({ project: z.string().min(1), projectId: idSchema })
 
 export type RecordBoardDeps = {
   boardWakeSource: BoardWakeSource

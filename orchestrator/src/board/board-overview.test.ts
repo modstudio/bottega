@@ -40,7 +40,8 @@ function entry(
   acceptedReplyId: string | null = null,
 ): BoardOverviewEntry {
   const base = {
-    id,
+    recordId: id,
+    number: Number(id),
     title: `${kind} ${id}`,
     audience: 'operator',
     origin,
@@ -84,20 +85,21 @@ test('the pure overview applies kind, open, ended filters and newest-first opaqu
     ended: message.state === 'expired' || message.state === 'withdrawn',
   }))
 
-  expect(boardOverview(rows).map((row) => row.id)).toEqual([
+  expect(boardOverview(rows).map((row) => row.recordId)).toEqual([
     'accepted',
     'z-hosted',
     'a-local',
     'local-1',
   ])
-  expect(boardOverview(rows, { kind: 'notice' }).map((row) => row.id)).toEqual(['local-1'])
-  expect(boardOverview(rows, { open: true }).map((row) => row.id)).toEqual(['z-hosted', 'a-local'])
-  expect(boardOverview(rows, { open: true, includeEnded: true }).map((row) => row.id)).toEqual([
+  expect(boardOverview(rows, { kind: 'notice' }).map((row) => row.recordId)).toEqual(['local-1'])
+  expect(boardOverview(rows, { open: true }).map((row) => row.recordId)).toEqual([
     'z-hosted',
     'a-local',
-    'expired',
   ])
-  expect(boardOverview(rows, { includeEnded: true }).map((row) => row.id)).toEqual([
+  expect(
+    boardOverview(rows, { open: true, includeEnded: true }).map((row) => row.recordId),
+  ).toEqual(['z-hosted', 'a-local', 'expired'])
+  expect(boardOverview(rows, { includeEnded: true }).map((row) => row.recordId)).toEqual([
     'accepted',
     'z-hosted',
     'a-local',
@@ -111,8 +113,8 @@ test('listing an unadopted board leaves its printed root unread for the session'
   const session = 'overview-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','overview-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','overview-project',(SELECT record_id FROM project WHERE name='overview-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
   const posted = postNotice(
@@ -130,9 +132,9 @@ test('listing an unadopted board leaves its printed root unread for the session'
   )
   const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 1 })
 
-  expect(listed.messages.map((row) => row.id)).toEqual([String(posted.id)])
+  expect(listed.messages.map((row) => row.recordId)).toEqual([String(posted.recordId)])
   expect(listed.warning).toBeNull()
-  expect(pending.delivery.map((message) => message.id)).toEqual([String(posted.id)])
+  expect(pending.delivery.map((message) => message.id)).toEqual([String(posted.number)])
 })
 
 test('an adopted overview combines local and cached roots with null hosted reach and warning', async () => {
@@ -193,16 +195,16 @@ test('an adopted overview combines local and cached roots with null hosted reach
       },
     },
   )
-  expect(listed.messages.map((row) => row.id)).toEqual([hosted.id, String(local.id)])
+  expect(listed.messages.map((row) => row.recordId)).toEqual([hosted.id, String(local.recordId)])
   expect(listed.messages[0]).toMatchObject({
-    id: hosted.id,
+    recordId: hosted.id,
     store: 'hosted',
     reached: 0,
     acknowledged: 0,
     unacknowledged: [],
     replyCount: 0,
   })
-  expect(listed.messages[1]).toMatchObject({ id: String(local.id), store: 'local', reached: 0 })
+  expect(listed.messages[1]).toMatchObject({ recordId: local.recordId, store: 'local', reached: 0 })
   expect(listed.warning).toContain('overview refresh offline')
 })
 
@@ -228,8 +230,8 @@ test('a spent refresh budget keeps the failed store outcome for overview and pus
   const session = 'overview-push'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','overview-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','overview-project',(SELECT record_id FROM project WHERE name='overview-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, '2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
   installRecordApiClient(hanging)

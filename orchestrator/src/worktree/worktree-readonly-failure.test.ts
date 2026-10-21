@@ -26,7 +26,7 @@ test('built-in read-only creation removes the clone when checkout fails', () => 
     const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
 
     expect(() =>
-      createReadOnlyWorktree(repoRoot, runId, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'),
+      createReadOnlyWorktree(repoRoot, String(runId), 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'),
     ).toThrow()
     expect(existsSync(path)).toBeFalse()
   } finally {

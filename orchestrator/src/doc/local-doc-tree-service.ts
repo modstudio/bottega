@@ -24,7 +24,7 @@ type TreeWriteInput = {
 
 export type LocalDocTreeFields = {
   audiences: DocAudiences
-  parentId: number | null
+  parentId: string | null
   parentSlug: string | null
   position: number
   featured: boolean
@@ -38,7 +38,7 @@ function treeDoc(
 ): Doc | null {
   const row = db()
     .query(
-      `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
+      `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.record_id=d.parent_record_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(scope, subject, owner, slug) as (Omit<Doc, 'audiences'> & { audiences: string }) | null
   return row ? { ...row, audiences: decodeStoredDocAudiences(row.audiences) } : null
@@ -56,25 +56,27 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
     ? treeDoc(input.scope, input.subject, parentSlug, input.owner ?? null)
     : null
   const children = prior
-    ? (db().query('SELECT slug FROM doc WHERE parent_id=? ORDER BY slug').all(prior.id) as Array<{
+    ? (db()
+        .query('SELECT slug FROM doc WHERE parent_record_id=? ORDER BY slug')
+        .all(prior.record_id) as Array<{
         slug: string
       }>)
     : []
   const ancestorSlugs: string[] = []
   let ancestor = parent
-  const seen = new Set<number>()
-  while (ancestor && !seen.has(ancestor.id)) {
-    seen.add(ancestor.id)
+  const seen = new Set<string>()
+  while (ancestor && !seen.has(ancestor.record_id)) {
+    seen.add(ancestor.record_id)
     ancestorSlugs.push(ancestor.slug)
-    if (!ancestor.parent_id) {
+    if (!ancestor.parent_record_id) {
       ancestor = null
       continue
     }
     const row = db()
       .query(
-        `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
+        `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.record_id=d.parent_record_id WHERE d.record_id=?`,
       )
-      .get(ancestor.parent_id) as (Omit<Doc, 'audiences'> & { audiences: string }) | null
+      .get(ancestor.parent_record_id) as (Omit<Doc, 'audiences'> & { audiences: string }) | null
     ancestor = row ? { ...row, audiences: decodeStoredDocAudiences(row.audiences) } : null
   }
   const refusal = documentTreeWriteRefusal({
@@ -91,7 +93,7 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
   if (refusal) throw new Error(refusal)
   return {
     audiences,
-    parentId: parent?.id ?? null,
+    parentId: parent?.record_id ?? null,
     parentSlug,
     position: input.position ?? prior?.position ?? 0,
     featured: input.featured ?? prior?.featured ?? false,
@@ -100,8 +102,8 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
 
 export function assertLocalDocRemovalAllowed(doc: Doc): void {
   const children = db()
-    .query('SELECT slug FROM doc WHERE parent_id=? ORDER BY slug')
-    .all(doc.id) as Array<{ slug: string }>
+    .query('SELECT slug FROM doc WHERE parent_record_id=? ORDER BY slug')
+    .all(doc.record_id) as Array<{ slug: string }>
   const refusal = documentTreeWriteRefusal({
     ...doc,
     parent: null,
@@ -116,10 +118,10 @@ export function localParentRecordId(doc: {
   scope: string
   subject: string | null
   owner: string | null
-  parent_id: number | null
+  parent_record_id: string | null
   parent_slug: string | null
 }): string | null {
-  if (doc.parent_id === null) return null
+  if (doc.parent_record_id === null) return null
   const recordId = treeDoc(doc.scope, doc.subject, doc.parent_slug!, doc.owner)?.record_id
   if (!recordId) {
     throw new Error(
@@ -133,10 +135,10 @@ export function localRestoredParentSlug(input: {
   scope: string
   subject: string | null
   slug: string
-  parentId: number | null
+  parentId: string | null
 }): string | null {
   if (input.parentId === null) return null
-  const parent = db().query('SELECT slug FROM doc WHERE id=?').get(input.parentId) as {
+  const parent = db().query('SELECT slug FROM doc WHERE record_id=?').get(input.parentId) as {
     slug: string
   } | null
   if (!parent) {

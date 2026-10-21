@@ -13,6 +13,7 @@ type Input = {
   userId: string
   writeSpaceId: string
   writeProjectName: string
+  writeProjectId: string
   token(): string
   otherToken(): string
   setToken(token: string): void
@@ -21,6 +22,7 @@ type Input = {
 
 // A machine may hold one run per local id, so every proof row takes its own.
 let nextLocalId = 7000
+let defaultProjectId = ''
 
 const runPayload = (input: {
   id: string
@@ -35,6 +37,7 @@ const runPayload = (input: {
   )
   Object.assign(row, {
     ...input,
+    projectId: input.projectId ?? defaultProjectId,
     localId: nextLocalId++,
     startedAt: '2026-10-13T01:00:00.000Z',
     agent: 'codex',
@@ -65,6 +68,7 @@ const scorePayload = (input: {
   )
   Object.assign(row, {
     ...input,
+    projectId: defaultProjectId,
     localId: nextLocalId++,
     delivery: 'full',
     quality: 'right',
@@ -104,6 +108,7 @@ async function withoutDirectRecordCredentials<T>(operation: () => Promise<T>): P
 }
 
 export function registerHostedSyncAuthorizationProofs(input: Input): void {
+  defaultProjectId = input.writeProjectId
   beforeEach(() => {
     installRecordApiClient(null)
     input.setToken(input.token())
@@ -125,6 +130,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         id,
         machineId: input.machineId,
         projectName: deniedProjectName,
+        projectId: deniedProjectId,
         spaceId: input.writeSpaceId,
       }),
     )
@@ -153,24 +159,36 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
        INSERT INTO project (id,space_id,name,created_at)
        VALUES ('${deniedProjectId}','${deniedSpaceId}','foreign-project',now());`,
     )
-    const id = newRecordId()
+    const ids = [newRecordId(), newRecordId()]
     const local = localOutbox(
       runPayload({
-        id,
+        id: ids[0]!,
         machineId: input.machineId,
         projectName: input.writeProjectName,
         projectId: deniedProjectId,
         spaceId: input.writeSpaceId,
       }),
     )
+    const second = runPayload({
+      id: ids[1]!,
+      machineId: input.machineId,
+      projectName: input.writeProjectName,
+      projectId: deniedProjectId,
+      spaceId: input.writeSpaceId,
+    })
+    local
+      .query(
+        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,2,'run',?,?,?)",
+      )
+      .run(newRecordId(), String(second.id), JSON.stringify(second), String(second.createdAt))
     try {
       const result = await withoutDirectRecordCredentials(() =>
         syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
       )
-      expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
-      expect(result.quarantined).toHaveLength(1)
-      expect(result.quarantined[0]?.error).toContain('absent from request space')
-      expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('0')
+      expect(result).toMatchObject({ pushed: 0, failed: 2, pending: 0 })
+      expect(result.quarantined).toHaveLength(2)
+      for (const row of result.quarantined) expect(row.error).toContain('absent from request space')
+      expect(input.admin(`SELECT count(*) FROM run WHERE id IN ('${ids.join("','")}');`)).toBe('0')
     } finally {
       local.close()
     }
@@ -194,6 +212,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         id,
         machineId: input.machineId,
         projectName: readProjectName,
+        projectId: readProjectId,
         spaceId: input.writeSpaceId,
       }),
     )
@@ -238,6 +257,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       id,
       machineId: input.machineId,
       projectName: input.writeProjectName,
+      projectId: input.writeProjectId,
       spaceId: newRecordId(),
       startedByUserId: otherUserId,
     })
@@ -571,6 +591,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     })
     const insert =
       "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,'test_flake',?,?,?)"
+    const client = recordApiClient()
     const sync = async (rowId: number) => {
       const local = new Database(':memory:')
       applyMigrations(local)
@@ -578,6 +599,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       try {
         return await withoutDirectRecordCredentials(() =>
           syncRecord({
+            client: { ...client, sync: client.sync! },
             local,
             identity: { id: input.machineId, name: 'proof-machine' },
             projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
@@ -603,6 +625,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       id: readId,
       spaceId: input.writeSpaceId,
       projectName: input.writeProjectName,
+      projectId: input.writeProjectId,
       machineId: input.machineId,
       localId: nextLocalId++,
       branch: 'DEV-1307-proof',
@@ -623,6 +646,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       id: snapshotId,
       spaceId: input.writeSpaceId,
       projectName: input.writeProjectName,
+      projectId: input.writeProjectId,
       machineId: input.machineId,
       localId: nextLocalId++,
       branch: 'DEV-1307-proof',
@@ -643,6 +667,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     })
     const local = new Database(':memory:')
     applyMigrations(local)
+    const client = recordApiClient()
     local
       .query(
         `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'review_read',?,?,?),
@@ -661,6 +686,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       expect(
         await withoutDirectRecordCredentials(() =>
           syncRecord({
+            client: { ...client, sync: client.sync! },
             local,
             identity: { id: input.machineId, name: 'proof-machine' },
             projectSpaces: { [input.writeProjectName]: input.writeSpaceId },

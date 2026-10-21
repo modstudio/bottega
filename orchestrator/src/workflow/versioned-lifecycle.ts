@@ -42,22 +42,40 @@ const author = (value?: string) => value?.trim() || sessionId() || 'unknown'
 
 function insertOwner(d: Database, table: string, slug: string, at: string): { id: number } {
   return d
-    .query(`INSERT INTO ${table} (record_id,slug,created_at) VALUES (?,?,?) RETURNING id`)
+    .query(
+      `INSERT INTO ${table} (record_id,slug,created_at,space_id) VALUES (?,?,?,NULL) RETURNING id`,
+    )
     .get(newRecordId(), slug, at) as { id: number }
 }
 
-export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
-  const assertWorkerStoreWriteAllowed = (operation: VersionEvent) => {
-    const refusal = workerStoreWriteRefusal('workflow', `${operation} ${config.noun}`, process.env)
-    if (refusal) throw new Error(refusal)
-  }
-  const ownerId = (slug: string, d: Database) => {
-    const row = d.query(`SELECT id FROM ${config.identityTable} WHERE slug=?`).get(slug) as {
+function assertWorkerStoreWriteAllowed<T>(
+  config: VersionedStoreConfig<T>,
+  operation: VersionEvent,
+) {
+  const refusal = workerStoreWriteRefusal('workflow', `${operation} ${config.noun}`, process.env)
+  if (refusal) throw new Error(refusal)
+}
+
+function ownerId<T>(
+  config: VersionedStoreConfig<T>,
+  slug: string,
+  d: Database,
+  spaceId: string | null,
+): number {
+  const row = (
+    d.query(`SELECT id,space_id FROM ${config.identityTable} WHERE slug=?`).all(slug) as {
       id: number
-    } | null
-    if (!row) throw new Error(`unknown ${config.noun} "${slug}"`)
-    return row.id
-  }
+      space_id: string | null
+    }[]
+  ).find((candidate) => candidate.space_id === spaceId)
+  if (!row)
+    throw new Error(
+      `unknown ${config.noun} "${slug}"${spaceId === null ? '' : ` in hosted space ${spaceId}`}`,
+    )
+  return row.id
+}
+
+export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   const row = (slug: string, n: number | undefined, d: Database): Row => {
     const suffix =
       n === undefined
@@ -65,7 +83,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
         : `AND v.n=?`
     const found = d
       .query(
-        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? ${suffix}`,
+        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL ${suffix}`,
       )
       .get(...(n === undefined ? [slug] : [slug, n])) as Row | null
     if (!found)
@@ -83,7 +101,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   const production = (slug: string, d: Database) => {
     const found = d
       .query(
-        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? AND v.status='production'`,
+        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL AND v.status='production'`,
       )
       .get(slug) as Row | null
     if (!found) throw new Error(`${config.noun} "${slug}" has no production version; promote one`)
@@ -100,7 +118,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   ) =>
     d
       .query(
-        `INSERT INTO ${config.eventTable} (record_id,${config.foreignKey},version_n,event,author,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)`,
+        `INSERT INTO ${config.eventTable} (record_id,${config.foreignKey},version_n,event,author,reason,session_id,at,space_id) VALUES (?,?,?,?,?,?,?,?,NULL)`,
       )
       .run(newRecordId(), id, n, kind, by, reason, sessionId(), at)
 
@@ -112,13 +130,15 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     kind: Extract<VersionEvent, 'set' | 'fork' | 'import'>,
     d: Database,
   ) => {
-    assertWorkerStoreWriteAllowed(kind)
+    assertWorkerStoreWriteAllowed(config, kind)
     config.validate(definition, d)
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso()
     return writeTransaction(() => {
-      let identity = d.query(`SELECT id FROM ${config.identityTable} WHERE slug=?`).get(slug) as {
+      let identity = d
+        .query(`SELECT id FROM ${config.identityTable} WHERE slug=? AND space_id IS NULL`)
+        .get(slug) as {
         id: number
       } | null
       if (!identity) identity = insertOwner(d, config.identityTable, slug, at)
@@ -129,7 +149,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
         .get(identity.id) as { n: number }
       const n = max.n + 1
       d.query(
-        `INSERT INTO ${config.versionTable} (record_id,${config.foreignKey},n,status,definition,author,reason,created_at) VALUES (?,?,?,'draft',?,?,?,?)`,
+        `INSERT INTO ${config.versionTable} (record_id,${config.foreignKey},n,status,definition,author,reason,created_at,space_id) VALUES (?,?,?,'draft',?,?,?,?,NULL)`,
       ).run(newRecordId(), identity.id, n, JSON.stringify(definition), by, why, at)
       event(d, identity.id, n, kind, by, why, at)
       return show(slug, n, d)
@@ -143,11 +163,11 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     d: Database,
     preflight?: (definition: T, d: Database) => void,
   ) => {
-    assertWorkerStoreWriteAllowed('promote')
+    assertWorkerStoreWriteAllowed(config, 'promote')
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),
-      id = ownerId(slug, d)
+      id = ownerId(config, slug, d, null)
     return writeTransaction(() => {
       const target = show(slug, n, d)
       if (target.status !== 'draft')
@@ -177,11 +197,11 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     authorValue: string | undefined,
     d: Database,
   ) => {
-    assertWorkerStoreWriteAllowed('retire')
+    assertWorkerStoreWriteAllowed(config, 'retire')
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso(),
-      id = ownerId(slug, d)
+      id = ownerId(config, slug, d, null)
     return writeTransaction(() => {
       const target = show(slug, n, d)
       if (target.status === 'retired')
@@ -193,8 +213,8 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       return show(slug, n, d)
     }, d)
   }
-  const versions = (slug: string, d: Database) => {
-    const id = ownerId(slug, d)
+  const versions = (slug: string, d: Database, spaceId: string | null) => {
+    const id = ownerId(config, slug, d, spaceId)
     const rows = d
       .query(
         `SELECT n,status,author,reason,created_at,promoted_at,retired_at FROM ${config.versionTable} WHERE ${config.foreignKey}=? ORDER BY n`,

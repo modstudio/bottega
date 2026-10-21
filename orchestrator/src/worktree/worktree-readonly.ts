@@ -1,6 +1,7 @@
 // concern: worktree-readonly
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { assertBranchRefMayBeCreated, observeBranchRef } from '../branch/branch-ref-guard.ts'
 import {
   borrowedCheckoutOf,
   git,
@@ -10,6 +11,7 @@ import {
   targetGitEnvironment,
 } from '../git/git-environment.ts'
 import { projectAt, type WorktreeTool } from '../project/projects.ts'
+import { appendProvisioningPhases, cloneProvisionRecorder } from './provisioning-measurement.ts'
 import {
   attributeWorktree,
   type RecordWorktree,
@@ -17,13 +19,13 @@ import {
   verifyFreshWorktree,
 } from './worktree-create.ts'
 import { provisionWorktree, type WorktreeProvision } from './worktree-provision.ts'
-import { branchTip, removeReadOnlyDirectory, removeReadOnlyTree } from './worktree-remove.ts'
+import { removeReadOnlyDirectory, removeReadOnlyTree } from './worktree-remove.ts'
 import { assertCreateVarsAvailable } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export function createReadOnlyWorktree(
   cwd: string,
-  runId: number,
+  runId: string,
   base: string,
   record?: RecordWorktree,
   provision: WorktreeProvision = [],
@@ -46,10 +48,39 @@ export function createReadOnlyWorktree(
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
     restoreRemoteTrackingRefs(path, remoteTrackingRefs)
-    provisionWorktree(repoRoot, path, provision, 'the project register row', provisionTimeoutMs)
+    const dependencyStarted = performance.now()
+    try {
+      provisionWorktree(
+        repoRoot,
+        path,
+        provision,
+        'the project register row',
+        provisionTimeoutMs,
+        cloneProvisionRecorder(runId),
+      )
+    } finally {
+      appendProvisioningPhases(runId, [
+        {
+          phase: 'dependency',
+          name: 'declared dependencies',
+          durationMs: performance.now() - dependencyStarted,
+        },
+      ])
+    }
     attributeWorktree(worktree, runId, record)
-    verifyFreshWorktree(worktree)
-    verifyBorrowedCheckout(path, repoRoot)
+    const verifyStarted = performance.now()
+    try {
+      verifyFreshWorktree(worktree)
+      verifyBorrowedCheckout(path, repoRoot)
+    } finally {
+      appendProvisioningPhases(runId, [
+        {
+          phase: 'verify',
+          name: 'read-only checkout',
+          durationMs: performance.now() - verifyStarted,
+        },
+      ])
+    }
     return worktree
   } catch (error) {
     const cleanup = removeReadOnlyDirectory(worktree)
@@ -104,6 +135,7 @@ function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
 function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): void {
   for (const ref of refs) {
     try {
+      // branch-ref-guard: non-local refs/remotes/
       gitInput(
         ['update-ref', '--stdin'],
         path,
@@ -119,7 +151,7 @@ function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): voi
 export function createReadOnlyWithTool(
   tool: WorktreeTool,
   cwd: string,
-  runId: number,
+  runId: string,
   base: string,
   record?: RecordWorktree,
 ): Worktree {
@@ -218,9 +250,11 @@ function restoreBranchToTip(
   branch: string,
   tip: string,
 ): { ok: true } | { ok: false; error: string } {
-  const current = branchTip(repoRoot, branch)
+  const current = observeBranchRef(repoRoot, branch).exactTip
   if (current === tip) return { ok: true }
+  if (current === null) assertBranchRefMayBeCreated(repoRoot, branch)
   const expected = current ?? '0000000000000000000000000000000000000000'
+  // branch-ref-guard: assertBranchRefMayBeCreated
   const p = Bun.spawnSync(['git', 'update-ref', `refs/heads/${branch}`, tip, expected], {
     cwd: repoRoot,
     env: targetGitEnvironment(repoRoot),

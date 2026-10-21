@@ -13,7 +13,9 @@ import {
 function projectFixture() {
   const cwd = resolve(import.meta.dir, '../../..')
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('suggestion-project',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'suggestion-project',?,'{}')`,
+    )
     .run(cwd)
   return cwd
 }
@@ -22,11 +24,11 @@ function runFixture(session: string | null, status = 'running') {
   return db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
-       VALUES ('${newRecordId()}','2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
-       RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
+       RETURNING record_id AS id`,
     )
-    .get(status, session) as { id: number }
+    .get(status, session) as { id: string }
 }
 
 test('worker suggestion can be edited, posted with both origins, and withdrawn', () => {
@@ -35,8 +37,9 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
   const run = runFixture('owning-architect')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,last_seen)
-       VALUES ('owning-architect','claude-code','architect','test','suggestion-project',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,last_seen)
+       VALUES ('owning-architect','claude-code','architect','test','suggestion-project',
+               (SELECT record_id FROM project WHERE name='suggestion-project'),?,?)`,
     )
     .run(cwd, new Date(clock).toISOString())
   const suggested = suggestBoardPost(
@@ -45,7 +48,9 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
     clock,
   )
   expect(
-    db().query('SELECT purpose,expires_at FROM board_message WHERE id=?').get(suggested.id),
+    db()
+      .query('SELECT purpose,expires_at FROM board_message WHERE record_id=?')
+      .get(suggested.recordId),
   ).toEqual({
     purpose: 'request',
     expires_at: new Date(clock + 4 * 60 * 60 * 1000).toISOString(),
@@ -53,34 +58,40 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
   expect(
     claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'owning-architect' }, clock + 1)[0]!.text,
   ).toContain(
-    `Acknowledgement: dispose with ${PLATFORM_SLUG} board suggestion post ${suggested.id} --audience <expr> or ${PLATFORM_SLUG} board suggestion decline ${suggested.id}`,
+    `Acknowledgement: dispose with ${PLATFORM_SLUG} board suggestion post ${suggested.number} --audience <expr> or ${PLATFORM_SLUG} board suggestion decline ${suggested.number}`,
   )
 
   const posted = postBoardSuggestion(
-    suggested.id,
+    suggested.recordId,
     { audience: 'operator', title: 'Edited title' },
     { CLAUDE_CODE_SESSION_ID: 'owning-architect' },
     clock + 2,
     cwd,
   )
-  const rendered = claimNotices(false, {}, clock + 3).find((notice) => notice.id === posted.id)!
+  const rendered = claimNotices(false, {}, clock + 3).find(
+    (notice) => notice.recordId === posted.recordId,
+  )!
   expect(rendered.text).toContain('Title: Edited title')
   expect(rendered.text).toContain(
     `architect owning-architect (claude-code, suggestion-project), from run ${run.id}`,
   )
-  expect(db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(suggested.id)).toEqual(
-    { withdrawn_at: new Date(clock + 2).toISOString() },
-  )
+  expect(
+    db().query('SELECT withdrawn_at FROM board_message WHERE record_id=?').get(suggested.recordId),
+  ).toEqual({ withdrawn_at: new Date(clock + 2).toISOString() })
 })
 
 test('worker suggestion can be declined', () => {
   const clock = Date.now() + 200_000
   const run = runFixture('declining-architect')
   const suggested = suggestBoardPost(run.id, { title: 'Decline', body: 'No longer needed' }, clock)
-  declineBoardSuggestion(suggested.id, { CLAUDE_CODE_SESSION_ID: 'declining-architect' }, clock + 1)
-  expect(db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(suggested.id)).toEqual(
-    { withdrawn_at: new Date(clock + 1).toISOString() },
+  declineBoardSuggestion(
+    suggested.recordId,
+    { CLAUDE_CODE_SESSION_ID: 'declining-architect' },
+    clock + 1,
   )
+  expect(
+    db().query('SELECT withdrawn_at FROM board_message WHERE record_id=?').get(suggested.recordId),
+  ).toEqual({ withdrawn_at: new Date(clock + 1).toISOString() })
 })
 
 test('refused suggestion post leaves the suggestion live', () => {
@@ -94,18 +105,18 @@ test('refused suggestion post leaves the suggestion live', () => {
   ).count
   expect(() =>
     postBoardSuggestion(
-      suggested.id,
+      suggested.recordId,
       { audience: 'operator', topics: ['unknown-topic'] },
       { CLAUDE_CODE_SESSION_ID: 'rollback-architect' },
       clock + 1,
       projectFixture(),
     ),
   ).toThrow(/unknown board topic/)
-  expect(db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(suggested.id)).toEqual(
-    {
-      withdrawn_at: null,
-    },
-  )
+  expect(
+    db().query('SELECT withdrawn_at FROM board_message WHERE record_id=?').get(suggested.recordId),
+  ).toEqual({
+    withdrawn_at: null,
+  })
   expect(
     (
       db().query("SELECT COUNT(*) count FROM board_message WHERE kind='notice'").get() as {
@@ -124,6 +135,10 @@ test('suggestion refuses a run without an owner and disposal by another session'
   const owned = runFixture('right-session')
   const suggested = suggestBoardPost(owned.id, { title: 'Owned', body: 'Guarded' }, clock + 1)
   expect(() =>
-    declineBoardSuggestion(suggested.id, { CLAUDE_CODE_SESSION_ID: 'wrong-session' }, clock + 2),
+    declineBoardSuggestion(
+      suggested.recordId,
+      { CLAUDE_CODE_SESSION_ID: 'wrong-session' },
+      clock + 2,
+    ),
   ).toThrow(/only session right-session or the operator/)
 })

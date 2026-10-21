@@ -4,7 +4,7 @@ import {
   formatCursorResumed,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
-import { evidenceGuidance, type FloorKind } from './workflow-floor.ts'
+import { evidenceGuidance, type FloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
@@ -17,7 +17,12 @@ type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
     previousSession?: string | null
   } | null
 }
-type WorkflowStep = ReturnType<typeof getWorkflowStep> & { cursor?: number; notice?: string }
+type WorkflowStep = ReturnType<typeof getWorkflowStep> & {
+  cursor?: number
+  notice?: string
+  flow?: Array<{ slug: string; outcome?: string; skipped?: unknown }>
+  pass?: number
+}
 
 export function withSelfRuling(
   result: string,
@@ -39,6 +44,9 @@ const rulingsHeader = (result: WorkflowComposition) =>
 
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
+
+const conditionText = (condition: { step: string; outcome: string[] }) =>
+  `only when ${condition.step} is ${condition.outcome.join(' or ')}`
 
 export function renderWorkflowComposition(result: WorkflowComposition): string {
   if (result.mode && result.steps.length && !result.needs.arguments)
@@ -80,7 +88,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     `facts: ${JSON.stringify(result.facts)}`,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -120,7 +128,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
     ...facts,
     ...result.steps.map(
       (step) =>
-        `${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
+        `${step.n}. ${step.slug} — ${step.title}${step.when ? `; ${conditionText(step.when)}` : ''} [job=${step.job ?? '-'} autonomy=${step.resolvedAutonomy.value}(${step.resolvedAutonomy.scope}) floor=${step.floor.join('|')} needs=${step.needs.join('|') || '-'}]`,
     ),
   ].join('\n')
 }
@@ -131,44 +139,88 @@ function operatorRulingAutonomy(hasOtherFloor: boolean): string {
     : `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
 }
 
+const stopAndAsk = `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+const selfRulingCloseProtocol = `record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\``
+
+function selfRulingOpportunity(step: WorkflowStep): string | null {
+  if (mayCloseOnAgentSelfRuling(step, undefined))
+    return `rule yourself and ${selfRulingCloseProtocol}`
+  const outcomes = (step.rulingOutcomes ?? []).filter((outcome) =>
+    mayCloseOnAgentSelfRuling(step, outcome),
+  )
+  if (outcomes.length)
+    return `for outcome ${outcomes.join(' or ')}, you may rule this step yourself and ${selfRulingCloseProtocol}`
+  if (step.reenter && mayCloseOnAgentSelfRuling(step, undefined, true))
+    return `when the automatic re-entry bound is exhausted, you may rule this step yourself and ${selfRulingCloseProtocol}`
+  return null
+}
+
 function autonomyInstruction(step: WorkflowStep): string {
   const resolved = step.resolvedAutonomy.value
-  const maySelfRule = step.floor.includes('ruling') && !step.operatorRuling
-  if (step.floor.includes('ruling') && step.operatorRuling)
+  const opportunity = selfRulingOpportunity(step)
+  const effectiveRuling =
+    opportunity !== null ||
+    (step.operatorRuling && selfRulingOpportunity({ ...step, operatorRuling: false }) !== null)
+  if (effectiveRuling && step.operatorRuling)
     return operatorRulingAutonomy(step.floor.some((kind) => kind !== 'ruling'))
   if (resolved === 'ask')
-    return `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+    return `${stopAndAsk} The operator's answer authorizes the action; then close this step with ${step.floor.join(' or ')} evidence.`
+  if (!opportunity)
+    return `meet this step's floor with ${step.floor.join(' or ')} evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'auto' && step.autonomy === 'ask')
-    return maySelfRule
-      ? `rule this step yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-      : `rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    return `${opportunity}; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'review')
-    return maySelfRule
-      ? `rule yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-      : `rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-  return maySelfRule
-    ? `rule yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-    : `rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    return `${opportunity}; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+  return `${opportunity}; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+}
+
+function closeContract(step: WorkflowStep): string {
+  const reference = step.cursor ? workflowCursorReference(step.cursor) : null
+  const cursor = reference ? ` with ${reference.mcp}` : ''
+  const cliCursor = reference?.cli ?? ''
+  const outcome = step.outcomes?.length
+    ? ` Choose one allowed outcome (${step.outcomes.join(', ')}) and pass it as \`outcome\` to MCP or \`--outcome <slug>\` to the CLI.`
+    : ''
+  const rulingOutcomes = step.rulingOutcomes?.length
+    ? ` Closing with ${step.rulingOutcomes.join(' or ')} stops for a ruling.`
+    : ''
+  const reenter = step.reenter
+    ? ` Outcome ${step.reenter.outcome} returns to ${step.reenter.to} automatically once; beyond that it needs a ruling.`
+    : ''
+  return `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;${outcome}${rulingOutcomes}${reenter}`
+}
+
+function nextPointer(step: WorkflowStep, close: string): string {
+  if (step.next === undefined)
+    return `${close} that serves the following step from the workflow's step list.`
+  if (step.next)
+    return step.next.when
+      ? `${close} step ${step.next.n} ${step.next.slug} — ${step.next.title} runs ${conditionText(step.next.when)}; otherwise closing skips it and serves the next eligible step.`
+      : `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
+  return step.mode
+    ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
+    : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
+}
+
+function flowSoFar(step: WorkflowStep): string {
+  const flow = (step.flow ?? []).flatMap((entry) =>
+    entry.skipped
+      ? [`${entry.slug}=skipped`]
+      : entry.outcome
+        ? [`${entry.slug}=${entry.outcome}`]
+        : [],
+  )
+  if (step.pass !== undefined && step.pass > 1) flow.unshift(`Pass ${step.pass}`)
+  return flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
 }
 
 export function renderWorkflowStep(step: WorkflowStep): string {
   const autonomy = autonomyInstruction(step)
-  const reference = step.cursor ? workflowCursorReference(step.cursor) : null
-  const cursor = reference ? ` with ${reference.mcp}` : ''
-  const cliCursor = reference?.cli ?? ''
-  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;`
-  const pointer =
-    step.next === undefined
-      ? `${close} that serves the following step from the workflow's step list.`
-      : step.next
-        ? `${close} that serves step ${step.next.n} ${step.next.slug} — ${step.next.title}.`
-        : step.mode
-          ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
-          : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
+  const close = closeContract(step)
   const guidance = step.floor.map(
     (kind) =>
       `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
   )
   const notice = step.notice ? `${step.notice}\n` : ''
-  return `${notice}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
+  return `${notice}${flowSoFar(step)}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${nextPointer(step, close)}`
 }

@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import type { ProcessSample } from '../idle-kill.ts'
+import type { ProcessSample } from '../process-resource-sampler.ts'
 import { type LiveRunMember, liveMemberStall, liveRunMembers } from './live-run-member.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 
 describe('live run member', () => {
   const clock = Date.parse('2026-09-22T12:30:00.000Z')
   const member: LiveRunMember = {
-    id: 88,
+    record_id: 'run-record-id-88',
+    number: 88,
     started_at: '2026-09-22T12:00:00.000Z',
     last_event_at: '2026-09-22T12:00:00.000Z',
     agent: 'codex',
@@ -45,6 +47,40 @@ describe('live run member', () => {
     })
   })
 
+  test('a fresh host waiter is exempt from stall detection', () => {
+    expect(
+      liveMemberStall(
+        { ...member, host_wait_since: new Date(clock - 1_000).toISOString() },
+        idle,
+        clock,
+        25 * 60_000,
+        () => member.agent_start_time,
+      ),
+    ).toMatchObject({ state: 'healthy', idleMs: null })
+  })
+
+  test('an expired or terminal host wait marker does not exempt a stall', () => {
+    const expired = new Date(clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1).toISOString()
+    expect(
+      liveMemberStall(
+        { ...member, host_wait_since: expired },
+        idle,
+        clock,
+        25 * 60_000,
+        () => member.agent_start_time,
+      ).state,
+    ).toBe('stalled')
+    expect(
+      liveMemberStall(
+        { ...member, status: 'stopped', host_wait_since: new Date(clock - 1_000).toISOString() },
+        idle,
+        clock,
+        25 * 60_000,
+        () => member.agent_start_time,
+      ).state,
+    ).toBe('stalled')
+  })
+
   test('publishes the running turn, not its asking root, as the live member', () => {
     const root = addRun({
       agent: 'codex',
@@ -60,11 +96,12 @@ describe('live run member', () => {
       turn: 2,
     })
     db()
-      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE id=?')
+      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE record_id=?')
       .run(880, 'recorded birth', '2026-09-22T12:00:00.000Z', turn)
 
     expect(liveRunMembers()).toContainEqual({
-      id: turn,
+      record_id: turn,
+      number: expect.any(Number),
       started_at: expect.any(String),
       last_event_at: '2026-09-22T12:00:00.000Z',
       agent: 'grok',
@@ -72,6 +109,7 @@ describe('live run member', () => {
       session_id: 'session-chain',
       agent_pid: 880,
       agent_start_time: 'recorded birth',
+      host_wait_since: null,
     })
   })
 })

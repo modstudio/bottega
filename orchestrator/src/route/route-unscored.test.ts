@@ -26,7 +26,7 @@ describe('what counts as unscored', () => {
 
   test('doctor and pending cannot disagree, because they share the rule', () => {
     const mine = addRun({ agent: 'grok', job: 'craft' })
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('S', mine)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('S', mine)
     addRun({ agent: 'grok', job: 'craft', status: 'failed' })
     expect(pendingForSession('S').length).toBe(1)
     expect(unscoredCount()).toBe(1)
@@ -35,7 +35,7 @@ describe('what counts as unscored', () => {
   test('the count honors the dashboard window', () => {
     const old = addRun({ agent: 'grok', job: 'craft' })
     db()
-      .query('UPDATE run SET started_at=? WHERE id=?')
+      .query('UPDATE run SET started_at=? WHERE record_id=?')
       .run(new Date(Date.now() - 60 * 86_400_000).toISOString(), old)
     addRun({ agent: 'grok', job: 'craft' })
     expect(unscoredCount()).toBe(2)
@@ -49,7 +49,9 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     stripSqlComments(sql).replace(/\s+/g, ' ').trim().toLowerCase()
 
   const HOOK_ONLY_AND = [normalizeSql('r.session_id = ?')]
-  const HOOK_ONLY_OR = [normalizeSql('review.id IS NOT NULL AND review.completed_at IS NULL')]
+  const HOOK_ONLY_OR = [
+    normalizeSql('review.record_id IS NOT NULL AND review.completed_at IS NULL'),
+  ]
 
   const isWordChar = (c: string | undefined) => c != null && /[A-Za-z0-9_]/.test(c)
 
@@ -160,9 +162,9 @@ describe('the Stop hook and orch agree on what is unscored', () => {
   }
 
   const hookOwedWhere = (source: string) => {
-    const start = source.indexOf('SELECT r.id, r.agent, r.job')
+    const start = source.indexOf('SELECT r.record_id, r.agent, r.job')
     if (start < 0) throw new Error('hook owed-run query not found')
-    const order = source.indexOf('ORDER BY r.id', start)
+    const order = source.indexOf('ORDER BY r.number', start)
     const sql = source.slice(start, order)
     const whereAt = sql.search(/\bWHERE\b/)
     return sql.slice(whereAt + 'WHERE'.length)
@@ -324,7 +326,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
   test('a new AND conjunct that merely mentions r.session_id or review. is still caught', () => {
     const hook = liveHookWhere()
     const mentionsSession = "COALESCE(r.session_id, '') <> ''"
-    const mentionsReview = 'review.id IS NULL'
+    const mentionsReview = 'review.record_id IS NULL'
     expect(predicateDrift(UNSCORED_WHERE, `${hook} AND ${mentionsSession}`)).toEqual({
       missingFromHook: [],
       missingFromTs: predicateDrift('', mentionsSession).missingFromTs,
@@ -337,13 +339,13 @@ describe('the Stop hook and orch agree on what is unscored', () => {
 
   test('empty-string exclusion is voided in SQL, matching IS NOT NULL not truthiness', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
-    db().query("UPDATE run SET evidence_excluded='' WHERE id=?").run(id)
+    db().query("UPDATE run SET evidence_excluded='' WHERE record_id=?").run(id)
     const row = db()
-      .query(`SELECT ${voidedSql('r')} AS voided FROM run r WHERE id=?`)
+      .query(`SELECT ${voidedSql('r')} AS voided FROM run r WHERE record_id=?`)
       .get(id) as { voided: number }
     expect(row).toEqual({ voided: 1 })
     const nulled = db()
-      .query(`SELECT ${voidedSql('r')} AS voided FROM run r WHERE id=?`)
+      .query(`SELECT ${voidedSql('r')} AS voided FROM run r WHERE record_id=?`)
       .get(addRun({ agent: 'codex', job: 'implement', status: 'asking' })) as { voided: number }
     expect(nulled).toEqual({ voided: 0 })
   })

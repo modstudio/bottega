@@ -8,7 +8,7 @@ import {
 } from './review-finding-restore-policy.ts'
 
 const payload: RestoreFindingPayload = {
-  localId: 12,
+  recordId: 'finding-12',
   reviewRecordId: 'review-record',
   reviewLensRecordId: 'lens-record',
   ordinal: 3,
@@ -22,8 +22,10 @@ function facts(overrides: Partial<RestoreFindingFacts> = {}): RestoreFindingFact
   return {
     existingFindingIds: new Set(),
     findingIdByReviewOrdinal: new Map(),
-    reviewIdByRecordId: new Map([['review-record', 7]]),
-    lensByRecordId: new Map([['lens-record', { id: 9, reviewId: 7 }]]),
+    reviewIdByRecordId: new Map([['review-record', 'review-record']]),
+    lensByRecordId: new Map([
+      ['lens-record', { recordId: 'lens-record', reviewRecordId: 'review-record' }],
+    ]),
     ...overrides,
   }
 }
@@ -31,8 +33,8 @@ function facts(overrides: Partial<RestoreFindingFacts> = {}): RestoreFindingFact
 test('restores a missing finding through its record-linked parents', () => {
   expect(decideFindingRestore(payload, facts())).toEqual({
     action: 'insert',
-    reviewId: 7,
-    reviewLensId: 9,
+    reviewRecordId: 'review-record',
+    reviewLensRecordId: 'lens-record',
   })
 })
 
@@ -59,30 +61,32 @@ test('refuses a repeated finding whose later payload conflicts with the first wi
   expect(decisions.map(({ action }) => action)).toEqual(['insert', 'refuse'])
   expect(decisions[1]).toMatchObject({
     outboxId: 2,
-    reason: 'finding 12 has conflicting outbox payloads',
+    reason: 'finding finding-12 has conflicting outbox payloads',
   })
 })
 
 test('skips a finding whose original local id is already present', () => {
   expect(
-    decideFindingRestore(payload, facts({ existingFindingIds: new Set([payload.localId]) })),
-  ).toEqual({ action: 'skip', reason: 'finding 12 is already present' })
+    decideFindingRestore(payload, facts({ existingFindingIds: new Set([payload.recordId]) })),
+  ).toEqual({ action: 'skip', reason: 'finding finding-12 is already present' })
 })
 
 test('refuses missing and inconsistent parents and occupied ordinals', () => {
   expect(decideFindingRestore(payload, facts({ reviewIdByRecordId: new Map() }))).toEqual({
     action: 'refuse',
-    reason: 'finding 12 references missing review review-record',
+    reason: 'finding finding-12 references missing review review-record',
   })
   expect(decideFindingRestore(payload, facts({ lensByRecordId: new Map() }))).toEqual({
     action: 'refuse',
-    reason: 'finding 12 references missing review lens lens-record',
+    reason: 'finding finding-12 references missing review lens lens-record',
   })
   expect(
     decideFindingRestore(
       payload,
       facts({
-        lensByRecordId: new Map([['lens-record', { id: 9, reviewId: 8 }]]),
+        lensByRecordId: new Map([
+          ['lens-record', { recordId: 'lens-record', reviewRecordId: 'other-review' }],
+        ]),
       }),
     ),
   ).toMatchObject({ action: 'refuse' })
@@ -90,11 +94,12 @@ test('refuses missing and inconsistent parents and occupied ordinals', () => {
     decideFindingRestore(
       payload,
       facts({
-        findingIdByReviewOrdinal: new Map([[reviewOrdinalKey(7, 3), 99]]),
+        findingIdByReviewOrdinal: new Map([[reviewOrdinalKey('review-record', 3), 'finding-99']]),
       }),
     ),
   ).toEqual({
     action: 'refuse',
-    reason: 'finding 12 cannot use review 7 ordinal 3; finding 99 already uses it',
+    reason:
+      'finding finding-12 cannot use review review-record ordinal 3; finding finding-99 already uses it',
   })
 })

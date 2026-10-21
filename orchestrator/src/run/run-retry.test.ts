@@ -109,9 +109,9 @@ test('the retry prompt carries continuation instructions in order after the spec
     renderWritingRetryPrompt({
       originalSpec: 'Build it.',
       continuationInstructions: [
-        { turnId: 12, at: '2026-09-25T12:00:00.000Z', instructions: 'Review 1621.' },
+        { turnId: '12', at: '2026-09-25T12:00:00.000Z', instructions: 'Review 1621.' },
         {
-          turnId: 14,
+          turnId: '14',
           at: '2026-09-25T13:00:00.000Z',
           instructions: 'worker-gate-tooling-change',
         },

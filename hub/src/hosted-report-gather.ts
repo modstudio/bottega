@@ -1,9 +1,10 @@
 // concern: hosted-report-gather
 /** Builds the existing report projection from hosted record rows. */
 
+import type { SQL } from 'bun'
 import { engagedMs, human } from '../../shared/interval.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
-import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import type { MeasureScope } from './measures.ts'
 import type { DeliveryPeriod } from './report-delivery.ts'
 import type { GatheredReport, Item } from './report-renderer.ts'
@@ -133,7 +134,7 @@ export function gatherHostedReport(
 }
 
 export async function hostedGatherReport(
-  databaseUrl: string,
+  databaseUrl: SQL,
   identity: TaskIdentity,
   period: DeliveryPeriod,
   scope: MeasureScope,
@@ -156,8 +157,7 @@ export async function hostedGatherReport(
         t.project AS task_project,t.title AS task_title,t.status AS task_status,p.color AS project_color
       FROM hub_interval i
       LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
-      LEFT JOIN project p ON p.space_id=i.space_id
-        AND p.name=COALESCE(t.project,i.project_name) AND p.retired_at IS NULL
+      LEFT JOIN project p ON p.id=COALESCE(t.project_id,i.project_id) AND p.retired_at IS NULL
       LEFT JOIN space s ON s.id=i.space_id
       WHERE i.start_at < ${period.to}::timestamptz AND i.end_at >= ${period.from}::timestamptz
         AND (${project}::text IS NULL OR COALESCE(t.project,i.project_name)=${project})
@@ -170,7 +170,7 @@ export async function hostedGatherReport(
       await tx`
       SELECT t.id AS task_id FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
-      LEFT JOIN project p ON p.space_id=t.space_id AND p.name=t.project AND p.retired_at IS NULL
+      LEFT JOIN project p ON p.id=t.project_id AND p.retired_at IS NULL
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL AND e.to_status='done'
         AND e.at >= ${period.from}::timestamptz AND e.at < ${period.to}::timestamptz
         AND (${project}::text IS NULL OR t.project=${project})

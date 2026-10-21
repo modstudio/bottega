@@ -35,74 +35,91 @@ function countName(table: string, column: string, value: string): number {
   ).n
 }
 
-function seedNameMirrors(projectId: number, otherId: number): void {
+function seedNameMirrors(projectId: string, otherId: string): void {
   const id = newRecordId
   const d = db()
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id)
+     VALUES (?,1,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OLD, projectId)
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id)
+     VALUES (?,2,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OTHER, otherId)
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo)
+     VALUES (?,3,?,?,?,?,?,?,?,?)`,
   ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OLD)
   d.query(
-    `INSERT INTO canon_pack (record_id,job,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project,project_id)
+    `INSERT INTO canon_pack (record_id,job,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 'implement', 'ab', 1, 0, '[]', 't', 0, OLD, projectId)
   d.query(
-    `INSERT INTO landing (record_id,project,branch,status,started_at,project_id)
+    `INSERT INTO landing (record_id,project,branch,status,started_at,project_record_id)
      VALUES (?,?,?,?,?,?)`,
   ).run(id(), OLD, 'main', 'queued', 't', projectId)
   d.query(
-    `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_id)
+    `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_record_id)
      VALUES (?,?,?,?,?,?,?,?)`,
   ).run(id(), OLD, 'main', 'tip', 'tree', 'reason', 't', projectId)
   const review = d
-    .query(`INSERT INTO review (record_id,recorded_at,project_id) VALUES (?,?,?) RETURNING id`)
-    .get(id(), 't', projectId) as { id: number }
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES (?,1,?,?) RETURNING record_id`,
+    )
+    .get(id(), 't', projectId) as { record_id: string }
   d.query(
     `INSERT INTO landing_review_carry
-     (record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_id)
+     (record_id,project,branch,tip,tree,review_record_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'main', 'tip', 'tree', review.id, 'c', 't', 'p', 'a', 'b', 't', projectId)
+  ).run(id(), OLD, 'main', 'tip', 'tree', review.record_id, 'c', 't', 'p', 'a', 'b', 't', projectId)
   const read = d
     .query(
-      `INSERT INTO review_read (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at,project_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      `INSERT INTO review_read (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at,project_record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
-    .get(id(), OLD, 'main', 'tip', 'p', '[]', 1, 'n', 't', projectId) as { id: number }
+    .get(id(), OLD, 'main', 'tip', 'p', '[]', 1, 'n', 't', projectId) as { record_id: string }
   const override = d
     .query(
-      `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_id)
-       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+      `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_record_id)
+       VALUES (?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
-    .get(id(), OTHER, 'side', 'tip', 'tree', 'reason', 't', otherId) as { id: number }
+    .get(id(), OTHER, 'side', 'tip', 'tree', 'reason', 't', otherId) as { record_id: string }
   d.query(
     `INSERT INTO landing_triage_snapshot
-     (record_id,project,branch,tip,tree,review_ids,patch_id,tier,lens_rounds,finding_count,at,read_id,override_id,project_id)
+     (record_id,project,branch,tip,tree,review_record_ids,patch_id,tier,lens_rounds,finding_count,at,read_record_id,override_record_id,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'main', 'tip', 'tree', '[]', 'p', 1, 0, 0, 't', read.id, override.id, projectId)
+  ).run(
+    id(),
+    OLD,
+    'main',
+    'tip',
+    'tree',
+    '[]',
+    'p',
+    1,
+    0,
+    0,
+    't',
+    read.record_id,
+    override.record_id,
+    projectId,
+  )
   d.query(
-    `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_id)
+    `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 'project', OLD, 'slug', 'title', 'body', 't', 't', '["technical"]', projectId)
   const doc = d
-    .query(`SELECT id FROM doc WHERE subject=? AND project_id=?`)
+    .query(`SELECT record_id FROM doc WHERE subject=? AND project_record_id=?`)
     .get(OLD, projectId) as {
-    id: number
+    record_id: string
   }
   d.query(
     `INSERT INTO doc_revision
-     (record_id,doc_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     (record_id,number,doc_record_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id(),
-    doc.id,
+    doc.record_id,
     'project',
     OLD,
     'slug',
@@ -122,17 +139,16 @@ function seedNameMirrors(projectId: number, otherId: number): void {
   ] as const) {
     const recordId = id()
     d.query(
-      `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_id)
+      `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
     ).run(recordId, scope, OLD, slug, 'title', 'body', 't', 't', '["technical"]', owner)
-    const inserted = d.query('SELECT id FROM doc WHERE record_id=?').get(recordId) as { id: number }
     d.query(
       `INSERT INTO doc_revision
-       (record_id,doc_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (record_id,number,doc_record_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       id(),
-      inserted.id,
+      recordId,
       scope,
       OLD,
       slug,
@@ -148,23 +164,36 @@ function seedNameMirrors(projectId: number, otherId: number): void {
   }
   d.query(
     `INSERT INTO board_claim
-     (record_id,project,subject_kind,subject_value,holder_kind,duration_ms,taken_at,renewed_at,lapses_at)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'task', 'DEV-1', 'operator', 1, 't', 't', 't')
+     (record_id,project,project_record_id,subject_kind,subject_value,holder_kind,duration_ms,taken_at,renewed_at,lapses_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+  ).run(id(), OLD, projectId, 'task', 'DEV-1', 'operator', 1, 't', 't', 't')
+  const messageRecordId = id()
   d.query(
     `INSERT INTO board_message
-     (record_id,kind,author_kind,body,ack_required,created_at,expires_at,audience,title,author_project)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), 'notice', 'operator', 'body', 0, 't', 'later', 'architects', 'title', OLD)
+     (record_id,number,kind,author_kind,body,ack_required,created_at,expires_at,audience,title,author_project)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    messageRecordId,
+    1,
+    'notice',
+    'operator',
+    'body',
+    0,
+    't',
+    'later',
+    'architects',
+    'title',
+    OLD,
+  )
   d.query(
     `INSERT INTO board_reach_delivery
-     (record_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
+     (record_id,message_source,message_record_id,reader_session,reader_project,delivery_point,blocked_stop,
       audience,acknowledgement_required,posted_at,session_started_at,posting_timing,concern,recorded_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id(),
     'local',
-    '1',
+    messageRecordId,
     'sess',
     OLD,
     'session-start',
@@ -178,46 +207,59 @@ function seedNameMirrors(projectId: number, otherId: number): void {
     't',
   )
   d.query(
-    `INSERT INTO branch_landing_record (record_id,project,branch,tip,pr_number,merged_at,recorded_at)
-     VALUES (?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'main', 'tip', 1, 't', 't')
+    `INSERT INTO branch_landing_record
+     (record_id,project,project_record_id,branch,tip,pr_number,merged_at,recorded_at)
+     VALUES (?,?,?,?,?,?,?,?)`,
+  ).run(id(), OLD, projectId, 'main', 'tip', 1, 't', 't')
   d.query(
-    `INSERT INTO presence (session_id,harness,role,machine,project,cwd,last_seen)
-     VALUES (?,?,?,?,?,?,?)`,
-  ).run('sess-a', 'claude', 'architect', 'm', OLD, '/w', 't')
+    `INSERT INTO presence (session_id,harness,role,machine,project,project_record_id,cwd,last_seen)
+     VALUES (?,?,?,?,?,?,?,?)`,
+  ).run('sess-a', 'claude', 'architect', 'm', OLD, projectId, '/w', 't')
   d.query(
-    `INSERT INTO release_ledger (record_id,project,rung,candidate_commit,rollback,actor,started_at)
-     VALUES (?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'live', 'abc', 0, 'op', 't')
-  const run = d.query(`SELECT id FROM run WHERE project_id=?`).get(projectId) as { id: number }
+    `INSERT INTO release_ledger
+     (record_id,project,project_record_id,rung,candidate_commit,rollback,actor,started_at)
+     VALUES (?,?,?,?,?,?,?,?)`,
+  ).run(id(), OLD, projectId, 'live', 'abc', 0, 'op', 't')
+  const run = d
+    .query(`SELECT record_id AS id FROM run WHERE project_record_id=?`)
+    .get(projectId) as {
+    id: string
+  }
   d.query(
-    `INSERT INTO worker_note_request (record_id,run_id,text,requested_at,status,project)
-     VALUES (?,?,?,?,?,?)`,
-  ).run(id(), run.id, 'note', 't', 'requested', OLD)
+    `INSERT INTO worker_note_request
+     (record_id,run_record_id,text,requested_at,status,project,project_record_id)
+     VALUES (?,?,?,?,?,?,?)`,
+  ).run(id(), run.id, 'note', 't', 'requested', OLD, projectId)
   d.query(
     `INSERT INTO workflow_cursor
-     (record_id,project,workflow_slug,mode_slug,instance_id,workflow_version,catalogue_version,args,total_steps,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'wf', 'mode', 'inst', 1, 1, '{}', 1, 't', 't')
+     (record_id,project,project_record_id,workflow_slug,mode_slug,instance_id,workflow_version,catalogue_version,args,total_steps,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(id(), OLD, projectId, 'wf', 'mode', 'inst', 1, 1, '{}', 1, 't', 't')
 }
 
 test('a local rename leaves no listed table naming the old project', () => {
   writeTransaction(() => {
-    upsertProject({ name: OLD, path: '/w/rename-from' })
-    upsertProject({ name: OTHER, path: '/w/rename-other' })
+    upsertProject({ recordId: newRecordId(), name: OLD, path: '/w/rename-from' })
+    upsertProject({ recordId: newRecordId(), name: OTHER, path: '/w/rename-other' })
   })
   const project = projectByName(OLD)
   const other = projectByName(OTHER)
   if (!project || !other) throw new Error('fixture projects were not registered')
-  writeTransaction(() => seedNameMirrors(project.id, other.id))
-  persistLocalProjectSet({ id: project.id }, OLD, NEXT, {
+  writeTransaction(() => seedNameMirrors(project.recordId, other.recordId))
+  persistLocalProjectSet({ recordId: project.recordId }, OLD, NEXT, {
+    recordId: project.recordId,
     name: NEXT,
     path: '/w/rename-from',
   })
   expect(projectByName(OLD)).toBeNull()
-  expect(projectByName(NEXT)?.id).toBe(project.id)
-  for (const [table, column] of [...PROJECT_ID_NAME_COLUMNS, ...PROJECT_NAME_ONLY_COLUMNS]) {
+  expect(projectByName(NEXT)?.recordId).toBe(project.recordId)
+  for (const [table, column] of PROJECT_NAME_ONLY_COLUMNS) {
     expect(countName(table, column, OLD), `${table}.${column} kept ${OLD}`).toBe(0)
+  }
+  for (const [table, column] of PROJECT_ID_NAME_COLUMNS) {
+    expect(countName(table, column, OLD), `${table}.${column} changed an unresolved snapshot`).toBe(
+      table === 'run' ? 1 : 0,
+    )
   }
   expect(countName('run', 'repo', OTHER)).toBe(1)
   expect(countName('landing_override', 'project', OTHER)).toBe(1)
@@ -225,10 +267,10 @@ test('a local rename leaves no listed table naming the old project', () => {
     const renamed = db()
       .query(
         `SELECT COUNT(*) AS n FROM ${table}
-         WHERE subject=? AND (project_id=? OR (project_id IS NULL AND scope IN ('project','resume','canon','settings')))`,
+         WHERE subject=? AND project_record_id=?`,
       )
-      .get(OLD, project.id) as { n: number }
+      .get(OLD, project.recordId) as { n: number }
     expect(renamed.n, `${table} kept a project subject`).toBe(0)
-    expect(countName(table, 'subject', OLD), `${table} changed protected subjects`).toBe(2)
+    expect(countName(table, 'subject', OLD), `${table} changed unresolved subjects`).toBe(3)
   }
 })

@@ -1,13 +1,13 @@
+import { type OperatorWaitingItem, queryClient, trpc } from '@bottega/hub-data/client'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button } from '@bottega/hub-ui/button'
+import { Textarea } from '@bottega/hub-ui/field/textarea'
+import { DisplayRow } from '@bottega/hub-ui/form-layout'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { RadioRows } from '@bottega/hub-ui/radio-rows'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { type OperatorWaitingItem, queryClient, trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Button } from '@/ui/button/button'
-import { Textarea } from '@/ui/field/textarea'
-import { DisplayRow } from '@/ui/form-layout/form-layout'
-import { PageHeader } from '@/ui/page-header/page-header'
-import { RadioRows } from '@/ui/radio-rows/radio-rows'
 
 export const Route = createFileRoute('/inbox_/$kind/$id')({ component: InboxDetailPage })
 
@@ -39,7 +39,8 @@ function InboxDetailPage() {
     answeredQuestions ??
     (item?.kind === 'question'
       ? (waiting.data ?? []).filter(
-          (candidate) => candidate.kind === 'question' && candidate.run_id === item.run_id,
+          (candidate) =>
+            candidate.kind === 'question' && candidate.run_record_id === item.run_record_id,
         )
       : [])
   return item?.kind === 'workflow' && !answeredQuestions ? (
@@ -94,7 +95,7 @@ function QuestionRuling({
       await queryClient.invalidateQueries({ queryKey: trpc.operator.waiting.queryKey() })
     },
   })
-  const runId = first.run_id
+  const runId = first.run_record_id
   const rulings = questions.map((question) => ({
     questionId: question.id,
     ruling: drafts[question.id]?.freeText.trim() || drafts[question.id]?.choice || '',
@@ -166,7 +167,7 @@ function QuestionRuling({
           <div className="space-y-4">
             <p data-tone="success" className="text-status-text">
               {answer.data.outcome === 'resumed'
-                ? `resumed as run ${answer.data.resumed_as}`
+                ? `resumed as run ${answer.data.resumed_number}`
                 : answer.data.outcome === 'delivered-live'
                   ? 'delivered to the live worker'
                   : 'recorded'}

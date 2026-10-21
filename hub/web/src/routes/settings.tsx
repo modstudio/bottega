@@ -1,19 +1,28 @@
+import { queryClient, type RecordSettingsResponse, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button } from '@bottega/hub-ui/button'
+import { Checkbox } from '@bottega/hub-ui/checkbox'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { Dialog } from '@bottega/hub-ui/dialog'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
+import { hourOfDayLabel, sendTimestamp } from '@bottega/hub-util/format'
+import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@bottega/hub-util/report-arrival'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
-import { hourOfDayLabel, sendTimestamp } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@/lib/report-arrival'
-import { queryClient, type RecordSettingsResponse, trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Button } from '@/ui/button/button'
-import { Checkbox } from '@/ui/checkbox/checkbox'
-import { Dialog } from '@/ui/dialog/dialog'
-import { EmptyState } from '@/ui/empty-state/empty-state'
-import { Input } from '@/ui/field/input'
-import { Select } from '@/ui/listbox/select'
-import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
+import { type ReactNode, useState } from 'react'
 
 type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]
@@ -76,7 +85,6 @@ function OperatorEmailSettings() {
 
 function initialDraft(
   row: Subscription | undefined,
-  spaceProjects: Settings['spaceProjects'],
   isPersonalSpace: boolean,
   spaceId: string,
 ): Draft {
@@ -85,10 +93,7 @@ function initialDraft(
       isPersonalSpace &&
       row.projects.some((project) => project.space_id !== spaceId),
   )
-  const legacyProjectId =
-    row?.scope_kind === 'project'
-      ? spaceProjects.find((project) => project.name === row.project_name)?.id
-      : undefined
+  const legacyProjectId = row?.scope_kind === 'project' ? row.project_id : undefined
   return {
     scope:
       row?.scope_kind === 'project'
@@ -264,9 +269,7 @@ function SubscriptionDialog({
   canManageEmails: boolean
   onClose: () => void
 }) {
-  const [draft, setDraft] = useState<Draft>(() =>
-    initialDraft(row, spaceProjects, isPersonalSpace, spaceId),
-  )
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(row, isPersonalSpace, spaceId))
   const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')
@@ -558,13 +561,123 @@ function MemberChecks({
   )
 }
 
+function subscriptionScopeText(row: Subscription, spaceId?: string) {
+  if (row.scope_kind === 'project') return `Project: ${row.project_name}`
+  if (row.scope_kind === 'members') {
+    return `Members: ${row.members.map((member) => member.name).join(', ')}`
+  }
+  if (row.scope_kind === 'projects') {
+    const sameSpace = row.projects.every((selected) => selected.space_id === spaceId)
+    return `Projects: ${row.projects
+      .map((project) =>
+        sameSpace ? project.project_name : `${project.space_name}/${project.project_name}`,
+      )
+      .join(', ')}`
+  }
+  return 'Space'
+}
+
+const subscriptionScheduleText = (row: Subscription) =>
+  row.cadence === 'weekly'
+    ? `weekly ${row.weekday} ${hourOfDayLabel(row.hour)} ${row.zone}`
+    : `daily ${hourOfDayLabel(row.hour)} ${row.zone}`
+
+const subscriptionRecipientsText = (row: Subscription) =>
+  row.recipients
+    .map((recipient) => (recipient.user_id ? recipient.name : recipient.email))
+    .join(', ')
+
+type Send = Settings['sends'][number]
+const sendRecipientsText = (row: Send) =>
+  row.error
+    ? `Reason: ${row.error}`
+    : row.recipient_details
+        .map((recipient) => `${recipient.name} (${recipient.email})`)
+        .join(', ') || row.recipients
+
+function SubscriptionStatus({ enabled }: { enabled: boolean }) {
+  return <Badge tone={enabled ? 'success' : 'neutral'}>{enabled ? 'enabled' : 'disabled'}</Badge>
+}
+
+function SendResult({ row }: { row: Send }) {
+  return (
+    <div className="flex gap-1">
+      <Badge>{String(row.status)}</Badge>
+      {row.test ? <Badge tone="neutral">test</Badge> : null}
+    </div>
+  )
+}
+
+const responsive = (phone: boolean, phoneView: ReactNode, deskView: ReactNode) =>
+  phone ? phoneView : deskView
+const whenDesk = (phone: boolean, view: ReactNode) => (phone ? null : view)
+
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: phone cards and unchanged desk tables stay together.
 export function SettingsPage() {
+  const phone = useMediaQuery(PHONE_QUERY)
   const query = useQuery(
     trpc.record.settings.queryOptions({ hours: 48 }, { refetchInterval: 10_000 }),
   )
   const data = query.data
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Subscription>()
+  const createAction = (
+    <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
+      Create subscription
+    </Button>
+  )
+  const subscriptionColumns: CollectionColumn<Subscription>[] = [
+    {
+      id: 'scope',
+      label: 'Scope',
+      phone: 'title',
+      render: (row) => subscriptionScopeText(row, data?.spaceId),
+    },
+    {
+      id: 'enabled',
+      label: 'Status',
+      phone: 'aside',
+      render: (row) => <SubscriptionStatus enabled={row.enabled} />,
+    },
+    {
+      id: 'schedule',
+      label: 'Schedule',
+      phone: 'line',
+      render: subscriptionScheduleText,
+    },
+    {
+      id: 'recipients',
+      label: 'Recipients',
+      phone: 'line',
+      render: subscriptionRecipientsText,
+    },
+  ]
+  const sendColumns: CollectionColumn<Send>[] = [
+    {
+      id: 'when',
+      label: 'When',
+      phone: 'title',
+      render: (row) => sendTimestamp(row.at),
+    },
+    {
+      id: 'result',
+      label: 'Result',
+      phone: 'aside',
+      render: (row) => <SendResult row={row} />,
+    },
+    {
+      id: 'recipients',
+      label: 'Recipients',
+      phone: 'line',
+      render: sendRecipientsText,
+    },
+    {
+      id: 'items',
+      label: 'Items',
+      phone: 'more',
+      render: (row) => row.items.toLocaleString(),
+    },
+  ]
   return (
     <section>
       <PageHeader title="Report subscriptions" subtitle="Schedules and delivery history" />
@@ -575,67 +688,61 @@ export function SettingsPage() {
       {data ? (
         <>
           <div className="flex max-w-[800px] items-center justify-between">
-            <SectionTitle>Subscriptions</SectionTitle>
-            <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
-              Create subscription
-            </Button>
+            {whenDesk(phone, <SectionTitle>Subscriptions</SectionTitle>)}
+            {whenDesk(phone, createAction)}
           </div>
-          <div className="mb-6 max-w-[800px] border border-border-default">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Schedule</TableHead>
-                  <TableHead>Recipients</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.subscriptions.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      {row.scope_kind === 'project'
-                        ? `Project: ${row.project_name}`
-                        : row.scope_kind === 'members'
-                          ? `Members: ${row.members.map((member) => member.name).join(', ')}`
-                          : row.scope_kind === 'projects'
-                            ? `Projects: ${row.projects
-                                .map((project) =>
-                                  row.projects.every(
-                                    (selected) => selected.space_id === data.spaceId,
-                                  )
-                                    ? project.project_name
-                                    : `${project.space_name}/${project.project_name}`,
-                                )
-                                .join(', ')}`
-                            : 'Space'}
-                    </TableCell>
-                    <TableCell muted>
-                      {row.cadence === 'weekly'
-                        ? `weekly ${row.weekday} ${hourOfDayLabel(row.hour)} ${row.zone}`
-                        : `daily ${hourOfDayLabel(row.hour)} ${row.zone}`}
-                      <Badge className="mt-1 block" tone={row.enabled ? 'success' : 'neutral'}>
-                        {row.enabled ? 'enabled' : 'disabled'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {row.recipients
-                        .map((recipient) => (recipient.user_id ? recipient.name : recipient.email))
-                        .join(', ')}
-                    </TableCell>
-                    <TableCell>
-                      <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
-                        Edit
-                      </Button>
-                    </TableCell>
+          {responsive(
+            phone,
+            <Collection
+              title="Subscriptions"
+              count={data.subscriptions.length}
+              actions={createAction}
+              columns={subscriptionColumns}
+              rows={data.subscriptions}
+              getKey={(row) => row.id}
+              onOpen={() => undefined}
+              rowActions={(row) => (
+                <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
+                  Edit
+                </Button>
+              )}
+              empty={{ title: 'No report subscriptions.', hint: 'Create one for this space.' }}
+            />,
+            <div className="mb-6 max-w-[800px] border border-border-default">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Scope</TableHead>
+                    <TableHead>Schedule</TableHead>
+                    <TableHead>Recipients</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {!data.subscriptions.length ? (
-              <EmptyState title="No report subscriptions." hint="Create one for this space." />
-            ) : null}
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {data.subscriptions.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{subscriptionScopeText(row, data.spaceId)}</TableCell>
+                      <TableCell muted>
+                        {subscriptionScheduleText(row)}
+                        <span className="mt-1 block">
+                          <SubscriptionStatus enabled={row.enabled} />
+                        </span>
+                      </TableCell>
+                      <TableCell>{subscriptionRecipientsText(row)}</TableCell>
+                      <TableCell>
+                        <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
+                          Edit
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {!data.subscriptions.length ? (
+                <EmptyState title="No report subscriptions." hint="Create one for this space." />
+              ) : null}
+            </div>,
+          )}
           {creating || editing ? (
             <SubscriptionDialog
               row={editing}
@@ -652,47 +759,53 @@ export function SettingsPage() {
             />
           ) : null}
           <div className="max-w-[800px]">
-            <SectionTitle>Send history</SectionTitle>
+            {whenDesk(phone, <SectionTitle>Send history</SectionTitle>)}
           </div>
-          <div className="max-w-[800px] border border-border-default">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>Result</TableHead>
-                  <TableHead numeric>Items</TableHead>
-                  <TableHead>Recipients</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.sends.map((row) => (
-                  <TableRow key={`${row.at}:${row.recipients}`}>
-                    <TableCell muted>{sendTimestamp(row.at)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Badge>{String(row.status)}</Badge>
-                        {row.test ? <Badge tone="neutral">test</Badge> : null}
-                      </div>
-                    </TableCell>
-                    <TableCell numeric>{row.items.toLocaleString()}</TableCell>
-                    <TableCell muted>
-                      {row.error
-                        ? `Reason: ${row.error}`
-                        : row.recipient_details
-                            .map((recipient) => `${recipient.name} (${recipient.email})`)
-                            .join(', ') || row.recipients}
-                    </TableCell>
+          {responsive(
+            phone,
+            <Collection
+              title="Send history"
+              count={data.sends.length}
+              columns={sendColumns}
+              rows={data.sends}
+              getKey={(row) => `${row.at}:${row.recipients}`}
+              onOpen={() => undefined}
+              empty={{
+                title: 'No reports have been sent.',
+                hint: 'No send records exist for this space.',
+              }}
+            />,
+            <div className="max-w-[800px] border border-border-default">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Result</TableHead>
+                    <TableHead numeric>Items</TableHead>
+                    <TableHead>Recipients</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {!data.sends.length ? (
-              <EmptyState
-                title="No reports have been sent."
-                hint="No send records exist for this space."
-              />
-            ) : null}
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {data.sends.map((row) => (
+                    <TableRow key={`${row.at}:${row.recipients}`}>
+                      <TableCell muted>{sendTimestamp(row.at)}</TableCell>
+                      <TableCell>
+                        <SendResult row={row} />
+                      </TableCell>
+                      <TableCell numeric>{row.items.toLocaleString()}</TableCell>
+                      <TableCell muted>{sendRecipientsText(row)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {!data.sends.length ? (
+                <EmptyState
+                  title="No reports have been sent."
+                  hint="No send records exist for this space."
+                />
+              ) : null}
+            </div>,
+          )}
         </>
       ) : query.isPending ? (
         <p className="text-text-muted">Loading settings...</p>

@@ -14,11 +14,11 @@ const hasNotification = (
 ): row is ClaimedOperatorNotification => 'notification' in row
 
 export function relayCommand(
-  runId: number,
+  runId: string,
   args: string[],
   note: string | undefined,
   presentation: Presentation,
-  resolveQuestion: (identifier: string) => number,
+  resolveQuestion: (identifier: string) => string,
 ): void {
   if (!note?.trim()) throw new Error('--note is required')
   const accepted = new Set([`--note=${note}`, '--note', note])

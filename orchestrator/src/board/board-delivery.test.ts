@@ -91,8 +91,8 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   }
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('delivery-reader','claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('delivery-reader','claude','architect','machine','delivery-project',(SELECT record_id FROM project WHERE name='delivery-project'),'/tmp',NULL,?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', new Date().toISOString())
   const localClaim = postNotice(
@@ -103,7 +103,7 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   const hostedClaim = hosted('session:delivery-reader')
   installFailedRefreshWithCached(hostedClaim)
   const claimed = await claimBoardNotices(false, { env })
-  expect(claimed.notices.map((row) => row.id)).toEqual([String(localClaim.id), hostedClaim.id])
+  expect(claimed.notices.map((row) => row.id)).toEqual([String(localClaim.number), hostedClaim.id])
   expect(claimed.notices.map((row) => Object.keys(row).sort())).toEqual([
     ['ackRequired', 'createdAt', 'id', 'oneLine', 'purpose', 'text'],
     ['ackRequired', 'createdAt', 'id', 'oneLine', 'purpose', 'text'],
@@ -129,7 +129,7 @@ test('board read and read --claim deliver hosted beside local once and retain a 
     )
     .run(hostedRead.id, hostedRead.kind, null, hostedRead.revision, JSON.stringify(hostedRead))
   const read = await readBoardNotices(false, { env })
-  expect(read.notices.map((row) => row.id)).toEqual([String(localRead.id), hostedRead.id])
+  expect(read.notices.map((row) => row.id)).toEqual([String(localRead.number), hostedRead.id])
   expect(read.warning).toContain('offline for warning proof')
   expect(read.warning).not.toContain('\n')
   expect((await readBoardNotices(false, { env })).notices).toEqual([])
@@ -139,16 +139,16 @@ test('a second chain turn claims and marks hosted and local notices through its 
   const recordId = newRecordId()
   const root = db()
     .query(
-      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,record_id,turn)
-       VALUES (?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,1) RETURNING id`,
+      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,record_id,turn)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,1) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T11:00:00.000Z', recordId) as { id: number }
+    .get('2026-10-05T11:00:00.000Z', recordId) as { id: string }
   const turn = db()
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2) RETURNING id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_record_id,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T11:30:00.000Z', root.id) as { id: number }
+    .get('2026-10-05T11:30:00.000Z', root.id) as { id: string }
   const local = postNotice(
     { audience: `run:${root.id}`, title: 'Local chain', body: 'local body' },
     {},
@@ -157,7 +157,7 @@ test('a second chain turn claims and marks hosted and local notices through its 
   const remote = hosted(`run:${recordId}`)
   installFailedRefreshWithCached(remote)
   const delivery = await claimRunBoardNotices(turn.id)
-  expect(delivery.notices.map((row) => row.id)).toEqual([String(local.id), remote.id])
+  expect(delivery.notices.map((row) => row.id)).toEqual([String(local.number), remote.id])
   expect(delivery.warning).toContain('offline for warning proof')
   await markRunBoardNoticesDelivered(
     turn.id,
@@ -178,8 +178,8 @@ test('a spent refresh budget still surfaces the failed-refresh warning', async (
   }
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('delivery-reader','claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('delivery-reader','claude','architect','machine','delivery-project',(SELECT record_id FROM project WHERE name='delivery-project'),'/tmp',NULL,?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', new Date().toISOString())
   const hostedClaim = hosted('session:delivery-reader')
@@ -218,8 +218,8 @@ test('session start renders information and standing as one line but a request i
   const session = 'purpose-start-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','delivery-project',(SELECT record_id FROM project WHERE name='delivery-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1).toISOString(), new Date(clock).toISOString())
   const posts = [
@@ -252,7 +252,9 @@ test('session start renders information and standing as one line but a request i
   const claimed = await claimBoardNotices(false, {
     env: { CLAUDE_CODE_SESSION_ID: session },
   })
-  expect(claimed.notices.map((notice) => notice.id)).toEqual(posts.map((post) => String(post.id)))
+  expect(claimed.notices.map((notice) => notice.id)).toEqual(
+    posts.map((post) => String(post.number)),
+  )
   expect(claimed.notices[0]!.text).toBe(claimed.notices[0]!.oneLine)
   expect(claimed.notices[1]!.text).toContain('request body')
   expect(claimed.notices[2]!.text).toBe(claimed.notices[2]!.oneLine)

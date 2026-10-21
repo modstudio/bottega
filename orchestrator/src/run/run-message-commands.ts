@@ -29,7 +29,7 @@ import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
-type Presentation = { printRunId(id: number): void }
+type Presentation = { printRunId(id: string): void }
 export type ContinueCommandDependencies = {
   continueRun: typeof continueRun
   reportContinuedRun: typeof reportContinuedRun
@@ -50,7 +50,7 @@ const scoreSuffix = (jobName: string) =>
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
-const scoreHint = (id: number, jobName: string, parent: number | null) =>
+const scoreHint = (id: string, jobName: string, parent: string | null) =>
   `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
 const argvResumeLimit = (agentName: string) =>
   AGENTS[agentName]?.resumeArgv ? resumePromptByteLimit(AGENTS[agentName]!) : undefined
@@ -126,28 +126,33 @@ export async function answerInputFromArgv(
 }
 
 export async function retryCommand(
-  id: number,
+  id: string,
   options: { agent?: string; model?: string; flags: Flags },
   presentation: Presentation,
 ): Promise<void> {
   await retryRun(id, options, answerRunHelpers(presentation))
 }
 
-function answeredQuestionIds(runId: number, rulings: AnswerRunInput['rulings']): number[] {
-  if (typeof rulings !== 'string') return rulings.map((ruling) => ruling.questionId)
+function answeredQuestionIds(runId: string, rulings: AnswerRunInput['rulings']): number[] {
+  if (typeof rulings !== 'string') {
+    const number = db().query<{ number: number }, [string]>(
+      'SELECT number FROM question WHERE record_id=?',
+    )
+    return rulings.map((ruling) => number.get(ruling.questionId)!.number)
+  }
   return (
     db()
       .query(
-        `SELECT q.id FROM question q JOIN run owner ON owner.id=q.run_id
-          WHERE (owner.id=? OR owner.parent_run_id=?) AND ${questionOpenSql('q')}
-          ORDER BY q.id`,
+        `SELECT q.number FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+          WHERE (owner.record_id=? OR owner.parent_run_record_id=?) AND ${questionOpenSql('q')}
+          ORDER BY q.number`,
       )
-      .all(runId, runId) as { id: number }[]
-  ).map((row) => row.id)
+      .all(runId, runId) as { number: number }[]
+  ).map((row) => row.number)
 }
 
 export async function answerCommand(
-  id: number,
+  id: string,
   argv: string[],
   recordOnly: boolean,
   json: boolean,
@@ -174,18 +179,20 @@ export async function answerCommand(
 }
 
 export async function continueCommand(
-  id: number,
+  id: string,
   argv: string[],
   includeFindings: boolean,
   flags: Flags,
   presentation: Presentation,
-  renderFindings: (runId: number, message: string | undefined) => string,
+  renderFindings: (runId: string, message: string | undefined) => string,
   dependencies: ContinueCommandDependencies = continueCommandDependencies,
 ): Promise<void> {
-  const chain = db().query('SELECT id, agent, parent_run_id FROM run WHERE id = ?').get(id) as {
-    id: number
+  const chain = db()
+    .query('SELECT record_id, agent, parent_run_record_id FROM run WHERE record_id = ?')
+    .get(id) as {
+    record_id: string
     agent: string
-    parent_run_id: number | null
+    parent_run_record_id: string | null
   } | null
   const sources = parseWorkerMessageArgs(argv, {
     booleans: ['--follow', '--detach', '--quiet', '--findings'],

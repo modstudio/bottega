@@ -8,6 +8,8 @@ import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
+import { resumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
+import { resumeRestoreRefusal, resumeWriteRefusal } from '../doc/doc-resume-write.ts'
 import {
   consumeDocBody,
   type DocDelivery,
@@ -78,6 +80,8 @@ type Tenant = { url: string } & TenantPrincipal
 type StoredDocRow = Record<string, unknown>
 
 function assertRestoredRecordDoc(
+  scope: string,
+  slug: string,
   body: string,
   kind: DocKind,
   form: DocForm | null,
@@ -85,6 +89,16 @@ function assertRestoredRecordDoc(
 ): void {
   assertDocSections(body, recordDocAudiences(audiences))
   checkRecordCommands({ body }, kind, form, audiences)
+  if (scope === 'resume') {
+    assertWrite(resumeRestoreRefusal(resumeWriteRefusal(slug, body, resumeFrontmatter(body))))
+  }
+}
+
+function assertRecordDocUpsert(input: RecordDocWriteInput): void {
+  assertUpsertAddress(input)
+  if (input.scope === 'resume') {
+    assertWrite(resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)))
+  }
 }
 
 function assertImportedRecordDoc(
@@ -160,7 +174,7 @@ function revisionArticleFields(fields: Awaited<ReturnType<typeof resolveHostedAr
 export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
-  assertUpsertAddress(input)
+  assertRecordDocUpsert(input)
   return tenant(input, async (tx) => {
     const existing = await tx`
       SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc
@@ -360,6 +374,7 @@ export async function deleteRecordDoc(
       audiences: recordDocAudiences(doc.audiences),
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
+      featured: doc.featured == null ? false : Boolean(doc.featured),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
       form: doc.form == null ? null : (String(doc.form) as DocForm),
@@ -426,6 +441,7 @@ export async function consumeRecordDoc(
       audiences: recordDocAudiences(doc.audiences),
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
+      featured: doc.featured == null ? false : Boolean(doc.featured),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
       form: doc.form == null ? null : (String(doc.form) as DocForm),
@@ -507,7 +523,7 @@ export async function restoreRecordDoc(
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
     const articleFields = restoredArticleFields(revision)
-    assertRestoredRecordDoc(body, kind, articleFields.form, audiences)
+    assertRestoredRecordDoc(scope, slug, body, kind, articleFields.form, audiences)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -656,6 +672,49 @@ function assertImportAddress(doc: ReturnType<typeof normalizeRecordDocImport>['d
   assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
 }
 
+type NormalizedDocImport = ReturnType<typeof normalizeRecordDocImport>
+
+function insertImportedRevision(
+  tx: SQL,
+  spaceId: string,
+  docId: string,
+  projectId: string | null,
+  doc: NormalizedDocImport['doc'],
+  revision: NormalizedDocImport['revisions'][number],
+): Promise<string> {
+  return insertRecordDocRevision(tx, {
+    id: revision.id,
+    spaceId,
+    docId,
+    scope: doc.scope,
+    subject: doc.subject,
+    owner: doc.owner ?? null,
+    slug: doc.slug,
+    projectId,
+    op: revision.op,
+    title: revision.title,
+    body: revision.body,
+    delivery: revision.delivery,
+    audiences: recordDocAudiences(revision.audiences),
+    parentId: revision.parentId,
+    position: revision.position,
+    featured: revision.featured,
+    status: revision.status,
+    kind: revision.kind,
+    form: revision.form,
+    articleSubjectId: revision.articleSubjectId,
+    relatedSubjectIds: revision.relatedSubjectIds,
+    sourceFiles: revision.sourceFiles,
+    checkedAgainstCommit: revision.checkedAgainstCommit,
+    summary: revision.summary,
+    replacementSlug: revision.replacementSlug,
+    author: revision.author,
+    reason: revision.reason,
+    sessionId: revision.sessionId ?? null,
+    at: revision.at,
+  })
+}
+
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
@@ -728,35 +787,7 @@ export async function importRecordDoc(
     const revisionIds: string[] = []
     for (const revision of revisions) {
       revisionIds.push(
-        await insertRecordDocRevision(tx, {
-          spaceId: input.spaceId,
-          docId: id,
-          scope: doc.scope,
-          subject: doc.subject,
-          owner: doc.owner ?? null,
-          slug: doc.slug,
-          projectId: resolvedProject,
-          op: revision.op,
-          title: revision.title,
-          body: revision.body,
-          delivery: revision.delivery,
-          audiences: recordDocAudiences(revision.audiences),
-          parentId: revision.parentId,
-          position: revision.position,
-          featured: revision.featured,
-          status: revision.status,
-          kind: revision.kind,
-          form: revision.form,
-          articleSubjectId: revision.articleSubjectId,
-          relatedSubjectIds: revision.relatedSubjectIds,
-          sourceFiles: revision.sourceFiles,
-          checkedAgainstCommit: revision.checkedAgainstCommit,
-          replacementSlug: revision.replacementSlug,
-          author: revision.author,
-          reason: revision.reason,
-          sessionId: revision.sessionId ?? null,
-          at: revision.at,
-        }),
+        await insertImportedRevision(tx, input.spaceId, id, resolvedProject, doc, revision),
       )
     }
     return { id, revisionIds, ...hostedArticleResponse(doc, importedSubjectNames) }

@@ -58,8 +58,8 @@ type BranchEvidence = {
   firstReviewAt: string
   tier: ReviewTierNumber | null
   rounds: Map<string, string>
-  eligibleReviews: Set<number>
-  unclassifiableReviews: Set<number>
+  eligibleReviews: Set<string>
+  unclassifiableReviews: Set<string>
 }
 
 function eligibleRows(
@@ -69,19 +69,19 @@ function eligibleRows(
 ): ReviewRoundEvidenceRow[] {
   return database
     .query(
-      `SELECT rl.id AS lens_id, r.id AS review_id, r.recorded_at, r.completed_at, r.tier,
+      `SELECT rl.record_id AS lens_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier,
               r.patch_id, r.path_set, p.name AS project, run.repo AS run_repo,
               run.launch_key, run.branch, rl.lens, rl.agent, rl.model,
               run.latency_ms, run.input_tree, run.head_commit, rl.overlap
          FROM review_lens rl
-         JOIN review r ON r.id=rl.review_id
-         JOIN run ON run.id=rl.run_id
-         LEFT JOIN project p ON p.id=r.project_id
+         JOIN review r ON r.record_id=rl.review_record_id
+         JOIN run ON run.record_id=rl.run_record_id
+         LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE ${reviewRunEvidenceSql('run', 'rl')}
           AND (? IS NULL OR r.recorded_at >= ?)
-          AND (? IS NULL OR run.repo = ?)
+          AND (? IS NULL OR run.project_record_id=(SELECT record_id FROM project WHERE name=?))
           AND (? IS NULL OR run.branch = ?)
-        ORDER BY r.recorded_at,r.id,rl.id`,
+        ORDER BY r.recorded_at,r.number,run.number`,
     )
     .all(
       since ?? null,
@@ -109,16 +109,16 @@ function branchEvidence(
       firstReviewAt: row.recorded_at,
       tier: null,
       rounds: new Map<string, string>(),
-      eligibleReviews: new Set<number>(),
-      unclassifiableReviews: new Set<number>(),
+      eligibleReviews: new Set<string>(),
+      unclassifiableReviews: new Set<string>(),
     }
-    branch.eligibleReviews.add(row.review_id)
+    branch.eligibleReviews.add(row.review_record_id)
     if (row.tier !== null && (branch.tier === null || row.tier > branch.tier)) {
       branch.tier = row.tier
     }
     const round = reviewRoundIdentity(row).identity
     if (round && !branch.rounds.has(round)) branch.rounds.set(round, row.recorded_at)
-    if (!round) branch.unclassifiableReviews.add(row.review_id)
+    if (!round) branch.unclassifiableReviews.add(row.review_record_id)
     branches.set(key, branch)
   }
   return branches

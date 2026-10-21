@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -72,7 +73,13 @@ test('canon import can drop a citer and its target after deciding the complete n
     writeFileSync(join(root, 'AGENTS.md'), 'Current guidance.\n')
     writeFileSync(join(root, 'AGENTS.override.md'), 'Generated output must not become a row.\n')
     spawnFixtureGitSync(['add', 'AGENTS.md', 'AGENTS.override.md'], { cwd: root })
-    upsertProject({ name: 'canon-import-removal', path: root, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'canon-import-removal',
+      path: root,
+      canon: true,
+      settings: {},
+    })
     const target = '.agents/reference/old-target.md'
     await setDoc({
       scope: 'canon',
@@ -123,7 +130,13 @@ test('project canon import bootstraps findings and refuses findings on the next 
     spawnFixtureGitSync(['init'], { cwd: root })
     writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n')
     spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
-    upsertProject({ name: 'canon-import-bootstrap', path: root, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'canon-import-bootstrap',
+      path: root,
+      canon: true,
+      settings: {},
+    })
     const values = new Map([
       ['project', 'canon-import-bootstrap'],
       ['cwd', root],
@@ -167,7 +180,13 @@ test('project canon import dry-run prints the plan and writes neither store', as
     spawnFixtureGitSync(['init'], { cwd: root })
     writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n')
     spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
-    upsertProject({ name: 'canon-import-dry-run', path: root, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'canon-import-dry-run',
+      path: root,
+      canon: true,
+      settings: {},
+    })
     const output: string[] = []
     const values = new Map<string, string | true>([
       ['project', 'canon-import-dry-run'],
@@ -202,7 +221,13 @@ test('project canon hydrate dry-run prints the plan and leaves the tree unchange
     spawnFixtureGitSync(['init'], { cwd: root })
     writeFileSync(join(root, 'AGENTS.md'), 'Keep the tree.\n')
     spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
-    upsertProject({ name: 'canon-hydrate-dry-run', path: root, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'canon-hydrate-dry-run',
+      path: root,
+      canon: true,
+      settings: {},
+    })
     const output: string[] = []
     const values = new Map<string, string | true>([
       ['project', 'canon-hydrate-dry-run'],
@@ -237,7 +262,13 @@ test('project canon hydrate refuses when only global canon rows exist and the tr
     spawnFixtureGitSync(['init'], { cwd: root })
     writeFileSync(join(root, 'AGENTS.md'), 'Keep the tree.\n')
     spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
-    upsertProject({ name: 'canon-hydrate-global-only', path: main, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'canon-hydrate-global-only',
+      path: main,
+      canon: true,
+      settings: {},
+    })
     await setDoc({
       scope: 'canon',
       subject: null,
@@ -276,7 +307,13 @@ test('project canon hydrate refuses an empty store that would delete managed tre
     spawnFixtureGitSync(['init'], { cwd: root })
     writeFileSync(join(root, 'AGENTS.md'), 'Keep the tree.\n')
     spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
-    upsertProject({ name: 'canon-hydrate-empty-store', path: main, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'canon-hydrate-empty-store',
+      path: main,
+      canon: true,
+      settings: {},
+    })
     const output: string[] = []
 
     await expect(

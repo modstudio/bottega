@@ -21,6 +21,7 @@ export type CommandRoute = {
 
 export const GROUPS = [
   ['run', 'dispatch and inspect runs'],
+  ['session', 'architect session lifecycle'],
   ['question', 'open worker questions and rulings'],
   ['score', 'verdicts on runs'],
   ['review', 'review runs, lenses, tiers, and confinement'],
@@ -59,6 +60,8 @@ export const ROUTES = (
     route('run start', 'orch', 'do'),
     route('run show', 'orch', 'run'),
     route('run list', 'orch', 'runs'),
+    route('run identity-map', 'orch', 'run-identities'),
+    route('question identity-map', 'orch', 'question-identities'),
     ...[
       'diff',
       'state',
@@ -115,6 +118,7 @@ export const ROUTES = (
     ),
     route('doc', 'orch', 'doc'),
     route('project', 'orch', 'project'),
+    route('session', 'orch', 'session'),
     route('tree branch', 'orch', 'branches'),
     route('tree', 'orch', 'tree'),
     route('pr', 'orch', 'pr'),
@@ -122,6 +126,7 @@ export const ROUTES = (
     route('gate ratchet', 'orch', 'ratchet'),
     route('gate enforcement', 'orch', 'enforcement'),
     route('gate test-substance', 'orch', 'test-substance'),
+    route('gate hub-import', 'orch', 'hub-import'),
     route('gate', 'orch', 'gate'),
     route('release run', 'orch', 'release'),
     route(
@@ -215,6 +220,8 @@ export const ROUTES = (
       'health',
       'blockers',
       'monitor',
+      'storage',
+      'provisioning',
       'sweep',
       'reclaim',
       'config',

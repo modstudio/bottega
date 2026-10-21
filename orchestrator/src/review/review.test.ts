@@ -4,9 +4,81 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
-import { cleanReviewEvidence, getReview, UNEVIDENCED_REVIEW_ERROR } from './review.ts'
+import { cleanReviewEvidence, getReview, listReviews, UNEVIDENCED_REVIEW_ERROR } from './review.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { amendFinding, completeReview, recordReview, triageFinding } from './review-triage.ts'
+
+describe('review listing', () => {
+  test('lists populated reviews with display numbers and applies state and project filters', () => {
+    db()
+      .query("INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}'),(?,?,?,'{}')")
+      .run(
+        '01990000-0000-7000-8000-000000000101',
+        'listing-alpha',
+        process.cwd(),
+        '01990000-0000-7000-8000-000000000102',
+        'listing-beta',
+        process.cwd(),
+      )
+    const addReviewRun = (project: string, lens: string) => {
+      const runId = addRun({
+        agent: 'codex',
+        job: 'review-lens',
+        model: 'm',
+        lens,
+        repo: project,
+      })
+      db()
+        .query(
+          'UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
+        )
+        .run(project, runId)
+      return runId
+    }
+
+    const openReview = recordReview(
+      addReviewRun('listing-alpha', 'listing-open'),
+      reviewReply(2, 'high'),
+      db(),
+    )
+    triageFinding(openReview, 1, 'accepted', undefined, 'high', db())
+    const completeReviewId = recordReview(
+      addReviewRun('listing-alpha', 'listing-complete'),
+      reviewReply(1, 'medium'),
+      db(),
+    )
+    triageFinding(completeReviewId, 1, 'rejected', 'bogus', 'medium', db())
+    completeReview(completeReviewId, db())
+    const otherProjectReview = recordReview(
+      addReviewRun('listing-beta', 'listing-other-project'),
+      reviewReply(1, 'low'),
+      db(),
+    )
+
+    const all = listReviews({}, db())
+    expect(all).toHaveLength(3)
+    expect(all.every((row) => row.record_id.length > 0 && row.number > 0)).toBe(true)
+    expect(all.find((row) => row.record_id === openReview)?.findings).toEqual({
+      total: 2,
+      triaged: 1,
+      accepted: 1,
+      modified: 0,
+      rejected: 0,
+      skipped: 0,
+    })
+    expect(listReviews({ state: 'open' }, db()).map((row) => row.record_id)).toEqual([
+      otherProjectReview,
+      openReview,
+    ])
+    expect(listReviews({ state: 'complete' }, db()).map((row) => row.record_id)).toEqual([
+      completeReviewId,
+    ])
+    expect(listReviews({ project: 'listing-alpha' }, db()).map((row) => row.record_id)).toEqual([
+      openReview,
+      completeReviewId,
+    ])
+  })
+})
 
 describe('review triage', () => {
   test('review triage --severity stores explicit agreement and omission stores null', () => {
@@ -20,7 +92,7 @@ describe('review triage', () => {
     expect(
       db()
         .query(
-          'SELECT ordinal,triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
+          'SELECT ordinal,triaged_severity FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
         )
         .all(reviewId),
     ).toEqual([
@@ -46,7 +118,7 @@ describe('review triage', () => {
     expect(
       db()
         .query(
-          'SELECT disposition,triaged_severity,triaged_at FROM review_finding WHERE review_id=?',
+          'SELECT disposition,triaged_severity,triaged_at FROM review_finding WHERE review_record_id=?',
         )
         .get(reviewId),
     ).toEqual({ disposition: null, triaged_severity: null, triaged_at: null })
@@ -58,7 +130,9 @@ describe('review triage', () => {
     triageFinding(reviewId, 1, 'rejected', 'bogus', undefined, db())
     completeReview(reviewId, db())
     const completed = db()
-      .query<{ completed_at: string }, [number]>('SELECT completed_at FROM review WHERE id=?')
+      .query<{ completed_at: string }, [string]>(
+        'SELECT completed_at FROM review WHERE record_id=?',
+      )
       .get(reviewId)!.completed_at
     db().query('DELETE FROM outbox').run()
 
@@ -90,7 +164,7 @@ describe('review triage', () => {
       db()
         .query(
           `SELECT disposition,rejection_category,triaged_severity
-           FROM review_finding WHERE review_id=? AND ordinal=1`,
+           FROM review_finding WHERE review_record_id=? AND ordinal=1`,
         )
         .get(reviewId),
     ).toEqual({ disposition: 'accepted', rejection_category: null, triaged_severity: 'medium' })
@@ -99,7 +173,9 @@ describe('review triage', () => {
         .query(
           `SELECT old_disposition,new_disposition,old_rejection_category,new_rejection_category,
                   old_triaged_severity,new_triaged_severity,reason,actor_session,at
-           FROM review_finding_amendment WHERE review_id=? AND finding_ordinal=1`,
+           FROM review_finding_amendment amendment JOIN review_finding finding
+             ON finding.record_id=amendment.review_finding_record_id
+           WHERE finding.review_record_id=? AND finding.ordinal=1`,
         )
         .all(reviewId),
     ).toEqual([
@@ -117,12 +193,14 @@ describe('review triage', () => {
     ])
     expect(
       db()
-        .query<{ record_id: string }, [number]>(
-          'SELECT record_id FROM review_finding_amendment WHERE review_id=?',
+        .query<{ record_id: string }, [string]>(
+          `SELECT amendment.record_id FROM review_finding_amendment amendment
+           JOIN review_finding finding ON finding.record_id=amendment.review_finding_record_id
+           WHERE finding.review_record_id=?`,
         )
         .get(reviewId)?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
+    expect(db().query('SELECT completed_at FROM review WHERE record_id=?').get(reviewId)).toEqual({
       completed_at: completed,
     })
     expect(
@@ -140,7 +218,7 @@ describe('review triage', () => {
     const reviewId = recordReview(runId, reviewReply(1), db())
     expect(() =>
       amendFinding(reviewId, 1, 'accepted', 'correction', undefined, 'low', db()),
-    ).toThrow(`review ${reviewId} is incomplete; use ${PLATFORM_SLUG} review triage ${reviewId} 1`)
+    ).toThrow(`review 1 is incomplete; use ${PLATFORM_SLUG} review triage 1 1`)
     triageFinding(reviewId, 1, 'accepted', undefined, 'low', db())
     completeReview(reviewId, db())
     expect(() => amendFinding(reviewId, 1, 'accepted', '   ', undefined, 'low', db())).toThrow(
@@ -157,7 +235,7 @@ describe('review triage', () => {
     triageFinding(reviewId, 1, 'accepted', undefined, 'low', db())
     completeReview(reviewId, db())
     expect(() => triageFinding(reviewId, 1, 'modified', undefined, 'low', db())).toThrow(
-      `use ${PLATFORM_SLUG} review amend ${reviewId} 1`,
+      `use ${PLATFORM_SLUG} review amend 1 1`,
     )
   })
 })
@@ -171,7 +249,7 @@ describe('review files_covered matching', () => {
     reply.provenance.files_covered = []
     reply.provenance.commands_run = []
 
-    expect(cleanReviewEvidence(0, reply, db())).toEqual({
+    expect(cleanReviewEvidence('run-0', reply, db())).toEqual({
       failure: UNEVIDENCED_REVIEW_ERROR,
       note: null,
       kind: 'unevidenced',
@@ -183,7 +261,7 @@ describe('review files_covered matching', () => {
     reply.findings[0]!.evidence = 'prompt truncated, read the offloaded prompt'
     reply.provenance.commands_run = []
 
-    expect(cleanReviewEvidence(0, reply, db())).toEqual({ failure: null, note: null })
+    expect(cleanReviewEvidence('run-0', reply, db())).toEqual({ failure: null, note: null })
   })
 
   test('an absolute worktree path ending in a changed path counts as coverage', () => {

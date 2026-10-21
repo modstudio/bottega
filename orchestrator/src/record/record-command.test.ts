@@ -1,5 +1,6 @@
+import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { closeDatabaseForFixture, registerOpenHooks } from '../database/db.ts'
+import { closeDatabaseForFixture, DB_PATH, registerOpenHooks } from '../database/db.ts'
 import {
   recordAuditSecretsCommand,
   recordSpaceMoveProjectCommand,
@@ -8,7 +9,7 @@ import {
 
 const project = {
   id: 1,
-  recordId: null,
+  recordId: '01990000-0000-7000-8000-000000001214',
   name: 'alpha',
   path: '/tmp/alpha',
   stack: null,
@@ -111,6 +112,8 @@ describe('record space move-project command', () => {
 describe('record audit-secrets command', () => {
   test('default open does not enter writable-open hooks', () => {
     closeDatabaseForFixture()
+    const keeper = new Database(DB_PATH)
+    keeper.exec('PRAGMA journal_mode = WAL; BEGIN IMMEDIATE; COMMIT;')
     let entered = 0
     const restore = registerOpenHooks({
       afterWritableOpen: [
@@ -131,6 +134,7 @@ describe('record audit-secrets command', () => {
       expect(JSON.parse(output.join(''))).toEqual({ counts: [] })
     } finally {
       restore()
+      keeper.close()
     }
   })
 })

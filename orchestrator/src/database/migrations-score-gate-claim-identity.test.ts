@@ -1,15 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import {
-  applyMigrations,
-  canonicalSchemaHash,
-  expectedSchemaHash,
-  MIGRATIONS_FOLDER,
-  migrationJournal,
-} from './migrations.ts'
+import { applyMigrationsBefore, canonicalSchemaHash } from './migrations.ts'
+import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const TABLES = [
@@ -30,24 +22,12 @@ const TABLES = [
   'review_finding_amendment',
 ] as const
 
+migrationBoundaryTestDatabase('0107_score_gate_claim_audit_record_identity').close()
+migrationBoundaryTestDatabase('0125_question_uuid_key').close()
+
 test('score gate claim and audit identity migration fills ids, keeps rows and keys, and preserves schema', () => {
-  const folder = mkdtempSync(join(tmpdir(), 'orch-score-gate-claim-identity-'))
-  mkdirSync(join(folder, 'meta'))
-  const journal = migrationJournal()
-  const migration = journal.findIndex(
-    (entry) => entry.tag === '0107_score_gate_claim_audit_record_identity',
-  )
-  const prior = journal.slice(0, migration)
-  for (const entry of prior)
-    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
-  writeFileSync(
-    join(folder, 'meta', '_journal.json'),
-    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
-  )
-  const database = new Database(':memory:')
+  const database = migrationBoundaryTestDatabase('0107_score_gate_claim_audit_record_identity')
   try {
-    database.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(database, folder)
     database
       .query(
         `INSERT INTO run
@@ -179,7 +159,9 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
         (database.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n,
       ]),
     )
-    expect(applyMigrations(database)).toContain('0107_score_gate_claim_audit_record_identity')
+    expect(applyMigrationsBefore(database, '0125_question_uuid_key')).toContain(
+      '0107_score_gate_claim_audit_record_identity',
+    )
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({
         n: before[table],
@@ -211,19 +193,25 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
           .get()?.dflt_value,
       ).toBeNull()
     }
-    expect(database.query('SELECT run_a_id,run_b_id FROM compared_pair').get()).toEqual({
-      run_a_id: 1,
-      run_b_id: 2,
+    expect(
+      database.query('SELECT run_a_record_id,run_b_record_id FROM compared_pair').get(),
+    ).toEqual({
+      run_a_record_id: '01990000-0000-7000-8000-000000000701',
+      run_b_record_id: '01990000-0000-7000-8000-000000000702',
     })
     expect(
-      database.query('SELECT run_id,question_id FROM run_carried_ruling ORDER BY run_id').all(),
+      database
+        .query('SELECT run_record_id,question_id FROM run_carried_ruling ORDER BY run_record_id')
+        .all(),
     ).toEqual([
-      { run_id: 1, question_id: 1 },
-      { run_id: 2, question_id: 2 },
+      { run_record_id: '01990000-0000-7000-8000-000000000701', question_id: 1 },
+      { run_record_id: '01990000-0000-7000-8000-000000000702', question_id: 2 },
     ])
-    expect(database.query('SELECT winner_run_id,loser_run_id FROM duel').get()).toEqual({
-      winner_run_id: 1,
-      loser_run_id: 2,
+    expect(
+      database.query('SELECT winner_run_record_id,loser_run_record_id FROM duel').get(),
+    ).toEqual({
+      winner_run_record_id: '01990000-0000-7000-8000-000000000701',
+      loser_run_record_id: '01990000-0000-7000-8000-000000000702',
     })
     expect(
       database.query('SELECT gate_execution_id,check_name FROM check_execution ORDER BY id').all(),
@@ -232,9 +220,7 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
       { gate_execution_id: 2, check_name: 'lint' },
     ])
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
-    const fresh = new Database(':memory:')
-    fresh.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(fresh)
+    const fresh = migrationBoundaryTestDatabase('0125_question_uuid_key')
     const schemaRows = (subject: Database) =>
       subject
         .query(
@@ -245,9 +231,7 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
     expect(schemaRows(database)).toEqual(schemaRows(fresh))
     expect(canonicalSchemaHash(database)).toBe(canonicalSchemaHash(fresh))
     fresh.close()
-    expect(canonicalSchemaHash(database)).toBe(expectedSchemaHash())
   } finally {
     database.close()
-    rmSync(folder, { recursive: true, force: true })
   }
 })

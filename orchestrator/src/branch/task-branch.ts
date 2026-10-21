@@ -32,18 +32,62 @@ export type TaskBranchCandidate = {
   tip: string
   commitCount: number
   mergeBase: string
-  projectId: number
+  projectId: string
   projectName: string
   nominatingRuns: TaskBranchNominatingRun[]
   trunk: string
   worktree: Worktree | null
+  worktreeOwnerJob: string | null
+}
+
+/** Compose the operator remedy when an architect landing tree owns the reused branch. */
+export function taskBranchLandingTreeRefusal(refusal: {
+  path: string
+  branch: string
+  freshBase: string
+}): string {
+  return (
+    `refusing task branch ${refusal.branch}: it is checked out in architect landing tree ${refusal.path}.\n` +
+    `cleared by: ${PLATFORM_SLUG} tree remove ${refusal.path}, then dispatch again; ` +
+    `or dispatch again with --base ${refusal.freshBase} to start a fresh branch`
+  )
 }
 
 export type TaskBranchRunRow = {
-  id: number
-  parent_run_id: number | null
+  record_id: string
+  number: number
+  parent_run_record_id: string | null
   branch: string
   launch_base: string | null
+}
+
+export function taskBranchRunRow(run: {
+  record_id: string
+  number: number
+  parent_run_record_id: string | null
+  branch: string | null
+  launch_base: string | null
+}): TaskBranchRunRow {
+  return { ...run, branch: run.branch! }
+}
+
+type ResolvedTaskBranchRunRow = TaskBranchRunRow & {
+  session_id: string | null
+  worktree: string | null
+  worktree_source: string | null
+  job: string
+}
+
+function nominatingRuns(rows: ResolvedTaskBranchRunRow[]): TaskBranchNominatingRun[] {
+  return rows.map((row) => ({ record_id: row.record_id, sessionId: row.session_id }))
+}
+
+type TaskBranchWorktreeOwnerRow = {
+  record_id: string
+  worktree: string
+  worktree_source: string | null
+  job: string
+  status: string
 }
 
 export type TaskBranchPullRequestCheck =
@@ -247,13 +291,13 @@ export function taskBranchAlreadyLanded(input: {
 
 /** Whether a later explicit-base root moved the task's ownership to another branch. */
 export function isTaskBranchSuperseded(branch: string, rows: readonly TaskBranchRunRow[]): boolean {
-  const branchRunIds = rows.filter((row) => row.branch === branch).map((row) => row.id)
-  if (branchRunIds.length === 0) return false
-  const latestBranchRunId = Math.max(...branchRunIds)
+  const branchRunNumbers = rows.filter((row) => row.branch === branch).map((row) => row.number)
+  if (branchRunNumbers.length === 0) return false
+  const latestBranchRunNumber = Math.max(...branchRunNumbers)
   return rows.some(
     (row) =>
-      row.id > latestBranchRunId &&
-      row.parent_run_id === null &&
+      row.number > latestBranchRunNumber &&
+      row.parent_run_record_id === null &&
       row.launch_base !== null &&
       row.branch !== branch,
   )
@@ -314,7 +358,7 @@ function taskBranchScoreVoidRemedies(
     .map((kept) => {
       const voidCommands = candidates
         .filter((candidate) => candidate !== kept)
-        .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.id))
+        .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.record_id))
         .map(
           (id) =>
             `    ${PLATFORM_SLUG} score ${id} --void --note "not the live ${launchKey} branch"`,
@@ -354,9 +398,20 @@ export function taskBranchCandidacySql(runAlias = 'candidate'): string {
   )
 }
 
-function taskBranchGit(cwd: string, ...args: string[]): string {
+const PATCH_EQUIVALENCE_GIT_IDENTITY = {
+  GIT_AUTHOR_NAME: 'Patch Equivalence',
+  GIT_AUTHOR_EMAIL: 'patch-equivalence@orchestrator.invalid',
+  GIT_COMMITTER_NAME: 'Patch Equivalence',
+  GIT_COMMITTER_EMAIL: 'patch-equivalence@orchestrator.invalid',
+} as const
+
+function taskBranchGit(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
+): string {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: targetGitEnvironment(cwd),
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -387,6 +442,46 @@ export function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: 
   )
 }
 
+function resolvedTaskBranchWorktree(input: {
+  repoRoot: string
+  projectId: string
+  branch: string
+  tip: string
+  path: string | null
+}): { worktree: Worktree | null; ownerJob: string | null } {
+  if (!input.path) return { worktree: null, ownerJob: null }
+  const owners = db()
+    .query(
+      `SELECT record_id,worktree,worktree_source,job,status
+         FROM run
+        WHERE project_record_id=? AND worktree IS NOT NULL
+        ORDER BY CASE WHEN status IN ('ok','failed','stale','stopped') THEN 1 ELSE 0 END, number DESC`,
+    )
+    .all(input.projectId) as TaskBranchWorktreeOwnerRow[]
+  const owner = owners.find(
+    (row) => row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(input.path!),
+  )
+  const source = owner?.worktree_source
+  return {
+    worktree: {
+      path: input.path,
+      branch: input.branch,
+      base: input.tip,
+      repoRoot: input.repoRoot,
+      source:
+        source === 'recipe' ||
+        source === 'git' ||
+        source === 'clone' ||
+        source === 'readonly_recipe'
+          ? source
+          : undefined,
+      // Null records that this run attached; it did not mint the task branch.
+      mintedBranch: null,
+    },
+    ownerJob: owner?.job ?? null,
+  }
+}
+
 /** Tips that are a strict ancestor of another candidate tip. Equal tips are not contained. */
 export function taskBranchContainedTips(
   tips: readonly string[],
@@ -411,19 +506,15 @@ export function taskBranchPatchEquivalent(input: {
   mergeBase: string
   commitMessage: string
 }): PatchEquivalentForm | null {
-  const individual = taskBranchGit(input.cwd, 'cherry', input.trunkTip, input.branchTip)
+  const individual = taskBranchGit(input.cwd, ['cherry', input.trunkTip, input.branchTip])
   if (!individual.split('\n').some((line) => line.startsWith('+ '))) return 'commits'
-  const tree = taskBranchGit(input.cwd, 'rev-parse', '--verify', `${input.branchTip}^{tree}`)
+  const tree = taskBranchGit(input.cwd, ['rev-parse', '--verify', `${input.branchTip}^{tree}`])
   const squash = taskBranchGit(
     input.cwd,
-    'commit-tree',
-    tree,
-    '-p',
-    input.mergeBase,
-    '-m',
-    input.commitMessage,
+    ['commit-tree', tree, '-p', input.mergeBase, '-m', input.commitMessage],
+    { ...targetGitEnvironment(input.cwd), ...PATCH_EQUIVALENCE_GIT_IDENTITY },
   )
-  const cherry = taskBranchGit(input.cwd, 'cherry', input.trunkTip, squash)
+  const cherry = taskBranchGit(input.cwd, ['cherry', input.trunkTip, squash])
   return cherry.split('\n').some((line) => line.startsWith('+ ')) ? null : 'squash'
 }
 
@@ -439,23 +530,19 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
   if (!project || !repoRoot) return null
   const rows = db()
     .query(
-      `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
-     SELECT candidate.id, candidate.parent_run_id, candidate.branch,
+      `WITH candidate AS (SELECT run.*, run.record_id AS run_record_id FROM run)
+     SELECT candidate.number, candidate.record_id, candidate.parent_run_record_id, candidate.branch,
             candidate.launch_base, candidate.session_id, candidate.worktree,
-            candidate.worktree_source
+            candidate.worktree_source, candidate.job
        FROM candidate
       WHERE candidate.launch_key=?
-        AND (candidate.project_id=? OR (candidate.project_id IS NULL AND candidate.repo=?))
+        AND candidate.project_record_id=?
         AND candidate.branch IS NOT NULL
         AND ${taskBranchCandidacySql('candidate')}
         AND ${reviewRunEvidenceSql('candidate', 'candidate')}
-      ORDER BY candidate.id`,
+      ORDER BY candidate.number`,
     )
-    .all(launchKey, project.id, project.name) as (TaskBranchRunRow & {
-    session_id: string | null
-    worktree: string | null
-    worktree_source: string | null
-  })[]
+    .all(launchKey, project.recordId) as ResolvedTaskBranchRunRow[]
   if (rows.length === 0) return null
 
   const trunk = project.settings.trunk?.trim()
@@ -467,31 +554,29 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 
   const byBranch = new Map<string, typeof rows>()
   for (const row of rows) byBranch.set(row.branch, [...(byBranch.get(row.branch) ?? []), row])
-  const trunkTip = taskBranchGit(
-    repoRoot,
+  const trunkTip = taskBranchGit(repoRoot, [
     'rev-parse',
     '--verify',
     '--end-of-options',
     `${trunk}^{commit}`,
-  )
+  ])
   const candidates: TaskBranchCandidate[] = []
   const liveBranches = [...byBranch].filter(([branch]) => !isTaskBranchSuperseded(branch, rows))
   for (const [branch, branchRows] of liveBranches) {
     let tip: string
     try {
-      tip = taskBranchGit(
-        repoRoot,
+      tip = taskBranchGit(repoRoot, [
         'rev-parse',
         '--verify',
         '--end-of-options',
         `refs/heads/${branch}^{commit}`,
-      )
+      ])
     } catch {
       continue
     }
-    const mergeBase = taskBranchGit(repoRoot, 'merge-base', trunkTip, tip)
+    const mergeBase = taskBranchGit(repoRoot, ['merge-base', trunkTip, tip])
     const commitCount = Number(
-      taskBranchGit(repoRoot, 'rev-list', '--count', `${mergeBase}..${tip}`),
+      taskBranchGit(repoRoot, ['rev-list', '--count', `${mergeBase}..${tip}`]),
     )
     if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
 
@@ -510,38 +595,24 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       continue
 
     const path = checkedOutWorktree(repoRoot, branch)
-    const attachedRow = path
-      ? branchRows.find(
-          (row) => row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(path),
-        )
-      : null
-    const source = attachedRow?.worktree_source
+    const resolvedWorktree = resolvedTaskBranchWorktree({
+      repoRoot,
+      projectId: project.recordId,
+      branch,
+      tip,
+      path,
+    })
     candidates.push({
       branch,
       tip,
       commitCount,
       mergeBase,
-      projectId: project.id,
+      projectId: project.recordId,
       projectName: project.name,
-      nominatingRuns: branchRows.map((row) => ({ id: row.id, sessionId: row.session_id })),
+      nominatingRuns: nominatingRuns(branchRows),
       trunk,
-      worktree: path
-        ? {
-            path,
-            branch,
-            base: tip,
-            repoRoot,
-            source:
-              source === 'recipe' ||
-              source === 'git' ||
-              source === 'clone' ||
-              source === 'readonly_recipe'
-                ? source
-                : undefined,
-            // Null records that this run attached; it did not mint the task branch.
-            mintedBranch: null,
-          }
-        : null,
+      worktree: resolvedWorktree.worktree,
+      worktreeOwnerJob: resolvedWorktree.ownerJob,
     })
   }
 
@@ -562,7 +633,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 export function taskBranchReuseNotice(candidate: TaskBranchCandidate): string {
   return (
     `! continuing task branch ${candidate.branch} at tip ${candidate.tip} ` +
-    `(runs ${candidate.nominatingRuns.map((run) => run.id).join(', ')}); ` +
+    `(runs ${candidate.nominatingRuns.map((run) => run.record_id).join(', ')}); ` +
     `use --base ${candidate.trunk} to start over`
   )
 }

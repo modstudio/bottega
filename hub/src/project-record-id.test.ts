@@ -91,7 +91,7 @@ test('collect rewrites a name snapshot keyed by project_record_id', async () => 
   ).toBe('workshop')
 })
 
-test('collect backfill fills a matching name and leaves an unmatched name null', async () => {
+test('collect leaves null project identities parked regardless of a matching name', async () => {
   resetFixtureStore()
   refreshProjects()
   writeTransaction((conn) => {
@@ -117,7 +117,7 @@ test('collect backfill fills a matching name and leaves an unmatched name null',
         'SELECT project_record_id FROM task WHERE key=?',
       )
       .get('DEV-1')?.project_record_id,
-  ).toBe('01990000-0000-7000-8000-000000000075')
+  ).toBeNull()
   expect(
     db()
       .query<{ project_record_id: string | null }, [string]>(

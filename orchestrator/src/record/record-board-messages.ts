@@ -7,6 +7,7 @@ import {
   defaultBoardPurpose,
   parseBoardPurpose,
 } from '../../../shared/board-purpose.ts'
+import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   type Audience,
@@ -214,10 +215,14 @@ export async function resolveVisibleProjectId(
   name: string,
   requestedId?: string | null,
 ): Promise<string> {
+  if (!requestedId)
+    throw new RecordBoardError(
+      `project-scoped board write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+      400,
+    )
   const resolved = await resolveRecordProjectIdentity(tx, {
     projectId: requestedId,
     projectName: name,
-    liveNameOnly: true,
   })
   if (resolved.status !== 'found' || resolved.project.retired)
     throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
@@ -229,14 +234,17 @@ async function resolvePostingProjectId(
   name: string,
   requestedId?: string | null,
 ): Promise<string | null> {
+  if (!requestedId)
+    throw new RecordBoardError(
+      `project-scoped board write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+      400,
+    )
   const resolved = await resolveRecordProjectIdentity(tx, {
     projectId: requestedId,
     projectName: name,
-    liveNameOnly: true,
   })
   if (resolved.status !== 'found') {
-    if (requestedId) throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-    return null
+    throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
   }
   return resolved.project.retired ? null : resolved.project.id
 }
@@ -551,7 +559,7 @@ async function prepareHostedPost(
     postingProjectId,
   )
   if (audience.kind === 'architects' && audience.value)
-    await resolveVisibleProjectId(tx, audience.value)
+    await resolveVisibleProjectId(tx, audience.value, postingProjectId)
   const derived = hostedBoardScope(audience, projectId)
   const scopeProjectIds = forcedScope?.scopeProjectIds ?? derived.scopeProjectIds
   const recipientUserIds = forcedScope?.recipientUserIds ?? derived.recipientUserIds
@@ -577,11 +585,7 @@ async function resolvePostProjects(
   postingProjectId: string | null | undefined,
 ): Promise<{ projectId: string | null; authorProjectId: string | null }> {
   const projectId = projectName
-    ? await resolveVisibleProjectId(
-        tx,
-        projectName,
-        projectName === postingProject ? postingProjectId : null,
-      )
+    ? await resolveVisibleProjectId(tx, projectName, postingProjectId)
     : null
   if (!postingProject) return { projectId, authorProjectId: null }
   if (projectName === postingProject) return { projectId, authorProjectId: projectId }

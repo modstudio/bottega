@@ -17,7 +17,9 @@ const cwd = resolve(import.meta.dir, '../../..')
 
 function ensurePostingProject() {
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('thread-fixture',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'thread-fixture',?,'{}')`,
+    )
     .run(cwd)
   if (!projectAt(cwd)) throw new Error('thread test posting project did not resolve')
 }
@@ -25,10 +27,10 @@ function ensurePostingProject() {
 function addArchitect(session: string, project: string, clock: number) {
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,'claude-code','architect','test',?,?,NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES (?,'claude-code','architect','test',?,(SELECT record_id FROM project WHERE name=?),?,NULL,?)`,
     )
-    .run(session, project, cwd, new Date(clock).toISOString())
+    .run(session, project, project, cwd, new Date(clock).toISOString())
 }
 
 const architect = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })
@@ -49,7 +51,7 @@ test('question replies reach the prior participants but never the replier', () =
     clock,
   )
   const first = replyToThread(
-    question.id,
+    question.recordId,
     'First answer',
     architect('thread-first'),
     clock + 1,
@@ -57,22 +59,22 @@ test('question replies reach the prior participants but never the replier', () =
   )
   expect(first.reached).toBe(1)
   expect(
-    claimNotices(false, architect('thread-first'), clock + 2).map((row) => row.id),
-  ).not.toContain(first.id)
-  expect(claimNotices(false, {}, clock + 2).map((row) => row.id)).toContain(first.id)
+    claimNotices(false, architect('thread-first'), clock + 2).map((row) => row.recordId),
+  ).not.toContain(first.recordId)
+  expect(claimNotices(false, {}, clock + 2).map((row) => row.recordId)).toContain(first.recordId)
 
   const second = replyToThread(
-    question.id,
+    question.recordId,
     'Second answer',
     architect('thread-second'),
     clock + 3,
     cwd,
   )
   expect(second.reached).toBe(2)
-  expect(claimNotices(false, {}, clock + 4).map((row) => row.id)).toContain(second.id)
-  expect(claimNotices(false, architect('thread-first'), clock + 4).map((row) => row.id)).toContain(
-    second.id,
-  )
+  expect(claimNotices(false, {}, clock + 4).map((row) => row.recordId)).toContain(second.recordId)
+  expect(
+    claimNotices(false, architect('thread-first'), clock + 4).map((row) => row.recordId),
+  ).toContain(second.recordId)
 })
 
 test('questions are withheld from run readers and architect broadcasts reject non-author replies', () => {
@@ -81,10 +83,10 @@ test('questions are withheld from run readers and architect broadcasts reject no
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const workerQuestion = askQuestion(
     { audience: 'project:thread-workers', title: 'Architect only', body: 'Workers cannot answer.' },
     {},
@@ -99,7 +101,7 @@ test('questions are withheld from run readers and architect broadcasts reject no
   )
   expect(() =>
     replyToThread(
-      broadcast.id,
+      broadcast.recordId,
       'Should not post',
       architect('broadcast-reader'),
       clock + 20_001,
@@ -122,15 +124,15 @@ test('acceptance closes a question, persists through filing failure, and retry f
     cwd,
   )
   const reply = replyToThread(
-    question.id,
+    question.recordId,
     'The accepted answer',
     architect('question-answerer'),
     clock + 1,
     cwd,
   )
   const failed = await acceptAnswer(
-    question.id,
-    reply.id,
+    question.recordId,
+    reply.recordId,
     architect('question-asker'),
     clock + 2,
     cwd,
@@ -139,23 +141,30 @@ test('acceptance closes a question, persists through filing failure, and retry f
     },
   )
   expect(failed.notePendingError).toBe('hub unavailable')
-  expect(readThread(question.id, architect('question-asker'), clock + 3).root).toMatchObject({
+  expect(readThread(question.recordId, architect('question-asker'), clock + 3).root).toMatchObject({
     state: 'accepted',
-    acceptedReplyId: reply.id,
+    acceptedReplyId: reply.recordId,
     noteRecordId: null,
     noteLabel: null,
     notePendingError: 'hub unavailable',
   })
   expect(() =>
-    replyToThread(question.id, 'Too late', architect('question-answerer'), clock + 4, cwd),
+    replyToThread(question.recordId, 'Too late', architect('question-answerer'), clock + 4, cwd),
   ).toThrow(/accepted answer/)
   await expect(
-    acceptAnswer(question.id, reply.id, architect('question-asker'), clock + 5, cwd, async () => ({
-      ...filed(99),
-    })),
+    acceptAnswer(
+      question.recordId,
+      reply.recordId,
+      architect('question-asker'),
+      clock + 5,
+      cwd,
+      async () => ({
+        ...filed(99),
+      }),
+    ),
   ).rejects.toThrow(/acceptance is final/)
   const retried = await fileAnswerNote(
-    question.id,
+    question.recordId,
     architect('question-asker'),
     cwd,
     async ({ text }) => {
@@ -165,10 +174,10 @@ test('acceptance closes a question, persists through filing failure, and retry f
   )
   expect(retried.noteLabel).toBe('thread-fixture#99')
   await expect(
-    fileAnswerNote(question.id, architect('question-answerer'), cwd, async () => filed(100)),
+    fileAnswerNote(question.recordId, architect('question-answerer'), cwd, async () => filed(100)),
   ).rejects.toThrow(/question author or operator/)
   await expect(
-    fileAnswerNote(question.id, architect('question-asker'), cwd, async () => filed(100)),
+    fileAnswerNote(question.recordId, architect('question-asker'), cwd, async () => filed(100)),
   ).rejects.toThrow(/already filed note thread-fixture#99/)
 })
 
@@ -191,21 +200,26 @@ test('only the asker or operator accepts and the reply must belong to the questi
     cwd,
   )
   const reply = replyToThread(
-    question.id,
+    question.recordId,
     'Answer',
     architect('permission-answerer'),
     clock + 2,
     cwd,
   )
   await expect(
-    acceptAnswer(question.id, reply.id, architect('permission-other'), clock + 3, cwd, async () =>
-      filed(1),
+    acceptAnswer(
+      question.recordId,
+      reply.recordId,
+      architect('permission-other'),
+      clock + 3,
+      cwd,
+      async () => filed(1),
     ),
   ).rejects.toThrow(/question author/)
   await expect(
     acceptAnswer(
-      otherQuestion.id,
-      reply.id,
+      otherQuestion.recordId,
+      reply.recordId,
       architect('permission-asker'),
       clock + 4,
       cwd,
@@ -225,22 +239,28 @@ test('accepted threads survive retention while unaccepted expired questions are 
     clock,
   )
   const reply = replyToThread(
-    accepted.id,
+    accepted.recordId,
     'Durable answer',
     architect('retention-answerer'),
     clock,
     cwd,
   )
-  await acceptAnswer(accepted.id, reply.id, {}, clock, cwd, async () => filed(101))
+  await acceptAnswer(accepted.recordId, reply.recordId, {}, clock, cwd, async () => filed(101))
   const expired = askQuestion(
     { audience: `project:${project}`, title: 'Reap', body: 'Reap this.', expiresMs: 1 },
     {},
     clock + 20_000,
   )
   reapBoardMessages(clock + 20_000 + 15 * 24 * 60 * 60 * 1_000)
-  expect(db().query('SELECT id FROM board_message WHERE id=?').get(accepted.id)).toBeDefined()
-  expect(db().query('SELECT id FROM board_message WHERE id=?').get(reply.id)).toBeDefined()
-  expect(db().query('SELECT id FROM board_message WHERE id=?').get(expired.id)).toBeNull()
+  expect(
+    db().query('SELECT record_id FROM board_message WHERE record_id=?').get(accepted.recordId),
+  ).toBeDefined()
+  expect(
+    db().query('SELECT record_id FROM board_message WHERE record_id=?').get(reply.recordId),
+  ).toBeDefined()
+  expect(
+    db().query('SELECT record_id FROM board_message WHERE record_id=?').get(expired.recordId),
+  ).toBeNull()
 })
 
 test('a retry while acceptance is filing is refused and files exactly one note', async () => {
@@ -255,7 +275,13 @@ test('a retry while acceptance is filing is refused and files exactly one note',
     clock,
     cwd,
   )
-  const reply = replyToThread(question.id, 'Only once', architect('lease-answerer'), clock + 1, cwd)
+  const reply = replyToThread(
+    question.recordId,
+    'Only once',
+    architect('lease-answerer'),
+    clock + 1,
+    cwd,
+  )
   let release!: () => void
   let signalStarted!: () => void
   const started = new Promise<void>((resolve) => {
@@ -266,8 +292,8 @@ test('a retry while acceptance is filing is refused and files exactly one note',
   })
   let filings = 0
   const accepting = acceptAnswer(
-    question.id,
-    reply.id,
+    question.recordId,
+    reply.recordId,
     architect('lease-asker'),
     clock + 2,
     cwd,
@@ -281,7 +307,7 @@ test('a retry while acceptance is filing is refused and files exactly one note',
   await started
   await expect(
     fileAnswerNote(
-      question.id,
+      question.recordId,
       architect('lease-asker'),
       cwd,
       async () => {
@@ -309,20 +335,27 @@ test('a stale note filing lease can be taken over', async () => {
     cwd,
   )
   const reply = replyToThread(
-    question.id,
+    question.recordId,
     'Recover it',
     architect('stale-answerer'),
     clock + 1,
     cwd,
   )
-  await acceptAnswer(question.id, reply.id, architect('stale-asker'), clock + 2, cwd, async () => {
-    throw new Error('first filing failed')
-  })
+  await acceptAnswer(
+    question.recordId,
+    reply.recordId,
+    architect('stale-asker'),
+    clock + 2,
+    cwd,
+    async () => {
+      throw new Error('first filing failed')
+    },
+  )
   db()
-    .query('UPDATE board_message SET note_filing_started_at=? WHERE id=?')
-    .run(new Date(clock + 3).toISOString(), question.id)
+    .query('UPDATE board_message SET note_filing_started_at=? WHERE record_id=?')
+    .run(new Date(clock + 3).toISOString(), question.recordId)
   const retried = await fileAnswerNote(
-    question.id,
+    question.recordId,
     architect('stale-asker'),
     cwd,
     async () => filed(204),

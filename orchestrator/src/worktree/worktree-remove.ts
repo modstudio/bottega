@@ -3,6 +3,11 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  assertBranchRefDecisionMayBeDeleted,
+  observeBranchRef,
+  observeBranchRefMutation,
+} from '../branch/branch-ref-guard.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   borrowedCheckoutOf,
@@ -41,8 +46,12 @@ export type WorktreeRemovalResult = {
   resourceTeardownFailed?: true
 }
 
-function portFor(runId: number): number {
-  return 21000 + (runId % 4000)
+function portFor(runId: string): number {
+  const row = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(runId)
+  if (!row) throw new Error(`no run ${runId} for legacy recipe port derivation`)
+  return 21000 + (row.number % 4000)
 }
 
 export type Changes = {
@@ -63,7 +72,7 @@ export type Changes = {
 function teardownBuiltInRecipe(
   recipe: Recipe,
   w: Worktree,
-  runId: number,
+  runId: string,
 ): { ok: true } | { ok: false; step: string; detail: string } {
   const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
   const treeExists = existsSync(w.path)
@@ -209,11 +218,13 @@ function removeWithTool(
   w: Worktree,
   forceOrchTree = false,
   keepBranch = false,
-  runId?: number,
-  removeTree: () => { removed: boolean; detail: string } = () => removeWorktree(w, keepBranch),
+  runId?: string,
+  classifiedTip: string | null = branchTip(w.repoRoot, w.branch),
+  removeTree: () => { removed: boolean; detail: string } = () =>
+    removeWorktree(w, keepBranch, classifiedTip),
 ): WorktreeRemovalResult {
   const name = w.path.split('/').pop() ?? w.path
-  const branchBefore = branchTip(w.repoRoot, w.branch)
+  const branchBefore = classifiedTip
   const uniqueBefore = unmergedBranch(w.repoRoot, w.branch, null)
 
   // A recipe-built tree is torn down the same way it was made: bottega
@@ -221,31 +232,26 @@ function removeWithTool(
   // goes, because a compose file that lives in the worktree cannot bring
   // anything down once the worktree has been deleted.
   if (!tool.remove) {
-    return removeWithoutCommand(tool, w, keepBranch, runId)
+    return removeWithoutCommand(tool, w, keepBranch, classifiedTip, runId)
   }
 
   const vars: Record<string, string> = { name, path: w.path }
   if (w.branch) vars.branch = w.branch
+  const branchRefusal = toolBranchDeletionRefusal(w, keepBranch, classifiedTip)
+  if (branchRefusal) return { removed: false, detail: branchRefusal }
   const r = runShellTool(tool.remove, vars, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
     markRecordedResourceTeardownDone(runId)
     const branchAfter = branchTip(w.repoRoot, w.branch)
-    if (
-      branchAfter !== null &&
-      branchAfter !== branchBefore &&
-      (uniqueBefore !== null || !keepBranch)
-    ) {
-      return {
-        removed: false,
-        detail:
-          branchBefore === null
-            ? `project remove tool created unprotected branch ${w.branch} at ${branchAfter}; it was left in place`
-            : uniqueBefore
-              ? `project remove tool moved unique branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`
-              : `project remove tool moved unprotected branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`,
-        ...(r.out ? { output: r.out } : {}),
-      }
-    }
+    const mutationFailure = projectToolBranchMutationFailure({
+      worktree: w,
+      keepBranch,
+      branchBefore,
+      branchAfter,
+      uniqueBefore,
+      output: r.out,
+    })
+    if (mutationFailure) return mutationFailure
     const reconciled = removeTree()
     return {
       ...reconciled,
@@ -260,7 +266,7 @@ function removeWithTool(
   // templates also recognize old trees for sweep, but are deliberately not
   // strong enough evidence for destructive fallback here.
   if (forceOrchTree && existsSync(join(w.path, ORCH_RUN_MARKER))) {
-    return removeWorktree(w, keepBranch)
+    return removeWorktree(w, keepBranch, classifiedTip)
   }
 
   /**
@@ -296,11 +302,62 @@ function removeWithTool(
   }
 }
 
+function projectToolBranchMutationFailure(input: {
+  worktree: Worktree
+  keepBranch: boolean
+  branchBefore: string | null
+  branchAfter: string | null
+  uniqueBefore: UnmergedBranch | null
+  output: string
+}): WorktreeRemovalResult | null {
+  if (
+    input.branchAfter === null ||
+    input.branchAfter === input.branchBefore ||
+    (input.uniqueBefore === null && input.keepBranch)
+  ) {
+    return null
+  }
+  const detail =
+    input.branchBefore === null
+      ? `project remove tool created unprotected branch ${input.worktree.branch} at ${input.branchAfter}; it was left in place`
+      : input.uniqueBefore
+        ? `project remove tool moved unique branch ${input.worktree.branch} from ${input.branchBefore} to ${input.branchAfter}; it was left in place`
+        : `project remove tool moved unprotected branch ${input.worktree.branch} from ${input.branchBefore} to ${input.branchAfter}; it was left in place`
+  return {
+    removed: false,
+    detail,
+    ...(input.output ? { output: input.output } : {}),
+  }
+}
+
+function toolBranchDeletionRefusal(
+  worktree: Worktree,
+  keepBranch: boolean,
+  classifiedTip: string | null,
+): string | null {
+  if (!worktree.branch || keepBranch) return null
+  try {
+    const observation = observeBranchRefMutation(worktree.repoRoot, 'delete', worktree.branch)
+    if (!observation.decision.allowed && observation.decision.reason === 'case-collision') {
+      assertBranchRefDecisionMayBeDeleted(observation.decision, worktree.branch)
+    }
+    if (observation.exactTip !== classifiedTip) {
+      throw new Error(
+        `refusing to delete branch ${worktree.branch}: branch moved since it was classified (${classifiedTip ?? 'absent'} to ${observation.exactTip ?? 'absent'})`,
+      )
+    }
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
 function removeWithoutCommand(
   tool: WorktreeTool,
   w: Worktree,
   keepBranch: boolean,
-  runId?: number,
+  classifiedTip: string | null,
+  runId?: string,
 ): WorktreeRemovalResult {
   const snapshotRefusal = snapshotlessTrackedRecipeRefusal({
     hasRunRow: runId !== undefined,
@@ -312,21 +369,21 @@ function removeWithoutCommand(
   if (tool.recipePath) {
     let teardownCompleted = false
     const removed = teardownTrackedRecipe({
-      runId: runId as number,
+      runId: runId!,
       worktree: w,
       remove: () => {
         teardownCompleted = true
-        return removeWorktree(w, keepBranch)
+        return removeWorktree(w, keepBranch, classifiedTip)
       },
     })
     return teardownCompleted
       ? { ...removed, resourceTeardownCompleted: true }
       : { ...removed, resourceTeardownFailed: true }
   }
-  if (!tool.recipe || runId === undefined) return removeWorktree(w, keepBranch)
+  if (!tool.recipe || runId === undefined) return removeWorktree(w, keepBranch, classifiedTip)
   const teardown = teardownBuiltInRecipe(tool.recipe, w, runId)
   return teardown.ok
-    ? { ...removeWorktree(w, keepBranch), resourceTeardownCompleted: true }
+    ? { ...removeWorktree(w, keepBranch, classifiedTip), resourceTeardownCompleted: true }
     : {
         removed: false,
         detail: `recipe teardown failed at "${teardown.step}": ${teardown.detail.slice(-200)}`,
@@ -424,10 +481,10 @@ export function removeReadOnlyDirectory(w: Worktree): { removed: boolean; detail
     : { removed: true, detail: w.path }
 }
 
-function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
+function mintedBranchOwnedBy(w: Worktree, runId?: string): string | null {
   if (runId !== undefined) {
     try {
-      const row = db().query('SELECT minted_branch FROM run WHERE id=?').get(runId) as {
+      const row = db().query('SELECT minted_branch FROM run WHERE record_id=?').get(runId) as {
         minted_branch: string | null
       } | null
       if (row) return row.minted_branch
@@ -438,22 +495,22 @@ function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   return w.mintedBranch ?? null
 }
 
-function setRecordedResourceTeardownDone(runId: number): void {
+function setRecordedResourceTeardownDone(runId: string): void {
   db()
     .query(
       `UPDATE run SET resource_teardown='done'
-       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+       WHERE record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
          AND resource_teardown='pending'`,
     )
     .run(runId)
 }
 
-function markRecordedResourceTeardownDone(runId: number | undefined): void {
+function markRecordedResourceTeardownDone(runId: string | undefined): void {
   if (runId === undefined) return
   writeTransaction(() => setRecordedResourceTeardownDone(runId))
 }
 
-function recordedTeardownFacts(runId: number | undefined): {
+function recordedTeardownFacts(runId: string | undefined): {
   recipeSnapshot: string | null
   worktreeSource: Worktree['source'] | null
   resourceTeardown: 'pending' | 'done' | null
@@ -463,7 +520,7 @@ function recordedTeardownFacts(runId: number | undefined): {
   const row = db()
     .query(
       `SELECT recipe_snapshot,worktree_source,resource_teardown FROM run
-       WHERE id=(SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)`,
+       WHERE record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .get(runId) as {
     recipe_snapshot: string | null
@@ -478,7 +535,7 @@ function recordedTeardownFacts(runId: number | undefined): {
 }
 
 /** Whether an absent tree still has a recorded lifecycle capable of releasing its resources. */
-export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): boolean {
+export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: string): boolean {
   const facts = recordedTeardownFacts(runId)
   return absentTreeTeardownPlan({
     ...facts,
@@ -488,7 +545,7 @@ export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: number): bool
 
 function absentLifecycleRemoval(input: {
   worktree: Worktree
-  runId?: number
+  runId?: string
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult | null {
   if (existsSync(input.worktree.path)) return null
@@ -497,7 +554,7 @@ function absentLifecycleRemoval(input: {
   if (!facts.recipeSnapshot) return null
   let teardownCompleted = false
   const removed = teardownTrackedRecipe({
-    runId: input.runId as number,
+    runId: input.runId!,
     worktree: input.worktree,
     remove: () => {
       teardownCompleted = true
@@ -516,7 +573,8 @@ function removeByLifecycle(input: {
   projectName: string | null
   forceOrchTree: boolean
   retainBranch: boolean
-  runId?: number
+  classifiedTip: string | null
+  runId?: string
   removeTree(): { removed: boolean; detail: string }
 }): WorktreeRemovalResult {
   const { worktree, tool, runId, removeTree } = input
@@ -537,8 +595,16 @@ function removeByLifecycle(input: {
     worktree.source === 'recipe' || (worktree.source === undefined && Boolean(tool))
   const removed: WorktreeRemovalResult =
     tool && projectOwned
-      ? removeWithTool(tool, worktree, input.forceOrchTree, input.retainBranch, runId, removeTree)
-      : removeWorktree(worktree, input.retainBranch)
+      ? removeWithTool(
+          tool,
+          worktree,
+          input.forceOrchTree,
+          input.retainBranch,
+          runId,
+          input.classifiedTip,
+          removeTree,
+        )
+      : removeWorktree(worktree, input.retainBranch, input.classifiedTip)
   return removed.output && input.projectName
     ? { ...removed, output: `${input.projectName} remove:\n${removed.output}` }
     : removed
@@ -550,7 +616,7 @@ export function removeFor(
   repoRoot: string,
   forceOrchTree = false,
   keepBranch = false,
-  runId?: number,
+  runId?: string,
   forceUnmerged = false,
   skipGitRemoval = false,
   scratchAlreadyArchived = false,
@@ -571,18 +637,20 @@ export function removeFor(
   const owned = { ...w, branch: minted ?? '' }
   const project = projectAt(repoRoot)
   const tool = resolvedWorktreeTool(project)
+  const classification = minted ? classifyBranch(repoRoot, minted, null) : null
   const retainBranch =
-    keepBranch || !minted || (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
+    keepBranch || !minted || (!forceUnmerged && Boolean(classification?.unmerged))
   const removeTree = () =>
     skipGitRemoval
       ? { removed: true, detail: `${w.path} was already gone` }
-      : removeWorktree(owned, retainBranch)
+      : removeWorktree(owned, retainBranch, classification?.tip ?? null)
   const result = removeByLifecycle({
     worktree: owned,
     tool,
     projectName: project?.name ?? null,
     forceOrchTree,
     retainBranch,
+    classifiedTip: classification?.tip ?? null,
     runId,
     removeTree,
   })
@@ -605,6 +673,7 @@ export function sweepWithTool(
 export function removeWorktree(
   w: Worktree,
   keepBranch = false,
+  classifiedTip: string | null,
 ): { removed: boolean; detail: string } {
   const deleteBranch = Boolean(w.branch) && !keepBranch
   // Never prune the repository; remove only this worktree's own record.
@@ -613,14 +682,12 @@ export function removeWorktree(
   // pointer that ought to be clearable — refusing would strand it for ever.
   if (!existsSync(w.path)) {
     gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot)
-    if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
-    const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
-    return branch !== null
-      ? {
-          removed: false,
-          detail: `git could not remove branch ${w.branch}; it remains at ${branch}`,
-        }
-      : { removed: true, detail: `${w.path} was already gone` }
+    return (
+      removeOwnedWorktreeBranch(w, deleteBranch, classifiedTip) ?? {
+        removed: true,
+        detail: `${w.path} was already gone`,
+      }
+    )
   }
   const cwdRefusal = removalWorkingDirectoryRefusal(w.path, w.repoRoot)
   if (cwdRefusal) return { removed: false, detail: cwdRefusal }
@@ -631,33 +698,106 @@ export function removeWorktree(
   // worktree produced exactly the orphan the comment warned about, announced
   // as a success.
   const gone = gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot) !== null
-  if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
-  const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
-  return (gone || !existsSync(w.path)) && (!deleteBranch || branch === null)
+  if (!gone) {
+    return {
+      removed: false,
+      detail: existsSync(w.path)
+        ? `git could not remove ${w.path}; it is still on disk`
+        : `git could not remove the registered worktree ${w.path}`,
+    }
+  }
+  const branchFailure = removeOwnedWorktreeBranch(w, deleteBranch, classifiedTip)
+  if (branchFailure) return branchFailure
+  return gone || !existsSync(w.path)
     ? { removed: true, detail: w.path }
-    : branch !== null
-      ? {
-          removed: false,
-          detail: `git could not remove branch ${w.branch}; it remains at ${branch}`,
-        }
-      : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
+    : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
+}
+
+function removeOwnedWorktreeBranch(
+  worktree: Worktree,
+  deleteBranch: boolean,
+  classifiedTip: string | null,
+): WorktreeRemovalResult | null {
+  if (!deleteBranch) return null
+  try {
+    removeBranch(worktree.repoRoot, worktree.branch, classifiedTip)
+  } catch (error) {
+    return { removed: false, detail: error instanceof Error ? error.message : String(error) }
+  }
+  const branch = branchTip(worktree.repoRoot, worktree.branch)
+  return branch === null
+    ? null
+    : {
+        removed: false,
+        detail: `git could not remove branch ${worktree.branch}; it remains at ${branch}`,
+      }
 }
 
 /** Delete a local branch when it exists, reporting whether there was work to do. */
-export function removeBranch(repoRoot: string, branch: string): boolean {
-  if (gitOk(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoRoot) === null) {
-    return false
+export function removeBranch(
+  repoRoot: string,
+  branch: string,
+  classifiedTip: string | null,
+): boolean {
+  const observation = observeBranchRefMutation(repoRoot, 'delete', branch)
+  const { decision } = observation
+  if (!decision.allowed && decision.reason === 'exact-missing') return false
+  assertBranchRefDecisionMayBeDeleted(decision, branch)
+  const tip = observation.exactTip
+  if (!tip) throw new Error(`refusing to delete branch ${branch}: its exact tip could not be read`)
+  if (tip !== classifiedTip) {
+    throw new Error(
+      `refusing to delete branch ${branch}: branch moved since it was classified (${classifiedTip} to ${tip})`,
+    )
   }
-  git(['branch', '-D', branch], repoRoot)
+  const checkedOutAt = checkedOutBranchPath(
+    git(['worktree', 'list', '--porcelain'], repoRoot),
+    branch,
+  )
+  if (checkedOutAt) {
+    throw new Error(`refusing to delete branch ${branch}: branch is checked out in ${checkedOutAt}`)
+  }
+  // branch-ref-guard: observeBranchRefMutation
+  git(['update-ref', '-d', `refs/heads/${branch}`, tip], repoRoot)
   return true
+}
+
+/** Return the registered worktree path where an exact local branch is checked out. */
+export function checkedOutBranchPath(porcelain: string, branch: string): string | null {
+  let path: string | null = null
+  for (const line of porcelain.split('\n')) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
+    if (line === `branch refs/heads/${branch}`) return path
+    if (line === '') path = null
+  }
+  return null
 }
 
 /** Read a local branch tip so cleanup can restore a ref another run still records. */
 export function branchTip(repoRoot: string, branch: string): string | null {
-  return gitOk(['rev-parse', '--verify', `refs/heads/${branch}`], repoRoot)
+  try {
+    return observeBranchRef(repoRoot, branch).exactTip
+  } catch {
+    return null
+  }
 }
 
 export type UnmergedBranch = { count: number; tip: string }
+type BranchClassification = { tip: string; unmerged: UnmergedBranch | null }
+
+function classifyBranch(
+  repoRoot: string,
+  branch: string,
+  baseCommit: string | null,
+): BranchClassification | null {
+  const tip = branchTip(repoRoot, branch)
+  if (tip === null) return null
+  const args = ['rev-list', '--count', tip]
+  if (baseCommit) args.push(`^${baseCommit}`)
+  args.push('--not', `--exclude=${branch}`, '--branches', '--remotes', '--tags')
+  const count = Number(git(args, repoRoot))
+  return { tip, unmerged: count > 0 ? { count, tip } : null }
+}
 
 /**
  * Commits reachable only from this local branch — deleting it would lose them.
@@ -672,12 +812,5 @@ export function unmergedBranch(
   branch: string,
   baseCommit: string | null,
 ): UnmergedBranch | null {
-  const ref = `refs/heads/${branch}`
-  if (gitOk(['show-ref', '--verify', '--quiet', ref], repoRoot) === null) return null
-  const tip = git(['rev-parse', ref], repoRoot)
-  const args = ['rev-list', '--count', branch]
-  if (baseCommit) args.push(`^${baseCommit}`)
-  args.push('--not', `--exclude=${branch}`, '--branches', '--remotes', '--tags')
-  const count = Number(git(args, repoRoot))
-  return count > 0 ? { count, tip } : null
+  return classifyBranch(repoRoot, branch, baseCommit)?.unmerged ?? null
 }

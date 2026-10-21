@@ -27,7 +27,7 @@ describe('review discipline', () => {
     completeReview(gradedReview)
     db()
       .query(
-        `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
+        `INSERT INTO score (record_id, run_record_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
       )
       .run(graded, '2026-02-03T00:00:00.000Z')
     const ungraded = addRun({ agent: 'grok', job: 'review-lens', model: 'm2', lens: 'fleet-b' })
@@ -46,7 +46,7 @@ describe('review discipline', () => {
       completeReview(reviewId)
       db()
         .query(
-          `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
+          `INSERT INTO score (record_id, run_record_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
         )
         .run(runId, model === 'm3' ? '2026-02-04T00:00:00.000Z' : '2026-02-05T00:00:00.000Z')
     }
@@ -57,7 +57,7 @@ describe('review discipline', () => {
       lens: 'fleet-d',
     })
     const legacyReview = recordReview(legacy, reviewReply(MIN_REVIEW_TRIAGED), db())
-    db().query('UPDATE review_lens SET model=NULL WHERE run_id=?').run(legacy)
+    db().query('UPDATE review_lens SET model=NULL WHERE run_record_id=?').run(legacy)
     gradeReviewLens(legacy, null, {
       reproduced: 'all',
       coverage: 'adequate',
@@ -68,7 +68,7 @@ describe('review discipline', () => {
     completeReview(legacyReview)
     db()
       .query(
-        `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
+        `INSERT INTO score (record_id, run_record_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
       )
       .run(legacy, '2026-02-06T00:00:00.000Z')
 
@@ -215,7 +215,9 @@ describe('review discipline', () => {
       score(runId, 'full', 'right')
       if (voided) {
         db()
-          .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
+          .query(
+            `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`,
+          )
           .run(runId)
       }
       return runId
@@ -281,7 +283,7 @@ describe('review discipline', () => {
     db()
       .query(
         `UPDATE run SET mcp=1, mcp_server='fixture-project', mcp_connected=0,
-                      mcp_error='mirror: attachment failed' WHERE id=?`,
+                      mcp_error='mirror: attachment failed' WHERE record_id=?`,
       )
       .run(runId)
     const reviewId = recordReview(runId, reviewReply(0), db())
@@ -301,11 +303,13 @@ describe('review discipline', () => {
     const cliRun = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'mirror-mode' })
     db()
       .query(`UPDATE run SET mcp=1, mcp_server='fixture-project', mcp_connected=0,
-                      mcp_error='mirror: attachment failed' WHERE id=?`)
+                      mcp_error='mirror: attachment failed' WHERE record_id=?`)
       .run(cliRun)
     const recorded = recordReview(cliRun, reviewReply(0), db())
-    expect(db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(cliRun)).toEqual({
-      review_id: recorded,
+    expect(
+      db().query('SELECT review_record_id FROM review_lens WHERE run_record_id=?').get(cliRun),
+    ).toEqual({
+      review_record_id: recorded,
     })
   })
   test('per-tier calibration counts lens rounds per branch', () => {
@@ -316,12 +320,12 @@ describe('review discipline', () => {
       for (let round = 0; round < rounds; round++) {
         const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'rounds' })
         db()
-          .query('UPDATE run SET branch=?, launch_key=? WHERE id=?')
+          .query('UPDATE run SET branch=?, launch_key=? WHERE record_id=?')
           .run(`${branch}-worker-${round}`, branch, runId)
         const reviewId = recordReview(runId, reviewReply(0), db())
         db()
           .query(
-            "UPDATE review SET tier=2, tier_risk=2, tier_size=0, tier_reason='risk 2: fixture' WHERE id=?",
+            "UPDATE review SET tier=2, tier_risk=2, tier_size=0, tier_reason='risk 2: fixture' WHERE record_id=?",
           )
           .run(reviewId)
         completeReview(reviewId)
@@ -391,7 +395,7 @@ describe('review discipline', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity-cell' })
     const reviewId = recordReview(runId, reviewReply(3, 'high'), db())
     db()
-      .query("UPDATE review_finding SET severity='major' WHERE review_id=? AND ordinal=3")
+      .query("UPDATE review_finding SET severity='major' WHERE review_record_id=? AND ordinal=3")
       .run(reviewId)
     triageFinding(reviewId, 1, 'accepted', undefined, 'high')
     triageFinding(reviewId, 2, 'accepted', undefined, 'critical')

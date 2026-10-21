@@ -11,7 +11,10 @@
 #   BLOCKED  a worker asked a question; the session must rule and resume it
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
 #   WAITING  runs or landings still going, elapsed shown so a hung one is visible
-#   CLEAR    no runs, no landings, and nothing asked -> exits SILENTLY
+#   CLEAR    no runs, no landings, nothing asked, and nothing stalled -> exits SILENTLY
+#
+# heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
+# hook should keep watching and HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR.
 #
 # EMITS ONLY ON STATE CHANGE, plus a keepalive every KEEPALIVE_TICKS.
 #
@@ -70,8 +73,8 @@ INTERVAL="${2:-60}"
 MAX="${3:-60}"
 KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
 NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
-NOTICE_REASON_MAX_BYTES=4096
-NOTICE_REASON_MAX_CHARS=240
+HEARTBEAT_KEEP_LOOP_EXIT_STATUS=0
+HEARTBEAT_CLEAR_EXIT_STATUS=10
 
 prev_key=""
 since_emit=0
@@ -228,7 +231,7 @@ for line in sys.stdin:
         d = d.get("data")
         if not isinstance(d, dict):
             raise SystemExit(2)
-    if not isinstance(d.get("id"), int) or not isinstance(d.get("job"), str):
+    if not isinstance(d.get("record_id"), str) or not isinstance(d.get("number"), int) or not isinstance(d.get("job"), str):
         raise SystemExit(2)
     if not isinstance(d.get("agent"), str) or not isinstance(d.get("status"), str):
         raise SystemExit(2)
@@ -270,7 +273,7 @@ for line in sys.stdin:
         else:
             seconds = round(latency / 1000)
             duration = "%dm%02ds" % (seconds // 60, seconds % 60)
-        events.append((str(d["id"]), "1" if recent else "0", status, d["job"], d["agent"],
+        events.append((str(d["number"]), "1" if recent else "0", status, d["job"], d["agent"],
                        d.get("failure_kind") or "-", duration))
     # `asking` counts as live. A heartbeat that watches only `running` reports
     # CLEAR while a worker sits blocked - the exact failure this file prevents.
@@ -287,6 +290,14 @@ for line in sys.stdin:
     if isinstance(idle, str) and idle.startswith("idle "):
         idle_note = " " + idle
     stall_state = d.get("stall_state")
+    host_wait_since = d.get("host_wait_since")
+    if host_wait_since is not None and not isinstance(host_wait_since, str):
+        raise SystemExit(2)
+    waiting_for_host_capacity = d.get("waiting_for_host_capacity")
+    if not isinstance(waiting_for_host_capacity, bool):
+        raise SystemExit(2)
+    if waiting_for_host_capacity and host_wait_since is None:
+        raise SystemExit(2)
     if status == "running" and stall_state not in ("healthy", "stalled", "unknown"):
         raise SystemExit(2)
     stall = d.get("stall")
@@ -295,11 +306,12 @@ for line in sys.stdin:
             raise SystemExit(2)
         stalled.append(stall.replace("\t", " ").replace("\r", " ").replace("\n", " "))
         member_id = d.get("live_member_id")
-        if not isinstance(member_id, int):
+        if not isinstance(member_id, str):
             raise SystemExit(2)
         stalled_subjects.append("run:" + str(member_id))
-    ids.append(str(d.get("id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
-    out.append("%s/%s %s %s %s%s" % (d.get("id"), d.get("job"), d.get("agent"), d.get("status"), age, idle_note))
+    ids.append(str(d.get("record_id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
+    display = ("waiting for host capacity since " + host_wait_since) if waiting_for_host_capacity else (str(d.get("status")) + " " + age + idle_note)
+    out.append("%s/%s %s %s" % (d.get("number"), d.get("job"), d.get("agent"), display))
 if not saw:
     raise SystemExit(2)
 # count \t detail \t state-key (ids only - elapsed must never enter the key)
@@ -322,8 +334,8 @@ if not os.path.exists(path):
 try:
     connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
     rows = connection.execute(
-        "SELECT id, branch, status, started_at, finished_at FROM landing "
-        "WHERE session_id = ? AND status IN (\"queued\",\"running\") ORDER BY id",
+        "SELECT record_id, branch, status, started_at, finished_at FROM landing "
+        "WHERE session_id = ? AND status IN (\"queued\",\"running\") ORDER BY record_id",
         (os.environ["SID"],),
     ).fetchall()
 finally:
@@ -334,7 +346,7 @@ finally:
 now = datetime.datetime.now(datetime.timezone.utc)
 live, ids = [], []
 for landing_id, branch, status, started_at, finished_at in rows:
-    if not isinstance(landing_id, int) or not all(isinstance(v, str) for v in (branch, status, started_at)):
+    if not isinstance(landing_id, str) or not all(isinstance(v, str) for v in (branch, status, started_at)):
         raise SystemExit(2)
     branch = branch.replace("\t", " ").replace("\r", " ").replace("\n", " ")
     try:
@@ -396,29 +408,32 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
 
   key="$asking|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
-  should_exit=0
   direct_stalled_subjects=""
+  combined_detail="$detail"
+  if [ -n "$landing_detail" ]; then
+    [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
+    combined_detail="$combined_detail$landing_detail"
+  fi
+  decision_output=$(HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
+    HEARTBEAT_ASKING="$asking" HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
+    HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
+    HEARTBEAT_WAITING_DETAIL="$combined_detail" \
+      python3 "$ROOT/hooks/heartbeat-decision.py" tick)
+  decision_rc=$?
+  if [ "$decision_rc" -eq "$HEARTBEAT_CLEAR_EXIT_STATUS" ]; then
+    should_exit=1
+  elif [ "$decision_rc" -eq "$HEARTBEAT_KEEP_LOOP_EXIT_STATUS" ]; then
+    should_exit=0
+  else
+    should_exit=0
+    echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc; continuing to watch."
+  fi
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
-    ts=$(date +%H:%M:%S)
-    if [ "$asking" -gt 0 ]; then
-      echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'bottega question inbox', then 'bottega question answer <id>'. $n run(s) and $landing_n landing(s) live."
-    fi
+    [ -z "$decision_output" ] || printf '%s\n' "$decision_output"
     if [ "$stalled_n" -gt 0 ]; then
-      echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
       direct_stalled_subjects="$stalled_subjects"
-    elif [ "$asking" -eq 0 ] && { [ "$n" -gt 0 ] || [ "$landing_n" -gt 0 ]; }; then
-      combined_detail="$detail"
-      if [ -n "$landing_detail" ]; then
-        [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
-        combined_detail="$combined_detail$landing_detail"
-      fi
-      echo "[$ts] WAITING - $n run(s) and $landing_n landing(s), nothing needed from you: $combined_detail"
-    elif [ "$asking" -eq 0 ]; then
-      should_exit=1
     fi
-  elif [ "$asking" -eq 0 ] && [ "$n" -eq 0 ] && [ "$landing_n" -eq 0 ]; then
-    should_exit=1
   fi
 
   # Health above is complete and, when actionable, already on stdout. Only now
@@ -437,35 +452,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   ACTIVE_WATCHDOG_PID=""
   monitor_raw=$(<"$monitor_out")
   if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
-  if [ -s "$monitor_err" ]; then
-    monitor_err_had_bytes=1
-  else
-    monitor_err_had_bytes=0
-  fi
-  monitor_reason=$(LC_ALL=C head -c "$NOTICE_REASON_MAX_BYTES" "$monitor_err" | \
-    LC_ALL=C tr -cd '\12\40-\176' | \
-    LC_ALL=C awk -v limit="$NOTICE_REASON_MAX_CHARS" '
-NF {
-  reason = substr($0, 1, limit)
-  lower = tolower(reason)
-  if (lower ~ /:\/\/[^[:space:]\/@:]+:[^[:space:]\/@]+@/ ||
-      lower ~ /(key|token|secret|password|passwd|credential|auth)[[:alnum:]_.-]*["\047]?[[:space:]]*[=:]/ ||
-      lower ~ /bearer[[:space:]]/ ||
-      reason ~ /[[:alnum:]+\/]{32}/) {
-    print "reason withheld (secret-shaped)"
-  } else {
-    print reason
-  }
-  exit
-}
-  ')
-  if [ -z "$monitor_reason" ]; then
-    if [ "$monitor_err_had_bytes" -eq 0 ]; then
-      monitor_reason="stderr empty"
-    else
-      monitor_reason="stderr not printable"
-    fi
-  fi
+  monitor_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$monitor_err")
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '

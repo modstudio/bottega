@@ -1,8 +1,9 @@
 import { OrchRunEnvelopeSchema } from '../../../shared/orch-contract.ts'
 
 type RunJson = Record<string, unknown> & {
-  id: number
-  turns: { id: number; vendor_tokens: number }[]
+  record_id: string
+  number: number
+  turns: { record_id: string; number: number; vendor_tokens: number }[]
   questions: { answered_at: string | null }[]
   launch_key: string | null
   evidence_excluded: string | null

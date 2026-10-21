@@ -12,6 +12,7 @@ import type { HostedTaskIdentity } from './task-client.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const taskId = '01990000-0000-7000-8000-000000001251'
+const projectId = '01990000-0000-7000-8000-000000001252'
 const userId = '01990000-0000-7000-8000-000000001249'
 const identity = { userId, spaceId }
 let database: PGlite
@@ -21,6 +22,7 @@ const noteRow = (id: string, number: number, overrides: Partial<PushedNote> = {}
   number,
   project: 'workshop',
   project_name: 'workshop',
+  projectId,
   text: 'hosted text',
   area: null,
   anchors: '[{"kind":"run"}]',
@@ -39,13 +41,14 @@ const noteRow = (id: string, number: number, overrides: Partial<PushedNote> = {}
 async function seedHostedNote(row: PushedNote) {
   await database.query(
     `INSERT INTO hub_note
-      (id,space_id,project_name,number,project,text,area,anchors,sightings,created_at,
+      (id,space_id,project_name,project_id,number,project,text,area,anchors,sightings,created_at,
        last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_id,updated_at,deleted_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
     [
       row.id,
       spaceId,
       row.project_name,
+      row.projectId,
       row.number,
       row.project,
       row.text,
@@ -72,7 +75,9 @@ const unavailableHosted = {
   },
 }
 
-const noteRegistered = () => [{ name: 'workshop', settings: { space: spaceId } }]
+const noteRegistered = () => [
+  { name: 'workshop', record_id: projectId, settings: { space: spaceId } },
+]
 const noteIdentity = async (): Promise<HostedTaskIdentity> => ({
   userId,
   activeSpaceId: spaceId,
@@ -94,14 +99,15 @@ function seedMachineNote(row: PushedNote) {
     conn
       .query(
         `INSERT INTO note
-          (record_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,
+          (record_id,number,project,project_record_id,text,area,anchors,sightings,created_at,last_seen_at,
            stale_at,stale_reason,promoted_task)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         row.id,
         row.number,
         row.project,
+        row.projectId ?? projectId,
         row.text,
         row.area,
         row.anchors,
@@ -125,6 +131,10 @@ const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
+  await database.query(
+    `INSERT INTO project (id,space_id,name,created_at) VALUES ($1,$2,'workshop',now())`,
+    [projectId, spaceId],
+  )
   await apply([
     {
       table: 'hub_task',
@@ -135,6 +145,7 @@ beforeAll(async () => {
         key: 'DEV-1',
         project: 'workshop',
         project_name: 'workshop',
+        projectId,
         title: 'First',
         status: 'active',
         status_category: 'active',
@@ -373,14 +384,15 @@ test('keep adopts the existing hosted acknowledgement id and timestamp compariso
   await seedHostedNote(noteRow(noteId, 319))
   await database.query(
     `INSERT INTO hub_note_acknowledgement
-      (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
-     VALUES ($1,$2,'workshop',$3,'session',$4,1,$4,$4)`,
-    [hostedId, spaceId, noteId, hostedAt],
+      (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
+     VALUES ($1,$2,'workshop',$3,$4,'session',$5,1,$5,$5)`,
+    [hostedId, spaceId, projectId, noteId, hostedAt],
   )
   const incoming: PushedNoteAcknowledgement = {
     id: machineId,
     note_id: noteId,
     project_name: 'workshop',
+    projectId,
     session_id: 'session',
     acknowledged_at: '2026-10-09T13:00:00.000Z',
     sightings: 1,

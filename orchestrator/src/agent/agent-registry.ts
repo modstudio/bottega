@@ -17,6 +17,7 @@ export type AgentRow = {
   backend: string | null
   model: string
   base_url: string | null
+  api_key_secret: string | null
   transport: 'cli' | 'acp'
   caps: string
   billing: Agent['billing']
@@ -28,6 +29,7 @@ export type AgentRow = {
   jobs: string | null
   preferred_jobs: string | null
   max_concurrent: number | null
+  route_metered: number
 }
 
 export function rowAgent(row: AgentRow): Agent {
@@ -64,6 +66,7 @@ export function rowAgent(row: AgentRow): Agent {
     harness: row.harness,
     backend: row.backend,
     baseUrl: row.base_url,
+    apiKeySecret: row.api_key_secret,
     model: row.model,
     billing: row.billing,
     operatedBy: row.operated_by,
@@ -87,13 +90,13 @@ export function rowAgent(row: AgentRow): Agent {
     jobs: row.jobs ? JSON.parse(row.jobs) : null,
     preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
     maxConcurrent: row.max_concurrent,
+    routeMetered: Boolean(row.route_metered),
     ...(row.base_url
       ? {
           env: () => ({
             ...(base.env?.() ?? {}),
             ORCH_MODEL_HOST_URL: row.base_url!,
             OPENAI_BASE_URL: row.base_url!,
-            OPENAI_API_KEY: 'local',
             ...(row.harness === 'goose'
               ? {
                   GOOSE_PROVIDER: 'openai',
@@ -210,6 +213,7 @@ export type AgentMutation = {
   backend?: Backend
   model?: string
   baseUrl?: string | null
+  apiKeySecret?: string | null
   transport?: 'cli' | 'acp'
   billing?: Agent['billing']
   contextTokens?: number
@@ -218,6 +222,12 @@ export type AgentMutation = {
   jobs?: string[] | null
   preferredJobs?: string[]
   maxConcurrent?: number | null
+  routeMetered?: boolean
+}
+
+function assertApiKeySecret(value: string | null | undefined): void {
+  if (value !== undefined && value !== null && !value.trim())
+    throw new Error('--api-key-secret must name a non-empty configuration key')
 }
 
 function assertAgentMutation(input: AgentMutation, adding: boolean): void {
@@ -236,6 +246,7 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
   if (input.enabled === false && !input.reason?.trim()) {
     throw new Error('disabling an agent requires --reason')
   }
+  assertApiKeySecret(input.apiKeySecret)
   if (input.enabled !== false && input.reason !== undefined) {
     throw new Error('--reason is only valid with --enabled false')
   }
@@ -283,8 +294,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       newRecordId(),
@@ -293,18 +304,47 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.backend!,
       input.model!,
       input.baseUrl ?? null,
+      input.apiKeySecret ?? null,
       input.transport ?? 'acp',
       JSON.stringify(caps),
-      input.billing ?? (input.backend === 'vendor' ? 'subscription' : 'none'),
+      input.billing ??
+        (input.apiKeySecret ? 'metered' : input.backend === 'vendor' ? 'subscription' : 'none'),
       input.backend === 'vendor' ? 'vendor' : 'self',
       input.enabled === false ? 0 : 1,
       input.enabled === false ? input.reason!.trim() : null,
       input.jobs == null ? null : JSON.stringify(input.jobs),
       input.preferredJobs === undefined ? null : JSON.stringify(input.preferredJobs),
       input.maxConcurrent ?? null,
+      input.routeMetered ? 1 : 0,
     )
   refreshAgents()
   return agentRows().find((row) => row.name === name)!
+}
+
+function storedApiKeySecret(current: AgentRow, input: AgentMutation): string | null {
+  return input.apiKeySecret === undefined ? current.api_key_secret : input.apiKeySecret
+}
+
+function agentIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
+  return (
+    (input.harness !== undefined && input.harness !== current.harness) ||
+    (input.backend !== undefined && input.backend !== current.backend) ||
+    (input.model !== undefined && input.model !== current.model) ||
+    (input.baseUrl !== undefined && input.baseUrl !== current.base_url) ||
+    (input.apiKeySecret !== undefined && input.apiKeySecret !== current.api_key_secret)
+  )
+}
+
+function agentEnabledFields(current: AgentRow, input: AgentMutation) {
+  return {
+    enabled: input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0,
+    reason:
+      input.enabled === false
+        ? input.reason!.trim()
+        : input.enabled === true
+          ? null
+          : current.disabled_reason,
+  }
 }
 
 export function setAgent(name: string, input: AgentMutation): AgentRow {
@@ -312,18 +352,8 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
   const current = agentRows().find((row) => row.name === name)
   if (!current) throw new Error(`unknown agent "${name}"`)
   let caps = JSON.parse(current.caps) as Record<string, unknown>
-  const enabled = input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0
-  const reason =
-    input.enabled === false
-      ? input.reason!.trim()
-      : input.enabled === true
-        ? null
-        : current.disabled_reason
-  const identityChanged =
-    (input.harness !== undefined && input.harness !== current.harness) ||
-    (input.backend !== undefined && input.backend !== current.backend) ||
-    (input.model !== undefined && input.model !== current.model) ||
-    (input.baseUrl !== undefined && input.baseUrl !== current.base_url)
+  const { enabled, reason } = agentEnabledFields(current, input)
+  const identityChanged = agentIdentityChanged(current, input)
   let probedAt = current.probed_at
   let probeResult = current.probe_result
   if (identityChanged) {
@@ -352,6 +382,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         backend: input.backend ?? current.backend,
         model: input.model ?? current.model,
         baseUrl: input.baseUrl === undefined ? current.base_url : input.baseUrl,
+        apiKeySecret: storedApiKeySecret(current, input),
       },
       attempts,
     })
@@ -375,13 +406,14 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=? WHERE name=?`,
+      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=? WHERE name=?`,
     )
     .run(
       input.harness ?? current.harness,
       input.backend ?? current.backend,
       input.model ?? current.model,
       input.baseUrl === undefined ? current.base_url : input.baseUrl,
+      storedApiKeySecret(current, input),
       input.transport ?? current.transport,
       JSON.stringify(caps),
       input.billing ?? current.billing,
@@ -398,6 +430,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         ? current.preferred_jobs
         : JSON.stringify(input.preferredJobs),
       input.maxConcurrent === undefined ? current.max_concurrent : input.maxConcurrent,
+      input.routeMetered === undefined ? current.route_metered : input.routeMetered ? 1 : 0,
       name,
     )
   refreshAgents()

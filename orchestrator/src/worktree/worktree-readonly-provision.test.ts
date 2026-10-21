@@ -28,7 +28,7 @@ test('a required read-only provision identifies the project register declaration
     const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
 
     expect(() =>
-      createReadOnlyWorktree(repoRoot, runId, base, undefined, [
+      createReadOnlyWorktree(repoRoot, String(runId), base, undefined, [
         { path: 'node_modules', method: 'link', required: true },
       ]),
     ).toThrow('from the project register row')

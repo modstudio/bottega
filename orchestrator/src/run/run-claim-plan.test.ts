@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import {
   claimedRunBranch,
   decideClaimTreePlan,
@@ -54,7 +56,7 @@ test('claim branch selection records implicit, explicit, and ordinary worktree b
 })
 
 const defaultFacts = {
-  hasResolvedTaskWorktree: false,
+  resolvedTaskWorktree: null,
   forbidsRepo: false,
   repoJob: false,
   hasWorktree: false,
@@ -63,9 +65,14 @@ const defaultFacts = {
 describe('claim tree plan', () => {
   test.each([
     {
-      name: 'a resolved task worktree attaches ahead of every other mode',
+      name: "a candidate in a writer's tree still attaches",
       facts: {
-        hasResolvedTaskWorktree: true,
+        resolvedTaskWorktree: {
+          path: '/tmp/DEV-1398-writer',
+          branch: 'DEV-1398-writer',
+          ownerJob: 'implement',
+          freshBase: 'main',
+        },
         forbidsRepo: true,
         repoJob: true,
         hasWorktree: false,
@@ -78,7 +85,7 @@ describe('claim tree plan', () => {
       expected: { mode: 'isolate' as const },
     },
     {
-      name: 'a repository job without a tree creates',
+      name: 'a candidate with no tree still creates',
       facts: { ...defaultFacts, repoJob: true },
       expected: { mode: 'create' as const },
     },
@@ -94,6 +101,31 @@ describe('claim tree plan', () => {
     },
   ])('$name', ({ facts, expected }) => {
     expect(decideClaimTreePlan(facts)).toEqual(expected)
+  })
+
+  test('a candidate in an architect landing tree is refused with both remedies', () => {
+    const ruling = decideClaimTreePlan({
+      ...defaultFacts,
+      repoJob: true,
+      resolvedTaskWorktree: {
+        path: '/tmp/DEV-1398-landing',
+        branch: 'DEV-1398-writer',
+        ownerJob: 'landing-tree',
+        freshBase: 'main',
+      },
+    })
+    expect(ruling).toEqual({
+      mode: 'refuse',
+      path: '/tmp/DEV-1398-landing',
+      branch: 'DEV-1398-writer',
+      freshBase: 'main',
+    })
+    if (ruling.mode !== 'refuse') throw new Error('expected a landing-tree refusal')
+    expect(taskBranchLandingTreeRefusal(ruling)).toBe(
+      'refusing task branch DEV-1398-writer: it is checked out in architect landing tree /tmp/DEV-1398-landing.\n' +
+        `cleared by: ${PLATFORM_SLUG} tree remove /tmp/DEV-1398-landing, then dispatch again; ` +
+        'or dispatch again with --base main to start a fresh branch',
+    )
   })
 })
 

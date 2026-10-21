@@ -9,6 +9,10 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
+import type {
+  RunDetailReviewFinding,
+  RunDetailReviewLens,
+} from '../../../shared/review-presentation.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { readAskServerFailure } from '../ask/ask-failure.ts'
 import { summarizeAskServer } from '../ask/ask-lifecycle.ts'
@@ -34,21 +38,49 @@ registerStandardRuntime()
 const jsonArray = (value: unknown) =>
   typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
 
-function reviewsForRun(runId: number) {
+function reviewsForRun(runId: string): RunDetailReviewLens[] {
   const lenses = db()
     .query(
       `SELECT l.*, run.record_id AS run_record_id,
-              r.project_id AS review_project_id, r.recorded_at, r.completed_at,
+              r.number AS review_number, r.project_record_id AS review_project_record_id,
+              r.recorded_at, r.completed_at,
               r.tier, r.patch_id, r.commit_message
-         FROM review_lens l JOIN review r ON r.id=l.review_id JOIN run ON run.id=l.run_id
-        WHERE l.run_id=? ORDER BY r.recorded_at DESC, l.id DESC`,
+         FROM review_lens l JOIN review r ON r.record_id=l.review_record_id JOIN run ON run.record_id=l.run_record_id
+        WHERE l.run_record_id=? ORDER BY r.recorded_at DESC, r.number DESC, run.number DESC`,
     )
-    .all(runId) as Record<string, unknown>[]
+    .all(runId) as {
+    record_id: string
+    review_record_id: string
+    run_record_id: string
+    review_number: number
+    review_project_record_id: string | null
+    lens: string
+    agent: string
+    model: string | null
+    tree_inspected: string | null
+    reviewed_tree: string | null
+    standards_read: string
+    files_covered: string
+    commands_run: string
+    could_not_verify: string
+    mcp_tools: string
+    docs_read: string
+    substitutes: string
+    reproduced: string | null
+    coverage: string | null
+    limits: string | null
+    overlap: string | null
+    recorded_at: string
+    completed_at: string | null
+    tier: number | null
+    patch_id: string | null
+    commit_message: string | null
+  }[]
   return lenses.map((lens) => ({
-    id: lens.id,
-    reviewId: lens.review_id,
-    runId: lens.run_id,
-    runRecordId: lens.run_record_id,
+    id: lens.record_id,
+    reviewId: lens.review_record_id,
+    runId: lens.run_record_id,
+    reviewNumber: lens.review_number,
     lens: lens.lens,
     agent: lens.agent,
     model: lens.model,
@@ -65,7 +97,7 @@ function reviewsForRun(runId: number) {
     coverage: lens.coverage,
     limits: lens.limits,
     overlap: lens.overlap,
-    reviewProjectId: lens.review_project_id,
+    reviewProjectId: lens.review_project_record_id,
     recordedAt: lens.recorded_at,
     completedAt: lens.completed_at,
     tier: lens.tier,
@@ -73,28 +105,33 @@ function reviewsForRun(runId: number) {
     commitMessage: lens.commit_message,
     findings: db()
       .query(
-        `SELECT id, review_id AS reviewId, review_lens_id AS reviewLensId, ordinal,
+        `SELECT record_id AS id, review_record_id AS reviewId,
+                review_lens_record_id AS reviewLensId, ordinal,
                 severity, location, evidence, proposed_correction AS proposedCorrection,
                 disposition, rejection_category AS rejectionCategory,
                 triaged_severity AS triagedSeverity, triaged_at AS triagedAt
-           FROM review_finding WHERE review_lens_id=? ORDER BY ordinal`,
+           FROM review_finding WHERE review_lens_record_id=? ORDER BY ordinal`,
       )
-      .all(Number(lens.id)),
+      .all(String(lens.record_id)) as RunDetailReviewFinding[],
   }))
 }
 
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
-export function runDetail(id: number, receipt = false) {
+export function runDetail(id: string, receipt = false) {
   const row = db()
     .query(
-      `SELECT r.id, r.record_id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
+      `SELECT r.number AS id, r.record_id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
             r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit,
             r.changed_paths, r.review_ref, r.doc_revisions, r.canon_sha,
             r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
             r.branch_kept, r.branch_kept_tip,
+            r.provisioning_kind, r.provisioning_ms, r.provisioning_phases,
+            r.provisioning_entries, r.provisioning_entries_limited, r.provisioning_host_load,
+            r.provisioning_outcome, r.provisioning_entry_roots,
+            r.resource_cpu_ms, r.resource_peak_rss_bytes, r.resource_samples, r.resource_source,
             s.delivery, s.quality, s.fidelity, s.note, s.scored_at
        FROM run r
-       LEFT JOIN score s ON s.run_id = r.id WHERE r.id = ?`,
+       LEFT JOIN score s ON s.run_record_id = r.record_id WHERE r.record_id = ?`,
     )
     .get(id) as Record<string, unknown> | null
   if (!row) return null
@@ -103,45 +140,59 @@ export function runDetail(id: number, receipt = false) {
   const eventsPath = runEventsPath(id)
   const identity = db()
     .query(
-      `SELECT subject.parent_run_id, COALESCE(subject.parent_run_id, subject.id) root_id,
+      `SELECT subject.parent_run_record_id, root.number root_id,
               root.record_id root_record_id
-         FROM run subject JOIN run root ON root.id=COALESCE(subject.parent_run_id, subject.id)
-        WHERE subject.id=?`,
+         FROM run subject JOIN run root ON root.record_id=COALESCE(subject.parent_run_record_id, subject.record_id)
+        WHERE subject.record_id=?`,
     )
-    .get(id) as { parent_run_id: number | null; root_id: number; root_record_id: string }
-  const rootId = identity.root_id
+    .get(id) as { parent_run_record_id: string | null; root_id: number; root_record_id: string }
+  const rootId = identity.root_record_id
   const messages = receipt ? receiptMessagesForArchitect(id) : messagesForRun(id)
   const audit = db()
     .query(
-      `SELECT audit.run_id, subject.record_id AS run_record_id,
-              audit.root_id, root.record_id AS root_record_id,
-              audit.turn_id, turn.record_id AS turn_record_id, action,
+      `SELECT subject.number AS run_id, subject.record_id AS run_record_id,
+              root.number AS root_id, root.record_id AS root_record_id,
+              turn.number AS turn_id, turn.record_id AS turn_record_id, action,
             COALESCE(actor_session, 'anonymous (no session id)') actor_session,
             at, reason
        FROM run_mutation_audit audit
-       JOIN run subject ON subject.id=audit.run_id
-       JOIN run root ON root.id=audit.root_id
-       LEFT JOIN run turn ON turn.id=audit.turn_id
-       WHERE audit.root_id=? ORDER BY at, audit.rowid`,
+       JOIN run subject ON subject.record_id=audit.run_record_id
+       JOIN run root ON root.record_id=audit.root_run_record_id
+       LEFT JOIN run turn ON turn.record_id=audit.turn_run_record_id
+       WHERE audit.root_run_record_id=? ORDER BY at, audit.rowid`,
     )
     .all(rootId)
   const questions = db()
     .query(
-      `SELECT q.id,q.record_id,q.run_id,owner.record_id AS run_record_id,
+      `SELECT q.number,q.record_id,owner.number AS run_id,owner.record_id AS run_record_id,
               q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,
               q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
               q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at
-         FROM question q JOIN run owner ON owner.id=q.run_id
-        WHERE owner.id=? OR owner.parent_run_id=? ORDER BY q.id`,
+         FROM question q JOIN run owner ON owner.record_id=q.run_record_id
+        WHERE owner.record_id=? OR owner.parent_run_record_id=? ORDER BY q.number`,
     )
-    .all(rootId, rootId) as Record<string, unknown>[]
+    .all(rootId, rootId)
+    .map((question) => {
+      const { number, ...row } = question as Record<string, unknown> & { number: number }
+      return { id: number, ...row }
+    })
   return {
     ...row,
     requested_id: id,
-    resolved_from: identity.parent_run_id === null ? 'root' : 'turn',
-    root_id: rootId,
+    resolved_from: identity.parent_run_record_id === null ? 'root' : 'turn',
+    root_id: identity.root_id,
     root_record_id: identity.root_record_id,
     changed_paths: typeof row.changed_paths === 'string' ? JSON.parse(row.changed_paths) : null,
+    provisioning_phases:
+      typeof row.provisioning_phases === 'string' ? JSON.parse(row.provisioning_phases) : null,
+    provisioning_host_load:
+      typeof row.provisioning_host_load === 'string'
+        ? JSON.parse(row.provisioning_host_load)
+        : null,
+    provisioning_entry_roots:
+      typeof row.provisioning_entry_roots === 'string'
+        ? JSON.parse(row.provisioning_entry_roots)
+        : null,
     project: typeof row.cwd === 'string' ? (projectAt(row.cwd)?.name ?? null) : null,
     scoreAxes: JOBS[String(row.job)]?.needs.writesRepo
       ? ['delivery', 'quality', 'fidelity']
@@ -155,10 +206,13 @@ export function runDetail(id: number, receipt = false) {
     reviews: reviewsForRun(id),
     messages,
     audit,
-    questions: questions.map((question) => ({
-      ...question,
-      ruling_status: rulingStatus(question.overturned_at, question.answered_at),
-    })),
+    questions: questions.map((question) => {
+      const row = question as unknown as Record<string, unknown> & {
+        overturned_at: string | null
+        answered_at: string | null
+      }
+      return { ...row, ruling_status: rulingStatus(row.overturned_at, row.answered_at) }
+    }),
     // Runs recorded before prompts were kept on disk have only the head.
     promptTruncated: !row.prompt_path,
   }
@@ -211,17 +265,17 @@ export function state(sinceDays: number | null = null) {
    */
   const live = d
     .query(
-      `SELECT run.id, run.record_id,
-            COALESCE(run.parent_run_id,run.id) root_id,
+      `SELECT run.number id, run.record_id,
+            root.number root_id,
             root.record_id root_record_id,
             run.agent, run.job, run.repo, run.cwd, run.started_at,
             COALESCE(run.label, run.prompt_head) AS prompt_head, run.status,
             (SELECT COUNT(*) FROM question q
-              WHERE q.run_id = run.id AND ${questionOpenSql('q')}) AS open_questions,
+              WHERE q.run_record_id = run.record_id AND ${questionOpenSql('q')}) AS open_questions,
             (run.status = 'asking' AND (SELECT COUNT(*) FROM question q
-              WHERE q.run_id = run.id AND ${questionOpenSql('q')}) > 0) AS waiting
-       FROM run JOIN run root ON root.id=COALESCE(run.parent_run_id,run.id)
-       WHERE run.status IN ('running','asking') ORDER BY waiting DESC, run.id DESC`,
+              WHERE q.run_record_id = run.record_id AND ${questionOpenSql('q')}) > 0) AS waiting
+       FROM run JOIN run root ON root.record_id=COALESCE(run.parent_run_record_id,run.record_id)
+       WHERE run.status IN ('running','asking') ORDER BY waiting DESC, run.number DESC`,
     )
     .all()
 
@@ -297,7 +351,7 @@ export function state(sinceDays: number | null = null) {
         `SELECT status, failure_kind, started_at,
               (julianday('now') - julianday(started_at)) * 1440 AS mins_ago
          FROM run WHERE agent = ? AND status IN ('ok','failed') AND started_at >= ?
-        ORDER BY id DESC LIMIT 1`,
+        ORDER BY number DESC LIMIT 1`,
       )
       .get(name, since) as { status: string; failure_kind: string | null; mins_ago: number } | null
     return {

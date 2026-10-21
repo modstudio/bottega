@@ -15,22 +15,25 @@ export function renderRulingFileText(input: {
   ruling: string
   basis?: string | null
   answererKind: string | null
-  runId: number | null
+  runId: string | null
+  runRecordId: string | null
   workflow?: { slug: string; mode: string; cursorId: number } | null
   taskKey: string | null
   date: string
   questionId: number
+  questionRecordId: string
 }): string {
   return [
     '---',
-    `question_id: ${input.questionId}`,
+    `question_id: ${input.questionRecordId}`,
+    `question_number: ${input.questionId}`,
     ...(input.runId === null && input.workflow
       ? [
           `workflow: ${input.workflow.slug}`,
           `workflow_mode: ${input.workflow.mode}`,
           `workflow_cursor: ${input.workflow.cursorId}`,
         ]
-      : [`run: ${input.runId}`]),
+      : [`run: ${input.runRecordId}`, `run_number: ${input.runId}`]),
     `task: ${input.taskKey ?? 'none'}`,
     `date: ${input.date}`,
     `answerer: ${input.answererKind ?? 'unknown'}`,
@@ -85,6 +88,6 @@ export function rulingFileOfferLines(input: {
   return input.questionIds.map(rulingFileHint)
 }
 
-export function filedDocRef(id: number, revision: string | null): string {
-  return revision ? `${id}@${revision}` : String(id)
+export function filedDocRef(address: string, revisionNumber: number): string {
+  return `${address}@${revisionNumber}`
 }

@@ -8,14 +8,14 @@ import { projectAt } from '../project/projects.ts'
 
 type GateCandidate = {
   id: number
-  projectId: number | null
+  projectId: string | null
   cwd: string | null
 }
 
 export function selectPassingGateId(
   candidates: readonly GateCandidate[],
-  projectId: number,
-  architectProjectId: (cwd: string) => number | null,
+  projectId: string,
+  architectProjectId: (cwd: string) => string | null,
 ): number | null {
   for (const candidate of candidates) {
     const candidateProject =
@@ -37,8 +37,8 @@ export function passingGateForCommit(
   if (!normalized) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
   const candidates = d
     .query<GateCandidate, [string]>(
-      `SELECT g.id,r.project_id AS projectId,g.cwd
-         FROM gate_execution g LEFT JOIN run r ON r.id=g.run_id
+      `SELECT g.id,r.project_record_id AS projectId,g.cwd
+         FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
         WHERE g.head_commit=? AND g.finished_at IS NOT NULL AND g.exit_code=0 AND g.timed_out=0
         ORDER BY g.id DESC`,
     )
@@ -48,8 +48,8 @@ export function passingGateForCommit(
     commit: normalized,
     gateId: selectPassingGateId(
       candidates,
-      project.id,
-      (gateCwd) => projectAt(gateCwd, d)?.id ?? null,
+      project.recordId,
+      (gateCwd) => projectAt(gateCwd, d)?.recordId ?? null,
     ),
   }
 }

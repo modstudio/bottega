@@ -13,7 +13,7 @@ export function shouldResolveRunBase(
 }
 
 export function resolveRunBase(
-  input: { cwd: string; base: string; resumeParent?: number; launchBase?: string },
+  input: { cwd: string; base: string; resumeParent?: string; launchBase?: string },
   database: Database = db(),
   resolve: (cwd: string, base: string) => string = resolveBase,
 ): void {
@@ -22,7 +22,7 @@ export function resolveRunBase(
   } catch (error) {
     const root = input.resumeParent
       ? (database
-          .query('SELECT launch_base,base_commit FROM run WHERE id=?')
+          .query('SELECT launch_base,base_commit FROM run WHERE record_id=?')
           .get(input.resumeParent) as {
           launch_base: string | null
           base_commit: string | null

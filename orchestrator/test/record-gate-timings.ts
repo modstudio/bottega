@@ -39,7 +39,7 @@ export type SpawnCounts = {
   argv0: Record<string, number>
 }
 
-type TestRow = {
+export type TestRow = {
   name: string
   file: string
   wallMs: number

@@ -4,7 +4,7 @@ import { z } from 'zod'
 
 export const restoreFindingPayloadSchema = z
   .object({
-    localId: z.number().int().positive(),
+    id: z.uuid(),
     reviewId: z.string().min(1),
     reviewLensId: z.string().min(1),
     ordinal: z.number().int().nonnegative(),
@@ -13,8 +13,9 @@ export const restoreFindingPayloadSchema = z
     evidence: z.string(),
     proposedCorrection: z.string(),
   })
-  .transform(({ reviewId, reviewLensId, ...finding }) => ({
+  .transform(({ id, reviewId, reviewLensId, ...finding }) => ({
     ...finding,
+    recordId: id,
     reviewRecordId: reviewId,
     reviewLensRecordId: reviewLensId,
   }))
@@ -22,14 +23,14 @@ export const restoreFindingPayloadSchema = z
 export type RestoreFindingPayload = z.infer<typeof restoreFindingPayloadSchema>
 
 export type RestoreFindingFacts = {
-  existingFindingIds: ReadonlySet<number>
-  findingIdByReviewOrdinal: ReadonlyMap<string, number>
-  reviewIdByRecordId: ReadonlyMap<string, number>
-  lensByRecordId: ReadonlyMap<string, { id: number; reviewId: number }>
+  existingFindingIds: ReadonlySet<string>
+  findingIdByReviewOrdinal: ReadonlyMap<string, string>
+  reviewIdByRecordId: ReadonlyMap<string, string>
+  lensByRecordId: ReadonlyMap<string, { recordId: string; reviewRecordId: string }>
 }
 
 export type RestoreFindingDecision =
-  | { action: 'insert'; reviewId: number; reviewLensId: number }
+  | { action: 'insert'; reviewRecordId: string; reviewLensRecordId: string }
   | { action: 'skip'; reason: string }
   | { action: 'refuse'; reason: string }
 
@@ -40,13 +41,13 @@ export type OrderedRestoreFindingPayload = {
 
 export type OrderedRestoreFindingDecision = OrderedRestoreFindingPayload &
   (
-    | { action: 'insert'; reviewId: number; reviewLensId: number }
+    | { action: 'insert'; reviewRecordId: string; reviewLensRecordId: string }
     | { action: 'skip'; reason: string }
     | { action: 'duplicate'; reason: string }
     | { action: 'refuse'; reason: string }
   )
 
-export function reviewOrdinalKey(reviewId: number, ordinal: number): string {
+export function reviewOrdinalKey(reviewId: string, ordinal: number): string {
   return `${reviewId}:${ordinal}`
 }
 
@@ -54,32 +55,32 @@ export function decideFindingRestore(
   payload: RestoreFindingPayload,
   facts: RestoreFindingFacts,
 ): RestoreFindingDecision {
-  if (facts.existingFindingIds.has(payload.localId)) {
+  if (facts.existingFindingIds.has(payload.recordId)) {
     return {
       action: 'skip',
-      reason: `finding ${payload.localId} is already present`,
+      reason: `finding ${payload.recordId} is already present`,
     }
   }
   const reviewId = facts.reviewIdByRecordId.get(payload.reviewRecordId)
   if (reviewId === undefined) {
     return {
       action: 'refuse',
-      reason: `finding ${payload.localId} references missing review ${payload.reviewRecordId}`,
+      reason: `finding ${payload.recordId} references missing review ${payload.reviewRecordId}`,
     }
   }
   const lens = facts.lensByRecordId.get(payload.reviewLensRecordId)
   if (!lens) {
     return {
       action: 'refuse',
-      reason: `finding ${payload.localId} references missing review lens ${payload.reviewLensRecordId}`,
+      reason: `finding ${payload.recordId} references missing review lens ${payload.reviewLensRecordId}`,
     }
   }
-  if (lens.reviewId !== reviewId) {
+  if (lens.reviewRecordId !== reviewId) {
     return {
       action: 'refuse',
       reason:
-        `finding ${payload.localId} references review ${payload.reviewRecordId} but lens ` +
-        `${payload.reviewLensRecordId} belongs to review ${lens.reviewId}`,
+        `finding ${payload.recordId} references review ${payload.reviewRecordId} but lens ` +
+        `${payload.reviewLensRecordId} belongs to review ${lens.reviewRecordId}`,
     }
   }
   const ordinalOwner = facts.findingIdByReviewOrdinal.get(
@@ -89,11 +90,11 @@ export function decideFindingRestore(
     return {
       action: 'refuse',
       reason:
-        `finding ${payload.localId} cannot use review ${reviewId} ordinal ${payload.ordinal}; ` +
+        `finding ${payload.recordId} cannot use review ${reviewId} ordinal ${payload.ordinal}; ` +
         `finding ${ordinalOwner} already uses it`,
     }
   }
-  return { action: 'insert', reviewId, reviewLensId: lens.id }
+  return { action: 'insert', reviewRecordId: reviewId, reviewLensRecordId: lens.recordId }
 }
 
 function samePayload(left: RestoreFindingPayload, right: RestoreFindingPayload): boolean {
@@ -105,30 +106,30 @@ export function decideFindingRestores(
   ordered: readonly OrderedRestoreFindingPayload[],
   facts: RestoreFindingFacts,
 ): OrderedRestoreFindingDecision[] {
-  const winners = new Map<number, RestoreFindingPayload>()
+  const winners = new Map<string, RestoreFindingPayload>()
   const existingFindingIds = new Set(facts.existingFindingIds)
   const findingIdByReviewOrdinal = new Map(facts.findingIdByReviewOrdinal)
   const decisions: OrderedRestoreFindingDecision[] = []
 
   for (const item of ordered) {
-    const winner = winners.get(item.payload.localId)
+    const winner = winners.get(item.payload.recordId)
     if (winner) {
       decisions.push(
         samePayload(winner, item.payload)
           ? {
               ...item,
               action: 'duplicate',
-              reason: `finding ${item.payload.localId} repeats an identical payload`,
+              reason: `finding ${item.payload.recordId} repeats an identical payload`,
             }
           : {
               ...item,
               action: 'refuse',
-              reason: `finding ${item.payload.localId} has conflicting outbox payloads`,
+              reason: `finding ${item.payload.recordId} has conflicting outbox payloads`,
             },
       )
       continue
     }
-    winners.set(item.payload.localId, item.payload)
+    winners.set(item.payload.recordId, item.payload)
     const decision = decideFindingRestore(item.payload, {
       ...facts,
       existingFindingIds,
@@ -136,10 +137,10 @@ export function decideFindingRestores(
     })
     decisions.push({ ...item, ...decision })
     if (decision.action === 'insert') {
-      existingFindingIds.add(item.payload.localId)
+      existingFindingIds.add(item.payload.recordId)
       findingIdByReviewOrdinal.set(
-        reviewOrdinalKey(decision.reviewId, item.payload.ordinal),
-        item.payload.localId,
+        reviewOrdinalKey(decision.reviewRecordId, item.payload.ordinal),
+        item.payload.recordId,
       )
     }
   }

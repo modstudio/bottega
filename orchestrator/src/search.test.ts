@@ -19,17 +19,19 @@ function fixture(): Database {
   const d = new Database(':memory:')
   d.exec(`
     CREATE TABLE run (
-      id INTEGER PRIMARY KEY, record_id TEXT NOT NULL, parent_run_id INTEGER, launch_key TEXT,
+      record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, parent_run_record_id TEXT, launch_key TEXT,
       started_at TEXT NOT NULL, output_path TEXT
     );
-    CREATE TABLE score (id INTEGER PRIMARY KEY, run_id INTEGER, note TEXT);
+    CREATE TABLE score (id INTEGER PRIMARY KEY, run_record_id TEXT, note TEXT);
     CREATE TABLE question (
-      id INTEGER PRIMARY KEY, run_id INTEGER, question TEXT, options TEXT,
+      record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, run_record_id TEXT, question TEXT, options TEXT,
       recommendation TEXT, why TEXT, answer TEXT
     );
-    CREATE TABLE review_lens (id INTEGER PRIMARY KEY, run_id INTEGER);
+    CREATE TABLE review_lens (record_id TEXT PRIMARY KEY, run_record_id TEXT);
+    CREATE TABLE review (record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE);
     CREATE TABLE review_finding (
-      id INTEGER PRIMARY KEY, review_lens_id INTEGER, severity TEXT, location TEXT, evidence TEXT,
+      record_id TEXT PRIMARY KEY, review_lens_record_id TEXT, review_record_id TEXT, ordinal INTEGER,
+      severity TEXT, location TEXT, evidence TEXT,
       proposed_correction TEXT, disposition TEXT, rejection_category TEXT
     );
   `)
@@ -44,11 +46,12 @@ describe('record search', () => {
     writeFileSync(output, `worker established ${'long '.repeat(80)}result`)
     const d = fixture()
     d.exec(`
-      INSERT INTO run VALUES (1, '01990000-0000-7000-8000-000000000001', NULL, 'DEV-203', '2026-09-01T00:00:00Z', '${output}');
-      INSERT INTO score VALUES (1, 1, 'A substantial scoring note that does not repeat its task key.');
-      INSERT INTO question VALUES (1, 1, 'Which primitive?', NULL, NULL, NULL, 'Use read-tree.');
-      INSERT INTO review_lens VALUES (1, 1);
-      INSERT INTO review_finding VALUES (1, 1, 'major', 'file.ts:4', 'The guard is process-local.', 'Move it to the repository hook.', 'accepted', NULL);
+      INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-203', '2026-09-01T00:00:00Z', '${output}');
+      INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'A substantial scoring note that does not repeat its task key.');
+      INSERT INTO question VALUES ('01990000-0000-7000-8000-000000000101', 1, '01990000-0000-7000-8000-000000000001', 'Which primitive?', NULL, NULL, NULL, 'Use read-tree.');
+      INSERT INTO review_lens VALUES ('01990000-0000-7000-8000-000000000201', '01990000-0000-7000-8000-000000000001');
+      INSERT INTO review VALUES ('01990000-0000-7000-8000-000000000401', 1);
+      INSERT INTO review_finding VALUES ('01990000-0000-7000-8000-000000000301', '01990000-0000-7000-8000-000000000201', '01990000-0000-7000-8000-000000000401', 1, 'major', 'file.ts:4', 'The guard is process-local.', 'Move it to the repository hook.', 'accepted', NULL);
     `)
 
     const found = searchRecords(d, 'dev-203')
@@ -59,7 +62,7 @@ describe('record search', () => {
       'output',
     ])
     expect(found.results.every((result) => result.match === 'direct task link')).toBe(true)
-    expect(found.results.map((result) => result.id)).toEqual([1, 1, 1, 1])
+    expect(found.results.map((result) => result.id)).toEqual([1, 1, '1/1', 1])
     expect(
       found.results.find((result) => result.source === 'output')!.snippet.length,
     ).toBeLessThanOrEqual(242)
@@ -68,8 +71,8 @@ describe('record search', () => {
   test('file and function searches are literal and honestly marked weak', () => {
     const d = fixture()
     d.exec(`
-      INSERT INTO run VALUES (1, '01990000-0000-7000-8000-000000000001', NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
-      INSERT INTO score VALUES (1, 1, 'Checked resolveBase() in orchestrator/src/worktree/worktree.ts:44; it preserves HEAD.');
+      INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
+      INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'Checked resolveBase() in orchestrator/src/worktree/worktree.ts:44; it preserves HEAD.');
     `)
 
     const file = searchRecords(d, 'orchestrator/src/worktree/worktree.ts')
@@ -81,7 +84,7 @@ describe('record search', () => {
   test('missing output files are reported instead of silently treated as searchable', () => {
     const d = fixture()
     d.exec(
-      `INSERT INTO run VALUES (1, '01990000-0000-7000-8000-000000000001', NULL, 'DEV-1', '2026-09-01T00:00:00Z', '/definitely/missing/output')`,
+      `INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', '/definitely/missing/output')`,
     )
     const found = searchRecords(d, 'anything')
     expect(found.results).toEqual([])
@@ -91,8 +94,8 @@ describe('record search', () => {
   test('full records are opt-in', () => {
     const d = fixture()
     d.exec(`
-      INSERT INTO run VALUES (1, '01990000-0000-7000-8000-000000000001', NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
-      INSERT INTO score VALUES (1, 1, 'the complete note');
+      INSERT INTO run VALUES ('01990000-0000-7000-8000-000000000001', 1, NULL, 'DEV-1', '2026-09-01T00:00:00Z', NULL);
+      INSERT INTO score VALUES (1, '01990000-0000-7000-8000-000000000001', 'the complete note');
     `)
     expect(searchRecords(d, 'complete').results[0]).not.toHaveProperty('content')
     expect(searchRecords(d, 'complete', 20, true).results[0]?.content).toBe('the complete note')
@@ -108,7 +111,7 @@ describe('record search', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
     db()
       .query(
-        `INSERT INTO score (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+        `INSERT INTO score (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
          VALUES ('${newRecordId()}', ?,'full','right','faithful',?,datetime('now'),'architect')`,
       )
       .run(run, 'unique search json note')

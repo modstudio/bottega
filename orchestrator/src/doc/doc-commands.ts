@@ -21,7 +21,9 @@ import {
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
+import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
+import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
@@ -273,7 +275,7 @@ function keywordListDocs(
       : []),
     ...(bodyMatch !== undefined ? listDocMetadata({ ...filters, bodyMatch }) : []),
   ]
-  return [...new Map(metadata.map((doc) => [doc.id, doc])).values()]
+  return [...new Map(metadata.map((doc) => [doc.record_id, doc])).values()]
     .sort(
       (left, right) =>
         compareStoreText(left.scope, right.scope) ||
@@ -306,7 +308,7 @@ function listedDocs(
 }
 
 function readDoc(
-  address: { scope: string; subject: string | null; owner: string | null },
+  address: { scope: string; subject: string | null | undefined; owner: string | null },
   slug: string,
   audience: DocAudience | undefined,
 ) {
@@ -328,6 +330,14 @@ function readDocFilters(
     kind: flags.flag('kind'),
     articleSubject: flags.flag('article-subject'),
   }
+}
+
+function readDocSubject(
+  flags: DocFlags,
+  address: { subject: string | null },
+): string | null | undefined {
+  if (!flags.has('subject') && !flags.has('user')) return undefined
+  return address.subject
 }
 
 function handledReadDocCommand(
@@ -367,7 +377,11 @@ function handledReadDocCommand(
   if (!slug || !address.scope)
     throw new Error(`${PLATFORM_SLUG} doc ${sub} <slug> --scope S [--subject X]`)
   const doc = readDoc(
-    { scope: address.scope, subject: address.subject, owner: address.owner },
+    {
+      scope: address.scope,
+      subject: readDocSubject(flags, address),
+      owner: address.owner,
+    },
     slug,
     docReadAudience(flags.flag('audience')),
   )
@@ -537,13 +551,19 @@ async function handleReorderDocCommand(
   if (sub !== 'reorder') return false
   if (!address.scope)
     throw new Error(
-      `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
+      `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent SLUG|UUID] --slug SLUG|UUID...`,
     )
-  const orderedIds = flags.values?.('id') ?? []
+  const docs = listDocs({ scope: address.scope, subject: address.subject })
+  const resolve = (value: string): string => {
+    const row = docs.find((doc) => doc.slug === value || doc.record_id === value.toLowerCase())
+    if (!row) throw new Error(`no ${address.scope}/${address.subject ?? '_'}/${value} document`)
+    return row.record_id
+  }
+  const orderedIds = (flags.values?.('slug') ?? []).map(resolve)
   const result = await reorderDocs({
     scope: address.scope,
     subject: address.subject,
-    parentId: flags.flag('parent-id') ?? null,
+    parentId: flags.flag('parent') ? resolve(flags.flag('parent')!) : null,
     orderedIds,
   })
   presentation.log(
@@ -600,8 +620,8 @@ function handledRevisionDocCommand(
   const scope = argv[2]
   const rawSubject = argv[3]
   const slug = argv[4]
-  const revisionId = Number(argv[5])
-  if (!scope || rawSubject === undefined || !slug || !revisionId)
+  const revisionIdentifier = argv[5]
+  if (!scope || rawSubject === undefined || !slug || !revisionIdentifier)
     throw new Error(`${PLATFORM_SLUG} doc revision <scope> <subject|-> <slug> <rev> --json`)
   const subject = rawSubject === '-' ? null : rawSubject
   if (flags.has('user') && (scope !== 'canon' || subject !== null)) {
@@ -611,7 +631,7 @@ function handledRevisionDocCommand(
     scope,
     subject,
     slug,
-    revisionId,
+    resolveDocRevisionIdentifier(db(), revisionIdentifier),
     owner,
     docReadAudience(flags.flag('audience')),
   )
@@ -772,16 +792,16 @@ export async function docCommand(
       } else
         for (const revision of revisions) {
           presentation.log(
-            `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
+            `${revision.number}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
           )
         }
       return
     }
     if (sub === 'diff') {
-      const a = argv[5] ? Number(argv[5]) : revisions[1]?.id
-      const b = argv[6] ? Number(argv[6]) : revisions[0]?.id
+      const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
+      const b = argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : revisions[0]?.record_id
       if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
-      const addressIds = new Set(revisions.map((revision) => revision.id))
+      const addressIds = new Set(revisions.map((revision) => revision.record_id))
       if (!addressIds.has(a) || !addressIds.has(b)) {
         throw new Error(
           `doc diff revisions must belong to ${addressScope}/${addressSubject ?? '_'}/${slug}`,
@@ -790,9 +810,9 @@ export async function docCommand(
       presentation.write(diffDocRevisions(a, b, owner))
       return
     }
-    const revisionId = Number(argv[5])
+    const revisionIdentifier = argv[5]
     const reason = flag('reason')
-    if (!revisionId || !reason?.trim()) {
+    if (!revisionIdentifier || !reason?.trim()) {
       throw new Error(
         `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
       )
@@ -801,7 +821,7 @@ export async function docCommand(
       addressScope,
       addressSubject,
       slug,
-      revisionId,
+      resolveDocRevisionIdentifier(db(), revisionIdentifier),
       {
         reason,
         author: flag('author'),

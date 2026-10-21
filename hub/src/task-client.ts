@@ -6,6 +6,7 @@ import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import { parseIdentitySetPage } from './identity-set-contract.ts'
 import {
@@ -60,6 +61,7 @@ async function hostedFetch(
 
 export type HostedTaskIdentity = {
   userId: string
+  userName?: string | null
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
   capabilities?: {
@@ -101,7 +103,7 @@ export function assertTargetSpaceNotes(identity: HostedTaskIdentity) {
 }
 
 function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
-  const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
+  const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   return baseUrl
 }
@@ -163,6 +165,35 @@ async function request<T>(
   return value as T
 }
 
+class HostedTaskRequestError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+export const isMissingHostedTask = (cause: unknown) =>
+  cause instanceof HostedTaskRequestError && cause.status === 404
+
+export async function hostedGetTask(
+  taskId: string,
+  options?: Parameters<typeof request>[3],
+): Promise<{ task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }> {
+  const { response, value } = await responseObject(
+    `/v1/tasks/${encodeURIComponent(taskId)}`,
+    'GET',
+    undefined,
+    options,
+  )
+  if (!response.ok)
+    throw new HostedTaskRequestError(
+      response.status,
+      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}`,
+    )
+  return value as { task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }
+}
+
 export const hostedCreateTask = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<HostedTask>('/v1/tasks', 'POST', body, options)
 export const hostedCreateOperatorWaitingEmail = (
@@ -194,14 +225,33 @@ export const hostedCreateDocument = (
   options?: Parameters<typeof request>[3],
 ) =>
   request<HostedDocument>(`/v1/tasks/${encodeURIComponent(key)}/documents`, 'POST', body, options)
-export const hostedListTasks = (options?: Parameters<typeof request>[3]) =>
-  request<{
+export async function hostedListTasks(options?: Parameters<typeof request>[3]) {
+  type Result = {
     tasks: HostedTask[]
     comments: HostedComment[]
     documents: HostedDocument[]
     statusEvents: import('./hosted-tasks.ts').HostedStatusEvent[]
-    cursor: string
-  }>('/v1/tasks', 'GET', undefined, options)
+  }
+  const rows = { tasks: [], comments: [], documents: [], statusEvents: [] } as Result
+  let cursor: string | null = null
+  for (;;) {
+    const query = new URLSearchParams()
+    if (cursor) query.set('cursor', cursor)
+    const page = await request<Result & { cursor: string; more: boolean }>(
+      `/v1/tasks?${query}`,
+      'GET',
+      undefined,
+      options,
+    )
+    rows.tasks.push(...page.tasks)
+    rows.comments.push(...page.comments)
+    rows.documents.push(...page.documents)
+    rows.statusEvents.push(...page.statusEvents)
+    if (!page.more) return { ...rows, cursor: page.cursor, more: false }
+    if (page.cursor === cursor) throw new Error('hosted task list cursor did not advance')
+    cursor = page.cursor
+  }
+}
 
 export const hostedTaskPresence = (
   pairs: HostedTaskPresencePair[],
@@ -236,6 +286,7 @@ export async function hostedTaskChanges(
     documents: HostedDocument[]
     statusEvents: import('./hosted-tasks.ts').HostedStatusEvent[]
     cursor: string
+    more?: boolean
   }>(`/v1/tasks?${query}`, 'GET', undefined, options)
 }
 
@@ -535,9 +586,21 @@ async function taskIdentityResult(
         object.remedy ? `. ${String(object.remedy)}` : ''
       }`,
     )
+  validateTaskIdentityUser(object)
+  return { unauthorized: false, value: object }
+}
+
+function validateTaskIdentityUser(object: Record<string, unknown>): void {
   if (typeof object.userId !== 'string')
     throw new Error('hosted hub returned a malformed task identity: userId must be a string')
-  return { unauthorized: false, value: object }
+  if (
+    object.userName !== undefined &&
+    object.userName !== null &&
+    typeof object.userName !== 'string'
+  )
+    throw new Error(
+      'hosted hub returned a malformed task identity: userName must be a string or null',
+    )
 }
 
 export async function hostedTaskIdentity(
@@ -552,6 +615,7 @@ export async function hostedTaskIdentity(
     throw new Error('hosted hub returned a malformed task identity: memberships must be an array')
   return {
     userId: value.userId as string,
+    userName: (value.userName as string | null | undefined) ?? null,
     activeSpaceId: value.activeSpaceId as string,
     memberships: value.memberships as RecordSpaceMembership[],
     capabilities: {
@@ -576,4 +640,16 @@ export async function hostedSignedInUserId(
 ): Promise<string | null> {
   const result = await taskIdentityResult(options)
   return result.unauthorized ? null : (result.value.userId as string)
+}
+
+export async function hostedSignedInUser(
+  options?: Parameters<typeof request>[3],
+): Promise<{ id: string; name: string | null } | null> {
+  const result = await taskIdentityResult(options)
+  return result.unauthorized
+    ? null
+    : {
+        id: result.value.userId as string,
+        name: (result.value.userName as string | null | undefined) ?? null,
+      }
 }

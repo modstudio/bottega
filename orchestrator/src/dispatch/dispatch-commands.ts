@@ -15,6 +15,7 @@ import {
   projectByName,
   projectRepositoryRefusal,
   projects,
+  resolveBranchRef,
   retiredProjectAt,
   retiredProjectByName,
   retiredProjectRefusal,
@@ -24,6 +25,7 @@ import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import { reviewLensPrompt } from './review-lens-prompt.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.ts'
 
 type TransportName = 'cli' | 'acp'
@@ -93,16 +95,34 @@ function lensPromptFor(
   findings: boolean | undefined,
   lensId: string | undefined,
   supplied: string,
+  earlierRejections: ReturnType<DispatchPresentation['earlierReviewRejections']>,
 ): string {
   return reviewLensPrompt({
     lens: resolvedFindingsLens(findings, lensId, project?.name ?? null),
     mechanicallyEnforced: projectMechanicalChecks(project),
+    earlierRejections,
     supplied,
   })
 }
 
+async function compose(
+  presentation: DispatchPresentation,
+  project: Project | null,
+  requested: ReturnType<typeof job>,
+  lens: string | undefined,
+  cwd: string,
+  reviewRef: string | undefined,
+): Promise<string> {
+  const earlier =
+    requested.findings && project
+      ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch(reviewRef))
+      : { project: project?.name ?? '', branch: null, rows: [] }
+  return lensPromptFor(project, requested.findings, lens, await presentation.readPrompt(), earlier)
+}
+
 type DispatchOptions = {
   agent: string | undefined
+  agentExplicit: boolean
   transport: TransportName
   transportExplicit: boolean
   avoid: string[]
@@ -129,7 +149,7 @@ type DispatchPresentation = {
     reportReuse: boolean,
   ): NonNullable<DetachSpec['resolvedTaskBranch']> | null
   contractConflicts(prompt: string): { line: number; text: string }[]
-  warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: number): void
+  warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: string): void
   checkoutHasUncommittedWork(cwd: string): boolean
   resolveBase(cwd: string, base: string): string
   isWorktreeRelativeRef(ref: string): boolean
@@ -144,9 +164,15 @@ type DispatchPresentation = {
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
   lookupTaskKey: TaskKeyLookup
-  recordRunWarning(runId: number, warning: string): void
-  detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
-  follow(id: number, quiet: boolean): Promise<unknown>
+  recordRunWarning(runId: string, warning: string): void
+  earlierReviewRejections(
+    project: string,
+    cwd: string,
+    explicitBranch: string | null,
+  ): ReviewFindingMemory
+  detach(jobName: string, prompt: string, spec: DetachSpec): Promise<string>
+  follow(id: string, quiet: boolean): Promise<unknown>
+  runNumber(id: string): number
 }
 
 export function resolveDispatchBase(
@@ -157,6 +183,26 @@ export function resolveDispatchBase(
 ): string {
   const resolved = resolve(cwd, base)
   return isWorktreeRelative(base) ? resolved : base
+}
+
+/** Choose the branch whose earlier review rulings belong in this dispatch. */
+export function reviewMemoryBranch(
+  callerBranch: string | null,
+  explicitReviewBranch: string | null,
+): string | null {
+  return explicitReviewBranch ?? callerBranch
+}
+
+// Memory is advisory: a review target this cannot name as a branch (a run with no branch, an
+// unknown id) falls back to the caller's branch, and the dispatch's own target resolution
+// reports anything actually wrong with the target.
+function explicitReviewBranch(reviewRef: string | undefined): string | null {
+  if (!reviewRef) return null
+  try {
+    return resolveBranchRef(reviewRef).branch
+  } catch {
+    return null
+  }
 }
 
 function taskBranchBypassWarningKey(
@@ -273,15 +319,16 @@ async function taskKeyWarningForDispatch(
 }
 
 function recordTaskKeyWarning(
-  runId: number,
+  runId: string,
   warning: string | null,
-  record: (runId: number, warning: string) => void,
+  record: (runId: string, warning: string) => void,
 ): void {
   if (warning) record(runId, warning)
 }
 
-function detachedRunCollectRemedy(id: number): string {
-  return `detached as run ${id}: ${PLATFORM_SLUG} run wait ${id}, then ${PLATFORM_SLUG} run result ${id}`
+function detachedRunCollectRemedy(id: string, runNumber: (id: string) => number): string {
+  const number = runNumber(id)
+  return `detached as run ${number}: ${PLATFORM_SLUG} run wait ${number}, then ${PLATFORM_SLUG} run result ${number}`
 }
 
 export async function dispatchCommand(
@@ -295,7 +342,6 @@ export async function dispatchCommand(
     doUsage,
     error,
     printRunId,
-    readPrompt,
     validateSchema,
     warnCallerDrift,
     warnTaskBranchBypass,
@@ -324,7 +370,7 @@ export async function dispatchCommand(
     throw new Error('--porcelain cannot be combined with --follow')
   }
   const requested = job(jobName)
-  const { agent, transport, transportExplicit, avoid, distinctModels, mcp } =
+  const { agent, agentExplicit, transport, transportExplicit, avoid, distinctModels, mcp } =
     await resolveDispatchOptions(jobName)
   const requestedCwd = flag('cwd')
   if (requestedCwd && !existsSync(requestedCwd))
@@ -431,14 +477,13 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = lensPromptFor(dispatchProject, requested.findings, lens, await readPrompt())
+  const prompt = await compose(presentation, dispatchProject, requested, lens, callerCwd, reviewRef)
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),
     flag('keep-tree-reason'),
   )
   const conflicts = jobName === 'implement' ? contractConflicts(prompt) : []
-
   // A fan-out cannot be run synchronously, and that is not a caller's problem
   // to solve.
   //
@@ -467,7 +512,7 @@ export async function dispatchCommand(
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, {
-      agent,
+      ...{ agent, agentExplicit },
       schema,
       label: flag('label'),
       lens,
@@ -494,14 +539,14 @@ export async function dispatchCommand(
     })
     recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
-    printRunId(id)
+    printRunId(presentation.runNumber(id))
     if (!has('quiet') && !porcelain) {
-      error(detachedRunCollectRemedy(id))
+      error(detachedRunCollectRemedy(id, presentation.runNumber))
     }
     if (detachByDefault && !has('detach') && !has('quiet') && !porcelain) {
       error(
         `\n— ${jobName} detached by default; collect it when it finishes.` +
-          `\n  ${PLATFORM_SLUG} run wait ${id}      then:  ${PLATFORM_SLUG} run result ${id}` +
+          `\n  ${PLATFORM_SLUG} run wait ${presentation.runNumber(id)}      then:  ${PLATFORM_SLUG} run result ${presentation.runNumber(id)}` +
           `\n  ${PLATFORM_SLUG} question inbox          if it stops to ask` +
           `\n  --follow            to watch it here instead`,
       )
@@ -528,7 +573,7 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, {
-    agent,
+    ...{ agent, agentExplicit },
     schema,
     label: flag('label'),
     lens,
@@ -554,6 +599,5 @@ export async function dispatchCommand(
   })
   recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
   warnImplementContractConflicts(conflicts, id)
-
   await follow(id, has('quiet'))
 }

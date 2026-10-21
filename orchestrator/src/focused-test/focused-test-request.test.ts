@@ -2,10 +2,12 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { addRun } from '../../test/fixtures/store.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { writeFocusedTestFileAtomic } from './focused-test-files.ts'
 import {
   FOCUSED_TEST_REQUEST_FILE,
+  focusedTestProgressFile,
   focusedTestResultFile,
   requestFocusedTests,
 } from './focused-test-request.ts'
@@ -41,11 +43,11 @@ function answerRequest(scratchDir: string, request: { id: string }): void {
   )
 }
 
-function expectedResult(scratchDir: string, request: { id: string }): string {
+function expectedResult(runId: string, scratchDir: string, request: { id: string }): string {
   return [
     'Focused tests exited 1 in 42ms.',
     `Full log: ${join(scratchDir, `focused-test-${request.id}.log`)}`,
-    `After the run closes: ${join(runArtifactsDir(123), `focused-test-${request.id}.log`)}`,
+    `After the run closes: ${join(runArtifactsDir(runId), `focused-test-${request.id}.log`)}`,
     'Output tail:\none failure',
   ].join('\n')
 }
@@ -63,9 +65,10 @@ function shortWait() {
 
 test('request handoff lets a simultaneous call join the same execution', async () => {
   const scratchDir = scratchDirectory()
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const signal = new AbortController().signal
   const first = requestFocusedTests({
-    runId: 123,
+    runId,
     scratchDir,
     paths: ['tests/one.test.ts'],
     signal,
@@ -74,36 +77,50 @@ test('request handoff lets a simultaneous call join the same execution', async (
   expect(request.paths).toEqual(['tests/one.test.ts'])
 
   const joined = requestFocusedTests({
-    runId: 123,
+    runId,
     scratchDir,
     paths: ['tests/two.test.ts'],
     signal,
   })
   answerRequest(scratchDir, request)
 
-  expect(await first).toBe(expectedResult(scratchDir, request))
+  expect(await first).toBe(expectedResult(runId, scratchDir, request))
   expect(await joined).toBe(
     `Focused tests for "tests/one.test.ts" were already running; ` +
       `this call ignored its requested paths ("tests/two.test.ts") and waited for the same execution.\n` +
-      expectedResult(scratchDir, request),
+      expectedResult(runId, scratchDir, request),
   )
 })
 
 test('a capped wait leaves the execution available for a later joining call', async () => {
   const scratchDir = scratchDirectory()
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const signal = new AbortController().signal
+  let now = 0
   const first = await requestFocusedTests(
-    { runId: 123, scratchDir, paths: ['tests/slow.test.ts'], signal },
-    shortWait(),
+    { runId, scratchDir, paths: ['tests/slow.test.ts'], signal },
+    {
+      waitMs: 1,
+      now: () => now,
+      wait: async () => {
+        now += 1
+        const request = emittedRequest(scratchDir)
+        writeFocusedTestFileAtomic(
+          join(scratchDir, focusedTestProgressFile(request.id)),
+          'waiting 250ms for host capacity (held_on=load)',
+        )
+      },
+    },
   )
   expect(first).toBe(
     'Focused tests for "tests/slow.test.ts" are still running. ' +
-      'Call run_tests again to wait for and collect this same execution.',
+      'Call run_tests again to wait for and collect this same execution.\n' +
+      'waiting 250ms for host capacity (held_on=load)',
   )
 
   const request = emittedRequest(scratchDir)
   const joined = requestFocusedTests({
-    runId: 123,
+    runId,
     scratchDir,
     paths: ['tests/ignored.test.ts'],
     signal,
@@ -113,21 +130,22 @@ test('a capped wait leaves the execution available for a later joining call', as
   expect(result).toContain(
     'this call ignored its requested paths ("tests/ignored.test.ts") and waited for the same execution.',
   )
-  expect(result).toContain(expectedResult(scratchDir, request))
+  expect(result).toContain(expectedResult(runId, scratchDir, request))
 })
 
 test('a finished uncollected result is returned before a new request starts', async () => {
   const scratchDir = scratchDirectory()
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const signal = new AbortController().signal
   await requestFocusedTests(
-    { runId: 123, scratchDir, paths: ['tests/slow.test.ts'], signal },
+    { runId, scratchDir, paths: ['tests/slow.test.ts'], signal },
     shortWait(),
   )
   const request = emittedRequest(scratchDir)
   answerRequest(scratchDir, request)
 
   const collected = await requestFocusedTests({
-    runId: 123,
+    runId,
     scratchDir,
     paths: ['tests/new.test.ts'],
     signal,
@@ -135,6 +153,6 @@ test('a finished uncollected result is returned before a new request starts', as
   expect(collected).toContain(
     'Focused tests for "tests/slow.test.ts" finished after an earlier run_tests call stopped waiting; returning that result.',
   )
-  expect(collected).toContain(expectedResult(scratchDir, request))
+  expect(collected).toContain(expectedResult(runId, scratchDir, request))
   expect(emittedRequest(scratchDir)).toEqual(request)
 })

@@ -16,7 +16,7 @@ export function treeRemoveCommand(path: string): void {
 }
 
 export function treeOpenCommand(
-  runId: number,
+  runId: string,
   seed: string | undefined,
   presentation: { log(value: string): void },
 ): void {

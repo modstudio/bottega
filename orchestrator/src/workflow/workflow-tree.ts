@@ -54,7 +54,11 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         title: step.title,
         ...(step.stage === undefined ? {} : { stage: step.stage }),
         floor: step.floor,
+        ...(step.outcomes?.length ? { outcomes: step.outcomes } : {}),
+        ...(step.rulingOutcomes?.length ? { rulingOutcomes: step.rulingOutcomes } : {}),
+        ...(step.reenter ? { reenter: step.reenter } : {}),
         ...(step.deferrable?.length ? { deferrable: step.deferrable } : {}),
+        ...(step.expectedExitCodes ? { expectedExitCodes: step.expectedExitCodes } : {}),
         ...(step.expectedStatus ? { expectedStatus: step.expectedStatus } : {}),
         ...(step.requirePullRequest ? { requirePullRequest: true } : {}),
         ...(step.operatorRuling ? { operatorRuling: true } : {}),
@@ -131,6 +135,28 @@ const expectedStatusFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { expectedStatus: frontMatter.expectedStatus as CatalogueStep['expectedStatus'] }
 
+const expectedExitCodesFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.expectedExitCodes === undefined
+    ? {}
+    : {
+        expectedExitCodes: frontMatter.expectedExitCodes as CatalogueStep['expectedExitCodes'],
+      }
+
+const outcomesFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.outcomes === undefined
+    ? {}
+    : { outcomes: frontMatter.outcomes as CatalogueStep['outcomes'] }
+
+const rulingOutcomesFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.rulingOutcomes === undefined
+    ? {}
+    : { rulingOutcomes: frontMatter.rulingOutcomes as CatalogueStep['rulingOutcomes'] }
+
+const reenterFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.reenter === undefined
+    ? {}
+    : { reenter: frontMatter.reenter as CatalogueStep['reenter'] }
+
 const stepBooleanOptionsFrom = (frontMatter: Record<string, unknown>) => ({
   ...(frontMatter.requirePullRequest === undefined
     ? {}
@@ -166,9 +192,13 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         title: frontMatter.title as string,
         stage: frontMatter.stage as CatalogueStep['stage'],
         floor: frontMatter.floor as CatalogueStep['floor'],
+        ...outcomesFrom(frontMatter),
+        ...rulingOutcomesFrom(frontMatter),
+        ...reenterFrom(frontMatter),
         ...(frontMatter.deferrable === undefined
           ? {}
           : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
+        ...expectedExitCodesFrom(frontMatter),
         ...expectedStatusFrom(frontMatter),
         ...stepBooleanOptionsFrom(frontMatter),
         ...commandEvidenceFrom(frontMatter),

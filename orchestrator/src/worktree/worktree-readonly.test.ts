@@ -11,6 +11,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { git } from '../git/git-environment.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import {
@@ -67,7 +69,7 @@ test('remote-tracking ref output skips malformed lines', () => {
 
 test('built-in read-only trees are detached shared clones with private refs', () => {
   const repoRoot = mkdtempSync(join(tmpdir(), 'orch-readonly-worktree-'))
-  const runId = 828
+  const runId = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
 
   try {
     git(['init', '--initial-branch=main'], repoRoot)
@@ -90,6 +92,7 @@ test('built-in read-only trees are detached shared clones with private refs', ()
     writeFileSync(join(remoteRefs, 'develop'), `${base}\n`)
     writeFileSync(join(remoteRefs, 'topic'), `${base}\n`)
     upsertProject({
+      recordId: newRecordId(),
       name: `readonly-worktree-${runId}`,
       path: realpathSync(repoRoot),
       settings: { trunk: 'develop' },

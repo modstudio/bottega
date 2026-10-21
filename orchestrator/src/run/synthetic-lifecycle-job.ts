@@ -15,7 +15,7 @@ export function agentWorkValue<T>(job: string, value: () => T): T | null {
 }
 
 export function assertAgentWorkRun(
-  id: number,
+  id: string,
   job: string,
   action: 'judged' | 'retried' | 'scored' | 'unvoided',
 ): void {

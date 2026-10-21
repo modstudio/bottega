@@ -38,14 +38,14 @@ import {
   readonlyLensProfile,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
+  sandboxReasonPrefix,
   sandboxRuntimeConfig,
   selectReadonlySandbox,
   withoutRegisteredOrchAskServer,
 } from './sandbox.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
-  id: 1,
-  recordId: null,
+  recordId: '01990000-0000-7000-8000-000000001214',
   name: 'fixture',
   path: '/projects/fixture',
   stack: 'node',
@@ -590,6 +590,7 @@ describe('readonly-lens sandbox profile', () => {
       runsDir: '/runs/evidence',
       project,
       agent: 'grok',
+      baseUrl: 'https://openrouter.ai/api/v1',
       path: '/opt/toolchain/bin:/usr/bin',
       nodeModuleLinks: ['/projects/fixture/node_modules'],
       environment,
@@ -621,12 +622,14 @@ describe('readonly-lens sandbox profile', () => {
       'cli-chat-proxy.grok.com',
       'auth.x.ai',
       'api.x.ai',
+      'openrouter.ai',
       'localhost',
       '127.0.0.1',
       '[::1]',
     ])
     expect(profile.network.allowUnixSockets).toEqual([])
     expect(profile.network.allowLocalBinding).toBe(true)
+    expect(profile.enableWeakerNetworkIsolation).toBe(true)
   })
 
   test('profile construction includes the exact token-directory deny without creating it', () => {
@@ -716,8 +719,10 @@ describe('readonly-lens sandbox profile', () => {
       nodeModuleLinks: [],
     })
     profile.network.allowUnixSockets.push('/runs/evidence/grok-leader.sock')
+    expect(profile.enableWeakerNetworkIsolation).toBe(false)
     expect(sandboxRuntimeConfig(profile)).toEqual({
       ...profile,
+      enableWeakerNetworkIsolation: false,
       filesystem: {
         denyRead: profile.filesystem.denyRead,
         allowRead: profile.filesystem.allowWithinDeny,
@@ -725,6 +730,26 @@ describe('readonly-lens sandbox profile', () => {
         denyWrite: profile.filesystem.denyWrite,
       },
     })
+  })
+
+  test('a remote HTTPS agent endpoint records weaker isolation on the srt selection', () => {
+    const selected = selectReadonlySandbox({
+      agent: 'goose-openrouter',
+      readsRepo: true,
+      writesRepo: false,
+      worktree: '/runs/tree',
+      runsDir: '/runs/evidence',
+      project: fixtureProject(),
+      path: '/usr/bin',
+      baseUrl: 'https://openrouter.ai/api/v1',
+    })
+    expect(selected.sandbox).toBe('srt')
+    expect(selected.profile?.enableWeakerNetworkIsolation).toBe(true)
+    expect(selected.reason).toBe(
+      'weaker network isolation enabled: remote HTTPS endpoint openrouter.ai ' +
+        'requires macOS trustd for TLS verification',
+    )
+    expect(sandboxReasonPrefix(selected.sandbox)).toBe('sandbox')
   })
 
   test('a read-only sandbox profile always denies Docker sockets', () => {
@@ -747,6 +772,7 @@ describe('readonly-lens sandbox profile', () => {
 
     expect(selected.sandbox).toBe('srt')
     expect(selected.reason).toBeNull()
+    expect(selected.profile?.enableWeakerNetworkIsolation).toBe(false)
     expect(selected.profile?.filesystem.denyRead).toEqual(
       expect.arrayContaining(READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir()))),
     )

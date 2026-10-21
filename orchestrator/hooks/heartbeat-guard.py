@@ -17,9 +17,11 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import uuid
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 DB = os.environ.get("ORCH_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
@@ -34,6 +36,15 @@ def bottega_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega"))
 
 
+def uuid_string(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
+
+
 def heartbeat_armed(session_id: str) -> bool | None:
     process_list = os.environ.get("ORCH_HEARTBEAT_PROCESS_LIST")
     if process_list is None:
@@ -42,7 +53,7 @@ def heartbeat_armed(session_id: str) -> bool | None:
                 ["ps", "-axo", "pid=,args="],
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=PROCESS_LIST_PS_TIMEOUT_SECONDS,
                 check=True,
             )
             process_list = observed.stdout
@@ -89,7 +100,7 @@ def live_landing_ids(session_id: str):
         connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
         try:
             rows = connection.execute(
-                "SELECT id FROM landing WHERE session_id = ? AND status IN ('queued','running')",
+                "SELECT record_id FROM landing WHERE session_id = ? AND status IN ('queued','running')",
                 (session_id,),
             ).fetchall()
         finally:
@@ -119,9 +130,9 @@ def live_run_ids(session_id: str):
             if not isinstance(data, dict):
                 raise ValueError("run data is not an object")
             if data.get("session_id") == session_id and data.get("status") in ("running", "asking"):
-                run_id = data.get("id")
-                if not isinstance(run_id, int):
-                    raise ValueError("live run has no integer id")
+                run_id = data.get("record_id")
+                if not uuid_string(run_id):
+                    raise ValueError("live run has no UUID record_id")
                 ids.append(run_id)
         return sorted(set(ids))
     except Exception:

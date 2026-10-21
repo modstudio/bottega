@@ -1,13 +1,13 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { retireOutboxRowWithDependencyProof } from './outbox-operator.ts'
 import { quarantineOutboxRow, retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 
 function fixture(): Database {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,7,'score','record-7','{}','2026-09-28T00:00:00.000Z')`,
@@ -118,8 +118,7 @@ describe('outbox quarantine exits', () => {
   })
 
   test('retire accepts an active row blocked by a retired parent and audits it', () => {
-    const database = new Database(':memory:')
-    applyMigrations(database)
+    const database = migratedTestDatabase()
     database
       .query(
         `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
@@ -153,6 +152,47 @@ describe('outbox quarantine exits', () => {
       error: null,
       attempts: 0,
       reason: 'parent cannot be delivered',
+    })
+    database.close()
+  })
+
+  test('retire accepts a held row and audits it', () => {
+    const database = migratedTestDatabase()
+    const heldReason = new HostedApiUpgradeRequiredError('run', ['futureColumn']).message
+    database
+      .query(
+        `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,last_error,attempts)
+         VALUES (?,10,'run','held-run','{}','2026-09-28',?,1)`,
+      )
+      .run(newRecordId(), heldReason)
+
+    retireOutboxRowWithDependencyProof(
+      10,
+      'operator chose not to deliver it',
+      database,
+      '2026-09-28T00:05:00.000Z',
+      'operator-session',
+    )
+
+    expect(
+      database.query('SELECT retired_at,retirement_reason FROM outbox WHERE id=10').get(),
+    ).toEqual({
+      retired_at: '2026-09-28T00:05:00.000Z',
+      retirement_reason: 'operator chose not to deliver it',
+    })
+    expect(
+      database
+        .query(
+          `SELECT disposition,error,attempts,reason,actor_session
+           FROM outbox_quarantine_audit WHERE outbox_id=10`,
+        )
+        .get(),
+    ).toEqual({
+      disposition: 'retire',
+      error: heldReason,
+      attempts: 1,
+      reason: 'operator chose not to deliver it',
+      actor_session: 'operator-session',
     })
     database.close()
   })

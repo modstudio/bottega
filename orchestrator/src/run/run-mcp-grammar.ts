@@ -11,7 +11,7 @@ export async function enforceRunMcpGrammar(input: {
   mode: McpMode
   pattern?: string
   probe: McpProbeResult
-  runId: number
+  runId: string
   started: number
   resetSandbox(): Promise<void>
 }): Promise<McpConnection | null> {

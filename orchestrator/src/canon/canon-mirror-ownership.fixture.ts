@@ -1,6 +1,7 @@
-import { existsSync, mkdtempSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -12,26 +13,19 @@ import { type CanonMirrorPort, systemCanonMirrorPort } from './canon-mirror.ts'
 
 export function mirrorRepository(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`))
-  spawnFixtureGitSync(['init'], { cwd: root })
-  spawnFixtureGitSync(
-    [
-      '-c',
-      'user.email=mirror@example.test',
-      '-c',
-      'user.name=Mirror Test',
-      'commit',
-      '--allow-empty',
-      '-m',
-      'fixture',
-    ],
-    { cwd: root },
+  spawnFixtureGitSync(['init', '-b', 'main'], { cwd: root })
+  appendFileSync(
+    join(root, '.git', 'config'),
+    '\n[user]\n\temail = mirror@example.test\n\tname = Mirror Test\n',
   )
+  spawnFixtureGitSync(['commit', '--allow-empty', '-m', 'fixture'], { cwd: root })
   return root
 }
 
 export async function registerManagedMirror(root: string, name: string): Promise<void> {
   installRecordApiClient(createMemoryRecordApiClient())
   upsertProject({
+    recordId: newRecordId(),
     name,
     path: root,
     canon: true,

@@ -2,18 +2,11 @@
 /** Runs a project's registered gate as an architect invocation and records the finished row. */
 import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
-import { readFileSync, unlinkSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  CHECK_EXECUTION_FILE_ENV,
-  type CheckExecutionRecord,
-  parseCheckExecutionLines,
-} from '../../../shared/check-execution.ts'
+import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -25,6 +18,11 @@ import {
 } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
+import {
+  gateCheckExecutionPath,
+  insertGateCheckExecutions,
+  readGateCheckExecutions,
+} from './gate-check-executions.ts'
 import {
   boundedGateOutputTail,
   decideGateHeadCommit,
@@ -120,35 +118,6 @@ function gateHeadCommit(cwd: string, observe: ArchitectGateGitState): string | n
   return decideGateHeadCommit(observe(cwd))
 }
 
-function checkExecutionPath(): string {
-  return join(
-    dirname(resolveOrchestratorDatabase(process.env)),
-    `check-execution-${crypto.randomUUID()}.jsonl`,
-  )
-}
-
-function readCheckExecutions(path: string, write: (chunk: string) => void): CheckExecutionRecord[] {
-  let records: CheckExecutionRecord[] = []
-  try {
-    const parsed = parseCheckExecutionLines(readFileSync(path, 'utf8'))
-    records = parsed.records
-    if (parsed.rejected) write(`check execution records rejected ${parsed.rejected} line(s)\n`)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      write(`check execution records could not be read: ${String(error)}\n`)
-    }
-  } finally {
-    try {
-      unlinkSync(path)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        write(`check execution records could not be removed: ${String(error)}\n`)
-      }
-    }
-  }
-  return records
-}
-
 /** Who may run the gate, in which registered project and checkout, with which command. */
 function architectGateTarget(input: {
   cwd?: string
@@ -192,7 +161,7 @@ export async function runArchitectGate(input: {
 }): Promise<ArchitectGateRecord> {
   const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
   ensureMainStackStarted({
-    projectId: project.id,
+    projectId: project.recordId,
     projectName: project.name,
     projectPath: project.path,
     declaration: project.settings.mainStack,
@@ -203,14 +172,14 @@ export async function runArchitectGate(input: {
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
   const observe = input.gitState ?? observeGitState
   const before = gateHeadCommit(checkoutTopLevel, observe)
-  const executionPath = checkExecutionPath()
+  const executionPath = gateCheckExecutionPath()
   const ran = await (input.runner ?? defaultRunner)({
     command,
     cwd: checkoutTopLevel,
     env: { ...process.env, [CHECK_EXECUTION_FILE_ENV]: executionPath },
     write,
   })
-  const checkExecutions = readCheckExecutions(executionPath, write)
+  const checkExecutions = readGateCheckExecutions(executionPath, write)
   // A gate that rewrites the tree while it runs tested something other than HEAD.
   const commit =
     before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
@@ -223,7 +192,7 @@ export async function runArchitectGate(input: {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO gate_execution
-          (record_id,run_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
+          (record_id,run_record_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
            output_tail,output_artifact,tooling_paths,resolved_command,head_commit,session_id,cwd)
          VALUES (?,NULL,?,?,?,?,0,?,?,NULL,'[]',?,?,?,?) RETURNING id`,
       )
@@ -241,23 +210,7 @@ export async function runArchitectGate(input: {
         checkoutTopLevel,
       )
     if (!row) throw new Error('gate_execution row was not inserted')
-    const insertCheck = d.query(
-      `INSERT INTO check_execution
-        (record_id,gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count)
-       VALUES (?,?,?,?,?,?,?,?)`,
-    )
-    for (const check of checkExecutions) {
-      insertCheck.run(
-        newRecordId(),
-        row.id,
-        check.check,
-        check.category ?? null,
-        check.wallMs,
-        check.cpuMs ?? null,
-        check.exitCode,
-        check.remaining ?? null,
-      )
-    }
+    insertGateCheckExecutions(d, row.id, checkExecutions)
     return { id: row.id, exitCode: ran.exitCode }
   }, d)
 }

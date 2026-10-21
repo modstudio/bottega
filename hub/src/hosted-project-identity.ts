@@ -2,6 +2,7 @@
 /** Hub SQL adapter over the shared project-identity decision. */
 import type { SQL } from 'bun'
 import {
+  MISSING_PROJECT_ID_REMEDY,
   type RecordProjectIdentityResult,
   recordProjectIdentityDecision,
 } from '../../shared/record-project-identity.ts'
@@ -9,17 +10,13 @@ import {
 async function resolveHubRecordProjectIdentity(
   tx: SQL,
   input: {
-    projectId?: string | null
+    projectId: string
     projectName?: string | null
     spaceId?: string | null
   },
 ): Promise<RecordProjectIdentityResult> {
-  const rows = input.projectId
-    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${input.projectId}::uuid`
-    : input.spaceId
-      ? await tx`SELECT id,name,space_id,retired_at FROM project
-          WHERE space_id=${input.spaceId}::uuid AND name=${input.projectName}`
-      : await tx`SELECT id,name,space_id,retired_at FROM project WHERE name=${input.projectName}`
+  const rows =
+    await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${input.projectId}::uuid`
   const result = recordProjectIdentityDecision({
     requestedId: input.projectId,
     requestedName: input.projectName,
@@ -44,9 +41,15 @@ export async function storedHubProjectId(
   input: { projectId?: string | null; projectName?: string | null },
 ): Promise<string | null> {
   if (!input.projectId && !input.projectName) return null
-  const resolved = await resolveHubRecordProjectIdentity(tx, { ...input, spaceId })
+  if (!input.projectId)
+    throw new Error(
+      `project-scoped hosted write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+    )
+  const resolved = await resolveHubRecordProjectIdentity(tx, {
+    ...input,
+    projectId: input.projectId,
+    spaceId,
+  })
   if (resolved.status === 'found') return resolved.project.id
-  if (input.projectId)
-    throw new Error(`record project ${input.projectId} is absent from request space ${spaceId}`)
-  return null
+  throw new Error(`record project ${input.projectId} is absent from request space ${spaceId}`)
 }

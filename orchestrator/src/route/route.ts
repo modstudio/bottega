@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
+import type { Agent } from '../agent/agents.ts'
 import {
   fileContractProbeReason,
   predatesFileContract,
@@ -15,6 +16,7 @@ import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
+import { transportPinIneligibility } from '../transport/transport.ts'
 
 export type Candidate = {
   agent: string
@@ -59,8 +61,11 @@ export type Candidate = {
   declared: string[] | null
   preferred: boolean
   maxConcurrent: number | null
-  runningRunIds: number[]
+  runningRunIds: string[]
 }
+
+const RUNNING_RUNS_SQL =
+  "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
 
 /**
  * How long to leave an agent alone after it runs out of quota or loses its
@@ -132,7 +137,7 @@ export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
       `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
        FROM run
       WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
-        AND evidence_excluded IS NULL AND parent_run_id IS NULL
+        AND evidence_excluded IS NULL AND parent_run_record_id IS NULL
         AND agent != '(pending)'`,
     )
     .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
@@ -180,7 +185,7 @@ export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
 }
 
 type RoutingWindowRow = {
-  id: number
+  record_id: string
   agent: string
   model: string | null
   startedAt: string
@@ -199,7 +204,9 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
 ): { rows: T[]; evidenceModel: string | null } {
   const modelRows = rows
     .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id)
+    .sort(
+      (a, b) => b.startedAt.localeCompare(a.startedAt) || b.record_id.localeCompare(a.record_id),
+    )
     .slice(0, EVIDENCE_WINDOW)
   return { rows: modelRows, evidenceModel: currentModel }
 }
@@ -420,6 +427,7 @@ export function candidates(
   coolingProbeAgent?: string,
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
+  explicitlyNamedAgent?: string,
 ): Candidate[] {
   const j = job(jobName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
@@ -469,16 +477,16 @@ export function candidates(
                        THEN ${weightCase()} ELSE 0 END) AS pts,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_tokens, 0) ELSE 0 END) AS tokens,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END) AS cost
-         FROM run r LEFT JOIN score s ON s.run_id = r.id
+         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
         -- Child turns are excluded: a conversation is ONE piece of evidence
         -- about an agent, and its root row carries the outcome. Counting each
         -- turn would let an agent cross MIN_SAMPLE by asking questions.
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
-          AND r.parent_run_id IS NULL
+          AND r.parent_run_record_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = r.id AND rl.lens = ?)' : ''}
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}
         GROUP BY r.agent`,
     )
     .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
@@ -491,22 +499,21 @@ export function candidates(
     cost: number
   }[]
   const hist = new Map(rows.map((r) => [r.agent, r]))
-
   const evidenceRows = (
     db()
       .query(
-        `SELECT r.id, r.agent, r.model, r.started_at AS startedAt, r.status,
+        `SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
               r.failure_kind AS failureKind, s.delivery, ${weightCase()} AS pts
-         FROM run r LEFT JOIN score s ON s.run_id = r.id
+         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
-          AND r.parent_run_id IS NULL
+          AND r.parent_run_record_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = r.id AND rl.lens = ?)' : ''}`,
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}`,
       )
       .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
-      id: number
+      record_id: string
       agent: string
       model: string | null
       startedAt: string
@@ -516,7 +523,6 @@ export function candidates(
       pts: number | null
     }[]
   ).filter(isRoutingEvidence)
-
   type Evidence = { scored: number; failures: number; none: number; pts: number }
   const aggregate = (rs: typeof evidenceRows): Evidence => ({
     scored: rs.filter((r) => r.delivery !== null).length,
@@ -534,7 +540,7 @@ export function candidates(
         WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
           AND ${promptBucketSql('run', promptBytes)}
           ${stack ? 'AND stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = run.id AND rl.lens = ?)' : ''}`,
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = run.record_id AND rl.lens = ?)' : ''}`,
     )
     .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
     agent: string
@@ -560,14 +566,14 @@ export function candidates(
       db()
         .query(
           `WITH terminal AS (
-         SELECT id, agent, status, failure_kind,
+         SELECT record_id, agent, status, failure_kind,
                 julianday(started_at) + latency_ms / 86400000.0 AS finished_at
            FROM run
           WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
        ), cooling_failures AS (
-         SELECT id, agent, failure_kind, finished_at,
+         SELECT record_id, agent, failure_kind, finished_at,
                 ROW_NUMBER() OVER (
-                  PARTITION BY agent ORDER BY finished_at DESC, id DESC
+                  PARTITION BY agent ORDER BY finished_at DESC, record_id DESC
                 ) AS recency
            FROM terminal
           WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
@@ -599,17 +605,15 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    let eligible = true
-    let why = ''
     const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
+    const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent)
+    let eligible = true,
+      why = policy.why
     const unavailable = unavailableReason(name)
-    const runningRunIds = (
-      db()
-        .query("SELECT id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY id")
-        .all(name) as { id: number }[]
-    ).map((row) => row.id)
+    const runningRunIds = (db().query(RUNNING_RUNS_SQL).all(name) as { record_id: string }[]).map(
+      (row) => row.record_id,
+    )
     const declared = a.jobs ?? null
-    const preferred = Boolean(a.preferredJobs?.includes(jobName))
     if (declared && !declared.includes(jobName)) {
       eligible = false
       why = `not declared for ${jobName}`
@@ -619,9 +623,9 @@ export function candidates(
     } else if (unavailable) {
       eligible = false
       why = unavailable
-    } else if (a.billing === 'metered') {
+    } else if (!policy.eligible) {
       eligible = false
-      why = 'metered billing'
+      why = policy.why
     } else if (!a.probedAt) {
       eligible = false
       why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe ${name}`
@@ -679,7 +683,7 @@ export function candidates(
       why,
       cooling,
       declared,
-      preferred,
+      preferred: Boolean(a.preferredJobs?.includes(jobName)),
       maxConcurrent: a.maxConcurrent ?? null,
       runningRunIds,
     }
@@ -987,21 +991,20 @@ export function pick(
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    // Keep candidates()' reporting view unchanged: cooling remains an exclusion
-    // in guide and hub. Only this explicit probe route gets a candidate whose
-    // other exclusions are evaluated without the cooling circuit in front.
-    const probeCandidates = probe
-      ? candidates(
-          jobName,
-          promptBytes,
-          ev.level === 'stack' ? ev.stack : undefined,
-          avoid.model,
-          override,
-          ev.level === 'lens' ? ev.lens : undefined,
-          avoid.requiredMcp,
-        )
-      : cands
-    const c = probeCandidates.find((x) => x.agent === override)
+    // Keep candidates()' reporting view unchanged: metered billing and cooling
+    // remain routing exclusions in guide and hub. A named route may spend the
+    // former, while only an explicit probe bypasses the latter.
+    const namedCandidates = candidates(
+      jobName,
+      promptBytes,
+      ev.level === 'stack' ? ev.stack : undefined,
+      avoid.model,
+      probe ? override : undefined,
+      ev.level === 'lens' ? ev.lens : undefined,
+      avoid.requiredMcp,
+      override,
+    )
+    const c = namedCandidates.find((x) => x.agent === override)
     if (!c) throw new Error(`unknown agent "${override}"`)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
       throw new Error(capacityRefusal(c))
@@ -1138,4 +1141,83 @@ export function pick(
     agent: chosen.agent,
     reason: withConstraint(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),
   }
+}
+
+export function meteredRouteEligibility(input: {
+  billing: string
+  routeMetered: boolean
+  writesRepo: boolean
+  name: string
+  explicitlyNamedAgent?: string
+}): { eligible: boolean; why: string; mayAutoRouteNamedJob: boolean } {
+  if (input.billing !== 'metered' || input.explicitlyNamedAgent === input.name)
+    return {
+      eligible: true,
+      why: '',
+      mayAutoRouteNamedJob: input.explicitlyNamedAgent === input.name,
+    }
+  if (!input.routeMetered)
+    return {
+      eligible: false,
+      why: 'metered billing is not opted in for automatic routing',
+      mayAutoRouteNamedJob: false,
+    }
+  if (input.writesRepo)
+    return {
+      eligible: false,
+      why: 'metered routing opt-in is limited to jobs that do not write the repository',
+      mayAutoRouteNamedJob: false,
+    }
+  return { eligible: true, why: '', mayAutoRouteNamedJob: true }
+}
+
+export function agentMeteredRouteEligibility(
+  jobName: string,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name'>,
+  explicitlyNamedAgent?: string,
+): ReturnType<typeof meteredRouteEligibility> {
+  return meteredRouteEligibility({
+    billing: agent.billing,
+    routeMetered: Boolean(agent.routeMetered),
+    writesRepo: Boolean(job(jobName).needs.writesRepo),
+    name: agent.name,
+    explicitlyNamedAgent,
+  })
+}
+
+function routePolicyEligibility(
+  jobName: string,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport'>,
+  explicitlyNamedAgent: string | undefined,
+) {
+  const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)
+  if (!metered.eligible) return metered
+  const transportWhy =
+    agent.defaultTransport === 'acp'
+      ? transportPinIneligibility(
+          jobName,
+          agent.name,
+          AGENTS[agent.name]!,
+          agent.defaultTransport,
+          metered.mayAutoRouteNamedJob,
+        )
+      : null
+  return transportWhy ? { ...metered, eligible: false, why: transportWhy } : metered
+}
+
+export function agentsIneligibleForTransport(jobName: string, transport: 'cli' | 'acp'): string[] {
+  return Object.values(AGENTS)
+    .filter((agent) => {
+      const policy = agentMeteredRouteEligibility(jobName, agent)
+      return (
+        transportPinIneligibility(
+          jobName,
+          agent.name,
+          agent,
+          transport,
+          policy.mayAutoRouteNamedJob,
+        ) !== null
+      )
+    })
+    .map((agent) => agent.name)
 }

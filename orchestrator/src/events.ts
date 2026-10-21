@@ -27,6 +27,7 @@ const PEEK_TEXT_CHARS = 120
 
 export type RunLogEvent =
   | { ts: string; type: 'text'; text: string }
+  | { ts: string; type: 'warning'; text: string }
   | {
       ts: string
       type: 'note'
@@ -34,7 +35,6 @@ export type RunLogEvent =
       noteLabel: string
       candidates: { recordId: string; label: string }[]
     }
-  | { ts: string; type: 'note'; noteId: number; candidateIds: number[] }
   | {
       ts: string
       type: 'tool_call'
@@ -57,6 +57,7 @@ export type RunLogEvent =
       ts: string
       type: 'focused_test'
       paths: string[]
+      started: boolean
       exitCode: number
       timedOut: boolean
       elapsedMs: number
@@ -65,6 +66,7 @@ export type RunLogEvent =
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
+  | { type: 'warning'; text: string }
   | { type: 'note'; noteLabel: string; candidateLabels: string[] }
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
@@ -76,6 +78,7 @@ type PeekEventSummary =
   | {
       type: 'focused_test'
       paths: string[]
+      started: boolean
       exitCode: number
       timedOut: boolean
       elapsedMs: number
@@ -84,6 +87,7 @@ type PeekEventSummary =
 
 export type PeekSummary = {
   id: number
+  record_id: string
   status: string
   agent: string
   job: string
@@ -102,8 +106,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-export function runEventsPath(id: number, runsDir = resolveRunsDirectory(process.env)): string {
-  return join(runsDir, String(id), 'events.jsonl')
+export function runEventsPath(id: string, runsDir = resolveRunsDirectory(process.env)): string {
+  return join(runsDir, id, 'events.jsonl')
 }
 
 export function idleWarnMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -136,40 +140,44 @@ export function idleMsSince(
   return Math.max(0, now - since)
 }
 
-function touchLastEventAt(runId: number, ts: string): void {
+function touchLastEventAt(runId: string, ts: string): void {
   if (!runId) return
   try {
-    writableDb().query('UPDATE run SET last_event_at=? WHERE id=?').run(ts, runId)
+    writableDb().query('UPDATE run SET last_event_at=? WHERE record_id=?').run(ts, runId)
   } catch {
     /* best-effort: a live tee must not fail the vendor process */
   }
 }
 
-export function appendRunEvent(
-  runId: number,
-  event: RunLogEvent,
-  path = runEventsPath(runId),
-): void {
+export function appendRunEvent(runId: string, event: RunLogEvent, path?: string): void {
   // Best-effort, like touchLastEventAt: the live log observes the vendor
   // stream and must never fail the run or reach its outcome (review 349).
   try {
-    mkdirSync(dirname(path), { recursive: true })
-    appendFileSync(path, `${JSON.stringify(event)}\n`)
+    const destination = path ?? runEventsPath(runId)
+    mkdirSync(dirname(destination), { recursive: true })
+    appendFileSync(destination, `${JSON.stringify(event)}\n`)
   } catch {
     /* a missing or unwritable run directory loses the log line, nothing else */
   }
   if (isWorkerActivity(event)) touchLastEventAt(runId, event.ts)
 }
 
+/** Record a non-fatal run warning consistently across dispatch and live execution. */
+export function recordRunWarning(runId: string, warning: string): void {
+  appendRunEvent(runId, { ts: nowIso(), type: 'warning', text: warning })
+}
+
 function isWorkerActivity(event: RunLogEvent): boolean {
-  return !['ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(event.type)
+  return !['warning', 'ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(
+    event.type,
+  )
 }
 
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
 
 export function createEventLog(
-  runId: number,
-  path = runEventsPath(runId),
+  runId: string,
+  path?: string,
 ): {
   observe(event: StreamEvent, ts?: string): void
   flush(ts?: string): void
@@ -227,7 +235,7 @@ export function createEventLog(
 
 export async function teeTransportEvents(
   events: AsyncIterable<{ kind: string }>,
-  runId: number,
+  runId: string,
 ): Promise<void> {
   const log = createEventLog(runId)
   try {
@@ -486,7 +494,11 @@ export function readEventLog(path: string): RunLogEvent[] {
         parsed &&
         typeof parsed === 'object' &&
         typeof parsed.ts === 'string' &&
-        typeof parsed.type === 'string'
+        typeof parsed.type === 'string' &&
+        (parsed.type !== 'note' ||
+          (typeof parsed.noteRecordId === 'string' &&
+            typeof parsed.noteLabel === 'string' &&
+            Array.isArray(parsed.candidates)))
       ) {
         events.push(parsed)
       }
@@ -499,19 +511,13 @@ export function readEventLog(path: string): RunLogEvent[] {
 
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
+  if (event.type === 'warning')
+    return { type: 'warning', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'note') {
-    // Run files live for KEEP_RUN_FILES_DAYS, so accept the numeric event shape until they age out.
-    if ('noteLabel' in event) {
-      return {
-        type: 'note',
-        noteLabel: event.noteLabel,
-        candidateLabels: event.candidates.map((candidate) => candidate.label),
-      }
-    }
     return {
       type: 'note',
-      noteLabel: String(event.noteId),
-      candidateLabels: event.candidateIds.map(String),
+      noteLabel: event.noteLabel,
+      candidateLabels: event.candidates.map((candidate) => candidate.label),
     }
   }
   if (event.type === 'tool_call') {
@@ -533,6 +539,7 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
     return {
       type: 'focused_test',
       paths: event.paths,
+      started: event.started,
       exitCode: event.exitCode,
       timedOut: event.timedOut,
       elapsedMs: event.elapsedMs,
@@ -569,16 +576,17 @@ function worktreeCommits(worktree: string | null, base: string | null): string[]
 }
 
 export function peekRun(
-  id: number,
+  id: string,
   opts: { events?: number; now?: number; runsDir?: string } = {},
 ): PeekSummary {
   const row = db()
     .query(
-      `SELECT id, status, agent, job, started_at, last_event_at, worktree, base_commit, vendor_tokens
-       FROM run WHERE id=?`,
+      `SELECT number AS id, record_id, status, agent, job, started_at, last_event_at, worktree, base_commit, vendor_tokens
+       FROM run WHERE record_id=?`,
     )
     .get(id) as {
     id: number
+    record_id: string
     status: string
     agent: string
     job: string
@@ -603,6 +611,7 @@ export function peekRun(
   const usage = [...events].reverse().find((event) => event.type === 'usage')
   return {
     id: row.id,
+    record_id: row.record_id,
     status: row.status,
     agent: row.agent,
     job: row.job,
@@ -628,7 +637,7 @@ function formatFocusedTestPeekEvent(event: Extract<PeekEventSummary, { type: 'fo
 }
 
 function formatPeekEvent(event: PeekEventSummary): string {
-  if (event.type === 'text') return `  text ${event.text}`
+  if ('text' in event) return `  ${event.type} ${event.text}`
   if (event.type === 'note') {
     return `  note ${event.noteLabel}${event.candidateLabels.length ? ` near ${event.candidateLabels.join(',')}` : ''}`
   }

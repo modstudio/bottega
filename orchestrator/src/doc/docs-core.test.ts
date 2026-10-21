@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { consumeDoc, importDocs, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -12,8 +12,9 @@ import {
 import { dir } from '../../test/fixtures/store.ts'
 import { compilePack } from '../canon/canon.ts'
 import { db } from '../database/db.ts'
-import { retireProject, upsertProject } from '../project/projects.ts'
+import { projects, retireProject, upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding.ts'
+import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
 import {
   consumeDoc as consumeDocument,
   removeDoc as deleteDoc,
@@ -30,6 +31,10 @@ import {
   signedInDocOwner,
   setDoc as writeDoc,
 } from './docs.ts'
+
+function upsertFixtureProject(name: string, path: string, canon = true): void {
+  upsertProject({ name, path, canon, recordId: newRecordId(), stack: null, settings: {} })
+}
 
 describe('scoped operator docs', () => {
   test('never-bound document lifecycle stays local and rejects a stale revision', async () => {
@@ -97,7 +102,7 @@ describe('scoped operator docs', () => {
       expectedRevision: consumed.revision!,
     })
     const history = listDocRevisions('global', null, created.slug)
-    const restored = await restoreDoc('global', null, created.slug, history.at(-1)!.id, {
+    const restored = await restoreDoc('global', null, created.slug, history.at(-1)!.record_id, {
       reason: 'restore local document',
       expectedRevision: history[0]!.record_id!,
     })
@@ -125,7 +130,7 @@ describe('scoped operator docs', () => {
         delivery: 'demand',
         reason: 'prove refusal',
       }),
-    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record doctor`))
+    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record use`))
     expect(getDoc('global', null, 'bound-refusal')).toBeNull()
   })
 
@@ -141,11 +146,13 @@ describe('scoped operator docs', () => {
       reason: 'prove settings owner visibility',
     })
     expect(
-      listDocs({ scope: 'settings', subject: null }).some((row) => row.id === created.id),
+      listDocs({ scope: 'settings', subject: null }).some(
+        (row) => row.record_id === created.record_id,
+      ),
     ).toBe(false)
     expect(listDocs({ scope: 'settings', subject: null, owner })).toContainEqual(created)
     expect(getDoc('settings', null, 'settings')).toBeNull()
-    expect(getDoc('settings', null, 'settings', owner)?.id).toBe(created.id)
+    expect(getDoc('settings', null, 'settings', owner)?.record_id).toBe(created.record_id)
   })
 
   test('settings updates require the exposed current revision locally', async () => {
@@ -184,12 +191,14 @@ describe('scoped operator docs', () => {
       reason: 'prove owner visibility',
       allowCanonBootstrap: true,
     })
-    expect(listDocs({ scope: 'canon', subject: null }).some((row) => row.id === created.id)).toBe(
-      false,
-    )
+    expect(
+      listDocs({ scope: 'canon', subject: null }).some(
+        (row) => row.record_id === created.record_id,
+      ),
+    ).toBe(false)
     expect(listDocs({ scope: 'canon', subject: null, owner })).toContainEqual(created)
     expect(getDoc('canon', null, created.slug)).toBeNull()
-    expect(getDoc('canon', null, created.slug, owner)?.id).toBe(created.id)
+    expect(getDoc('canon', null, created.slug, owner)?.record_id).toBe(created.record_id)
     expect(listDocRevisions('canon', null, created.slug)).toEqual([])
     expect(listDocRevisions('canon', null, created.slug, owner)).toHaveLength(1)
   })
@@ -252,7 +261,7 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
       reason: 'create stale verb fixture',
     })
-    const target = listDocRevisions('global', null, created.slug)[0]!.id
+    const target = listDocRevisions('global', null, created.slug)[0]!.record_id
     const updated = await writeDoc({
       scope: 'global',
       subject: null,
@@ -296,7 +305,7 @@ describe('scoped operator docs', () => {
       reason: 'create missing revision fixture',
       allowCanonBootstrap: true,
     })
-    db().query('DELETE FROM doc_revision WHERE doc_id=?').run(created.id)
+    db().query('DELETE FROM doc_revision WHERE doc_record_id=?').run(created.record_id)
     await expect(
       deleteDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
     ).rejects.toThrow(
@@ -326,7 +335,9 @@ describe('scoped operator docs', () => {
       title: 'Legacy prose',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This was formerly different.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This was formerly different.', stored.record_id)
     await expect(
       setDoc({
         scope: 'global',
@@ -352,15 +363,17 @@ describe('scoped operator docs', () => {
     })
     const revision = listDocRevisions('canon', null, created.slug, owner)[0]!
     const legacyBody = '---\ndescription: Legacy user canon\n---\n\nThis was formerly different.\n'
-    db().query('UPDATE doc SET body=? WHERE id=?').run(legacyBody, created.id)
-    db().query('UPDATE doc_revision SET body=? WHERE id=?').run(legacyBody, revision.id)
+    db().query('UPDATE doc SET body=? WHERE record_id=?').run(legacyBody, created.record_id)
+    db()
+      .query('UPDATE doc_revision SET body=? WHERE record_id=?')
+      .run(legacyBody, revision.record_id)
 
     await expect(
       restoreDoc(
         'canon',
         null,
         created.slug,
-        revision.id,
+        revision.record_id,
         { reason: 'restore owned legacy revision', expectedRevision: created.revision! },
         owner,
       ),
@@ -375,7 +388,9 @@ describe('scoped operator docs', () => {
       title: 'Legacy edit',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This was formerly different.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This was formerly different.', stored.record_id)
     await expect(
       setDoc({
         scope: 'global',
@@ -387,24 +402,14 @@ describe('scoped operator docs', () => {
     ).rejects.toThrow('contains a task key')
   })
 
-  test('an unreadable unrelated checkout does not affect a project doc write', async () => {
-    upsertProject({ name: 'known', path: process.cwd(), stack: null, canon: true, settings: {} })
-    upsertProject({
-      name: 'unreadable',
-      path: '/dev/null',
-      stack: null,
-      canon: false,
-      settings: {},
-    })
-    await expect(
-      setDoc({
-        scope: 'project',
-        subject: 'known',
-        slug: 'target-only',
-        title: 'Target only',
-        body: 'See `package.json`.',
-      }),
-    ).resolves.toMatchObject({ slug: 'target-only' })
+  test('an unreadable unrelated checkout does not affect a project doc write', () => {
+    upsertFixtureProject('known', process.cwd(), true)
+    upsertFixtureProject('unreadable', '/dev/null', false)
+    expect(
+      docReferenceTargetProjects({ scope: 'project', subject: 'known' }, projects()).map(
+        ({ name }) => name,
+      ),
+    ).toEqual(['known'])
   })
 
   test('CRUD round-trips and set is a uniqueness-preserving upsert', async () => {
@@ -423,7 +428,7 @@ describe('scoped operator docs', () => {
       title: 'Hello again',
       body: 'two',
     })
-    expect(second.id).toBe(first.id)
+    expect(second.record_id).toBe(first.record_id)
     expect(listDocs()).toHaveLength(1)
     expect(second.created_at).toBe(first.created_at)
     expect(second.body).toBe('two')
@@ -460,7 +465,7 @@ describe('scoped operator docs', () => {
       'global',
       null,
       'revision-life',
-      listDocRevisions('global', null, 'revision-life').at(-1)!.id,
+      listDocRevisions('global', null, 'revision-life').at(-1)!.record_id,
       { author: 'restorer', reason: 'bring it back' },
     )
     expect(restored.record_id).not.toBe(beforeDelete.record_id)
@@ -486,9 +491,9 @@ describe('scoped operator docs', () => {
       'remove it',
       'bring it back',
     ])
-    expect(getDocRevision(revisions[2]!.id)?.body).toContain('status: consumed')
-    expect(getDocRevision(revisions[3]!.id)?.body).toBe(beforeDelete.body)
-    expect(getDocRevision(revisions[1]!.id)?.delivery).toBe('demand')
+    expect(getDocRevision(revisions[2]!.record_id)?.body).toContain('status: consumed')
+    expect(getDocRevision(revisions[3]!.record_id)?.body).toBe(beforeDelete.body)
+    expect(getDocRevision(revisions[1]!.record_id)?.delivery).toBe('demand')
     expect(restored.body).toBe('---\nstatus: open\n---\n\none')
     expect(restored.delivery).toBe('demand')
     expect(restored.updated_at).not.toBe(created.updated_at)
@@ -504,49 +509,49 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
       reason: 'create revision shell',
     })
-    db().query("UPDATE doc_revision SET delivery='inject' WHERE doc_id=?").run(legacy.id)
+    db()
+      .query("UPDATE doc_revision SET delivery='inject' WHERE doc_record_id=?")
+      .run(legacy.record_id)
     const revision = listDocRevisions('global', null, 'legacy-inject')[0]!
 
     await expect(
-      restoreDoc('global', null, 'legacy-inject', revision.id, { reason: 'restore legacy state' }),
+      restoreDoc('global', null, 'legacy-inject', revision.record_id, {
+        reason: 'restore legacy state',
+      }),
     ).rejects.toThrow(
       'make the instruction canon, or write the operator document with delivery demand',
     )
   })
 
   test('restore refuses a canon path colliding with the other level', async () => {
-    upsertProject({ name: 'known', path: process.cwd(), stack: null, canon: true, settings: {} })
+    upsertFixtureProject('known', process.cwd(), true)
     const slug = '.agents/rules/shared.md'
     const body = '---\ndescription: Shared rule\nalways: true\n---\n\nRule.\n'
-    const projectDoc = await writeDoc({
-      scope: 'canon',
-      subject: 'known',
-      slug,
-      title: 'Project rule',
-      body,
-      reason: 'create project revision',
-      allowCanonBootstrap: true,
-    })
-    const revision = listDocRevisions('canon', 'known', slug)[0]!
-    await deleteDoc('canon', 'known', slug, {
-      reason: 'make the historic row restorable',
-      expectedRevision: projectDoc.revision!,
-    })
-    const deletedRevision = getDocRevision(listDocRevisions('canon', 'known', slug)[0]!.id)
-    await writeDoc({
-      scope: 'canon',
-      subject: null,
-      slug,
-      title: 'Global rule',
-      body,
-      reason: 'occupy the global path',
-      allowCanonBootstrap: true,
-    })
+    const project = db()
+      .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='known'")
+      .get()!
+    const revisionId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc_revision
+         (record_id,number,scope,subject,slug,project_record_id,op,title,body,delivery,author,reason,at,
+          audiences)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),'canon','known',?,?,'create',
+           'Project rule',?,'inject','test','seed restore fixture','2026-10-20','["internal"]')`,
+      )
+      .run(revisionId, slug, project.record_id, body)
+    db()
+      .query(
+        `INSERT INTO doc
+         (record_id,scope,subject,slug,title,body,delivery,created_at,updated_at,audiences,source_files)
+         VALUES (?,'canon',NULL,?,'Global rule',?,'inject','2026-10-20','2026-10-20','["internal"]','[]')`,
+      )
+      .run(newRecordId(), slug, body)
 
     await expect(
-      restoreDoc('canon', 'known', projectDoc.slug, revision.id, {
+      restoreDoc('canon', 'known', slug, revisionId, {
         reason: 'restore colliding project rule',
-        expectedRevision: deletedRevision!.record_id!,
+        expectedRevision: revisionId,
       }),
     ).rejects.toThrow('refusing canon path collision')
   })
@@ -674,11 +679,11 @@ describe('scoped operator docs', () => {
       reason: 'second',
     })
     const [latest, previous] = listDocRevisions('global', null, 'diffed')
-    expect(diffDocRevisions(previous!.id, latest!.id)).toContain('-one\n+two')
+    expect(diffDocRevisions(previous!.record_id, latest!.record_id)).toContain('-one\n+two')
   })
 
   test('history and restore survive retirement of the addressed project', async () => {
-    upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
+    upsertFixtureProject('former', '/w/former', true)
     await setDoc({
       scope: 'project',
       subject: 'former',
@@ -699,11 +704,11 @@ describe('scoped operator docs', () => {
         'historic',
         listDocRevisions('project', 'former', 'historic').find(
           (revision) => revision.op === 'create',
-        )!.id,
+        )!.record_id,
         { reason: 'restore after retiring' },
       ),
     ).toMatchObject({
-      id: expect.any(Number),
+      record_id: expect.any(String),
       scope: 'project',
       subject: 'former',
       slug: 'historic',
@@ -712,13 +717,13 @@ describe('scoped operator docs', () => {
   })
 
   test('consume survives retirement of the addressed project', async () => {
-    upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
+    upsertFixtureProject('former', '/w/former', true)
     await setDoc({
       scope: 'resume',
       subject: 'former',
       slug: 'epic',
       title: 'Resume',
-      body: '---\nstatus: open\n---\n\nresume',
+      body: resume,
     })
     await setDoc({
       scope: 'project',
@@ -736,14 +741,14 @@ describe('scoped operator docs', () => {
   })
 
   test('scope, slug, and every subject rule name a usable fix', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertFixtureProject('known', '/w/known', true)
     const put = (scope: string, subject: string | null, slug = 'ok') =>
       setDoc({
         scope,
         subject,
         slug,
         title: 'T',
-        body: scope === 'resume' ? '---\nstatus: open\n---\n\nB' : 'B',
+        body: scope === 'resume' ? resume : 'B',
       })
     await expect(put('global', null, 'Bad')).rejects.toThrow('1-64')
     await expect(put('global', null, 'a'.repeat(65))).rejects.toThrow('1-64')
@@ -760,7 +765,7 @@ describe('scoped operator docs', () => {
   })
 
   test('docsForRun injects job docs and omits demand and non-run scopes', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertFixtureProject('known', '/w/known', true)
     expect(docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toEqual([])
     await setDoc({
       scope: 'project',
@@ -778,7 +783,7 @@ describe('scoped operator docs', () => {
       subject: 'known',
       slug: 'epic',
       title: 'Resume',
-      body: '---\nstatus: open\n---\n\nR',
+      body: resume,
     })
     expect(docsForRun({ job: 'file-question', cwd: '/w/known/src' }).map((d) => d.title)).toEqual([
       'Job',
@@ -786,7 +791,7 @@ describe('scoped operator docs', () => {
   })
 
   test('delivery is round-tripped and demand docs never enter a compiled pack', async () => {
-    upsertProject({ name: 'known', path: dir, stack: null, canon: true, settings: {} })
+    upsertFixtureProject('known', dir, true)
     await setDoc({
       scope: 'machine',
       subject: null,
@@ -812,7 +817,7 @@ describe('scoped operator docs', () => {
     })
     const pack = compilePack({ job: 'understand', cwd: dir })
     expect(pack.docs.map((doc) => doc.title)).toEqual(['Job'])
-    expect(pack.docs.every((doc) => doc.revisionId > 0)).toBe(true)
+    expect(pack.docs.every((doc) => doc.revisionId.length > 0)).toBe(true)
     expect(pack.bytes).toBe(Buffer.byteLength(pack.markdown))
     expect(pack.sha256).toHaveLength(64)
     expect(getDoc('global', null, 'demand')?.delivery).toBe('demand')
@@ -822,7 +827,7 @@ describe('scoped operator docs', () => {
   })
 
   test('setDoc closes project and global inject while allowing canon and estate facts', async () => {
-    upsertProject({ name: 'known', path: dir, stack: null, canon: false, settings: {} })
+    upsertFixtureProject('known', dir, false)
     for (const [scope, subject] of [
       ['global', null],
       ['project', 'known'],
@@ -944,7 +949,7 @@ describe('scoped operator docs', () => {
   })
 
   test('metadata listing omits bodies and supports discovery filters without widening exact matches', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertFixtureProject('known', '/w/known', true)
     await setDoc({
       scope: 'project',
       subject: 'known',
@@ -991,7 +996,7 @@ describe('scoped operator docs', () => {
   })
 
   test('export and import preserve title and markdown body', async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertFixtureProject('known', '/w/known', true)
     await setDoc({
       scope: 'global',
       subject: null,

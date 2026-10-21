@@ -1,6 +1,7 @@
 // concern: run-board-prompt
 /** Adds addressed board context after a run row exists, without changing its compiled canon pack. */
 import { writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { claimRunBoardNotices } from '../board/board-delivery.ts'
 import { BOARD_DELIVERY_MAX_CHARS, BOARD_DELIVERY_MAX_MESSAGES } from '../board/board-render.ts'
 import { db } from '../database/db.ts'
@@ -46,7 +47,7 @@ export function renderRunBoardSection(notices: RunNotice[]): {
 
 export async function appendInitialRunBoardPrompt(
   prompt: string,
-  runId: number,
+  runId: string,
 ): Promise<{ prompt: string; noticeIds: string[] }> {
   const delivery = await claimRunBoardNotices(runId, false, undefined, true)
   const section = renderRunBoardSection(delivery.notices)
@@ -60,7 +61,7 @@ export async function appendInitialRunBoardPrompt(
 export async function prepareRunBoard(
   prompt: string,
   promptPath: string,
-  runId: number,
+  runId: string,
   firstTurn: boolean,
 ): Promise<{ prompt: string; noticeIds: string[] }> {
   const result = firstTurn
@@ -71,7 +72,7 @@ export async function prepareRunBoard(
 }
 
 export async function prepareLaterRunBoardPrompt(
-  runId: number,
+  runId: string,
   laterTurn: boolean,
   mailbox: { id: number; body: string }[],
   prompt: string,
@@ -89,9 +90,9 @@ export async function prepareLaterRunBoardPrompt(
   return { prompt: `${items.join('\n\n')}\n\n${banner}\n\n${prompt}`, notices }
 }
 
-export function persistBoundPrompt(promptPath: string, prompt: string, runId: number): void {
-  writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+export function persistBoundPrompt(promptPath: string, prompt: string, runId: string): void {
+  writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
-    .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+    .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
     .run(sha(prompt), Buffer.byteLength(prompt), runId)
 }

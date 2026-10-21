@@ -25,8 +25,8 @@ export type ContentionWrite = {
   eventKind: EventKind
   durationMs?: number | null
   cause?: string | null
-  runId?: number | null
-  landingId?: number | null
+  runId?: string | null
+  landingId?: string | null
 }
 
 type ContentionResourceSummary = {
@@ -54,7 +54,7 @@ type ContentionRow = {
   resource_key: string
   event_kind: EventKind
   duration_ms: number | null
-  landing_id: number | null
+  landing_record_id: string | null
   cause: string | null
   at: string
 }
@@ -79,8 +79,8 @@ export function insertContention(d: Database, row: ContentionWrite): void {
   const inserted = d
     .query(
       `INSERT INTO contention
-         (record_id, at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_id, landing_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+         (record_id, at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_record_id, landing_record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -93,8 +93,8 @@ export function insertContention(d: Database, row: ContentionWrite): void {
       row.cause ?? null,
       row.runId ?? null,
       row.landingId ?? null,
-    ) as { id: number }
-  enqueueContention(d, inserted.id, at)
+    ) as { record_id: string }
+  enqueueContention(d, inserted.record_id, at)
 }
 
 export function summarizeContention(d: Database, from: string): ContentionSummary {
@@ -104,7 +104,7 @@ export function summarizeContention(d: Database, from: string): ContentionSummar
       `SELECT session_id, resource_kind, resource_key, event_kind, duration_ms
        FROM contention WHERE datetime(at) >= datetime(?)`,
     )
-    .all(from) as Omit<ContentionRow, 'landing_id' | 'cause' | 'at'>[]
+    .all(from) as Omit<ContentionRow, 'landing_record_id' | 'cause' | 'at'>[]
   const resources = RESOURCE_KINDS.map((kind): ContentionResourceSummary => {
     const matching = rows.filter((row) => row.resource_kind === kind)
     const totalDurationMs = matching.reduce(

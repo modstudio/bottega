@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { lensDispatchNotices } from './dispatch-commands.ts'
 import { preflight } from './dispatch-preflight.ts'
@@ -42,6 +43,7 @@ test('preflight uses the recipe default from the explicit base creation will use
   git(path, 'commit', '-am', 'base recipe')
   git(path, 'checkout', 'main')
   upsertProject({
+    recordId: newRecordId(),
     name,
     path,
     settings: {

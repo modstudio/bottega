@@ -1,6 +1,6 @@
 // concern: postgres-schema-landing
 /** Knows the hosted landing and operational-evidence record shape. Must not know local execution or synchronization. */
-import { bigint, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { bigint, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
@@ -8,7 +8,6 @@ const machineIdentity = () =>
   uuid('machine_id')
     .notNull()
     .references(() => machine.id)
-const localIdentity = () => bigint('local_id', { mode: 'bigint' }).notNull()
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
 const recordedAt = (name: string) => timestamp(name, { withTimezone: true }).notNull()
@@ -20,7 +19,6 @@ export const landing = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text(),
     trunkBefore: text('trunk_before'),
@@ -37,10 +35,7 @@ export const landing = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing', table.spaceId)],
 )
 
 export const landingOverride = pgTable.withRLS(
@@ -50,7 +45,6 @@ export const landingOverride = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text().notNull(),
     tree: text().notNull(),
@@ -63,10 +57,7 @@ export const landingOverride = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_override_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing_override', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing_override', table.spaceId)],
 )
 
 export const landingReviewCarry = pgTable.withRLS(
@@ -76,7 +67,6 @@ export const landingReviewCarry = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text().notNull(),
     tree: text().notNull(),
@@ -91,10 +81,7 @@ export const landingReviewCarry = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_review_carry_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing_review_carry', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing_review_carry', table.spaceId)],
 )
 
 export const landingTriageSnapshot = pgTable.withRLS(
@@ -104,7 +91,6 @@ export const landingTriageSnapshot = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     branch: text().notNull(),
     tip: text().notNull(),
     tree: text().notNull(),
@@ -122,10 +108,7 @@ export const landingTriageSnapshot = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('landing_triage_snapshot_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('landing_triage_snapshot', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('landing_triage_snapshot', table.spaceId)],
 )
 
 export const contention = pgTable.withRLS(
@@ -134,7 +117,6 @@ export const contention = pgTable.withRLS(
     id: recordIdentity(),
     spaceId: spaceIdentity(),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     at: recordedAt('at'),
     sessionId: text('session_id'),
     resourceKind: text('resource_kind').notNull(),
@@ -148,10 +130,7 @@ export const contention = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('contention_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('contention', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('contention', table.spaceId)],
 )
 
 export const testFlake = pgTable.withRLS(
@@ -161,7 +140,6 @@ export const testFlake = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: machineIdentity(),
-    localId: localIdentity(),
     test: text().notNull(),
     file: text().notNull(),
     loadAtFailure: jsonb('load_at_failure').notNull(),
@@ -171,8 +149,28 @@ export const testFlake = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    unique('test_flake_machine_local_unique').on(table.machineId, table.localId),
-    ...tenantPolicies('test_flake', table.spaceId),
-  ],
+  (table) => [...tenantPolicies('test_flake', table.spaceId)],
+)
+
+export const branchDisposal = pgTable.withRLS(
+  'branch_disposal',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    projectId: uuid('project_id').references(() => project.id),
+    machineId: machineIdentity(),
+    branch: text().notNull(),
+    tip: text().notNull(),
+    taskKey: text('task_key'),
+    reason: text().notNull(),
+    note: text().notNull(),
+    archiveRef: text('archive_ref').notNull(),
+    archiveExpiresAt: recordedAt('archive_expires_at'),
+    actorSession: text('actor_session').notNull(),
+    disposedAt: recordedAt('disposed_at'),
+    withheldFields: jsonb('withheld_fields'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [...tenantPolicies('branch_disposal', table.spaceId)],
 )

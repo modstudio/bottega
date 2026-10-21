@@ -2,13 +2,14 @@ language js
 
 // A ui/ component takes layout classes only (margin, size, flex and grid
 // placement); its appearance comes from its own variants. The list names every
-// component in hub/web/src/ui that takes a className; add one here when it lands.
+// component exported by hub/ui/src that takes a className. The gate generates
+// this alternation from the component source and refuses a stale copy.
 // Grit binds regex groups, so every group here is non-capturing.
 or {
   JsxOpeningElement(name=$element, attributes=$attributes),
   JsxSelfClosingElement(name=$element, attributes=$attributes)
 } where {
-  $element <: r"(?:Badge|Identifier|Button|IconButton|TextButton|Input|Textarea|Checkbox|Switch|Spinner|Kbd|Separator|Popover|Tooltip|Menu|Select|Dialog|Toaster|Pagination|AppShell|UserMenu|TableCard|ToolbarBand|Segmented|Companion|Docked|Sheet|PageHeader|SectionTitle|StatTile|StatRow|EmptyState|ProjectName|FieldSection|SettingBlock|DisplayRow|Copyable|Panel|Tabs|Table|TableHeader|TableBody|TableRow|TableHead|TableCell)",
+  $element <: r"(?:AppMark|Badge|Button|Checkbox|Dialog|IconButton|Identifier|Input|Kbd|Pagination|Select|Separator|Spinner|Switch|Table|TableCell|TableHead|TextButton|Textarea)",
   $attributes <: some JsxAttribute(name=$name, initializer=$value) as $attribute where {
     $name <: `className`,
     $value <: r"[\s\S]*[^a-z0-9\[\]()./_-](?:bg|text|border|rounded|shadow|font|ring|outline|opacity|leading|tracking|p|px|py|pt|pr|pb|pl|ps|pe|fill|stroke|decoration|underline)(?:-|[^a-z-])[\s\S]*"

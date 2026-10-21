@@ -16,6 +16,9 @@ export default defineConfig({
     './shared/record/schema-snapshots.ts',
     './shared/record/schema-config.ts',
     './shared/record/schema-board.ts',
+    './shared/record/schema-workflow-catalogue.ts',
+    './shared/record/schema-lens-catalogue.ts',
+    './shared/record/schema-port.ts',
   ],
   out: './shared/record/migrations',
 })

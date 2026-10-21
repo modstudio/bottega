@@ -8,6 +8,11 @@
     "cli",
     "hub",
     "hub/deploy/site",
+    "hub/data",
+    "hub/site",
+    "hub/ui",
+    "hub/util",
+    "hub/views",
     "hub/web",
     "retrieval"
   ],
@@ -15,6 +20,8 @@
   "type": "module",
   "scripts": {
     "check": "bun scripts/check.ts",
+    "check:suite": "bun scripts/check.ts --suite",
+    "test:focused": "bun scripts/test-focused.ts",
     "release:build": "bun scripts/build-release.ts",
     "release:binary": "bun scripts/build-binary.ts",
     "release:artifacts": "bun scripts/build-release-artifacts.ts",
@@ -26,30 +33,34 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
-    "@electric-sql/pglite": "0.5.8",
+    "@bottega/hub-views": "workspace:*",
+    "@electric-sql/pglite": "0.5.11",
     "@types/bun": "latest",
     "commander": "15.0.0",
-    "dependency-cruiser": "18.3.1",
+    "dependency-cruiser": "18.7.0",
     "drizzle-kit": "1.0.0-rc.4",
-    "knip": "6.36.0",
-    "sql-parser-cst": "0.42.1"
+    "knip": "6.42.1",
+    "sql-parser-cst": "0.42.3"
   },
   "dependencies": {
-    "@decimalturn/toml-patch": "^3.3.0",
+    "@decimalturn/toml-patch": "^3.3.1",
     "@hpke/chacha20poly1305": "1.8.0",
     "@hpke/core": "1.9.0",
     "@hpke/dhkem-x25519": "1.8.0",
     "@noble/ciphers": "2.4.0",
-    "@typescript-eslint/parser": "8.70.0",
+    "@typescript-eslint/parser": "8.72.0",
     "@vitest/eslint-plugin": "^1.6.27",
     "drizzle-orm": "1.0.0-rc.4",
-    "eslint": "^10.10.0",
-    "eslint-plugin-jest": "^29.16.6",
-    "eslint-plugin-sonarjs": "4.2.0",
+    "eslint": "^10.13.0",
+    "eslint-plugin-jest": "^29.17.0",
+    "eslint-plugin-sonarjs": "4.2.2",
     "mdast-util-directive": "^3.1.1",
     "mdast-util-from-markdown": "^2.1.0",
     "micromark-extension-directive": "^4.0.0",
-    "typescript": "^5",
-    "zod": "^4.5.4"
+    "typescript": "^5.9.3",
+    "zod": "^4.6.7"
+  },
+  "overrides": {
+    "@types/node": "22.20.3"
   }
 }

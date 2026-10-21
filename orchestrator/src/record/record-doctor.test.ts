@@ -95,6 +95,23 @@ describe('record doctor decisions', () => {
     expect(recordDoctorExitCode(checks)).toBe(1)
   })
 
+  test('an unconfigured API directs the customer to record use', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      apiConfigured: false,
+      apiReachable: false,
+      sessionAccepted: false,
+      activeSpaceId: null,
+      memberships: [],
+    })
+    expect(checks[0]).toEqual({
+      name: 'hosted API address configured',
+      status: 'fail',
+      detail: `run \`${PLATFORM_SLUG} record use <address>\``,
+      section: 'customer',
+    })
+  })
+
   test('a project declaring an unavailable space fails and names it', () => {
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,
@@ -165,43 +182,43 @@ describe('record doctor decisions', () => {
     applyMigrations(database)
     database
       .query(
-        `INSERT INTO project (id,name,path,settings) VALUES
-         (1,'default','/default','{}'),
-         (2,'other','/other','{}'),
-         (3,'unknown','/unknown','{}')`,
+        `INSERT INTO project (record_id,name,path,settings) VALUES
+         ('01990000-0000-7000-8000-000000000101','default','/default','{}'),
+         ('01990000-0000-7000-8000-000000000102','other','/other','{}'),
+         ('01990000-0000-7000-8000-000000000103','unknown','/unknown','{}')`,
       )
       .run()
     const addRun = database.query(
       `INSERT INTO run
-       (id,record_id,project_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,project_record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (?,?,?,'2026-09-25','codex','implement','sha',3,'ask','asking')`,
     )
-    addRun.run(1, '01990000-0000-7000-8000-000000000001', 1)
-    addRun.run(2, '01990000-0000-7000-8000-000000000002', 1)
-    addRun.run(3, '01990000-0000-7000-8000-000000000003', 2)
-    addRun.run(4, '01990000-0000-7000-8000-000000000004', 3)
+    addRun.run(1, '01990000-0000-7000-8000-000000000001', '01990000-0000-7000-8000-000000000101')
+    addRun.run(2, '01990000-0000-7000-8000-000000000002', '01990000-0000-7000-8000-000000000101')
+    addRun.run(3, '01990000-0000-7000-8000-000000000003', '01990000-0000-7000-8000-000000000102')
+    addRun.run(4, '01990000-0000-7000-8000-000000000004', '01990000-0000-7000-8000-000000000103')
     database
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES
-         ('${newRecordId()}',1,'2026-09-25','default'),
-         ('${newRecordId()}',2,'2026-09-25','unsynced'),
-         ('${newRecordId()}',3,'2026-09-25','other'),
-         ('${newRecordId()}',4,'2026-09-25','unknown')`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES
+         (1,'${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','default'),
+         (2,'${newRecordId()}','01990000-0000-7000-8000-000000000002','2026-09-25','unsynced'),
+         (3,'${newRecordId()}','01990000-0000-7000-8000-000000000003','2026-09-25','other'),
+         (4,'${newRecordId()}','01990000-0000-7000-8000-000000000004','2026-09-25','unknown')`,
       )
       .run()
     database
       .query(
         `INSERT INTO workflow_cursor
-         (record_id,project,workflow_slug,mode_slug,instance_id,session_id,workflow_version,catalogue_version,
+         (record_id,project,project_record_id,workflow_slug,mode_slug,instance_id,session_id,workflow_version,catalogue_version,
           args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
-         VALUES ('${newRecordId()}','default','test','default','','session',1,1,'{}',0,'step','awaiting-ruling','[]',1,
+         VALUES ('${newRecordId()}','default','01990000-0000-7000-8000-000000000101','test','default','','session',1,1,'{}',0,'step','awaiting-ruling','[]',1,
                  '2026-09-25','2026-09-25')`,
       )
       .run()
     database
       .query(
-        `INSERT INTO question (record_id,workflow_cursor_id,asked_at,question)
-         VALUES ('${newRecordId()}',last_insert_rowid(),'2026-09-25','workflow')`,
+        `INSERT INTO question (number,record_id,workflow_cursor_id,asked_at,question)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',last_insert_rowid(),'2026-09-25','workflow')`,
       )
       .run()
     database
@@ -231,14 +248,14 @@ describe('record doctor decisions', () => {
     database
       .query(
         `INSERT INTO run
-         (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
          VALUES (1,'01990000-0000-7000-8000-000000000001','2026-09-25','codex','implement',
                  'sha',3,'ask','asking')`,
       )
       .run()
     database
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',1,'2026-09-25','no project')`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','01990000-0000-7000-8000-000000000001','2026-09-25','no project')`,
       )
       .run()
     database

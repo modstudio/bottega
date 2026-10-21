@@ -14,6 +14,61 @@ import {
 } from './docs.ts'
 import { commitDocRestore, commitDocSet } from './local-doc-write.ts'
 
+test('latest revision follows its sequence when record ids sort in the opposite order', async () => {
+  const created = await setDoc({
+    scope: 'global',
+    subject: null,
+    slug: 'revision-sequence-not-uuid-order',
+    title: 'Revision sequence',
+    body: 'Older body.',
+    delivery: 'demand',
+    audiences: ['technical'],
+    reason: 'create ordering fixture',
+  })
+  const newer = await setDoc({
+    scope: created.scope,
+    subject: created.subject,
+    slug: created.slug,
+    title: created.title,
+    body: 'Newer body.',
+    delivery: created.delivery,
+    audiences: created.audiences,
+    reason: 'create newer ordering fixture',
+    expectedRevision: created.revision!,
+  })
+  const revisions = db()
+    .query<{ number: number; record_id: string }, [string]>(
+      'SELECT number,record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number',
+    )
+    .all(created.record_id)
+  const olderRecordId = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+  const newerRecordId = '00000000-0000-4000-8000-000000000001'
+  db()
+    .query('UPDATE doc_revision SET record_id=? WHERE number=?')
+    .run(olderRecordId, revisions[0]!.number)
+  db()
+    .query('UPDATE doc_revision SET record_id=? WHERE number=?')
+    .run(newerRecordId, revisions[1]!.number)
+
+  expect((await import('./docs.ts')).getDoc('global', null, created.slug)?.revision).toBe(
+    newerRecordId,
+  )
+  await expect(
+    setDoc({
+      scope: created.scope,
+      subject: created.subject,
+      slug: created.slug,
+      title: created.title,
+      body: 'Newest body.',
+      delivery: created.delivery,
+      audiences: created.audiences,
+      reason: 'compare against sequence-selected revision',
+      expectedRevision: newerRecordId,
+    }),
+  ).resolves.toMatchObject({ body: 'Newest body.' })
+  expect(newer.revision).not.toBe(newerRecordId)
+})
+
 test('kind selects lint and an omitted kind keeps the current value', async () => {
   const article = await setDoc({
     scope: 'global',
@@ -182,20 +237,23 @@ test('an article cannot be created or changed to effective inject delivery', asy
 
 test('set and restore repair the project id on an existing document', () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'repair-project',
     path: '/w/repair',
     stack: null,
     canon: true,
     settings: {},
   })
-  const project = db().query('SELECT id FROM project WHERE name=?').get('repair-project') as {
-    id: number
+  const project = db()
+    .query('SELECT record_id FROM project WHERE name=?')
+    .get('repair-project') as {
+    record_id: string
   }
   const input = {
     scope: 'resume',
     subject: 'repair-project',
     owner: null,
-    projectId: project.id,
+    projectId: project.record_id,
     slug: 'repair-project-id',
     title: 'Resume',
     body: '---\nstatus: open\n---\n\nBody.',
@@ -208,22 +266,26 @@ test('set and restore repair the project id on an existing document', () => {
   }
   const created = commitDocSet({ ...input, revisionId: newRecordId() })
 
-  db().query('UPDATE doc SET project_id=NULL WHERE id=?').run(created.id)
+  db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
   commitDocSet({ ...input, revisionId: newRecordId() })
-  expect(db().query('SELECT project_id FROM doc WHERE id=?').get(created.id)).toEqual({
-    project_id: project.id,
+  expect(
+    db().query('SELECT project_record_id FROM doc WHERE record_id=?').get(created.record_id),
+  ).toEqual({
+    project_record_id: project.record_id,
   })
 
-  db().query('UPDATE doc SET project_id=NULL WHERE id=?').run(created.id)
+  db().query('UPDATE doc SET project_record_id=NULL WHERE record_id=?').run(created.record_id)
   commitDocRestore({ ...input, revisionId: newRecordId() })
-  expect(db().query('SELECT project_id FROM doc WHERE id=?').get(created.id)).toEqual({
-    project_id: project.id,
+  expect(
+    db().query('SELECT project_record_id FROM doc WHERE record_id=?').get(created.record_id),
+  ).toEqual({
+    project_record_id: project.record_id,
   })
 })
 
 test('article fields validate, keep omitted values, clear explicitly, and restore snapshots', async () => {
-  upsertProject({ name: 'articles', path: '/w/articles' })
-  upsertProject({ name: 'foreign', path: '/w/foreign' })
+  upsertProject({ recordId: newRecordId(), name: 'articles', path: '/w/articles' })
+  upsertProject({ recordId: newRecordId(), name: 'foreign', path: '/w/foreign' })
   const own = await addSubject({ project: 'articles', name: 'Own', definition: 'Own.' })
   const related = await addSubject({ project: 'articles', name: 'Related', definition: 'Related.' })
   const retired = await addSubject({ project: 'articles', name: 'Retired', definition: 'Retired.' })
@@ -360,7 +422,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     checkedAgainstCommit: null,
   })
   const firstRevision = listDocRevisions('project', 'articles', 'fields').at(-1)!
-  const restored = await restoreDoc('project', 'articles', 'fields', firstRevision.id, {
+  const restored = await restoreDoc('project', 'articles', 'fields', firstRevision.record_id, {
     reason: 'restore fields',
     expectedRevision: cleared.revision!,
   })
@@ -371,14 +433,14 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     sourceFiles: ['src/one.ts'],
     checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
-  expect(getDocRevision(firstRevision.id)?.sourceFiles).toEqual(['src/one.ts'])
-  expect(getDocRevision(firstRevision.id)?.checkedAgainstCommit).toBe(
+  expect(getDocRevision(firstRevision.record_id)?.sourceFiles).toEqual(['src/one.ts'])
+  expect(getDocRevision(firstRevision.record_id)?.checkedAgainstCommit).toBe(
     '1111111111111111111111111111111111111111',
   )
 })
 
 test('subject filtering lists own-subject documents before related documents', async () => {
-  upsertProject({ name: 'filter-articles', path: '/w/filter-articles' })
+  upsertProject({ recordId: newRecordId(), name: 'filter-articles', path: '/w/filter-articles' })
   const subject = await addSubject({
     project: 'filter-articles',
     name: 'Topic',

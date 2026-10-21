@@ -7,15 +7,15 @@ const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
 export function questionRulingRemedy(row: {
-  id: number
-  root_id: number | null
+  number: number
+  root_id: string | null
   workflow_slug: string | null
   mode_slug: string | null
   repo: string | null
   args: string | null
 }): string {
   if (row.root_id !== null)
-    return `${PLATFORM_SLUG} question answer ${row.root_id} --q${row.id} "<ruling>"`
+    return `${PLATFORM_SLUG} question answer ${row.root_id} --q${row.number} "<ruling>"`
   const args = JSON.parse(row.args ?? '{}') as Record<string, string>
   const flags = Object.entries(args)
     .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)

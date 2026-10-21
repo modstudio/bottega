@@ -13,7 +13,7 @@ describe('landing-tree decisions', () => {
   test('keeps a clean existing landing tree without holding close-out', () => {
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
         true,
         { held: false as const },
       ),
@@ -28,7 +28,7 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: false as const }
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
         false,
         ordinary,
       ),
@@ -43,7 +43,7 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: true as const, until: null, reason: 'ordinary hold' }
     expect(
       landingTreeHoldDecision(
-        { job: 'implement', treeExists: true, branch: 'DEV-1037-orch-1', runId: 1 },
+        { job: 'implement', treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
         true,
         ordinary,
       ),
@@ -117,6 +117,29 @@ describe('landing-tree decisions', () => {
       reason: 'landing tree held by session owner: conversation is running',
     })
   })
+
+  test.each([true, false])(
+    'keeps a present clean tree while landing is in flight (landed=%s)',
+    (landed) => {
+      expect(
+        landingTreeReleaseDecision(
+          {
+            job: LANDING_TREE_JOB,
+            sessionId: 'owner',
+            treeExists: true,
+            status: 'ok',
+            landingInFlight: true,
+            explicitTreeRemovalRequested: false,
+          },
+          true,
+          landed,
+        ),
+      ).toEqual({
+        action: 'keep',
+        reason: 'landing tree held by session owner: landing is in flight',
+      })
+    },
+  )
 
   test('explicit removal releases a present clean tree before its branch lands', () => {
     const facts = {

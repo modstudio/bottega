@@ -69,23 +69,23 @@ After cloning, configure the tracked hooks with `git config core.hooksPath
 counterpart is `orchestrator/hooks/no-attribution.py`.
 
 Landing goes through `origin`, a public repository, by pull request. Push the branch,
-open the pull request and merge on GitHub. Trunk moves remotely; the local
+open the pull request and merge it through GitHub's merge queue. Trunk moves remotely; the local
 checkout follows it. Never fast-forward local trunk and call that landed, and do
 not invent a local admission queue.
 
-Remote checks are off while the account has no runner minutes, so the local gate
-is the only proof a commit has. Run it on the rebased branch you are about to
-merge, not on an earlier state, and say in the pull request that you did. Do not
-merge on a gate you ran before the last rebase.
+The full suite runs in GitHub Actions, sharded, on every pull request and in the
+merge queue. The aggregate `ci` check is the proof a commit has, and the merge
+queue tests each pull request on top of the current trunk before it lands. The
+local gate, `bun run check`, runs the fast static checks; run it before opening
+the pull request.
 
-The pull-request rule is procedural rather than mechanically protected. Follow
-it regardless, and buy enforcement only after an observed violation.
+A ruleset on the landing branch requires the merge queue and the `ci` check, so
+no change reaches trunk outside a pull request.
 
-Run the local gate before opening the pull request. The local gate proves the
-commit; the pull request admits it. A check that skips what it cannot
-provision is informational, not a gate, because running nothing proves
-nothing. Attribute each failure before aggregating it; an unattributed count
-is not a rate.
+CI proves the commit; the merge queue admits it. A check that skips what it
+cannot provision is informational, not a gate, because running nothing proves
+nothing. Attribute each failure before aggregating it; an unattributed count is
+not a rate.
 
 ## Tasks
 
@@ -140,6 +140,20 @@ Its purposes are one system:
 Delegation is safe only because the lifecycle prevents cheap execution from
 creating expensive rework. Surfaces return decisions rather than undigested
 data because architect attention is the scarce resource.
+
+## Design from the multi-space hosted platform
+
+Bottega runs in two modes, and both are first-class: on a machine with no
+record, and against a hosted record shared by a space's machines and members.
+Every design decision starts from the hosted, multi-space perspective, meaning
+state a space shares across machines and members, then keeps the same
+capability useful as a CLI with no record.
+
+Where a record is configured, everything a space works by or does together is
+hosted-first, and a machine keeps only what is specific to it. State that
+silently works on one machine only, when a record is configured, is a gap to
+close, not a design to extend. The seam is the doc store document
+`design-machine-hosted-seam`.
 
 ## Delegation costs nothing in judgment
 
@@ -388,6 +402,9 @@ example. In an epic, schedule that surface first. A proposed fix cites the
 measurement command's current output, and a landed fix reports what the same
 surface shows afterwards.
 
+A worker has no network; repeat its timings that cross one from the main
+checkout.
+
 A fix without class-level measurement is instance patching. The monitor ranks
 above a patch because it reveals prevalence, cost and unseen paths.
 
@@ -434,7 +451,9 @@ re-export them as another public surface. Mutate process environment only in a
 test lifecycle hook and always restore it; never mutate it at module load.
 
 Suite time is shared and `bun run check` reports the budget. Prefer deleting a
-slow, low-value test to nursing it.
+slow, low-value test to nursing it. Per-file and per-test timing ceilings block
+local and worker gates, where the machine is known; CI reports overruns without
+failing because shared-runner wall time varies.
 
 ---
 description: Reversible cleanup, conservative destructive defaults, liveness, claims, and visible escalation
@@ -616,7 +635,7 @@ Never continue or land a chain while its worker has an unanswered question, beca
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and merge it with `bottega pr merge`. `bottega pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `bottega pr merge` repeats that review-admission check for the head commit and refuses when it does not hold. It also refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. It merges exactly the commit it admitted and proved. The local gate proves the commit; the pull request admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. `bottega pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `bottega pr merge` repeats that review-admission check for the head commit and refuses when it does not hold. It also refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. Where the project declares a merge queue, it enqueues the admitted head, waits for the queue to land it, and does not apply the landing-branch freshness refusal, because the queue tests each pull request on top of the current trunk. CI proves the commit; the merge queue admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 
@@ -626,4 +645,4 @@ On any other machine, install a release in its own directory and update it by re
 
 ## Close out the session
 
-Release terminal worktrees with `bottega run close-out`, prune landed run branches with `bottega tree branch prune`, which sweep also runs, close landed tasks with `bottega task`, and offer a resume brief through `bottega doc`. A session with held trees, unscored runs, or unclosed landed tasks is paused rather than finished.
+Run `bottega session close-out` to release everything the session owns through its ordinary owner and prove that nothing remains. Dispose of unique unproved branches only through `bottega tree branch dispose`, which archives their work before recording the ruling. Close landed tasks with `bottega task` and offer a resume brief through `bottega doc`. A session with live runs, held resources, queued landings, incomplete reviews, unresolved process items, unscored runs, or unclosed landed tasks is paused rather than finished.

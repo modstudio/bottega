@@ -93,12 +93,78 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
 
 const id = '01990000-0000-7000-8000-000000000001'
 describe('record API', () => {
+  test('serves reconciled workflow import only on the v2 route', async () => {
+    const imported = mock(async () => ({
+      inserted: 0,
+      alreadyPresent: 0,
+      skipped: [],
+      outcomes: [],
+    }))
+    const app = appWith(identity, { importWorkflowCatalogue: imported })
+    const body = JSON.stringify({
+      dryRun: false,
+      step_catalogue: [],
+      step_catalogue_version: [],
+      step_catalogue_event: [],
+      workflow: [],
+      workflow_version: [],
+      workflow_event: [],
+    })
+    expect(
+      (
+        await app.request('/v1/workflow-catalogue/import/v2', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await app.request('/v1/workflow-catalogue/import', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        })
+      ).status,
+    ).toBe(404)
+    expect(imported).toHaveBeenCalledTimes(1)
+  })
+
   test('the revisions route forwards its audience to the record service', async () => {
     const listDocRevisions = mock(async () => [])
     const app = appWith(identity, { listDocRevisions })
     expect((await app.request(`/v1/docs/${id}/revisions?audience=internal`)).status).toBe(200)
     expect(listDocRevisions).toHaveBeenCalledWith(
       expect.objectContaining({ id, audience: 'internal' }),
+    )
+  })
+
+  test('pages reviews past the first page with the hosted review id', async () => {
+    const firstId = '01990000-0000-7000-8000-000000000011'
+    const secondId = '01990000-0000-7000-8000-000000000012'
+    const first = { id: firstId, recordedAt: '2026-10-19T12:00:00.000Z' }
+    const second = { id: secondId, recordedAt: '2026-10-19T11:00:00.000Z' }
+    const readReviews = mock(async (input: { before: { at: string; id: string } | null }) =>
+      input.before ? [second] : [first, second],
+    )
+    const app = appWith(identity, { readReviews })
+
+    const firstResponse = await app.request('/v1/reviews?limit=1')
+    expect(firstResponse.status).toBe(200)
+    const firstPage = (await firstResponse.json()) as {
+      items: Array<{ id: string }>
+      nextCursor: string
+    }
+    expect(firstPage.items).toEqual([first])
+
+    const secondResponse = await app.request(
+      `/v1/reviews?limit=1&before=${encodeURIComponent(firstPage.nextCursor)}`,
+    )
+    expect(secondResponse.status).toBe(200)
+    expect(await secondResponse.json()).toEqual({ items: [second], nextCursor: null })
+    expect(readReviews).toHaveBeenLastCalledWith(
+      expect.objectContaining({ before: { at: first.recordedAt, id: firstId } }),
     )
   })
 
@@ -432,7 +498,11 @@ describe('record API', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        address: { kind: 'project', subject: 'alpha' },
+        address: {
+          kind: 'project',
+          subject: 'alpha',
+          projectId: '01990000-0000-7000-8000-000000000001',
+        },
         rows: [{ slug: 'AGENTS.md', title: 'AGENTS.md', body: 'Rule.' }],
         expectedRevisions: {},
         reason: 'test',
@@ -442,7 +512,13 @@ describe('record API', () => {
     })
     expect(response.status).toBe(200)
     expect(calls).toEqual([
-      expect.objectContaining({ address: { kind: 'project', subject: 'alpha' } }),
+      expect.objectContaining({
+        address: {
+          kind: 'project',
+          subject: 'alpha',
+          projectId: '01990000-0000-7000-8000-000000000001',
+        },
+      }),
     ])
     expect(calls[0]).not.toHaveProperty('bootstrap')
   })
@@ -827,15 +903,20 @@ describe('record API presentation routes', () => {
     expect(await missing.json()).toEqual({ error: 'run not found' })
   })
 
-  test('projects contain only the presentation allowlist', async () => {
+  test('projects carry the settings needed to adopt the hosted row', async () => {
     const project = {
       id,
+      spaceId: 'space-a',
+      spaceName: 'Space A',
       name: 'one',
       keyPrefixes: ['ONE'],
       stack: null,
+      managedContext: true,
       landingBranch: 'main',
       color: null,
       colorDark: null,
+      canon: true,
+      settings: { keyPrefixes: ['ONE'], trunk: 'main' },
       retiredAt: null,
     }
     const response = await appWith(identity, { readProjects: async () => [project] }).request(
@@ -843,27 +924,21 @@ describe('record API presentation routes', () => {
     )
     const rows = (await response.json()) as Record<string, unknown>[]
     expect(Object.keys(rows[0]!).sort()).toEqual([
+      'canon',
       'color',
       'colorDark',
       'id',
       'keyPrefixes',
       'landingBranch',
+      'managedContext',
       'name',
       'retiredAt',
+      'settings',
+      'spaceId',
+      'spaceName',
       'stack',
     ])
-    for (const forbidden of [
-      'checkoutPath',
-      'secretPaths',
-      'worktree',
-      'tracker',
-      'mcpServer',
-      'workerMcpServers',
-      'mcpProbeTool',
-      'envPrefix',
-      'gate',
-    ])
-      expect(forbidden in rows[0]!).toBe(false)
+    expect(rows[0]!.settings).toEqual({ keyPrefixes: ['ONE'], trunk: 'main' })
   })
 
   test('validates project upsert at the edge and passes the tenant', async () => {
@@ -919,8 +994,8 @@ describe('record API presentation routes', () => {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        id,
         name: 'beta',
-        previousName: 'alpha',
         path: '/w/beta',
         stack: null,
         canon: true,
@@ -934,17 +1009,17 @@ describe('record API presentation routes', () => {
     })
   })
 
-  test('retires a project by name', async () => {
+  test('retires a project by id', async () => {
     const calls: string[] = []
     const app = appWith(identity, {
-      retireProject: async (input: { name: string }) => {
-        calls.push(input.name)
-        return { id, name: input.name }
+      retireProject: async (input: { id: string }) => {
+        calls.push(input.id)
+        return { name: 'probe' }
       },
     })
-    const response = await app.request('/v1/projects/probe/retire', { method: 'POST' })
+    const response = await app.request(`/v1/projects/${id}/retire`, { method: 'POST' })
     expect(response.status).toBe(200)
-    expect(calls).toEqual(['probe'])
+    expect(calls).toEqual([id])
   })
 
   test('CORS allows configured origins with credentials and omits headers otherwise', async () => {

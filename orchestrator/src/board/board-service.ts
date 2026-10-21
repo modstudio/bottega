@@ -72,16 +72,17 @@ export function recordPresence(
     .query(
       `SELECT launch_key FROM run
        WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY number DESC LIMIT 1`,
     )
     .get(identity.session) as { launch_key: string } | null
   writableDb()
     .query(
       `INSERT INTO presence
-       (session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,?,'architect',?,?,?,?,?,?)
+       (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,?,'architect',?, ?,?, ?,?,?,?)
        ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
-         machine=excluded.machine, project=excluded.project, cwd=excluded.cwd,
+         machine=excluded.machine, project=excluded.project,
+         project_record_id=excluded.project_record_id, cwd=excluded.cwd,
          current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
     )
     .run(
@@ -89,6 +90,7 @@ export function recordPresence(
       identity.harness,
       hostname(),
       project.name,
+      project.recordId,
       cwd,
       current?.launch_key ?? null,
       at,
@@ -117,18 +119,18 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-export function runReader(runId: number, database = db()): string {
+export function runReader(runId: string, database = db()): string {
   const row = database
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(runId) as { root_id: number } | null
+    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
+    .get(runId) as { root_id: string } | null
   if (!row) throw new Error(`no run ${runId}; use a live orchestrator run id`)
   return `run:${row.root_id}`
 }
 
-function wasDelivered(messageId: number, reader: string, database = db()): boolean {
+function wasDelivered(messageRecordId: string, reader: string, database = db()): boolean {
   const receipt = database
-    .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-    .get(messageId, reader) as { delivered_at: string | null } | null
+    .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?')
+    .get(messageRecordId, reader) as { delivered_at: string | null } | null
   return Boolean(receipt?.delivered_at)
 }
 
@@ -139,26 +141,29 @@ export function deliverableTo(
   database = db(),
 ): boolean {
   return message.kind === 'reply'
-    ? hasReceipt(message.id, reader, database)
+    ? hasReceipt(message.record_id, reader, database)
     : addressed(message, reader, clock, database)
 }
 
 function render(message: MessageRow, worker = false, database = db()) {
-  const tags = messageTags(message.id, database)
+  const tags = messageTags(message.record_id, database)
   if (message.kind === 'reply') {
-    const root = messageRows(database).find((candidate) => candidate.id === message.thread_root_id)
-    if (!root?.title) throw new Error(`board reply ${message.id} has no thread root`)
+    const root = messageRows(database).find(
+      (candidate) => candidate.record_id === message.thread_root_record_id,
+    )
+    if (!root?.title) throw new Error(`board reply ${message.number} has no thread root`)
     return {
-      id: message.id,
+      number: message.number,
+      recordId: message.record_id,
       text: renderBoardReply({
-        id: message.id,
+        id: message.number,
         origin: originText(boardOrigin(message)),
-        rootId: root.id,
+        rootId: root.record_id,
         rootTitle: root.title,
         body: message.body,
       }),
       oneLine: renderBoardNoticeOneLine({
-        id: message.id,
+        id: message.number,
         title: root.title,
         sender: originText(boardOrigin(message)),
         ackRequired: false,
@@ -168,9 +173,10 @@ function render(message: MessageRow, worker = false, database = db()) {
   }
   if (message.kind === 'question') {
     return {
-      id: message.id,
+      number: message.number,
+      recordId: message.record_id,
       text: renderBoardQuestion({
-        id: message.id,
+        id: message.number,
         origin: originText(boardOrigin(message)),
         title: message.title ?? '',
         body: message.body,
@@ -180,7 +186,7 @@ function render(message: MessageRow, worker = false, database = db()) {
           .map((tag) => `${tag.kind}:${tag.value}`),
       }),
       oneLine: renderBoardNoticeOneLine({
-        id: message.id,
+        id: message.number,
         title: message.title ?? '',
         sender: originText(boardOrigin(message)),
         ackRequired: false,
@@ -189,16 +195,17 @@ function render(message: MessageRow, worker = false, database = db()) {
     }
   }
   return {
-    id: message.id,
+    number: message.number,
+    recordId: message.record_id,
     text: renderBoardNotice({
-      id: message.id,
+      id: message.number,
       kind: message.kind,
       purpose: message.purpose ?? 'information',
       authorKind: message.author_kind,
       authorSession: message.author_session,
       authorHarness: message.author_harness,
       authorProject: message.author_project,
-      authorRunId: message.author_run_id,
+      authorRunId: message.author_run_record_id,
       title: message.title ?? '',
       body: message.body,
       expiresAt: message.expires_at ?? '',
@@ -207,7 +214,7 @@ function render(message: MessageRow, worker = false, database = db()) {
       worker,
     }),
     oneLine: renderBoardNoticeOneLine({
-      id: message.id,
+      id: message.number,
       title: message.title ?? '',
       sender: originText(boardOrigin(message)),
       ackRequired: message.ack_required === 1,
@@ -217,16 +224,19 @@ function render(message: MessageRow, worker = false, database = db()) {
 }
 
 export function claimRunNotices(
-  runId: number,
+  runId: string,
   all = false,
   clock = Date.now(),
   database = db(),
 ): {
-  id: number
+  number: number
+  recordId: string
   text: string
   oneLine: string
   ackRequired: boolean
+  ackDeadline: string | null
   createdAt: string
+  expiresAt: string | null
   purpose: BoardPurpose
 }[] {
   const reader = runReader(runId, database)
@@ -236,17 +246,19 @@ export function claimRunNotices(
         row.kind === 'notice' &&
         rowIsLive(row, clock, database) &&
         addressed(row, reader, clock, database) &&
-        (all || !wasDelivered(row.id, reader, database)),
+        (all || !wasDelivered(row.record_id, reader, database)),
     )
     .map((row) => ({
       ...render(row, true, database),
       ackRequired: row.ack_required === 1,
+      ackDeadline: row.ack_deadline,
       createdAt: row.created_at,
+      expiresAt: row.expires_at,
     }))
 }
 
 export function claimRunPushNotices(
-  runId: number,
+  runId: string,
   all = false,
   clock = Date.now(),
   database = db(),
@@ -256,28 +268,28 @@ export function claimRunPushNotices(
   warning: string | null
 } {
   const run = database
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
     .get(runId) as { root_id: number } | null
   if (!run)
     return {
-      ...selectPushNotices(null, []),
+      ...selectPushNotices('unbounded', [], clock),
       warning: missingReaderStartWarning(`run:${runId}`),
     }
   const reader = `run:${run.root_id}`
   const beganAt = boardReaderBeganAt(reader, database)
   return {
-    ...selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database)),
+    ...selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database), clock),
     warning: beganAt === null ? missingReaderStartWarning(reader) : null,
   }
 }
 
-export function markRunNoticesDelivered(runId: number, ids: number[], clock = Date.now()): void {
+export function markRunNoticesDelivered(runId: string, ids: string[], clock = Date.now()): void {
   const reader = runReader(runId)
   const idSet = new Set(ids)
   const rows = messageRows().filter(
     (row) =>
       row.kind === 'notice' &&
-      idSet.has(row.id) &&
+      idSet.has(row.record_id) &&
       rowIsLive(row, clock) &&
       addressed(row, reader, clock),
   )
@@ -287,11 +299,11 @@ export function markRunNoticesDelivered(runId: number, ids: number[], clock = Da
   writeTransaction(() => {
     const stamp = database.query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const row of rows) stamp.run(row.id, reader, deliveredAt, newRecordId())
+    for (const row of rows) stamp.run(row.record_id, reader, deliveredAt, newRecordId())
   }, database)
 }
 
@@ -301,11 +313,14 @@ export function claimNotices(
   clock = Date.now(),
   database = db(),
 ): {
-  id: number
+  number: number
+  recordId: string
   text: string
   oneLine: string
   ackRequired: boolean
+  ackDeadline: string | null
   createdAt: string
+  expiresAt: string | null
   purpose: BoardPurpose
 }[] {
   const reader = boardReader(env)
@@ -314,12 +329,14 @@ export function claimNotices(
       row.author_session !== reader &&
       rowIsLive(row, clock, database) &&
       deliverableTo(row, reader, clock, database) &&
-      (all || !wasDelivered(row.id, reader, database)),
+      (all || !wasDelivered(row.record_id, reader, database)),
   )
   return rows.map((row) => ({
     ...render(row, false, database),
     ackRequired: row.ack_required === 1,
+    ackDeadline: row.ack_deadline,
     createdAt: row.created_at,
+    expiresAt: row.expires_at,
   }))
 }
 
@@ -334,16 +351,18 @@ export function claimPushNotices(
   warning: string | null
 } {
   const reader = boardReader(env)
-  const beganAt = reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database)
+  const beganAt =
+    reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
+  const selected = selectPushNotices(beganAt, claimNotices(all, env, clock, database), clock)
   return {
-    ...selectPushNotices(beganAt, claimNotices(all, env, clock, database)),
+    ...selected,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }
 }
 
 export function markNoticesDelivered(
-  ids: number[],
+  ids: string[],
   env: Environment = process.env,
   clock = Date.now(),
   database: Database = writableDb(),
@@ -352,7 +371,7 @@ export function markNoticesDelivered(
   const idSet = new Set(ids)
   const rows = messageRows(database).filter(
     (row) =>
-      idSet.has(row.id) &&
+      idSet.has(row.record_id) &&
       row.author_session !== reader &&
       rowIsLive(row, clock, database) &&
       deliverableTo(row, reader, clock, database),
@@ -361,11 +380,11 @@ export function markNoticesDelivered(
   writeTransaction(() => {
     const stamp = database.query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const row of rows) stamp.run(row.id, reader, deliveredAt, newRecordId())
+    for (const row of rows) stamp.run(row.record_id, reader, deliveredAt, newRecordId())
   }, database)
 }
 
@@ -374,7 +393,8 @@ export function readNotices(
   env: Environment = process.env,
   clock = Date.now(),
 ): {
-  id: number
+  number: number
+  recordId: string
   text: string
   oneLine: string
   ackRequired: boolean
@@ -383,32 +403,38 @@ export function readNotices(
 }[] {
   const notices = claimNotices(all, env, clock)
   markNoticesDelivered(
-    notices.map((notice) => notice.id),
+    notices.map((notice) => notice.recordId),
     env,
     clock,
   )
   return notices
 }
 
-export function acknowledgeNotice(id: number, env: Environment = process.env, clock = Date.now()) {
+export function acknowledgeNotice(id: string, env: Environment = process.env, clock = Date.now()) {
   const reader = boardReader(env)
-  const row = messageRows().find((candidate) => candidate.id === id)
+  const row = messageRows().find((candidate) => candidate.record_id === id)
   if (!row || !rowIsLive(row, clock) || !addressed(row, reader, clock))
     throw new Error(`live board notice ${id} is not addressed to this reader`)
   writableDb()
     .query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,?,0,?,?,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,?,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at),
        acknowledged_at=excluded.acknowledged_at`,
     )
-    .run(id, reader, new Date(clock).toISOString(), new Date(clock).toISOString(), newRecordId())
+    .run(
+      row.record_id,
+      reader,
+      new Date(clock).toISOString(),
+      new Date(clock).toISOString(),
+      newRecordId(),
+    )
 }
 
-export function noticeStatus(id: number, env: Environment = process.env, clock = Date.now()) {
+export function noticeStatus(id: string, env: Environment = process.env, clock = Date.now()) {
   const actor = boardActor(env)
-  const row = messageRows().find((candidate) => candidate.id === id)
+  const row = messageRows().find((candidate) => candidate.record_id === id)
   if (!row) throw new Error(`no board notice ${id}`)
   if (
     actor.kind !== 'operator' &&
@@ -419,9 +445,9 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
   const receipts = db()
     .query(
       `SELECT reader_session,audience_at_posting,delivered_at,acknowledged_at FROM board_receipt
-       WHERE message_id=? ORDER BY reader_session`,
+       WHERE message_record_id=? ORDER BY reader_session`,
     )
-    .all(id) as {
+    .all(row.record_id) as {
     reader_session: string
     audience_at_posting: number
     delivered_at: string | null
@@ -429,7 +455,7 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
   }[]
   const unresolved = new Set(
     row.ack_required && row.audience && parseAudience(row.audience).kind === 'machine'
-      ? recipients(row.audience, clock, messageTags(row.id))
+      ? recipients(row.audience, clock, messageTags(row.record_id))
       : [],
   )
   for (const receipt of receipts) {
@@ -440,7 +466,7 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
   return {
     message: render(row),
     row,
-    tags: messageTags(row.id),
+    tags: messageTags(row.record_id),
     receipts,
     reached: receipts.length,
     acknowledged: receipts.filter((receipt) => receipt.acknowledged_at !== null).length,
@@ -450,26 +476,26 @@ export function noticeStatus(id: number, env: Environment = process.env, clock =
   }
 }
 
-export function withdrawNotice(id: number, env: Environment = process.env, clock = Date.now()) {
+export function withdrawNotice(id: string, env: Environment = process.env, clock = Date.now()) {
   const actor = boardActor(env)
-  const row = messageRows().find((candidate) => candidate.id === id)
+  const row = messageRows().find((candidate) => candidate.record_id === id)
   if (!row) throw new Error(`no board notice ${id}`)
   if (actor.kind !== 'operator' && actor.session !== row.author_session)
     throw new Error(`only the notice author or operator may withdraw board notice ${id}`)
   writableDb()
-    .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE id=?')
-    .run(new Date(clock).toISOString(), id)
+    .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE record_id=?')
+    .run(new Date(clock).toISOString(), row.record_id)
 }
 
-export function markSessionMessagesDelivered(session: string, ids: number[], at = nowIso()) {
+export function markSessionMessagesDelivered(session: string, ids: string[], at = nowIso()) {
   requireRealSession(session, 'board delivery acknowledgement')
   const database = writableDb()
   for (const id of ids)
     database
       .query(
         `INSERT INTO board_receipt
-         (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-         VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+         VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
          delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
       )
       .run(id, session, at, newRecordId())
@@ -478,13 +504,13 @@ export function markSessionMessagesDelivered(session: string, ids: number[], at 
 export function boardEscalations(clock = Date.now()) {
   const rows = db()
     .query(
-      `SELECT m.id,m.ack_required,m.ack_deadline,m.expires_at,m.withdrawn_at,r.reader_session,
+      `SELECT m.number,m.ack_required,m.ack_deadline,m.expires_at,m.withdrawn_at,r.reader_session,
               r.acknowledged_at,r.audience_at_posting
-       FROM board_message m JOIN board_receipt r ON r.message_id=m.id
+       FROM board_message m JOIN board_receipt r ON r.message_record_id=m.record_id
       `,
     )
     .all() as {
-    id: number
+    number: number
     ack_required: number
     ack_deadline: string | null
     expires_at: string
@@ -509,11 +535,11 @@ export function boardEscalations(clock = Date.now()) {
     )
     .map((row) => ({
       kind: 'board-ack-overdue',
-      subject: `board:${row.id}:${row.reader_session}`,
+      subject: `board:${row.number}:${row.reader_session}`,
       since: row.ack_deadline,
       ageMs: row.ack_deadline ? clock - Date.parse(row.ack_deadline) : null,
-      detail: `Board notice ${row.id} is not acknowledged by ${row.reader_session}`,
-      action: `inspect with ${PLATFORM_SLUG} board status ${row.id}`,
+      detail: `Board notice ${row.number} is not acknowledged by ${row.reader_session}`,
+      action: `inspect with ${PLATFORM_SLUG} board status ${row.number}`,
     }))
 }
 
@@ -521,14 +547,14 @@ export function reapBoardMessages(clock = Date.now()): number {
   const rows = messageRows()
   const acceptedRoots = new Set(
     rows
-      .filter((row) => row.kind === 'question' && row.accepted_reply_id !== null)
-      .map((row) => row.id),
+      .filter((row) => row.kind === 'question' && row.accepted_reply_record_id !== null)
+      .map((row) => row.record_id),
   )
   const ids = rows
     .filter(
       (row) =>
-        !acceptedRoots.has(row.id) &&
-        (row.thread_root_id === null || !acceptedRoots.has(row.thread_root_id)),
+        !acceptedRoots.has(row.record_id) &&
+        (row.thread_root_record_id === null || !acceptedRoots.has(row.thread_root_record_id)),
     )
     .filter((row) =>
       row.expires_at === null
@@ -541,8 +567,8 @@ export function reapBoardMessages(clock = Date.now()): number {
             clock,
           ),
     )
-    .map((row) => row.id)
-  const remove = writableDb().query('DELETE FROM board_message WHERE id=?')
+    .map((row) => row.record_id)
+  const remove = writableDb().query('DELETE FROM board_message WHERE record_id=?')
   let reaped = 0
   for (const id of ids) reaped += remove.run(id).changes
   return reaped + reapHostedBoardCache(clock)

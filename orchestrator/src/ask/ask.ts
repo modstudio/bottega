@@ -57,9 +57,11 @@ import { JOBS } from '../jobs/jobs.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { nextQuestionNumber } from '../run/question-number.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
@@ -93,7 +95,7 @@ function boundedTimeout(): number {
 const ASK_TIMEOUT_MS = boundedTimeout()
 
 function recordQuestion(input: {
-  runId: number
+  runId: string
   askedAt: string
   question: string
   options?: string[] | null
@@ -101,15 +103,17 @@ function recordQuestion(input: {
   why?: string | null
   askedVia: AskedVia
   awaitingOperatorAt: string | null
-}): number {
+}): string {
+  const recordId = newRecordId()
   const inserted = db()
-    .query(
+    .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO question
-       (record_id, run_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
-       VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
+       (record_id,number,run_record_id,asked_at,question,options,recommendation,why,asked_via,awaiting_operator_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
-      newRecordId(),
+      recordId,
+      nextQuestionNumber(db()),
       input.runId,
       input.askedAt,
       input.question,
@@ -118,13 +122,14 @@ function recordQuestion(input: {
       input.why ?? null,
       input.askedVia,
       input.awaitingOperatorAt,
-    ) as { id: number }
-  enqueueQuestionRecord(db(), inserted.id)
-  return inserted.id
+    )
+  if (!inserted) throw new Error('question was not recorded')
+  enqueueQuestionRecord(db(), inserted.record_id)
+  return inserted.record_id
 }
 
 export function recordReplyQuestions(input: {
-  runId: number
+  runId: string
   questions: Array<{
     question: string
     options?: string[] | null
@@ -153,11 +158,11 @@ const POLL_MS = 1_000
 
 export type AskResult = { answered: true; answer: string } | { answered: false; reason: string }
 
-function gateEligibility(runId: number, token: string) {
+function gateEligibility(runId: string, token: string) {
   const row = db()
     .query(
       `SELECT r.job,p.settings FROM run r
-       LEFT JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+       LEFT JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as { job: string; settings: string | null } | null
   let gate: string | null = null
@@ -174,16 +179,18 @@ function gateEligibility(runId: number, token: string) {
   })
 }
 
-function authenticatedJobNeeds(runId: number, token: string) {
+function authenticatedJobNeeds(runId: string, token: string) {
   if (!authenticatedWorkerRun(runId, token)) return null
-  const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
+  const row = db().query('SELECT job FROM run WHERE record_id=?').get(runId) as {
+    job: string
+  } | null
   return row ? JOBS[row.job]?.needs : null
 }
 
-function gateToolAvailable(runId: number, token: string): boolean {
+function gateToolAvailable(runId: string, token: string): boolean {
   return Boolean(authenticatedJobNeeds(runId, token)?.writesRepo)
 }
-function gateResultToolAvailable(runId: number, token: string): boolean {
+function gateResultToolAvailable(runId: string, token: string): boolean {
   const needs = authenticatedJobNeeds(runId, token)
   return Boolean(needs?.readsRepo && !needs.writesRepo)
 }
@@ -206,11 +213,11 @@ type GateExecutionSelection = {
   finished_at: string | null
 }
 
-function latestGateExecution(runId: number): GateExecutionSelection | null {
+function latestGateExecution(runId: string): GateExecutionSelection | null {
   return db()
     .query(
       `SELECT id,requested_at,finished_at FROM gate_execution
-        WHERE run_id=? ORDER BY id DESC LIMIT 1`,
+        WHERE run_record_id=? ORDER BY id DESC LIMIT 1`,
     )
     .get(runId) as GateExecutionSelection | null
 }
@@ -220,11 +227,13 @@ type RequestedGate =
   | { message: string }
 
 function selectGateExecutionOnce(
-  runId: number,
+  runId: string,
   pendingResults: ReadonlySet<number>,
 ): RequestedGate {
   return writeTransaction(() => {
-    const run = db().query('SELECT status,gate_requests_closed FROM run WHERE id=?').get(runId) as {
+    const run = db()
+      .query('SELECT status,gate_requests_closed FROM run WHERE record_id=?')
+      .get(runId) as {
       status: string
       gate_requests_closed: number
     } | null
@@ -248,14 +257,14 @@ function selectGateExecutionOnce(
     const requestedAt = nowIso()
     const inserted = db()
       .query(
-        'INSERT INTO gate_execution (record_id,run_id,requested_at) VALUES (?,?,?) RETURNING id',
+        'INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?) RETURNING id',
       )
       .get(newRecordId(), runId, requestedAt) as { id: number }
     return { id: inserted.id, requestedAt, introduction: null }
   })
 }
 
-function selectGateExecution(runId: number, pendingResults: ReadonlySet<number>): RequestedGate {
+function selectGateExecution(runId: string, pendingResults: ReadonlySet<number>): RequestedGate {
   try {
     return selectGateExecutionOnce(runId, pendingResults)
   } catch (error) {
@@ -280,8 +289,20 @@ function waitForGatePoll(ms: number, signal: AbortSignal, wait: (ms: number) => 
   })
 }
 
+function gateResultLogPaths(runId: string, executionId: number, artifactPath: string | null) {
+  if (!artifactPath) return {}
+  return {
+    outputPath: `${runScratchDir(runId)}/gate-${executionId}.log`,
+    artifactPath,
+  }
+}
+
+function formatPendingGateWait(message: string, outputTail: string | null): string {
+  return `${message}${outputTail ? `\n${outputTail}` : ''}`
+}
+
 async function waitForGateExecution(
-  runId: number,
+  runId: string,
   requested: Exclude<RequestedGate, { message: string }>,
   pendingResults: Set<number>,
   dependencies: GateWaitDependencies,
@@ -297,7 +318,7 @@ async function waitForGateExecution(
       .query(
         `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,
                 g.cancelled_reason,r.status,r.gate_requests_closed
-         FROM gate_execution g JOIN run r ON r.id=g.run_id WHERE g.id=?`,
+         FROM gate_execution g JOIN run r ON r.record_id=g.run_record_id WHERE g.id=?`,
       )
       .get(id) as {
       exit_code: number | null
@@ -333,13 +354,12 @@ async function waitForGateExecution(
           timedOut: row.timed_out === 1,
           elapsedMs: row.elapsed_ms!,
           output: row.output_tail ?? '',
-          outputPath: `${runScratchDir(runId)}/gate-${id}.log`,
-          artifactPath: row.output_artifact ?? '(no artifact recorded)',
+          ...gateResultLogPaths(runId, id, row.output_artifact),
         }),
       )
       return requested.introduction ? `${requested.introduction}\n${result}` : result
     }
-    if (!waitDecision.wait) return waitDecision.message!
+    if (!waitDecision.wait) return formatPendingGateWait(waitDecision.message!, row.output_tail)
     await waitForGatePoll(
       Math.min(POLL_MS, dependencies.waitMs - (now - waitStartedAt)),
       signal,
@@ -349,7 +369,7 @@ async function waitForGateExecution(
 }
 
 async function requestGate(
-  runId: number,
+  runId: string,
   pendingResults: Set<number>,
   signal: AbortSignal,
   dependencies: GateWaitDependencies = defaultGateWaitDependencies,
@@ -369,7 +389,7 @@ async function requestGate(
  * agent.
  */
 export async function ask(o: {
-  runId: number
+  runId: string
   question: string
   options?: string[]
   recommendation?: string
@@ -380,7 +400,7 @@ export async function ask(o: {
   const askedAt = nowIso()
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
   const id = writeTransaction(() => {
-    db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(o.runId)
+    db().query("UPDATE run SET status='asking' WHERE record_id=? AND status='running'").run(o.runId)
     enqueueRunRecord(db(), o.runId, machineId(), askedAt)
     return recordQuestion({
       runId: o.runId,
@@ -394,7 +414,9 @@ export async function ask(o: {
     })
   })
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
-  const q = db().query('SELECT answer FROM question WHERE id = ? AND answered_at IS NOT NULL')
+  const q = db().query(
+    'SELECT answer FROM question WHERE record_id = ? AND answered_at IS NOT NULL',
+  )
 
   // BOUNDED BY CONSTRUCTION, like `bottega run wait`. An unbounded poll against a
   // question nobody will ever answer is the failure this is meant to remove
@@ -402,7 +424,9 @@ export async function ask(o: {
   for (;;) {
     const row = q.get(id) as { answer: string | null } | null
     if (row) {
-      db().query("UPDATE run SET status='running' WHERE id=? AND status='asking'").run(o.runId)
+      db()
+        .query("UPDATE run SET status='running' WHERE record_id=? AND status='asking'")
+        .run(o.runId)
       appendRunEvent(o.runId, {
         ts: nowIso(),
         type: 'text',
@@ -423,7 +447,7 @@ export async function ask(o: {
           'question in your final answer, describing what you completed before reaching it.',
       }
     }
-    await new Promise((r) => setTimeout(r, POLL_MS))
+    await new Promise((r) => setTimeout(r, Math.min(POLL_MS, Math.max(0, deadline - Date.now()))))
   }
 }
 
@@ -440,16 +464,17 @@ type AskServerDependencies = {
   lifecycle?: AskLifecycle
 }
 
-function workerNoteRun(runId: number): WorkerNoteRun {
+function workerNoteRun(runId: string): WorkerNoteRun {
   const row = db()
     .query(
-      `SELECT r.id,p.name AS project,p.path AS project_path,
+      `SELECT r.number AS id,r.record_id,p.name AS project,p.path AS project_path,
               COALESCE(r.worktree,r.cwd) AS tree,r.branch,
               r.session_id,r.head_commit
-         FROM run r JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+         FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as {
     id: number
+    record_id: string
     project: string
     project_path: string
     tree: string | null
@@ -461,6 +486,7 @@ function workerNoteRun(runId: number): WorkerNoteRun {
   if (!row.tree) throw new Error(`run ${runId} has no run tree for a file-bound observation`)
   return {
     id: row.id,
+    recordId: row.record_id,
     project: row.project,
     projectPath: row.project_path,
     tree: row.tree,
@@ -472,7 +498,7 @@ function workerNoteRun(runId: number): WorkerNoteRun {
 
 function registerRunGateTool(input: {
   registerTool: McpServer['registerTool']
-  runId: number
+  runId: string
   token: string
   pendingResults: Set<number>
   dependencies?: GateWaitDependencies
@@ -511,8 +537,12 @@ function registerRunGateTool(input: {
   )
 }
 
+function askServerState(runId: string, dependencies: AskServerDependencies) {
+  return [new Set<number>(), dependencies.lifecycle ?? askLifecycle(runId), [] as string[]] as const
+}
+
 export function createAskMcpServer(
-  runId: number,
+  runId: string,
   token: string,
   timeoutMs?: number,
   dependencies: AskServerDependencies = { fileWorkerNote: requestWorkerNote },
@@ -534,10 +564,7 @@ export function createAskMcpServer(
    * who can read the environment of a process they already own.
    */
   const authorized = (): boolean => authenticatedWorkerRun(runId, token)
-  const pendingGateResults = new Set<number>()
-  const lifecycle = dependencies.lifecycle ?? askLifecycle(runId)
-  const toolNames: string[] = []
-
+  const [pendingGateResults, lifecycle, toolNames] = askServerState(runId, dependencies)
   const server = new McpServer({ name: 'orch-ask', version: '1' })
   const registerTool = ((...args: unknown[]) => {
     if (typeof args[0] === 'string') toolNames.push(args[0])
@@ -559,7 +586,6 @@ export function createAskMcpServer(
   // the SDK returns a validation error before the escalation channel can tell
   // the worker to ask again rather than decide the matter itself.
   const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
-
   toolNames.push(...registerAskBoardTools({ server, runId, authorized, unauthorized, text }))
 
   registerTool(
@@ -710,7 +736,9 @@ export function createAskMcpServer(
       try {
         if (!authorized()) throw new Error(unauthorized())
         const saved = messageArchitect(runId, body)
-        return text(`Message ${saved.id} recorded on run ${saved.root_run_id}. Keep working.`)
+        return text(
+          `Message ${saved.id} recorded on run ${saved.root_run_record_id}. Keep working.`,
+        )
       } catch (error) {
         return text(`The message was not recorded (${String(error)}).`, true)
       }
@@ -772,7 +800,7 @@ export type AskLoopback = { url: string; close(): Promise<void> }
  * Start the database-owning side of orch-ask outside a worker's process sandbox.
  * The OS chooses the port, and the listener is bound only to loopback.
  */
-export async function startAskLoopback(runId: number, token: string): Promise<AskLoopback> {
+export async function startAskLoopback(runId: string, token: string): Promise<AskLoopback> {
   const sockets = new Set<Socket>()
   const server = createServer((socket) => {
     sockets.add(socket)
@@ -829,7 +857,7 @@ async function proxyAsk(urlValue: string): Promise<void> {
 export async function serveAsk(): Promise<void> {
   const loopback = process.env.ORCH_ASK_URL
   if (loopback) return proxyAsk(loopback)
-  const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+  const runId = resolveRunIdentifier(db(), process.env.ORCH_RUN_ID ?? '')
   const token = process.env.ORCH_RUN_TOKEN ?? ''
   serveStdio(() => createAskMcpServer(runId, token), {
     transport: observeAskTransport(new StdioServerTransport(), runId),

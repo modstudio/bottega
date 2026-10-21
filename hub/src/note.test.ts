@@ -24,6 +24,8 @@ import {
   resolveNoteReference,
   staleNotes,
 } from './note.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
+import { createLocalTaskInTransaction, showTask } from './task.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 beforeAll(resetFixtureStore)
@@ -117,6 +119,7 @@ const acknowledge = (id: number, session: string) =>
 describe('suggestion notes', () => {
   test('a named target project routes independently from the filing anchor', async () => {
     const requestedSpaces: Array<string | null> = []
+    const writes: Record<string, unknown>[] = []
     const targetHosted = {
       baseUrl: 'https://hub.example.test',
       token: 'test',
@@ -134,6 +137,7 @@ describe('suggestion notes', () => {
           })
         requestedSpaces.push(new Headers(init?.headers).get('x-record-space'))
         const body = JSON.parse(String(init?.body))
+        writes.push(body)
         return Response.json({
           id: crypto.randomUUID(),
           number: 1,
@@ -163,6 +167,9 @@ describe('suggestion notes', () => {
       { hosted: targetHosted },
     )
     expect(requestedSpaces).toEqual(['space-gamma'])
+    expect(writes).toEqual([
+      expect.objectContaining({ project: 'gamma', projectId: projectRecordIdFor('gamma') }),
+    ])
     expect(result.note.project).toBe('gamma')
     expect(result.note.anchors[0]?.project).toBe('workshop')
     expect(result.note.anchors[0]?.cwd).toBe('/fixtures/repos/workshop')
@@ -383,7 +390,7 @@ describe('suggestion notes', () => {
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
     })
 
-    test('a hub-protocol note promotion mints through hub and refuses --task', async () => {
+    test('a hub-protocol note promotion mints or links an existing hub task with evidence', async () => {
       const created = (
         await createNote({
           text: `Hub-owned promotion ${crypto.randomUUID()}`,
@@ -396,14 +403,43 @@ describe('suggestion notes', () => {
 
       const another = (
         await createNote({
-          text: `Hub-owned task refusal ${crypto.randomUUID()}`,
+          text: `Hub-owned existing task ${crypto.randomUUID()}`,
           cwd: '/fixtures/repos/workshop',
           forceNew: true,
         })
       ).note
-      await expect(promoteNote(another.record_id, { existingTaskKey: 'LOC-999' })).rejects.toThrow(
-        '--task is valid only for a project that owns its tracker',
+      const existing = writeTransaction((conn) =>
+        createLocalTaskInTransaction(conn, {
+          project: 'workshop',
+          title: 'Existing task',
+          status: 'done',
+        }),
       )
+      const linked = await promoteNote(another.record_id, { existingTaskKey: existing.key })
+      expect(linked.promoted_task).toBe(existing.key)
+      const detail = showTask(existing.key, { project: 'workshop' })
+      expect(detail.task.status_category).toBe('done')
+      expect(detail.comments).toHaveLength(1)
+      expect(detail.comments[0]?.body).toContain(another.text)
+      expect(detail.comments[0]?.body).toContain('SIGHTINGS (1)')
+      expect(
+        db()
+          .query<{ promoted_task_record_id: string }, [string]>(
+            'SELECT promoted_task_record_id FROM note WHERE record_id=?',
+          )
+          .get(another.record_id),
+      ).toEqual({ promoted_task_record_id: existing.record_id })
+
+      const unknown = (
+        await createNote({
+          text: `Hub-owned unknown task ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      await expect(
+        promoteNote(unknown.record_id, { existingTaskKey: 'LOC-999999' }),
+      ).rejects.toThrow(`${PLATFORM_SLUG} task list --project workshop`)
     })
 
     test('drop merge and reap write locally and keep hosted invariants', async () => {
@@ -550,13 +586,15 @@ describe('suggestion notes', () => {
     const file = join(scratch, 'anchor.ts')
     writeFileSync(file, 'first\nanchored line\n')
     const anchor = deriveNoteAnchor(`inspect ${file}:2`, '/fixtures/repos/workshop', {
-      ORCH_RUN_ID: '42',
+      ORCH_RUN_ID: '42000000-0000-4000-8000-000000000000',
+      ORCH_RUN_NUMBER: '42',
       CLAUDE_CODE_SESSION_ID: 'session-42',
     } as NodeJS.ProcessEnv)
     expect(anchor).toMatchObject({
       project: 'workshop',
       cwd: '/fixtures/repos/workshop',
       run_id: 42,
+      run_record_id: '42000000-0000-4000-8000-000000000000',
       session_id: 'session-42',
     })
     expect(anchor.files).toEqual([])
@@ -703,7 +741,11 @@ describe('suggestion notes', () => {
     }
     const anchors = [
       { ...base, files: [{ path: file, line: 1, content: 'old' }] },
-      { ...base, run_id: 999 },
+      {
+        ...base,
+        run_id: 999,
+        run_record_id: '99999999-9999-4999-8999-999999999999',
+      },
       { ...base, branch: 'deleted-branch' },
       { ...base, commit: 'old-commit' },
     ]

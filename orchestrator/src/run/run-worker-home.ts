@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
-import type { McpServerConfig } from '../mcp/mcp-probe.ts'
+import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
@@ -20,6 +20,7 @@ import {
   prepareSandboxHome,
   type RunSandbox,
   removeNewSandboxHomeAfterFailure,
+  workerStateEnvironment,
 } from '../sandbox/sandbox.ts'
 import { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -57,6 +58,19 @@ export function grokReaderServersForRun(
   )
 }
 
+export function claimedGrokReaderConfig(
+  agent: Agent,
+  writesRepository: boolean,
+  cwd: string,
+  project: Project,
+) {
+  const treeConfig = readMcpConfig(cwd)
+  return {
+    treeConfig,
+    readerServers: grokReaderServersForRun(agent, true, writesRepository, treeConfig, project, cwd),
+  }
+}
+
 export function projectMcpServerName(
   connection: { server: string } | null,
   project: Project | null,
@@ -81,7 +95,7 @@ export function trackedWorkerEnvironment(
   repoJob: boolean,
   writesJob: boolean,
   worktree: Worktree | null,
-  runId: number,
+  runId: string,
 ): Record<string, string> {
   return {
     ...(writesJob && worktree ? trackedRecipeEnvironment(runId) : {}),
@@ -93,7 +107,8 @@ export async function prepareWorkerHomeLaunch(input: {
   agent: Agent
   sandbox: RunSandbox
   runDir: string
-  runId: number
+  runNumber: number
+  runRecordId: string
   runToken: string
   environment: Record<string, string>
   grokEnvironment: Record<string, string>
@@ -114,15 +129,20 @@ export async function prepareWorkerHomeLaunch(input: {
   )
   const environment = childEnv(
     input.agent,
-    input.runId,
+    input.runRecordId,
     input.runToken,
     {
       ...input.environment,
+      // Repository workers receive run-scoped homes. Resolve the operator's
+      // hub store before that HOME replaces the one that owns task state.
+      ...(input.includeStore ? workerStateEnvironment(process.env) : {}),
       ...home,
       ...input.grokEnvironment,
       ...grokReaderScope?.environment,
     },
     input.includeStore,
+    input.runNumber,
+    input.environment,
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.codexMcpScope, environment)
   return {

@@ -1,3 +1,4 @@
+import { TRPCError } from '@trpc/server'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
@@ -121,17 +122,19 @@ export function handleTrpcRequest(
   request: Request,
   auth: Pick<LocalHubAuth, 'allows'> = localAuth,
 ): Promise<Response> {
-  if (request.method.toUpperCase() === 'POST' && !auth.allows(request)) {
-    return Promise.resolve(new Response(LOCAL_LOGIN_MESSAGE, { status: 401 }))
-  }
-  if (!trpcMutationRequestAllowed(request)) {
-    return Promise.resolve(new Response('cross-origin tRPC mutation refused', { status: 403 }))
-  }
   return fetchRequestHandler({
     endpoint: '/trpc',
     req: request,
     router: appRouter,
-    createContext,
+    createContext(options) {
+      if (request.method.toUpperCase() === 'POST' && !auth.allows(request)) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: LOCAL_LOGIN_MESSAGE })
+      }
+      if (!trpcMutationRequestAllowed(request)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'cross-origin tRPC mutation refused' })
+      }
+      return createContext(options)
+    },
     // A write can change anything an orch read returned, so the next read starts fresh.
     responseMeta({ type }) {
       if (type === 'mutation') orchCache.clear()
@@ -407,7 +410,7 @@ export async function view(
       const shaped = raw.map((r) => {
         const a = attributeRun(r)
         return {
-          id: r.id,
+          id: r.number,
           agent: r.agent,
           job: r.job,
           task: a.key,

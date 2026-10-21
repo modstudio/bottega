@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from '../workflow/step-catalogue.ts'
 import { removeDoc } from './docs.ts'
 
@@ -24,7 +25,7 @@ describe('stored canon removal preflight', () => {
       allowCanonBootstrap: true,
     })
     const current = productionStepCatalogue().definition
-    const draft = setStepCatalogue(
+    const draft = setStepCatalogueLocal(
       {
         steps: [
           ...current.steps,
@@ -43,7 +44,7 @@ describe('stored canon removal preflight', () => {
       'test workflow citation',
       'test',
     )
-    promoteStepCatalogue(draft.n, 'publish test workflow citation', 'test')
+    promoteStepCatalogueLocal(draft.n, 'publish test workflow citation', 'test')
 
     await expect(
       removeDoc('canon', null, targetSlug, {
@@ -87,32 +88,46 @@ describe('stored canon removal preflight', () => {
 
   test("checks an unmanaged project's canon before removing a global row", async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'unmanaged',
       path: process.cwd(),
       canon: true,
       settings: { managedContext: false },
     })
-    const target = await setDoc({
-      scope: 'canon',
-      subject: null,
-      slug: targetSlug,
-      title: 'Target',
-      body: targetBody,
-      allowCanonBootstrap: true,
-    })
-    await setDoc({
-      scope: 'canon',
-      subject: 'unmanaged',
-      slug: 'AGENTS.md',
-      title: 'Citer',
-      body: citation,
-      allowCanonBootstrap: true,
-    })
+    const project = db()
+      .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='unmanaged'")
+      .get()!
+    const targetRecordId = newRecordId()
+    const targetRevisionId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc
+         (record_id,scope,subject,slug,title,project_record_id,body,delivery,created_at,updated_at,
+          audiences,source_files)
+         VALUES (?,'canon',NULL,?,'Target',NULL,?,'inject','2026-10-20','2026-10-20','["internal"]','[]'),
+                (?,'canon','unmanaged','AGENTS.md','Citer',?,?,'inject','2026-10-20','2026-10-20','["internal"]','[]')`,
+      )
+      .run(targetRecordId, targetSlug, targetBody, newRecordId(), project.record_id, citation)
+    db()
+      .query(
+        `INSERT INTO doc_revision
+         (record_id,number,doc_record_id,scope,slug,op,title,body,delivery,author,reason,at,audiences)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,'canon',?,'create','Target',?,
+           'inject','test','seed removal fixture','2026-10-20','["internal"]')`,
+      )
+      .run(targetRevisionId, targetRecordId, targetSlug, targetBody)
 
     await expect(
       removeDoc('canon', null, targetSlug, {
         reason: 'test global removal',
-        expectedRevision: target.revision!,
+        expectedRevision: targetRevisionId,
+        collectCanonLintInput: () => ({
+          files: [],
+          codexProjectDoc: true,
+          trackedPaths: [],
+          packageScripts: [],
+          sourceTexts: [],
+        }),
       }),
     ).rejects.toThrow('AGENTS.md:1')
     expect(db().query('SELECT COUNT(*) AS n FROM doc WHERE slug=?').get(targetSlug)).toEqual({

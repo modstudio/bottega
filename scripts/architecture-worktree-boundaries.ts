@@ -5,6 +5,8 @@ export const worktreeBoundarySpecs = [
     allowed: [
       'node:fs',
       'node:path',
+      '../filesystem-identity-plan.ts',
+      '../../../shared/record-id.ts',
       '../git/checkout-identity.ts',
       '../database/database-location.ts',
       '../database/db.ts',

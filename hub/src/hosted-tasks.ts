@@ -1,15 +1,11 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
+import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
-import {
-  hostedTaskJoin,
-  hostedTaskRelationship,
-  repairHostedTaskReferences,
-  taskIdFor,
-} from './hosted-task-reference.ts'
+import { hostedTaskJoin, repairHostedTaskReferences, taskIdFor } from './hosted-task-reference.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import type {
   PushedComment,
   PushedDocument,
@@ -19,7 +15,6 @@ import type {
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
-export type TaskIdentity = TenantPrincipal
 export type HostedTask = PushedTask & { newly_assigned?: boolean }
 export type HostedComment = PushedComment
 export type HostedDocument = PushedDocument
@@ -32,88 +27,14 @@ export const hostedTaskPullSerializers = {
   hub_task_status_event: (row: HostedStatusEvent) => row,
 } as const
 
-export async function withHostedTenant<T>(
-  url: string,
-  identity: TaskIdentity,
-  work: (tx: SQL) => Promise<T>,
-) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
-}
-
 const rows = <T>(value: unknown) => value as T[]
 
-export async function listHostedTasks(
-  url: string,
-  identity: TaskIdentity,
-  filters: {
-    project?: string
-    status?: string
-    parent?: string
-    updatedSince?: string
-    includeDeleted?: boolean
-    cursor?: string
-  },
-) {
-  return withHostedTenant(url, identity, async (tx) => {
-    const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
-    const parentId = filters.parent ? await taskIdFor(tx, identity.spaceId, filters.parent) : null
-    const parent = hostedTaskRelationship('hub_task')
-    const tasks = rows<HostedTask>(
-      await tx`
-      SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid
-        AND (${filters.project ?? null}::text IS NULL OR project_name=${filters.project ?? null})
-        AND (${filters.status ?? null}::text IS NULL OR status_category=${filters.status ?? null})
-        AND (${filters.parent ?? null}::text IS NULL
-          OR ${tx.unsafe(parent.idColumn)}=${parentId}::uuid
-          OR (${tx.unsafe(parent.idColumn)} IS NULL AND
-            ${tx.unsafe(parent.keyColumn)}=${filters.parent ?? null}))
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-      ORDER BY updated_at, key`,
-    ).map(hostedTaskPullSerializers.hub_task)
-    const comments = rows<HostedComment>(
-      await tx`
-      SELECT * FROM hub_task_comment WHERE space_id=${identity.spaceId}::uuid
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-        ORDER BY updated_at,id`,
-    ).map(hostedTaskPullSerializers.hub_task_comment)
-    const documents = rows<HostedDocument>(
-      await tx`
-      SELECT * FROM hub_task_document WHERE space_id=${identity.spaceId}::uuid
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-        ORDER BY updated_at,id`,
-    ).map(hostedTaskPullSerializers.hub_task_document)
-    const statusEvents = rows<HostedStatusEvent>(
-      await tx`
-      SELECT * FROM hub_task_status_event WHERE space_id=${identity.spaceId}::uuid
-        AND updated_at > ${since}::timestamptz
-        AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-        ORDER BY updated_at,id`,
-    ).map(hostedTaskPullSerializers.hub_task_status_event)
-    const changed = [...tasks, ...comments, ...documents, ...statusEvents]
-    const cursor = changed.reduce((latest, row) => {
-      const stamp = new Date(row.updated_at).toISOString()
-      return stamp > latest ? stamp : latest
-    }, since)
-    return { tasks, comments, documents, statusEvents, cursor }
-  })
-}
-
-export async function getHostedTask(url: string, identity: TaskIdentity, key: string) {
-  return withHostedTenant(url, identity, async (tx) => {
+export async function getHostedTask(client: SQL, identity: TaskIdentity, taskIdentity: string) {
+  return withHostedTenant(client, identity, async (tx) => {
     const task = rows<HostedTask>(
       await tx`
-      SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND key=${key}
+      SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid
+        AND (key=${taskIdentity} OR id::text=${taskIdentity})
         AND deleted_at IS NULL`,
     )[0]
     if (!task) return null
@@ -134,10 +55,11 @@ export async function getHostedTask(url: string, identity: TaskIdentity, key: st
 }
 
 export async function createHostedTask(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   input: {
     project: string
+    projectId: string
     title: string
     status?: string
     parent?: string
@@ -147,7 +69,9 @@ export async function createHostedTask(
     updated_at?: string
   },
 ) {
-  return withHostedTenant(url, identity, (tx) => createHostedTaskInTransaction(tx, identity, input))
+  return withHostedTenant(client, identity, (tx) =>
+    createHostedTaskInTransaction(tx, identity, input),
+  )
 }
 
 export async function createHostedTaskInTransaction(
@@ -155,10 +79,14 @@ export async function createHostedTaskInTransaction(
   identity: TaskIdentity,
   input: Parameters<typeof createHostedTask>[2],
 ) {
+  if (!input.projectId)
+    throw new Error(
+      `project-scoped hosted task write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+    )
   const project = rows<{ id: string; key_prefixes: string[] }>(
     await tx`
       SELECT id,key_prefixes FROM project WHERE space_id=${identity.spaceId}::uuid
-        AND name=${input.project}`,
+        AND id=${input.projectId}::uuid`,
   )[0]
   if (!project)
     throw new Error(
@@ -204,14 +132,19 @@ export async function createHostedTaskInTransaction(
 }
 
 export async function createHostedDocument(
-  url: string,
+  client: SQL,
   identity: TaskIdentity,
   key: string,
   input: { title: string; body?: string; role?: string | null; version: string },
 ) {
-  return withHostedTenant(url, identity, async (tx) => {
-    const project = rows<{ id: string; project_name: string; next_document_number: number }>(
-      await tx`SELECT id,project_name,next_document_number FROM hub_task
+  return withHostedTenant(client, identity, async (tx) => {
+    const project = rows<{
+      id: string
+      project_id: string
+      project_name: string
+      next_document_number: number
+    }>(
+      await tx`SELECT id,project_id,project_name,next_document_number FROM hub_task
       WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!project) return null
@@ -219,7 +152,7 @@ export async function createHostedDocument(
       await tx`INSERT INTO hub_task_document
       (id,space_id,project_name,project_id,task_key,task_id,number,role,title,body,version,created_at,updated_at)
       VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.project_name},
-       ${await storedHubProjectId(tx, identity.spaceId, { projectName: project.project_name })}::uuid,
+       ${project.project_id}::uuid,
        ${key},${project.id}::uuid,
        ${project.next_document_number},${input.role ?? null},${input.title},${input.body ?? ''},${input.version},now(),now()) RETURNING *`,
     )[0]!
@@ -512,20 +445,23 @@ export async function mirrorCommentRow(
     { sameRow: 'update' },
   )
   applyMirrorDecision(decision)
-  const projectId = await storedHubProjectId(tx, identity.spaceId, {
-    projectId: row.projectId,
-    projectName: row.project_name,
-  })
+  const projectId = rows<{ project_id: string }>(
+    await tx`SELECT project_id FROM hub_task WHERE id=${taskId}::uuid`,
+  )[0]!.project_id
   if (decision.action === 'update-same-row') {
     await tx`UPDATE hub_task_comment SET
       project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,body=${row.body},
-      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
+      actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),
+      actor_name=COALESCE(${row.actor_name},actor_name),agent=COALESCE(${row.agent},agent),
+      run_id=COALESCE(${row.run_id},run_id),
+      updated_at=${row.updated_at}::timestamptz,
+      deleted_at=COALESCE(${row.deleted_at}::timestamptz,deleted_at)
       WHERE id=${row.id}::uuid`
     return
   }
   await tx`INSERT INTO hub_task_comment
-    (id,space_id,project_name,project_id,task_key,task_id,body,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,actor_name,agent,run_id,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.body},${row.actor_user_id},${row.actor_name},${row.agent},${row.run_id},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 export async function mirrorDocumentRow(
@@ -559,10 +495,9 @@ export async function mirrorDocumentRow(
     { sameRow: 'update' },
   )
   applyMirrorDecision(decision)
-  const projectId = await storedHubProjectId(tx, identity.spaceId, {
-    projectId: row.projectId,
-    projectName: row.project_name,
-  })
+  const projectId = rows<{ project_id: string }>(
+    await tx`SELECT project_id FROM hub_task WHERE id=${taskId}::uuid`,
+  )[0]!.project_id
   if (decision.action === 'update-same-row') {
     await tx`UPDATE hub_task_document SET
       project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,number=${number},role=${row.role},
@@ -610,18 +545,31 @@ export async function mirrorStatusEventRow(
     },
   )
   applyMirrorDecision(decision)
-  const projectId = await storedHubProjectId(tx, identity.spaceId, {
-    projectId: row.projectId,
-    projectName: row.project_name,
-  })
-  if (decision.action === 'adopt') return { id: decision.id }
+  const parentProject = rows<{ project_id: string }>(
+    await tx`SELECT project_id FROM hub_task WHERE id=${taskId}::uuid`,
+  )[0]
+  const projectId =
+    parentProject?.project_id ??
+    (await storedHubProjectId(tx, identity.spaceId, {
+      projectId: row.projectId,
+      projectName: row.project_name,
+    }))
+  if (decision.action === 'adopt') {
+    await tx`UPDATE hub_task_status_event SET
+      actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),actor_name=COALESCE(${row.actor_name},actor_name),
+      agent=COALESCE(${row.agent},agent),run_id=COALESCE(${row.run_id},run_id)
+      WHERE id=${decision.id}::uuid`
+    return { id: decision.id }
+  }
   if (decision.action === 'idempotent-duplicate') {
-    await tx`UPDATE hub_task_status_event SET project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid
+    await tx`UPDATE hub_task_status_event SET project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,
+      actor_user_id=COALESCE(${row.actor_user_id},actor_user_id),actor_name=COALESCE(${row.actor_name},actor_name),
+      agent=COALESCE(${row.agent},agent),run_id=COALESCE(${row.run_id},run_id)
       WHERE id=${row.id}::uuid`
     return null
   }
   await tx`INSERT INTO hub_task_status_event
-    (id,space_id,project_name,project_id,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,project_id,task_key,task_id,at,from_status,to_status,actor_user_id,actor_name,agent,run_id,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.actor_user_id},${row.actor_name},${row.agent},${row.run_id},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
   return null
 }

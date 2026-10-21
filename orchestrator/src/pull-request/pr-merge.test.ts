@@ -3,10 +3,12 @@ import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
+  MERGED_WITH_RESIDUE_EXIT_CODE,
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
@@ -14,21 +16,24 @@ import {
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
-function registerProject(requiredChecks: string[]): void {
+function registerProject(requiredChecks: string[], mergeQueue = false): void {
   db()
-    .query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)')
+    .query(
+      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+    )
     .run(
       'merge-fixture',
       cwd,
       'bun',
       JSON.stringify({
         trunk: 'main',
-        release: { rungs: [], mergeMethod: 'squash', requiredChecks },
+        release: { rungs: [], mergeMethod: 'squash', requiredChecks, mergeQueue },
       }),
     )
 }
 
 const pullRequest: PullRequestMergeFacts = {
+  nodeId: 'PR_node_id',
   number: 42,
   headCommit: 'head-commit',
   headBranch: 'DEV-1255-admission',
@@ -55,7 +60,9 @@ function adapter(
       decision: AdmissionDecision,
       prNumber: number,
       database: ReturnType<typeof db>,
-    ) => number | null
+    ) => string | null
+    recordLandings?: () => void
+    shipCleanup?: () => ShipCleanupReport
   } = {},
 ): PullRequestMergeAdapter {
   return {
@@ -75,10 +82,36 @@ function adapter(
       })),
     recordAdmission: (change, decision, prNumber, database) =>
       input.recordAdmission?.(change, decision, prNumber, database) ?? null,
+    ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
+    queueState: () => ({
+      pullRequestState: 'MERGED',
+      mergeCommit: 'merge-commit',
+      entryState: null,
+    }),
+    enqueue: () => {},
+    now: Date.now,
+    wait: () => {},
+    ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
   }
 }
+
+const cleanupReport = (
+  overrides: Partial<Pick<ShipCleanupReport, 'kept' | 'errors'>> = {},
+): ShipCleanupReport => ({
+  project: 'merge-fixture',
+  branch: pullRequest.headBranch,
+  freed: { artifacts: 0, scratch: 0, worktrees: 0 },
+  removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+  reclaimed: { processes: [], compose: [] },
+  kept: overrides.kept ?? [],
+  errors: overrides.errors ?? [],
+  verdict:
+    (overrides.errors?.length ?? 0) > 0 || (overrides.kept?.length ?? 0) > 0
+      ? { clean: false, reason: 'unexpected-kept-item' }
+      : { clean: true },
+})
 
 function recordPassingGate(): void {
   db()
@@ -111,8 +144,86 @@ test('an injected forge adapter merges all-passing checks with the method, subje
       },
     }),
   )
-  expect(commit).toBe('merged-oid')
+  expect(commit.output).toBe('merged-oid')
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
+})
+
+test('a cleanup failure reports its retry without undoing a successful merge', () => {
+  registerProject(['test'])
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      shipCleanup: () => {
+        throw new Error('close-out unavailable')
+      },
+    }),
+  )
+  expect(outcome.output).toBe(
+    `merge-commit\nship cleanup failed for ${pullRequest.headBranch}: close-out unavailable; retry: ${PLATFORM_SLUG} tree ship-cleanup ${pullRequest.headBranch}`,
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+})
+
+test('a merge reports residue when cleanup keeps anything beyond its command tree', () => {
+  registerProject(['test'])
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      shipCleanup: () =>
+        cleanupReport({
+          kept: [{ item: 'branch DEV-1-a', reason: 'live', reasonKind: 'safety-hold' }],
+        }),
+    }),
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output.startsWith('merge-commit\n')).toBe(true)
+})
+
+test('a successful merge records contained branches before cleanup can delete them', () => {
+  registerProject(['test'])
+  const calls: string[] = []
+  mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      merge: () => {
+        calls.push('merge')
+        return 'merge-commit'
+      },
+      recordLandings: () => calls.push('record-landings'),
+      shipCleanup: () => {
+        calls.push('cleanup')
+        return cleanupReport()
+      },
+    }),
+  )
+  expect(calls).toEqual(['merge', 'record-landings', 'cleanup'])
+})
+
+test('a landing-record failure preserves branches by skipping cleanup', () => {
+  registerProject(['test'])
+  let cleaned = false
+  const output = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      recordLandings: () => {
+        throw new Error('local refs unavailable')
+      },
+      shipCleanup: () => {
+        cleaned = true
+        return cleanupReport()
+      },
+    }),
+  )
+  expect(output.output).toContain('landing recording failed')
+  expect(cleaned).toBe(false)
 })
 
 test('an injected forge adapter exposes a pending required check without merging', () => {
@@ -163,21 +274,22 @@ test('an incomplete admission refuses with its review remedy without merging', (
             triage: {
               complete: false,
               snapshot: {
-                reviewIds: [],
+                reviewRecordIds: [],
                 patchId: 'patch',
                 tier: 2,
                 lensRounds: 0,
                 findingCount: 0,
                 admissionPath: 'exact_review',
-                readId: null,
+                readRecordId: null,
               },
               missingReview: true,
-              unfinishedReviewIds: [],
+              unfinishedReviewNumbers: [],
               undisposedFindings: [],
               missingLenses: [],
+              missingSecondOpinion: null,
               finalTierRaised: false,
               architectReadRequired: false,
-              earlierReviewId: null,
+              earlierReviewNumber: null,
               earlierReviewTier: null,
             },
           },
@@ -240,7 +352,7 @@ test('an admitted head records a snapshot with the pull request number before me
   registerProject(['test'])
   const database = db()
   const project = database
-    .query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get('merge-fixture')!
   const decision: AdmissionDecision = {
     complete: true,
@@ -248,13 +360,13 @@ test('an admitted head records a snapshot with the pull request number before me
     triage: {
       complete: true,
       snapshot: {
-        reviewIds: [],
+        reviewRecordIds: [],
         patchId: 'patch',
         tier: 2,
         lensRounds: 0,
         findingCount: 0,
         admissionPath: 'exact_review',
-        readId: null,
+        readRecordId: null,
       },
     },
   }
@@ -276,8 +388,7 @@ test('an admitted head records a snapshot with the pull request number before me
         return {
           change: {
             project: {
-              id: project.id,
-              recordId: null,
+              recordId: project.record_id,
               name: 'merge-fixture',
               path: admissionCwd,
               stack: 'bun',
@@ -307,11 +418,11 @@ test('an admitted head records a snapshot with the pull request number before me
   expect(
     database
       .query(
-        `SELECT pr_number,override_id FROM landing_triage_snapshot
+        `SELECT pr_number,override_record_id FROM landing_triage_snapshot
           WHERE project=? AND branch=? AND tip=?`,
       )
       .get('merge-fixture', pullRequest.headBranch, pullRequest.headCommit),
-  ).toEqual({ pr_number: 42, override_id: null })
+  ).toEqual({ pr_number: 42, override_record_id: null })
 })
 
 test('a failing forge call refuses because proof was not checked', () => {

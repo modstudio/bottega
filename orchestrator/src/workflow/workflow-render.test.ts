@@ -1,20 +1,28 @@
-import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { applyMigrations } from '../database/migrations.ts'
-import { floorGuidance, floorKinds } from './workflow-floor.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
+import { type FloorKind, floorGuidance, floorKinds } from './workflow-floor.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { composeWorkflow, getWorkflowStep, promoteWorkflow, setWorkflow } from './workflows.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+} from './workflows.ts'
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run(
     'fixture',
     '/fixture',
     'bun',
@@ -25,12 +33,91 @@ const database = () => {
       tracker: { protocol: 'hub' },
     }),
   )
-  return d
-}
+})
 
 const args = { key: 'DEV-821', branch: 'DEV-821-work', worktree: '/tmp/work' }
 
 describe('workflow rendering', () => {
+  test('renders conditional composition entries and a step close outcome contract', () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const catalogue = setStepCatalogueLocal(
+      {
+        ...current,
+        steps: current.steps.map((step) =>
+          step.slug === 'lens'
+            ? { ...step, body: 'Review the work.', outcomes: ['needed', 'clear'] }
+            : step,
+        ),
+      },
+      'render flow fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
+    const draft = setWorkflowLocal(
+      'render-flow',
+      {
+        title: 'Render flow',
+        description: 'Render conditions.',
+        arguments: [],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: [
+              'lens',
+              { step: 'score', when: { step: 'lens', outcome: ['needed', 'clear'] } },
+            ],
+          },
+        ],
+      },
+      'render flow fixture',
+      'test',
+      d,
+    )
+    promoteWorkflowLocal('render-flow', draft.n, 'publish', 'test', d)
+    expect(
+      renderWorkflowComposition(composeWorkflow('render-flow', 'fixture', 'default', {}, d)),
+    ).toContain('only when lens is needed or clear')
+    expect(
+      renderWorkflowStep(
+        getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+      ),
+    ).toContain('Choose one allowed outcome (needed, clear)')
+    expect(
+      renderWorkflowStep({
+        ...getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+        rulingOutcomes: ['needed'],
+        reenter: { to: 'score', outcome: 'needed' },
+        pass: 2,
+        flow: [{ slug: 'lens', outcome: 'needed' }],
+      }),
+    ).toContain('Flow so far: Pass 2, lens=needed')
+    expect(
+      renderWorkflowStep({
+        ...getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+        rulingOutcomes: ['needed'],
+        reenter: { to: 'score', outcome: 'needed' },
+      }),
+    ).toContain('Closing with needed stops for a ruling.')
+    expect(
+      renderWorkflowStep({
+        ...getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+        reenter: { to: 'score', outcome: 'needed' },
+      }),
+    ).toContain(
+      'Outcome needed returns to score automatically once; beyond that it needs a ruling.',
+    )
+    expect(
+      renderWorkflowStep(
+        getWorkflowStep('render-flow', 'fixture', 'lens', {}, d, { mode: 'default' }),
+      ),
+    ).toContain(
+      'step 2 score — Score the lenses runs only when lens is needed or clear; otherwise closing skips it and serves the next eligible step.',
+    )
+  })
   test('every floor kind has generated evidence guidance', () => {
     expect(floorKinds.filter((kind) => !floorGuidance[kind]?.trim())).toEqual([])
     const d = database()
@@ -40,6 +127,11 @@ describe('workflow rendering', () => {
       ),
     ).toContain(
       `Evidence for command-exit: run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`.`,
+    )
+    expect(
+      renderWorkflowStep(getWorkflowStep('flow', 'fixture', 'lens', args, d, { mode: 'default' })),
+    ).toContain(
+      'Evidence for recorded-artifact: record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>`.',
     )
   })
 
@@ -68,7 +160,7 @@ describe('workflow rendering', () => {
 
   test('a composition needing a mode asks for one without the driving contract', () => {
     const d = database()
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'choose',
       {
         title: 'Choose',
@@ -86,7 +178,7 @@ describe('workflow rendering', () => {
       'test',
       d,
     )
-    promoteWorkflow('choose', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('choose', draft.n, 'publish', 'test', d)
 
     const rendered = renderWorkflowComposition(
       composeWorkflow('choose', 'fixture', undefined, {}, d),
@@ -149,7 +241,7 @@ describe('workflow rendering', () => {
         getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
-      `Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: auto (built-in) — meet this step's floor with command-exit evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(
       renderWorkflowStep(
@@ -164,7 +256,7 @@ describe('workflow rendering', () => {
       `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; this is the last step of flow (default), and closing it finishes the workflow.`,
     )
 
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       'forked-next',
       {
         title: 'Forked next',
@@ -182,10 +274,91 @@ describe('workflow rendering', () => {
       'test',
       d,
     )
-    promoteWorkflow('forked-next', draft.n, 'publish', 'test', d)
+    promoteWorkflowLocal('forked-next', draft.n, 'publish', 'test', d)
     expect(renderWorkflowStep(getWorkflowStep('forked-next', 'fixture', 'score', {}, d))).toEndWith(
       `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.`,
     )
+  })
+
+  test('autonomy offers self-ruling only when the step has a ruling floor', () => {
+    const step = {
+      slug: 'apply-findings',
+      title: 'Apply review findings',
+      body: 'Apply the accepted findings.',
+      floor: ['command-exit', 'recorded-artifact'] as FloorKind[],
+      expectedStatus: undefined,
+      commandEvidence: undefined,
+      job: null,
+      autonomy: 'auto' as const,
+      needs: [],
+      resolvedAutonomy: { value: 'auto' as const, scope: 'built-in' },
+      workflow: 'ship-task',
+      version: 1,
+      catalogueVersion: 1,
+      project: 'fixture',
+      mode: 'full',
+      facts: {},
+      next: null,
+    }
+    const evidenceRendered = renderWorkflowStep(step)
+    expect(evidenceRendered).toContain(
+      `Autonomy: auto (built-in) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+    )
+    expect(evidenceRendered).not.toContain('self_ruling')
+    expect(evidenceRendered).not.toContain('--self-ruling')
+    expect(evidenceRendered).not.toContain('rule yourself')
+
+    const reviewEvidenceRendered = renderWorkflowStep({
+      ...step,
+      resolvedAutonomy: { value: 'review' as const, scope: 'project' },
+    })
+    expect(reviewEvidenceRendered).toContain(
+      `Autonomy: review (project) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+    )
+    expect(reviewEvidenceRendered).not.toContain('self_ruling')
+    expect(reviewEvidenceRendered).not.toContain('--self-ruling')
+    expect(reviewEvidenceRendered).not.toContain('rule yourself')
+
+    const rulingRendered = renderWorkflowStep({ ...step, floor: ['ruling'] })
+    expect(rulingRendered).toContain('self_ruling')
+    expect(rulingRendered).toContain('--self-ruling')
+    expect(rulingRendered).toContain('rule yourself')
+
+    const rulingOutcomeRendered = renderWorkflowStep({
+      ...step,
+      outcomes: ['needed', 'clear'],
+      rulingOutcomes: ['needed'],
+    })
+    expect(rulingOutcomeRendered).toContain('for outcome needed, you may rule this step yourself')
+    expect(rulingOutcomeRendered).toContain('--self-ruling')
+  })
+
+  test('ask autonomy wins when the step has no ruling floor', () => {
+    const rendered = renderWorkflowStep({
+      slug: 'merge-pr',
+      title: 'Merge the pull request',
+      body: 'Merge the admitted pull request.',
+      floor: ['command-exit', 'recorded-artifact'],
+      expectedStatus: undefined,
+      commandEvidence: undefined,
+      job: null,
+      autonomy: 'auto',
+      needs: [],
+      resolvedAutonomy: { value: 'ask', scope: 'operator' },
+      workflow: 'ship-task',
+      version: 1,
+      catalogueVersion: 1,
+      project: 'fixture',
+      mode: 'full',
+      facts: {},
+      next: null,
+    })
+    expect(rendered).toContain(
+      `Autonomy: ask (operator) — stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`. The operator's answer authorizes the action; then close this step with command-exit or recorded-artifact evidence.`,
+    )
+    expect(rendered).not.toContain('self_ruling')
+    expect(rendered).not.toContain('--self-ruling')
+    expect(rendered).not.toContain('rule yourself')
   })
 
   test('an operator-only ruling floor does not tell the agent to rule itself or pass self-ruling', () => {
@@ -242,7 +415,7 @@ describe('workflow rendering', () => {
       next: null,
     })
     expect(rendered).toContain(
-      `Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: auto (built-in) — meet this step's floor with tracker-transition evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(rendered).not.toContain('put an operator ruling')
   })

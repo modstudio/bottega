@@ -1,11 +1,12 @@
 // concern: run-liveness
 /**
- * Knows process and chain liveness, stale transition, audit, and root roll-up. Must not know routing, transports, reviews, or CLI adapters.
+ * Knows process and chain liveness, stale transition, audit, root roll-up, and the paired run-record enqueue. Must not know routing, transports, reviews, or CLI adapters.
  */
 
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   closeRunChainQuestions,
@@ -16,8 +17,10 @@ import { questionOpenSql } from './question-open.ts'
 import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
+import { chainTerminationAtForRoot } from './run-chain.ts'
 import { coordinatorSetupError } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
+import { enqueueRunRecord } from './run-outbox.ts'
 
 /**
  * The outer ceiling for a run and for callers waiting on one. Liveness itself
@@ -38,28 +41,16 @@ export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
  * an explicit terminal timestamp, a member without latency has no supportable
  * terminal time and returns null.
  */
-export function chainTerminationAt(database: Database, memberId: number): string | null {
-  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(memberId) as {
-    id: number
-    parent_run_id: number | null
+export function chainTerminationAt(database: Database, memberId: string): string | null {
+  const member = database
+    .query('SELECT record_id, parent_run_record_id FROM run WHERE record_id=?')
+    .get(memberId) as {
+    record_id: string
+    parent_run_record_id: string | null
   } | null
   if (!member) return null
-  const rootId = member.parent_run_id ?? member.id
-  const terminal = database
-    .query(
-      `SELECT started_at, latency_ms, status FROM run
-      WHERE id=? OR parent_run_id=?
-      ORDER BY turn DESC, id DESC LIMIT 1`,
-    )
-    .get(rootId, rootId) as { started_at: string; latency_ms: number | null; status: string } | null
-  if (
-    !terminal ||
-    !['ok', 'failed', 'stale'].includes(terminal.status) ||
-    terminal.latency_ms === null
-  ) {
-    return null
-  }
-  return new Date(Date.parse(terminal.started_at) + terminal.latency_ms).toISOString()
+  const rootId = member.parent_run_record_id ?? member.record_id
+  return chainTerminationAtForRoot(database, rootId)
 }
 
 /**
@@ -92,67 +83,124 @@ export function chainTerminationAt(database: Database, memberId: number): string
  */
 function resolveRootFromLastTurnPreserving(
   database: Database,
-  rootId: number,
-  preserveFailureKindForTurnId: number | null,
+  rootId: string,
+  preserveFailureKindForTurnId: string | null,
 ): number {
   return database
     .query(
       `UPDATE run AS root
         SET status = (
           SELECT last.status FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             error = (
           SELECT last.error FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             failure_kind = (
           SELECT CASE
-                   WHEN last.id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
+                   WHEN last.record_id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
                      THEN root.failure_kind
                    ELSE last.failure_kind
                  END
             FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             pre_confinement = (
           SELECT last.pre_confinement FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ),
             confinement = (
           SELECT last.confinement FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
+           LIMIT 1
+        ),
+            tests_ran = (
+          SELECT last.tests_ran FROM run last
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
+           LIMIT 1
+        ),
+            tests_passed = (
+          SELECT last.tests_passed FROM run last
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
+           LIMIT 1
+        ),
+            tests_claim_disagrees = (
+          SELECT last.tests_claim_disagrees FROM run last
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         )
-      WHERE root.id = ?
-        AND root.parent_run_id IS NULL
+      WHERE root.record_id = ?
+        AND root.parent_run_record_id IS NULL
         AND root.status IN ('asking', 'ok', 'failed')
         AND NOT EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
-           WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
+          SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+           WHERE (owner.record_id = root.record_id OR owner.parent_run_record_id = root.record_id)
              AND ${questionOpenSql('q')}
         )
         AND (
           SELECT last.status FROM run last
-           WHERE last.id = root.id OR last.parent_run_id = root.id
-           ORDER BY last.turn DESC, last.id DESC
+           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
+           ORDER BY last.turn DESC, last.number DESC
            LIMIT 1
         ) IN ('ok', 'failed', 'stale')`,
     )
     .run(preserveFailureKindForTurnId, rootId).changes
 }
 
-export function resolveRootFromLastTurn(database: Database, rootId: number): number {
-  return resolveRootFromLastTurnPreserving(database, rootId, null)
+export function rollUpRootAndEnqueue(
+  database: Database,
+  rootId: string,
+  preserveFailureKindForTurnId: string | null,
+  machine: string,
+  finishedAt: string,
+): number {
+  const changes = resolveRootFromLastTurnPreserving(database, rootId, preserveFailureKindForTurnId)
+  enqueueRunRecord(database, rootId, machine, finishedAt)
+  return changes
+}
+
+function rollUpReapedRoots(
+  database: Database,
+  ended: string[],
+  setupDeathIds: Set<string>,
+  machine: string,
+  finishedAt: string,
+): void {
+  const roots = database
+    .query(
+      `SELECT DISTINCT COALESCE(ended.parent_run_record_id, ended.record_id) AS root_record_id,
+        (SELECT last.record_id FROM run last
+          WHERE last.record_id = COALESCE(ended.parent_run_record_id, ended.record_id)
+             OR last.parent_run_record_id = COALESCE(ended.parent_run_record_id, ended.record_id)
+          ORDER BY last.turn DESC, last.number DESC LIMIT 1) AS last_record_id
+      FROM run ended WHERE ended.record_id IN (${ended.map(() => '?').join(',')})`,
+    )
+    .all(...ended) as { root_record_id: string; last_record_id: string }[]
+  for (const { root_record_id, last_record_id } of roots) {
+    writeTransaction(() => {
+      rollUpRootAndEnqueue(
+        database,
+        root_record_id,
+        preservedFailureKindTurnId(setupDeathIds, last_record_id),
+        machine,
+        finishedAt,
+      )
+      retireRunChainQuestionDeliveries(database, root_record_id, QUESTION_CLOSE_CHAIN_STALE)
+    }, database)
+  }
 }
 
 /**
@@ -168,10 +216,11 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
  * Returns how many were swept. Called opportunistically on open: cheap, and it
  * means no separate cron has to remember.
  */
-export type ObservedDeadRun = { id: number; reason: string }
+export type ObservedDeadRun = { record_id: string; reason: string }
 
 type RunningRow = {
-  id: number
+  number: number
+  record_id: string
   pid: number | null
   agent_pid: number | null
   agent: string
@@ -179,19 +228,19 @@ type RunningRow = {
 }
 
 function deadRunReason(row: RunningRow): string {
-  if (runLeaseState(row.id) === 'free') return `run lease ${row.id} is free`
+  if (runLeaseState(row.record_id) === 'free') return `run lease ${row.number} is free`
   if (row.pid) return `pid ${row.pid} is not alive`
   return 'legacy run has no live pid'
 }
 
 type RunningDisposition = 'alive' | 'dead' | 'abandoned-bootstrap' | 'setup-death'
 
-function preservedFailureKindTurnId(setupDeathIds: Set<number>, lastTurnId: number): number | null {
+function preservedFailureKindTurnId(setupDeathIds: Set<string>, lastTurnId: string): string | null {
   return setupDeathIds.has(lastTurnId) ? lastTurnId : null
 }
 
 function runningDisposition(row: RunningRow, now: number): RunningDisposition {
-  const leaseState = runLeaseState(row.id)
+  const leaseState = runLeaseState(row.record_id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
   if (row.agent === '(pending)') {
     return abandonedBootstrap({
@@ -220,25 +269,47 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
     : 'dead'
 }
 
+function coordinatorSetupDeathError(rows: RunningRow[], id: string): string {
+  return coordinatorSetupError(rows.find((candidate) => candidate.record_id === id)!.record_id)
+}
+
+function setupDeathObservation(rows: RunningRow[], recordId: string): ObservedDeadRun {
+  return { record_id: recordId, reason: coordinatorSetupDeathError(rows, recordId) }
+}
+
+function finalizeReapedRuns(
+  database: Database,
+  ended: string[],
+  setupDeaths: string[],
+  localMachineId: string,
+  finishedAt: string,
+): void {
+  if (!ended.length) return
+  rollUpReapedRoots(database, ended, new Set(setupDeaths), localMachineId, finishedAt)
+  for (const id of ended) teardownTerminalRunResources(database, id)
+}
+
 export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const now = Date.now()
   const rows = d
-    .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
+    .query(
+      `SELECT number, record_id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`,
+    )
     .all() as RunningRow[]
 
-  const dead: number[] = []
-  const abandonedBootstraps: number[] = []
-  const setupDeaths: number[] = []
+  const dead: string[] = []
+  const abandonedBootstraps: string[] = []
+  const setupDeaths: string[] = []
   for (const r of rows) {
     switch (runningDisposition(r, now)) {
       case 'dead':
-        dead.push(r.id)
+        dead.push(r.record_id)
         break
       case 'abandoned-bootstrap':
-        abandonedBootstraps.push(r.id)
+        abandonedBootstraps.push(r.record_id)
         break
       case 'setup-death':
-        setupDeaths.push(r.id)
+        setupDeaths.push(r.record_id)
         break
       case 'alive':
         break
@@ -247,46 +318,51 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   if (linkedWorktreeReadOnly) {
     return [
       ...dead.map((id) => {
-        const row = rows.find((candidate) => candidate.id === id)!
+        const row = rows.find((candidate) => candidate.record_id === id)!
         return {
-          id,
+          record_id: id,
           reason: deadRunReason(row),
         }
       }),
       ...abandonedBootstraps.map((id) => ({
-        id,
+        record_id: id,
         reason: `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
-      ...setupDeaths.map((id) => ({ id, reason: coordinatorSetupError(id) })),
+      ...setupDeaths.map((id) => setupDeathObservation(rows, id)),
     ]
   }
+  const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
+  const localMachineId = ended.length ? machineId() : ''
+  const finishedAt = new Date(now).toISOString()
   if (abandonedBootstraps.length) {
     const update = d.query(
-      `UPDATE run SET status='failed', failure_kind='harness',
-              error=? WHERE id=? AND status='running'`,
+      `UPDATE run SET status='failed', failure_kind='harness', host_wait_since=NULL,
+              error=? WHERE record_id=? AND status='running'`,
     )
     for (const id of abandonedBootstraps) {
-      const error = coordinatorSetupError(id)
+      const error = coordinatorSetupDeathError(rows, id)
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', error, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
+        enqueueRunRecord(d, id, localMachineId, finishedAt)
       }, d)
     }
   }
   if (setupDeaths.length) {
     const update = d.query(
-      `UPDATE run SET status='failed', failure_kind='harness', error=?
-        WHERE id=? AND status='running'`,
+      `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL
+        WHERE record_id=? AND status='running'`,
     )
     for (const id of setupDeaths) {
-      const error = coordinatorSetupError(id)
+      const error = coordinatorSetupDeathError(rows, id)
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', error, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
+        enqueueRunRecord(d, id, localMachineId, finishedAt)
       }, d)
     }
   }
@@ -302,11 +378,11 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     // by the calling harness's command timeout and landed here - a fact about the
     // caller, charged until now to qwen36-goose.
     const update = d.query(
-      `UPDATE run SET status='stale', failure_kind='interrupted', error=?
-        WHERE id=? AND status='running'`,
+      `UPDATE run SET status='stale', failure_kind='interrupted', error=?, host_wait_since=NULL
+        WHERE record_id=? AND status='running'`,
     )
     for (const id of dead) {
-      const row = rows.find((candidate) => candidate.id === id)!
+      const row = rows.find((candidate) => candidate.record_id === id)!
       const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
       const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
       const error = `abandoned: process gone, no terminal state recorded${surviving}`
@@ -316,27 +392,10 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', reason, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
+        enqueueRunRecord(d, id, localMachineId, finishedAt)
       }, d)
     }
   }
-  const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
-  if (ended.length) {
-    const roots = d
-      .query(
-        `SELECT DISTINCT COALESCE(ended.parent_run_id, ended.id) AS id,
-          (SELECT last.id FROM run last
-            WHERE last.id = COALESCE(ended.parent_run_id, ended.id)
-               OR last.parent_run_id = COALESCE(ended.parent_run_id, ended.id)
-            ORDER BY last.turn DESC, last.id DESC LIMIT 1) AS last_id
-        FROM run ended WHERE ended.id IN (${ended.map(() => '?').join(',')})`,
-      )
-      .all(...ended) as { id: number; last_id: number }[]
-    const setupDeathIds = new Set(setupDeaths)
-    for (const { id, last_id } of roots) {
-      resolveRootFromLastTurnPreserving(d, id, preservedFailureKindTurnId(setupDeathIds, last_id))
-      retireRunChainQuestionDeliveries(d, id, QUESTION_CLOSE_CHAIN_STALE)
-    }
-    for (const id of ended) teardownTerminalRunResources(d, id)
-  }
+  finalizeReapedRuns(d, ended, setupDeaths, localMachineId, finishedAt)
   return dead.length + abandonedBootstraps.length + setupDeaths.length
 }

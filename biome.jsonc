@@ -110,6 +110,43 @@
   },
   "overrides": [
     {
+      "includes": ["hub/ui/**", "hub/views/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": {
+              "level": "error",
+              "options": { "filenameCases": ["kebab-case"] }
+            },
+            "noDefaultExport": "error"
+          },
+          "performance": {
+            "noBarrelFile": "error",
+            "noReExportAll": "error"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "hub/ui/**/*.stories.tsx",
+        "hub/ui/.storybook/*.ts",
+        "hub/ui/.storybook/*.tsx",
+        "hub/ui/vitest.config.ts",
+        "hub/views/**/*.stories.tsx",
+        "hub/views/.storybook/*.ts",
+        "hub/views/.storybook/*.tsx",
+        "hub/views/vitest.config.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.test.ts", "**/*.test.tsx", "**/test/**"],
       "linter": {
         "rules": {

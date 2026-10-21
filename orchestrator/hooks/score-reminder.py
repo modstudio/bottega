@@ -65,12 +65,12 @@ def main() -> int:
         # stall Stop until Claude's own 600s hook deadline.
         con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
         rows = con.execute(
-            """SELECT r.id, r.agent, r.job, substr(COALESCE(r.label, r.prompt_head), 1, 60),
-                      s.delivery, s.quality, s.fidelity, review.id,
+            """SELECT r.record_id, r.agent, r.job, substr(COALESCE(r.label, r.prompt_head), 1, 60),
+                      s.delivery, s.quality, s.fidelity, review.record_id,
                       rl.reproduced, rl.coverage, rl.limits, rl.overlap
-                 FROM run r LEFT JOIN score s ON s.run_id = r.id
-                 LEFT JOIN review_lens rl ON rl.run_id = r.id
-                 LEFT JOIN review ON review.id = rl.review_id
+                 FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
+                 LEFT JOIN review_lens rl ON rl.run_record_id = r.record_id
+                 LEFT JOIN review ON review.record_id = rl.review_record_id
                 WHERE r.session_id = ? AND r.status = 'ok'
                   AND r.evidence_excluded IS NULL
                   -- A probe is excluded from routing and reporting by design, so
@@ -89,12 +89,12 @@ def main() -> int:
                   -- runs that `bottega score` would refuse to take. The same failure this
                   -- canon already records for the router and the dashboard drifting
                   -- apart on what a score was.
-                  AND r.parent_run_id IS NULL
+                  AND r.parent_run_record_id IS NULL
                   -- A resumed root is not judgeable while its newest turn is
                   -- still running. Raising it now asks for a score the CLI
                   -- correctly cannot accept yet, teaching people to ignore
                   -- the reminder when it fires.
-                  AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_id = r.id
+                  AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_record_id = r.record_id
                                  ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
                   -- Never scored, OR scored before the conversation moved on.
                   -- A chain takes one verdict, so a root judged after its first
@@ -103,9 +103,9 @@ def main() -> int:
                   -- mutable; what was missing was asking again.
                   AND ((s.delivery IS NULL
                         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
-                                            FROM run c WHERE c.parent_run_id = r.id))
-                       OR (review.id IS NOT NULL AND review.completed_at IS NULL))
-                ORDER BY r.id""",
+                                            FROM run c WHERE c.parent_run_record_id = r.record_id))
+                       OR (review.record_id IS NOT NULL AND review.completed_at IS NULL))
+                ORDER BY r.number""",
             (sid,),
         ).fetchall()
         pairs = []
@@ -114,7 +114,7 @@ def main() -> int:
         ).fetchone()
         if has_compared_pairs:
             pairs = con.execute(
-                """SELECT newer.id, older.id, older.agent,
+                """SELECT newer.record_id, older.record_id, older.agent,
                           CASE
                             WHEN newer.lens IS NOT NULL AND newer_review.patch_id IS NOT NULL
                                  AND older_review.patch_id IS NOT NULL
@@ -127,21 +127,21 @@ def main() -> int:
                           END,
                           newer.job, newer_score.delivery, newer_score.quality, newer_score.fidelity
                      FROM run newer
-                     LEFT JOIN review_lens newer_lens ON newer_lens.run_id = newer.id
-                     LEFT JOIN review newer_review ON newer_review.id = newer_lens.review_id
-                     JOIN score newer_score ON newer_score.run_id = newer.id
-                     JOIN run older ON older.id < newer.id
-                      AND older.parent_run_id IS NULL
+                     LEFT JOIN review_lens newer_lens ON newer_lens.run_record_id = newer.record_id
+                     LEFT JOIN review newer_review ON newer_review.record_id = newer_lens.review_record_id
+                     JOIN score newer_score ON newer_score.run_record_id = newer.record_id
+                     JOIN run older ON older.number < newer.number
+                      AND older.parent_run_record_id IS NULL
                       AND older.job = newer.job
                       AND older.session_id = newer.session_id
                       AND COALESCE(older.probe, 0) = 0
                       AND older.evidence_excluded IS NULL
-                     LEFT JOIN review_lens older_lens ON older_lens.run_id = older.id
-                     LEFT JOIN review older_review ON older_review.id = older_lens.review_id
-                     JOIN score older_score ON older_score.run_id = older.id
+                     LEFT JOIN review_lens older_lens ON older_lens.run_record_id = older.record_id
+                     LEFT JOIN review older_review ON older_review.record_id = older_lens.review_record_id
+                     JOIN score older_score ON older_score.run_record_id = older.record_id
                      LEFT JOIN compared_pair compared
-                       ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
-                    WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
+                       ON compared.run_a_record_id = older.record_id AND compared.run_b_record_id = newer.record_id
+                    WHERE newer.parent_run_record_id IS NULL AND newer.session_id = ?
                       AND COALESCE(newer.probe, 0) = 0
                       AND newer.evidence_excluded IS NULL
                       AND newer.spec_sha IS NOT NULL
@@ -151,12 +151,12 @@ def main() -> int:
                       AND newer_review.path_set IS older_review.path_set
                       AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
                       AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
-                      AND compared.run_a_id IS NULL
-                    ORDER BY newer.id, older.id""",
+                      AND compared.run_a_record_id IS NULL
+                    ORDER BY newer.number, older.number""",
                 (sid,),
             ).fetchall()
         cleanup_roots = con.execute(
-            """SELECT MIN(id)
+            """SELECT MIN(number)
                  FROM run
                 WHERE session_id IN ({}) AND worktree IS NOT NULL
                   AND status IN ('ok','failed','stale','stopped')
@@ -255,7 +255,7 @@ def main() -> int:
                 if value is None:
                     missing.append(f"--{name} <{choices}>")
             ordinals = con.execute(
-                "SELECT ordinal FROM review_finding WHERE review_id=? AND disposition IS NULL ORDER BY ordinal",
+                "SELECT ordinal FROM review_finding WHERE review_record_id=? AND disposition IS NULL ORDER BY ordinal",
                 (review_id,),
             ).fetchall()
             missing.extend(

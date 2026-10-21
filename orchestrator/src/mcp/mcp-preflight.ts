@@ -83,6 +83,33 @@ export function requestedMcpMode(request: McpRequest | undefined): McpMode | nul
   return request ? 'require' : null
 }
 
+export type CwdMcpPreflightFacts = {
+  mcpRequest: McpRequest | undefined
+  callerCwdHasProject: boolean
+  forbidsRepo: boolean
+  repoJob: boolean
+  discoversMcpFromCwd: boolean
+}
+
+export const DEFERRED_CWD_MCP_STEPS = [
+  'defer-cwd-preflight',
+  'ensure-main-stack',
+  'provision-worker-mcp',
+] as const
+
+export type DeferredCwdMcpStep = (typeof DEFERRED_CWD_MCP_STEPS)[number]
+
+/** Decide whether MCP work waits for a worker tree and fix its execution order. */
+export function decideDeferredCwdMcpPlan(facts: CwdMcpPreflightFacts): DeferredCwdMcpStep[] {
+  const mode = requestedMcpMode(facts.mcpRequest)
+  const deferred = Boolean(
+    mode &&
+      facts.callerCwdHasProject &&
+      (facts.forbidsRepo || (facts.repoJob && facts.discoversMcpFromCwd)),
+  )
+  return deferred ? [...DEFERRED_CWD_MCP_STEPS] : []
+}
+
 /** Project/server identity required by compatibility-aware routing. */
 export function requiredMcpServer(
   request: McpRequest | undefined,
@@ -93,7 +120,7 @@ export function requiredMcpServer(
   const project = projectName ? projectByName(projectName) : projectAt(cwd)
   if (!project) return undefined
   return {
-    projectId: project.id,
+    projectId: project.recordId,
     project: project.name,
     server: project.settings.mcpServer ?? project.name,
     mode: requestedMcpMode(request)!,
@@ -244,7 +271,7 @@ export function mcpAttachRefusal(connection: McpConnection): string | null {
 export function assertGrokTrustEligible(
   cwd: string,
   recorded: {
-    id?: number
+    id?: string
     cwd?: string | null
     worktree: string | null
     worktree_source: string | null

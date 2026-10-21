@@ -56,6 +56,7 @@ describe('record subject API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         project: 'alpha',
+        projectId: '01990000-0000-7000-8000-000000000004',
         name: 'One',
         definition: '  One subject. \n',
       }),
@@ -66,7 +67,11 @@ describe('record subject API', () => {
     const refused = await app.request('/v1/subjects/01990000-0000-7000-8000-000000000001/define', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ project: 'alpha', definition: 'First line\nSecond line' }),
+      body: JSON.stringify({
+        project: 'alpha',
+        projectId: '01990000-0000-7000-8000-000000000004',
+        definition: 'First line\nSecond line',
+      }),
     })
     expect(refused.status).toBe(400)
     expect(await refused.json()).toEqual({

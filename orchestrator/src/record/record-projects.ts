@@ -2,29 +2,17 @@
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { type HostedProjectColumns, hostedProjectColumns } from './record-project-columns.ts'
-import { decideHostedProjectWrite, type HostedProjectNameRow } from './record-project-write.ts'
-
-export type RecordProject = {
-  id: string
-  spaceId: string
-  spaceName: string
-  name: string
-  keyPrefixes: string[]
-  stack: string | null
-  managedContext: boolean
-  landingBranch: string | null
-  color: string | null
-  colorDark: string | null
-  retiredAt: string | null
-}
+import type { RecordProject } from '../../../shared/record-project-contract.ts'
+import {
+  type HostedProjectColumns,
+  hostedProjectColumns,
+  hostedProjectSettings,
+} from './record-project-columns.ts'
 
 export type RecordProjectUpsertInput = {
-  id?: string
+  id: string
   name: string
-  previousName?: string
   path: string
   stack: string | null
   canon: boolean
@@ -54,16 +42,6 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   }
 }
 
-function namedRow(row: Record<string, unknown> | undefined): HostedProjectNameRow | null {
-  if (!row) return null
-  return {
-    id: String(row.id),
-    name: String(row.name),
-    retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
-    checkoutPath: row.checkout_path == null ? null : String(row.checkout_path),
-  }
-}
-
 async function renameHostedDocSubjects(
   tx: SQL,
   spaceId: string,
@@ -71,16 +49,15 @@ async function renameHostedDocSubjects(
   from: string,
   to: string,
 ): Promise<void> {
-  const projectScopes = tx.array(['project', 'resume', 'canon', 'settings'], 'text')
   await tx`
     UPDATE doc SET subject=${to}, updated_at=now()
     WHERE space_id=${spaceId}::uuid AND subject=${from}
-      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
+      AND project_id=${projectId}::uuid
   `
   await tx`
     UPDATE doc_revision SET subject=${to}
     WHERE space_id=${spaceId}::uuid AND subject=${from}
-      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
+      AND project_id=${projectId}::uuid
   `
 }
 
@@ -102,18 +79,15 @@ async function renameHostedHubProjectNames(
 ): Promise<void> {
   for (const table of HUB_PROJECT_NAME_TABLES) {
     await tx`UPDATE ${tx.unsafe(table)} SET project_name=${input.to}
-      WHERE project_id=${input.projectId}::uuid
-         OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project_name=${input.from})`
+      WHERE project_id=${input.projectId}::uuid`
   }
   await tx`
     UPDATE hub_task SET project=${input.to}
     WHERE project_id=${input.projectId}::uuid
-       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
   `
   await tx`
     UPDATE hub_note SET project=${input.to}
     WHERE project_id=${input.projectId}::uuid
-       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
   `
 }
 
@@ -132,10 +106,10 @@ export async function upsertHostedProjectRow(
     canon: boolean
     retiredAt: string | null
     columns: HostedProjectColumns
-    id?: string
+    id: string
   },
 ): Promise<string> {
-  const id = input.id ?? newRecordId()
+  const id = input.id
   const columns = input.columns
   const rows = await tx`
     INSERT INTO project (
@@ -165,7 +139,8 @@ export async function upsertHostedProjectRow(
       ${input.retiredAt},
       now()
     )
-    ON CONFLICT (space_id, name) DO UPDATE SET
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
       key_prefixes = EXCLUDED.key_prefixes,
       checkout_path = EXCLUDED.checkout_path,
       stack = EXCLUDED.stack,
@@ -204,91 +179,120 @@ export async function listRecordProjects(
   input: { url: string } & TenantPrincipal,
 ): Promise<RecordProject[]> {
   return tenant(input, async (tx) => {
-    const rows =
-      await tx`SELECT p.id, p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
-        p.managed_context, p.landing_branch, p.color, p.color_dark, p.retired_at
+    const rows = await tx`SELECT p.*, s.name AS space_name
         FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
-    return rows.map((row: Record<string, unknown>) => ({
-      id: String(row.id),
-      spaceId: String(row.space_id),
-      spaceName: String(row.space_name),
-      name: String(row.name),
-      keyPrefixes: row.key_prefixes as string[],
-      stack: row.stack == null ? null : String(row.stack),
-      managedContext: row.managed_context === true,
-      landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
-      color: row.color == null ? null : String(row.color),
-      colorDark: row.color_dark == null ? null : String(row.color_dark),
-      retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
-    }))
+    return rows.map((row: Record<string, unknown>) => {
+      const columns: HostedProjectColumns = {
+        keyPrefixes: row.key_prefixes as string[],
+        managedContext: row.managed_context === true,
+        landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
+        productionBranch: row.production_branch == null ? null : String(row.production_branch),
+        gate: row.gate == null ? null : String(row.gate),
+        focusedTests: row.focused_tests as HostedProjectColumns['focusedTests'],
+        requireCleanMain: row.require_clean_main !== false,
+        color: row.color == null ? null : String(row.color),
+        colorDark: row.color_dark == null ? null : String(row.color_dark),
+        envPrefix: row.env_prefix == null ? null : String(row.env_prefix),
+        mcpServer: row.mcp_server == null ? null : String(row.mcp_server),
+        workerMcpServers: row.worker_mcp_servers as string[] | null,
+        secretPaths: row.secret_paths as string[] | null,
+        mcpProbeTool: row.mcp_probe_tool == null ? null : String(row.mcp_probe_tool),
+        mcpReaderTools: row.mcp_reader_tools as HostedProjectColumns['mcpReaderTools'],
+        docs: row.docs as HostedProjectColumns['docs'],
+        reference: row.reference as HostedProjectColumns['reference'],
+        signals: row.signals as HostedProjectColumns['signals'],
+        review: row.review as HostedProjectColumns['review'],
+        testSubstance: row.test_substance as HostedProjectColumns['testSubstance'],
+        mechanicalChecks: row.mechanical_checks as HostedProjectColumns['mechanicalChecks'],
+        release: row.release as HostedProjectColumns['release'],
+        states: row.states as HostedProjectColumns['states'],
+        tracker: row.tracker as HostedProjectColumns['tracker'],
+        worktree: row.worktree as HostedProjectColumns['worktree'],
+      }
+      return {
+        id: String(row.id),
+        spaceId: String(row.space_id),
+        spaceName: String(row.space_name),
+        name: String(row.name),
+        keyPrefixes: columns.keyPrefixes,
+        stack: row.stack == null ? null : String(row.stack),
+        managedContext: columns.managedContext,
+        landingBranch: columns.landingBranch,
+        color: columns.color,
+        colorDark: columns.colorDark,
+        retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
+        canon: row.canon === true,
+        settings: hostedProjectSettings(columns),
+      }
+    })
   })
 }
 
 export async function upsertRecordProject(
   input: Tenant & RecordProjectUpsertInput,
 ): Promise<{ id: string; name: string }> {
-  return tenant(input, async (tx) => {
-    const currentName = input.previousName ?? input.name
-    const nextName = input.name
-    const currentRows = await tx`
-      SELECT id, name, retired_at, checkout_path FROM project
-      WHERE space_id=${input.spaceId}::uuid AND name=${currentName}
+  try {
+    return await tenant(input, async (tx) => {
+      const nextName = input.name
+      const currentRows = await tx`
+      SELECT id, name FROM project
+      WHERE id=${input.id}::uuid
     `
-    const nextRows =
-      currentName === nextName
-        ? currentRows
-        : await tx`
-          SELECT id, name, retired_at, checkout_path FROM project
-          WHERE space_id=${input.spaceId}::uuid AND name=${nextName}
-        `
-    const plan = decideHostedProjectWrite({
-      currentName,
-      nextName,
-      path: input.path,
-      current: namedRow(currentRows[0] as Record<string, unknown> | undefined),
-      next: namedRow(nextRows[0] as Record<string, unknown> | undefined),
-    })
-    if (plan.kind === 'refuse') throw new RecordProjectError(plan.message, 409)
-    let columns: HostedProjectColumns
-    try {
-      columns = hostedProjectColumns(input.settings, nextName)
-    } catch (error) {
-      throw new RecordProjectError(error instanceof Error ? error.message : String(error), 400)
-    }
-    if (plan.kind === 'rename') {
-      await tx`UPDATE project SET name=${plan.to} WHERE id=${plan.id}::uuid`
-      await renameHostedHubProjectNames(tx, {
+      const currentName = currentRows[0]?.name == null ? null : String(currentRows[0].name)
+      let columns: HostedProjectColumns
+      try {
+        columns = hostedProjectColumns(input.settings, nextName)
+      } catch (error) {
+        throw new RecordProjectError(error instanceof Error ? error.message : String(error), 400)
+      }
+      if (currentName !== null && currentName !== nextName) {
+        await tx`UPDATE project SET name=${nextName} WHERE id=${input.id}::uuid`
+        await renameHostedHubProjectNames(tx, {
+          spaceId: input.spaceId,
+          projectId: input.id,
+          from: currentName,
+          to: nextName,
+        })
+        await renameHostedDocSubjects(tx, input.spaceId, input.id, currentName, nextName)
+      }
+      const id = await upsertHostedProjectRow(tx, {
         spaceId: input.spaceId,
-        projectId: plan.id,
-        from: plan.from,
-        to: plan.to,
+        id: input.id,
+        name: nextName,
+        path: input.path,
+        stack: input.stack,
+        canon: input.canon,
+        retiredAt: input.retiredAt,
+        columns,
       })
-      await renameHostedDocSubjects(tx, input.spaceId, plan.id, currentName, nextName)
-    }
-    const id = await upsertHostedProjectRow(tx, {
-      spaceId: input.spaceId,
-      id: input.id,
-      name: nextName,
-      path: input.path,
-      stack: input.stack,
-      canon: input.canon,
-      retiredAt: input.retiredAt,
-      columns,
+      return { id, name: nextName }
     })
-    return { id, name: nextName }
-  })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('project_space_name_uq') ||
+        error.message.includes('project_space_id_name_unique') ||
+        error.message.includes('duplicate key value violates unique constraint'))
+    ) {
+      throw new RecordProjectError(
+        `hosted project name "${input.name}" already exists in the request space`,
+        409,
+      )
+    }
+    throw error
+  }
 }
 
 export async function retireRecordProject(
-  input: Tenant & { name: string },
+  input: Tenant & { id: string },
 ): Promise<{ name: string }> {
   return tenant(input, async (tx) => {
     const rows = await tx`
       UPDATE project SET retired_at = now()
-      WHERE space_id=${input.spaceId}::uuid AND name=${input.name}
+      WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
       RETURNING name
     `
-    if (!rows.length) throw new RecordProjectError(`hosted project "${input.name}" not found`, 404)
+    if (!rows.length) throw new RecordProjectError(`hosted project ${input.id} not found`, 404)
     return { name: String(rows[0]!.name) }
   })
 }

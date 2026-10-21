@@ -10,9 +10,9 @@ import {
   type AnswerChannel,
 } from '../../../shared/question-vocabulary.ts'
 import { db } from '../database/db.ts'
-import { setDoc } from '../doc/docs.ts'
+import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
-import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
 import { listRulings } from '../run/ruling-list.ts'
@@ -48,12 +48,23 @@ function filingChannel(value: string | undefined): AnswerChannel {
 const rulingFileStores: RulingFileStores = {
   writeDoc: async (input) => {
     const doc = await setDoc(input)
-    return { id: doc.id, revision: doc.revision }
+    const revision = doc.revision ? getDocRevision(doc.revision) : null
+    if (!revision) throw new Error('filed ruling document has no revision')
+    return { id: doc.record_id, revision: revision.record_id, revisionNumber: revision.number }
   },
   fileNote,
 }
 
+function registerQuestionIdentities(program: Command): void {
+  program
+    .command('question-identities')
+    .description('print numeric question identities and their durable record ids as JSON')
+    .allowExcessArguments(false)
+    .action(() => log(JSON.stringify(questionIdentityMap(db()))))
+}
+
 export function register(program: Command): void {
+  registerQuestionIdentities(program)
   const question = program.command('question').description('manage worker questions')
   question
     .command('close <id>')

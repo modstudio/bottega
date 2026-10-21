@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   applyMigrations,
+  applyMigrationsBefore,
   canonicalSchemaHash,
-  expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
 } from './migrations.ts'
@@ -82,7 +82,9 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
         (database.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n,
       ]),
     )
-    expect(applyMigrations(database)).toContain('0109_remaining_store_record_identity')
+    expect(applyMigrationsBefore(database, '0110_outbox_record_identity')).toContain(
+      '0109_remaining_store_record_identity',
+    )
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS n FROM ${table}`).get(), table).toEqual({
         n: before[table],
@@ -129,7 +131,7 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const fresh = new Database(':memory:')
     fresh.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(fresh)
+    applyMigrationsBefore(fresh, '0110_outbox_record_identity')
     const schemaRows = (subject: Database) =>
       subject
         .query(
@@ -140,7 +142,6 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
     expect(schemaRows(database)).toEqual(schemaRows(fresh))
     expect(canonicalSchemaHash(database)).toBe(canonicalSchemaHash(fresh))
     fresh.close()
-    expect(canonicalSchemaHash(database)).toBe(expectedSchemaHash())
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

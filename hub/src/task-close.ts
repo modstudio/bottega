@@ -1,5 +1,6 @@
 import { pruneTaskBranches, releaseTaskClaims } from './orch.ts'
 import { closeTask, type TaskRow } from './task.ts'
+import type { Attribution } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
 
 export async function closeThenPrune(
@@ -7,15 +8,21 @@ export async function closeThenPrune(
   scope: TaskScope,
   keepBranches: boolean,
   abandonReason: string | undefined,
+  attribution: Attribution,
   dependencies: {
-    close?: (key: string, scope: TaskScope, options: { abandonReason?: string }) => Promise<TaskRow>
+    close?: (
+      key: string,
+      scope: TaskScope,
+      attribution: Attribution,
+      options: { abandonReason?: string },
+    ) => Promise<TaskRow>
     prune?: typeof pruneTaskBranches
     releaseClaims?: typeof releaseTaskClaims
   } = {},
 ) {
   const closed = dependencies.close
-    ? await dependencies.close(key, scope, { abandonReason })
-    : await closeTask(key, scope, { abandonReason })
+    ? await dependencies.close(key, scope, attribution, { abandonReason })
+    : await closeTask(key, scope, attribution, { abandonReason })
   let claimReleaseError: Error | null = null
   try {
     await (dependencies.releaseClaims ?? releaseTaskClaims)(closed.project, closed.key)

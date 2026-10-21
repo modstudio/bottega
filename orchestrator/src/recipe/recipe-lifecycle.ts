@@ -56,7 +56,7 @@ export function teardownVars(input: {
   main: string
   label: string
   treeExists: boolean
-  compose?: { projectName: string; rootRunId: number }
+  compose?: { projectName: string; rootRunId: string }
   allocations?: {
     index: number
     ports: Record<string, number>
@@ -96,6 +96,24 @@ export function teardownVars(input: {
 
 export function lifecycleFailure(results: readonly StepResult[]): StepResult | null {
   return results.find((result) => result.status !== 'ok') ?? null
+}
+
+export function trackedTeardownFailure(
+  results: readonly StepResult[],
+  stopFailure: string | null,
+  stopNote: string | null,
+): string | null {
+  const failed = lifecycleFailure(results)
+  if (!failed && !stopFailure) return null
+  const detail = [
+    failed
+      ? `recipe teardown failed at "${failed.name}" (${failed.phase}): ${failed.detail}`
+      : null,
+    stopFailure,
+  ]
+    .filter(Boolean)
+    .join('; ')
+  return stopNote ? `${detail}; ${stopNote}` : detail
 }
 
 /**

@@ -10,12 +10,14 @@ import {
   processStartTime,
 } from '../../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
-import { runHasLiveDescendants, sampleProcesses } from '../idle-kill.ts'
+import { runHasLiveDescendants } from '../idle-kill.ts'
+import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
 import type { ResourceClaimKind } from '../resources/resource-claims.ts'
 import {
@@ -26,6 +28,7 @@ import {
 
 export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
 
+import type { ReclaimKind } from '../reclaim/reclaim-kind.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
@@ -43,20 +46,22 @@ import type {
   RecipeDatabaseNamespace,
 } from './monitor-types.ts'
 
-const ASKING_RUN_WHERE = `parent_run_id IS NULL
+const ORPHAN_DOCKER_VOLUME_KIND = 'orphan-docker-volume' satisfies ReclaimKind
+
+const ASKING_RUN_WHERE = `parent_run_record_id IS NULL
    AND (
      SELECT member.status FROM run member
-      WHERE member.id = run.id OR member.parent_run_id = run.id
-      ORDER BY member.turn DESC, member.id DESC
+      WHERE member.record_id = run.record_id OR member.parent_run_record_id = run.record_id
+      ORDER BY member.turn DESC, member.number DESC
       LIMIT 1
    ) = 'asking'
    AND NOT EXISTS (
-     SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
-      WHERE (owner.id = run.id OR owner.parent_run_id = run.id)
+     SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+      WHERE (owner.record_id = run.record_id OR owner.parent_run_record_id = run.record_id)
         AND ${questionOpenSql('q')}
    )`
 
-type AddressedRun = { id: number; started_at: string; session_id: string | null }
+type AddressedRun = { record_id: string; started_at: string; session_id: string | null }
 
 /** Compare observed namespaces with live claims and map unaccounted names to conditions. */
 export function orphanRecipeDatabaseConditions(
@@ -87,7 +92,7 @@ export function orphanRecipeDatabaseConditions(
 
 export function askingRuns(database = db()): AddressedRun[] {
   return database
-    .query(`SELECT id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`)
+    .query(`SELECT record_id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`)
     .all() as AddressedRun[]
 }
 
@@ -100,7 +105,7 @@ type TerminalCloseOutRun = AddressedRun & {
 export function terminalCloseOutRuns(database = db()): TerminalCloseOutRun[] {
   return database
     .query(
-      `SELECT id, started_at, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
+      `SELECT record_id, started_at, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
        FROM run
       WHERE status IN ('ok','failed','stale','stopped')
         AND job NOT IN (${SYNTHETIC_LIFECYCLE_JOBS.map(() => '?').join(',')})
@@ -112,8 +117,8 @@ export function terminalCloseOutRuns(database = db()): TerminalCloseOutRun[] {
 export function unscoredRuns(database = db()): AddressedRun[] {
   return database
     .query(
-      `SELECT r.id, r.started_at, r.session_id
-       FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
+      `SELECT r.record_id, r.started_at, r.session_id
+       FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id WHERE ${UNSCORED_WHERE}`,
     )
     .all() as AddressedRun[]
 }
@@ -122,17 +127,22 @@ export function unscoredRuns(database = db()): AddressedRun[] {
 export function staleRunConditions(database = db(), clock = Date.now()): MonitorCondition[] {
   const rows = database
     .query(
-      `SELECT id, started_at, error, session_id FROM run
+      `SELECT record_id, started_at, error, session_id FROM run
         WHERE status='stale' AND evidence_excluded IS NULL`,
     )
-    .all() as { id: number; started_at: string; error: string | null; session_id: string | null }[]
+    .all() as {
+    record_id: string
+    started_at: string
+    error: string | null
+    session_id: string | null
+  }[]
   return rows.map((run) => ({
     kind: 'stale-run',
-    subject: `run:${run.id}`,
+    subject: `run:${run.record_id}`,
     since: run.started_at,
     ageMs: age(run.started_at, clock),
-    detail: run.error ?? `run ${run.id} is stale`,
-    action: `run ${PLATFORM_SLUG} machine reclaim stale-run ${run.id} --dry-run, then ${PLATFORM_SLUG} machine reclaim stale-run ${run.id}`,
+    detail: run.error ?? `run ${run.record_id} is stale`,
+    action: `run ${PLATFORM_SLUG} machine reclaim stale-run ${run.record_id} --dry-run, then ${PLATFORM_SLUG} machine reclaim stale-run ${run.record_id}`,
     ownerSession: run.session_id,
   }))
 }
@@ -146,18 +156,27 @@ export const age = (since: string | null, clock: number) => {
 export function hookTreeConditions(database = db(), clock = Date.now()): MonitorCondition[] {
   const rows = database
     .query(
-      `SELECT id,job,status,worktree path,started_at FROM run
-       WHERE job=? AND worktree IS NOT NULL ORDER BY id`,
+      `SELECT record_id,job,status,worktree path,started_at FROM run
+       WHERE job=? AND worktree IS NOT NULL ORDER BY number`,
     )
     .all(HOOK_TREE_JOB) as {
-    id: number
+    record_id: string
     job: string
     status: string
     path: string
     started_at: string
   }[]
   return rows.flatMap((row) => {
-    const condition = hookTreeNotice({ ...row, startedAt: row.started_at }, clock)
+    const condition = hookTreeNotice(
+      {
+        id: row.record_id,
+        job: row.job,
+        status: row.status,
+        path: row.path,
+        startedAt: row.started_at,
+      },
+      clock,
+    )
     return condition ? [condition] : []
   })
 }
@@ -190,7 +209,7 @@ function elapsedDetail(elapsedMs: number | null): string {
 }
 
 type IdleRunFacts = {
-  id: number
+  record_id: string
   started_at: string
   last_event_at: string | null
   agent: string
@@ -208,11 +227,11 @@ export function idleRunCondition(
   if (run.pidAlive === false) {
     return {
       kind: 'stale-run',
-      subject: `run:${run.id}`,
+      subject: `run:${run.record_id}`,
       since: run.started_at,
       ageMs: age(run.started_at, clock),
-      detail: `run ${run.id} is running but its recorded pid is gone; no terminal state was recorded`,
-      action: `run ${PLATFORM_SLUG} run stop ${run.id}`,
+      detail: `run ${run.record_id} is running but its recorded pid is gone; no terminal state was recorded`,
+      action: `run ${PLATFORM_SLUG} run stop ${run.record_id}`,
       ownerSession: run.session_id,
     }
   }
@@ -220,10 +239,10 @@ export function idleRunCondition(
   if (!label) return null
   return {
     kind: 'idle',
-    subject: `run:${run.id}`,
+    subject: `run:${run.record_id}`,
     since: run.last_event_at ?? run.started_at,
     ageMs: idleMsSince(run.last_event_at, run.started_at, clock),
-    detail: `run ${run.id} ${run.agent}/${run.job} ${label}`,
+    detail: `run ${run.record_id} ${run.agent}/${run.job} ${label}`,
     action: 'reported; the run coordinator checkpoints and terminates past the idle-kill threshold',
     ownerSession: run.session_id,
   }
@@ -233,10 +252,10 @@ export function idleRunCondition(
 export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
   const running = db()
     .query(
-      `SELECT id, started_at, last_event_at, agent, job, session_id, pid FROM run WHERE status='running'`,
+      `SELECT record_id, started_at, last_event_at, agent, job, session_id, pid FROM run WHERE status='running'`,
     )
     .all() as {
-    id: number
+    record_id: string
     started_at: string
     last_event_at: string | null
     agent: string
@@ -273,11 +292,11 @@ export function stalledRunConditions(
     return [
       {
         kind: 'stalled-run',
-        subject: `run:${run.id}`,
+        subject: `run:${run.record_id}`,
         since: run.last_event_at ?? run.started_at,
         ageMs: observed.idleMs,
         detail: observed.detail,
-        action: `run ${PLATFORM_SLUG} run stop ${run.id}, then re-dispatch; otherwise wait for the idle bound`,
+        action: `run ${PLATFORM_SLUG} run stop ${run.record_id}, then re-dispatch; otherwise wait for the idle bound`,
         ownerSession: run.session_id,
       },
     ]
@@ -304,7 +323,7 @@ export function terminalProcessPgid(
 }
 
 type TerminalProcessRun = {
-  id: number
+  record_id: string
   started_at: string
   latency_ms: number | null
   pid: number | null
@@ -367,7 +386,7 @@ export function terminalProcessState(
 }
 
 export type TerminalProcessResidueObservation = {
-  runId: number
+  runId: string
   liveness: 'dead' | 'live' | 'unknown'
   condition: MonitorCondition
 }
@@ -383,7 +402,7 @@ export function terminalProcessResidueObservations(
 ): TerminalProcessResidueObservation[] {
   const terminal = db()
     .query(
-      `SELECT id, started_at, latency_ms, pid, agent_pid, agent_pgid, agent_start_time FROM run
+      `SELECT record_id, started_at, latency_ms, pid, agent_pid, agent_pgid, agent_start_time FROM run
       WHERE status IN ${TERMINAL_RUN_STATUSES}
         AND (pid IS NOT NULL OR agent_pid IS NOT NULL OR agent_pgid IS NOT NULL)`,
     )
@@ -425,7 +444,7 @@ export function terminalProcessResidueObservations(
     const who = parts.join(' and ') || `a descendant of pid ${roots.join('/')}`
     return [
       {
-        runId: run.id,
+        runId: run.record_id,
         // An identity-unverified live pid remains operator-only. Its record is
         // released unattended only after a fresh observation proves it gone.
         liveness:
@@ -436,11 +455,11 @@ export function terminalProcessResidueObservations(
               : 'dead',
         condition: {
           kind: 'terminal-process-alive',
-          subject: `run:${run.id}:pid:${reported}`,
+          subject: `run:${run.record_id}:pid:${reported}`,
           since: run.started_at,
           ageMs: age(run.started_at, clock),
-          detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
-          action: `run ${PLATFORM_SLUG} machine reclaim process ${run.id} --dry-run, then ${PLATFORM_SLUG} machine reclaim process ${run.id}`,
+          detail: `terminal run ${run.record_id} still has live ${who}; an unverified process is reported and never killed`,
+          action: `run ${PLATFORM_SLUG} machine reclaim process ${run.record_id} --dry-run, then ${PLATFORM_SLUG} machine reclaim process ${run.record_id}`,
         },
       },
     ]
@@ -456,10 +475,10 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
 export function deadRunningProcessConditions(clock = Date.now()): MonitorCondition[] {
   const running = db()
     .query(
-      `SELECT id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running'`,
+      `SELECT record_id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running'`,
     )
     .all() as {
-    id: number
+    record_id: string
     started_at: string
     pid: number | null
     agent_pid: number | null
@@ -473,7 +492,7 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
     // liveness so the reader can distinguish that transient from a dead worker.
     if (!run.agent_pid || pidAlive(run.agent_pid)) return []
     const ageMs = age(run.started_at, clock)
-    const lease = runLeaseState(run.id)
+    const lease = runLeaseState(run.record_id)
     const coordinatorAlive = runAlive({
       status: 'running',
       lease,
@@ -481,21 +500,21 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
     })
     const worker = coordinatorAlive
       ? lease === 'held'
-        ? `run ${run.id} coordinator lease is held (the run may be in teardown)`
+        ? `run ${run.record_id} coordinator lease is held (the run may be in teardown)`
         : `legacy worker pid ${run.pid} is still alive (the run may be in teardown)`
       : lease === 'free'
-        ? `run ${run.id} coordinator lease is free`
+        ? `run ${run.record_id} coordinator lease is free`
         : run.pid
           ? `legacy worker pid ${run.pid} is also gone`
           : 'legacy worker pid was not recorded'
     return [
       {
         kind: 'dead-running-process',
-        subject: `run:${run.id}`,
+        subject: `run:${run.record_id}`,
         since: run.started_at,
         ageMs,
         detail:
-          `run ${run.id} is running but agent pid ${run.agent_pid} is gone; ` +
+          `run ${run.record_id} is running but agent pid ${run.agent_pid} is gone; ` +
           `${worker}; ${elapsedDetail(ageMs)}; output ${run.output_bytes ?? 'unknown'} bytes`,
         action: 'reported; disposition and status repair require intent',
         ownerSession: run.session_id,
@@ -508,18 +527,18 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
 export function abandonedBootstrapConditions(clock = Date.now()): MonitorCondition[] {
   const pending = db()
     .query(
-      `SELECT id, started_at, pid, agent, session_id
+      `SELECT record_id, started_at, pid, agent, session_id
        FROM run WHERE status='running' AND agent='(pending)'`,
     )
     .all() as {
-    id: number
+    record_id: string
     started_at: string
     pid: number | null
     agent: string
     session_id: string | null
   }[]
   return pending.flatMap((run): MonitorCondition[] => {
-    const leaseState = runLeaseState(run.id)
+    const leaseState = runLeaseState(run.record_id)
     if (
       !abandonedBootstrap({
         agent: run.agent,
@@ -541,10 +560,10 @@ export function abandonedBootstrapConditions(clock = Date.now()): MonitorConditi
     return [
       {
         kind: 'abandoned-bootstrap',
-        subject: `run:${run.id}`,
+        subject: `run:${run.record_id}`,
         since: run.started_at,
         ageMs: age(run.started_at, clock),
-        detail: `pending run ${run.id} ${cause} after the ${PENDING_BOOTSTRAP_MS}ms launch grace`,
+        detail: `pending run ${run.record_id} ${cause} after the ${PENDING_BOOTSTRAP_MS}ms launch grace`,
         action: `run ${PLATFORM_SLUG} machine sweep to terminalize the abandoned bootstrap`,
         ownerSession: run.session_id,
       },
@@ -721,38 +740,39 @@ export function dockerConditions(clock: number): {
       !workingDir ||
       !ownedRoots.some((root) => workingDir.startsWith(root)) ||
       existsSync(workingDir) ||
-      liveTrees.has(workingDir)
+      liveTrees.has(workingDir) ||
+      recordedRunClaimsWorktree(workingDir)
     )
       return []
     const since = row.CreatedAt ? new Date(row.CreatedAt).toISOString() : null
     return [
       {
-        kind: 'orphan-docker-volume',
+        kind: ORPHAN_DOCKER_VOLUME_KIND,
         subject: row.Name,
         since,
         ageMs: age(since, clock),
         detail: `compose worktree is gone: ${workingDir}`,
-        action: 'reported; no established removal verb',
+        action: `${PLATFORM_SLUG} machine reclaim orphan-docker-volume ${row.Name}`,
       },
     ]
   })
   return { conditions, errors: [] }
 }
 
-function liveRunIds(database: ReturnType<typeof db>): Set<number> {
+function liveRunIds(database: ReturnType<typeof db>): Set<string> {
   const rows = database
-    .query(`SELECT id,status,pid FROM run WHERE status IN ('running','asking')`)
-    .all() as { id: number; status: string; pid: number | null }[]
+    .query(`SELECT record_id,status,pid FROM run WHERE status IN ('running','asking')`)
+    .all() as { record_id: string; status: string; pid: number | null }[]
   return new Set(
     rows
       .filter((row) =>
         runAlive({
           status: row.status,
-          lease: runLeaseState(row.id),
+          lease: runLeaseState(row.record_id),
           pidAlive: Boolean(row.pid && pidAlive(row.pid)),
         }),
       )
-      .map((row) => row.id),
+      .map((row) => row.record_id),
   )
 }
 
@@ -854,7 +874,7 @@ export type UnsettledClaimInventory =
       ascertainable: true
       claims: {
         kind: ResourceClaimKind
-        rootId: number
+        rootId: string
         allocationKeys: string[]
         terminal: boolean
         terminalAt: string | null
@@ -868,18 +888,18 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
   try {
     const claims = database
       .query(
-        `SELECT root_run_id,kind,allocation_key FROM resource_claim
-         WHERE state='claimed' ORDER BY root_run_id,kind,allocation_key`,
+        `SELECT root_run_record_id,kind,allocation_key FROM resource_claim
+         WHERE state='claimed' ORDER BY root_run_record_id,kind,allocation_key`,
       )
-      .all() as { root_run_id: number; kind: ResourceClaimKind; allocation_key: string }[]
+      .all() as { root_run_record_id: string; kind: ResourceClaimKind; allocation_key: string }[]
     const turns = database
       .query(
-        `SELECT id,parent_run_id,turn,status,started_at,latency_ms,last_event_at,job FROM run
-         ORDER BY COALESCE(parent_run_id,id),turn,id`,
+        `SELECT record_id,parent_run_record_id,turn,status,started_at,latency_ms,last_event_at,job FROM run
+         ORDER BY COALESCE(parent_run_record_id,record_id),turn,number`,
       )
       .all() as {
-      id: number
-      parent_run_id: number | null
+      record_id: string
+      parent_run_record_id: string | null
       turn: number
       status: string
       started_at: string
@@ -887,26 +907,27 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       last_event_at: string | null
       job: string
     }[]
-    const byRoot = new Map<number, typeof turns>()
+    const byRoot = new Map<string, typeof turns>()
     for (const turn of turns) {
-      const rootId = turn.parent_run_id ?? turn.id
+      const rootId = turn.parent_run_record_id ?? turn.record_id
       byRoot.set(rootId, [...(byRoot.get(rootId) ?? []), turn])
     }
     const grouped = new Map<
       string,
       {
         kind: ResourceClaimKind
-        rootId: number
+        rootId: string
         allocationKeys: string[]
         terminal: boolean
         terminalAt: string | null
       }
     >()
-    const unresolvable = new Set<number>()
+    const unresolvable = new Set<string>()
     for (const claim of claims) {
-      if (byRoot.get(claim.root_run_id)?.some((turn) => isSyntheticLifecycleJob(turn.job))) continue
-      const key = `${claim.kind}:${claim.root_run_id}`
-      const conversation = byRoot.get(claim.root_run_id) ?? []
+      if (byRoot.get(claim.root_run_record_id)?.some((turn) => isSyntheticLifecycleJob(turn.job)))
+        continue
+      const key = `${claim.kind}:${claim.root_run_record_id}`
+      const conversation = byRoot.get(claim.root_run_record_id) ?? []
       const terminal =
         conversation.length > 0 &&
         conversation.every((turn) => TERMINAL_RUN_STATUS_SET.has(turn.status))
@@ -914,11 +935,11 @@ export function unsettledClaimInventory(database = db()): UnsettledClaimInventor
       let terminalAt: string | null = null
       if (terminal && last) {
         terminalAt = terminalConversationTime(last)
-        if (terminalAt === null) unresolvable.add(claim.root_run_id)
+        if (terminalAt === null) unresolvable.add(claim.root_run_record_id)
       }
       const current = grouped.get(key) ?? {
         kind: claim.kind,
-        rootId: claim.root_run_id,
+        rootId: claim.root_run_record_id,
         allocationKeys: [],
         terminal,
         terminalAt,

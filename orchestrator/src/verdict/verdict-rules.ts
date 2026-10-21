@@ -8,8 +8,8 @@ import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 export const VOID_EXCLUSION_REASON = 'voided with orch score --void'
 
 export function refuseChildTurnVoid(
-  requestedId: number,
-  resolvedRootId: number,
+  requestedId: string,
+  resolvedRootId: string,
   voidRequested: boolean,
 ): string | null {
   if (!voidRequested || requestedId === resolvedRootId) return null

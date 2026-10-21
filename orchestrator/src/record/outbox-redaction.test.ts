@@ -1,7 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import {
   redactSyncedOutbox,
@@ -35,13 +35,12 @@ function runPayload(error: string, label: string): string {
 }
 
 function seeded(): { database: Database; urlUserinfo: string; base64: string } {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   const planted = plantedValues()
   database
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label)
        VALUES (42,'record-42',?,'codex','implement','sha',4,'ordinary prompt','ok',?,?)`,
     )
     .run(STAMP, planted.urlUserinfo, planted.base64)
@@ -80,7 +79,7 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
   expect(replacement.label).toBe(base64)
   expect(replacement.withheldFields).toEqual(['error'])
   expect(rows[1]!.payload).not.toContain(urlUserinfo)
-  expect(database.query('SELECT error,label FROM run WHERE id=42').get()).toEqual({
+  expect(database.query("SELECT error,label FROM run WHERE record_id='record-42'").get()).toEqual({
     error: urlUserinfo,
     label: base64,
   })

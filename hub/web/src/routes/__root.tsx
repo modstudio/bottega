@@ -1,3 +1,30 @@
+import { queryClient, trpc } from '@bottega/hub-data/client'
+import { signOutFromRecord } from '@bottega/hub-data/hosted-auth'
+import {
+  hostedOrigin,
+  isDocsPath,
+  isHostedMode,
+  isHostedPath,
+  isHostedSignInFramePath,
+  isMarketingPath,
+  navForMode,
+  sameLocationOn,
+} from '@bottega/hub-data/hub-mode'
+import { waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
+import { useProjectColors } from '@bottega/hub-data/use-project-colors'
+import { useWindowState } from '@bottega/hub-data/window'
+import { SiteFrame } from '@bottega/hub-site/chrome'
+import { type SiteLinkProps, SiteNavigation } from '@bottega/hub-site/navigation'
+import { AppMark } from '@bottega/hub-ui/app-mark'
+import {
+  AppShell,
+  type NavItem,
+  type NavSection,
+  type RenderLink,
+} from '@bottega/hub-ui/shell/app-shell'
+import { UserMenu } from '@bottega/hub-ui/shell/user-menu'
+import { recordSpaces } from '@bottega/hub-util/record-spaces'
+import { ProjectColorsContext } from '@bottega/hub-views/project-colors'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createRootRoute,
@@ -9,31 +36,12 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { AppMark } from '@/components/app-mark'
-import { signOutFromRecord } from '@/lib/hosted-auth'
-import {
-  hostedOrigin,
-  isDocsPath,
-  isHostedMode,
-  isHostedPath,
-  isHostedSignInFramePath,
-  isMarketingPath,
-  navForMode,
-  sameLocationOn,
-} from '@/lib/hub-mode'
-import { waitingInboxEntries } from '@/lib/operator-waiting'
-import { recordSpaces } from '@/lib/record-spaces'
-import { useWindowState } from '@/lib/window'
-import { SiteFrame } from '@/site/chrome'
-import { queryClient, trpc } from '@/trpc/client'
-import { AppShell, type NavItem, type NavSection, type RenderLink } from '@/ui/shell/app-shell'
-import { UserMenu } from '@/ui/shell/user-menu'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 
 const THEME_KEY = 'hub:theme'
 const RAIL_KEY = 'hub:rail'
 
-const mark = <AppMark className="size-5 shrink-0 text-text-primary" />
+const mark = <AppMark className="size-5 shrink-0" />
 
 const renderLink: RenderLink = (item, { className, onClick, children }) => (
   <Link to={item.to as LinkProps['to']} className={className} onClick={onClick}>
@@ -112,12 +120,17 @@ export const Route = createRootRoute({
 })
 
 function RootShell() {
+  const currentPath = useRouterState({ select: (state) => state.location.pathname })
   return (
-    <>
+    <SiteNavigation link={RouterSiteLink} currentPath={currentPath}>
       <HeadContent />
       <ShellContent />
-    </>
+    </SiteNavigation>
   )
+}
+
+function RouterSiteLink({ to, ...props }: SiteLinkProps) {
+  return <Link to={to as LinkProps['to']} {...props} />
 }
 
 function ShellContent() {
@@ -211,6 +224,7 @@ function OriginNavigation({ origin }: { origin: string }) {
 }
 
 function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) {
+  const projectColors = useProjectColors()
   const { counts } = useWindowState()
   const whoami = useQuery({
     ...trpc.record.whoami.queryOptions(),
@@ -258,27 +272,29 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     whoami.data?.user && 'email' in whoami.data.user ? String(whoami.data.user.email) : null
   const spaces = recordSpaces(whoami.data?.memberships)
   return (
-    <AppShell
-      name={PLATFORM_NAME}
-      mark={mark}
-      nav={nav}
-      renderLink={renderLink}
-      isActive={isActive}
-      storageKey={RAIL_KEY}
-      railFooter={
-        <RailFooterIdentity
-          hosted={hosted}
-          email={email}
-          activeSpaceId={whoami.data?.activeSpaceId ?? null}
-          spaces={spaces}
-          onSelectSpace={(spaceId) => switchSpace.mutate({ spaceId })}
-          onSignOut={() => void signOut()}
-        />
-      }
-    >
-      <div className="mx-auto max-w-[90rem]">
-        <Outlet />
-      </div>
-    </AppShell>
+    <ProjectColorsContext.Provider value={projectColors}>
+      <AppShell
+        name={PLATFORM_NAME}
+        mark={mark}
+        nav={nav}
+        renderLink={renderLink}
+        isActive={isActive}
+        storageKey={RAIL_KEY}
+        railFooter={
+          <RailFooterIdentity
+            hosted={hosted}
+            email={email}
+            activeSpaceId={whoami.data?.activeSpaceId ?? null}
+            spaces={spaces}
+            onSelectSpace={(spaceId) => switchSpace.mutate({ spaceId })}
+            onSignOut={() => void signOut()}
+          />
+        }
+      >
+        <div className="mx-auto max-w-[90rem]">
+          <Outlet />
+        </div>
+      </AppShell>
+    </ProjectColorsContext.Provider>
   )
 }

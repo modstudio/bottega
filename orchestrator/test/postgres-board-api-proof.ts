@@ -8,11 +8,12 @@ import {
 import { BOARD_POST_RATE_LIMIT } from '../src/board/board-policy.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
 import { startRecordApiServer } from '../src/record/record-api-server.ts'
-import { recordAuth } from '../src/record/record-auth.ts'
+import { noSpaceBuiltIns, recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
-import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
+import { notice as boardNotice, expiresAt, headers, json } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
+import { registerBoardClaimApiProof } from './postgres-board-claim-api-proof.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
 import { registerBoardRouteEdgeProof } from './postgres-board-route-edge-proof.ts'
@@ -46,6 +47,25 @@ const PROJECT = 'board-api-shared'
 const PROJECT_TWO = 'board-api-second'
 const ADOPTION_PROJECT = 'board-api-adoption'
 const ORIGIN_PROJECT = 'board-api-private-origin'
+const PROJECT_IDS: Record<string, string> = {
+  [PROJECT]: IDS.project,
+  [PROJECT_TWO]: IDS.projectTwo,
+  [ADOPTION_PROJECT]: IDS.adoptionProject,
+  [ORIGIN_PROJECT]: IDS.originProject,
+}
+const notice = (
+  id: string,
+  audience: string,
+  authorSession: string,
+  extra: Record<string, unknown> = {},
+) => {
+  const audienceProject = audience.includes(':') ? audience.slice(audience.indexOf(':') + 1) : null
+  const namedProject = typeof extra.project === 'string' ? extra.project : audienceProject
+  return boardNotice(id, audience, authorSession, {
+    ...(namedProject && PROJECT_IDS[namedProject] ? { projectId: PROJECT_IDS[namedProject] } : {}),
+    ...extra,
+  })
+}
 export function registerBoardApiProofs(input: {
   actorUrl: string
   spaceA: string
@@ -85,7 +105,14 @@ export function registerBoardApiProofs(input: {
       RECORD_HUB_URL: 'http://127.0.0.1',
     })
     origin = `http://127.0.0.1:${server.port}`
-    const auth = recordAuth(input.actorUrl)
+    const auth = recordAuth(
+      input.actorUrl,
+      process.env,
+      undefined,
+      undefined,
+      undefined,
+      noSpaceBuiltIns,
+    )
     const signUp = async (email: string, name: string) => {
       const created = await auth.api.signUpEmail({
         body: { email, name, password: SIGN_UP_AUTH.password },
@@ -153,6 +180,7 @@ export function registerBoardApiProofs(input: {
     token: () => tokenA,
     userId: () => userA,
     project: ADOPTION_PROJECT,
+    projectId: IDS.adoptionProject,
     expiresAt,
     caseSession,
     succeeds: input.succeeds,
@@ -376,6 +404,7 @@ export function registerBoardApiProofs(input: {
     projectTwo: PROJECT_TWO,
     originProject: ORIGIN_PROJECT,
     projectId: IDS.project,
+    projectTwoId: IDS.projectTwo,
     originProjectId: IDS.originProject,
   })
 
@@ -402,6 +431,7 @@ export function registerBoardApiProofs(input: {
         id: questionId,
         kind: 'question',
         audience: `project:${PROJECT}`,
+        projectId: IDS.project,
         title: 'Question',
         body: 'What?',
         expiresAt,
@@ -446,6 +476,7 @@ export function registerBoardApiProofs(input: {
             id: questionId,
             kind: 'question',
             audience: `project:${PROJECT}`,
+            projectId: IDS.project,
             title: 'File',
             body: 'Q',
             expiresAt,
@@ -604,104 +635,13 @@ export function registerBoardApiProofs(input: {
     expect(ids).toContain(right)
   })
 
-  test('claim take, renewal, live conflict with notice, lapsed takeover, release, and release by task key', async () => {
-    const take = (token: string, body: Record<string, unknown>) =>
-      fetch(`${origin}/v1/board/claims`, {
-        method: 'PUT',
-        headers: headers(token),
-        body: JSON.stringify(body),
-      })
-    const liveId = newRecordId()
-    const taken = await take(tokenA, {
-      id: liveId,
-      project: PROJECT,
-      subject: 'resource:gpu',
-      holderSession: 'holder-a',
-      durationMs: 60_000,
-    })
-    expect(taken.status).toBe(200)
-    expect((await json(taken)).action).toBe('taken')
-    const renewed = await fetch(`${origin}/v1/board/claims/${liveId}/renew`, {
-      method: 'POST',
-      headers: headers(tokenA),
-      body: JSON.stringify({ holderSession: 'holder-a' }),
-    })
-    expect(renewed.status).toBe(200)
-    const conflict = await take(tokenB, {
-      id: newRecordId(),
-      project: PROJECT,
-      subject: 'resource:gpu',
-      holderSession: 'holder-b',
-    })
-    expect(conflict.status).toBe(409)
-    const conflictBody = JSON.stringify(await conflict.json())
-    expect(conflictBody).toContain(userA)
-    const notices = await json(
-      await fetch(`${origin}/v1/board/changes?after=0&limit=100`, { headers: headers(tokenA) }),
-    )
-    const told = (
-      notices.items as Array<{ message: { audience: string; claimId: string | null } }>
-    ).some(
-      (item) => item.message.audience === 'session:holder-a' && item.message.claimId === liveId,
-    )
-    expect(told).toBeTrue()
-    const lapsedId = newRecordId()
-    const short = await take(tokenA, {
-      id: lapsedId,
-      project: PROJECT,
-      subject: 'task:BAPI-1',
-      holderSession: 'holder-a',
-      durationMs: 1,
-    })
-    expect(short.status).toBe(200)
-    await Bun.sleep(20)
-    const successor = newRecordId()
-    const takeover = await take(tokenB, {
-      id: successor,
-      project: PROJECT,
-      subject: 'task:BAPI-1',
-      holderSession: 'holder-b',
-    })
-    expect(takeover.status).toBe(200)
-    const takeoverBody = await json(takeover)
-    expect(takeoverBody.action).toBe('taken-over')
-    const listed = await json(
-      await fetch(`${origin}/v1/board/claims?project=${PROJECT}`, { headers: headers(tokenA) }),
-    )
-    const claims = listed.claims as Array<{
-      id: string
-      closeReason: string | null
-      supersededByClaimId: string | null
-      previousClaimIds: string[]
-    }>
-    const old = claims.find((claim) => claim.id === lapsedId)
-    expect(old?.closeReason).toBe('lapsed')
-    expect(old?.supersededByClaimId).toBe(successor)
-    expect(claims.find((claim) => claim.id === successor)?.previousClaimIds).toContain(lapsedId)
-    const released = await fetch(`${origin}/v1/board/claims/${liveId}/release`, {
-      method: 'POST',
-      headers: headers(tokenA),
-      body: JSON.stringify({ holderSession: 'holder-a' }),
-    })
-    expect(released.status).toBe(200)
-    const taskId = newRecordId()
-    expect(
-      (
-        await take(tokenA, {
-          id: taskId,
-          project: PROJECT,
-          subject: 'task:BAPI-9',
-          holderSession: 'holder-a',
-        })
-      ).status,
-    ).toBe(200)
-    const byTask = await fetch(`${origin}/v1/board/claims/release-task`, {
-      method: 'POST',
-      headers: headers(tokenA),
-      body: JSON.stringify({ project: PROJECT, key: 'BAPI-9' }),
-    })
-    expect(byTask.status).toBe(200)
-    expect((await json(byTask)).released).toBe(1)
+  registerBoardClaimApiProof({
+    origin: () => origin,
+    tokenA: () => tokenA,
+    tokenB: () => tokenB,
+    userA: () => userA,
+    project: PROJECT,
+    projectId: IDS.project,
   })
 
   test('a user bound through the API sees a project in a second space', async () => {
@@ -756,6 +696,7 @@ export function registerBoardApiProofs(input: {
             id: questionId,
             kind: 'question',
             audience: `project:${PROJECT}`,
+            projectId: IDS.project,
             title: 'Q',
             body: 'Q',
             expiresAt,
@@ -794,11 +735,11 @@ export function registerBoardApiProofs(input: {
       `INSERT INTO machine (id, user_id, name, registered_at, last_seen)
          VALUES ('${machineId}', '${ownerUserId}', 'board-api-machine', now(), now());
        INSERT INTO run (
-         id, space_id, project_id, machine_id, local_id, started_by_user_id, started_at, agent, job,
+         id, space_id, project_id, machine_id, started_by_user_id, started_at, agent, job,
          prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
          automatic_failover, work_preserved, created_at, updated_at
        ) VALUES (
-         '${runId}', '${spaceA}', '${IDS.project}', '${machineId}', 1, '${ownerUserId}',
+         '${runId}', '${spaceA}', '${IDS.project}', '${machineId}', '${ownerUserId}',
          now(), 'proof', 'proof', 'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()
        );`,
     )
@@ -818,6 +759,7 @@ export function registerBoardApiProofs(input: {
             id: questionId,
             kind: 'question',
             audience: `project:${PROJECT}`,
+            projectId: IDS.project,
             title: 'Idempotent reply',
             body: 'Q',
             expiresAt,
@@ -993,6 +935,7 @@ export function registerBoardApiProofs(input: {
       body: JSON.stringify({
         id: newRecordId(),
         project: PROJECT,
+        projectId: IDS.project,
         subject: `resource:foreign-run-${runId.slice(0, 8)}`,
         holderSession: caseSession('foreign-run-claim'),
         runId,
@@ -1019,6 +962,7 @@ export function registerBoardApiProofs(input: {
       body: JSON.stringify({
         id: newRecordId(),
         project: PROJECT,
+        projectId: IDS.project,
         subject: `resource:own-run-${runId.slice(0, 8)}`,
         holderSession: caseSession('own-run-claim'),
         runId,
@@ -1039,6 +983,7 @@ export function registerBoardApiProofs(input: {
     streamUserHomeSpaceId: () => spaceC,
     postNotice: (body) => post(tokenA, body),
     project: PROJECT,
+    projectId: IDS.project,
     admin: (statement) => input.succeeds('postgres', 'postgres', statement),
   })
 }

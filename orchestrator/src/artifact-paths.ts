@@ -5,11 +5,11 @@
  */
 import { basename, join, relative } from 'node:path'
 
-export function runScratchDir(id: number, runsDir: string): string {
+export function runScratchDir(id: string, runsDir: string): string {
   return join(runsDir, String(id), 'scratch')
 }
 
-export function runArtifactsDir(id: number, runsDir: string): string {
+export function runArtifactsDir(id: string, runsDir: string): string {
   return join(runsDir, String(id), 'artifacts')
 }
 
@@ -24,7 +24,7 @@ export type NamedArtifactPlan = {
 }
 
 export function namedArtifactPlan(
-  id: number,
+  id: string,
   runsDir: string,
   entry: string,
   worktreePath: string | null,
@@ -44,7 +44,7 @@ export function namedArtifactPlan(
 }
 
 export function persistedRunArtifactPath(
-  id: number,
+  id: string,
   runsDir: string,
   entry: string,
   worktreePath: string | null,
@@ -170,7 +170,7 @@ export function rewriteFilesWrittenPaths(
 }
 
 /** Rewrite every run scratch-dir occurrence onto the artifacts dir. */
-export function rewriteScratchDirPaths(text: string, id: number, runsDir: string): string {
+export function rewriteScratchDirPaths(text: string, id: string, runsDir: string): string {
   const scratch = runScratchDir(id, runsDir)
   const artifacts = runArtifactsDir(id, runsDir)
   let rewritten = ''

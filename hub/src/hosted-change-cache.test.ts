@@ -99,7 +99,7 @@ const identity = {
 
 type RouteOptions = {
   changes?: (space: string | null, after: string | null) => unknown | Response
-  notes?: (space: string | null) => unknown | Response
+  notes?: (space: string | null, cursor: string | null) => unknown | Response
   getNote?: (space: string | null, id: string) => unknown | Response
 }
 type TestFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -115,7 +115,7 @@ function routeFetch(options: RouteOptions) {
       return body instanceof Response ? body : Response.json(body)
     }
     if (url.pathname === '/v1/notes') {
-      const body = options.notes?.(space) ?? fullNotes()
+      const body = options.notes?.(space, url.searchParams.get('cursor')) ?? fullNotes()
       return body instanceof Response ? body : Response.json(body)
     }
     const id = url.pathname.split('/').at(-1) ?? ''
@@ -165,6 +165,40 @@ test('the note family starts and resets through the full note pull including cou
     db().query<{ text: string }, [string]>('SELECT text FROM note WHERE record_id=?').get(noteId)
       ?.text,
   ).toBe('snapshot-2')
+})
+
+test('a first pull skips a live acknowledgement whose deleted parent was on an earlier page', async () => {
+  const requestedCursors: Array<string | null> = []
+  let parentFetches = 0
+  const fetch = routeFetch({
+    changes: (_space, after) => page({ head: 17, next: Number(after ?? 17) }),
+    notes: (_space, noteCursor) => {
+      requestedCursors.push(noteCursor)
+      if (noteCursor === null)
+        return { ...fullNotes([note({ deleted_at: at })]), cursor: 'notes-page', more: true }
+      if (noteCursor === 'notes-page')
+        return {
+          ...fullNotes([], [acknowledgement()]),
+          cursor: 'acknowledgements-page',
+          more: true,
+        }
+      return { ...fullNotes(), cursor: 'counters-page', more: false }
+    },
+    getNote: () => {
+      parentFetches += 1
+      return Response.json({ error: 'note not found' }, { status: 404 })
+    },
+  })
+
+  await pull(fetch)
+
+  expect(requestedCursors).toEqual([null, 'notes-page', 'acknowledgements-page'])
+  expect(parentFetches).toBe(1)
+  expect(cursor()).toBe('17')
+  expect(db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId)).toBeNull()
+  expect(
+    db().query('SELECT 1 FROM note_acknowledgement WHERE record_id=?').get(acknowledgementId),
+  ).toBeNull()
 })
 
 test('note upserts distinguish a timestamp no-op from a changed row', async () => {
@@ -718,6 +752,7 @@ test('one change family failing leaves the other family result intact', async ()
       upsertsNoop: 0,
       deletesApplied: 0,
       deletesSkipped: 0,
+      absentParentSkipped: 0,
       resets: 0,
       spaces: [
         {
@@ -726,6 +761,7 @@ test('one change family failing leaves the other family result intact', async ()
           upsertsNoop: 0,
           deletesApplied: 0,
           deletesSkipped: 0,
+          absentParentSkipped: 0,
           resets: 0,
         },
       ],

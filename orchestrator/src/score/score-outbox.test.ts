@@ -1,7 +1,7 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
@@ -18,22 +18,21 @@ const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
 const STAMP = '2026-09-16T01:00:00.000Z'
 
 function scoredRun(recordId: string | null = RECORD_ID): Database {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','implement','sha',3,'ask','ok')`,
     )
     .run(recordId)
   database
     .query(
       `INSERT INTO score
-       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 42,'full','right','faithful','first',?,'architect')`,
+       (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', ?,'full','right','faithful','first',?,'architect')`,
     )
-    .run(STAMP)
+    .run(recordId, STAMP)
   return database
 }
 
@@ -107,7 +106,7 @@ test('score enqueue participates in its caller transaction', () => {
   expect(() =>
     database
       .transaction(() => {
-        enqueueScoreRecord(database, 42, MACHINE_ID)
+        enqueueScoreRecord(database, RECORD_ID, MACHINE_ID)
         throw new Error('rollback')
       })
       .immediate(),
@@ -139,7 +138,7 @@ test('score backfill enqueues each hosted score once', () => {
 
 test.each(['quarantined', 'retired'])('a new score does not overwrite a %s row', (state) => {
   const database = scoredRun()
-  enqueueScoreRecord(database, 42, MACHINE_ID)
+  enqueueScoreRecord(database, RECORD_ID, MACHINE_ID)
   const original = database
     .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox')
     .get()!
@@ -148,9 +147,9 @@ test.each(['quarantined', 'retired'])('a new score does not overwrite a %s row',
       `UPDATE outbox SET ${state === 'quarantined' ? 'quarantined_at' : 'retired_at'}=? WHERE id=?`,
     )
     .run(STAMP, original.id)
-  database.query("UPDATE score SET note='corrected' WHERE run_id=42").run()
+  database.query("UPDATE score SET note='corrected' WHERE run_record_id=?").run(RECORD_ID)
 
-  enqueueScoreRecord(database, 42, MACHINE_ID)
+  enqueueScoreRecord(database, RECORD_ID, MACHINE_ID)
 
   const rows = database
     .query<{ id: number; payload: string }, []>('SELECT id,payload FROM outbox ORDER BY id')

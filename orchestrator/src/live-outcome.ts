@@ -133,11 +133,17 @@ export type CompletedReplyEndedFacts = {
   failoverTerminal: string
   signal: string | null
   lastVendorEventType: string | null
+  lastVendorError?: string | null
   stderr: string
 }
 
-/** Type of the last stdout JSONL object, including a line the vendor parser ignored. */
-export function lastStdoutJsonlType(stdout: string): string | null {
+type LastStdoutJsonlEvent = {
+  type: string
+  error: string | null
+}
+
+/** Last stdout JSONL object, including a line the vendor parser ignored. */
+function lastStdoutJsonlEvent(stdout: string): LastStdoutJsonlEvent | null {
   const line =
     stdout
       .split('\n')
@@ -147,8 +153,21 @@ export function lastStdoutJsonlType(stdout: string): string | null {
   try {
     const raw: unknown = JSON.parse(line)
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
-    const type = (raw as { type?: unknown }).type
-    return typeof type === 'string' && type ? type : null
+    const event = raw as { type?: unknown; message?: unknown; error?: unknown }
+    if (typeof event.type !== 'string' || !event.type) return null
+    const nestedError =
+      event.error !== null && typeof event.error === 'object' && !Array.isArray(event.error)
+        ? (event.error as { message?: unknown }).message
+        : null
+    const error =
+      typeof nestedError === 'string'
+        ? nestedError
+        : typeof event.message === 'string'
+          ? event.message
+          : typeof event.error === 'string'
+            ? event.error
+            : null
+    return { type: event.type, error }
   } catch {
     return null
   }
@@ -164,14 +183,20 @@ function recordedLastVendorEventType(raw: string | null): string | null {
 
 export function composeCompletedReplyEndedError(facts: CompletedReplyEndedFacts): string {
   const notice =
-    `the worker completed and wrote its reply, then the process ended ` +
-    `(exit ${facts.exitCode}). Its work is in the worktree; resume or read the diff.`
+    `the worker wrote a done-shaped reply, then the process ended ` +
+    `(exit ${facts.exitCode}) before the run finished. ` +
+    `Its work so far is in the worktree; read the diff and resume.`
   const head = facts.failoverTerminal ? `${facts.failoverTerminal}\n${notice}` : notice
   const lines = [errorTail(head)]
   const signal = facts.signal?.trim() ?? ''
   if (signal) lines.push(`signal: ${signal}`)
   const eventType = recordedLastVendorEventType(facts.lastVendorEventType)
   if (eventType) lines.push(`last vendor event: ${eventType}`)
+  const vendorError = facts.lastVendorError?.trim() ?? ''
+  if (vendorError) {
+    const body = containsSecretShaped(vendorError) ? SECRET_SHAPED_STDERR : vendorError
+    lines.push(`vendor error: ${errorTail(body)}`)
+  }
   const stderr = facts.stderr.trim()
   if (stderr) {
     const body = containsSecretShaped(stderr) ? SECRET_SHAPED_STDERR : stderr
@@ -191,16 +216,19 @@ function withVendorStderrTail(facts: LiveOutcomeFacts, error: string | null): st
 
 function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): string | null {
   const { inputs } = calculated
-  const completedReplyEndedError = () =>
-    composeCompletedReplyEndedError({
+  const completedReplyEndedError = () => {
+    const lastVendorEvent = lastStdoutJsonlEvent(facts.stdout)
+    return composeCompletedReplyEndedError({
       exitCode: facts.exitCode,
       failoverTerminal: FAILS_OVER.includes(inputs.completedContractFailureKind)
         ? calculated.completedContractTerminal
         : '',
       signal: facts.signal,
-      lastVendorEventType: lastStdoutJsonlType(facts.stdout),
+      lastVendorEventType: lastVendorEvent?.type ?? null,
+      lastVendorError: lastVendorEvent?.error ?? null,
       stderr: facts.stderr,
     })
+  }
   const rules: Array<[boolean, () => string | null]> = [
     [facts.idleKilled && inputs.completedReply, () => null],
     [facts.idleKilled && (facts.collectedAsking || facts.acceptedQuestions), () => null],

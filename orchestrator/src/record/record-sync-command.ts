@@ -25,6 +25,12 @@ export function readOnlyDeferredLines(
   return rows.map((row) => `deferred ${row.rows}\tread-only space ${row.spaceId}`)
 }
 
+function heldOutboxLines(
+  rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['held']>,
+): string[] {
+  return rows.map((row) => `held ${row.rows}\t${row.kind}\t${row.reason}`)
+}
+
 export async function syncCommand(
   options: { backfill: boolean },
   presentation: { log(value: string): void },
@@ -40,7 +46,7 @@ export async function syncCommand(
   }
   if (result.backfill) {
     presentation.log(
-      `backfill enqueued ${result.backfill.enqueued}, skipped-live ${result.backfill.skippedLive}`,
+      `backfill enqueued ${result.backfill.enqueued}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-live ${result.backfill.skippedLive}`,
     )
     presentation.log(`score backfill enqueued ${result.backfill.scores}`)
     presentation.log(
@@ -60,4 +66,5 @@ export async function syncCommand(
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
   for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
   for (const line of readOnlyDeferredLines(result.readOnlyDeferred ?? [])) presentation.log(line)
+  for (const line of heldOutboxLines(result.held ?? [])) presentation.log(line)
 }

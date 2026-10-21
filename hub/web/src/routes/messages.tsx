@@ -1,23 +1,24 @@
+import { queryClient, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Badge } from '@bottega/hub-ui/badge'
+import { Button } from '@bottega/hub-ui/button'
+import { Checkbox } from '@bottega/hub-ui/checkbox'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { Dialog } from '@bottega/hub-ui/dialog'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Textarea } from '@bottega/hub-ui/field/textarea'
+import { SettingBlock } from '@bottega/hub-ui/form-layout'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { Segmented } from '@bottega/hub-ui/segmented'
+import { sendTimestamp } from '@bottega/hub-util/format'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import type { inferRouterOutputs } from '@trpc/server'
 import { ChevronRight, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
-import { Collection, type CollectionColumn } from '@/components/collection'
-import { useDetailPanel } from '@/lib/detail-panel'
-import { sendTimestamp } from '@/lib/format'
-import { isHostedMode } from '@/lib/hub-mode'
-import { queryClient, trpc } from '@/trpc/client'
-import { Badge } from '@/ui/badge/badge'
-import { Button } from '@/ui/button/button'
-import { Checkbox } from '@/ui/checkbox/checkbox'
-import { Dialog } from '@/ui/dialog/dialog'
-import { Input } from '@/ui/field/input'
-import { Textarea } from '@/ui/field/textarea'
-import { SettingBlock } from '@/ui/form-layout/form-layout'
-import { Select } from '@/ui/listbox/select'
-import { PageHeader } from '@/ui/page-header/page-header'
-import { Segmented } from '@/ui/segmented/segmented'
+import { useDetailPanel } from '@/routes/-detail-panel'
 import {
   BOARD_PURPOSES,
   type BoardPurpose,
@@ -75,7 +76,9 @@ function MessagesList({
   selectedId,
   panel,
   onOpen,
-  controls,
+  filters,
+  filtersActive,
+  actions,
 }: {
   rows: BoardListRow[]
   warning: string | null
@@ -83,13 +86,22 @@ function MessagesList({
   selectedId?: string
   panel?: React.ReactNode
   onOpen: (row: BoardListRow) => void
-  controls?: React.ReactNode
+  filters?: React.ReactNode
+  filtersActive?: boolean
+  actions?: React.ReactNode
 }) {
   const columns: CollectionColumn<BoardListRow>[] = [
     {
       id: 'title',
       label: 'Message',
       grow: true,
+      phone: 'title',
+      phoneRender: (row) => (
+        <span className="block min-w-0">
+          <span className="block font-medium">{row.title ?? '(Untitled)'}</span>
+          <span className="block text-sm text-text-muted">{originText(row.origin)}</span>
+        </span>
+      ),
       render: (row) => (
         <span className="block min-w-0">
           <span className="block truncate font-medium">{row.title ?? '(Untitled)'}</span>
@@ -97,24 +109,27 @@ function MessagesList({
         </span>
       ),
     },
-    { id: 'kind', label: 'Kind', priority: 'low', render: (row) => row.kind },
+    { id: 'kind', label: 'Kind', phone: 'line', priority: 'low', render: (row) => row.kind },
     {
       id: 'audience',
       label: 'Audience',
+      phone: 'line',
       priority: 'low',
       render: (row) => row.audience ?? '-',
     },
     {
       id: 'state',
       label: 'State',
+      phone: 'aside',
       render: (row) => (
         <Badge tone={row.state === 'open' ? 'progress' : 'neutral'}>{row.state}</Badge>
       ),
     },
-    { id: 'response', label: 'Reach / replies', render: responseText },
+    { id: 'response', label: 'Reach / replies', phone: 'line', render: responseText },
     {
       id: 'expires',
       label: 'Expires',
+      phone: 'more',
       priority: 'low',
       render: (row) => (row.expiresAt ? sendTimestamp(row.expiresAt) : 'Never'),
     },
@@ -134,7 +149,9 @@ function MessagesList({
       <Collection
         title="Messages"
         count={rows.length}
-        actions={controls}
+        filters={filters}
+        filtersActive={filtersActive ? 1 : 0}
+        actions={actions}
         panel={panel}
         selectedKey={selectedId}
         columns={columns}
@@ -171,11 +188,51 @@ export function MessagesContent({
   selectedId?: string
   onOpen: (row: BoardListRow) => void
 }) {
+  const phone = useMediaQuery(PHONE_QUERY)
   const [filter, setFilter] = useState<Filter>('all')
   const [includeEnded, setIncludeEnded] = useState(false)
   const [posting, setPosting] = useState(false)
   const query = useQuery(trpc.board.list.queryOptions(listInput(filter, includeEnded)))
   const rows = query.data?.messages ?? []
+  const filterControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Segmented
+        label="Message filter"
+        value={filter}
+        options={[
+          { value: 'all', label: 'All' },
+          { value: 'notice', label: 'Notices' },
+          { value: 'question', label: 'Questions' },
+          { value: 'open', label: 'Open questions' },
+        ]}
+        onChange={(value) => setFilter(value as Filter)}
+      />
+      <label htmlFor="show-ended" className="flex items-center gap-2 text-sm text-text-muted">
+        <Checkbox
+          id="show-ended"
+          checked={includeEnded}
+          onChange={(event) => setIncludeEnded(event.target.checked)}
+        />
+        Show ended
+      </label>
+    </div>
+  )
+  const actionControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" onClick={() => void query.refetch()}>
+        <RefreshCw /> Refresh
+      </Button>
+      <Button size="sm" variant="primary" onClick={() => setPosting(true)}>
+        New message
+      </Button>
+    </div>
+  )
+  const deskControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      {filterControls}
+      {actionControls}
+    </div>
+  )
 
   return (
     <section>
@@ -198,35 +255,9 @@ export function MessagesContent({
         selectedId={selectedId}
         panel={panel}
         onOpen={onOpen}
-        controls={
-          <div className="flex flex-wrap items-center gap-2">
-            <Segmented
-              label="Message filter"
-              value={filter}
-              options={[
-                { value: 'all', label: 'All' },
-                { value: 'notice', label: 'Notices' },
-                { value: 'question', label: 'Questions' },
-                { value: 'open', label: 'Open questions' },
-              ]}
-              onChange={(value) => setFilter(value as Filter)}
-            />
-            <label htmlFor="show-ended" className="flex items-center gap-2 text-sm text-text-muted">
-              <Checkbox
-                id="show-ended"
-                checked={includeEnded}
-                onChange={(event) => setIncludeEnded(event.target.checked)}
-              />
-              Show ended
-            </label>
-            <Button size="sm" onClick={() => void query.refetch()}>
-              <RefreshCw /> Refresh
-            </Button>
-            <Button size="sm" variant="primary" onClick={() => setPosting(true)}>
-              New message
-            </Button>
-          </div>
-        }
+        filters={phone ? filterControls : undefined}
+        filtersActive={filter !== 'all' || includeEnded}
+        actions={phone ? actionControls : deskControls}
       />
       <NewMessageDialog open={posting} onOpenChange={setPosting} />
     </section>

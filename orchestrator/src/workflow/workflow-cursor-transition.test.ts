@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
   type CursorValue,
+  decideConditionalAdvance,
   decideCursorStart,
   decideCursorTransition,
+  decideStepOutcome,
+  stepPass,
 } from './workflow-cursor-transition.ts'
 
 const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] = 'running') => ({
@@ -12,6 +15,94 @@ const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] =
 })
 
 describe('workflow cursor transition', () => {
+  test('requires, validates, and refuses undeclared close outcomes', () => {
+    expect(decideStepOutcome('choose', ['yes', 'no'], undefined)).toEqual({
+      action: 'refuse',
+      message: 'step "choose" requires --outcome <slug>; allowed values: yes, no',
+    })
+    expect(decideStepOutcome('choose', ['yes', 'no'], 'maybe')).toMatchObject({
+      action: 'refuse',
+    })
+    expect(decideStepOutcome('choose', ['yes', 'no'], 'yes')).toEqual({ action: 'allow' })
+    expect(decideStepOutcome('plain', undefined, 'yes')).toMatchObject({ action: 'refuse' })
+  })
+
+  test('skips an unmet conditional chain and stops at the next eligible step', () => {
+    const steps = [
+      { slug: 'choose' },
+      { slug: 'one', when: { step: 'choose', outcome: ['yes'] } },
+      { slug: 'two', when: { step: 'choose', outcome: ['yes'] } },
+      { slug: 'finish' },
+    ]
+    expect(decideConditionalAdvance(steps, [], 0, 'no')).toEqual({
+      ordinal: 3,
+      skipped: [
+        { ordinal: 1, step: steps[1]! },
+        { ordinal: 2, step: steps[2]! },
+      ],
+      requireRuling: false,
+    })
+    expect(decideConditionalAdvance(steps.slice(0, 2), [], 0, 'no')).toEqual({
+      ordinal: null,
+      skipped: [{ ordinal: 1, step: steps[1]! }],
+      requireRuling: false,
+    })
+
+    const skippedDependency = [
+      { slug: 'choose' },
+      { slug: 'one', when: { step: 'choose', outcome: ['yes'] } },
+      { slug: 'two', when: { step: 'one', outcome: ['done'] } },
+      { slug: 'finish' },
+    ]
+    expect(decideConditionalAdvance(skippedDependency, [], 0, 'no')).toEqual({
+      ordinal: 3,
+      skipped: [
+        { ordinal: 1, step: skippedDependency[1]! },
+        { ordinal: 2, step: skippedDependency[2]! },
+      ],
+      requireRuling: false,
+    })
+  })
+
+  test('the first re-entry moves back and records pass 2', () => {
+    const steps = [
+      { slug: 'start' },
+      { slug: 'apply', reenter: { to: 'start', outcome: 'changed' } },
+    ]
+    expect(decideConditionalAdvance(steps, [], 1, 'changed')).toEqual({
+      ordinal: 0,
+      skipped: [],
+      reentered: { to: 'start', pass: 2 },
+      requireRuling: false,
+    })
+  })
+
+  test('a second re-entry requires a ruling and a non-re-entering outcome advances', () => {
+    const steps = [
+      { slug: 'start' },
+      { slug: 'apply', reenter: { to: 'start', outcome: 'changed' } },
+      { slug: 'finish' },
+    ]
+    const trail = [{ slug: 'apply', outcome: 'changed', reentered: { to: 'start', pass: 2 } }]
+    expect(decideConditionalAdvance(steps, trail, 1, 'changed')).toEqual({
+      ordinal: 0,
+      skipped: [],
+      reentered: { to: 'start', pass: 3 },
+      requireRuling: true,
+    })
+    expect(decideConditionalAdvance(steps, trail, 1, 'clean')).toEqual({
+      ordinal: 2,
+      skipped: [],
+      requireRuling: false,
+    })
+  })
+
+  test('pass counts re-entries whose target is at or before the served step', () => {
+    const steps = [{ slug: 'start' }, { slug: 'apply' }, { slug: 'finish' }]
+    const trail = [{ slug: 'apply', reentered: { to: 'start', pass: 2 } }]
+    expect(stepPass(trail, steps, 0)).toBe(2)
+    expect(stepPass([], steps, 0)).toBe(1)
+  })
   test('retires terminal cursors before starting and reuses active cursors', () => {
     expect(decideCursorStart(null)).toBe('insert')
     expect(decideCursorStart('running')).toBe('reuse')

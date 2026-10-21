@@ -81,6 +81,9 @@ export function landingTreeReleaseDecision(
     }
     return { action: 'release' }
   }
+  if (row.landingInFlight) {
+    return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+  }
   if (!landed)
     return {
       action: 'keep',
@@ -92,7 +95,7 @@ export function landingTreeReleaseDecision(
 }
 
 export function landingTreeHoldDecision<T>(
-  row: { job: string; treeExists: boolean; branch: string | null; runId: number },
+  row: { job: string; treeExists: boolean; branch: string | null; runId: string },
   clean: boolean,
   ordinary: T,
 ): T | { held: true; until: null; reason: string } | { held: false; kept: true; reason: string } {

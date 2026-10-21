@@ -22,7 +22,8 @@ export function vacateRetiredWorkflowKeySlot(
 ): void {
   d.query(
     `UPDATE workflow_cursor SET instance_id=instance_id || '#' || id
-     WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
+     WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+       AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
        AND state IN ('done','abandoned')`,
   ).run(project, workflow, mode, key)
 }
@@ -36,16 +37,16 @@ function assignWorkflowTaskKey(row: AdoptionCursor, key: string, d: Database): v
   row.workflow_key = key
   row.args = JSON.stringify(adoptedArgs)
   const questions = d
-    .query<{ id: number }, [number]>(
-      'SELECT id FROM question WHERE workflow_cursor_id=? ORDER BY id',
+    .query<{ record_id: string }, [number]>(
+      'SELECT record_id FROM question WHERE workflow_cursor_id=? ORDER BY number',
     )
     .all(row.id)
   for (const question of questions) {
-    d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE id=?').run(
+    d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE record_id=?').run(
       key,
-      question.id,
+      question.record_id,
     )
-    enqueueQuestionRecord(d, question.id)
+    enqueueQuestionRecord(d, question.record_id)
   }
 }
 
@@ -66,7 +67,8 @@ export function adoptWorkflowTask(
   const conflict = d
     .query<{ id: number }, [string, string, string, string]>(
       `SELECT id FROM workflow_cursor
-       WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_slug=? AND mode_slug=? AND workflow_key=?
          AND state NOT IN ('done','abandoned') LIMIT 1`,
     )
     .get(row.project, row.workflow_slug, row.mode_slug, key)

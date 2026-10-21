@@ -4,6 +4,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import {
+  lensPortReferenceOrphanCounts,
+  portStaleCopyConflicts,
+} from './lens-port-migration-preflight.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
@@ -11,8 +15,14 @@ const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
 export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
+const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'
+const LENS_PORT_UUID_KEY_MIGRATION = '0131_lens_port_uuid_key'
 
 type JournalEntry = { idx: number; when: number; tag: string }
+export type BeforeMigrationApply = {
+  migration: string
+  action(database: Database): void
+}
 type ColumnShape = {
   table: string
   name: string
@@ -171,6 +181,18 @@ export function storeMigrationState(
   if (state.ahead) return 'ahead'
   if (state.pending.length) return 'behind'
   return 'current'
+}
+
+/** Whether one exact journal entry is already recorded in this store. */
+export function migrationApplied(d: Database, tag: string, folder = MIGRATIONS_FOLDER): boolean {
+  if (!tableExists(d, MIGRATIONS_TABLE)) return false
+  const entry = migrationJournal(folder).find((candidate) => candidate.tag === tag)
+  if (!entry) throw new Error(`unknown migration ${tag}`)
+  return Boolean(
+    d
+      .query(`SELECT 1 FROM ${MIGRATIONS_TABLE} WHERE created_at=? AND hash=?`)
+      .get(entry.when, migrationHash(entry, folder)),
+  )
 }
 
 export function migrationRefusal(d: Database): string | null {
@@ -450,11 +472,272 @@ function executeMigrationSource(d: Database, source: string): void {
   executeStatements(d, splitMigrationSource(source).ddl)
 }
 
-function applyBackfills(d: Database, folder: string): void {
-  for (const entry of migrationJournal(folder)) {
+const INTEGER_RUN_REFERENCES = [
+  ['run', 'retry_of'],
+  ['run', 'parent_run_id'],
+  ['blocker', 'run_id'],
+  ['board_claim', 'run_id'],
+  ['board_message', 'author_run_id'],
+  ['calibration', 'run_id'],
+  ['canon_eval', 'run_id'],
+  ['compared_pair', 'run_a_id'],
+  ['compared_pair', 'run_b_id'],
+  ['contention', 'run_id'],
+  ['duel', 'winner_run_id'],
+  ['duel', 'loser_run_id'],
+  ['gate_execution', 'run_id'],
+  ['question', 'run_id'],
+  ['question_delivery', 'run_id'],
+  ['resource_claim', 'root_run_id'],
+  ['resource_claim', 'run_id'],
+  ['review_lens', 'run_id'],
+  ['run_carried_ruling', 'run_id'],
+  ['run_checkpoint', 'run_id'],
+  ['run_message', 'root_run_id'],
+  ['run_message', 'run_id'],
+  ['run_mutation_audit', 'run_id'],
+  ['run_mutation_audit', 'root_id'],
+  ['run_mutation_audit', 'turn_id'],
+  ['score', 'run_id'],
+  ['worker_note_request', 'run_id'],
+] as const
+
+const INTEGER_QUESTION_REFERENCES = [
+  ['question_delivery', 'question_id'],
+  ['question_mutation_audit', 'question_id'],
+  ['run_carried_ruling', 'question_id'],
+] as const
+
+const REVIEW_LANDING_REFERENCES = [
+  ['review_lens', 'review_id', 'review', 'review_record_id'],
+  ['review_finding', 'review_id', 'review', 'review_record_id'],
+  ['review_finding', 'review_lens_id', 'review_lens', 'review_lens_record_id'],
+  ['landing_review_carry', 'review_id', 'review', 'review_record_id'],
+  ['landing', 'causing_landing_id', 'landing', 'causing_landing_record_id'],
+  ['landing_triage_snapshot', 'override_id', 'landing_override', 'override_record_id'],
+  ['landing_triage_snapshot', 'read_id', 'review_read', 'read_record_id'],
+  ['contention', 'landing_id', 'landing', 'landing_record_id'],
+] as const
+
+const BOARD_REFERENCES = [
+  ['board_claim', 'superseded_by_claim_id', 'board_claim', 'superseded_by_claim_record_id'],
+  ['board_message', 'thread_root_id', 'board_message', 'thread_root_record_id'],
+  ['board_message', 'accepted_reply_id', 'board_message', 'accepted_reply_record_id'],
+  ['board_message', 'claim_id', 'board_claim', 'claim_record_id'],
+  ['board_message_tag', 'message_id', 'board_message', 'message_record_id'],
+  ['board_receipt', 'message_id', 'board_message', 'message_record_id'],
+] as const
+
+function runReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column] of INTEGER_RUN_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE child.${quoteIdentifier(column)} IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM run parent WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${column}=${count}`)
+  }
+  return findings
+}
+
+function questionReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column] of INTEGER_QUESTION_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE NOT EXISTS (SELECT 1 FROM question parent WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${column}=${count}`)
+  }
+  const notificationCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM operator_notification child
+         WHERE child.kind='question'
+           AND NOT EXISTS (SELECT 1 FROM question parent WHERE parent.id=child.item_id)`,
+      )
+      .get() as { n: number }
+  ).n
+  if (notificationCount > 0) findings.push(`operator_notification.item_id=${notificationCount}`)
+  return findings
+}
+
+function reviewLandingReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column, parent, migratedColumn] of REVIEW_LANDING_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE child.${quoteIdentifier(column)} IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM ${quoteIdentifier(parent)} parent
+               WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${migratedColumn}=${count}`)
+  }
+  const amendmentFindingCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM review_finding_amendment child
+         WHERE NOT EXISTS (
+           SELECT 1 FROM review_finding finding
+           WHERE finding.review_id=child.review_id AND finding.ordinal=child.finding_ordinal
+         )`,
+      )
+      .get() as { n: number }
+  ).n
+  if (amendmentFindingCount > 0)
+    findings.push(`review_finding_amendment.review_finding_record_id=${amendmentFindingCount}`)
+  const jsonCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM landing_triage_snapshot snapshot, json_each(snapshot.review_ids) item
+         WHERE item.type <> 'integer'
+            OR NOT EXISTS (SELECT 1 FROM review WHERE review.id=item.value)`,
+      )
+      .get() as { n: number }
+  ).n
+  if (jsonCount > 0) findings.push(`landing_triage_snapshot.review_record_ids=${jsonCount}`)
+  return findings
+}
+
+function boardReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column, parent, migratedColumn] of BOARD_REFERENCES) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)} child
+           WHERE child.${quoteIdentifier(column)} IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM ${quoteIdentifier(parent)} parent
+               WHERE parent.id=child.${quoteIdentifier(column)})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count > 0) findings.push(`${table}.${migratedColumn}=${count}`)
+  }
+  const reachCount = (
+    d
+      .query(
+        `SELECT COUNT(*) AS n FROM board_reach_delivery child
+         WHERE child.message_source='local'
+           AND NOT EXISTS (SELECT 1 FROM board_message parent
+             WHERE parent.id=CAST(child.message_id AS INTEGER))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (reachCount > 0) findings.push(`board_reach_delivery.message_record_id=${reachCount}`)
+  return findings
+}
+
+function docReferenceOrphanCounts(d: Database): string[] {
+  const findings: string[] = []
+  for (const [table, column, label] of [
+    ['doc', 'parent_id', 'doc.parent_record_id'],
+    ['doc_revision', 'parent_id', 'doc_revision.parent_record_id'],
+  ] as const) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) n FROM ${table} child WHERE child.${column} IS NOT NULL AND NOT EXISTS (SELECT 1 FROM doc parent WHERE parent.id=child.${column})`,
+        )
+        .get() as { n: number }
+    ).n
+    if (count) findings.push(`${label}=${count}`)
+  }
+  const runCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM run row,json_each(row.doc_revisions) item WHERE row.doc_revisions IS NOT NULL AND (item.type<>'integer' OR NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.id=item.value))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (runCount) findings.push(`run.doc_revisions=${runCount}`)
+  const packCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM canon_pack row,json_each(row.doc_revisions) item WHERE json_type(item.value)<>'object' OR json_type(item.value,'$.revisionId')<>'integer' OR NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.id=json_extract(item.value,'$.revisionId'))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (packCount) findings.push(`canon_pack.doc_revisions=${packCount}`)
+  const filingCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM question row WHERE row.filed_as='doc' AND (row.filed_ref IS NULL OR instr(row.filed_ref,'@')=0 OR NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.record_id=substr(row.filed_ref,instr(row.filed_ref,'@')+1)))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (filingCount) findings.push(`question.filed_ref=${filingCount}`)
+  const ambiguousArtifactCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM workflow_obligation row,json_each(row.satisfied_evidence) item JOIN doc document ON document.id=CAST(json_extract(item.value,'$.value') AS INTEGER) JOIN run parent ON parent.number=CAST(json_extract(item.value,'$.value') AS INTEGER) WHERE row.satisfied_evidence IS NOT NULL AND json_extract(item.value,'$.flag')='--artifact' AND json_extract(item.value,'$.value') NOT LIKE 'doc:%'`,
+      )
+      .get() as { n: number }
+  ).n
+  if (ambiguousArtifactCount)
+    findings.push(`workflow_obligation.satisfied_evidence.ambiguous=${ambiguousArtifactCount}`)
+  const artifactCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM workflow_obligation row,json_each(row.satisfied_evidence) item WHERE row.satisfied_evidence IS NOT NULL AND json_extract(item.value,'$.flag')='--artifact' AND NOT EXISTS (SELECT 1 FROM doc document WHERE document.id=CAST(CASE WHEN json_extract(item.value,'$.value') LIKE 'doc:%' THEN substr(json_extract(item.value,'$.value'),5) ELSE json_extract(item.value,'$.value') END AS INTEGER)) AND NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.doc_id=CAST(CASE WHEN json_extract(item.value,'$.value') LIKE 'doc:%' THEN substr(json_extract(item.value,'$.value'),5) ELSE json_extract(item.value,'$.value') END AS INTEGER)) AND ((json_extract(item.value,'$.value') GLOB 'doc:[0-9]*' AND substr(json_extract(item.value,'$.value'),5) NOT GLOB '*[^0-9]*') OR (json_extract(item.value,'$.value') GLOB '[0-9]*' AND json_extract(item.value,'$.value') NOT GLOB '*[^0-9]*' AND NOT EXISTS (SELECT 1 FROM run parent WHERE parent.number=CAST(json_extract(item.value,'$.value') AS INTEGER))))`,
+      )
+      .get() as { n: number }
+  ).n
+  if (artifactCount) findings.push(`workflow_obligation.satisfied_evidence=${artifactCount}`)
+  return findings
+}
+
+function applyBackfills(d: Database, entries: JournalEntry[], folder: string): void {
+  for (const entry of entries) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
     if (backfill.trim()) executeStatements(d, backfill)
   }
+}
+
+const BACKFILL_SCHEMA_BOUNDARIES = new Set(['0117_project_uuid_key'])
+const INTEGER_PROJECT_BACKFILLS = new Set([
+  '0006_project_id_backfill',
+  '0010_landing_queue',
+  '0116_release_project_identity',
+])
+
+function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): JournalEntry[] {
+  const projectHasIntegerId = (
+    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('project') WHERE name='id'").get() as {
+      n: number
+    }
+  ).n
+  if (projectHasIntegerId > 0)
+    return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
+  const runHasIntegerId = (
+    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('run') WHERE name='id'").get() as {
+      n: number
+    }
+  ).n
+  const reviewHasIntegerId = (
+    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('review') WHERE name='id'").get() as {
+      n: number
+    }
+  ).n
+  return entries.filter(
+    (entry) =>
+      !INTEGER_PROJECT_BACKFILLS.has(entry.tag) &&
+      (runHasIntegerId > 0 || entry.tag !== '0117_project_uuid_key') &&
+      (reviewHasIntegerId > 0 || entry.tag !== '0124_run_uuid_key'),
+  )
 }
 
 const expectedSchemaHashes = new Map<string, string>()
@@ -465,9 +748,8 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   if (cached) return cached
   const d = new Database(':memory:')
   try {
-    for (const entry of migrationJournal(folder)) {
-      executeMigrationSource(d, migrationSource(entry, folder))
-    }
+    d.exec('PRAGMA foreign_keys = ON')
+    applyMigrations(d, folder)
     const hash = canonicalSchemaHash(d)
     expectedSchemaHashes.set(folder, hash)
     return hash
@@ -589,11 +871,72 @@ function adoptBaseline(d: Database, folder: string): string[] {
   return [entry.tag]
 }
 
-/** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
-export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
+function migrationOrphanCounts(d: Database, tag: string): string[] {
+  if (tag === RUN_UUID_KEY_MIGRATION) return runReferenceOrphanCounts(d)
+  if (tag === '0125_question_uuid_key') return questionReferenceOrphanCounts(d)
+  if (tag === '0126_review_landing_uuid_key') return reviewLandingReferenceOrphanCounts(d)
+  if (tag === '0127_board_uuid_key') return boardReferenceOrphanCounts(d)
+  if (tag === '0130_doc_uuid_key') return docReferenceOrphanCounts(d)
+  if (tag === LENS_PORT_UUID_KEY_MIGRATION) return lensPortReferenceOrphanCounts(d)
+  return []
+}
+
+function migrationEntityLabel(tag: string): { migration: string; parent: string } {
+  if (tag === RUN_UUID_KEY_MIGRATION) return { migration: 'run', parent: 'run' }
+  if (tag === '0125_question_uuid_key') return { migration: 'question', parent: 'question' }
+  if (tag === '0126_review_landing_uuid_key')
+    return { migration: 'review/landing', parent: 'review/landing row' }
+  if (tag === '0130_doc_uuid_key') return { migration: 'document', parent: 'document row' }
+  if (tag === LENS_PORT_UUID_KEY_MIGRATION)
+    return { migration: 'lens/port catalogue', parent: 'catalogue row' }
+  return { migration: 'board', parent: 'board row' }
+}
+
+function prepareMigrationEntry(
+  d: Database,
+  entry: JournalEntry,
+  beforeApply?: BeforeMigrationApply,
+): void {
+  if (beforeApply?.migration === entry.tag) beforeApply.action(d)
+  const orphanCounts = migrationOrphanCounts(d, entry.tag)
+  if (orphanCounts.length) {
+    const label = migrationEntityLabel(entry.tag)
+    throw new Error(
+      `refusing ${label.migration} UUID-key migration: ` +
+        `integer references have no parent ${label.parent} ` +
+        `(${orphanCounts.join(', ')})`,
+    )
+  }
+  if (entry.tag === LENS_PORT_UUID_KEY_MIGRATION) {
+    const conflicts = portStaleCopyConflicts(d)
+    if (conflicts.length) {
+      throw new Error(
+        `refusing lens/port UUID-key migration: bound store has NULL-space port rows without equivalent hosted twins (${conflicts.join(', ')})\n` +
+          `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} database migrate\``,
+      )
+    }
+  }
+}
+
+function applyMigrationRange(
+  d: Database,
+  folder: string,
+  beforeMigration?: string,
+  beforeApply?: BeforeMigrationApply,
+): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
-  d.exec('BEGIN IMMEDIATE')
+  const journal = migrationJournal(folder)
+  const boundary = beforeMigration
+    ? journal.findIndex((entry) => entry.tag === beforeMigration)
+    : journal.length
+  if (boundary < 0) throw new Error(`unknown migration boundary ${beforeMigration}`)
+  const allowedEntries = journal.slice(0, boundary)
+  const legacyAlterTable = (
+    d.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
+  ).legacy_alter_table
+  d.exec('PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = OFF')
   try {
+    d.exec('BEGIN IMMEDIATE')
     ensureSchemaLock(d)
     d.exec(`UPDATE ${SCHEMA_LOCK_TABLE} SET id = 1 WHERE id = 1`)
     const versions = adoptBaseline(d, folder)
@@ -603,15 +946,40 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
         `refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`,
       )
     }
-    for (const entry of state.pending) {
+    const allowed = new Set(allowedEntries.map((entry) => entry.tag))
+    for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
+      prepareMigrationEntry(d, entry, beforeApply)
       createMigrationsTable(d)
+      if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
+        const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
+        applyBackfills(d, allowedEntries.slice(0, boundary), folder)
+      }
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)
       versions.push(entry.tag)
     }
-    applyBackfills(d, folder)
-    stampUserVersion(d, migrationJournal(folder).length)
+    applyBackfills(d, compatibleBackfillEntries(d, allowedEntries), folder)
+    const highestApplied = journal.reduce(
+      (highest, entry) =>
+        state.pending.some((pending) => pending.tag === entry.tag)
+          ? highest
+          : Math.max(highest, entry.idx + 1),
+      0,
+    )
+    stampUserVersion(d, Math.max(readUserVersion(d), highestApplied))
+    const broken = d.query('PRAGMA foreign_key_check').all() as Array<{
+      table: string
+      rowid: number | null
+      parent: string
+      fkid: number
+    }>
+    if (broken.length) {
+      const first = broken[0]!
+      throw new Error(
+        `refusing to commit migration with a dangling foreign key: table ${first.table}, rowid ${first.rowid ?? 'NULL'}, parent ${first.parent}, fkid ${first.fkid}`,
+      )
+    }
     d.exec('COMMIT')
     return versions
   } catch (error) {
@@ -621,5 +989,26 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
       /* statement error already aborted the transaction */
     }
     throw error
+  } finally {
+    d.exec('PRAGMA foreign_keys = ON')
+    d.exec(`PRAGMA legacy_alter_table = ${legacyAlterTable}`)
   }
+}
+
+/** Apply the complete pending journal and re-run every shipped backfill. */
+export function applyMigrations(
+  d: Database,
+  folder = MIGRATIONS_FOLDER,
+  beforeApply?: BeforeMigrationApply,
+): string[] {
+  return applyMigrationRange(d, folder, undefined, beforeApply)
+}
+
+/** Apply pending entries up to, but not including, one named migration. */
+export function applyMigrationsBefore(
+  d: Database,
+  beforeMigration: string,
+  folder = MIGRATIONS_FOLDER,
+): string[] {
+  return applyMigrationRange(d, folder, beforeMigration)
 }

@@ -104,7 +104,7 @@ export type CanonEval = {
 
 export type CanonEvalRecord = {
   slug: string
-  runId: number | null
+  runId: string | null
   canonSha: string
   agent: string
   model: string | null
@@ -121,7 +121,7 @@ export type CanonEvalLatest = {
   why: string
   canon_sha: string
   at: string
-  run_id: number
+  run_record_id: number
   model: string | null
 }
 
@@ -383,10 +383,10 @@ function extraAssertions(
   reply: WorkerReply | ReviewReply | string,
   repo: string,
   mainHead: string,
-  runId: number,
+  runId: string,
 ): { pass: boolean; why: string } {
   if (ev.slug === 'refuses-main') {
-    const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as {
+    const row = db().query('SELECT branch FROM run WHERE record_id=?').get(runId) as {
       branch: string | null
     } | null
     const branch = row?.branch ?? null
@@ -430,7 +430,7 @@ function lastPassSha(slug: string, agent: string): string | null {
 
 function insertEval(row: {
   slug: string
-  runId: number
+  runId: string
   canonSha: string
   agent: string
   model: string | null
@@ -439,7 +439,7 @@ function insertEval(row: {
 }): void {
   db()
     .query(
-      `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+      `INSERT INTO canon_eval (record_id, slug, run_record_id, canon_sha, agent, model, pass, why, at)
      VALUES (?,?,?,?,?,?,?,?,?)`,
     )
     .run(
@@ -471,24 +471,24 @@ function realpathIfPresent(path: string): string {
   }
 }
 
-function recordedEvalScratchRunId(repo: string): number | null {
+function recordedEvalScratchRunId(repo: string): string | null {
   const treeRoot = join(realpathSync(repo), '.claude', 'worktrees')
   const rows = db()
-    .query(`SELECT id, worktree FROM run WHERE worktree IS NOT NULL ORDER BY id DESC`)
-    .all() as { id: number; worktree: string }[]
+    .query(`SELECT record_id, worktree FROM run WHERE worktree IS NOT NULL ORDER BY number DESC`)
+    .all() as { record_id: string; worktree: string }[]
   return (
     rows.find((row) =>
       decideEvalScratchWorktreeMatch({
         worktree: realpathIfPresent(row.worktree),
         scratchTreeRoot: treeRoot,
       }),
-    )?.id ?? null
+    )?.record_id ?? null
   )
 }
 
 async function runCanonEvalAttempt(
   input: Parameters<typeof run>[0],
-  rememberRunId: (id: number) => void,
+  rememberRunId: (id: string) => void,
 ): ReturnType<typeof run> {
   try {
     return await run(input)
@@ -499,7 +499,7 @@ async function runCanonEvalAttempt(
   }
 }
 
-async function releaseEvalOwnedScratchWorktree(repo: string, runId: number | null): Promise<void> {
+async function releaseEvalOwnedScratchWorktree(repo: string, runId: string | null): Promise<void> {
   const id = runId ?? recordedEvalScratchRunId(repo)
   if (
     decideEvalOwnedScratchRelease({
@@ -524,11 +524,11 @@ async function releaseEvalOwnedScratchWorktree(repo: string, runId: number | nul
  * successfully delivered. `probe=1` keeps that `ok` row out of routing and
  * pending-score evidence; pass/fail belongs to canon_eval.
  */
-function terminaliseJudgedProbe(runId: number): void {
+function terminaliseJudgedProbe(runId: string): void {
   const answeredAt = nowIso()
   const questions = db()
-    .query<{ id: number }, [number]>(
-      `SELECT id FROM question WHERE run_id=? AND ${questionOpenSql('question')}`,
+    .query<{ record_id: string }, [string]>(
+      `SELECT record_id FROM question WHERE run_record_id=? AND ${questionOpenSql('question')}`,
     )
     .all(runId)
   const answered = db()
@@ -536,18 +536,18 @@ function terminaliseJudgedProbe(runId: number): void {
       `UPDATE question
         SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval',
             answerer_kind=?, answer_channel=?, awaiting_operator_at=NULL, revision=revision+1
-      WHERE run_id=? AND ${questionOpenSql('question')}`,
+      WHERE run_record_id=? AND ${questionOpenSql('question')}`,
     )
     .run(answeredAt, ANSWERER_KIND_EVAL, ANSWER_CHANNEL_CLI, runId)
   const terminalised = db()
     .query(
       `UPDATE run SET status='ok', error=NULL, failure_kind=NULL
-      WHERE id=? AND status='asking' AND probe=1`,
+      WHERE record_id=? AND status='asking' AND probe=1`,
     )
     .run(runId)
   if (answered.changes || terminalised.changes) {
     auditRunMutation(runMutationActor(runId), 'canon-eval')
-    for (const question of questions) enqueueQuestionRecord(db(), question.id)
+    for (const question of questions) enqueueQuestionRecord(db(), question.record_id)
   }
 }
 
@@ -569,7 +569,7 @@ export async function runCanonEvals(opts: {
     for (const ev of selected) {
       const { pack, canonSha } = evalPack(ev, project)
       const { repo, mainHead } = createScratchRepo(ev)
-      let runId: number | null = null
+      let runId: string | null = null
       try {
         const prior = lastPassSha(ev.slug, agent)
         if (!opts.force && prior === canonSha) {
@@ -601,10 +601,10 @@ export async function runCanonEvals(opts: {
             runId = id
           },
         )
-        runId = result.id
+        runId = result.record_id
         const reply = parseEvalReply(ev, result.output, result.contract)
         const checked = ev.check(reply)
-        const extra = extraAssertions(ev, reply, repo, mainHead, result.id)
+        const extra = extraAssertions(ev, reply, repo, mainHead, result.record_id)
         const pass = checked.pass && extra.pass
         const extraWhy = extra.why === 'no extra assertion' ? null : extra.why
         const why = pass
@@ -614,15 +614,17 @@ export async function runCanonEvals(opts: {
           : [checked.pass ? null : checked.why, extra.pass ? null : extraWhy]
               .filter((part): part is string => Boolean(part))
               .join('; ')
-        const row = db().query('SELECT model, canon_sha FROM run WHERE id=?').get(result.id) as {
+        const row = db()
+          .query('SELECT model, canon_sha FROM run WHERE record_id=?')
+          .get(result.record_id) as {
           model: string | null
           canon_sha: string | null
         }
         writeTransaction(() => {
-          terminaliseJudgedProbe(result.id)
+          terminaliseJudgedProbe(result.record_id)
           insertEval({
             slug: ev.slug,
-            runId: result.id,
+            runId: result.record_id,
             canonSha: row.canon_sha ?? canonSha,
             agent: result.agent,
             model: row.model,
@@ -632,7 +634,7 @@ export async function runCanonEvals(opts: {
         })
         results.push({
           slug: ev.slug,
-          runId: result.id,
+          runId: result.record_id,
           canonSha: row.canon_sha ?? canonSha,
           agent: result.agent,
           model: row.model,
@@ -656,7 +658,7 @@ export async function runCanonEvals(opts: {
 export function latestCanonEvals(): CanonEvalLatest[] {
   const rows = db()
     .query(
-      `SELECT slug, agent, pass, why, canon_sha, at, run_id, model
+      `SELECT slug, agent, pass, why, canon_sha, at, run_record_id, model
        FROM canon_eval
       WHERE id IN (
         SELECT MAX(id) FROM canon_eval GROUP BY slug, agent
@@ -670,7 +672,7 @@ export function latestCanonEvals(): CanonEvalLatest[] {
     why: string
     canon_sha: string
     at: string
-    run_id: number
+    run_record_id: number
     model: string | null
   }[]
   return rows.map((row) => ({
@@ -683,7 +685,7 @@ export function latestCanonEvals(): CanonEvalLatest[] {
         : row.why,
     canon_sha: row.canon_sha,
     at: row.at,
-    run_id: row.run_id,
+    run_record_id: row.run_record_id,
     model: row.model,
   }))
 }

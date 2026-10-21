@@ -28,11 +28,15 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
   hubLoginTokenDirectory,
+  resolveHubDatabase,
+  type StateEnvironment,
 } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
+import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
+import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -48,6 +52,13 @@ export type SandboxRuntimeConfig = {
     allowWrite: string[]
     denyWrite: string[]
   }
+  /** SRT option that lets macOS trustd verify public TLS certificates. Default off. */
+  enableWeakerNetworkIsolation?: boolean
+}
+
+/** Pin operator state before a worker's isolated HOME changes implicit resolution. */
+export function workerStateEnvironment(environment: StateEnvironment): Record<string, string> {
+  return { HUB_DB: resolveHubDatabase(environment) }
 }
 
 export type RunSandbox = 'host' | 'srt'
@@ -93,6 +104,7 @@ export function createSandboxRuntimeConfig(
 ): SandboxRuntimeConfig {
   return {
     ...profile,
+    enableWeakerNetworkIsolation: profile.enableWeakerNetworkIsolation === true,
     filesystem: {
       ...profile.filesystem,
       denyRead: [
@@ -243,15 +255,6 @@ function linkedNodeModules(worktree: string): string[] {
   return [...found].sort()
 }
 
-function localHost(baseUrl: string): string[] {
-  if (!baseUrl) return []
-  try {
-    return [new URL(baseUrl).hostname]
-  } catch {
-    return []
-  }
-}
-
 export function readonlyLensProfile(input: {
   worktree: string
   runsDir: string
@@ -259,7 +262,7 @@ export function readonlyLensProfile(input: {
   project: Project | null
   agent: string
   path?: string
-  localBaseUrl?: string
+  baseUrl?: string | null
   nodeModuleLinks?: string[]
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
@@ -270,11 +273,7 @@ export function readonlyLensProfile(input: {
     .filter(Boolean)
     .map((path) => resolve(path))
   const vendorDomains =
-    input.agent === 'grok'
-      ? ['cli-chat-proxy.grok.com', 'auth.x.ai', 'api.x.ai']
-      : input.agent === 'qwen36-qwencli'
-        ? localHost(input.localBaseUrl ?? '')
-        : []
+    input.agent === 'grok' ? ['cli-chat-proxy.grok.com', 'auth.x.ai', 'api.x.ai'] : []
   const worktree = resolve(input.worktree)
   const runsDir = resolve(input.runsDir)
   const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
@@ -296,12 +295,15 @@ export function readonlyLensProfile(input: {
   const allowWithinDeny = candidateAllows.filter(
     (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
   )
+  const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
   return createSandboxRuntimeConfig(
     {
+      enableWeakerNetworkIsolation: isolation.enabled,
       network: {
         allowedDomains: [
           ...new Set([
             ...vendorDomains,
+            ...endpointHost(input.baseUrl),
             'localhost',
             '127.0.0.1',
             '[::1]',
@@ -374,6 +376,11 @@ export type SandboxSelection = {
   reason: string | null
 }
 
+/** Host-run reasons stay labeled as host; SRT profile notes use sandbox. */
+export function sandboxReasonPrefix(sandbox: RunSandbox): 'sandbox host' | 'sandbox' {
+  return sandbox === 'host' ? 'sandbox host' : 'sandbox'
+}
+
 export function isReadonlySandboxCandidate(input: {
   agent: string
   readsRepo: boolean
@@ -439,7 +446,7 @@ export function selectReadonlySandbox(input: {
   project: Project | null
   override?: string
   path?: string
-  localBaseUrl?: string
+  baseUrl?: string | null
   mcp?: boolean
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
@@ -462,9 +469,10 @@ export function selectReadonlySandbox(input: {
   if (kind.sandbox !== 'srt') {
     return { sandbox: kind.sandbox, profile: null, reason: kind.reason }
   }
+  const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
   return {
     sandbox: 'srt',
-    reason: kind.reason,
+    reason: isolation.enabled ? isolation.reason : kind.reason,
     profile: readonlyLensProfile({
       worktree: input.worktree!,
       runsDir: input.runsDir,
@@ -472,7 +480,7 @@ export function selectReadonlySandbox(input: {
       project: input.project,
       agent: input.agent,
       path: input.path,
-      localBaseUrl: input.localBaseUrl,
+      baseUrl: input.baseUrl,
       mcpAllowlist: input.mcpAllowlist,
       environment: input.environment,
     }),
@@ -484,6 +492,7 @@ export function sandboxRuntimeConfig(profile: SandboxRuntimeConfig): LibrarySand
   const { allowWithinDeny, ...filesystem } = profile.filesystem
   return {
     ...profile,
+    enableWeakerNetworkIsolation: profile.enableWeakerNetworkIsolation === true,
     filesystem: {
       denyRead: filesystem.denyRead,
       allowRead: allowWithinDeny,
@@ -770,11 +779,7 @@ function secureCodexConfig(configSource: string, configTarget: string): void {
     const config = withoutRegisteredOrchAskServer(readFileSync(configSource, 'utf8'))
     let descriptor: number
     try {
-      descriptor = openSync(
-        configTarget,
-        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
-        0o600,
-      )
+      descriptor = createNoFollowFile(configTarget)
     } catch {
       throw codexConfigRefusal(configTarget)
     }

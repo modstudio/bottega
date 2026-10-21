@@ -8,24 +8,24 @@ import {
   recordSpaceAccessDecision,
   recordSpaceRequestDecision,
 } from '../../shared/record-space-request.ts'
+import { listHostedNotes } from './hosted-note-list.ts'
 import {
   createHostedNote,
   getHostedNote,
   hostedNoteCounts,
-  listHostedNotes,
   mirrorHostedNotes,
   promoteHostedNote,
   reapHostedNotes,
 } from './hosted-notes.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 type Identity = { userId: string; spaceId: string; memberships: RecordSpaceMembership[] }
 type RouteContext = {
   request: Request
   url: URL
-  config: Config
+  config: HostedRouteConfig
   dependencies: Dependencies
   who: Identity
   body: Record<string, unknown> | null
@@ -38,7 +38,7 @@ const call = <T>(stub: unknown, real: T): T => {
 
 async function authenticate(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies,
 ): Promise<Identity | { refusedSpace: string } | null> {
   const authorization = request.headers.get('authorization')
@@ -74,6 +74,7 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
         actionable: url.searchParams.get('actionable') === 'true',
         updatedSince: url.searchParams.get('updatedSince') ?? undefined,
         cursor: url.searchParams.get('cursor') ?? undefined,
+        limit: url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined,
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
       }),
     )
@@ -141,7 +142,7 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
 
 export async function noteApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)

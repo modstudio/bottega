@@ -13,11 +13,105 @@ import {
   EVIDENCE_WINDOW,
   evidenceFor,
   MIN_SAMPLE,
+  meteredRouteEligibility,
   PROMPT_SIZE_BOUNDARY,
   pick,
   promptSizeBucket,
   scoreboard,
 } from './route.ts'
+
+test('metered route eligibility is an opt-in limited to read-only jobs unless named', () => {
+  const base = { billing: 'metered', routeMetered: false, writesRepo: false, name: 'metered' }
+  expect(meteredRouteEligibility(base)).toEqual({
+    eligible: false,
+    why: 'metered billing is not opted in for automatic routing',
+    mayAutoRouteNamedJob: false,
+  })
+  expect(meteredRouteEligibility({ ...base, routeMetered: true })).toEqual({
+    eligible: true,
+    why: '',
+    mayAutoRouteNamedJob: true,
+  })
+  expect(meteredRouteEligibility({ ...base, routeMetered: true, writesRepo: true })).toEqual({
+    eligible: false,
+    why: 'metered routing opt-in is limited to jobs that do not write the repository',
+    mayAutoRouteNamedJob: false,
+  })
+  expect(meteredRouteEligibility({ ...base, explicitlyNamedAgent: 'metered' })).toEqual({
+    eligible: true,
+    why: '',
+    mayAutoRouteNamedJob: true,
+  })
+})
+
+test('automatic routing excludes metered billing without opt-in while a named agent may spend it', () => {
+  const original = db().query("SELECT billing FROM agent WHERE name='codex'").get() as {
+    billing: string
+  }
+  try {
+    db().query("UPDATE agent SET billing='metered' WHERE name='codex'").run()
+    refreshAgents()
+    expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      eligible: false,
+      why: 'metered billing is not opted in for automatic routing',
+    })
+    expect(pick('summarize', 'codex')).toEqual({ agent: 'codex', reason: 'explicit --agent' })
+  } finally {
+    db().query("UPDATE agent SET billing=? WHERE name='codex'").run(original.billing)
+    refreshAgents()
+  }
+})
+
+test('metered routing opt-in admits read-only work and still excludes writer jobs', () => {
+  const original = db()
+    .query("SELECT billing,route_metered FROM agent WHERE name='codex'")
+    .get() as { billing: string; route_metered: number }
+  try {
+    db().query("UPDATE agent SET billing='metered',route_metered=1 WHERE name='codex'").run()
+    refreshAgents()
+    expect(
+      candidates('file-question').find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({
+      eligible: true,
+      why: '',
+    })
+    expect(candidates('implement').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      eligible: false,
+      why: 'metered routing opt-in is limited to jobs that do not write the repository',
+    })
+  } finally {
+    db()
+      .query("UPDATE agent SET billing=?,route_metered=? WHERE name='codex'")
+      .run(original.billing, original.route_metered)
+    refreshAgents()
+  }
+})
+
+test('a named non-opted-in ACP agent remains eligible for a review lens', () => {
+  const name = 'codex'
+  const original = db()
+    .query('SELECT billing,route_metered,transport,probed_at FROM agent WHERE name=?')
+    .get(name) as {
+    billing: string
+    route_metered: number
+    transport: string
+    probed_at: string | null
+  }
+  try {
+    db()
+      .query(
+        "UPDATE agent SET billing='metered',route_metered=0,transport='acp',probed_at=? WHERE name=?",
+      )
+      .run(new Date().toISOString(), name)
+    refreshAgents()
+    expect(pick('review-lens', name)).toEqual({ agent: name, reason: 'explicit --agent' })
+  } finally {
+    db()
+      .query('UPDATE agent SET billing=?,route_metered=?,transport=?,probed_at=? WHERE name=?')
+      .run(original.billing, original.route_metered, original.transport, original.probed_at, name)
+    refreshAgents()
+  }
+})
 
 test('the registration probe gates inline and repository jobs', () => {
   const original = db()
@@ -430,14 +524,14 @@ describe('fan-out routing exclusions', () => {
   test('a known incompatible MCP catalogue excludes grok and refuses an explicit pin', () => {
     const project = db()
       .query(
-        "INSERT INTO project (name,path,settings) VALUES ('compat-fixture','/compat-fixture','{}') RETURNING id",
+        "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'compat-fixture','/compat-fixture','{}') RETURNING record_id",
       )
-      .get() as { id: number }
+      .get() as { record_id: string }
     const run = addRun({ agent: 'codex', job: 'mcp-query', repo: 'compat-fixture' })
     db()
-      .query('UPDATE run SET project_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE record_id=?')
       .run(
-        project.id,
+        project.record_id,
         'compat-fixture',
         JSON.stringify({
           server: 'compat-fixture',
@@ -458,9 +552,9 @@ describe('fan-out routing exclusions', () => {
       startedAt: '2099-01-01T00:00:00.000Z',
     })
     db()
-      .query('UPDATE run SET project_id=?, mcp_server=?, mcp_probe=? WHERE id=?')
+      .query('UPDATE run SET project_record_id=?, mcp_server=?, mcp_probe=? WHERE record_id=?')
       .run(
-        project.id,
+        project.record_id,
         'compat-fixture',
         JSON.stringify({
           server: 'compat-fixture',
@@ -474,7 +568,7 @@ describe('fan-out routing exclusions', () => {
         newerOldEvidence,
       )
     const requiredMcp = {
-      projectId: project.id,
+      projectId: project.record_id,
       project: 'compat-fixture',
       server: 'compat-fixture',
       mode: 'require' as const,

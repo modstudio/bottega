@@ -2,20 +2,16 @@
 /** Owns the scheduled store-to-repository canon publication lifecycle. */
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import {
+  assertBranchRefMayBeCreated,
+  assertBranchRefMayBeDeleted,
+} from '../branch/branch-ref-guard.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -25,10 +21,11 @@ import { type Project, projects, stackAt } from '../project/projects.ts'
 import { createPullRequest } from '../pull-request/pr-admission.ts'
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
+import { nextRunNumber } from '../run/run-number.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
-import { inspectTreeOwnership, ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
+import { inspectTreeOwnership, readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
 import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
@@ -73,7 +70,7 @@ type PullRequest = {
   checks: ChecksState
 }
 export type CanonMirrorPort = {
-  acquireLease(runId: number): ReturnType<typeof acquireRunLease>
+  acquireLease(runId: string): ReturnType<typeof acquireRunLease>
   fetch(project: Project): void
   localBranch(project: Project, branch: string): boolean
   remoteBranchTip(project: Project, branch: string): string | null
@@ -84,7 +81,7 @@ export type CanonMirrorPort = {
     path: string
     branch: string
     base: string
-    runId: number
+    runId: string
     record(base: string): void
   }): string
   changedPaths(path: string): string[]
@@ -96,7 +93,7 @@ export type CanonMirrorPort = {
   refreshPullRequest(path: string, number: number, title: string, bodyFile: string): PullRequest
   merge(path: string, number: number, commit: string): void
   releaseBranch(project: Project, branch: string, expected: string): void
-  releaseRun(runId: number): { outcome: string; detail: string }
+  releaseRun(runId: string): { outcome: string; detail: string }
 }
 
 const WITHHELD = 'command failed: output withheld because it resembles a secret'
@@ -173,6 +170,8 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
   refTip: (p, ref) => command(p.path, ['git', 'rev-parse', ref]),
   createTree: ({ project, path, branch, base, record }) => {
     mkdirSync(dirname(path), { recursive: true })
+    assertBranchRefMayBeCreated(project.path, branch)
+    // branch-ref-guard: assertBranchRefMayBeCreated
     const child = spawn(project.path, ['git', 'worktree', 'add', '-B', branch, path, base])
     if (existsSync(path)) record(base)
     if (child.exitCode !== 0) {
@@ -240,6 +239,8 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     command(path, canonMirrorMergeArgs(number, commit))
   },
   releaseBranch: (p, branch, expected) => {
+    assertBranchRefMayBeDeleted(p.path, branch)
+    // branch-ref-guard: assertBranchRefMayBeDeleted
     command(p.path, ['git', 'update-ref', '-d', `refs/heads/${branch}`, expected])
   },
   releaseRun: (runId) => closeOutRun(runId, { intent: 'tree-remove' }),
@@ -250,24 +251,25 @@ export function canonMirrorMergeArgs(number: number, commit: string): string[] {
 }
 
 type MirrorResult = { project: string; text: string; failed: boolean }
-function createLifecycleRun(project: Project, key: string): number {
+function createLifecycleRun(project: Project, key: string): string {
   writableDb()
   const prompt = `canon mirror ${project.name}`
   return (
     db()
       .query(
         `INSERT INTO run
-     (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+     (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
       session_id,launch_cwd,launch_key,launch_base,stack,evidence_excluded,pid)
-     VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING id`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
+        nextRunNumber(db()),
         nowIso(),
         '(architect)',
         CANON_MIRROR_JOB,
         project.name,
-        project.id,
+        project.recordId,
         project.path,
         createHash('sha256').update(prompt).digest('hex').slice(0, 16),
         Buffer.byteLength(prompt),
@@ -279,11 +281,11 @@ function createLifecycleRun(project: Project, key: string): number {
         stackAt(project.path),
         'canon mirror lifecycle row; not agent execution',
         process.pid,
-      ) as { id: number }
-  ).id
+      ) as { record_id: string }
+  ).record_id
 }
 function recordTree(
-  runId: number,
+  runId: string,
   project: Project,
   path: string,
   branch: string,
@@ -292,13 +294,13 @@ function recordTree(
   writeTransaction(() => {
     db()
       .query(
-        `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,worktree_source='git' WHERE id=?`,
+        `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,worktree_source='git' WHERE record_id=?`,
       )
       .run(path, path, branch, branch, base, runId)
     recordCreatedWorktreeClaims(db(), {
       rootRunId: runId,
       runId,
-      projectId: project.id,
+      projectId: project.recordId,
       owned: true,
       path,
       head: base,
@@ -318,7 +320,7 @@ export function revisionRows(
       .query(
         `SELECT record_id revision,op,reason FROM doc_revision
        WHERE scope='canon' AND slug=? AND owner IS NULL AND (subject=? OR subject IS NULL)
-       ORDER BY CASE WHEN subject=? THEN 0 ELSE 1 END,id DESC LIMIT 1`,
+       ORDER BY CASE WHEN subject=? THEN 0 ELSE 1 END,number DESC LIMIT 1`,
       )
       .get(path, project, project) as { revision: string | null; op: string; reason: string } | null
     return {
@@ -329,13 +331,13 @@ export function revisionRows(
     }
   })
 }
-function setRunTerminal(runId: number, started: number, error?: string): void {
+function setRunTerminal(runId: string, started: number, error?: string): void {
   const safe = error ? screenCanonMirrorError(error) : null
   db()
-    .query(`UPDATE run SET status=?,latency_ms=?,exit_code=?,error=?,pid=NULL WHERE id=?`)
+    .query(`UPDATE run SET status=?,latency_ms=?,exit_code=?,error=?,pid=NULL WHERE record_id=?`)
     .run(safe ? 'failed' : 'ok', Date.now() - started, safe ? 1 : 0, safe, runId)
 }
-function releaseLifecycle(port: CanonMirrorPort, runId: number): string | null {
+function releaseLifecycle(port: CanonMirrorPort, runId: string): string | null {
   try {
     const closed = port.releaseRun(runId)
     return ['released', 'absent'].includes(closed.outcome)
@@ -357,40 +359,45 @@ function remoteOwnershipRefusal(
     ? `refusing remote branch ${branch}: expected recorded tip ${previous.tip}, found ${remoteTip ?? 'absent'}`
     : `refusing unowned remote branch ${branch} at ${remoteTip}; no prior canon-mirror publication recorded it`
 }
-function previousPublication(project: Project, branch: string, runId: number): Publication | null {
+function previousPublication(project: Project, branch: string, runId: string): Publication | null {
   return db()
-    .query<Publication, [number, string, string, number, string]>(
+    .query<Publication, [string, string, string, string]>(
       `SELECT head_commit tip,base_commit base FROM run
-     WHERE id<>? AND job=? AND branch=? AND head_commit IS NOT NULL
-       AND (project_id=? OR (project_id IS NULL AND repo=?))
-     ORDER BY id DESC LIMIT 1`,
+     WHERE record_id<>? AND job=? AND branch=? AND head_commit IS NOT NULL
+       AND project_record_id=?
+     ORDER BY number DESC LIMIT 1`,
     )
-    .get(runId, CANON_MIRROR_JOB, branch, project.id, project.name) as Publication | null
+    .get(runId, CANON_MIRROR_JOB, branch, project.recordId) as Publication | null
 }
 function releaseOwnedLeftover(project: Project, path: string, port: CanonMirrorPort): void {
   if (!existsSync(path)) return
   const owners = db()
-    .query<{ id: number }, [string, string, number, string]>(
-      `SELECT id FROM run WHERE job=? AND worktree=?
-     AND (project_id=? OR (project_id IS NULL AND repo=?)) ORDER BY id`,
+    .query<{ record_id: string }, [string, string, string]>(
+      `SELECT record_id FROM run WHERE job=? AND worktree=?
+     AND project_record_id=? ORDER BY number`,
     )
-    .all(CANON_MIRROR_JOB, path, project.id, project.name)
+    .all(CANON_MIRROR_JOB, path, project.recordId)
   const ownership = inspectTreeOwnership(
     path,
     project.path,
-    owners.map((r) => r.id),
+    owners.map((r) => r.record_id),
   )
-  let markerRun = 0
-  try {
-    markerRun = Number(readFileSync(join(path, ORCH_RUN_MARKER), 'utf8').split('\n')[0])
-  } catch {
-    markerRun = 0
-  }
-  if (ownership !== 'owned' || !owners.some((r) => r.id === markerRun)) {
+  const markerRecordId = readWorktreeMarker(path).runRecordId
+  const markerRun = markerRecordId
+    ? (db()
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+        .get(markerRecordId)?.record_id ?? null)
+    : null
+  if (
+    markerRun === null ||
+    ownership !== 'owned' ||
+    !owners.some((r) => r.record_id === markerRun)
+  ) {
     throw new Error(
       'refusing unowned canon mirror worktree .claude/worktrees/canon-mirror; it was left intact',
     )
   }
+  if (markerRun === null) return
   const closed = port.releaseRun(markerRun)
   if (!['released', 'absent'].includes(closed.outcome) || existsSync(path)) {
     throw new Error(
@@ -411,9 +418,9 @@ function proveLocalBranchOwnership(
     `refusing unowned local branch ${branch} at ${tip}; expected prior canon-mirror tip ${previous?.tip ?? 'none'} or base ${previous?.base ?? 'none'}; it was left intact`,
   )
 }
-function settleReleasedBranch(runId: number, branch: string): void {
+function settleReleasedBranch(runId: string, branch: string): void {
   writeTransaction(() => {
-    db().query('UPDATE run SET branch_kept=NULL,branch_kept_tip=NULL WHERE id=?').run(runId)
+    db().query('UPDATE run SET branch_kept=NULL,branch_kept_tip=NULL WHERE record_id=?').run(runId)
     settleClaims(db(), {
       rootRunId: runId,
       kind: 'branch',
@@ -432,15 +439,15 @@ type MirrorExecution = {
   commit: string | null
 }
 
-function recordPushedTip(runId: number, commit: string): void {
-  db().query('UPDATE run SET head_commit=? WHERE id=?').run(commit, runId)
+function recordPushedTip(runId: string, commit: string): void {
+  db().query('UPDATE run SET head_commit=? WHERE record_id=?').run(commit, runId)
 }
 
 function performMirrorPublication(input: {
   project: Project
   dryRun: boolean
   port: CanonMirrorPort
-  runId: number
+  runId: string
   key: string
   trunk: string
   branch: string

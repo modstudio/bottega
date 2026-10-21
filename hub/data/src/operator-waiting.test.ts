@@ -1,0 +1,51 @@
+import { expect, test } from 'bun:test'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { waitingByRun, waitingInboxEntries } from './operator-waiting.ts'
+
+test('maps only the exact active run named by a waiting question', () => {
+  const question = {
+    kind: 'question' as const,
+    id: 7,
+    question_record_id: '00000000-0000-4000-8000-000000000007',
+    run_number: 42,
+    run_record_id: '00000000-0000-4000-8000-000000000042',
+    project: PLATFORM_NAME.toLowerCase(),
+    task_key: 'DEV-943',
+    session_id: null,
+    question: 'Which?',
+    options: [],
+    recommendation: null,
+    why: null,
+    waiting_since: '2026-09-24T12:00:00.000Z',
+    episode: 'episode-1',
+    answer_command: `${PLATFORM_SLUG} question answer 42 --q7 --from-operator "<ruling>"`,
+  }
+  const workflow = {
+    ...question,
+    kind: 'workflow' as const,
+    id: 8,
+    run_number: null,
+    run_record_id: null,
+    session_id: 'session-1',
+  }
+  const mapped = waitingByRun(
+    [
+      { id: 41, record_id: '00000000-0000-4000-8000-000000000041' },
+      {
+        id: 99,
+        record_id: '00000000-0000-4000-8000-000000000099',
+        root_record_id: '00000000-0000-4000-8000-000000000042',
+      },
+      { id: 43, record_id: '00000000-0000-4000-8000-000000000043' },
+    ],
+    [question, workflow],
+  )
+  expect([...mapped.keys()]).toEqual(['99'])
+  expect(mapped.get('99')).toBe(question)
+
+  const second = { ...question, id: 9, question: 'And then?' }
+  expect(waitingInboxEntries([question, second, workflow])).toEqual([
+    { ...question, questionCount: 2 },
+    { ...workflow, questionCount: 1 },
+  ])
+})

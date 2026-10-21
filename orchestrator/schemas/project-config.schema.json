@@ -150,16 +150,24 @@
               },
               "method": {
                 "type": "string",
-                "enum": ["link", "clone"]
+                "enum": ["link", "clone", "install"]
               },
               "required": {
                 "type": "boolean"
+              },
+              "lockfile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "install": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": ["path", "method"],
             "additionalProperties": false
           },
-          "description": "Dependency paths placed in the writer tree before env files and create steps. link shares the main checkout's immediate entries, so writes through a link reach the main checkout; clone makes an independent copy-on-write copy."
+          "description": "Dependencies prepared in the writer tree before env files and create steps. link shares the main checkout's immediate entries, so writes through a link reach the main checkout; clone makes an independent copy-on-write copy; install runs the declared install command in the tree."
         },
         "env": {
           "type": "array",

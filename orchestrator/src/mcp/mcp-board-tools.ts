@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { readBoardNotices } from '../board/board-delivery.ts'
+import { resolveLocalBoardMessageIdentifier } from '../board/board-message-identifier.ts'
 import {
   boardAccept,
   boardAcknowledge,
@@ -15,6 +16,7 @@ import {
 } from '../board/board-operations.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
+import { db } from '../database/db.ts'
 import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 
 const ARCHITECTS_AUDIENCE_HELP =
@@ -179,7 +181,7 @@ export function registerBoardTools(server: McpServer): void {
     {
       description: `Post an addressed worker suggestion as a new architect notice. ${ARCHITECTS_AUDIENCE_HELP}`,
       inputSchema: z.object({
-        id: z.string().regex(/^[1-9]\d*$/),
+        id: z.string().min(1),
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS).optional(),
         body: z.string().min(1).max(BOARD_BODY_MAX_CHARS).optional(),
@@ -191,7 +193,7 @@ export function registerBoardTools(server: McpServer): void {
     async (input) =>
       result(
         (() => {
-          const posted = postBoardSuggestion(Number(input.id), {
+          const posted = postBoardSuggestion(resolveLocalBoardMessageIdentifier(db(), input.id), {
             audience: input.audience,
             title: input.title,
             body: input.body,
@@ -199,7 +201,7 @@ export function registerBoardTools(server: McpServer): void {
             paths: input.path,
             topics: input.topic,
           })
-          return { ...posted, id: String(posted.id) }
+          return posted
         })(),
       ),
   )
@@ -207,10 +209,10 @@ export function registerBoardTools(server: McpServer): void {
     'board_suggestion_decline',
     {
       description: 'Decline and withdraw an addressed worker suggestion.',
-      inputSchema: z.object({ id: z.string().regex(/^[1-9]\d*$/) }),
+      inputSchema: z.object({ id: z.string().min(1) }),
     },
     async ({ id }) => {
-      declineBoardSuggestion(Number(id))
+      declineBoardSuggestion(resolveLocalBoardMessageIdentifier(db(), id))
       return result({ declined: id })
     },
   )

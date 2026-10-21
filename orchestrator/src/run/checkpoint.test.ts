@@ -3,6 +3,7 @@ import { afterAll, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { git } from '../git/git-environment.ts'
 import { checkpointRun } from './checkpoint.ts'
@@ -18,7 +19,7 @@ const identity = {
 
 afterAll(() => rmSync(temporary, { recursive: true, force: true }))
 
-function fixture(name: string): { database: Database; repository: string } {
+function fixture(name: string): { database: Database; repository: string; runId: string } {
   const repository = join(temporary, name)
   mkdirSync(repository)
   git(['init', '-b', branch], repository)
@@ -38,13 +39,20 @@ function fixture(name: string): { database: Database; repository: string } {
   )
   const database = new Database(':memory:')
   applyMigrations(database)
-  return { database, repository }
+  const runId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (835,?,'2026-10-15','codex','implement','sha',1,'checkpoint','running')`,
+    )
+    .run(runId)
+  return { database, repository, runId }
 }
 
-function checkpoint(database: Database, repository: string) {
+function checkpoint(database: Database, repository: string, runId: string) {
   return checkpointRun({
     database,
-    runId: 835,
+    runId,
     worktree: repository,
     branch,
     taskKey: 'DEV-835',
@@ -54,11 +62,11 @@ function checkpoint(database: Database, repository: string) {
 }
 
 test('checkpoint commits a fresh untracked file', () => {
-  const { database, repository } = fixture('untracked')
+  const { database, repository, runId } = fixture('untracked')
   try {
     writeFileSync(join(repository, 'fresh.ts'), 'export const fresh = true\n')
 
-    expect(checkpoint(database, repository).created).toBe(true)
+    expect(checkpoint(database, repository, runId).created).toBe(true)
     expect(git(['show', '--format=', '--name-only', 'HEAD'], repository)).toBe('fresh.ts')
     expect(
       database.query<{ record_id: string }, []>('SELECT record_id FROM run_checkpoint').get()
@@ -70,12 +78,12 @@ test('checkpoint commits a fresh untracked file', () => {
 })
 
 test('checkpoint does not commit a gitignored file', () => {
-  const { database, repository } = fixture('ignored')
+  const { database, repository, runId } = fixture('ignored')
   try {
     writeFileSync(join(repository, '.gitignore'), '*.log\n')
     writeFileSync(join(repository, 'ignored.log'), 'not checkpointed\n')
 
-    expect(checkpoint(database, repository).created).toBe(true)
+    expect(checkpoint(database, repository, runId).created).toBe(true)
     expect(git(['show', '--format=', '--name-only', 'HEAD'], repository)).toBe('.gitignore')
   } finally {
     database.close()

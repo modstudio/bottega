@@ -1,6 +1,7 @@
 // concern: worktree-create
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { db } from '../database/db.ts'
 import { git, gitOk, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
@@ -10,7 +11,7 @@ import { dbNameFor, type Recipe, type RecipeDatabaseProvider, runRecipe } from '
 import { createTrackedRecipe } from '../recipe/tracked-recipe.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { resolveBase } from './worktree-caller.ts'
-import { removeFor, removeWorktree } from './worktree-remove.ts'
+import { branchTip, removeFor, removeWorktree } from './worktree-remove.ts'
 import { projectSeedPreflight } from './worktree-seed.ts'
 import { createArgv, fillArg, fillTool, type WorktreeCreate } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -22,11 +23,13 @@ export type RecordRecipeResource = (resource: {
   name: string
 }) => void
 export type ClaimRecipePort = () => number
+const LIVE_WORKTREE_OWNER_SQL =
+  "SELECT record_id,number FROM run WHERE worktree = ? AND status IN ('running','asking') LIMIT 1"
 
 export function worktreeCreateVariables(
   branchTemplate: string | undefined,
   existingBranch: string | undefined,
-  runId: number,
+  runId: string,
   key: string | undefined,
   seed: string | undefined,
   base: string,
@@ -61,7 +64,7 @@ export function leftoverRemedy(
 function runRecordedRecipe(
   worktree: Worktree,
   recipe: Recipe,
-  runId: number,
+  runId: string,
   recordRecipeResource?: RecordRecipeResource,
   claimRecipePort?: ClaimRecipePort,
 ): ReturnType<typeof runRecipe> {
@@ -83,7 +86,7 @@ function runRecordedRecipe(
   } catch (error) {
     const cleanup = recipeStarted
       ? removeFor(worktree, worktree.repoRoot, false, false, runId)
-      : removeWorktree(worktree)
+      : removeWorktree(worktree, false, branchTip(worktree.repoRoot, worktree.branch))
     settleCreateTimeBranchCleanup(worktree, runId)
     throw new Error(
       `${String((error as Error)?.message ?? error)}\n` +
@@ -95,11 +98,15 @@ function runRecordedRecipe(
 /** Mark a tree as orch-owned without asking the project to track orch metadata. */
 function markWorktree(
   path: string,
-  runId: number,
+  runId: string,
   repoRoot: string,
   source: NonNullable<Worktree['source']>,
 ): void {
-  writeFileSync(join(path, ORCH_RUN_MARKER), `${runId}\n${repoRoot}\nsource: ${source}\n`)
+  const owner = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(runId)
+  if (!owner) throw new Error(`cannot mark worktree: no run ${runId}`)
+  writeFileSync(join(path, ORCH_RUN_MARKER), `${owner.record_id}\n${repoRoot}\nsource: ${source}\n`)
   const exclude = resolve(path, git(['rev-parse', '--git-path', 'info/exclude'], path))
   const existing = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
   if (!existing.split('\n').includes(ORCH_RUN_MARKER)) {
@@ -120,7 +127,7 @@ function markWorktree(
  */
 export function attributeWorktree(
   worktree: Worktree,
-  runId: number,
+  runId: string,
   record?: RecordWorktree,
 ): void {
   try {
@@ -132,14 +139,14 @@ export function attributeWorktree(
         `unrecorded worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
     )
   }
-  const recorded = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
+  const recorded = db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
     status: string
   } | null
   if (recorded?.status === 'stopped') {
     const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
     settleCreateTimeBranchCleanup(worktree, runId)
     if (cleanup.removed) {
-      db().query('UPDATE run SET worktree=NULL WHERE id=?').run(runId)
+      db().query('UPDATE run SET worktree=NULL WHERE record_id=?').run(runId)
     }
     throw new Error(
       `run ${runId} stopped during worktree creation; ` +
@@ -197,7 +204,7 @@ export function runCreateTool(
 export function createWithTool(
   tool: WorktreeTool,
   cwd: string,
-  runId: number,
+  runId: string,
   seed?: string,
   key?: string,
   baseRef?: string,
@@ -244,7 +251,7 @@ export function createWithTool(
 function createWithToolUnlocked(
   tool: WorktreeTool,
   repoRoot: string,
-  runId: number,
+  runId: string,
   seed?: string,
   key?: string,
   baseRef?: string,
@@ -286,10 +293,7 @@ function createWithToolUnlocked(
       requestedBranch,
     )
   }
-
-  // A base is a commit, not a recipe argument. {base} is passed when the
-  // template has a slot; without one the branch is still cut at that commit
-  // after the tool returns.
+  // A base is a commit; the branch is cut there even without a {base} template slot.
   const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
   const vars = worktreeCreateVariables(
     tool.branch,
@@ -300,9 +304,8 @@ function createWithToolUnlocked(
     templateBaseRef ?? base,
   )
   const { branch, name } = vars
-  const r = runCreateTool(tool.create, vars, repoRoot, targetGitEnvironment(repoRoot))
+  const r = runGuardedCreateTool(tool, vars, repoRoot, detached, existingBranch)
   if (!r.ok) throw new Error(`the project's worktree tool failed:\n${r.out.slice(-1500)}`)
-
   /**
    * A successful project tool may still fail orch's postconditions. At that
    * point the tree, branch and database belong to the project's lifecycle and
@@ -377,12 +380,13 @@ function createWithToolUnlocked(
    * Read-only jobs never reach here: they get no worktree at all, and need
    * none.
    */
-  const owner = db()
-    .query(`SELECT id FROM run WHERE worktree = ? AND status IN ('running','asking') LIMIT 1`)
-    .get(path) as { id: number } | null
+  const owner = db().query(LIVE_WORKTREE_OWNER_SQL).get(path) as {
+    record_id: string
+    number: number
+  } | null
   if (owner) {
     throw new Error(
-      `the project's worktree tool returned ${path}, which run ${owner.id} is still using.\n` +
+      `the project's worktree tool returned ${path}, which run ${owner.number} is still using.\n` +
         `Each run needs its own tree. Check that this project's branch template makes the\n` +
         `directory unique per run — a template keyed only on a ticket collides on the second.` +
         leftover(path),
@@ -405,9 +409,7 @@ function createWithToolUnlocked(
   // diff name that floor rather than the caller checkout's incidental HEAD.
   const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
   if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
-    const dirty = gitOk(['status', '--porcelain=v1', '--untracked-files=no'], path)
-    if (baseRef && !dirty) git(['checkout', '-B', branch, base], path)
-    else gitOk(['checkout', '-B', branch], path)
+    checkoutCreatedBranch(repoRoot, path, branch, base, baseRef)
   }
   const worktree = {
     path,
@@ -426,6 +428,37 @@ function createWithToolUnlocked(
   return worktree
 }
 
+function checkoutCreatedBranch(
+  repoRoot: string,
+  path: string,
+  branch: string,
+  base: string,
+  baseRef?: string,
+): void {
+  assertBranchRefMayBeCreated(repoRoot, branch)
+  const dirty = gitOk(['status', '--porcelain=v1', '--untracked-files=no'], path)
+  if (baseRef && !dirty) {
+    // branch-ref-guard: assertBranchRefMayBeCreated
+    git(['checkout', '-B', branch, base], path)
+  } else {
+    // branch-ref-guard: assertBranchRefMayBeCreated
+    gitOk(['checkout', '-B', branch], path)
+  }
+}
+
+function runGuardedCreateTool(
+  tool: WorktreeTool,
+  vars: ReturnType<typeof worktreeCreateVariables>,
+  repoRoot: string,
+  detached: boolean,
+  existingBranch?: string,
+): ReturnType<typeof runCreateTool> {
+  if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
+    assertBranchRefMayBeCreated(repoRoot, vars.branch)
+  }
+  return runCreateTool(tool.create!, vars, repoRoot, targetGitEnvironment(repoRoot))
+}
+
 function shouldCheckoutCreatedBranch(detached: boolean, existingBranch?: string): boolean {
   return !detached && !existingBranch
 }
@@ -433,7 +466,7 @@ function shouldCheckoutCreatedBranch(detached: boolean, existingBranch?: string)
 function createWithoutCommand(
   tool: WorktreeTool,
   repoRoot: string,
-  runId: number,
+  runId: string,
   seed?: string,
   key?: string,
   baseRef?: string,
@@ -457,7 +490,12 @@ function createWithoutCommand(
       ...recipeWorktreeIdentity(tool, repoRoot, runId, key, existingBranch, requestedBranch),
       attribute: (worktree) => attributeWorktree(worktree, runId, record),
       verify: verifyFreshWorktree,
-      remove: (worktree) => removeWorktree(worktree, detached || Boolean(existingBranch)),
+      remove: (worktree) =>
+        removeWorktree(
+          worktree,
+          detached || Boolean(existingBranch),
+          branchTip(worktree.repoRoot, worktree.branch),
+        ),
       removeProvisioned: (worktree) => removeFor(worktree, repoRoot, false, false, runId),
     })
   }
@@ -482,7 +520,7 @@ const MISSING_WORKTREE_LIFECYCLE =
 
 export function createWorktree(
   cwd: string,
-  runId: number,
+  runId: string,
   baseRef?: string,
   record?: RecordWorktree,
   detached = false,
@@ -497,7 +535,7 @@ export function createWorktree(
 /** Cut a new disposable tree on a task branch that already exists. */
 export function createWorktreeForBranch(
   cwd: string,
-  runId: number,
+  runId: string,
   branch: string,
   record?: RecordWorktree,
 ): Worktree {
@@ -524,7 +562,7 @@ export function createWorktreeForBranch(
 
 function createWorktreeUnlocked(
   repoRoot: string,
-  runId: number,
+  runId: string,
   baseRef?: string,
   record?: RecordWorktree,
   detached = false,
@@ -538,6 +576,8 @@ function createWorktreeUnlocked(
   if (existsSync(path)) {
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
+  if (!detached) assertBranchRefMayBeCreated(repoRoot, branch)
+  // branch-ref-guard: assertBranchRefMayBeCreated
   git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
   const worktree = {
     path,
@@ -611,7 +651,7 @@ function createFromRecipe(
   tool: WorktreeTool,
   recipe: Recipe,
   repoRoot: string,
-  runId: number,
+  runId: string,
   key?: string,
   baseRef?: string,
   record?: RecordWorktree,
@@ -625,6 +665,9 @@ function createFromRecipe(
   if (existsSync(path)) {
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
+  if (shouldCheckoutCreatedBranch(detached, existingBranch)) {
+    assertBranchRefMayBeCreated(repoRoot, branch)
+  }
 
   // An explicit caller base wins. Without one, the base is the project's to
   // choose: two of these repos branch from origin/develop and one from local
@@ -636,6 +679,7 @@ function createFromRecipe(
       ? (gitOk(['rev-parse', recipe.baseRef], repoRoot) ?? git(['rev-parse', 'HEAD'], repoRoot))
       : git(['rev-parse', 'HEAD'], repoRoot)
 
+  // branch-ref-guard: assertBranchRefMayBeCreated
   git(
     [
       'worktree',
@@ -676,7 +720,7 @@ function createFromRecipe(
 function recipeWorktreeIdentity(
   tool: WorktreeTool,
   repoRoot: string,
-  runId: number,
+  runId: string,
   key?: string,
   existingBranch?: string,
   requestedBranch?: string,

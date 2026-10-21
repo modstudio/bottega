@@ -33,16 +33,6 @@ test('project identity refuses a project from another space', () => {
   ).toEqual({ status: 'outside-space', warnings: [] })
 })
 
-test('project identity falls back to the name result without an id', () => {
-  expect(
-    recordProjectIdentityDecision({
-      requestedName: project.name,
-      requestedSpaceId: project.spaceId,
-      projects: [project],
-    }),
-  ).toEqual({ status: 'found', project, warnings: [] })
-})
-
 test('project identity passes retired facts through for the route to interpret', () => {
   const retired = { ...project, retired: true }
   expect(

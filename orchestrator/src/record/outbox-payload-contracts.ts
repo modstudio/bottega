@@ -9,13 +9,30 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   projectId: null,
   startedByUserId: null,
   taskKey: null,
   evidenceUnvoid: null,
+  vendorInputTokens: null,
+  vendorOutputTokens: null,
+  vendorEstimatedCostUsd: null,
+  vendorCostSource: null,
+  resourceCpuMs: null,
+  resourcePeakRssBytes: null,
+  resourceSamples: null,
+  resourceSource: null,
+  provisioningKind: null,
+  provisioningMs: null,
+  provisioningPhases: null,
+  provisioningEntries: null,
+  provisioningEntriesLimited: null,
+  provisioningHostLoad: null,
+  provisioningOutcome: null,
+  provisioningEntryRoots: null,
+  testsClaimDisagrees: null,
   withheldFields: null,
 })
 
@@ -49,8 +66,8 @@ const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
   { projectId: null, projectName: null, withheldFields: null },
 )
 const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt withheldFields createdAt updatedAt',
-  { projectId: null, projectName: null, withheldFields: null },
+  'id spaceId projectId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt duplicateOfFindingId withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, duplicateOfFindingId: null, withheldFields: null },
 )
 const REVIEW_READ_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName machineId localId branch tip patchId pathSet tier note sessionId recordedAt withheldFields createdAt updatedAt',
@@ -104,6 +121,10 @@ const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = columns(
 const TEST_FLAKE_RECORD_PAYLOAD_CONTRACT = contract(TEST_FLAKE_RECORD_PAYLOAD_COLUMNS, {
   withheldFields: null,
 })
+const BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId projectId projectName machineId localId branch tip taskKey reason note archiveRef archiveExpiresAt actorSession disposedAt withheldFields createdAt updatedAt',
+  { projectId: null, taskKey: null, withheldFields: null },
+)
 
 export const OUTBOX_PAYLOAD_CONTRACTS = {
   run: RUN_RECORD_PAYLOAD_CONTRACT,
@@ -120,4 +141,5 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   landing_triage_snapshot: LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
   contention: CONTENTION_RECORD_PAYLOAD_CONTRACT,
   test_flake: TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
+  branch_disposal: BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT,
 } as const

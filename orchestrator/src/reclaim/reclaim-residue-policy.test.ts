@@ -187,30 +187,38 @@ describe('residue release decisions', () => {
   test('stale-run requires an unexcluded stale row', () => {
     expect(
       staleRunReleaseDecision({
-        runId: 7,
+        runId: '7',
         runExists: true,
         status: 'stale',
         alreadyExcluded: false,
       }).allowed,
     ).toBe(true)
     expect(
-      staleRunReleaseDecision({ runId: 7, runExists: false, status: null, alreadyExcluded: false })
+      staleRunReleaseDecision({
+        runId: '7',
+        runExists: false,
+        status: null,
+        alreadyExcluded: false,
+      }).allowed,
+    ).toBe(false)
+    expect(
+      staleRunReleaseDecision({ runId: '7', runExists: true, status: 'ok', alreadyExcluded: false })
         .allowed,
     ).toBe(false)
     expect(
-      staleRunReleaseDecision({ runId: 7, runExists: true, status: 'ok', alreadyExcluded: false })
-        .allowed,
-    ).toBe(false)
-    expect(
-      staleRunReleaseDecision({ runId: 7, runExists: true, status: 'stale', alreadyExcluded: true })
-        .allowed,
+      staleRunReleaseDecision({
+        runId: '7',
+        runExists: true,
+        status: 'stale',
+        alreadyExcluded: true,
+      }).allowed,
     ).toBe(false)
   })
 
   test('stale-run refusal names the lifecycle verb for each live status', () => {
     expect(
       staleRunReleaseDecision({
-        runId: 41,
+        runId: '41',
         runExists: true,
         status: 'running',
         alreadyExcluded: false,
@@ -221,7 +229,7 @@ describe('residue release decisions', () => {
     })
     expect(
       staleRunReleaseDecision({
-        runId: 42,
+        runId: '42',
         runExists: true,
         status: 'asking',
         alreadyExcluded: false,
@@ -232,7 +240,7 @@ describe('residue release decisions', () => {
     })
     expect(
       staleRunReleaseDecision({
-        runId: 43,
+        runId: '43',
         runExists: true,
         status: 'failed',
         alreadyExcluded: false,

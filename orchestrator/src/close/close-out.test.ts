@@ -45,9 +45,16 @@ function landingObservationResult(
   command: string[],
   observation: 'clean' | 'becomes-dirty' | 'missing-branch' | undefined,
   branch: string,
+  head: string,
   state: { statusCalls: number },
 ): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
   const args = normalizedGitArgs(command)
+  if (args[0] === 'for-each-ref') {
+    return {
+      args,
+      result: spawnResult(observation === 'missing-branch' ? '' : `${branch}\t${head}\n`),
+    }
+  }
   if (args[0] === 'status') {
     state.statusCalls++
     const dirty = observation === 'becomes-dirty' && state.statusCalls > 1
@@ -76,25 +83,36 @@ function closeOutFixture(
   const head = '1234567890abcdef1234567890abcdef12345678'
   mkdirSync(join(repo, '.git'), { recursive: true })
   mkdirSync(tree, { recursive: true })
-  writeFileSync(
-    join(tree, '.orch-run'),
-    `${ownership === 'owned' ? id : id + 1}\n${repo}\nsource: git\n`,
-  )
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  const ownerRecordId =
+    ownership === 'owned'
+      ? db()
+          .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+          .get(id)!.record_id
+      : newRecordId()
+  writeFileSync(join(tree, '.orch-run'), `${ownerRecordId}\n${repo}\nsource: git\n`)
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(
       `UPDATE run SET repo=?, cwd=?, worktree=?, branch=?, minted_branch=?,
-       base_commit=?, worktree_source='git', head_commit=?, launch_key='DEV-647' WHERE id=?`,
+       base_commit=?, worktree_source='git', head_commit=?, launch_key='DEV-647' WHERE record_id=?`,
     )
     .run(project, tree, tree, branch, branch, head, head, id)
   if (landingObservation) {
     db()
-      .query("UPDATE run SET job='landing-tree', minted_branch=NULL, session_id='owner' WHERE id=?")
+      .query(
+        "UPDATE run SET job='landing-tree', minted_branch=NULL, session_id='owner' WHERE record_id=?",
+      )
       .run(id)
   }
   const landingState = { statusCalls: 0 }
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
-    const observed = landingObservationResult(command, landingObservation, branch, landingState)
+    const observed = landingObservationResult(
+      command,
+      landingObservation,
+      branch,
+      head,
+      landingState,
+    )
     const { args } = observed
     if (observed.result) return observed.result
     if (args[0] === 'worktree' && args[1] === 'remove') {
@@ -121,7 +139,7 @@ function closeOutFixture(
 
 describe('close-out extraction decision', () => {
   test('rejects filing a child turn extraction under the conversation root', () => {
-    expect(extractionRunId({ id: 4267 })).toBe(4267)
+    expect(extractionRunId({ record_id: 'run-record-id-4267' })).toBe('run-record-id-4267')
   })
 })
 
@@ -149,7 +167,7 @@ test('a recreated released tree path survives a second close-out', () => {
       `prune after landing: ${PLATFORM_SLUG} tree branch prune --project close-out-${fixture.id} --key DEV-647`,
     )
     expect(existsSync(fixture.tree)).toBe(false)
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(fixture.id)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(fixture.id)).toEqual({
       worktree: null,
     })
 
@@ -169,11 +187,11 @@ test('a released tree clears a child turn that spells the same path differently'
   try {
     const child = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
     db()
-      .query('UPDATE run SET parent_run_id=?, worktree=? WHERE id=?')
+      .query('UPDATE run SET parent_run_record_id=?, worktree=? WHERE record_id=?')
       .run(fixture.id, `${fixture.tree}/`, child)
 
     expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(child)).toEqual({
       worktree: null,
     })
   } finally {
@@ -192,14 +210,16 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
   })
   const turnBranch = `DEV-1128-orch-${child}`
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(`close-out-${fixture.id}`) as {
+    db()
+      .query('SELECT record_id AS id FROM project WHERE name=?')
+      .get(`close-out-${fixture.id}`) as {
       id: number
     }
   ).id
   db()
     .query(
-      `UPDATE run SET repo=?,project_id=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?
-       WHERE id=?`,
+      `UPDATE run SET repo=?,project_record_id=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?
+       WHERE record_id=?`,
     )
     .run(
       `close-out-${fixture.id}`,
@@ -215,7 +235,7 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
     db()
       .query(
         `INSERT INTO resource_claim
-         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES ('${newRecordId()}', ?,?,?,'branch',?,'claimed','2026-10-06T00:00:00.000Z')`,
       )
       .run(fixture.id, child, projectId, `refs/heads/${turnBranch}`).lastInsertRowid,
@@ -241,7 +261,7 @@ test('a close-out that fails after removing the tree still clears its pointer', 
 
     expect(result.outcome).toBe('failed')
     expect(existsSync(fixture.tree)).toBe(false)
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(fixture.id)).toEqual({
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(fixture.id)).toEqual({
       worktree: null,
     })
   } finally {
@@ -252,6 +272,7 @@ test('a close-out that fails after removing the tree still clears its pointer', 
 test('present-tree recipe teardown becomes done with successful close-out', () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
+    recordId: newRecordId(),
     name: `close-out-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { recipePath: '.orch/worktree.jsonc' } },
@@ -266,14 +287,14 @@ test('present-tree recipe teardown becomes done with successful close-out', () =
   db()
     .query(
       `UPDATE run SET worktree_source='recipe',recipe_snapshot=?,resource_teardown='pending'
-       WHERE id=?`,
+       WHERE record_id=?`,
     )
     .run(snapshot, fixture.id)
   try {
     expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -286,6 +307,7 @@ test('present-tree recipe teardown becomes done with successful close-out', () =
 test('present-tree recipe teardown stays done when Git removal fails and is not repeated', () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
+    recordId: newRecordId(),
     name: `close-out-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { recipePath: '.orch/worktree.jsonc' } },
@@ -300,7 +322,7 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
   db()
     .query(
       `UPDATE run SET worktree_source='recipe',recipe_snapshot=?,resource_teardown='pending'
-       WHERE id=?`,
+       WHERE record_id=?`,
     )
     .run(snapshot, fixture.id)
   const commands: string[] = []
@@ -328,7 +350,7 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
     expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -344,12 +366,13 @@ test('present-tree recipe teardown stays done when Git removal fails and is not 
 test('present-tree inline-recipe teardown stays done when Git removal fails and is not repeated', () => {
   const fixture = closeOutFixture('owned')
   upsertProject({
+    recordId: newRecordId(),
     name: `close-out-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { recipe: { stop: 'inline-stop-marker' } } },
   })
   db()
-    .query("UPDATE run SET worktree_source='recipe',resource_teardown='pending' WHERE id=?")
+    .query("UPDATE run SET worktree_source='recipe',resource_teardown='pending' WHERE record_id=?")
     .run(fixture.id)
   const commands: string[] = []
   const head = '1234567890abcdef1234567890abcdef12345678'
@@ -376,7 +399,7 @@ test('present-tree inline-recipe teardown stays done when Git removal fails and 
     expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('failed')
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -396,7 +419,7 @@ test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
 
     expect(result).toMatchObject({
       outcome: 'held',
-      detail: 'landing tree held by session owner: tree is dirty',
+      detail: 'landing tree held by session owner: tree is dirty: hanged.ts',
     })
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {
@@ -417,7 +440,9 @@ test('clean landing-tree close-out persists held while reporting kept', () => {
     expect(lines).toHaveLength(1)
     expect(lines[0]).toStartWith(`kept run ${fixture.id} ${fixture.tree}: clean landing tree;`)
     expect(exitCodes).toEqual([])
-    expect(db().query('SELECT close_out_outcome FROM run WHERE id=?').get(fixture.id)).toEqual({
+    expect(
+      db().query('SELECT close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
+    ).toEqual({
       close_out_outcome: 'held',
     })
     expect(existsSync(fixture.tree)).toBe(true)
@@ -446,20 +471,20 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}-land`)
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(project) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(project) as { id: number }
   ).id
   db()
     .query(
-      `UPDATE run SET repo=?,project_id=?,cwd=?,worktree=?,branch=?,minted_branch=NULL,
-       session_id='owner' WHERE id=?`,
+      `UPDATE run SET repo=?,project_record_id=?,cwd=?,worktree=?,branch=?,minted_branch=NULL,
+       session_id='owner' WHERE record_id=?`,
     )
     .run(project, projectId, tree, tree, `DEV-1023-orch-${id}`, id)
   db()
     .query(
       `INSERT INTO resource_claim
-       (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+       (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
        VALUES ('${newRecordId()}', ?,?,?,'worktree',?,'claimed','2026-09-29T00:00:00.000Z')`,
     )
     .run(id, id, projectId, tree)
@@ -472,15 +497,17 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   try {
     db()
       .query(
-        `INSERT INTO landing (record_id,project,branch,status,started_at)
-         VALUES (?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
+        `INSERT INTO landing (record_id,project,project_record_id,branch,status,started_at)
+         VALUES (?,?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
-      .run(newRecordId(), project, `DEV-1023-orch-${id}`)
+      .run(newRecordId(), project, projectId, `DEV-1023-orch-${id}`)
     expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',
     })
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
+      worktree: tree,
+    })
     db().query("UPDATE landing SET status='landed',finished_at='2026-09-29T00:01:00.000Z'").run()
 
     const child = addRun({
@@ -489,28 +516,32 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
       status: 'running',
       parent: id,
     })
-    db().query('UPDATE run SET pid=NULL,agent_pid=? WHERE id=?').run(process.pid, child)
+    db().query('UPDATE run SET pid=NULL,agent_pid=? WHERE record_id=?').run(process.pid, child)
     expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
       detail: `live run(s): ${child} (running)`,
     })
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
-    db().query('UPDATE run SET pid=?,agent_pid=NULL WHERE id=?').run(process.pid, child)
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
+      worktree: tree,
+    })
+    db().query('UPDATE run SET pid=?,agent_pid=NULL WHERE record_id=?').run(process.pid, child)
     expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
       detail: `live run(s): ${child} (running)`,
     })
-    db().query("UPDATE run SET status='ok',pid=NULL WHERE id=?").run(child)
+    db().query("UPDATE run SET status='ok',pid=NULL WHERE record_id=?").run(child)
 
     const result = closeOutRun(id, { intent: 'sweep' })
 
     expect(result).toMatchObject({ outcome: 'absent' })
     expect(result.detail).toContain(`ref-guard ${project}:${id} was already absent`)
     expect(result.detail).toContain(`retained ref ${project}:${id} was already absent`)
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: null })
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
+      worktree: null,
+    })
     expect(
       db()
-        .query("SELECT state FROM resource_claim WHERE root_run_id=? AND kind='worktree'")
+        .query("SELECT state FROM resource_claim WHERE root_run_record_id=? AND kind='worktree'")
         .get(id),
     ).toEqual({ state: 'absent' })
   } finally {
@@ -526,11 +557,11 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}-land`)
   const branch = `DEV-1023-orch-${id}`
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(
       `UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,minted_branch=?,session_id='owner'
-       WHERE id=?`,
+       WHERE record_id=?`,
     )
     .run(project, tree, tree, branch, branch, id)
   let becameAlive = false
@@ -538,7 +569,7 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
     const args = normalizedGitArgs(command)
     if (!becameAlive && args[0] === 'rev-parse') {
       becameAlive = true
-      db().query('UPDATE run SET agent_pid=? WHERE id=?').run(process.pid, child)
+      db().query('UPDATE run SET agent_pid=? WHERE record_id=?').run(process.pid, child)
     }
     return spawnResult('', 1)
   }) as typeof Bun.spawnSync)
@@ -548,7 +579,9 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
       detail: `live run(s): ${child} (running)`,
     })
     expect(becameAlive).toBe(true)
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
+      worktree: tree,
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -558,7 +591,7 @@ test('clearing a keep-tree hold lets terminal close-out proceed', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose', status: 'ok' })
   db()
     .query(
-      'UPDATE run SET worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=? WHERE id=?',
+      'UPDATE run SET worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=? WHERE record_id=?',
     )
     .run(
       '/no-such-keep-tree-hold',
@@ -578,7 +611,7 @@ function absentRecipeFixture() {
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
   mkdirSync(join(repo, '.git'), { recursive: true })
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   const snapshot = JSON.stringify({
     source: { path: '.orch/worktree.jsonc', commit: 'abc' },
     recipe: {
@@ -589,7 +622,7 @@ function absentRecipeFixture() {
   db()
     .query(
       `UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,
-       worktree_source='recipe',recipe_snapshot=?,resource_teardown='pending' WHERE id=?`,
+       worktree_source='recipe',recipe_snapshot=?,resource_teardown='pending' WHERE record_id=?`,
     )
     .run(project, tree, tree, `DEV-979-orch-${id}`, `DEV-979-orch-${id}`, 'abc', snapshot, id)
   return { id, repo, tree }
@@ -610,7 +643,7 @@ test('an absent tracked-recipe tree tears resources down without Git worktree re
     expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -626,12 +659,14 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', () 
   const fixture = absentRecipeFixture()
   const commands: string[] = []
   const head = '1234567890abcdef1234567890abcdef12345678'
+  const branch = `DEV-979-orch-${fixture.id}`
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     const args = normalizedGitArgs(command)
     commands.push(args.join(' '))
     if (args.join(' ') === 'teardown-marker') return spawnResult()
     if (args.includes('--git-common-dir')) return spawnResult('.git')
     if (args.includes('--is-inside-work-tree')) return spawnResult('true')
+    if (args[0] === 'for-each-ref') return spawnResult(`${branch}\t${head}\n`)
     if (args[0] === 'update-ref' && args[1] === '-d') return spawnResult('', 1)
     if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('1')
     if (args[0] === 'rev-parse' || args[0] === 'show-ref' || args[0] === 'update-ref') {
@@ -643,7 +678,7 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', () 
     expect(closeOutRun(fixture.id, { intent: 'explicit' }).outcome).toBe('failed')
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -671,7 +706,7 @@ test('a failed absent-tree teardown stays pending and retries', () => {
     expect(first.detail).toContain('recipe teardown failed at "release resources"')
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -681,7 +716,7 @@ test('a failed absent-tree teardown stays pending and retries', () => {
     expect(attempts).toBe(2)
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -693,7 +728,7 @@ test('a failed absent-tree teardown stays pending and retries', () => {
 
 test('a legacy absent tracked-recipe tree with null teardown state is not torn down', () => {
   const fixture = absentRecipeFixture()
-  db().query('UPDATE run SET resource_teardown=NULL WHERE id=?').run(fixture.id)
+  db().query('UPDATE run SET resource_teardown=NULL WHERE record_id=?').run(fixture.id)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
@@ -711,9 +746,10 @@ test('a legacy absent tracked-recipe tree with null teardown state is not torn d
 test('an absent attached tree does not run its registered remove command', () => {
   const fixture = absentRecipeFixture()
   db()
-    .query('UPDATE run SET recipe_snapshot=NULL,worktree_source=? WHERE id=?')
+    .query('UPDATE run SET recipe_snapshot=NULL,worktree_source=? WHERE record_id=?')
     .run('git', fixture.id)
   upsertProject({
+    recordId: newRecordId(),
     name: `absent-recipe-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { remove: 'registered-remove-marker {path}' } },
@@ -734,8 +770,9 @@ test('an absent attached tree does not run its registered remove command', () =>
 
 test('an absent recipe tree runs its registered remove command without Git removal', () => {
   const fixture = absentRecipeFixture()
-  db().query('UPDATE run SET recipe_snapshot=NULL WHERE id=?').run(fixture.id)
+  db().query('UPDATE run SET recipe_snapshot=NULL WHERE record_id=?').run(fixture.id)
   upsertProject({
+    recordId: newRecordId(),
     name: `absent-recipe-${fixture.id}`,
     path: fixture.repo,
     settings: { trunk: 'main', worktree: { remove: 'registered-remove-marker {path}' } },
@@ -752,7 +789,7 @@ test('an absent recipe tree runs its registered remove command without Git remov
     expect(commands.some((command) => command.includes('worktree remove'))).toBe(false)
     expect(
       (
-        db().query('SELECT resource_teardown FROM run WHERE id=?').get(fixture.id) as {
+        db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
           resource_teardown: string | null
         }
       ).resource_teardown,
@@ -769,7 +806,9 @@ test('an absent recipe tree runs its registered remove command without Git remov
 test('a live sharer blocks absent-tree recipe teardown', () => {
   const fixture = absentRecipeFixture()
   const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-  db().query('UPDATE run SET worktree=?,pid=? WHERE id=?').run(fixture.tree, process.pid, sharer)
+  db()
+    .query('UPDATE run SET worktree=?,pid=? WHERE record_id=?')
+    .run(fixture.tree, process.pid, sharer)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
@@ -811,13 +850,13 @@ test('releasing a failover successor releases every held attempt oldest first', 
   db()
     .query(
       `UPDATE run SET worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=?
-       WHERE id=?`,
+       WHERE record_id=?`,
     )
     .run('/no-such-failover-predecessor', holdUntil, 'filed-issue coordinator', predecessor)
   db()
     .query(
-      `UPDATE run SET retry_of=?, worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=?
-       WHERE id=?`,
+      `UPDATE run SET retry_of_record_id=?, worktree=?, keep_tree=1, keep_tree_until=?, keep_tree_reason=?
+       WHERE record_id=?`,
     )
     .run(
       predecessor,

@@ -40,15 +40,15 @@ test('review record runs through Commander and records the lens output', async (
   try {
     const runId = addRun({ agent: 'codex', job: 'review-lens', lens: 'correctness' })
     writeFileSync(outputPath, JSON.stringify(reviewReply(1, 'high')))
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(outputPath, runId)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(outputPath, runId)
 
     await runReview(['review', 'record', String(runId)], output)
 
     expect(output).toEqual([expect.stringMatching(/^recorded review \d+$/)])
     expect(
       db()
-        .query<{ count: number }, [number]>(
-          'SELECT COUNT(*) AS count FROM review_lens WHERE run_id=?',
+        .query<{ count: number }, [string]>(
+          'SELECT COUNT(*) AS count FROM review_lens WHERE run_record_id=?',
         )
         .get(runId),
     ).toEqual({ count: 1 })
@@ -67,11 +67,11 @@ test('review triage runs through Commander and updates the finding', async () =>
     output,
   )
 
-  expect(output).toEqual([`triaged review ${reviewId} finding 1: accepted`])
+  expect(output).toEqual(['triaged finding 1/1: accepted'])
   expect(
     db()
-      .query<{ disposition: string | null; triaged_severity: string | null }, [number]>(
-        'SELECT disposition,triaged_severity FROM review_finding WHERE review_id=?',
+      .query<{ disposition: string | null; triaged_severity: string | null }, [string]>(
+        'SELECT disposition,triaged_severity FROM review_finding WHERE review_record_id=?',
       )
       .get(reviewId),
   ).toEqual({ disposition: 'accepted', triaged_severity: 'medium' })
@@ -85,11 +85,11 @@ test('review complete runs through Commander and completes a triaged review', as
 
   await runReview(['review', 'complete', String(reviewId)], output)
 
-  expect(output).toEqual([`completed review ${reviewId}`])
+  expect(output).toEqual(['completed review 1'])
   expect(
     db()
-      .query<{ completed_at: string | null }, [number]>(
-        'SELECT completed_at FROM review WHERE id=?',
+      .query<{ completed_at: string | null }, [string]>(
+        'SELECT completed_at FROM review WHERE record_id=?',
       )
       .get(reviewId)?.completed_at,
   ).not.toBeNull()
@@ -117,11 +117,11 @@ test('review amend runs through Commander and records the completed-review amend
     output,
   )
 
-  expect(output).toEqual([`amended review ${reviewId} finding 1: modified`])
+  expect(output).toEqual(['amended finding 1/1: modified'])
   expect(
     db()
-      .query<{ disposition: string; triaged_severity: string }, [number]>(
-        'SELECT disposition,triaged_severity FROM review_finding WHERE review_id=?',
+      .query<{ disposition: string; triaged_severity: string }, [string]>(
+        'SELECT disposition,triaged_severity FROM review_finding WHERE review_record_id=?',
       )
       .get(reviewId),
   ).toEqual({ disposition: 'modified', triaged_severity: 'medium' })
@@ -227,7 +227,12 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     git(repo, 'init', '-b', 'main')
     importRebasedHistory(repo)
 
-    upsertProject({ name: 'tier-fixture', path: repo, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'tier-fixture',
+      path: repo,
+      settings: { trunk: 'main' },
+    })
     // Deterministic fast-import identity for the fixture's trunk-to-writer range.
     // The command measures the live range, so this assertion fails if they diverge.
     const currentIdentity = {
@@ -235,30 +240,31 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
       paths: ['notes.md'],
     }
     const run = db()
-      .query<{ id: number }, [string, string, string]>(
+      .query<{ id: string }, [string, string, string]>(
         `INSERT INTO run
-           (record_id,started_at,agent,job,repo,branch,base_commit,input_tree,head_commit,
+           (record_id,number,started_at,agent,job,repo,project_record_id,branch,base_commit,input_tree,head_commit,
             prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('${newRecordId()}','2026-09-27','codex','implement','tier-fixture','DEV-992-fixture',?,?,?,
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-27','codex','implement','tier-fixture',
+                 (SELECT record_id FROM project WHERE name='tier-fixture'),'DEV-992-fixture',?,?,?,
                  'sha',1,'head','ok')
-         RETURNING id`,
+         RETURNING record_id AS id`,
       )
       .get(FIXTURE_BASE, FIXTURE_BASE, FIXTURE_WRITER_HEAD)!
     const output: string[] = []
 
     const review = db()
-      .query<{ id: number }, [string, string]>(
-        `INSERT INTO review (record_id,recorded_at,tier,patch_id,path_set)
-         VALUES ('${newRecordId()}','2026-09-28',0,?,?) RETURNING id`,
+      .query<{ record_id: string }, [string, string]>(
+        `INSERT INTO review (record_id,number,recorded_at,tier,patch_id,path_set)
+         VALUES ('${newRecordId()}',1,'2026-09-28',0,?,?) RETURNING record_id`,
       )
       .get(currentIdentity.patchId, serializePathSet(currentIdentity.paths))!
     db()
       .query(
         `INSERT INTO review_lens
-         (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
          VALUES ('${newRecordId()}',?,?,'correctness','codex','[]','[]','[]','[]')`,
       )
-      .run(review.id, run.id)
+      .run(review.record_id, run.id)
 
     await runReview(
       ['review', 'tier', 'DEV-992-fixture', '--cwd', relative(process.cwd(), repo)],
@@ -283,15 +289,30 @@ test('review tier reports stack and generic profile sources resolved for its pro
     git(repo, 'init', '-b', 'main')
     importRebasedHistory(repo)
     upsertProject({
+      recordId: newRecordId(),
       name: 'tier-profile-fixture',
       path: repo,
       stack: 'bun',
       settings: {
         trunk: 'main',
-        review: { lenses: [{ lens: 'correctness' }, { lens: 'craft' }] },
+        review: {
+          lenses: [{ lens: 'correctness', basis: 'yield evidence' }, { lens: 'craft' }],
+          secondOpinion: { lens: 'correctness', basis: 'escaped defect evidence' },
+          risk: {
+            paths: [
+              {
+                pattern: '^orchestrator/hooks/',
+                tier: 3,
+                reason: 'repository hooks',
+                basis: 'hook incident evidence',
+              },
+            ],
+            unlisted: 2,
+          },
+        },
       },
     })
-    setProfile({
+    await setProfile({
       lensId: 'correctness',
       axis: 'framework',
       name: 'bun',
@@ -300,23 +321,35 @@ test('review tier reports stack and generic profile sources resolved for its pro
       reason: 'review tier stack source fixture',
     })
     const run = db()
-      .query<{ id: number }, [string, string, string]>(
+      .query<{ id: string }, [string, string, string]>(
         `INSERT INTO run
-           (record_id,started_at,agent,job,repo,base_commit,input_tree,head_commit,
+           (record_id,number,started_at,agent,job,repo,base_commit,input_tree,head_commit,
             prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('${newRecordId()}','2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
                  'sha',1,'head','ok')
-         RETURNING id`,
+         RETURNING record_id AS id`,
       )
       .get(FIXTURE_BASE, FIXTURE_WRITER_HEAD, FIXTURE_WRITER_HEAD)!
     const output: string[] = []
 
     await runReview(['review', 'tier', String(run.id)], output)
 
-    expect(output).toContain('lens correctness  framework=stack')
+    expect(output).toContain('risk map project declaration')
+    expect(
+      output.some(
+        (line) => line.includes('risk 3:') && line.includes('basis: hook incident evidence'),
+      ),
+    ).toBeTrue()
+    expect(output).toContain('lens correctness  basis: yield evidence  framework=stack')
     expect(output).toContain('lens craft  framework=generic')
+    expect(output).toContain(
+      'second opinion correctness  basis: escaped defect evidence: dispatch this lens a second time on a different model with --distinct-from <the first run of correctness on this tip>',
+    )
     expect(output).toContain('rounds 0/3')
     expect(output).toContain('current change would start a new round')
+    const json: string[] = []
+    await runReview(['review', 'tier', String(run.id), '--json'], json)
+    expect(JSON.parse(json[0]!).riskBasis).toBe('hook incident evidence')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

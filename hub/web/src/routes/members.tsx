@@ -1,6 +1,3 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { createFileRoute, Navigate } from '@tanstack/react-router'
-import { useState } from 'react'
 import {
   activeOrganizationMember,
   cancelOrganizationInvitation,
@@ -11,13 +8,25 @@ import {
   type OrganizationRole,
   removeOrganizationMember,
   updateOrganizationMemberRole,
-} from '@/lib/hosted-organization'
-import { isHostedMode } from '@/lib/hub-mode'
-import { Button } from '@/ui/button/button'
-import { Input } from '@/ui/field/input'
-import { Select } from '@/ui/listbox/select'
-import { PageHeader, SectionTitle } from '@/ui/page-header/page-header'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
+} from '@bottega/hub-data/hosted-organization'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Button } from '@bottega/hub-ui/button'
+import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { Input } from '@bottega/hub-ui/field/input'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@bottega/hub-ui/table'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { createFileRoute, Navigate } from '@tanstack/react-router'
+import { useState } from 'react'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']
@@ -28,6 +37,9 @@ function MembersRoute() {
 }
 
 function MembersPage() {
+  const phone = useMediaQuery(PHONE_QUERY)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<OrganizationRole>('member')
   const members = useQuery({ queryKey: ['organization-members'], queryFn: listOrganizationMembers })
   const invitations = useQuery({
     queryKey: ['organization-invitations'],
@@ -50,32 +62,48 @@ function MembersPage() {
   )
   const callerRole = caller.data?.role
   const canManage = callerRole === 'owner' || callerRole === 'admin'
+  const invite = canManage ? (
+    <InviteForm
+      callerRole={callerRole}
+      email={inviteEmail}
+      role={inviteRole}
+      onEmailChange={setInviteEmail}
+      onRoleChange={setInviteRole}
+      onInvited={refresh}
+    />
+  ) : null
   return (
     <section>
       <PageHeader title="Members" subtitle="Manage this space" />
-      <SectionTitle detail={`${memberRows.length} total`}>Members</SectionTitle>
-      <MemberTable rows={memberRows} callerRole={callerRole} onChanged={refresh} />
-      <SectionTitle detail={`${invitationRows.length} pending`}>Pending invitations</SectionTitle>
+      {phone ? null : <SectionTitle detail={`${memberRows.length} total`}>Members</SectionTitle>}
+      <MemberTable rows={memberRows} callerRole={callerRole} onChanged={refresh} actions={invite} />
+      {phone ? null : (
+        <SectionTitle detail={`${invitationRows.length} pending`}>Pending invitations</SectionTitle>
+      )}
       <InvitationTable
         rows={invitationRows}
         members={memberRows}
         canManage={canManage}
         onChanged={refresh}
       />
-      {canManage ? <InviteForm callerRole={callerRole} onInvited={refresh} /> : null}
+      {phone ? null : invite}
     </section>
   )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: phone cards and unchanged desk table share mutations.
 function MemberTable({
   rows,
   callerRole,
   onChanged,
+  actions,
 }: {
   rows: OrganizationMember[]
   callerRole?: OrganizationRole
   onChanged: () => Promise<void>
+  actions?: React.ReactNode
 }) {
+  const phone = useMediaQuery(PHONE_QUERY)
   const [confirm, setConfirm] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const changeRole = useMutation({
@@ -94,6 +122,77 @@ function MemberTable({
         [id]: error instanceof Error ? error.message : String(error),
       }))
     }
+  }
+  const columns: CollectionColumn<OrganizationMember>[] = [
+    {
+      id: 'name',
+      label: 'Name',
+      phone: 'title',
+      render: (member) => member.user.name,
+    },
+    {
+      id: 'email',
+      label: 'Email',
+      phone: 'line',
+      render: (member) => member.user.email,
+    },
+    { id: 'role', label: 'Role', phone: 'aside', render: (member) => member.role },
+  ]
+  if (phone) {
+    return (
+      <Collection
+        title="Members"
+        count={rows.length}
+        actions={actions}
+        columns={columns}
+        rows={rows}
+        getKey={(member) => member.id}
+        onOpen={() => undefined}
+        rowActions={(member) => {
+          const allowed =
+            callerRole === 'owner' || (callerRole === 'admin' && member.role !== 'owner')
+          return allowed ? (
+            <div className="grid gap-2">
+              <Select
+                label={`Role for ${member.user.name}`}
+                size="sm"
+                value={member.role}
+                options={roles.map((role) => ({
+                  value: role,
+                  label: role,
+                  disabled: callerRole === 'admin' && role === 'owner',
+                }))}
+                onChange={(role) =>
+                  void act(member.id, () =>
+                    changeRole.mutateAsync({ id: member.id, role: role as OrganizationRole }),
+                  )
+                }
+              />
+              <Button
+                size="sm"
+                variant={confirm === member.id ? 'danger' : 'secondary'}
+                onClick={() =>
+                  confirm === member.id
+                    ? void act(member.id, async () => {
+                        await remove.mutateAsync(member.id)
+                        setConfirm(null)
+                      })
+                    : setConfirm(member.id)
+                }
+              >
+                {confirm === member.id ? 'Confirm remove' : 'Remove'}
+              </Button>
+              {errors[member.id] ? (
+                <p data-tone="error" className="text-sm text-status-text">
+                  {errors[member.id]}
+                </p>
+              ) : null}
+            </div>
+          ) : null
+        }}
+        empty={{ title: 'No members.' }}
+      />
+    )
   }
   return (
     <Table>
@@ -176,6 +275,7 @@ function InvitationTable({
   canManage: boolean
   onChanged: () => Promise<void>
 }) {
+  const phone = useMediaQuery(PHONE_QUERY)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const resend = useMutation({
     mutationFn: ({ email, role }: { email: string; role: OrganizationRole }) =>
@@ -193,6 +293,66 @@ function InvitationTable({
         [id]: error instanceof Error ? error.message : String(error),
       }))
     }
+  }
+  type Invitation = (typeof rows)[number]
+  const columns: CollectionColumn<Invitation>[] = [
+    { id: 'email', label: 'Email', phone: 'title', render: (invitation) => invitation.email },
+    { id: 'role', label: 'Role', phone: 'aside', render: (invitation) => invitation.role },
+    {
+      id: 'expires',
+      label: 'Expires',
+      phone: 'line',
+      render: (invitation) => new Date(invitation.expiresAt).toLocaleString(),
+    },
+    {
+      id: 'inviter',
+      label: 'Invited by',
+      phone: 'line',
+      render: (invitation) => {
+        const inviter = members.find((member) => member.userId === invitation.inviterId)?.user
+        return inviter ? `${inviter.name} (${inviter.email})` : invitation.inviterId
+      },
+    },
+  ]
+  if (phone) {
+    return (
+      <Collection
+        title="Pending invitations"
+        count={rows.length}
+        columns={columns}
+        rows={rows}
+        getKey={(invitation) => invitation.id}
+        onOpen={() => undefined}
+        rowActions={(invitation) =>
+          canManage ? (
+            <div className="grid gap-2">
+              <Button
+                size="sm"
+                onClick={() =>
+                  void act(invitation.id, () =>
+                    resend.mutateAsync({ email: invitation.email, role: invitation.role }),
+                  )
+                }
+              >
+                Resend
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void act(invitation.id, () => cancel.mutateAsync(invitation.id))}
+              >
+                Cancel
+              </Button>
+              {errors[invitation.id] ? (
+                <p data-tone="error" className="text-sm text-status-text">
+                  {errors[invitation.id]}
+                </p>
+              ) : null}
+            </div>
+          ) : null
+        }
+        empty={{ title: 'No pending invitations.' }}
+      />
+    )
   }
   return (
     <Table>
@@ -255,17 +415,23 @@ function InvitationTable({
 
 function InviteForm({
   callerRole,
+  email,
+  role,
+  onEmailChange,
+  onRoleChange,
   onInvited,
 }: {
   callerRole?: OrganizationRole
+  email: string
+  role: OrganizationRole
+  onEmailChange: (email: string) => void
+  onRoleChange: (role: OrganizationRole) => void
   onInvited: () => Promise<void>
 }) {
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<OrganizationRole>('member')
   const invite = useMutation({
     mutationFn: () => inviteOrganizationMember(email, role),
     onSuccess: async () => {
-      setEmail('')
+      onEmailChange('')
       await onInvited()
     },
   })
@@ -284,7 +450,7 @@ function InviteForm({
           type="email"
           required
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => onEmailChange(event.target.value)}
         />
       </label>
       <Select
@@ -295,7 +461,7 @@ function InviteForm({
           label: value,
           disabled: callerRole === 'admin' && value === 'owner',
         }))}
-        onChange={(value) => setRole(value as OrganizationRole)}
+        onChange={(value) => onRoleChange(value as OrganizationRole)}
       />
       <Button variant="primary" type="submit" disabled={invite.isPending}>
         Invite

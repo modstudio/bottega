@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-hydrate.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { newRecordId } from '../shared/record-id.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
@@ -137,21 +138,24 @@ describe('canon drift branch gate', () => {
     writable.exec(`
       CREATE TABLE project (
         id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, stack TEXT,
-        canon INTEGER NOT NULL DEFAULT 0, settings TEXT, retired_at TEXT
+        canon INTEGER NOT NULL DEFAULT 0, settings TEXT, retired_at TEXT,
+        record_id TEXT NOT NULL UNIQUE
       );
       CREATE TABLE doc (
-        id INTEGER PRIMARY KEY, scope TEXT NOT NULL, subject TEXT, owner TEXT,
+        record_id TEXT NOT NULL PRIMARY KEY, scope TEXT NOT NULL, subject TEXT, owner TEXT,
         project_id INTEGER, slug TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
         delivery TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        record_id TEXT, revision TEXT, audience TEXT NOT NULL DEFAULT 'technical',
-        parent_id INTEGER, position INTEGER NOT NULL DEFAULT 0
+        revision TEXT, audience TEXT NOT NULL DEFAULT 'technical',
+        parent_record_id TEXT, position INTEGER NOT NULL DEFAULT 0
       );
-      CREATE TABLE doc_revision (id INTEGER PRIMARY KEY, doc_id INTEGER, record_id TEXT);
+      CREATE TABLE doc_revision (
+        record_id TEXT NOT NULL PRIMARY KEY, doc_record_id TEXT, number INTEGER NOT NULL UNIQUE
+      );
     `)
     writable
-      .query('INSERT INTO project (name,path,canon,settings) VALUES (?,?,1,?)')
-      .run('fixture', root, JSON.stringify({ trunk: 'main' }))
-    writable.close()
+      .query('INSERT INTO project (record_id,name,path,canon,settings) VALUES (?,?,?,1,?)')
+      .run(newRecordId(), 'fixture', root, JSON.stringify({ trunk: 'main' }))
+    writable.exec('PRAGMA journal_mode = WAL; PRAGMA wal_checkpoint(TRUNCATE);')
     const digest = () => createHash('sha256').update(readFileSync(store)).digest('hex')
     const before = digest()
 
@@ -163,6 +167,7 @@ describe('canon drift branch gate', () => {
     readonly.close()
 
     expect(digest()).toBe(before)
+    writable.close()
   })
 
   test('refuses CI base metadata that differs from registered trunk', () => {

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
@@ -28,16 +29,15 @@ afterAll(async () => {
   await database?.close()
 })
 
-test('hosted write stores a sent projectId and resolves an absent one by name', async () => {
+test('hosted write stores a sent projectId and refuses a missing one', async () => {
   const tx = pgliteSql(database)
   await bindTenant(tx, identity)
   await expect(storedHubProjectId(tx, spaceId, { projectId, projectName: 'stale' })).resolves.toBe(
     projectId,
   )
-  await expect(storedHubProjectId(tx, spaceId, { projectName: 'workshop' })).resolves.toBe(
-    projectId,
+  await expect(storedHubProjectId(tx, spaceId, { projectName: 'workshop' })).rejects.toThrow(
+    `run \`${PLATFORM_SLUG} machine migrate\``,
   )
-  await expect(storedHubProjectId(tx, spaceId, { projectName: 'missing' })).resolves.toBeNull()
   const sentId = '01990000-0000-7000-8000-000000001261'
   await applyIntervalChangeInTransaction(tx, identity, {
     id: sentId,
@@ -62,36 +62,10 @@ test('hosted write stores a sent projectId and resolves an absent one by name', 
       user_id: null,
     },
   })
-  const namedId = '01990000-0000-7000-8000-000000001262'
-  await applyIntervalChangeInTransaction(tx, identity, {
-    id: namedId,
-    op: 'upsert',
-    row: {
-      id: namedId,
-      task_key: null,
-      project_name: 'workshop',
-      source: 'orch',
-      agent: null,
-      job: null,
-      start_at: '2026-10-15T12:02:00.000Z',
-      end_at: '2026-10-15T12:03:00.000Z',
-      claude_tokens: 0,
-      vendor_tokens: 0,
-      vendor_cost_usd: null,
-      ref: 'orch:identity:named',
-      via: null,
-      open: 0,
-      session_id: null,
-      user_id: null,
-    },
-  })
   const stored = await tx<{ id: string; project_id: string }[]>`
     SELECT id::text AS id, project_id::text AS project_id FROM hub_interval
-    WHERE id IN (${sentId}::uuid, ${namedId}::uuid) ORDER BY start_at`
-  expect(stored).toEqual([
-    { id: sentId, project_id: projectId },
-    { id: namedId, project_id: projectId },
-  ])
+    WHERE id=${sentId}::uuid`
+  expect(stored).toEqual([{ id: sentId, project_id: projectId }])
 })
 
 test('a supplied projectId unknown or from another space refuses the write', async () => {
@@ -114,7 +88,9 @@ test('a supplied projectId unknown or from another space refuses the write', asy
   await expect(storedHubProjectId(tx, spaceId, { projectId: foreignId })).rejects.toThrow(
     `record project ${foreignId} is absent from request space ${spaceId}`,
   )
-  await expect(storedHubProjectId(tx, spaceId, { projectName: 'missing' })).resolves.toBeNull()
+  await expect(storedHubProjectId(tx, spaceId, { projectName: 'missing' })).rejects.toThrow(
+    `run \`${PLATFORM_SLUG} machine migrate\``,
+  )
 })
 
 const at = '2026-10-15T13:00:00.000Z'

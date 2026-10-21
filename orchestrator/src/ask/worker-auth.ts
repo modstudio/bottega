@@ -1,9 +1,9 @@
 import { db } from '../database/db.ts'
 
 /** The single authentication check for tools acting as an orch worker. */
-export function authenticatedWorkerRun(runId: number, token: string): boolean {
+export function authenticatedWorkerRun(runId: string, token: string): boolean {
   if (!runId) return false
-  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as {
+  const row = db().query('SELECT run_token FROM run WHERE record_id = ?').get(runId) as {
     run_token: string | null
   } | null
   if (!row) return false
@@ -13,9 +13,9 @@ export function authenticatedWorkerRun(runId: number, token: string): boolean {
 }
 
 /** Authentication for worker actions that write outside the orchestrator. */
-export function strictlyAuthenticatedWorkerRun(runId: number, token: string): boolean {
+export function strictlyAuthenticatedWorkerRun(runId: string, token: string): boolean {
   if (!runId) return false
-  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as {
+  const row = db().query('SELECT run_token FROM run WHERE record_id = ?').get(runId) as {
     run_token: string | null
   } | null
   return row !== null && row.run_token !== null && row.run_token === token

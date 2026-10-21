@@ -83,7 +83,7 @@ describe('tracked recipe database comparison', () => {
 
 describe('idle run classification', () => {
   const row = {
-    id: 73,
+    record_id: '73',
     started_at: '2026-09-17T12:00:00.000Z',
     last_event_at: '2026-09-17T12:01:00.000Z',
     agent: 'codex',
@@ -134,13 +134,14 @@ describe('stalled run monitor condition', () => {
       startedAt: '2026-09-17T12:00:00.000Z',
     })
     db()
-      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE id=?')
+      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE record_id=?')
       .run(process.pid, 'recorded birth', '2026-09-17T12:01:00.000Z', turn)
 
     const clock = Date.parse('2026-09-17T12:30:00.000Z')
     const samples = [{ pid: process.pid, ppid: 1, pgid: process.pid, cpu: 0, state: 'S' }]
     const member = {
-      id: turn,
+      record_id: turn,
+      number: 2,
       started_at: '2026-09-17T12:00:00.000Z',
       last_event_at: '2026-09-17T12:01:00.000Z',
       agent: 'grok',
@@ -166,11 +167,11 @@ describe('stalled run monitor condition', () => {
     ])
   })
 })
-function insertAnsweredQuestion(runId: number): void {
+function insertAnsweredQuestion(runId: string): void {
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,why,answer,answered_at)
-       VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,why,answer,answered_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
     )
     .run(runId, nowIso(), 'which way?', 'needed', 'go left', nowIso())
 }
@@ -236,7 +237,7 @@ describe('operational monitor conditions', () => {
       const starts: number[] = []
       const state = terminalProcessState(
         {
-          id: 91,
+          record_id: 'run-record-id-91',
           started_at: '2026-09-17T08:00:00.000Z',
           latency_ms: 1000,
           pid: 9100,
@@ -265,8 +266,8 @@ describe('operational monitor conditions', () => {
     test('samples the process table once for every terminal run in one observation', () => {
       const first = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
       const second = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-      db().query('UPDATE run SET pid=? WHERE id=?').run(91_001, first)
-      db().query('UPDATE run SET pid=? WHERE id=?').run(91_002, second)
+      db().query('UPDATE run SET pid=? WHERE record_id=?').run(91_001, first)
+      db().query('UPDATE run SET pid=? WHERE record_id=?').run(91_002, second)
       let samples = 0
       let starts = 0
 
@@ -345,10 +346,10 @@ describe('operational monitor conditions', () => {
       status: 'stale',
       startedAt: 'not-a-date',
     })
-    db().query('UPDATE run SET latency_ms=NULL, last_event_at=NULL WHERE id=?').run(broken)
+    db().query('UPDATE run SET latency_ms=NULL, last_event_at=NULL WHERE record_id=?').run(broken)
     const insertClaim = db().query(
       `INSERT INTO resource_claim
-     (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+     (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?, ?,?,'sandbox_dir',?,'claimed',?)`,
     )
     insertClaim.run(
@@ -384,7 +385,7 @@ describe('operational monitor conditions', () => {
     const clock = Date.parse('2026-09-15T12:00:00Z')
     const claim = {
       kind: 'sandbox_dir' as const,
-      rootId: 52,
+      rootId: '52',
       allocationKeys: ['/runs/sandbox-52'],
       terminal: true,
       terminalAt: '2026-09-15T10:59:59Z',
@@ -409,7 +410,7 @@ describe('operational monitor conditions', () => {
           ascertainable: true,
           claims: [
             { ...claim, terminalAt: '2026-09-15T11:00:01Z' },
-            { ...claim, rootId: 53, terminal: false },
+            { ...claim, rootId: '53', terminal: false },
           ],
         },
         clock,
@@ -433,14 +434,14 @@ describe('operational monitor conditions', () => {
       createdAt: '2026-09-15T11:00:00Z',
       workingDir: '/trees/orch-41',
       workingDirExists: false,
-      runId: 41,
+      runId: '41',
     }
     const terminalOwner = {
       name: 'app-orch-42-default',
       createdAt: null,
       workingDir: null,
       workingDirExists: false,
-      runId: 42,
+      runId: '42',
     }
     expect(
       orphanDockerNetworkConditions(
@@ -448,8 +449,8 @@ describe('operational monitor conditions', () => {
           ascertainable: true,
           networks: [orphan, terminalOwner],
           owners: [
-            { rootId: 41, terminal: true, hasWorktree: false },
-            { rootId: 42, terminal: true, hasWorktree: false },
+            { rootId: '41', terminal: true, hasWorktree: false },
+            { rootId: '42', terminal: true, hasWorktree: false },
           ],
         },
         clock,
@@ -481,7 +482,7 @@ describe('operational monitor conditions', () => {
         {
           ascertainable: true,
           networks: [{ ...orphan, workingDirExists: true }],
-          owners: [{ rootId: 41, terminal: false, hasWorktree: true }],
+          owners: [{ rootId: '41', terminal: false, hasWorktree: true }],
         },
         clock,
       ),
@@ -501,8 +502,8 @@ describe('operational monitor conditions', () => {
     expect(
       orphanSandboxDirectoryConditions({
         ascertainable: true,
-        directories: [{ rootId: 52, path: '/runs/sandbox-52', sizeBytes: 8192 }],
-        conversations: [{ rootId: 52, terminal: true }],
+        directories: [{ rootId: '52', path: '/runs/sandbox-52', sizeBytes: 8192 }],
+        conversations: [{ rootId: '52', terminal: true }],
       }),
     ).toEqual({
       conditions: [
@@ -520,8 +521,8 @@ describe('operational monitor conditions', () => {
     expect(
       orphanSandboxDirectoryConditions({
         ascertainable: true,
-        directories: [{ rootId: 52, path: '/runs/sandbox-52', sizeBytes: 8192 }],
-        conversations: [{ rootId: 52, terminal: false }],
+        directories: [{ rootId: '52', path: '/runs/sandbox-52', sizeBytes: 8192 }],
+        conversations: [{ rootId: '52', terminal: false }],
       }),
     ).toEqual({ conditions: [], errors: [] })
     expect(
@@ -541,7 +542,7 @@ describe('operational monitor conditions', () => {
         ascertainable: true,
         entries: [
           {
-            runId: 63,
+            runId: '63',
             heading: '[folders."/trees/63"]',
             path: '/trees/63',
             pathExists: false,
@@ -572,7 +573,7 @@ describe('operational monitor conditions', () => {
         ascertainable: true,
         entries: [
           {
-            runId: 63,
+            runId: '63',
             heading: '[folders."/projects/main-checkout"]',
             path: '/projects/main-checkout',
             pathExists: false,
@@ -590,7 +591,7 @@ describe('operational monitor conditions', () => {
         ascertainable: true,
         entries: [
           {
-            runId: 63,
+            runId: '63',
             heading: '[folders."/other/checkout"]',
             path: '/other/checkout',
             pathExists: true,
@@ -608,7 +609,7 @@ describe('operational monitor conditions', () => {
         ascertainable: true,
         entries: [
           {
-            runId: 63,
+            runId: '63',
             heading: '[folders."/trees/63"]',
             path: '/trees/63',
             pathExists: false,
@@ -626,7 +627,7 @@ describe('operational monitor conditions', () => {
         ascertainable: true,
         entries: [
           {
-            runId: 63,
+            runId: '63',
             heading: '[folders.invalid]',
             path: null,
             pathExists: false,
@@ -661,7 +662,7 @@ describe('operational monitor conditions', () => {
       status: 'running',
       startedAt: '2026-09-04T20:00:00Z',
     })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(4_194_304, id)
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(4_194_304, id)
 
     expect(abandonedBootstrapConditions(clock)).toEqual([
       expect.objectContaining({
@@ -685,7 +686,7 @@ describe('operational monitor conditions', () => {
     })
     // The live worker makes this a fixture the old worker-pid detector missed.
     db()
-      .query('UPDATE run SET pid=?, agent_pid=?, output_bytes=? WHERE id=?')
+      .query('UPDATE run SET pid=?, agent_pid=?, output_bytes=? WHERE record_id=?')
       .run(process.pid, 4_194_304, 53, id)
 
     expect(deadRunningProcessConditions(clock)).toEqual([
@@ -701,7 +702,9 @@ describe('operational monitor conditions', () => {
     const [condition] = deadRunningProcessConditions(clock)
     expect(condition!.detail).toContain('elapsed 10s')
     expect(condition!.detail).toContain('output 53 bytes')
-    expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'running' })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'running',
+    })
   })
 
   test(`derives ghost interval ages from the audited ${PLATFORM_SLUG} machine reconcile command`, () => {
@@ -789,14 +792,14 @@ describe('operational monitor conditions', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     insertAnsweredQuestion(root)
     addRun({ agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2 })
-    expect(askingRuns().map((run) => run.id)).toEqual([])
+    expect(askingRuns().map((run) => run.record_id)).toEqual([])
   })
 
   test('answered asking root whose latest turn is also asking with no open question is reported once under the root id', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     insertAnsweredQuestion(root)
     addRun({ agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 2 })
-    expect(askingRuns().map((run) => run.id)).toEqual([root])
+    expect(askingRuns().map((run) => run.record_id)).toEqual([root])
   })
 
   test('an open question on a later turn suppresses the report', () => {
@@ -811,10 +814,10 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(child, nowIso(), 'and now what?')
-    expect(askingRuns().map((run) => run.id)).toEqual([])
+    expect(askingRuns().map((run) => run.record_id)).toEqual([])
   })
 
   test('does not deliver an asking-run condition after the run resumes', () => {
@@ -822,7 +825,7 @@ describe('operational monitor conditions', () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: owner })
     persistAddressedCondition('asking-run', `run:${runId}`, owner)
 
-    db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+    db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
 
     expect(claimMonitorNotices(owner)).toEqual([])
   })
@@ -849,7 +852,7 @@ describe('operational monitor conditions', () => {
     persistAddressedCondition('observation-error', 'invocation:recovered-observer', owner)
     persistAddressedCondition('stale-run', `run:${runId}`, owner)
 
-    db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+    db().query("UPDATE run SET status='ok' WHERE record_id=?").run(runId)
 
     expect(
       claimMonitorNotices(owner)

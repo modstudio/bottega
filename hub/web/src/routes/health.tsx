@@ -1,8 +1,21 @@
+import { useHealth } from '@bottega/hub-data/use-health'
+import { useWindowState } from '@bottega/hub-data/window'
+import { HostedHealth } from '@bottega/hub-views/insights/hosted-insights'
 import { createFileRoute } from '@tanstack/react-router'
-import { HostedHealth } from '@/components/hosted-insights'
-import { InsightView } from '@/components/insight-view'
-import { isHostedMode } from '@/lib/hub-mode'
+import { useState } from 'react'
+import { InsightView } from '@/routes/-insight-view'
 
 export const Route = createFileRoute('/health')({
-  component: () => (isHostedMode() ? <HostedHealth /> : <InsightView name="health" />),
+  component: HealthRoute,
 })
+
+function HealthRoute() {
+  const [machineId, setMachineId] = useState<string>()
+  const window = useWindowState()
+  const result = useHealth({ hours: window.hours, filters: window.filters }, machineId)
+  return result.kind === 'hosted' ? (
+    <HostedHealth {...result} machineId={machineId} onMachineChange={setMachineId} />
+  ) : (
+    <InsightView name="health" {...result} />
+  )
+}

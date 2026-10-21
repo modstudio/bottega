@@ -9,7 +9,7 @@ import type {
 } from './review-vocabulary.ts'
 
 export type ReviewCoverageInput = {
-  id: number
+  recordId: string
   patchId?: string | null
   pathSet?: string | null
   commitMessage?: string | null
@@ -30,7 +30,7 @@ type ReviewCarry = {
   branch: string
   tip: string
   tree: string
-  reviewId: number
+  reviewRecordId: string
   reviewedCommit: string
   reviewedTree: string
   patchId: string
@@ -57,7 +57,8 @@ export type ReviewListFilter = {
 }
 
 export type ReviewListRow = {
-  id: number
+  record_id: string
+  number: number
   recorded_at: string
   completed_at: string | null
   project: string | null
@@ -78,8 +79,8 @@ export type ReviewListRow = {
 }
 
 export type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
-  id: number
-  runId: number
+  recordId: string
+  runId: string
   agent: string
   model: string | null
   treeInspected: string | null
@@ -91,7 +92,7 @@ export type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
 }
 
 export type RunRow = {
-  id: number
+  record_id: string
   agent: string
   model: string | null
   lens: string | null
@@ -101,7 +102,7 @@ export type RunRow = {
   input_tree: string | null
   head_commit: string | null
   repo: string | null
-  project_id: number | null
+  project_record_id: string | null
   base_commit: string | null
   review_ref: string | null
   changed_paths: string | null

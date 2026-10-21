@@ -1,38 +1,62 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
-import { mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
+import {
+  decideOrphanDockerVolumeRemoval,
+  reclaimRemovedTreeDockerResources,
+  reclaimSweptDockerResources,
+} from './cleanup-sweep-docker.ts'
 
 afterEach(() => {
   mock.restore()
 })
+
+const runRecordId = (runId: string) => runId
 
 test('a project-scoped sweep previews reclamation only for that project', () => {
   const alphaRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const bravoRun = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const alphaName = `docker-alpha-${alphaRun}`
   const bravoName = `docker-bravo-${bravoRun}`
-  upsertProject({ name: alphaName, path: join(dir, alphaName), settings: {} })
-  upsertProject({ name: bravoName, path: join(dir, bravoName), settings: {} })
-  db().query('UPDATE run SET repo=? WHERE id=?').run(alphaName, alphaRun)
-  db().query('UPDATE run SET repo=? WHERE id=?').run(bravoName, bravoRun)
+  const alphaRecordId = newRecordId()
+  const bravoRecordId = newRecordId()
+  upsertProject({
+    recordId: alphaRecordId,
+    name: alphaName,
+    path: join(dir, alphaName),
+    settings: {},
+  })
+  upsertProject({
+    recordId: bravoRecordId,
+    name: bravoName,
+    path: join(dir, bravoName),
+    settings: {},
+  })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(alphaName, alphaRecordId, alphaRun)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(bravoName, bravoRecordId, bravoRun)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     commands.push(command)
     if (command.startsWith('docker ps -a --format'))
-      return result(`app-orch-${alphaRun}-web\napp-orch-${bravoRun}-web`)
+      return result(
+        `app-orch-${alphaRun}-web\t${runRecordId(alphaRun)}\napp-orch-${bravoRun}-web\t${runRecordId(bravoRun)}`,
+      )
     if (command.startsWith('docker volume ls --format')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
     return result('', 1, `unexpected command: ${command}`)
   }) as typeof Bun.spawnSync)
   const lines: string[] = []
-
   const failed = reclaimSweptDockerResources({
     dryRun: true,
     selectedProject: projectByName(alphaName)!,
@@ -47,11 +71,151 @@ test('a project-scoped sweep previews reclamation only for that project', () => 
   expect(commands.filter((command) => command.startsWith('docker '))).toHaveLength(3)
 })
 
+test('a project-scoped sweep still finds Docker resources after the project is renamed', () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const oldName = `docker-before-rename-${run}`
+  const newName = `docker-after-rename-${run}`
+  const recordId = newRecordId()
+  upsertProject({ recordId, name: oldName, path: join(dir, oldName), settings: {} })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(oldName, recordId, run)
+  db().query('UPDATE project SET name=? WHERE record_id=?').run(newName, recordId)
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    if (command.startsWith('docker ps -a --format'))
+      return result(`app-orch-${run}-web\t${runRecordId(run)}`)
+    if (command.startsWith('docker volume ls --format')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('', 1, `unexpected command: ${command}`)
+  }) as typeof Bun.spawnSync)
+  const lines: string[] = []
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: true,
+    selectedProject: projectByName(newName)!,
+    presentation: presentation(lines),
+    inventoryErrors: new Set(),
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeFalse()
+  expect(lines).toContain(`would tear down disposable Docker resources for run ${run}`)
+})
+
+test('a cross-project root and child chain retains Docker resources and fails visibly', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const alphaName = `docker-conflict-alpha-${root}`
+  const bravoName = `docker-conflict-bravo-${root}`
+  const alphaId = newRecordId()
+  const bravoId = newRecordId()
+  upsertProject({ recordId: alphaId, name: alphaName, path: join(dir, alphaName), settings: {} })
+  upsertProject({ recordId: bravoId, name: bravoName, path: join(dir, bravoName), settings: {} })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(alphaName, alphaId, root)
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
+    .run(bravoName, bravoId, child)
+  const commands: string[] = []
+  mockDockerForRun(root, commands)
+  const lines: string[] = []
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: false,
+    selectedProject: projectByName(bravoName)!,
+    presentation: presentation(lines),
+    inventoryErrors: new Set(),
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeTrue()
+  expect(commands.some((command) => command.startsWith('docker rm'))).toBeFalse()
+  expect(lines.join('\n')).toContain(
+    `conversation root ${root} project UUID ${alphaId} does not match project ${bravoId}`,
+  )
+})
+
+test('a fully NULL chain is reported instead of disappearing from project-scoped cleanup', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const name = `docker-null-chain-${root}`
+  upsertProject({ recordId: newRecordId(), name, path: join(dir, name), settings: {} })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=NULL WHERE record_id IN (?,?)')
+    .run(name, root, child)
+  const commands: string[] = []
+  mockDockerForRun(root, commands)
+  const lines: string[] = []
+
+  const failed = reclaimSweptDockerResources({
+    dryRun: false,
+    selectedProject: projectByName(name)!,
+    presentation: presentation(lines),
+    inventoryErrors: new Set(),
+    leaked: new Map(),
+  })
+
+  expect(failed).toBeTrue()
+  expect(commands.some((command) => command.startsWith('docker rm'))).toBeFalse()
+  expect(lines.join('\n')).toContain(`conversation root ${root} project UUID is missing`)
+})
+
+test('a matching root and child chain reclaims Docker resources', () => {
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const child = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+  })
+  const name = `docker-matching-chain-${root}`
+  const recordId = newRecordId()
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-matching-'))
+  mkdirSync(join(projectPath, '.git'))
+  upsertProject({ recordId, name, path: projectPath, settings: {} })
+  db()
+    .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id IN (?,?)')
+    .run(name, recordId, root, child)
+  const commands: string[] = []
+  mockDockerForRun(root, commands)
+  const lines: string[] = []
+
+  try {
+    const failed = reclaimSweptDockerResources({
+      dryRun: false,
+      selectedProject: projectByName(name)!,
+      presentation: presentation(lines),
+      inventoryErrors: new Set(),
+      leaked: new Map(),
+    })
+
+    expect(failed).toBeFalse()
+    expect(commands).toContain(`docker rm -f app-orch-${root}-web`)
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
 test('an unattributable worktree resource is an observation, not a sweep failure', () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const name = `docker-observation-${run}`
   const path = join(dir, name)
-  upsertProject({ name, path, settings: {} })
+  upsertProject({ recordId: newRecordId(), name, path, settings: {} })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     if (command.startsWith('docker ps -a --format'))
@@ -79,7 +243,7 @@ test('an orphan container pulls in its Compose network and volume while remnants
   Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
   const gone = join(projectPath, '.claude/worktrees/DEV-1053-gone')
   const name = `docker-orphan-group-${Date.now()}`
-  upsertProject({ name, path: projectPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name, path: projectPath, settings: {} })
   expect(projectByName(name)?.path).toBe(projectPath)
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
   spyOn(Bun, 'spawnSync').mockImplementation(((
@@ -149,14 +313,131 @@ test('an orphan container pulls in its Compose network and volume while remnants
   }
 })
 
+test('ship cleanup removes only the attributable Compose stack for its just-removed tree', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-shipped-'))
+  const shipped = join(projectPath, '.claude/worktrees/DEV-1435-shipped')
+  const other = join(projectPath, '.claude/worktrees/DEV-1435-other')
+  const name = `docker-shipped-group-${Date.now()}`
+  upsertProject({ recordId: newRecordId(), name, path: projectPath, settings: {} })
+  const landing = addRun({ agent: 'claude', job: 'architect', status: 'ok' })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(shipped, landing)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.endsWith('rev-parse --path-format=absolute --show-toplevel'))
+      return result(projectPath)
+    if (command.startsWith('docker ps -a --format'))
+      return result(`shipped-db\t\tshipped-stack\t${shipped}\nother-db\t\tother-stack\t${other}`)
+    return result('')
+  }) as typeof Bun.spawnSync)
+  try {
+    const cleanup = reclaimRemovedTreeDockerResources([
+      { path: shipped, removedRunIds: new Set([landing]) },
+    ])
+
+    expect(cleanup).toEqual({ removed: ['shipped-db'], kept: [], errors: [] })
+    expect(commands).toContain('docker rm -f shipped-db')
+    expect(commands).not.toContain('docker rm -f other-db')
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('ship cleanup removes a Compose volume after its run tree and containers are gone', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-shipped-volume-'))
+  const shipped = join(projectPath, '.claude/worktrees/DEV-1462-shipped')
+  upsertProject({
+    recordId: newRecordId(),
+    name: `docker-shipped-volume-${Date.now()}`,
+    path: projectPath,
+    settings: {},
+  })
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a --format')) return result('')
+    if (command.startsWith('docker volume ls --format'))
+      return result(`shipped_data\t\tshipped-stack\t${shipped}`)
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    return result('')
+  }) as typeof Bun.spawnSync)
+  try {
+    const cleanup = reclaimRemovedTreeDockerResources([{ path: shipped, removedRunIds: new Set() }])
+
+    expect(cleanup).toEqual({ removed: ['shipped_data'], kept: [], errors: [] })
+    expect(commands).toContain('docker volume rm shipped_data')
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('removed run identity is permitted but a replacement run at the same path blocks teardown', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-replacement-'))
+  const shipped = join(projectPath, '.claude/worktrees/DEV-1462-shipped')
+  upsertProject({
+    recordId: newRecordId(),
+    name: `docker-replacement-${Date.now()}`,
+    path: projectPath,
+    settings: {},
+  })
+  const removed = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const replacement = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  db()
+    .query('UPDATE run SET worktree=? WHERE record_id IN (?,?)')
+    .run(shipped, removed, replacement)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a --format'))
+      return result(`replacement-db\t\treplacement-stack\t${shipped}`)
+    return result('')
+  }) as typeof Bun.spawnSync)
+  try {
+    const cleanup = reclaimRemovedTreeDockerResources([
+      { path: shipped, removedRunIds: new Set([removed]) },
+    ])
+    expect(cleanup.removed).toEqual([])
+    expect(commands).not.toContain('docker rm -f replacement-db')
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true })
+  }
+})
+
+test('orphan volume decision covers ownership guards and dry-run output without Docker', () => {
+  expect(
+    decideOrphanDockerVolumeRemoval({
+      name: 'data',
+      attributable: true,
+      orphanWorktree: true,
+      recordedRunClaim: false,
+      dryRun: true,
+    }),
+  ).toEqual({ allowed: true, text: 'would remove orphan Docker volume data' })
+  expect(
+    decideOrphanDockerVolumeRemoval({
+      name: 'data',
+      attributable: true,
+      orphanWorktree: true,
+      recordedRunClaim: true,
+      dryRun: false,
+    }),
+  ).toEqual({
+    allowed: false,
+    reason: 'volume data is still claimed by a worktree or recorded run',
+  })
+})
+
 test('a recorded run worktree pointer keeps an otherwise orphan Compose project', () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-recorded-'))
   Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
   const gone = join(projectPath, '.claude/worktrees/DEV-1053-recorded')
   const name = `docker-recorded-group-${Date.now()}`
-  upsertProject({ name, path: projectPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name, path: projectPath, settings: {} })
   const run = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(gone, run)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(gone, run)
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
   spyOn(Bun, 'spawnSync').mockImplementation(((
     args: string[],
@@ -196,8 +477,8 @@ test('a cleanup lock failure is isolated and a later orphan group is still remov
   const secondGone = join(secondPath, '.claude/worktrees/DEV-1053-second')
   const firstName = `docker-lock-first-${Date.now()}`
   const secondName = `docker-lock-second-${Date.now()}`
-  upsertProject({ name: firstName, path: firstPath, settings: {} })
-  upsertProject({ name: secondName, path: secondPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name: firstName, path: firstPath, settings: {} })
+  upsertProject({ recordId: newRecordId(), name: secondName, path: secondPath, settings: {} })
   const commands: string[] = []
   let hidFirstGit = false
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
@@ -258,6 +539,24 @@ function presentation(lines: string[]): CleanupPresentation {
     setExitCode: () => undefined,
     keptBranchLine: () => '',
   }
+}
+
+function mockDockerForRun(runId: string, commands: string[]): void {
+  let removed = false
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    commands.push(command)
+    if (command.startsWith('docker ps -a --format'))
+      return result(removed ? '' : `app-orch-${runId}-web\t${runRecordId(runId)}`)
+    if (command.startsWith('docker volume ls --format')) return result('')
+    if (command === 'docker network ls --format {{.Name}}') return result('')
+    if (command === `docker rm -f app-orch-${runId}-web`) {
+      removed = true
+      return result('')
+    }
+    if (command.startsWith('git rev-parse --git-common-dir')) return result('.git')
+    return result('', 1, `unexpected command: ${command}`)
+  }) as typeof Bun.spawnSync)
 }
 
 function result(stdout: string, exitCode = 0, stderr = ''): ReturnType<typeof Bun.spawnSync> {

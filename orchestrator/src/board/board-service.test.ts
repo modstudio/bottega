@@ -35,7 +35,9 @@ test('local posts default acknowledgement-required messages to request', () => {
     ackRequired: true,
   })
   expect(
-    db().query('SELECT purpose,ack_required FROM board_message WHERE id=?').get(posted.id),
+    db()
+      .query('SELECT purpose,ack_required FROM board_message WHERE record_id=?')
+      .get(posted.recordId),
   ).toEqual({ purpose: 'request', ack_required: 1 })
   expect(() =>
     postNotice({
@@ -52,8 +54,8 @@ function postingProject() {
   const cwd = resolve(import.meta.dir, '../../..')
   db()
     .query(
-      `INSERT OR IGNORE INTO project(name,path,settings)
-       VALUES ('board-post-fixture',?,'{}')`,
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-post-fixture',?,'{}')`,
     )
     .run(cwd)
   const project = projectAt(cwd)
@@ -67,10 +69,11 @@ test('a created message, tag and receipt carry a version-7 record id', () => {
   const clock = Date.now()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES ('board-id-reader','claude-code','architect','test',?,'/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES ('board-id-reader','claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
     )
-    .run(PLATFORM_SLUG, new Date(clock).toISOString())
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
   const posted = postNotice(
     {
       audience: 'architects:all',
@@ -84,22 +87,24 @@ test('a created message, tag and receipt carry a version-7 record id', () => {
   )
   expect(
     db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
-      .get(posted.id)?.record_id,
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM board_message WHERE record_id=?',
+      )
+      .get(posted.recordId)?.record_id,
   ).toMatch(UUID_V7)
   expect(
     db()
-      .query<{ record_id: string }, [number]>(
-        'SELECT record_id FROM board_message_tag WHERE message_id=?',
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM board_message_tag WHERE message_record_id=?',
       )
-      .get(posted.id)?.record_id,
+      .get(posted.recordId)?.record_id,
   ).toMatch(UUID_V7)
   expect(
     db()
-      .query<{ record_id: string }, [number]>(
-        'SELECT record_id FROM board_receipt WHERE message_id=?',
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM board_receipt WHERE message_record_id=?',
       )
-      .get(posted.id)?.record_id,
+      .get(posted.recordId)?.record_id,
   ).toMatch(UUID_V7)
 })
 
@@ -107,10 +112,11 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
   const clock = Date.now()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES ('board-reader','claude-code','architect','test',?,'/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES ('board-reader','claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
     )
-    .run(PLATFORM_SLUG, new Date(clock).toISOString())
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
   const posted = postNotice(
     {
       audience: 'architects:all',
@@ -127,9 +133,9 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
   expect(notices).toHaveLength(1)
   expect(notices[0]!.text).toContain('Origin: operator')
   expect(notices[0]!.text).toContain('not an instruction, ruling, or consent')
-  expect(noticeStatus(posted.id, {}).unacknowledged).toEqual(['board-reader'])
-  acknowledgeNotice(posted.id, env, clock + 2)
-  expect(noticeStatus(posted.id, {}).unacknowledged).toEqual([])
+  expect(noticeStatus(posted.recordId, {}).unacknowledged).toEqual(['board-reader'])
+  acknowledgeNotice(posted.recordId, env, clock + 2)
+  expect(noticeStatus(posted.recordId, {}).unacknowledged).toEqual([])
 })
 
 test('recordPresence preserves first_seen after the first insert', () => {
@@ -149,18 +155,19 @@ test('local architect audiences select the posting project, all projects, or one
   const clock = Date.now()
   db()
     .query(
-      `INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-other','/tmp/board-other','{}')`,
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-other','/tmp/board-other','{}')`,
     )
     .run()
   const presence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
   )
   for (const [session, name] of [
     ['architect-a', project.name],
     ['architect-b', 'board-other'],
   ] as const)
-    presence.run(session, name, new Date(clock).toISOString(), new Date(clock).toISOString())
+    presence.run(session, name, name, new Date(clock).toISOString(), new Date(clock).toISOString())
   const env = { CLAUDE_CODE_SESSION_ID: 'architect-author' }
   const posting = postNotice(
     { audience: 'architects', title: 'Local project', body: 'A only.' },
@@ -181,16 +188,14 @@ test('local architect audiences select the posting project, all projects, or one
     cwd,
   )
   expect(
-    noticeStatus(posting.id, env, clock + 3).receipts.map((row) => row.reader_session),
+    noticeStatus(posting.recordId, env, clock + 3).receipts.map((row) => row.reader_session),
   ).toEqual(['architect-a', 'architect-author'])
-  expect(noticeStatus(all.id, env, clock + 3).receipts.map((row) => row.reader_session)).toEqual([
-    'architect-a',
-    'architect-author',
-    'architect-b',
-  ])
-  expect(noticeStatus(named.id, env, clock + 3).receipts.map((row) => row.reader_session)).toEqual([
-    'architect-b',
-  ])
+  expect(
+    noticeStatus(all.recordId, env, clock + 3).receipts.map((row) => row.reader_session),
+  ).toEqual(['architect-a', 'architect-author', 'architect-b'])
+  expect(
+    noticeStatus(named.recordId, env, clock + 3).receipts.map((row) => row.reader_session),
+  ).toEqual(['architect-b'])
   expect(() =>
     postNotice(
       { audience: 'architects:missing', title: 'Unknown', body: 'No.' },
@@ -219,12 +224,12 @@ test('a message posted after the hook start but before presence is written is du
     start + 1,
   )
   recordPresence(cwd, env, new Date(start).toISOString())
-  expect(claimPushNotices(false, env, start + 2).notices.map((notice) => notice.id)).toEqual([
-    posted.id,
+  expect(claimPushNotices(false, env, start + 2).notices.map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
   ])
 })
 
-test('operator push is unbounded and a missing session start delivers candidates with a warning', () => {
+test('operator push is unbounded and a missing session start withholds required acknowledgement', () => {
   const { cwd, project } = postingProject()
   const clock = Date.parse('2026-10-05T11:30:00.000Z')
   const operatorNotice = postNotice(
@@ -233,17 +238,19 @@ test('operator push is unbounded and a missing session start delivers candidates
     clock,
   )
   expect(claimPushNotices(false, {}, clock + 10_000)).toMatchObject({
-    notices: [{ id: operatorNotice.id }],
+    notices: [{ recordId: operatorNotice.recordId }],
     withheldOlderCount: 0,
     warning: null,
   })
 
   const insertPresence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test',?,?,NULL,?,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),?,NULL,?,?)`,
   )
   insertPresence.run(
     'missing-start-reader',
+    project.name,
     project.name,
     cwd,
     new Date(clock).toISOString(),
@@ -251,6 +258,7 @@ test('operator push is unbounded and a missing session start delivers candidates
   )
   insertPresence.run(
     'thread-author',
+    project.name,
     project.name,
     cwd,
     new Date(clock).toISOString(),
@@ -263,18 +271,28 @@ test('operator push is unbounded and a missing session start delivers candidates
     cwd,
   )
   replyToThread(
-    question.id,
+    question.recordId,
     'Reader joined.',
     { CLAUDE_CODE_SESSION_ID: 'missing-start-reader' },
     clock + 2,
     cwd,
   )
   const reply = replyToThread(
-    question.id,
+    question.recordId,
     'Author followed up.',
     { CLAUDE_CODE_SESSION_ID: 'thread-author' },
     clock + 3,
     cwd,
+  )
+  const required = postNotice(
+    {
+      audience: 'session:missing-start-reader',
+      title: 'Acknowledge this',
+      body: 'Only a reader known to be running at posting may receive this.',
+      ackRequired: true,
+    },
+    {},
+    clock + 3,
   )
   db().query('DELETE FROM presence WHERE session_id=?').run('missing-start-reader')
   const missing = claimPushNotices(
@@ -282,7 +300,8 @@ test('operator push is unbounded and a missing session start delivers candidates
     { CLAUDE_CODE_SESSION_ID: 'missing-start-reader' },
     clock + 4,
   )
-  expect(missing.notices.map((notice) => notice.id)).toContain(reply.id)
+  expect(missing.notices.map((notice) => notice.recordId)).toContain(reply.recordId)
+  expect(missing.notices.map((notice) => notice.recordId)).not.toContain(required.recordId)
   expect(missing.warning).toContain('has no recorded start')
 })
 
@@ -290,19 +309,20 @@ test('tagged project notices are not pushed to a late session even when acknowle
   const clock = Date.now() + 10_000
   const project = 'board-routing-project'
   const insertPresence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect','test',?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
   )
   const insertRun = db().query(
     `INSERT INTO run
-     (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,changed_paths)
-     VALUES (?,?,'codex','implement','sha',1,'prompt','ok',?,?)`,
+     (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,changed_paths)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','ok',?,?)`,
   )
   for (const [session, paths] of [
     ['matching-reader', ['orchestrator/src/board/board-service.ts']],
     ['other-reader', ['hub/web/src/routes/index.tsx']],
   ] as const) {
-    insertPresence.run(session, project, new Date(clock).toISOString())
+    insertPresence.run(session, project, project, new Date(clock).toISOString())
     insertRun.run(newRecordId(), new Date(clock).toISOString(), session, JSON.stringify(paths))
   }
   const posted = postNotice(
@@ -321,7 +341,7 @@ test('tagged project notices are not pushed to a late session even when acknowle
     { CLAUDE_CODE_SESSION_ID: 'matching-reader' },
     clock + 1,
   )
-  expect(matchingNotices.map((notice) => notice.id)).toEqual([posted.id])
+  expect(matchingNotices.map((notice) => notice.recordId)).toEqual([posted.recordId])
   expect(matchingNotices[0]!.text).toContain('Tags: path:orchestrator/src/board/**')
   expect(claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'other-reader' }, clock + 1)).toEqual([])
 
@@ -349,7 +369,7 @@ test('tagged project notices are not pushed to a late session even when acknowle
     clock + 1,
   )
 
-  insertPresence.run('late-reader', project, new Date(clock + 2).toISOString())
+  insertPresence.run('late-reader', project, project, new Date(clock + 2).toISOString())
   insertRun.run(
     newRecordId(),
     new Date(clock + 2).toISOString(),
@@ -359,15 +379,15 @@ test('tagged project notices are not pushed to a late session even when acknowle
   expect(
     claimPushNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3),
   ).toMatchObject({
-    notices: [{ id: standing.id }],
+    notices: [{ recordId: standing.recordId }],
     withheldOlderCount: 2,
   })
   expect(
     readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4).map(
-      (notice) => notice.id,
+      (notice) => notice.recordId,
     ),
-  ).toEqual([posted.id, required.id, standing.id])
-  expect(noticeStatus(posted.id, {}).reached).toBe(2)
+  ).toEqual([posted.recordId, required.recordId, standing.recordId])
+  expect(noticeStatus(posted.recordId, {}).reached).toBe(2)
 })
 
 test('purpose chooses the default expiry and an explicit expiry wins', () => {
@@ -383,7 +403,9 @@ test('purpose chooses the default expiry and an explicit expiry wins', () => {
       {},
       clock,
     )
-    expect(Date.parse(noticeStatus(posted.id, {}, clock).row.expires_at!)).toBe(clock + lifetime)
+    expect(Date.parse(noticeStatus(posted.recordId, {}, clock).row.expires_at!)).toBe(
+      clock + lifetime,
+    )
   }
   const explicit = postNotice(
     {
@@ -396,15 +418,17 @@ test('purpose chooses the default expiry and an explicit expiry wins', () => {
     {},
     clock,
   )
-  expect(Date.parse(noticeStatus(explicit.id, {}, clock).row.expires_at!)).toBe(clock + 123_456)
+  expect(Date.parse(noticeStatus(explicit.recordId, {}, clock).row.expires_at!)).toBe(
+    clock + 123_456,
+  )
 })
 
 test('tagged project notice reaches a matching worker chain and withholds from another', () => {
   const clock = Date.now() + 12_000
   const insertRun = db().query(
     `INSERT INTO run
-     (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,parent_run_id,turn)
-     VALUES (?,?,'codex','implement','worker-board-project','sha',1,'prompt',?,?,?,?,?) RETURNING id`,
+     (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,parent_run_record_id,turn)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','worker-board-project','sha',1,'prompt',?,?,?,?,?) RETURNING record_id AS id`,
   )
   const matching = insertRun.get(
     newRecordId(),
@@ -414,7 +438,7 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     JSON.stringify(['orchestrator/src/board/board-service.ts']),
     null,
     1,
-  ) as { id: number }
+  ) as { id: string }
   const other = insertRun.get(
     newRecordId(),
     new Date(clock).toISOString(),
@@ -423,7 +447,7 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     JSON.stringify(['hub/web/src/routes/index.tsx']),
     null,
     1,
-  ) as { id: number }
+  ) as { id: string }
   const posted = postNotice(
     {
       audience: 'project:worker-board-project',
@@ -435,8 +459,8 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     clock,
   )
   expect(posted.reached).toBe(1)
-  expect(claimRunNotices(matching.id, false, clock + 1).map((notice) => notice.id)).toEqual([
-    posted.id,
+  expect(claimRunNotices(matching.id, false, clock + 1).map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
   ])
   expect(claimRunNotices(other.id, false, clock + 1)).toEqual([])
 })
@@ -446,11 +470,11 @@ test('a run reader is pushed only notices posted after its start', () => {
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','worker-board-project','sha',1,'prompt','running','DEV-PUSH',1)
-       RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','worker-board-project','sha',1,'prompt','running','DEV-PUSH',1)
+       RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const older = postNotice(
     { audience: `run:${run.id}`, title: 'Older', body: 'Do not push this.' },
     {},
@@ -474,21 +498,22 @@ test('a run reader is pushed only notices posted after its start', () => {
   )
 
   expect(claimRunPushNotices(run.id, false, clock + 2)).toMatchObject({
-    notices: [{ id: newer.id }],
+    notices: [{ recordId: newer.recordId }],
     withheldOlderCount: 2,
   })
-  expect(claimRunNotices(run.id, false, clock + 2).map((notice) => notice.id)).toEqual([
-    older.id,
-    required.id,
-    newer.id,
+  expect(claimRunNotices(run.id, false, clock + 2).map((notice) => notice.recordId)).toEqual([
+    older.recordId,
+    required.recordId,
+    newer.recordId,
   ])
 })
 
 test('a missing run reader returns an unbounded empty selection with a warning', () => {
-  expect(claimRunPushNotices(999_999)).toEqual({
+  expect(claimRunPushNotices('missing-run-record-id')).toEqual({
     notices: [],
     withheldOlderCount: 0,
-    warning: 'Board reader run:999999 has no recorded start; no messages were withheld by age.',
+    warning:
+      'Board reader run:missing-run-record-id has no recorded start; no messages were withheld by age.',
   })
 })
 
@@ -497,8 +522,8 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
   const posting = postingProject()
   const insertRun = db().query(
     `INSERT INTO run
-     (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,parent_run_id,turn)
-     VALUES (?,?,'codex','implement','owned-run-project','sha',1,'prompt','running',?,?,?) RETURNING id`,
+     (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,parent_run_record_id,turn)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','owned-run-project','sha',1,'prompt','running',?,?,?) RETURNING record_id AS id`,
   )
   const root = insertRun.get(
     newRecordId(),
@@ -506,7 +531,7 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
     'run-owner',
     null,
     1,
-  ) as { id: number }
+  ) as { id: string }
   const turn = insertRun.get(
     newRecordId(),
     new Date(clock + 1).toISOString(),
@@ -524,7 +549,9 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
     posting.cwd,
   )
   expect(owned.reached).toBe(1)
-  expect(claimRunNotices(root.id, false, clock + 3).map((notice) => notice.id)).toContain(owned.id)
+  expect(claimRunNotices(root.id, false, clock + 3).map((notice) => notice.recordId)).toContain(
+    owned.recordId,
+  )
 
   const before = (db().query('SELECT COUNT(*) count FROM board_message').get() as { count: number })
     .count
@@ -555,10 +582,10 @@ test('an unregistered live chain resolves for run and machine but not project au
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement',NULL,'sha',1,'prompt','asking',1) RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',NULL,'sha',1,'prompt','asking',1) RETURNING record_id AS id`,
     )
-    .get(new Date(clock).toISOString()) as { id: number }
+    .get(new Date(clock).toISOString()) as { id: string }
   const byMachine = postNotice(
     { audience: `machine:${hostname()}`, title: 'Machine notice', body: 'Includes local runs.' },
     {},
@@ -579,11 +606,11 @@ test('an unregistered live chain resolves for run and machine but not project au
     {},
     clock + 4,
   )
-  const ids = claimRunNotices(run.id, false, clock + 5).map((notice) => notice.id)
-  expect(ids).toContain(byMachine.id)
-  expect(ids).toContain(byRun.id)
-  expect(ids).not.toContain(byProject.id)
-  expect(ids).not.toContain(byWorkers.id)
+  const ids = claimRunNotices(run.id, false, clock + 5).map((notice) => notice.recordId)
+  expect(ids).toContain(byMachine.recordId)
+  expect(ids).toContain(byRun.recordId)
+  expect(ids).not.toContain(byProject.recordId)
+  expect(ids).not.toContain(byWorkers.recordId)
 })
 
 test('an untagged notice infers no tags', () => {
@@ -596,9 +623,9 @@ test('an untagged notice infers no tags', () => {
     {},
     Date.now() + 15_000,
   )
-  expect(db().query('SELECT * FROM board_message_tag WHERE message_id=?').all(posted.id)).toEqual(
-    [],
-  )
+  expect(
+    db().query('SELECT * FROM board_message_tag WHERE message_record_id=?').all(posted.recordId),
+  ).toEqual([])
 })
 
 test('duplicate notices require the same order-independent sender tag set', () => {
@@ -624,7 +651,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
     {},
     clock + 1,
   )
-  expect(retargeted.id).not.toBe(first.id)
+  expect(retargeted.recordId).not.toBe(first.recordId)
   expect(retargeted.reached).toBe(0)
   expect(retargeted.dropped).toBeFalse()
 
@@ -634,7 +661,8 @@ test('duplicate notices require the same order-independent sender tag set', () =
     clock + 2,
   )
   expect(duplicate).toEqual({
-    id: retargeted.id,
+    recordId: retargeted.recordId,
+    number: retargeted.number,
     dropped: true,
     reached: 0,
     warning: 'reached no live session; re-address it or wait for a matching session',
@@ -649,7 +677,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
     {},
     clock + 3,
   )
-  expect(request.id).not.toBe(retargeted.id)
+  expect(request.recordId).not.toBe(retargeted.recordId)
   expect(request.dropped).toBeFalse()
 })
 
@@ -658,7 +686,7 @@ test('plain architects duplicate identity includes the posting project', () => {
   const firstCwd = resolve(import.meta.dir)
   const secondCwd = resolve(import.meta.dir, '../record')
   const project = db().query(
-    `INSERT OR IGNORE INTO project(name,path,settings) VALUES (?,?, '{}') RETURNING id`,
+    `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?, '{}') RETURNING record_id`,
   )
   project.get('board-duplicate-a', firstCwd)
   project.get('board-duplicate-b', secondCwd)
@@ -668,11 +696,11 @@ test('plain architects duplicate identity includes the posting project', () => {
   const second = postNotice(input, env, clock + 1, secondCwd)
   expect(first.dropped).toBeFalse()
   expect(second.dropped).toBeFalse()
-  expect(second.id).not.toBe(first.id)
+  expect(second.recordId).not.toBe(first.recordId)
   expect(
     db()
-      .query('SELECT author_project FROM board_message WHERE id IN (?,?) ORDER BY id')
-      .all(first.id, second.id),
+      .query('SELECT author_project FROM board_message WHERE record_id IN (?,?) ORDER BY record_id')
+      .all(first.recordId, second.recordId),
   ).toEqual([{ author_project: 'board-duplicate-a' }, { author_project: 'board-duplicate-b' }])
 })
 
@@ -680,19 +708,24 @@ test('a session-start notice reduced to a title or count stays unread until a st
   const clock = Date.now() + 20_000
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES ('budget-reader','claude-code','architect','test',?,'/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES ('budget-reader','claude-code','architect','test',?,
+               (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
     )
-    .run(PLATFORM_SLUG, new Date(clock).toISOString())
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
   const posted = postNotice(
     { audience: `session:budget-reader`, title: 'Droppable', body: 'budget text '.repeat(20) },
     {},
     clock,
   )
   const env = { CLAUDE_CODE_SESSION_ID: 'budget-reader' }
-  expect(claimNotices(false, env, clock + 1).map((notice) => notice.id)).toEqual([posted.id])
+  expect(claimNotices(false, env, clock + 1).map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
+  ])
   // The hook does not stamp ids represented only by its title or fallback count.
-  expect(readNotices(false, env, clock + 2).map((notice) => notice.id)).toEqual([posted.id])
+  expect(readNotices(false, env, clock + 2).map((notice) => notice.recordId)).toEqual([
+    posted.recordId,
+  ])
 })
 
 test('architect post resolves its current cwd project, refreshes stale presence, and snapshots it', () => {
@@ -701,8 +734,8 @@ test('architect post resolves its current cwd project, refreshes stale presence,
   const posting = postingProject()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-       VALUES (?,'claude-code','architect','test','stale-project','/tmp',NULL,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES (?,'claude-code','architect','test','stale-project',(SELECT record_id FROM project WHERE name='stale-project'),'/tmp',NULL,?)`,
     )
     .run(session, new Date(clock).toISOString())
   const posted = postNotice(
@@ -716,7 +749,7 @@ test('architect post resolves its current cwd project, refreshes stale presence,
     cwd: posting.cwd,
   })
   db().query('DELETE FROM presence WHERE session_id=?').run(session)
-  const rendered = noticeStatus(posted.id, {}).message.text
+  const rendered = noticeStatus(posted.recordId, {}).message.text
   expect(rendered).toContain(`architect ${session} (claude-code, ${posting.project.name})`)
   expect(rendered).not.toContain('stale-project')
   expect(rendered).not.toContain('unknown project')
@@ -754,7 +787,7 @@ test('secret-shaped title or body is refused before storage without echoing it',
     .count
   expect(after).toBe(before)
   expect(
-    db().query('SELECT id FROM board_message WHERE title=? OR body=?').all(planted, planted),
+    db().query('SELECT record_id FROM board_message WHERE title=? OR body=?').all(planted, planted),
   ).toEqual([])
 })
 
@@ -841,7 +874,9 @@ test('ack deadline cannot exceed expiry and expired notices do not escalate', ()
     clock + 1,
   )
   expect(
-    boardEscalations(clock + 1_002).some((row) => row.subject.startsWith(`board:${posted.id}:`)),
+    boardEscalations(clock + 1_002).some((row) =>
+      row.subject.startsWith(`board:${posted.recordId}:`),
+    ),
   ).toBeFalse()
 })
 
@@ -849,8 +884,8 @@ test('status is limited to operator, author, or an addressed architect and refus
   const clock = Date.now() + 80_000
   const posting = postingProject()
   const insert = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect','test','status-project','/tmp',NULL,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect','test','status-project',(SELECT record_id FROM project WHERE name='status-project'),'/tmp',NULL,?)`,
   )
   for (const session of ['status-author', 'status-reader', 'status-stranger'])
     insert.run(session, new Date(clock).toISOString())
@@ -860,17 +895,18 @@ test('status is limited to operator, author, or an addressed architect and refus
     clock,
     posting.cwd,
   )
-  expect(noticeStatus(posted.id, {}).message.id).toBe(posted.id)
-  expect(noticeStatus(posted.id, { CLAUDE_CODE_SESSION_ID: 'status-author' }).message.id).toBe(
-    posted.id,
-  )
+  expect(noticeStatus(posted.recordId, {}).message.recordId).toBe(posted.recordId)
   expect(
-    noticeStatus(posted.id, { CLAUDE_CODE_SESSION_ID: 'status-reader' }, clock + 1).message.id,
-  ).toBe(posted.id)
+    noticeStatus(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'status-author' }).message.recordId,
+  ).toBe(posted.recordId)
+  expect(
+    noticeStatus(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'status-reader' }, clock + 1).message
+      .recordId,
+  ).toBe(posted.recordId)
   expect(() =>
-    noticeStatus(posted.id, { CLAUDE_CODE_SESSION_ID: 'status-stranger' }, clock + 1),
+    noticeStatus(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'status-stranger' }, clock + 1),
   ).toThrow(/not authored by or addressed/)
-  expect(() => noticeStatus(posted.id, { ORCH_RUN_ID: '123' })).toThrow(/workers cannot/)
+  expect(() => noticeStatus(posted.recordId, { ORCH_RUN_ID: '123' })).toThrow(/workers cannot/)
 })
 
 test('reserved operator sentinel is refused on every session-aware board path', () => {
@@ -883,8 +919,8 @@ test('reserved operator sentinel is refused on every session-aware board path', 
   expect(() => recordPresence('/tmp', env)).toThrow(/reserved/)
   expect(() => postNotice({ audience: 'operator', title: 'x', body: 'y' }, env)).toThrow(/reserved/)
   expect(() => readNotices(false, env)).toThrow(/reserved/)
-  expect(() => acknowledgeNotice(posted.id, env)).toThrow(/reserved/)
-  expect(() => noticeStatus(posted.id, env)).toThrow(/reserved/)
+  expect(() => acknowledgeNotice(posted.recordId, env)).toThrow(/reserved/)
+  expect(() => noticeStatus(posted.recordId, env)).toThrow(/reserved/)
 })
 
 test('delivery entry point refuses the operator sentinel before changing its receipt', () => {
@@ -894,14 +930,18 @@ test('delivery entry point refuses the operator sentinel before changing its rec
     {},
     clock,
   )
-  expect(() => markSessionMessagesDelivered('operator', [posted.id])).toThrow(/real session id/)
-  expect(() => markMonitorNoticesDelivered('operator', [`board:${posted.id}`])).toThrow(
+  expect(() => markSessionMessagesDelivered('operator', [posted.recordId])).toThrow(
+    /real session id/,
+  )
+  expect(() => markMonitorNoticesDelivered('operator', [`board:${posted.recordId}`])).toThrow(
     /real session id/,
   )
   expect(
     db()
-      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(posted.id, 'operator'),
+      .query(
+        'SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(posted.recordId, 'operator'),
   ).toEqual({ delivered_at: null })
 })
 
@@ -909,12 +949,19 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
   const clock = Date.now() + 100_000
   const machine = hostname()
   const insert = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect',?,?,'/tmp',NULL,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect',?,?,
+             (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
   )
-  insert.run('machine-one', machine, PLATFORM_SLUG, new Date(clock).toISOString())
-  insert.run('machine-two', machine, PLATFORM_SLUG, new Date(clock).toISOString())
-  insert.run('elsewhere', `${machine}-elsewhere`, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run('machine-one', machine, PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run('machine-two', machine, PLATFORM_SLUG, PLATFORM_SLUG, new Date(clock).toISOString())
+  insert.run(
+    'elsewhere',
+    `${machine}-elsewhere`,
+    PLATFORM_SLUG,
+    PLATFORM_SLUG,
+    new Date(clock).toISOString(),
+  )
   const posted = postNotice(
     {
       audience: 'machine:this',
@@ -928,29 +975,29 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
   )
   expect(
     (
-      db().query('SELECT audience FROM board_message WHERE id=?').get(posted.id) as {
+      db().query('SELECT audience FROM board_message WHERE record_id=?').get(posted.recordId) as {
         audience: string
       }
     ).audience,
   ).toBe(`machine:${machine}`)
   expect(
     claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 1).map(
-      (notice) => notice.id,
+      (notice) => notice.recordId,
     ),
-  ).toEqual([posted.id])
-  expect(noticeStatus(posted.id, {}, clock + 1).unacknowledged).toEqual([
+  ).toEqual([posted.recordId])
+  expect(noticeStatus(posted.recordId, {}, clock + 1).unacknowledged).toEqual([
     'machine-one',
     'machine-two',
   ])
-  acknowledgeNotice(posted.id, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 2)
-  expect(noticeStatus(posted.id, {}, clock + 2).unacknowledged).toEqual(['machine-two'])
+  acknowledgeNotice(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'machine-one' }, clock + 2)
+  expect(noticeStatus(posted.recordId, {}, clock + 2).unacknowledged).toEqual(['machine-two'])
 })
 
 test('ack escalation keeps the posting-time audience snapshot across presence refreshes', () => {
   const clock = Date.now() + 10_000
   const insertPresence = db().query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
-     VALUES (?,'claude-code','architect','test','snapshot-project','/tmp',NULL,?)
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+     VALUES (?,'claude-code','architect','test','snapshot-project',(SELECT record_id FROM project WHERE name='snapshot-project'),'/tmp',NULL,?)
      ON CONFLICT(session_id) DO UPDATE SET project=excluded.project,last_seen=excluded.last_seen`,
   )
   insertPresence.run('posting-reader', new Date(clock).toISOString())
@@ -971,7 +1018,7 @@ test('ack escalation keeps the posting-time audience snapshot across presence re
   readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 500)
   expect(
     boardEscalations(clock + 1_001)
-      .filter((row) => row.subject.startsWith(`board:${posted.id}:`))
+      .filter((row) => row.subject.startsWith(`board:${posted.number}:`))
       .map((row) => row.subject),
-  ).toEqual([`board:${posted.id}:posting-reader`])
+  ).toEqual([`board:${posted.number}:posting-reader`])
 })

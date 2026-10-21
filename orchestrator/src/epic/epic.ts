@@ -32,7 +32,7 @@ type EpicTaskScore = {
   reviews: { recorded: number; completed: number; outdated: number }
   strandings: {
     count: number
-    reasons: { landingId: number; kind: 'strand-live' | 'unreviewed'; reason: string }[]
+    reasons: { landingRecordId: string; kind: 'strand-live' | 'unreviewed'; reason: string }[]
   }
   idleMinutes: number
   continuations: { count: number; branchDrift: number }
@@ -53,7 +53,7 @@ export type EpicScoreboard = {
 }
 
 type RunRow = {
-  id: number
+  record_id: string
   started_at: string
   job: string
   status: string
@@ -63,19 +63,19 @@ type RunRow = {
   vendor_cost_usd: number | null
   launch_key: string | null
   branch: string | null
-  parent_run_id: number | null
+  parent_run_record_id: string | null
   turn: number
   last_event_at: string | null
-  project_id: number | null
+  project_record_id: string | null
   head_commit: string | null
 }
 type LandingRow = {
-  id: number
+  record_id: string
   branch: string
   status: string
   error: string | null
   steps: string | null
-  project_id: number | null
+  project_record_id: string | null
   tip: string | null
 }
 type LandingStep = {
@@ -111,14 +111,14 @@ function flagsOf(row: Pick<LandingRow, 'steps'>): {
   }
 }
 type ReviewRow = {
-  id: number
+  record_id: string
   completed_at: string | null
   outdated_at: string | null
   patch_id: string | null
   launch_key: string | null
   branch: string | null
   head_commit: string | null
-  project_id: number | null
+  project_record_id: string | null
 }
 
 const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
@@ -146,6 +146,55 @@ export function attributedTaskKey(launchKey: string | null, branch: string | nul
 const utcMillis = (value: string): number =>
   Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`)
 
+function epicEvidence(database: Database) {
+  const runs = database
+    .query(
+      `SELECT record_id,started_at,job,status,failure_kind,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
+            parent_run_record_id,turn,last_event_at,project_record_id,head_commit FROM run ORDER BY started_at,number`,
+    )
+    .all() as RunRow[]
+  const landings = database
+    .query(
+      `SELECT record_id,branch,status,error,steps,project_record_id,tip FROM landing ORDER BY started_at,record_id`,
+    )
+    .all() as LandingRow[]
+  const reviews = database
+    .query(
+      `SELECT DISTINCT review.record_id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
+            run.head_commit,run.project_record_id
+       FROM review JOIN review_lens ON review_lens.review_record_id=review.record_id
+       JOIN run ON run.record_id=review_lens.run_record_id ORDER BY review.recorded_at,review.number`,
+    )
+    .all() as ReviewRow[]
+  return { runs, landings, reviews }
+}
+
+function isRootFixRun(run: RunRow): boolean {
+  return run.job === 'fix' && run.parent_run_record_id === null
+}
+
+function addStrandingReasons(
+  reasons: EpicTaskScore['strandings']['reasons'],
+  landing: LandingRow,
+): void {
+  const flags = flagsOf(landing)
+  if (flags.strandLive)
+    reasons.push({
+      landingRecordId: landing.record_id,
+      kind: 'strand-live',
+      reason: flags.strandLive,
+    })
+  if (flags.unreviewed)
+    reasons.push({
+      landingRecordId: landing.record_id,
+      kind: 'unreviewed',
+      reason: flags.unreviewed,
+    })
+}
+
+const reviewRoundKey = (review: ReviewRow) =>
+  review.patch_id ?? review.head_commit ?? `review:${review.record_id}`
+
 /**
  * Evidence attribution is deliberately ordered. run.launch_key is authoritative
  * when present; otherwise the task key embedded in run.branch and then its head
@@ -162,37 +211,19 @@ export function epicScoreboard(
 ): EpicScoreboard {
   const keys = children.map((child) => child.key.toUpperCase())
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
-  const runs = database
-    .query(
-      `SELECT id,started_at,job,status,failure_kind,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
-            parent_run_id,turn,last_event_at,project_id,head_commit FROM run ORDER BY started_at,id`,
-    )
-    .all() as RunRow[]
-  const landings = database
-    .query(`SELECT id,branch,status,error,steps,project_id,tip FROM landing ORDER BY started_at,id`)
-    .all() as LandingRow[]
-  const reviews = database
-    .query(
-      `SELECT DISTINCT review.id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
-            run.head_commit,run.project_id
-       FROM review JOIN review_lens ON review_lens.review_id=review.id
-       JOIN run ON run.id=review_lens.run_id ORDER BY review.id`,
-    )
-    .all() as ReviewRow[]
+  const { runs, landings, reviews } = epicEvidence(database)
   const subjects = commitSubjects(database)
-
-  const subjectKey = (projectId: number | null, commit: string | null) =>
+  const subjectKey = (projectId: string | null, commit: string | null) =>
     keyInBranch(projectId && commit ? (subjects.get(projectId)?.get(commit) ?? null) : null, keys)
-
   const runKey = (
-    row: Pick<RunRow, 'launch_key' | 'branch' | 'project_id' | 'head_commit'>,
+    row: Pick<RunRow, 'launch_key' | 'branch' | 'project_record_id' | 'head_commit'>,
   ): string | null => {
     const launch = row.launch_key?.toUpperCase()
     if (launch) return childByKey.has(launch) ? launch : null
-    return keyInBranch(row.branch, keys) ?? subjectKey(row.project_id, row.head_commit)
+    return keyInBranch(row.branch, keys) ?? subjectKey(row.project_record_id, row.head_commit)
   }
   const landingKey = (row: LandingRow) =>
-    keyInBranch(row.branch, keys) ?? subjectKey(row.project_id, row.tip)
+    keyInBranch(row.branch, keys) ?? subjectKey(row.project_record_id, row.tip)
   const reviewKey = (row: ReviewRow) => runKey(row)
 
   const rows = children.map((child): EpicTaskScore => {
@@ -215,11 +246,7 @@ export function epicScoreboard(
     for (const landing of taskLandings.filter((row) =>
       ['landed', 'install_failed'].includes(row.status),
     )) {
-      const flags = flagsOf(landing)
-      if (flags.strandLive)
-        reasons.push({ landingId: landing.id, kind: 'strand-live', reason: flags.strandLive })
-      if (flags.unreviewed)
-        reasons.push({ landingId: landing.id, kind: 'unreviewed', reason: flags.unreviewed })
+      addStrandingReasons(reasons, landing)
     }
     const earlierBranches = new Set<string>()
     let branchDrift = 0
@@ -228,7 +255,7 @@ export function epicScoreboard(
         branchDrift++
       if (run.branch) earlierBranches.add(run.branch)
     }
-    const rootFixRuns = taskRuns.filter((run) => run.job === 'fix' && run.parent_run_id === null)
+    const rootFixRuns = taskRuns.filter(isRootFixRun)
     return {
       key,
       title: child.title ?? '',
@@ -245,9 +272,7 @@ export function epicScoreboard(
         tokens: taskRuns.length - tokenRows.length,
         cost: taskRuns.length - costRows.length,
       },
-      lensRounds: new Set(
-        taskReviews.map((review) => review.patch_id ?? review.head_commit ?? `review:${review.id}`),
-      ).size,
+      lensRounds: new Set(taskReviews.map(reviewRoundKey)).size,
       fixRounds: rootFixRuns.length,
       landings: {
         attempted: taskLandings.length,
@@ -262,7 +287,7 @@ export function epicScoreboard(
         completed: taskReviews.filter((review) => review.completed_at !== null).length,
         outdated: taskReviews.filter((review) => review.outdated_at !== null).length,
       },
-      strandings: { count: new Set(reasons.map((reason) => reason.landingId)).size, reasons },
+      strandings: { count: new Set(reasons.map((reason) => reason.landingRecordId)).size, reasons },
       continuations: { count: taskRuns.filter((run) => run.turn > 1).length, branchDrift },
       architectCommits: null,
     }
@@ -343,12 +368,14 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
   }
 }
 
-function commitSubjects(database: Database): Map<number, Map<string, string>> {
-  const projects = database.query('SELECT id,path FROM project ORDER BY id').all() as {
-    id: number
+function commitSubjects(database: Database): Map<string, Map<string, string>> {
+  const projects = database
+    .query('SELECT record_id,path FROM project ORDER BY record_id')
+    .all() as {
+    record_id: string
     path: string
   }[]
-  const result = new Map<number, Map<string, string>>()
+  const result = new Map<string, Map<string, string>>()
   for (const project of projects) {
     const git = Bun.spawnSync(['git', 'log', '--all', '--format=%H%x09%s'], {
       cwd: project.path,
@@ -362,7 +389,7 @@ function commitSubjects(database: Database): Map<number, Map<string, string>> {
       const tab = line.indexOf('\t')
       if (tab > 0) rows.set(line.slice(0, tab), line.slice(tab + 1))
     }
-    result.set(project.id, rows)
+    result.set(project.record_id, rows)
   }
   return result
 }
@@ -500,7 +527,7 @@ export function renderEpicHuman(report: EpicScoreboard): string {
   if (!report.total.strandings.reasons.length) lines.push('  (none)')
   else
     for (const reason of report.total.strandings.reasons)
-      lines.push(`  landing ${reason.landingId} ${reason.kind}: ${reason.reason}`)
+      lines.push(`  landing ${reason.kind}: ${reason.reason}`)
   lines.push('\nNOT RECORDED')
   for (const missing of report.notRecorded) lines.push(`  ${missing.metric}: ${missing.needed}`)
   return lines.join('\n')

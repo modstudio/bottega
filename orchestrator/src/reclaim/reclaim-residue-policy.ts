@@ -135,7 +135,7 @@ export function processReleaseDecision(facts: {
 }
 
 export function staleRunReleaseDecision(facts: {
-  runId: number
+  runId: string
   runExists: boolean
   status: string | null
   alreadyExcluded: boolean

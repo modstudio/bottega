@@ -25,17 +25,17 @@ describe('run mailbox', () => {
     Object.assign(process.env, extraEnv)
     try {
       if (args[0] === 'tell') {
-        const message = tellRun(Number(args[1]), args.slice(2).join(' '))
+        const message = tellRun(String(args[1]), args.slice(2).join(' '))
         return { code: 0, out: `queued message ${message.id}; it has not been read`, err: '' }
       }
       if (args[0] === 'run') {
         const rows = args.includes('--receipt')
-          ? receiptMessagesForArchitect(Number(args[1]))
-          : messagesForRun(Number(args[1]))
+          ? receiptMessagesForArchitect(String(args[1]))
+          : messagesForRun(String(args[1]))
         return { code: 0, out: JSON.stringify({ messages: rows }), err: '' }
       }
       if (args[0] === 'ask-server') {
-        const runId = Number(extraEnv.ORCH_RUN_ID)
+        const runId = String(extraEnv.ORCH_RUN_ID ?? '')
         if (!runId)
           return {
             code: 0,
@@ -88,7 +88,7 @@ describe('run mailbox', () => {
   test('queues inbound context and receipts it only when the worker checks', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
-      .query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .query('UPDATE run SET vendor_session=?, run_token=? WHERE record_id=?')
       .run('worker-session', 'token', root)
 
     const told = mailboxOrch('tell', String(root), 'keep the public shape unchanged')
@@ -96,8 +96,8 @@ describe('run mailbox', () => {
     const queued = messagesForRun(root)[0]!
     expect(queued).toMatchObject({
       direction: 'to_worker',
-      root_run_id: root,
-      run_id: root,
+      root_run_record_id: root,
+      run_record_id: root,
       body: 'keep the public shape unchanged',
       read_at: null,
       read_by: null,
@@ -117,15 +117,15 @@ describe('run mailbox', () => {
       status: 'running',
       session: 'orch-test-session',
     })
-    db().query('UPDATE run SET transport=NULL WHERE id=?').run(root)
+    db().query('UPDATE run SET transport=NULL WHERE record_id=?').run(root)
 
     const told = mailboxOrch('tell', String(root), 'context for the detached turn')
     const message = messagesForRun(root)[0]!
 
     expect(told.code).toBe(0)
     expect(message).toMatchObject({
-      root_run_id: root,
-      run_id: root,
+      root_run_record_id: root,
+      run_record_id: root,
       body: 'context for the detached turn',
       read_at: null,
     })
@@ -139,8 +139,8 @@ describe('run mailbox', () => {
       parent: root,
       turn: 2,
     })
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', root)
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('foreign-session', child)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('owner-session', root)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('foreign-session', child)
 
     const foreign = mailboxOrchInput(['tell', String(child), 'foreign steering'], undefined, {
       CLAUDE_CODE_SESSION_ID: 'foreign-session',
@@ -154,18 +154,20 @@ describe('run mailbox', () => {
     expect(owner.code).toBe(0)
     expect(messagesForRun(root)[0]!.sender_session).toBe('owner-session')
     expect(
-      db().query('SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?').get(child),
+      db()
+        .query('SELECT action, actor_session FROM run_mutation_audit WHERE run_record_id=?')
+        .get(child),
     ).toEqual({ action: 'tell', actor_session: 'owner-session' })
   })
   test('the first tell adopts an unowned root and refuses a second session', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(root)
+    db().query('UPDATE run SET session_id=NULL WHERE record_id=?').run(root)
 
     const first = mailboxOrchInput(['tell', String(root), 'session A context'], undefined, {
       CLAUDE_CODE_SESSION_ID: 'session-A',
     })
     expect(first.code).toBe(0)
-    expect(db().query('SELECT session_id FROM run WHERE id=?').get(root)).toEqual({
+    expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
       session_id: 'session-A',
     })
 
@@ -187,7 +189,7 @@ describe('run mailbox', () => {
       db()
         .query(
           `SELECT action, actor_session, reason FROM run_mutation_audit
-        WHERE root_id=? ORDER BY rowid`,
+        WHERE root_run_record_id=? ORDER BY rowid`,
         )
         .all(root),
     ).toEqual([
@@ -199,18 +201,19 @@ describe('run mailbox', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id, asked_at, question)
-       VALUES ('${newRecordId()}',?, ?, 'which interface?')`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?, ?, 'which interface?')`,
       )
       .run(root, new Date().toISOString())
 
     expect(mailboxOrch('tell', String(root), 'background context only').code).toBe(0)
     expect(messagesForRun(root)[0]!.read_at).toBeNull()
-    expect(db().query('SELECT answer, answered_at FROM question WHERE run_id=?').get(root)).toEqual(
-      { answer: null, answered_at: null },
-    )
     expect(
-      (db().query('SELECT status FROM run WHERE id=?').get(root) as { status: string }).status,
+      db().query('SELECT answer, answered_at FROM question WHERE run_record_id=?').get(root),
+    ).toEqual({ answer: null, answered_at: null })
+    expect(
+      (db().query('SELECT status FROM run WHERE record_id=?').get(root) as { status: string })
+        .status,
     ).toBe('running')
   })
   test('run detail is read-only; only the root owner can explicitly receipt worker messages', () => {
@@ -222,16 +225,16 @@ describe('run mailbox', () => {
       parent: root,
       turn: 2,
     })
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('session-A', root)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('session-A', root)
     db()
-      .query('UPDATE run SET session_id=?, vendor_session=? WHERE id=?')
+      .query('UPDATE run SET session_id=?, vendor_session=? WHERE record_id=?')
       .run('session-B', 'worker-session', child)
 
     const sent = messageArchitect(child, 'the implementation is taking a narrower shape')
     expect(sent).toMatchObject({
       direction: 'from_worker',
-      root_run_id: root,
-      run_id: child,
+      root_run_record_id: root,
+      run_record_id: child,
       sender_session: 'worker-session',
       read_at: null,
       read_by: null,
@@ -266,7 +269,7 @@ describe('run mailbox', () => {
     })
     expect(result.code).toBe(1)
     expect(messagesForRun(root)[0]).toMatchObject({ read_at: null, read_by: null })
-    expect(db().query('SELECT session_id FROM run WHERE id=?').get(root)).toEqual({
+    expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
       session_id: null,
     })
     expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })
@@ -274,7 +277,7 @@ describe('run mailbox', () => {
   test('the worker MCP tools send outbound and read inbound at a checkpoint', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
-      .query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .query('UPDATE run SET vendor_session=?, run_token=? WHERE record_id=?')
       .run('worker-session', 'mailbox-token', root)
     expect(mailboxOrch('tell', String(root), 'new context').code).toBe(0)
     const calls =
@@ -310,7 +313,8 @@ describe('run mailbox', () => {
       messagesForRun(root).find((message) => message.direction === 'to_worker')!.read_at,
     ).not.toBeNull()
     expect(
-      (db().query('SELECT status FROM run WHERE id=?').get(root) as { status: string }).status,
+      (db().query('SELECT status FROM run WHERE record_id=?').get(root) as { status: string })
+        .status,
     ).toBe('running')
   })
   test('a resumed turn reads tell queued after the first turn ended', () => {
@@ -323,10 +327,10 @@ describe('run mailbox', () => {
       turn: 2,
     })
     db()
-      .query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .query('UPDATE run SET vendor_session=?, run_token=? WHERE record_id=?')
       .run('first-turn-session', 'root-token', root)
     db()
-      .query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .query('UPDATE run SET vendor_session=?, run_token=? WHERE record_id=?')
       .run('resume-session', 'turn-token', child)
     expect(mailboxOrch('tell', String(root), 'note after turn one').code).toBe(0)
     expect(messagesForRun(root)[0]!.read_at).toBeNull()
@@ -374,7 +378,10 @@ describe('run mailbox', () => {
       turn: 2,
     })
     expect(mailboxOrch('tell', String(root), 'context for turn two').code).toBe(0)
-    expect(messagesForRun(child)[0]).toMatchObject({ root_run_id: root, run_id: child })
+    expect(messagesForRun(child)[0]).toMatchObject({
+      root_run_record_id: root,
+      run_record_id: child,
+    })
   })
   test('tell refuses a finished conversation instead of claiming a queue', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'ok' })

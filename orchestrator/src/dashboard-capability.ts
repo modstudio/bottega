@@ -7,7 +7,9 @@ import {
   DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
-import { pidAlive } from '../../shared/process-identity.ts'
+import { observeBoundedSubprocess, pidAlive } from '../../shared/process-identity.ts'
+
+const DASHBOARD_CAPABILITY_PS_TIMEOUT_MS = 10_000
 
 export function dashboardServeCommand(command: string): boolean {
   const words = command.trim().split(/\s+/)
@@ -72,12 +74,17 @@ export function dashboardCapabilityAuthorized(): boolean {
       !pidAlive(capability.pid)
     )
       return false
-    const observed = Bun.spawnSync(['ps', '-p', String(capability.pid), '-o', 'command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { process: observed } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-p', String(capability.pid), '-o', 'command='],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      DASHBOARD_CAPABILITY_PS_TIMEOUT_MS,
+    )
     if (observed.exitCode !== 0) return false
-    return dashboardServeCommand(new TextDecoder().decode(observed.stdout))
+    return dashboardServeCommand(new TextDecoder().decode(observed.stdout ?? new Uint8Array()))
   } catch {
     return false
   }

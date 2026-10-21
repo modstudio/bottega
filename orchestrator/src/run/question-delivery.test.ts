@@ -11,11 +11,11 @@ test('question delivery rows mint a version-7 record id', () => {
   const questionId = (
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question)
-         VALUES (? ,?, '2026-10-14', 'Which?') RETURNING id`,
+        `INSERT INTO question (record_id,number,run_record_id,asked_at,question)
+         VALUES (?,1,?, '2026-10-14', 'Which?') RETURNING record_id`,
       )
-      .get(newRecordId(), runId) as { id: number }
-  ).id
+      .get(newRecordId(), runId) as { record_id: string }
+  ).record_id
   appendQuestionDeliveries([questionId], {
     runId,
     mode: 'resume',

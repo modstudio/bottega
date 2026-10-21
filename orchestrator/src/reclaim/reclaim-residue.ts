@@ -46,32 +46,30 @@ const denied = (decision: Extract<ReleaseDecision, { allowed: false }>) => ({
   action: decision.refusal,
 })
 
-function numericSubject(subject: string): number {
-  if (!/^[1-9]\d*$/.test(subject))
-    throw new Error(`run subject must be a positive id; received ${subject}`)
-  return Number(subject)
+function runSubject(subject: string): string {
+  return subject
 }
 
-function projectRunSubject(subject: string): { projectName: string; runId: number } {
-  const match = /^([^:]+):([1-9]\d*)$/.exec(subject)
+function projectRunSubject(subject: string): { projectName: string; runId: string } {
+  const match = /^([^:]+):(.+)$/.exec(subject)
   if (!match) throw new Error(`subject must be <project>:<run-id>; received ${subject}`)
-  return { projectName: match[1]!, runId: Number(match[2]) }
+  return { projectName: match[1]!, runId: match[2]! }
 }
 
-function recordedRunProject(runId: number): string | null {
+function recordedRunProject(runId: string): string | null {
   return (
     (
       db()
         .query(
           `SELECT COALESCE(project.name,r.repo) project
-           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+           FROM run r LEFT JOIN project ON project.record_id=r.project_record_id WHERE r.record_id=?`,
         )
         .get(runId) as { project: string | null } | null
     )?.project ?? null
   )
 }
 
-function projectMatchesRun(projectName: string, runId: number) {
+function projectMatchesRun(projectName: string, runId: string) {
   const recorded = recordedRunProject(runId)
   return recorded === projectName
     ? null
@@ -81,19 +79,21 @@ function projectMatchesRun(projectName: string, runId: number) {
       }
 }
 
-function conversationRows(runId: number) {
-  const owner = db().query('SELECT id,parent_run_id FROM run WHERE id=?').get(runId) as {
-    id: number
-    parent_run_id: number | null
+function conversationRows(runId: string) {
+  const owner = db()
+    .query('SELECT record_id,parent_run_record_id FROM run WHERE record_id=?')
+    .get(runId) as {
+    record_id: string
+    parent_run_record_id: string | null
   } | null
   if (!owner) return []
-  const root = owner.parent_run_id ?? owner.id
+  const root = owner.parent_run_record_id ?? owner.record_id
   return db()
     .query(
-      'SELECT id,status,worktree,pid,agent_pid,agent_pgid FROM run WHERE id=? OR parent_run_id=?',
+      'SELECT record_id,status,worktree,pid,agent_pid,agent_pgid FROM run WHERE record_id=? OR parent_run_record_id=?',
     )
     .all(root, root) as {
-    id: number
+    record_id: string
     status: string
     worktree: string | null
     pid: number | null
@@ -103,6 +103,7 @@ function conversationRows(runId: number) {
 }
 
 function gitUpdateRef(projectPath: string, ref: string, tip: string): boolean {
+  // branch-ref-guard: non-local refs/orch/
   const result = Bun.spawnSync(['git', 'update-ref', '-d', ref, tip], {
     cwd: projectPath,
     env: targetGitEnvironment(projectPath),
@@ -132,7 +133,7 @@ function reclaimRefGuard(subject: string, options: Options) {
       ok: false,
       action: `refused; invariant: project is registered; fix: check ${projectName}`,
     }
-  const path = join(projectGitCommonDir(project.path), 'orch-guards', String(runId))
+  const path = join(projectGitCommonDir(project.path), 'orch-guards', runId)
   const rows = conversationRows(runId)
   const decision = refGuardReleaseDecision({
     exists: existsSync(path),
@@ -140,7 +141,7 @@ function reclaimRefGuard(subject: string, options: Options) {
     conversationLive: rows.some((row) =>
       runAlive({
         status: row.status,
-        lease: runLeaseState(row.id),
+        lease: runLeaseState(row.record_id),
         pidAlive: pidAlive(row.pid),
       }),
     ),
@@ -157,7 +158,7 @@ function reclaimRefGuard(subject: string, options: Options) {
 }
 
 function reclaimSandbox(subject: string, options: Options) {
-  const runId = numericSubject(subject)
+  const runId = runSubject(subject)
   const path = join(RUNS_DIR, `sandbox-${runId}`)
   const rows = conversationRows(runId)
   const decision = sandboxReleaseDecision({
@@ -190,7 +191,7 @@ function reclaimRetainedRef(subject: string, options: Options) {
     }
   const ref = `refs/orch/retained/${runId}`
   const tip = refTip(project.path, ref)
-  const row = db().query('SELECT status FROM run WHERE id=?').get(runId) as {
+  const row = db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
     status: string
   } | null
   const decision = retainedRefReleaseDecision({
@@ -237,8 +238,8 @@ function orchWorktreePath(path: string): boolean {
 }
 
 function reclaimTrust(subject: string, options: Options) {
-  const runId = numericSubject(subject)
-  const row = db().query('SELECT mcp_trust_path FROM run WHERE id=?').get(runId) as {
+  const runId = runSubject(subject)
+  const row = db().query('SELECT mcp_trust_path FROM run WHERE record_id=?').get(runId) as {
     mcp_trust_path: string | null
   } | null
   const recorded = row?.mcp_trust_path ? (JSON.parse(row.mcp_trust_path) as unknown) : []
@@ -279,9 +280,9 @@ function reclaimTrust(subject: string, options: Options) {
 }
 
 function reclaimProcess(subject: string, options: Options) {
-  const runId = numericSubject(subject)
+  const runId = runSubject(subject)
   const row = db()
-    .query('SELECT status,agent,agent_pid,agent_start_time FROM run WHERE id=?')
+    .query('SELECT status,agent,agent_pid,agent_start_time FROM run WHERE record_id=?')
     .get(runId) as {
     status: string
     agent: string
@@ -318,7 +319,7 @@ function reclaimProcess(subject: string, options: Options) {
     writableDb()
     db()
       .query(
-        'UPDATE run SET pid=NULL,agent_pid=NULL,agent_pgid=NULL,agent_start_time=NULL WHERE id=?',
+        'UPDATE run SET pid=NULL,agent_pid=NULL,agent_pgid=NULL,agent_start_time=NULL WHERE record_id=?',
       )
       .run(runId)
   }
@@ -330,8 +331,10 @@ function reclaimProcess(subject: string, options: Options) {
 }
 
 function reclaimStaleRun(subject: string, options: Options) {
-  const runId = numericSubject(subject)
-  const row = db().query('SELECT status,evidence_excluded FROM run WHERE id=?').get(runId) as {
+  const runId = runSubject(subject)
+  const row = db()
+    .query('SELECT status,evidence_excluded FROM run WHERE record_id=?')
+    .get(runId) as {
     status: string
     evidence_excluded: string | null
   } | null

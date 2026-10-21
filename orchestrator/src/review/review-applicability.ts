@@ -7,23 +7,52 @@ const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
 }
 
-/** Decide the distinct catalogue lenses that apply, preserving declaration order. */
-export function applicableReviewLenses(
-  tier: 0 | 1 | 2 | 3,
+export type ApplicableReview = {
+  lenses: string[]
+  secondOpinion?: string
+  lensBases?: Record<string, string>
+  secondOpinionBasis?: string
+}
+
+function selectedLensRules(
+  declaration: ReviewSettings,
+  tier: 1 | 2 | 3,
   changedPaths: readonly string[],
-  review: ReviewSettings | undefined,
-): string[] {
-  if (tier === 0) return []
-  const selected: string[] = []
-  for (const entry of (review ?? BUILT_IN_REVIEW).lenses) {
+): { lenses: string[]; bases: Record<string, string> } {
+  const lenses: string[] = []
+  const bases: Record<string, string> = {}
+  for (const entry of declaration.lenses) {
     if (tier < (entry.minTier ?? 1)) continue
     if (
       entry.paths &&
       !entry.paths.some((pattern) => changedPaths.some((path) => new Bun.Glob(pattern).match(path)))
-    ) {
+    )
       continue
-    }
-    if (!selected.includes(entry.lens)) selected.push(entry.lens)
+    if (lenses.includes(entry.lens)) continue
+    lenses.push(entry.lens)
+    if (entry.basis) bases[entry.lens] = entry.basis
   }
-  return selected
+  return { lenses, bases }
+}
+
+/** Decide the review opinions that apply, preserving lens declaration order. */
+export function applicableReview(
+  tier: 0 | 1 | 2 | 3,
+  changedPaths: readonly string[],
+  review: ReviewSettings | undefined,
+): ApplicableReview {
+  if (tier === 0) return { lenses: [] }
+  const declaration = review ?? BUILT_IN_REVIEW
+  const { lenses: selected, bases: lensBases } = selectedLensRules(declaration, tier, changedPaths)
+  const secondOpinion = declaration.secondOpinion
+  if (!secondOpinion || tier < (secondOpinion.minTier ?? 3)) {
+    return { lenses: selected, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
+  }
+  if (!selected.includes(secondOpinion.lens)) selected.push(secondOpinion.lens)
+  return {
+    lenses: selected,
+    secondOpinion: secondOpinion.lens,
+    ...(Object.keys(lensBases).length ? { lensBases } : {}),
+    ...(secondOpinion.basis ? { secondOpinionBasis: secondOpinion.basis } : {}),
+  }
 }

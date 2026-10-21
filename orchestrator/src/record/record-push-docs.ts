@@ -48,8 +48,7 @@ function carriedArticleFields(input: {
 }
 
 type LocalDoc = {
-  id: number
-  record_id: string | null
+  record_id: string
   scope: string
   subject: string | null
   owner: string | null
@@ -58,7 +57,7 @@ type LocalDoc = {
   body: string
   delivery: DocDelivery
   audiences: string
-  parent_id: number | null
+  parent_record_id: string | null
   position: number
   featured: boolean
   status: DocStatus
@@ -69,15 +68,15 @@ type LocalDoc = {
   checked_against_commit: string | null
   summary: string | null
   replacement_slug: string | null
-  project_id: number | null
+  project_record_id: string | null
   created_at: string
   updated_at: string
 }
 
 type LocalRevision = {
-  id: number
-  doc_id: number
   record_id: string
+  number: number
+  doc_record_id: string | null
   scope: string
   subject: string | null
   owner: string | null
@@ -87,7 +86,7 @@ type LocalRevision = {
   body: string
   delivery: DocDelivery
   audiences: string
-  parent_id: number | null
+  parent_record_id: string | null
   position: number
   featured: boolean
   status: DocStatus
@@ -103,15 +102,15 @@ type LocalRevision = {
   reason: string
   session_id: string | null
   at: string
-  project_id: number | null
+  project_record_id: string | null
 }
 
 type ImportGroup = {
-  localDocId: number | null
-  sourceDocId: number
-  localParentId: number | null
-  localRevisionIds: number[]
-  localRevisionParentIds: Array<number | null>
+  localDocId: string | null
+  sourceDocId: string
+  localParentId: string | null
+  localRevisionIds: string[]
+  localRevisionParentIds: Array<string | null>
   payload: RecordDocImportInput
 }
 
@@ -132,30 +131,28 @@ function lifecycleAddress(input: {
   return `${input.scope}\0${input.subject ?? ''}\0${input.owner ?? ''}\0${input.slug}`
 }
 
-function projectNames(local: ReturnType<typeof db>): Map<number, string> {
-  const names = new Map<number, string>()
+function projectNames(local: ReturnType<typeof db>): Map<string, string> {
+  const names = new Map<string, string>()
   for (const row of local
-    .query<{ id: number; name: string }, []>('SELECT id, name FROM project')
+    .query<{ record_id: string; name: string }, []>('SELECT record_id, name FROM project')
     .all()) {
-    names.set(row.id, row.name)
+    names.set(row.record_id, row.name)
   }
   return names
 }
 
-function projectRecordIds(local: ReturnType<typeof db>): Map<number, string | null> {
+function projectRecordIds(local: ReturnType<typeof db>): Map<string, string> {
   return new Map(
     local
-      .query<{ id: number; record_id: string | null }, []>('SELECT id, record_id FROM project')
+      .query<{ record_id: string }, []>('SELECT record_id FROM project')
       .all()
-      .map((row) => [row.id, row.record_id]),
+      .map((row) => [row.record_id, row.record_id]),
   )
 }
 
-function asRevision(
-  row: LocalRevision,
-  recordIds: Map<number, string>,
-): RecordDocImportInput['revisions'][number] {
+function asRevision(row: LocalRevision): RecordDocImportInput['revisions'][number] {
   return {
+    id: row.record_id,
     scope: row.scope,
     subject: row.subject,
     owner: row.owner,
@@ -165,7 +162,7 @@ function asRevision(
     body: row.body,
     delivery: row.delivery,
     audiences: decodeStoredDocAudiences(row.audiences),
-    parentId: row.parent_id == null ? null : (recordIds.get(row.parent_id) ?? null),
+    parentId: row.parent_record_id,
     position: row.position,
     featured: Boolean(row.featured),
     status: row.status,
@@ -189,21 +186,20 @@ function asRevision(
 function groupFromLive(
   doc: LocalDoc,
   revisions: LocalRevision[],
-  names: Map<number, string>,
-  projectIds: Map<number, string | null>,
-  recordIds: Map<number, string>,
+  names: Map<string, string>,
+  projectIds: Map<string, string>,
   relatedIds: string[],
 ): ImportGroup {
   return {
-    localDocId: doc.id,
-    sourceDocId: doc.id,
-    localParentId: doc.parent_id,
-    localRevisionIds: revisions.map((row) => row.id),
-    localRevisionParentIds: revisions.map((row) => row.parent_id),
+    localDocId: doc.record_id,
+    sourceDocId: doc.record_id,
+    localParentId: doc.parent_record_id,
+    localRevisionIds: revisions.map((row) => row.record_id),
+    localRevisionParentIds: revisions.map((row) => row.parent_record_id),
     payload: {
       expectedRevision: revisions.at(-1)?.record_id ?? undefined,
       doc: {
-        id: recordIds.get(doc.id)!,
+        id: doc.record_id,
         scope: doc.scope,
         subject: doc.subject,
         owner: doc.owner,
@@ -212,7 +208,7 @@ function groupFromLive(
         body: doc.body,
         delivery: doc.delivery,
         audiences: decodeStoredDocAudiences(doc.audiences),
-        parentId: doc.parent_id == null ? null : (recordIds.get(doc.parent_id) ?? null),
+        parentId: doc.parent_record_id,
         position: doc.position,
         featured: Boolean(doc.featured),
         status: doc.status,
@@ -226,40 +222,41 @@ function groupFromLive(
           summary: doc.summary,
         }),
         replacementSlug: doc.replacement_slug,
-        projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
-        projectId: doc.project_id == null ? null : (projectIds.get(doc.project_id) ?? null),
+        projectName:
+          doc.project_record_id == null ? null : (names.get(doc.project_record_id) ?? null),
+        projectId:
+          doc.project_record_id == null ? null : (projectIds.get(doc.project_record_id) ?? null),
         createdAt: doc.created_at,
         updatedAt: doc.updated_at,
         deletedAt: null,
       },
-      revisions: revisions.map((row) => asRevision(row, recordIds)),
+      revisions: revisions.map((row) => asRevision(row)),
     },
   }
 }
 
 function groupFromDeleted(
   revisions: LocalRevision[],
-  names: Map<number, string>,
-  projectIds: Map<number, string | null>,
-  recordIds: Map<number, string>,
+  names: Map<string, string>,
+  projectIds: Map<string, string>,
 ): ImportGroup {
   const ordered = [...revisions].sort((left, right) => {
     const byAt = left.at.localeCompare(right.at)
-    return byAt !== 0 ? byAt : left.id - right.id
+    return byAt !== 0 ? byAt : left.number - right.number
   })
   const last = ordered.at(-1)!
   const deleted = [...ordered].reverse().find((row) => row.op === 'delete') ?? last
-  const projectId = last.project_id ?? deleted.project_id
+  const projectId = last.project_record_id ?? deleted.project_record_id
   return {
     localDocId: null,
-    sourceDocId: last.doc_id,
-    localParentId: last.parent_id,
-    localRevisionIds: revisions.map((row) => row.id),
-    localRevisionParentIds: revisions.map((row) => row.parent_id),
+    sourceDocId: lifecycleAddress(last),
+    localParentId: last.parent_record_id,
+    localRevisionIds: revisions.map((row) => row.record_id),
+    localRevisionParentIds: revisions.map((row) => row.parent_record_id),
     payload: {
       expectedRevision: revisions.at(-1)?.record_id ?? undefined,
       doc: {
-        id: recordIds.get(last.doc_id)!,
+        id: newRecordId(),
         scope: last.scope,
         subject: last.subject,
         owner: last.owner,
@@ -277,7 +274,7 @@ function groupFromDeleted(
           summary: last.summary,
         }),
         featured: Boolean(last.featured),
-        parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
+        parentId: last.parent_record_id,
         position: last.position,
         projectName: projectId == null ? null : (names.get(projectId) ?? null),
         projectId: projectId == null ? null : (projectIds.get(projectId) ?? null),
@@ -285,7 +282,7 @@ function groupFromDeleted(
         updatedAt: deleted.at,
         deletedAt: deleted.at,
       },
-      revisions: revisions.map((row) => asRevision(row, recordIds)),
+      revisions: revisions.map((row) => asRevision(row)),
     },
   }
 }
@@ -295,54 +292,49 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const projectIds = projectRecordIds(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, project_id, created_at, updated_at
-       FROM doc ORDER BY id`,
+      `SELECT record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_record_id, position, project_record_id, created_at, updated_at
+       FROM doc ORDER BY record_id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, author, reason,
-              session_id, at, project_id
-       FROM doc_revision ORDER BY id`,
+      `SELECT record_id, number, doc_record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, summary, replacement_slug, parent_record_id, position, author, reason,
+              session_id, at, project_record_id
+       FROM doc_revision ORDER BY number`,
     )
     .all()
-  const byDoc = new Map<number, LocalRevision[]>()
+  const byDoc = new Map<string, LocalRevision[]>()
   for (const revision of revisions) {
-    const list = byDoc.get(revision.doc_id) ?? []
+    const key = revision.doc_record_id ?? lifecycleAddress(revision)
+    const list = byDoc.get(key) ?? []
     list.push(revision)
-    byDoc.set(revision.doc_id, list)
+    byDoc.set(key, list)
   }
   const groups: ImportGroup[] = []
-  const relatedByDoc = new Map<number, string[]>()
+  const relatedByDoc = new Map<string, string[]>()
   for (const row of local
-    .query<{ doc_id: number; subject_id: string }, []>(
-      'SELECT d.id AS doc_id,r.subject_id FROM doc d JOIN doc_related_subject r ON r.doc_record_id=d.record_id ORDER BY d.id',
+    .query<{ doc_id: string; subject_id: string }, []>(
+      'SELECT d.record_id AS doc_id,r.subject_id FROM doc d JOIN doc_related_subject r ON r.doc_record_id=d.record_id ORDER BY d.record_id',
     )
     .all()) {
     relatedByDoc.set(row.doc_id, [...(relatedByDoc.get(row.doc_id) ?? []), row.subject_id])
   }
-  const recordIds = new Map<number, string>()
-  for (const doc of docs) recordIds.set(doc.id, doc.record_id ?? newRecordId())
-  for (const revision of revisions) {
-    if (!recordIds.has(revision.doc_id)) recordIds.set(revision.doc_id, newRecordId())
-  }
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   for (const doc of docs) {
-    seen.add(doc.id)
+    seen.add(doc.record_id)
     groups.push(
       groupFromLive(
         doc,
-        byDoc.get(doc.id) ?? [],
+        byDoc.get(doc.record_id) ?? [],
         names,
         projectIds,
-        recordIds,
-        relatedByDoc.get(doc.id) ?? [],
+        relatedByDoc.get(doc.record_id) ?? [],
       ),
     )
   }
   for (const [docId, list] of byDoc) {
     if (seen.has(docId) || list.length === 0) continue
-    groups.push(groupFromDeleted(list, names, projectIds, recordIds))
+    groups.push(groupFromDeleted(list, names, projectIds))
   }
   const byLocalId = new Map(groups.map((group) => [group.sourceDocId, group]))
   const liveByAddress = new Map(
@@ -351,7 +343,7 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
       .map((group) => [lifecycleAddress(group.payload.doc), group]),
   )
   const ordered: ImportGroup[] = []
-  const visited = new Set<number>()
+  const visited = new Set<string>()
   const visit = (group: ImportGroup): void => {
     const id = group.sourceDocId
     if (visited.has(id)) return
@@ -376,7 +368,7 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
 
 function payloadWithImportedParentIds(
   group: ImportGroup,
-  importedIds: Map<number, string>,
+  importedIds: Map<string, string>,
 ): RecordDocImportInput {
   return {
     ...group.payload,
@@ -401,8 +393,8 @@ async function compareLiveDocs(
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, status, kind, summary, replacement_slug, project_id, created_at, updated_at
-       FROM doc ORDER BY id`,
+      `SELECT record_id, scope, subject, owner, slug, title, body, delivery, status, kind, summary, replacement_slug, project_record_id, created_at, updated_at
+       FROM doc ORDER BY scope,subject,slug`,
     )
     .all()
   const mismatches: string[] = []
@@ -415,11 +407,11 @@ async function compareLiveDocs(
     let hosted: Record<string, unknown>
     try {
       const projectName =
-        doc.project_id == null
+        doc.project_record_id == null
           ? null
           : (local
-              .query<{ name: string }, [number]>('SELECT name FROM project WHERE id=?')
-              .get(doc.project_id)?.name ?? null)
+              .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+              .get(doc.project_record_id)?.name ?? null)
       hosted = await client.getDoc(doc.record_id, destinations.get(projectName))
     } catch {
       mismatches.push(`${label}: hosted row is absent`)
@@ -468,18 +460,56 @@ function liveDocMismatches(
 }
 
 function recordReturnedIds(
-  local: ReturnType<typeof db>,
   group: ImportGroup,
   hosted: { id: string; revisionIds: string[] },
 ): void {
-  if (group.localDocId != null) {
-    local.query('UPDATE doc SET record_id=? WHERE id=?').run(hosted.id, group.localDocId)
-  }
+  if (group.localDocId != null && hosted.id !== group.localDocId)
+    throw new Error(
+      `hosted document identity mismatch: submitted ${group.localDocId}, returned ${hosted.id}`,
+    )
   for (const [index, revisionId] of group.localRevisionIds.entries()) {
     const hostedRevisionId = hosted.revisionIds[index]
-    if (!hostedRevisionId) continue
-    local.query('UPDATE doc_revision SET record_id=? WHERE id=?').run(hostedRevisionId, revisionId)
+    if (hostedRevisionId !== revisionId)
+      throw new Error(
+        `hosted document revision identity mismatch: submitted ${revisionId}, returned ${hostedRevisionId ?? 'nothing'}`,
+      )
   }
+}
+
+async function retainedHostedDocumentId(
+  group: ImportGroup,
+  client: RecordApiClient,
+  destination: RecordRequestDestination,
+): Promise<string | null> {
+  if (group.localDocId !== null) return group.payload.doc.id ?? null
+  let cursor: string | null = null
+  do {
+    const listed = await client.listDocs(
+      {
+        scope: group.payload.doc.scope,
+        subject: group.payload.doc.subject,
+        includeDeleted: true,
+        limit: 100,
+        cursor,
+      },
+      destination,
+    )
+    for (const candidate of listed.items) {
+      if (
+        candidate.scope !== group.payload.doc.scope ||
+        (candidate.subject ?? null) !== group.payload.doc.subject ||
+        (candidate.owner ?? null) !== (group.payload.doc.owner ?? null) ||
+        candidate.slug !== group.payload.doc.slug ||
+        typeof candidate.id !== 'string'
+      )
+        continue
+      const revisions = await client.listRevisions(candidate.id, destination)
+      if (revisions.some((revision) => group.localRevisionIds.includes(String(revision.id))))
+        return candidate.id
+    }
+    cursor = listed.nextCursor
+  } while (cursor !== null)
+  return null
 }
 
 export async function pushDocsCommand(
@@ -521,10 +551,17 @@ export async function pushDocsCommand(
     destinations.set(projectName, destination)
     return destination
   }
-  const importedIds = new Map<number, string>()
-  for (const group of groups) importedIds.set(group.sourceDocId, group.payload.doc.id!)
+  const importedIds = new Map<string, string>()
+  for (const group of groups) {
+    if (group.localDocId !== null) importedIds.set(group.sourceDocId, group.payload.doc.id!)
+  }
   for (const group of groups) {
     const destination = await destinationFor(group.payload.doc.projectName ?? null)
+    if (group.localDocId === null) {
+      const retainedId = await retainedHostedDocumentId(group, client, destination)
+      group.payload.doc.id = retainedId ?? group.payload.doc.id
+      importedIds.set(group.sourceDocId, group.payload.doc.id!)
+    }
     const payload = payloadWithImportedParentIds(group, importedIds)
     const hosted = await client.importDoc(payload, destination)
     const compatibilityRefusal = recordDocArticleCompatibilityRefusal(
@@ -533,7 +570,7 @@ export async function pushDocsCommand(
     )
     if (compatibilityRefusal) throw new Error(compatibilityRefusal)
     importedIds.set(group.sourceDocId, hosted.id)
-    recordReturnedIds(local, group, hosted)
+    recordReturnedIds(group, hosted)
   }
   const hosted = { docs: 0, revisions: 0, scores: 0, voids: 0 }
   const uniqueDestinations = new Map(

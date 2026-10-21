@@ -178,8 +178,8 @@ export function assessEvidence<FailureKind extends string>(
 /** Record assessed findings inside the transaction owned by execution. */
 export function recordEvidence(
   database: Database,
-  runId: number,
+  runId: string,
   reviewReply: ReviewReply,
-): number {
+): string {
   return recordReview(runId, reviewReply, database)
 }

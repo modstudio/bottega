@@ -18,7 +18,7 @@ import {
   MONITOR_CAPABILITY_TOKEN_ENV,
   type MonitorCapability,
 } from '../../../shared/monitor-capability.ts'
-import { pidAlive } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
 import { callerIdentity, sessionId } from '../database/db.ts'
@@ -39,6 +39,8 @@ import {
   storeWriteLockReport,
 } from './monitor-store-write-lock.ts'
 import type { MonitorNotice } from './monitor-types.ts'
+
+const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
 
 type Options = {
   ackNotices?: string
@@ -91,12 +93,20 @@ function deliveryAuthorized(): boolean {
       !pidAlive(capability.pid)
     )
       return false
-    const observed = Bun.spawnSync(['/bin/ps', '-p', String(capability.pid), '-o', 'command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { process: observed } = observeBoundedSubprocess(
+      'ps',
+      ['/bin/ps', '-p', String(capability.pid), '-o', 'command='],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      MONITOR_CAPABILITY_PS_TIMEOUT_MS,
+    )
     if (observed.exitCode !== 0) return false
-    const words = new TextDecoder().decode(observed.stdout).trim().split(/\s+/)
+    const words = new TextDecoder()
+      .decode(observed.stdout ?? new Uint8Array())
+      .trim()
+      .split(/\s+/)
     let executable = words[0]
     if (/^(?:python(?:3(?:\.\d+)?)?|ba?sh|zsh|dash)$/i.test(executable ? basename(executable) : ''))
       executable = words[1]
@@ -192,7 +202,10 @@ async function showHistory(
     for (const row of rows)
       presentation.log(
         formatMonitorPass(
-          `monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`,
+          `monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors` +
+            (row.host_load
+              ? `  host load ${row.host_load.loadavg.toFixed(2)}/${row.host_load.ncpu}, ${row.host_load.liveRuns} live run(s)`
+              : ''),
           displayConditions(row.conditions),
         ).join('\n'),
       )
@@ -226,7 +239,10 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
   if (options.json) await presentation.write(`${JSON.stringify(result)}\n`)
   else {
     const failing = failingCanonEvalSlugs(),
-      lines = [`canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`]
+      lines = [
+        `host: load ${result.hostLoad.loadavg.toFixed(2)}/${result.hostLoad.ncpu} cpu; pressure ${result.hostLoad.pressure}; swap ${Math.round(result.hostLoad.swapUsed / 1024 / 1024)}/${Math.round(result.hostLoad.swapTotal / 1024 / 1024)} MiB; ${result.hostLoad.liveRuns} live run(s); ${result.hostLoad.waitingRequests} broker request(s) waiting, oldest ${result.hostLoad.oldestWaitMs}ms`,
+        `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
+      ]
     if (failing.length) lines.push(`canon evals: ${failing.length} failing (${failing.join(', ')})`)
     if (result.conditions.length || result.errors.length) {
       lines.push(

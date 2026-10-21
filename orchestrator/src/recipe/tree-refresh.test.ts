@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
@@ -95,6 +97,10 @@ describe('tree refresh recipe context', () => {
   } satisfies TrackedRecipe
 
   test('uses key, seed, label, base, and allocations from the recorded snapshot', () => {
+    const rootRunId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const rootRunRecordId = db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+      .get(rootRunId)!.record_id
     const snapshot: RecipeSnapshot = {
       source: { path: 'project.jsonc', commit: 'source-base' },
       recipe,
@@ -110,7 +116,7 @@ describe('tree refresh recipe context', () => {
         recipe,
         branch: 'DEV-675-tree-refresh',
         head: 'new-head',
-        owner: { snapshot, key: 'DEV-675', seed: 'small', rootRunId: 42 },
+        owner: { snapshot, key: 'DEV-675', seed: 'small', rootRunId },
       }),
       (_step, received) => {
         vars = received.vars
@@ -130,8 +136,8 @@ describe('tree refresh recipe context', () => {
     expect(vars.key).toBe('DEV-675')
     expect(vars.seed).toBe('small')
     expect(vars.base).toBe('source-base')
-    expect(vars.label).toBe('orch.run=42')
-    expect(vars['compose.project']).toBe('example-app-orch-42')
+    expect(vars.label).toBe(`orch.run=${rootRunRecordId}`)
+    expect(vars['compose.project']).toBe(`example-app-orch-${rootRunId}`)
     expect(vars.index).toBe('4')
     expect(vars['ports.web']).toBe('21404')
   })
@@ -168,12 +174,12 @@ describe('tree reseed seed selection', () => {
   test('refuses while a participant in the owning chain is live', () => {
     expect(
       reseedLivenessRefusal([
-        { id: 41, status: 'ok' },
-        { id: 42, status: 'asking' },
+        { record_id: '41', status: 'ok' },
+        { record_id: '42', status: 'asking' },
       ]),
     ).toBe(
       "run 42 is asking in this tree's owning chain; wait for it to finish or stop it before reseeding",
     )
-    expect(reseedLivenessRefusal([{ id: 41, status: 'ok' }])).toBeNull()
+    expect(reseedLivenessRefusal([{ record_id: '41', status: 'ok' }])).toBeNull()
   })
 })

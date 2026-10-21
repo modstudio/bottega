@@ -24,6 +24,7 @@ the hosted record and outbox
 - [bottega record publish](#bottega-record-publish)
 - [bottega record pull](#bottega-record-pull)
 - [bottega record push](#bottega-record-push)
+- [bottega record push-catalogues](#bottega-record-push-catalogues)
 - [bottega record push-docs](#bottega-record-push-docs)
 - [bottega record redact-synced](#bottega-record-redact-synced)
 - [bottega record sign-in](#bottega-record-sign-in)
@@ -38,6 +39,7 @@ the hosted record and outbox
 - [bottega record space move-project](#bottega-record-space-move-project)
 - [bottega record space switch](#bottega-record-space-switch)
 - [bottega record sync](#bottega-record-sync)
+- [bottega record use](#bottega-record-use)
 - [bottega record whoami](#bottega-record-whoami)
 
 ## bottega record
@@ -57,12 +59,14 @@ the hosted record and outbox
 - [bottega record publish](./record.md#bottega-record-publish)
 - [bottega record pull](./record.md#bottega-record-pull)
 - [bottega record push](./record.md#bottega-record-push)
+- [bottega record push-catalogues](./record.md#bottega-record-push-catalogues)
 - [bottega record push-docs](./record.md#bottega-record-push-docs)
 - [bottega record redact-synced](./record.md#bottega-record-redact-synced)
 - [bottega record sign-in](./record.md#bottega-record-sign-in)
 - [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
 - [bottega record sync](./record.md#bottega-record-sync)
+- [bottega record use](./record.md#bottega-record-use)
 - [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record audit-secrets
@@ -297,6 +301,20 @@ push this machine's orchestrator record
 
 - [bottega record](./record.md#bottega-record)
 
+## bottega record push-catalogues
+
+**Synopsis:** `bottega record push-catalogues [--dry-run]`
+
+push local catalogues and port items to the hosted record
+
+### Options
+
+- `--dry-run`: report the import plan without writing
+
+### Related
+
+- [bottega record](./record.md#bottega-record)
+
 ## bottega record push-docs
 
 **Synopsis:** `bottega record push-docs [--dry-run]`
@@ -480,6 +498,16 @@ synchronize the orchestrator and hub records
 - `--backfill`: enqueue older records before pushing
 - `--since <ISO>`: earliest source timestamp to ingest
 - `--only <runs|transcripts|git|tasks>`: source to ingest
+
+### Related
+
+- [bottega record](./record.md#bottega-record)
+
+## bottega record use
+
+**Synopsis:** `bottega record use <address>`
+
+bind this machine to a hosted record
 
 ### Related
 

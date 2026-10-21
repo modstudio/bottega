@@ -10,11 +10,11 @@ import {
   parseFocusedTestRunner,
 } from './focused-test-decision.ts'
 
-export function focusedTestEligibility(runId: number, token: string): FocusedTestEligibility {
+export function focusedTestEligibility(runId: string, token: string): FocusedTestEligibility {
   const row = db()
     .query(
       `SELECT r.job,p.settings FROM run r
-       LEFT JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+       LEFT JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as { job: string; settings: string | null } | null
   let runner = null

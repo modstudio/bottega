@@ -1,11 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import { tmpdir } from 'node:os'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import { noRepoIsolatePath } from './run-artifacts.ts'
 
 describe('review-lens-inline has no checkout', () => {
   test('the no-repo isolate is deterministically named below an owned runs directory', () => {
     const ownedRuns = '/var/lib/orch/runs'
-    expect(noRepoIsolatePath(42, ownedRuns)).toBe('/var/lib/orch/runs/isolates/42')
-    expect(noRepoIsolatePath(42, ownedRuns).startsWith(tmpdir())).toBe(false)
+    const runId = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    const recordId = db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+      .get(runId)!.record_id
+    expect(noRepoIsolatePath(runId, ownedRuns)).toBe(`/var/lib/orch/runs/isolates/${recordId}`)
+    expect(noRepoIsolatePath(runId, ownedRuns).startsWith(tmpdir())).toBe(false)
   })
 })

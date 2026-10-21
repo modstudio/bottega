@@ -17,6 +17,7 @@ export type OutboxSanitizeKind =
   | 'landing_override'
   | 'contention'
   | 'test_flake'
+  | 'branch_disposal'
 
 type SecretLeaf = {
   at: string
@@ -85,6 +86,7 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
     { at: 'file', style: 'value' },
     { at: 'signal', style: 'value' },
   ],
+  branch_disposal: [{ at: 'note', style: 'value' }],
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -1,18 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readlinkSync,
   rmSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
@@ -20,13 +18,85 @@ import { db } from '../database/db.ts'
 import {
   KEEP_RUN_FILES_DAYS,
   persistRunArtifacts,
+  persistTerminalSnapshot,
   pruneRuns,
+  RUNS_DIR,
   readDispatchState,
+  reconcileRun,
   runArtifactsDir,
   runFilePaths,
   runScratchDir,
   writeDispatchState,
 } from './run-artifacts.ts'
+
+const terminalSnapshot = () => ({
+  status: 'ok',
+  error: null,
+  failureKind: null,
+  output: 'complete',
+  outputPath: '/tmp/output',
+  promptPath: '/tmp/prompt',
+  exitCode: 0,
+  latencyMs: 123,
+  vendorTokens: 34,
+  vendorCostUsd: null,
+  vendorInputTokens: 12,
+  vendorOutputTokens: 22,
+  vendorEstimatedCostUsd: 0.45,
+  vendorCostSource: 'estimated',
+  model: 'fixture-model',
+  vendorSession: 'fixture-session',
+  preConfinement: null,
+  confinement: null,
+  filesChanged: 1,
+  changedPaths: '["file.ts"]',
+  linesAdded: 2,
+  linesRemoved: 1,
+  testsRan: 1,
+  testsPassed: 1,
+  testsClaimDisagrees: 0,
+  deviations: 0,
+  escalations: 0,
+})
+
+test('terminal snapshot preserves every vendor usage field', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  persistTerminalSnapshot(id, terminalSnapshot())
+
+  const stored = JSON.parse(readFileSync(join(RUNS_DIR, id, 'result.json'), 'utf8'))
+  expect(stored).toMatchObject({
+    vendorTokens: 34,
+    vendorCostUsd: null,
+    vendorInputTokens: 12,
+    vendorOutputTokens: 22,
+    vendorEstimatedCostUsd: 0.45,
+    vendorCostSource: 'estimated',
+  })
+})
+
+test('reconcile restores every vendor usage column from the terminal snapshot', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  db().query('UPDATE run SET unreconciled=1 WHERE record_id=?').run(id)
+  persistTerminalSnapshot(id, terminalSnapshot())
+
+  expect(reconcileRun(id)).toBe(`reconciled run ${id} as ok`)
+  expect(
+    db()
+      .query(
+        `SELECT vendor_tokens, vendor_cost_usd, vendor_input_tokens, vendor_output_tokens,
+                vendor_estimated_cost_usd, vendor_cost_source
+           FROM run WHERE record_id=?`,
+      )
+      .get(id),
+  ).toEqual({
+    vendor_tokens: 34,
+    vendor_cost_usd: null,
+    vendor_input_tokens: 12,
+    vendor_output_tokens: 22,
+    vendor_estimated_cost_usd: 0.45,
+    vendor_cost_source: 'estimated',
+  })
+})
 
 describe('run files are named by their run, not by the clock', () => {
   /**
@@ -79,13 +149,17 @@ describe('run file pruning', () => {
       utimesSync(prompt, old, old)
       utimesSync(output, old, old)
       const id = addRun({ agent: 'codex', job: 'file-question' })
-      db().query('UPDATE run SET prompt_path=?, output_path=? WHERE id=?').run(prompt, output, id)
+      db()
+        .query('UPDATE run SET prompt_path=?, output_path=? WHERE record_id=?')
+        .run(prompt, output, id)
 
       pruneRuns(files)
 
       expect(existsSync(prompt)).toBe(false)
       expect(existsSync(output)).toBe(false)
-      expect(db().query('SELECT prompt_path, output_path FROM run WHERE id=?').get(id)).toEqual({
+      expect(
+        db().query('SELECT prompt_path, output_path FROM run WHERE record_id=?').get(id),
+      ).toEqual({
         prompt_path: null,
         output_path: null,
       })
@@ -180,13 +254,21 @@ test('a listed directory is copied recursively without following its symlinks', 
     persistRunArtifacts(id, [evidence], null, null)
     const copied = join(runArtifactsDir(id), 'evidence')
     expect(readFileSync(join(copied, 'target.txt'), 'utf8')).toBe('target\n')
-    expect(lstatSync(join(copied, 'link.txt')).isSymbolicLink()).toBe(true)
-    expect(readlinkSync(join(copied, 'link.txt'))).toBe('target.txt')
+    expect(existsSync(join(copied, 'link.txt'))).toBe(false)
+    expect(
+      JSON.parse(readFileSync(join(runArtifactsDir(id), 'dropped.json'), 'utf8')),
+    ).toContainEqual(
+      expect.objectContaining({
+        path: 'evidence/link.txt',
+        reason: 'symlink',
+        linkText: 'target.txt',
+      }),
+    )
   } finally {
     rmSync(outside, { recursive: true, force: true })
   }
 })
-test('a listed symlink to a directory is materialized before its source is reclaimed', () => {
+test('a listed symlink to a directory is recorded without following it', () => {
   const id = addRun({ agent: 'codex', job: 'understand' })
   const outside = mkdtempSync(join(tmpdir(), 'orch-linked-artifact-directory-'))
   const source = join(outside, 'source')
@@ -198,12 +280,29 @@ test('a listed symlink to a directory is materialized before its source is recla
   persistRunArtifacts(id, [linked], null, null)
   rmSync(outside, { recursive: true, force: true })
 
-  const copied = join(runArtifactsDir(id), 'linked-evidence')
-  expect(lstatSync(copied).isDirectory()).toBe(true)
-  expect(lstatSync(copied).isSymbolicLink()).toBe(false)
-  expect(readFileSync(join(copied, 'result.txt'), 'utf8')).toBe('durable\n')
+  expect(existsSync(join(runArtifactsDir(id), 'linked-evidence'))).toBe(false)
+  expect(
+    JSON.parse(readFileSync(join(runArtifactsDir(id), 'dropped.json'), 'utf8')),
+  ).toContainEqual(
+    expect.objectContaining({ path: 'linked-evidence', reason: 'symlink', linkText: source }),
+  )
 })
-test('all named artifacts are attempted before copy failures are reported together', () => {
+test('a scratch root replaced by a symlink is refused and its target is never copied', () => {
+  const id = addRun({ agent: 'codex', job: 'understand' })
+  const outside = mkdtempSync(join(tmpdir(), 'orch-linked-scratch-root-'))
+  writeFileSync(join(outside, 'secret.txt'), 'outside\n')
+  mkdirSync(join(runScratchDir(id), '..'), { recursive: true })
+  symlinkSync(outside, runScratchDir(id))
+  try {
+    expect(() => persistRunArtifacts(id, null, null, null)).toThrow('symlinked root')
+    expect(existsSync(join(runArtifactsDir(id), 'secret.txt'))).toBe(false)
+    expect(existsSync(join(outside, 'secret.txt'))).toBe(true)
+  } finally {
+    rmSync(runScratchDir(id), { force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+test('all named artifacts are checked before copy failures are reported together', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-multiple-artifact-failures-'))
   writeFileSync(join(tree, 'first-good.txt'), 'first\n')
@@ -217,8 +316,8 @@ test('all named artifacts are attempted before copy failures are reported togeth
         null,
       ),
     ).toThrow(/first-missing\.txt[\s\S]*second-missing\.txt/)
-    expect(readFileSync(join(runArtifactsDir(id), 'first-good.txt'), 'utf8')).toBe('first\n')
-    expect(readFileSync(join(runArtifactsDir(id), 'last-good.txt'), 'utf8')).toBe('last\n')
+    expect(existsSync(join(runArtifactsDir(id), 'first-good.txt'))).toBe(false)
+    expect(existsSync(join(runArtifactsDir(id), 'last-good.txt'))).toBe(false)
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }
@@ -253,7 +352,7 @@ test('an artifact copy failure records a harness failure and preserves the tree'
       `could not copy named file ${join(tree, 'missing-evidence.txt')}`,
     )
     expect(existsSync(tree)).toBe(true)
-    expect(existsSync(runArtifactsDir(id))).toBe(true)
+    expect(existsSync(runArtifactsDir(id))).toBe(false)
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }
@@ -263,10 +362,45 @@ test('an artifact persistence failure cannot overwrite a concurrent operator sto
   const tree = mkdtempSync(join(tmpdir(), 'orch-stopped-artifact-tree-'))
   try {
     expect(() => persistRunArtifacts(id, ['missing'], { path: tree }, null)).toThrow()
-    expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'stopped',
+    })
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }
+})
+
+test('the adapter retains selected scratch files and records every dropped byte', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' })
+  const scratch = runScratchDir(id)
+  mkdirSync(join(scratch, 'repo', '.git'), { recursive: true })
+  writeFileSync(join(scratch, 'repo', '.git', 'config'), 'git metadata')
+  writeFileSync(join(scratch, 'repo', 'source.ts'), 'source')
+  mkdirSync(join(scratch, 'nested', 'deep'), { recursive: true })
+  writeFileSync(join(scratch, 'nested', 'deep', 'named.txt'), 'named evidence')
+  writeFileSync(join(scratch, 'nested', 'deep', 'unmentioned.txt'), 'drop me')
+  writeFileSync(join(scratch, 'summary.txt'), 'summary')
+  const resultPath = join(dirname(scratch), 'result.json')
+  writeFileSync(resultPath, '{}')
+
+  persistRunArtifacts(id, [join(scratch, 'nested', 'deep', 'named.txt')], null, {
+    diff: 'diff --git a/a b/a\n',
+  })
+
+  expect(readFileSync(join(runArtifactsDir(id), 'summary.txt'), 'utf8')).toBe('summary')
+  expect(readFileSync(join(runArtifactsDir(id), 'nested', 'deep', 'named.txt'), 'utf8')).toBe(
+    'named evidence',
+  )
+  expect(existsSync(join(runArtifactsDir(id), 'repo'))).toBe(false)
+  expect(existsSync(join(runArtifactsDir(id), 'nested', 'deep', 'unmentioned.txt'))).toBe(false)
+  expect(JSON.parse(readFileSync(join(runArtifactsDir(id), 'dropped.json'), 'utf8'))).toEqual([
+    { path: 'nested/deep/unmentioned.txt', size: 7, reason: 'outside retention depth' },
+    { path: 'repo', size: 18, reason: 'copy', fileCount: 2 },
+  ])
+  expect(JSON.parse(readFileSync(resultPath, 'utf8'))).toEqual({
+    artifactBytesKept: 40,
+    artifactBytesDropped: 25,
+  })
 })
 test(`${PLATFORM_SLUG} run retry preserves a reader root deliverable contract and timeout`, () => {
   const root = addRun({ agent: 'codex', job: 'understand' })

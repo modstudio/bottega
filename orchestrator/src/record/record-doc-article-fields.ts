@@ -3,6 +3,7 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocForm, DocKind } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
 import { articleFieldRefusal } from '../doc/doc-write-allowed.ts'
 import { assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
@@ -73,6 +74,11 @@ export async function hostedArticleProjectId(
   requestedId?: string | null,
 ): Promise<string | null> {
   if (!name && !requestedId) return null
+  if (!requestedId)
+    throw new RecordDocError(
+      `project-scoped document write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+      422,
+    )
   const resolved = await resolveRecordProjectIdentity(tx, {
     projectId: requestedId,
     projectName: name,

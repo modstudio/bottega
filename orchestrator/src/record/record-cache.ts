@@ -7,10 +7,14 @@ import { parseRecordSpaceMemberships } from '../../../shared/record-space-member
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import { projects } from '../project/projects.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import { pullPortCatalogue } from './record-cache-port.ts'
+import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -214,20 +218,43 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   subjects: number
   skippedSubjects: number
   scores: number
+  lensCatalogue: number
+  workflowCatalogue: number
+  portCatalogue: number
 }> {
   const hasMeta = local
     .query<{ n: number }, []>(
       "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='schema_meta'",
     )
     .get()
-  if (!hasMeta) return { docs: 0, skippedDocs: 0, subjects: 0, skippedSubjects: 0, scores: 0 }
+  if (!hasMeta)
+    return {
+      docs: 0,
+      skippedDocs: 0,
+      subjects: 0,
+      skippedSubjects: 0,
+      scores: 0,
+      lensCatalogue: 0,
+      workflowCatalogue: 0,
+      portCatalogue: 0,
+    }
   const client = recordApiClient()
   const identity = await client.whoami()
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   rememberSignedInRecordUser(identity.user, local)
+  rememberActiveRecordSpace(local, identity.activeSpaceId)
   const cache = recordCacheSpaces(identity)
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
+  const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
+  const workflowPull = await pullWorkflowCatalogue(local, cache.spaces)
+  const portPull = await pullPortCatalogue(local, cache.spaces)
+  for (const [project, spaceId] of cache.projectSpaces)
+    if (
+      spaceId === null ||
+      (workflowPull.completedSpaces.has(spaceId) && portPull.completedSpaces.has(spaceId))
+    )
+      rememberProjectSpace(local, project, spaceId)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -243,7 +270,14 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     }, local)
     if (!page.nextCursor) break
   }
-  return { ...pulledDocs, ...pulledSubjects, scores }
+  return {
+    ...pulledDocs,
+    ...pulledSubjects,
+    scores,
+    lensCatalogue,
+    workflowCatalogue: workflowPull.count,
+    portCatalogue: portPull.count,
+  }
 }
 
 async function pullSubjects(
@@ -291,14 +325,14 @@ async function pullSubjects(
 
 function resolveRememberedParents(local: Database, unresolved: Map<string, string>): void {
   for (const [childRecordId, parentRecordId] of unresolved) {
-    const child = local
-      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-      .get(childRecordId)
-    const parent = local
-      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-      .get(parentRecordId)
-    if (!child || !parent) continue
-    local.query('UPDATE doc SET parent_id=? WHERE id=?').run(parent.id, child.id)
+    if (
+      !local.query('SELECT 1 FROM doc WHERE record_id=?').get(childRecordId) ||
+      !local.query('SELECT 1 FROM doc WHERE record_id=?').get(parentRecordId)
+    )
+      continue
+    local
+      .query('UPDATE doc SET parent_record_id=? WHERE record_id=?')
+      .run(parentRecordId, childRecordId)
     unresolved.delete(childRecordId)
   }
 }
@@ -375,13 +409,11 @@ function syncPulledDocRelatedSubjects(
       .run(newRecordId(), newRecordId(), recordId, id)
 }
 
-function pulledDocParentId(local: Database, parentRecordId: string | null): number | null {
+function pulledDocParentId(local: Database, parentRecordId: string | null): string | null {
   if (parentRecordId == null) return null
-  return (
-    local
-      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-      .get(parentRecordId)?.id ?? null
-  )
+  return local.query('SELECT 1 FROM doc WHERE record_id=?').get(parentRecordId)
+    ? parentRecordId
+    : null
 }
 
 function applyDoc(
@@ -417,13 +449,11 @@ function applyDoc(
   else unresolvedParents.delete(recordId)
   const updatedAt = String(item.updatedAt ?? nowIso())
   const createdAt = String(item.createdAt ?? updatedAt)
-  const existing = local
-    .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-    .get(recordId)
+  const existing = local.query('SELECT 1 FROM doc WHERE record_id=?').get(recordId)
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_record_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE record_id=?',
       )
       .run(
         title,
@@ -444,47 +474,24 @@ function applyDoc(
         updatedAt,
         subject,
         owner,
-        existing.id,
+        recordId,
       )
     syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
     return
   }
   const byAddress = local
-    .query<{ id: number }, [string, string | null, string | null, string]>(
-      'SELECT id FROM doc WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?',
+    .query<{ record_id: string }, [string, string | null, string | null, string]>(
+      'SELECT record_id FROM doc WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?',
     )
     .get(scope, subject, owner, slug)
   if (byAddress) {
-    local
-      .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
-      )
-      .run(
-        title,
-        body,
-        delivery,
-        audiences,
-        parentId,
-        position,
-        featured,
-        status,
-        kind,
-        form,
-        articleSubjectId,
-        JSON.stringify(sourceFiles),
-        checkedAgainstCommit,
-        summary,
-        replacementSlug,
-        updatedAt,
-        recordId,
-        byAddress.id,
-      )
-    syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
-    return
+    throw new Error(
+      `hosted document UUID ${recordId} collides with local document UUID ${byAddress.record_id} at ${scope}/${subject ?? '_'}/${slug}`,
+    )
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
+      `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
@@ -518,25 +525,25 @@ function applyDoc(
 function applyScore(local: Database, item: Record<string, unknown>): void {
   const runId = String(item.runId)
   const localRun = local
-    .query<{ id: number }, [string]>('SELECT id FROM run WHERE record_id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(runId)
   if (!localRun) return
   if (Object.hasOwn(item, 'evidenceExcluded')) {
     local
-      .query('UPDATE run SET evidence_excluded=? WHERE id=?')
-      .run(item.evidenceExcluded == null ? null : String(item.evidenceExcluded), localRun.id)
+      .query('UPDATE run SET evidence_excluded=? WHERE record_id=?')
+      .run(item.evidenceExcluded == null ? null : String(item.evidenceExcluded), localRun.record_id)
   }
   if (item.delivery == null) return
   local
     .query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, fidelity, note, scored_at, scored_by)
        VALUES (?,?,?,?,?,?,?,?)
-       ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
+       ON CONFLICT(run_record_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
          fidelity=excluded.fidelity, note=excluded.note, scored_at=excluded.scored_at`,
     )
     .run(
       newRecordId(),
-      localRun.id,
+      localRun.record_id,
       String(item.delivery),
       item.quality == null ? null : String(item.quality),
       item.fidelity == null ? null : String(item.fidelity),

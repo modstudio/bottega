@@ -1,7 +1,7 @@
 // concern: run-inbox
 /** Pure operator wording for transports that cannot add context to a live turn. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-export function deferredWorkerMessageNotice(runId: number, canInjectMidTurn: boolean): string {
+export function deferredWorkerMessageNotice(runId: string, canInjectMidTurn: boolean): string {
   if (canInjectMidTurn) return ''
   return (
     'It will NOT reach the running turn unless the worker polls check_orchestrator_messages. ' +

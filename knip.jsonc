@@ -44,10 +44,14 @@
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "scripts/test-focused.ts!",
         "scripts/test-preload.ts!",
         "scripts/**/*.test.ts",
         "shared/**/*.test.ts",
         "scripts/architecture.test.ts",
+        "!scripts/check-outcome.ts",
+        "!scripts/check-plan.ts",
+        "!scripts/remaining-report.ts",
         "!scripts/check-runtime.ts",
         "scripts/generate-recipe-schema.ts!",
         "scripts/reference.ts!",
@@ -70,13 +74,13 @@
         // Spawned by path from src/run/run-dispatch.ts as the detached worker entry.
         "src/run/exec.ts!",
         "src/check/check-strict-schema.ts!",
+        "test/run-gate.ts!",
         "src/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",
         "scripts/check-canon-lint.ts!",
         "scripts/check-pack-budget.ts!",
         "scripts/check-projects.ts!",
-        "scripts/identity-inventory.ts!",
         "scripts/import-postgres-projects.ts!",
         "scripts/test-postgres-rls.ts!"
       ],
@@ -89,6 +93,23 @@
     "hub": {
       "entry": ["src/cli.ts!", "src/hosted.ts!", "src/**/*.test.ts"],
       "project": ["src/**/*.ts!", "test/**/*.ts"]
+    },
+    "hub/data": {
+      // test/dom.ts is loaded through the bunfig.toml test preload.
+      "entry": ["src/**/*.test.ts", "test/dom.ts"],
+      "project": ["src/**/*.ts!", "test/**/*.ts"]
+    },
+    "hub/ui": {
+      "entry": [".storybook/preview.css!"]
+    },
+    "hub/views": {
+      "entry": [".storybook/preview.css!"],
+      // Vite resolves codemirror-lang-mermaid's undeclared import through hub/web's alias.
+      "ignoreDependencies": ["@lezer/common"]
+    },
+    "hub/site": {
+      "entry": ["src/**/*.test.{ts,tsx}"],
+      "project": ["src/**/*.{ts,tsx}!"]
     },
     "retrieval": {
       "entry": [

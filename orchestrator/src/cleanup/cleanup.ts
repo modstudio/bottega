@@ -2,9 +2,10 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { repoRootOf, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
+import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { withCleanupLock as takeCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resources.ts'
@@ -33,7 +34,7 @@ export type CleanupPresentation = {
     branch: string,
     uniqueCount: number,
     afterCutCount: number | null,
-    id: number,
+    id: string,
   ) => string
 }
 export type CleanupOptions = {
@@ -45,7 +46,7 @@ export type CleanupOptions = {
 }
 
 export type CleanupRow = {
-  id: number
+  record_id: string
   repo?: string | null
   cwd?: string | null
   worktree: string
@@ -56,7 +57,7 @@ export type CleanupRow = {
 }
 
 type BranchOwnerRow = {
-  id: number
+  record_id: string
   repo: string | null
   cwd: string | null
   worktree: string | null
@@ -73,7 +74,9 @@ class SharedWorktreeClaimError extends Error {
     super(
       `worktree ${worktree} is still claimed by other conversations:\n` +
         sharers
-          .map((row) => `  run ${row.id} is ${row.status}${row.scored ? '' : ' and unscored'}`)
+          .map(
+            (row) => `  run ${row.record_id} is ${row.status}${row.scored ? '' : ' and unscored'}`,
+          )
           .join('\n'),
     )
     this.worktree = worktree
@@ -108,7 +111,7 @@ function samePath(a: string, b: string): boolean {
 
 /** A branch is shared only inside one repository, and active owners protect it. */
 export function evidenceOwningBranchOwners(
-  row: { id: number; repo?: string | null; branch: string | null },
+  row: { record_id: string; repo?: string | null; branch: string | null },
   repoRoot: string,
   branchTipBeforeRemoval?: string | null,
 ): BranchOwnerRow[] {
@@ -116,17 +119,19 @@ export function evidenceOwningBranchOwners(
   const project = row.repo ?? projectAt(repoRoot)?.name ?? null
   const candidates = db()
     .query(
-      `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
+      `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id,
             r.repo, r.cwd, r.worktree, r.status, r.evidence_excluded,
             ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r ${chainScoreJoin('r', 's')}
       WHERE r.branch=?
-        AND COALESCE(r.parent_run_id, r.id) <>
-            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
+        AND COALESCE(r.parent_run_record_id, r.record_id) <>
+            COALESCE((SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?), ?)
         AND r.status IN ('running','asking')
-      ORDER BY r.id`,
+      ORDER BY r.record_id`,
     )
-    .all(row.branch, row.id, row.id) as (BranchOwnerRow & { root_id: number })[]
+    .all(row.branch, row.record_id, row.record_id) as (BranchOwnerRow & {
+    root_record_id: string
+  })[]
   const matching = candidates.filter((candidate) => {
     if (project && candidate.repo && candidate.repo !== project) return false
     const candidateRoot = candidate.repo ? projectByName(candidate.repo)?.path : null
@@ -153,27 +158,27 @@ export function evidenceOwningBranchOwners(
     }
     return true
   })
-  const roots = new Set<number>()
+  const roots = new Set<string>()
   return matching.flatMap((candidate) => {
-    if (roots.has(candidate.root_id)) return []
-    roots.add(candidate.root_id)
-    return [{ ...candidate, id: candidate.root_id }]
+    if (roots.has(candidate.root_record_id)) return []
+    roots.add(candidate.root_record_id)
+    return [{ ...candidate, record_id: candidate.root_record_id }]
   })
 }
 
 export function branchDeletionProvenanceRefusal(
-  runId: number,
+  runId: string,
   target: string | null,
 ): string | null {
   const minted = db()
     .query(
-      `SELECT id, minted_branch FROM run
-       WHERE COALESCE(parent_run_id,id) =
-             (SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+      `SELECT record_id, minted_branch FROM run
+       WHERE COALESCE(parent_run_record_id,record_id) =
+             (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
          AND minted_branch IS NOT NULL
-       ORDER BY id`,
+       ORDER BY number`,
     )
-    .all(runId) as { id: number; minted_branch: string }[]
+    .all(runId) as { record_id: string; minted_branch: string }[]
   if (
     branchDeletableBy(
       target,
@@ -182,12 +187,14 @@ export function branchDeletionProvenanceRefusal(
   )
     return null
   const recordedMinter = target
-    ? (db().query('SELECT id FROM run WHERE minted_branch=? ORDER BY id LIMIT 1').get(target) as {
-        id: number
+    ? (db()
+        .query('SELECT record_id FROM run WHERE minted_branch=? ORDER BY number LIMIT 1')
+        .get(target) as {
+        record_id: string
       } | null)
     : null
   const ownership = recordedMinter
-    ? `it was minted by run ${recordedMinter.id}, not run ${runId}'s conversation`
+    ? `it was minted by run ${recordedMinter.record_id}, not run ${runId}'s conversation`
     : `no recorded run minted it for run ${runId}'s conversation`
   return `branch ${target ?? '(none)'} cannot be deleted: ${ownership}; it was left in place`
 }
@@ -212,7 +219,7 @@ export function withCleanupLock<T>(
 
 /** Null this conversation's pointer for one tree. Clear close-out only when no tree pointer remains. */
 function clearConversationWorktree(
-  runId: number,
+  runId: string,
   worktree: string,
   keptBranch: string | null = null,
 ): void {
@@ -220,19 +227,19 @@ function clearConversationWorktree(
     .query(
       `UPDATE run
         SET worktree=NULL,
-            branch_kept=CASE WHEN id=? THEN ? ELSE branch_kept END,
-            branch_kept_tip=CASE WHEN id=? THEN NULL ELSE branch_kept_tip END
+            branch_kept=CASE WHEN record_id=? THEN ? ELSE branch_kept END,
+            branch_kept_tip=CASE WHEN record_id=? THEN NULL ELSE branch_kept_tip END
       WHERE worktree=?
-        AND COALESCE(parent_run_id, id) =
-            (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+        AND COALESCE(parent_run_record_id,record_id) =
+            (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .run(runId, keptBranch, runId, worktree, runId)
   const remaining = db()
     .query(
       `SELECT 1 AS present FROM run
         WHERE worktree IS NOT NULL
-          AND COALESCE(parent_run_id, id) =
-              (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)
+          AND COALESCE(parent_run_record_id,record_id) =
+              (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
         LIMIT 1`,
     )
     .get(runId)
@@ -243,28 +250,30 @@ function clearConversationWorktree(
         SET close_out_outcome=NULL,
             close_out_detail=NULL,
             close_out_attempted_at=NULL
-      WHERE COALESCE(parent_run_id, id) =
-            (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+      WHERE COALESCE(parent_run_record_id,record_id) =
+            (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
     .run(runId)
 }
 
-export function resourcesForConversation(runId: number) {
+export function resourcesForConversation(runId: string) {
   const ids = db()
     .query(
-      `SELECT id FROM run
-      WHERE COALESCE(parent_run_id, id) =
-            (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+      `SELECT record_id FROM run
+      WHERE COALESCE(parent_run_record_id,record_id) =
+            (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
-    .all(runId) as { id: number }[]
-  return resourcesForRuns(ids.map((row) => row.id))
+    .all(runId) as { record_id: string }[]
+  return resourcesForRuns(ids.map((row) => row.record_id))
 }
 
-function recordRestoreRefusal(runId: number, branch: string, tip: string): void {
-  db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?').run(branch, tip, runId)
+function recordRestoreRefusal(runId: string, branch: string, tip: string): void {
+  db()
+    .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE record_id=?')
+    .run(branch, tip, runId)
 }
 
-function restoreRefusal(runId: number, branch: string, tip: string, error: string): string {
+function restoreRefusal(runId: string, branch: string, tip: string, error: string): string {
   recordRestoreRefusal(runId, branch, tip)
   return (
     `branch ${branch} should have been restored to ${tip}, but the ref write was refused: ` +
@@ -272,8 +281,20 @@ function restoreRefusal(runId: number, branch: string, tip: string, error: strin
   )
 }
 
+function restoreRefusalError(runId: string, branch: string, tip: string, error: string): Error {
+  return new Error(restoreRefusal(runId, branch, tip, error))
+}
+
+function branchOwnerMessage(branch: string, owner: BranchOwnerRow): string {
+  return `branch ${branch} left because run ${owner.record_id} records it`
+}
+
+function liveTurnsMessage(live: { record_id: string; status: string; worktree: string | null }[]) {
+  return live.map((turn) => `  run ${turn.record_id} (${turn.status}): ${turn.worktree}`).join('\n')
+}
+
 function sharedBranchRefusal(
-  runId: number,
+  runId: string,
   repoRoot: string,
   branch: string,
   snapshot: string,
@@ -285,7 +306,7 @@ function sharedBranchRefusal(
     return {
       refusal:
         `shared branch ${branch} moved from ${snapshot} to ${after} during cleanup; ` +
-        `run ${owner.id} owns it, so it was left at ${after}`,
+        `run ${owner.record_id} owns it, so it was left at ${after}`,
       warning: null,
     }
   }
@@ -304,15 +325,15 @@ function sharedBranchRefusal(
 }
 
 export function verifyBranchOwnershipAfterCleanup(
-  runId: number,
+  runId: string,
   repoRoot: string,
   branch: string,
   snapshot: string | null,
   before: BranchOwnerRow[],
   after: BranchOwnerRow[],
 ): { refusal: string | null; warning: string | null } {
-  const priorIds = new Set(before.map((owner) => owner.id))
-  const acquired = after.find((owner) => !priorIds.has(owner.id)) ?? null
+  const priorIds = new Set(before.map((owner) => owner.record_id))
+  const acquired = after.find((owner) => !priorIds.has(owner.record_id)) ?? null
   const protector = acquired ?? after[0] ?? null
   let outcome = { refusal: null as string | null, warning: null as string | null }
   if (protector && snapshot) {
@@ -321,7 +342,7 @@ export function verifyBranchOwnershipAfterCleanup(
   if (!acquired) return outcome
   if (outcome.refusal) {
     return {
-      refusal: `Run ${acquired.id} acquired branch ${branch} during cleanup; ${outcome.refusal}`,
+      refusal: `Run ${acquired.record_id} acquired branch ${branch} during cleanup; ${outcome.refusal}`,
       warning: null,
     }
   }
@@ -332,7 +353,7 @@ export function verifyBranchOwnershipAfterCleanup(
   return {
     refusal:
       `${outcome.warning ? `${outcome.warning} ` : ''}` +
-      `Run ${acquired.id} acquired branch ${branch} during cleanup; cleanup was refused and the branch was ${location}.`,
+      `Run ${acquired.record_id} acquired branch ${branch} during cleanup; cleanup was refused and the branch was ${location}.`,
     warning: null,
   }
 }
@@ -366,17 +387,19 @@ export function verifyBranchOwnershipAfterCleanup(
 function mintedBranchForCleanup(row: CleanupRow): string | null {
   if (row.minted_branch) return row.minted_branch
   try {
-    const found = db().query(`SELECT minted_branch FROM run WHERE id=?`).get(row.id) as {
+    const found = db()
+      .query(`SELECT minted_branch FROM run WHERE record_id=?`)
+      .get(row.record_id) as {
       minted_branch: string | null
     } | null
     if (found?.minted_branch) return found.minted_branch
     const chained = db()
       .query(
         `SELECT minted_branch FROM run
-        WHERE minted_branch IS NOT NULL AND (id=? OR parent_run_id=?)
-        ORDER BY id LIMIT 1`,
+        WHERE minted_branch IS NOT NULL AND (record_id=? OR parent_run_record_id=?)
+        ORDER BY number LIMIT 1`,
       )
-      .get(row.id, row.id) as { minted_branch: string | null } | null
+      .get(row.record_id, row.record_id) as { minted_branch: string | null } | null
     return chained?.minted_branch ?? null
   } catch {
     return null
@@ -388,24 +411,18 @@ function assertDiscardTreeOwnership(row: CleanupRow, repoRoot: string, force: bo
   const conversationIds = (
     db()
       .query(
-        `SELECT id FROM run
-         WHERE COALESCE(parent_run_id,id) =
-               (SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
-         ORDER BY id`,
+        `SELECT record_id FROM run
+         WHERE COALESCE(parent_run_record_id,record_id) =
+               (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
+         ORDER BY number`,
       )
-      .all(row.id) as { id: number }[]
-  ).map((turn) => turn.id)
-  const project = row.repo ? projectByName(row.repo) : projectAt(repoRoot)
-  const ownership = inspectTreeOwnership(
-    row.worktree,
-    repoRoot,
-    conversationIds,
-    project?.settings.worktree?.branch,
-  )
+      .all(row.record_id) as { record_id: string }[]
+  ).map((turn) => turn.record_id)
+  const ownership = inspectTreeOwnership(row.worktree, repoRoot, conversationIds)
   if (ownership === 'attached') {
     throw new Error(
       `refusing to remove attached tree ${row.worktree}; ` +
-        `clear this conversation's pointer with ${PLATFORM_SLUG} run close-out ${row.id}`,
+        `clear this conversation's pointer with ${PLATFORM_SLUG} run close-out ${row.record_id}`,
     )
   }
   if (ownership === 'unknown') {
@@ -425,7 +442,7 @@ export function discardWorktree(
   forceBusy = false,
 ): void {
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
-  withCleanupLock(repoRoot, `${row.id}`, row.worktree, () => {
+  withCleanupLock(repoRoot, `${row.record_id}`, row.worktree, () => {
     assertDiscardTreeOwnership(row, repoRoot, force)
     const sharers = otherConversationWorktreeSharers(db(), row)
     if (sharers.length) {
@@ -435,7 +452,7 @@ export function discardWorktree(
           auditAuthority = adoptRunMutation(auditAuthority, 'discard')
           auditRunMutation(auditAuthority, 'discard', options.auditReason)
         }
-        clearConversationWorktree(row.id, row.worktree)
+        clearConversationWorktree(row.record_id, row.worktree)
       })
       const claim = new SharedWorktreeClaimError(row.worktree, sharers)
       claim.message +=
@@ -468,7 +485,7 @@ export function discardWorktree(
       repoRoot,
       force || forceBusy,
       ownersBefore.length > 0 || !minted,
-      row.id,
+      row.record_id,
       force && !forceBusy,
     )
     const sharersAfter = otherConversationWorktreeSharers(db(), row)
@@ -476,7 +493,7 @@ export function discardWorktree(
     let branchWarning: string | null = null
     if (minted) {
       const ownership = verifyBranchOwnershipAfterCleanup(
-        row.id,
+        row.record_id,
         repoRoot,
         minted,
         branchSnapshot,
@@ -505,7 +522,7 @@ export function discardWorktree(
       if (after === null) {
         const restored = restoreBranch(repoRoot, minted, protectedBranch.tip)
         if (!restored.ok) {
-          throw new Error(restoreRefusal(row.id, minted, protectedBranch.tip, restored.error))
+          throw restoreRefusalError(row.record_id, minted, protectedBranch.tip, restored.error)
         }
         branchWarning =
           `project remove tool deleted protected branch ${minted}; ` +
@@ -515,12 +532,12 @@ export function discardWorktree(
     if (!r.removed) throw new Error(r.detail)
     if (!minted && row.branch) {
       options.presentation.log(
-        `branch ${row.branch} kept (review subject, not owned by run ${row.id})`,
+        `branch ${row.branch} kept (review subject, not owned by run ${row.record_id})`,
       )
     }
     if (branchWarning) options.presentation.error(branchWarning)
     const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-    const inventory = resourcesForConversation(row.id)
+    const inventory = resourcesForConversation(row.record_id)
     if (!inventory.ascertainable) {
       throw new Error(
         `project ${project}'s cleanup could not be verified — inventory unavailable:\n` +
@@ -543,9 +560,9 @@ export function discardWorktree(
         auditAuthority = reauthorizeRunMutation(auditAuthority, 'discard')
         auditAuthority = adoptRunMutation(auditAuthority, 'discard')
       }
-      clearConversationWorktree(row.id, row.worktree, keptProtectedBranch)
+      clearConversationWorktree(row.record_id, row.worktree, keptProtectedBranch)
       settleClaims(db(), {
-        rootRunId: row.id,
+        rootRunId: row.record_id,
         kind: 'worktree',
         state: 'released',
         settledAt: new Date().toISOString(),
@@ -554,7 +571,7 @@ export function discardWorktree(
       })
       if (forcedMintedBranchRemoved && minted) {
         settleClaims(db(), {
-          rootRunId: row.id,
+          rootRunId: row.record_id,
           kind: 'branch',
           state: 'released',
           settledAt: new Date().toISOString(),
@@ -564,7 +581,7 @@ export function discardWorktree(
       }
       if (auditAuthority) auditRunMutation(auditAuthority, 'discard', options.auditReason)
     })
-    options.presentation.log(`${verb} run ${row.id}'s worktree`)
+    options.presentation.log(`${verb} run ${row.record_id}'s worktree`)
     if (r.output) options.presentation.log(r.output)
     if (protectedBranch && keptProtectedBranch) {
       options.presentation.log(
@@ -572,13 +589,13 @@ export function discardWorktree(
           keptProtectedBranch,
           protectedBranch.count,
           afterCutCount,
-          row.id,
+          row.record_id,
         ),
       )
     }
     const branchOwner = ownersAfter[0] ?? ownersBefore[0] ?? null
     if (branchOwner && row.branch) {
-      options.presentation.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
+      options.presentation.log(branchOwnerMessage(row.branch, branchOwner))
     }
   })
 }
@@ -605,17 +622,17 @@ function discardReclaimable(options: CleanupOptions): boolean {
   return options.force || options.evalOwnedScratch === true
 }
 
-export async function discardRun(id: number, options: CleanupOptions): Promise<void> {
+export async function discardRun(id: string, options: CleanupOptions): Promise<void> {
   const force = discardReclaimable(options)
   let authority = authorizeRunMutation(id, 'discard')
   const rootRow = db()
     .query(
-      `SELECT id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit,
+      `SELECT record_id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit,
               worktree_source
-         FROM run WHERE id = ?`,
+         FROM run WHERE record_id = ?`,
     )
     .get(authority.rootId) as {
-    id: number
+    record_id: string
     repo: string | null
     cwd: string | null
     worktree: string | null
@@ -628,11 +645,11 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
   if (!rootRow) throw new Error(`no run ${authority.rootId}`)
   const chain = db()
     .query(
-      `SELECT id, status, worktree, branch, base_commit, worktree_source FROM run
-        WHERE id = ? OR parent_run_id = ? ORDER BY turn, id`,
+      `SELECT record_id, status, worktree, branch, base_commit, worktree_source FROM run
+        WHERE record_id = ? OR parent_run_record_id = ? ORDER BY turn, number`,
     )
     .all(authority.rootId, authority.rootId) as {
-    id: number
+    record_id: string
     status: string
     worktree: string | null
     branch: string | null
@@ -647,14 +664,14 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
     if (live.length) {
       throw new Error(
         `refusing to discard chain ${authority.rootId}: live turns still own worktrees:\n` +
-          live.map((turn) => `  run ${turn.id} (${turn.status}): ${turn.worktree}`).join('\n'),
+          liveTurnsMessage(live),
       )
     }
     for (const worktree of worktrees) {
       const artifact = chain.find((turn) => turn.worktree === worktree)!
       discardWorktree(
         {
-          id: authority.rootId,
+          record_id: authority.rootId,
           repo: rootRow.repo,
           cwd: rootRow.cwd,
           worktree,
@@ -685,13 +702,13 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
     const repoRoot = cleanupRepoRoot(row)
     if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
     withCleanupLock(repoRoot, `discard kept branch for run ${id}`, null, () => {
-      const provenanceRefusal = branchDeletionProvenanceRefusal(row.id, row.branch_kept)
+      const provenanceRefusal = branchDeletionProvenanceRefusal(row.record_id, row.branch_kept)
       if (provenanceRefusal) {
         writeTransaction(() => {
           authority = reauthorizeRunMutation(authority, 'discard')
           authority = adoptRunMutation(authority, 'discard')
           db()
-            .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
+            .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE record_id=?')
             .run(authority.rootId)
           settleClaims(db(), {
             rootRunId: authority.rootId,
@@ -706,20 +723,21 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
         options.presentation.log(provenanceRefusal)
         return
       }
-      const ownerRow = { id: row.id, repo: row.repo, branch: row.branch_kept }
+      const ownerRow = { record_id: row.record_id, repo: row.repo, branch: row.branch_kept }
       const ownersBefore = evidenceOwningBranchOwners(ownerRow, repoRoot)
       if (ownersBefore.length) {
         throw new Error(
-          `branch ${row.branch_kept} is still evidence owned by run ${ownersBefore[0]!.id}; ` +
+          `branch ${row.branch_kept} is still evidence owned by run ${ownersBefore[0]!.record_id}; ` +
             'it was left in place',
         )
       }
       authority = adoptRunMutation(authority, 'discard')
       const snapshot = branchTip(repoRoot, row.branch_kept!)
-      const removed = removeBranch(repoRoot, row.branch_kept!)
+      // The snapshot is the tip cleanup classified when it decided to delete.
+      const removed = removeBranch(repoRoot, row.branch_kept!, snapshot)
       const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot, snapshot)
       const outcome = verifyBranchOwnershipAfterCleanup(
-        row.id,
+        row.record_id,
         repoRoot,
         row.branch_kept!,
         snapshot,
@@ -733,7 +751,7 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
           authority = reauthorizeRunMutation(authority, 'discard')
           authority = adoptRunMutation(authority, 'discard')
           db()
-            .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
+            .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE record_id=?')
             .run(authority.rootId)
           settleClaims(db(), {
             rootRunId: authority.rootId,

@@ -18,6 +18,23 @@
 !cli/package.json
 !retrieval/package.json
 !hub/deploy/site/package.json
+!hub/data/package.json
+!hub/site/package.json
+!hub/ui/package.json
+!hub/util/package.json
+!hub/views/package.json
+!hub/ui/tsconfig.json
+# The web build imports the shared UI, views, data, site and util workspaces directly.
+!hub/site/tsconfig.json
+!hub/site/global.d.ts
+!hub/site/src/
+!hub/ui/src/
+!hub/views/tsconfig.json
+!hub/views/src/
+!hub/data/tsconfig.json
+!hub/data/src/
+!hub/util/tsconfig.json
+!hub/util/src/
 !hub/web/tsconfig.json
 !hub/web/vite.config.ts
 !hub/web/index.html

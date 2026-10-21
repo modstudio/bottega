@@ -24,6 +24,33 @@ def _start(bottega, *args, env=None, cwd=None):
     )
 
 
+def _uuid_string(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
+
+
+def _valid_filed_issue_loop_run(item):
+    return (
+        isinstance(item, dict)
+        and _uuid_string(item.get("runId"))
+        and isinstance(item.get("job"), str)
+        and isinstance(item.get("issueKey"), str)
+    )
+
+
+def _valid_blocked_issue_tree(item):
+    return (
+        isinstance(item, dict)
+        and _uuid_string(item.get("runId"))
+        and isinstance(item.get("path"), str)
+        and isinstance(item.get("why"), str)
+    )
+
+
 def _state_root(env=None):
     environment = env if env is not None else os.environ
     override = environment.get("BOTTEGA_STATE_HOME")
@@ -371,6 +398,76 @@ def _autonomy_slice(completed):
         return "", "Autonomy response was invalid; autonomy state is unknown."
 
 
+def _inbox_counts(stdout):
+    inbox_result = json.loads(stdout)
+    if (
+        not isinstance(inbox_result, dict)
+        or not isinstance(inbox_result.get("cwd_registered"), bool)
+        or (
+            inbox_result.get("project") is not None
+            and not isinstance(inbox_result.get("project"), str)
+        )
+    ):
+        raise ValueError("invalid scoped inbox JSON")
+    questions = inbox_result.get("rows")
+    if not isinstance(questions, list):
+        raise ValueError("invalid inbox JSON")
+    for item in questions:
+        if not isinstance(item, dict):
+            raise ValueError("invalid inbox JSON")
+        if item.get("kind") == "workflow":
+            valid = (
+                isinstance(item.get("question_id"), int)
+                and isinstance(item.get("can_answer"), bool)
+                and (
+                    item.get("session_id") is None
+                    or isinstance(item.get("session_id"), str)
+                )
+            )
+        else:
+            valid = (
+                item.get("session_liveness") in ("live", "unknown")
+                and isinstance(item.get("answer_id"), int)
+                and isinstance(item.get("can_answer"), bool)
+            )
+        if not valid:
+            raise ValueError("invalid inbox JSON")
+
+    answerable_count = sum(item["can_answer"] for item in questions)
+    run_questions = [item for item in questions if item.get("kind") != "workflow"]
+    workflow_questions = [item for item in questions if item.get("kind") == "workflow"]
+    foreign_count = len(
+        {item["answer_id"] for item in run_questions if not item["can_answer"]}
+    )
+    unknown_count = len(
+        {
+            item["answer_id"]
+            for item in run_questions
+            if not item["can_answer"] and item["session_liveness"] == "unknown"
+        }
+    )
+    foreign_workflow_count = len(
+        {
+            item["question_id"]
+            for item in workflow_questions
+            if not item["can_answer"]
+        }
+    )
+    return answerable_count, foreign_count, unknown_count, foreign_workflow_count
+
+
+def _foreign_workflow_notice(count):
+    if count == 1:
+        return (
+            "1 workflow started by another session is waiting on a ruling. "
+            "Only that session, or the operator relaying a decision, can answer it."
+        )
+    return (
+        f"{count} workflows started by other sessions are waiting on rulings. "
+        "Only those sessions, or the operator relaying decisions, can answer them."
+    )
+
+
 def _settings_apply_notice(completed, log_path=None):
     if completed is None:
         return f"settings apply still running; its result lands in {log_path}"
@@ -564,40 +661,16 @@ def main() -> int:
                 "brief state is unknown."
             )
 
-        answerable_count = foreign_count = unknown_count = 0
+        answerable_count = foreign_count = unknown_count = foreign_workflow_count = 0
         inbox_failure = None
         if inbox.returncode == 0:
             try:
-                inbox_result = json.loads(inbox.stdout)
-                if (
-                    not isinstance(inbox_result, dict)
-                    or not isinstance(inbox_result.get("cwd_registered"), bool)
-                    or (
-                        inbox_result.get("project") is not None
-                        and not isinstance(inbox_result.get("project"), str)
-                    )
-                ):
-                    raise ValueError("invalid scoped inbox JSON")
-                questions = inbox_result.get("rows")
-                if not isinstance(questions, list) or not all(
-                    isinstance(item, dict)
-                    and item.get("session_liveness") in ("live", "unknown")
-                    and isinstance(item.get("answer_id"), int)
-                    and isinstance(item.get("can_answer"), bool)
-                    for item in questions
-                ):
-                    raise ValueError("invalid inbox JSON")
-                answerable_count = sum(item["can_answer"] for item in questions)
-                foreign_count = len(
-                    {item["answer_id"] for item in questions if not item["can_answer"]}
-                )
-                unknown_count = len(
-                    {
-                        item["answer_id"]
-                        for item in questions
-                        if not item["can_answer"] and item["session_liveness"] == "unknown"
-                    }
-                )
+                (
+                    answerable_count,
+                    foreign_count,
+                    unknown_count,
+                    foreign_workflow_count,
+                ) = _inbox_counts(inbox.stdout)
             except Exception:
                 inbox_failure = "Inbox response was invalid; question state is unknown."
         elif inbox.returncode == -1:
@@ -640,10 +713,7 @@ def main() -> int:
                     ):
                         raise ValueError("invalid filed issue waiting JSON")
                 if not isinstance(unscored_loop_runs, list) or not all(
-                    isinstance(item, dict)
-                    and isinstance(item.get("runId"), int)
-                    and isinstance(item.get("job"), str)
-                    and isinstance(item.get("issueKey"), str)
+                    _valid_filed_issue_loop_run(item)
                     for item in unscored_loop_runs
                 ):
                     raise ValueError("invalid filed issue unscored JSON")
@@ -652,10 +722,7 @@ def main() -> int:
                     or not isinstance(blocked_issue_loop.get("limit"), int)
                     or not isinstance(blocked_issue_loop.get("held"), list)
                     or not all(
-                        isinstance(item, dict)
-                        and isinstance(item.get("runId"), int)
-                        and isinstance(item.get("path"), str)
-                        and isinstance(item.get("why"), str)
+                        _valid_blocked_issue_tree(item)
                         for item in blocked_issue_loop["held"]
                     )
                 ):
@@ -725,6 +792,10 @@ def main() -> int:
                     f"{unknown_count} of those are from a session not seen recently. They may be "
                     "closed, and those workers may never get an answer."
                 )
+            notices.append(message)
+            inbox_lines.append(message)
+        if foreign_workflow_count:
+            message = _foreign_workflow_notice(foreign_workflow_count)
             notices.append(message)
             inbox_lines.append(message)
         if waiting_issues:

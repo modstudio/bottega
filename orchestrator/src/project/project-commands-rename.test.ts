@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -24,14 +25,24 @@ async function renameTasks(settings?: string): Promise<string> {
 
 test('renaming tasks refuses its carried TASK prefix under the new name', async () => {
   installRecordApiClient(createMemoryRecordApiClient())
-  upsertProject({ name: 'tasks', path: '/w/tasks', settings: { keyPrefixes: ['TASK'] } })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'tasks',
+    path: '/w/tasks',
+    settings: { keyPrefixes: ['TASK'] },
+  })
   await expect(renameTasks()).rejects.toThrow('key prefix TASK is reserved')
   expect(projectByName('tasks')).not.toBeNull()
 })
 
 test('renaming tasks accepts a simultaneous non-reserved prefix patch', async () => {
   installRecordApiClient(createMemoryRecordApiClient())
-  upsertProject({ name: 'tasks', path: '/w/tasks', settings: { keyPrefixes: ['TASK'] } })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'tasks',
+    path: '/w/tasks',
+    settings: { keyPrefixes: ['TASK'] },
+  })
   expect(await renameTasks(JSON.stringify({ keyPrefixes: ['RENAMED'] }))).toBe(
     'updated renamed-tasks',
   )

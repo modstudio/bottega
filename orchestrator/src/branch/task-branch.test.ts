@@ -1,7 +1,10 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { addRun } from '../../test/fixtures/store.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
   type GitHubPullRequest,
@@ -11,6 +14,7 @@ import {
   decideTaskBranchLanding,
   decideTaskBranchPullRequestCheck,
   isTaskBranchSuperseded,
+  resolveTaskBranch,
   selectMaximalTaskBranchCandidates,
   type TaskBranchCandidate,
   type TaskBranchRunRow,
@@ -18,17 +22,140 @@ import {
   taskBranchCandidacySql,
   taskBranchContainedTips,
   taskBranchLandingRefusalMessage,
+  taskBranchLandingTreeRefusal,
   taskBranchReuseNotice,
 } from './task-branch.ts'
 
+afterEach(() => {
+  mock.restore()
+  rmSync(join(dir, 'landing-tree-owner-repo'), { recursive: true, force: true })
+})
+
+function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {
+  return {
+    exitCode,
+    stdout: Buffer.from(stdout),
+    stderr: Buffer.from(exitCode === 0 ? '' : 'failed'),
+    success: exitCode === 0,
+    exitedDueToTimeout: false,
+  } as ReturnType<typeof Bun.spawnSync>
+}
+
+test('an evidence-excluded landing-tree owner refuses dispatch planning', () => {
+  const repo = join(dir, 'landing-tree-owner-repo')
+  const landingTree = join(repo, '.claude', 'worktrees', 'orch-14488')
+  mkdirSync(landingTree, { recursive: true })
+  const projectId = (
+    db()
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings)
+         VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,NULL,'{"trunk":"main"}') RETURNING record_id`,
+      )
+      .get('landing-tree-owner-fixture', repo) as { record_id: string }
+  ).record_id
+  const writer = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'session-a',
+  })
+  db()
+    .query(
+      `UPDATE run SET launch_key='DEV-1398',branch='DEV-1398-orch-14461',project_record_id=?
+      WHERE record_id=?`,
+    )
+    .run(projectId, writer)
+  const landing = addRun({ agent: 'codex', job: 'landing-tree', status: 'running' })
+  db()
+    .query(
+      `UPDATE run SET worktree=?,project_record_id=?,
+       evidence_excluded='landing tree lifecycle row; not agent execution'
+      WHERE record_id=?`,
+    )
+    .run(landingTree, projectId, landing)
+  const newerTerminalOwner = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
+  db()
+    .query(
+      `UPDATE run SET worktree=?,project_record_id=?,
+       evidence_excluded='superseded fixture owner'
+      WHERE record_id=?`,
+    )
+    .run(landingTree, projectId, newerTerminalOwner)
+
+  const originalSpawnSync = Bun.spawnSync
+  spyOn(Bun, 'spawnSync').mockImplementation(((argv: string[], options?: object) => {
+    if (argv[0] === 'gh') return spawnResult('[]')
+    if (argv[0] !== 'git') return originalSpawnSync(argv, options as never)
+    const command = argv.join(' ')
+    if (command.includes('rev-parse --local-env-vars')) {
+      return spawnResult('GIT_DIR\nGIT_WORK_TREE\n')
+    }
+    if (command.includes('rev-parse --path-format=absolute --git-dir')) return spawnResult('', 1)
+    if (command.includes('rev-parse --path-format=absolute --show-toplevel')) {
+      return spawnResult(`${repo}\n`)
+    }
+    if (command.includes('rev-parse --path-format=absolute --git-common-dir')) {
+      return spawnResult(`${join(repo, '.git')}\n`)
+    }
+    if (command.includes('rev-parse --verify --end-of-options main^{commit}')) {
+      return spawnResult('trunk-tip\n')
+    }
+    if (
+      command.includes(
+        'rev-parse --verify --end-of-options refs/heads/DEV-1398-orch-14461^{commit}',
+      )
+    ) {
+      return spawnResult('writer-tip\n')
+    }
+    if (command.includes('merge-base trunk-tip writer-tip')) return spawnResult('merge-base\n')
+    if (command.includes('rev-list --count merge-base..writer-tip')) return spawnResult('1\n')
+    if (command.includes('cherry trunk-tip writer-tip')) return spawnResult('+ writer-tip\n')
+    if (command.includes('rev-parse --verify writer-tip^{tree}')) return spawnResult('tree-tip\n')
+    if (command.includes('commit-tree tree-tip')) {
+      expect(options).toMatchObject({
+        env: {
+          GIT_AUTHOR_NAME: 'Patch Equivalence',
+          GIT_AUTHOR_EMAIL: 'patch-equivalence@orchestrator.invalid',
+          GIT_COMMITTER_NAME: 'Patch Equivalence',
+          GIT_COMMITTER_EMAIL: 'patch-equivalence@orchestrator.invalid',
+        },
+      })
+      return spawnResult('squash-tip\n')
+    }
+    if (command.includes('cherry trunk-tip squash-tip')) return spawnResult('+ squash-tip\n')
+    if (command.includes('worktree list --porcelain')) {
+      return spawnResult(
+        `worktree ${repo}\nbranch refs/heads/main\n\n` +
+          `worktree ${landingTree}\nbranch refs/heads/DEV-1398-orch-14461\n`,
+      )
+    }
+    throw new Error(`unexpected git fixture command: ${command}`)
+  }) as typeof Bun.spawnSync)
+
+  const candidate = resolveTaskBranch(repo, 'DEV-1398')
+  expect(candidate?.worktree?.path).toBe(landingTree)
+  expect(() =>
+    claimTreePlanForCandidate({
+      candidate,
+      forbidsRepo: false,
+      repoJob: true,
+      hasWorktree: false,
+      refusalMessage: taskBranchLandingTreeRefusal,
+    }),
+  ).toThrow(
+    `refusing task branch DEV-1398-orch-14461: it is checked out in architect landing tree ${landingTree}.`,
+  )
+})
+
 const row = (
-  id: number,
+  id: string,
   branch: string,
   launchBase: string | null,
-  parentRunId: number | null = null,
+  parentRunId: string | null = null,
 ): TaskBranchRunRow => ({
-  id,
-  parent_run_id: parentRunId,
+  record_id: String(id),
+  number: Number(id),
+  parent_run_record_id: parentRunId,
   branch,
   launch_base: launchBase,
 })
@@ -36,20 +163,22 @@ const row = (
 test('an abandoned run is not a task-branch candidate', () => {
   const kept = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
   const abandoned = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
-  db().query("UPDATE run SET failure_kind='abandoned' WHERE id=?").run(abandoned)
+  db().query("UPDATE run SET failure_kind='abandoned' WHERE record_id=?").run(abandoned)
   const rows = db()
-    .query(`SELECT candidate.id FROM run candidate WHERE ${taskBranchCandidacySql('candidate')}`)
-    .all() as { id: number }[]
-  expect(rows.map((candidate) => candidate.id)).toContain(kept)
-  expect(rows.map((candidate) => candidate.id)).not.toContain(abandoned)
+    .query(
+      `SELECT candidate.record_id FROM run candidate WHERE ${taskBranchCandidacySql('candidate')}`,
+    )
+    .all() as { record_id: string }[]
+  expect(rows.map((candidate) => candidate.record_id)).toContain(kept)
+  expect(rows.map((candidate) => candidate.record_id)).not.toContain(abandoned)
 })
 
 describe('task branch supersession', () => {
   test('a later explicit-base root run supersedes an earlier branch', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-new', 'main'),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-new', 'main'),
       ]),
     ).toBe(true)
   })
@@ -57,8 +186,8 @@ describe('task branch supersession', () => {
   test('a later root run without a launch base does not supersede', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-new', null),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-new', null),
       ]),
     ).toBe(false)
   })
@@ -66,8 +195,8 @@ describe('task branch supersession', () => {
   test('a later resume with an inherited launch base does not supersede', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-new', 'main', 9),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-new', 'main', '9'),
       ]),
     ).toBe(false)
   })
@@ -75,8 +204,8 @@ describe('task branch supersession', () => {
   test('a later explicit-base run on the same branch does not supersede', () => {
     expect(
       isTaskBranchSuperseded('DEV-609-old', [
-        row(10, 'DEV-609-old', null),
-        row(11, 'DEV-609-old', 'main'),
+        row('10', 'DEV-609-old', null),
+        row('11', 'DEV-609-old', 'main'),
       ]),
     ).toBe(false)
   })
@@ -258,11 +387,12 @@ const branchCandidate = (
   tip,
   commitCount,
   mergeBase: 'merge-base',
-  projectId: 1,
+  projectId: 'project-1',
   projectName: 'starship',
-  nominatingRuns: [{ id: commitCount, sessionId: 'session-a' }],
+  nominatingRuns: [{ record_id: String(commitCount), sessionId: 'session-a' }],
   trunk: 'develop',
   worktree: null,
+  worktreeOwnerJob: null,
   ...extras,
 })
 
@@ -271,12 +401,12 @@ describe('contained task branch tips', () => {
     'STAR-5307-orch-9648',
     '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
     8,
-    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+    { nominatingRuns: [{ record_id: '9648', sessionId: 'session-a' }] },
   )
   const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
     nominatingRuns: [
-      { id: 9690, sessionId: 'session-a' },
-      { id: 9691, sessionId: 'session-a' },
+      { record_id: '9690', sessionId: 'session-a' },
+      { record_id: '9691', sessionId: 'session-a' },
     ],
     worktree: {
       path: '/tmp/STAR-5307',
@@ -321,12 +451,12 @@ describe('maximal task branch candidates', () => {
     'STAR-5307-orch-9648',
     '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
     8,
-    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+    { nominatingRuns: [{ record_id: '9648', sessionId: 'session-a' }] },
   )
   const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
     nominatingRuns: [
-      { id: 9690, sessionId: 'session-a' },
-      { id: 9691, sessionId: 'session-a' },
+      { record_id: '9690', sessionId: 'session-a' },
+      { record_id: '9691', sessionId: 'session-a' },
     ],
     worktree: {
       path: '/tmp/STAR-5307',
@@ -364,10 +494,10 @@ describe('task branch ambiguity refusal', () => {
     'STAR-5307-orch-9648',
     '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
     8,
-    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+    { nominatingRuns: [{ record_id: '9648', sessionId: 'session-a' }] },
   )
   const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
-    nominatingRuns: [{ id: 9690, sessionId: 'session-a' }],
+    nominatingRuns: [{ record_id: '9690', sessionId: 'session-a' }],
   })
 
   test('leads with git reconciliation before score voiding', () => {
@@ -390,14 +520,15 @@ test('task branch reuse notice names branch, tip, contributing runs, and start-o
       tip: 'abc123',
       commitCount: 2,
       mergeBase: 'def456',
-      projectId: 1,
+      projectId: 'project-1',
       projectName: 'project',
       nominatingRuns: [
-        { id: 5186, sessionId: 'session-a' },
-        { id: 5190, sessionId: 'session-a' },
+        { record_id: '5186', sessionId: 'session-a' },
+        { record_id: '5190', sessionId: 'session-a' },
       ],
       trunk: 'main',
       worktree: null,
+      worktreeOwnerJob: null,
     }),
   ).toBe(
     '! continuing task branch DEV-832-orch-5186 at tip abc123 (runs 5186, 5190); use --base main to start over',

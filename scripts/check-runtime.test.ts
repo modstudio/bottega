@@ -1,11 +1,63 @@
 import { describe, expect, test } from 'bun:test'
 import {
   attributeCommandCpu,
+  cpuBudgetMs,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
+  parseCheckArguments,
+  runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
+  selectedCheckLegs,
 } from './check-runtime'
+
+describe('check mode arguments', () => {
+  test('defaults to every static leg without a shard', () => {
+    const parsed = parseCheckArguments([])
+    expect(parsed).toEqual({ mode: 'static', omit: [] })
+    expect(selectedCheckLegs(parsed)).toEqual([
+      'orchestrator',
+      'hub',
+      'hub/web',
+      'hub/deploy/site',
+      'retrieval',
+    ])
+  })
+
+  test('selects one suite leg and preserves a valid shard', () => {
+    const parsed = parseCheckArguments(['--suite', '--only=orchestrator', '--shard=2/4'])
+    expect(parsed).toEqual({
+      mode: 'suite',
+      only: 'orchestrator',
+      shard: { index: 2, total: 4, value: '2/4' },
+      omit: [],
+    })
+    expect(selectedCheckLegs(parsed)).toEqual(['orchestrator'])
+    expect(runsRootSuiteTests(parsed)).toBe(false)
+    expect(runsRootSuiteTests(parseCheckArguments(['--suite', '--only=root']))).toBe(true)
+  })
+
+  test('refuses arguments that could silently omit a leg or use a malformed shard', () => {
+    expect(() => parseCheckArguments(['--only=hub'])).toThrow('require --suite')
+    expect(() => parseCheckArguments(['--suite', '--only=unknown'])).toThrow('expected one of')
+    expect(() => parseCheckArguments(['--suite', '--shard=0/4'])).toThrow('1 <= M <= N')
+    expect(() => parseCheckArguments(['--suite', '--shard=3/2'])).toThrow('1 <= M <= N')
+    expect(() => parseCheckArguments(['--suite', '--only=hub', '--shard=1/4'])).toThrow(
+      'only to the orchestrator',
+    )
+    expect(() => parseCheckArguments(['--suite', '--unexpected'])).toThrow('unknown')
+  })
+
+  test('accepts explicit static omit groups and refuses them in suite mode', () => {
+    expect(parseCheckArguments(['--omit=machine-only', '--omit=secrets'])).toEqual({
+      mode: 'static',
+      omit: ['machine-only', 'secrets'],
+    })
+    expect(() => parseCheckArguments(['--suite', '--omit=machine-only'])).toThrow(
+      'only to the static check',
+    )
+  })
+})
 
 describe('command CPU attribution', () => {
   test('orders commands by total CPU and calculates their share', () => {
@@ -27,7 +79,18 @@ describe('command CPU attribution', () => {
 })
 
 describe('suite runtime budget', () => {
-  test('CPU time over budget under CI is fatal', () => {
+  test('the slowest measured CI shard (214 s on an unchanged test set) stays within the suite CPU budget', () => {
+    expect(
+      decideRuntimeBudget({
+        elapsedMs: 214_000,
+        budgetMs: cpuBudgetMs('suite'),
+        ci: true,
+        measure: 'cpu',
+      }),
+    ).toBe('within')
+  })
+
+  test('CPU time over the suite budget under CI is fatal', () => {
     expect(
       decideRuntimeBudget({
         elapsedMs: SUITE_CPU_BUDGET_MS + 1,

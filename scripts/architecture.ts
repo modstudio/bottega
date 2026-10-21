@@ -1,9 +1,11 @@
 import { dirname, join, normalize } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
+import { agentProbeModules } from './architecture-agent-probe-modules.ts'
 import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import {
   cliCompositionRule,
   cliConcernEntries,
@@ -13,15 +15,26 @@ import {
 } from './architecture-cli.ts'
 import { confinementModules } from './architecture-confinement-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
+import { databaseModules } from './architecture-database-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { focusedTestModules } from './architecture-focused-test-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
+import { hubDataArchitectureRules } from './architecture-hub-data.ts'
+import { hubImportModules } from './architecture-hub-import-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
+import {
+  HUB_DATA_PACKAGE,
+  HUB_UI_PACKAGE,
+  HUB_VIEWS_PACKAGE,
+  hubSiteArchitectureRules,
+  hubUtilArchitectureRules,
+} from './architecture-hub-packages.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
+import { projectModules } from './architecture-project-modules.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { ratchetModules } from './architecture-ratchet-modules.ts'
 import { recipeModules } from './architecture-recipe-modules.ts'
@@ -39,7 +52,8 @@ import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
-import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
+import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
+import { workflowCommandModules } from './architecture-workflow-command-modules.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 
@@ -77,6 +91,12 @@ const concerns: ConcernManifest = {
       dependencyTypes: ['type-only'],
       reason: 'The web client imports only the hub router type across the web boundary.',
     },
+    {
+      from: 'hub/data',
+      to: 'hub/src/trpc/router.ts',
+      dependencyTypes: ['type-only'],
+      reason: 'The hub data client imports only the hub router type across the package boundary.',
+    },
     ...cliConcernEntries.map((to) => ({
       from: 'cli',
       to,
@@ -89,6 +109,7 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
+  ...hubImportModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...ratchetModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,
@@ -108,6 +129,9 @@ export const modules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   ...coreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...cleanupBoundarySpecs.map((spec) =>
+    module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
+  ),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
@@ -198,6 +222,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/cleanup/claim-reconciliation.ts', [
     'node:fs',
     '../../../shared/process-identity.ts',
+    '../branch/branch-ref-guard.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/project-lock.ts',
@@ -215,6 +240,7 @@ export const modules: ArchitectureModule[] = [
     './evidence-query.ts',
   ]),
   ...branchModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...agentProbeModules,
   ...pullRequestModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/branch/branch-settlement.ts', [
     '../database/db.ts',
@@ -224,8 +250,10 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/branch/branches.ts', [
     '../../../shared/brand.ts',
     './branch-base-claim.ts',
+    './branch-ref-guard.ts',
+    './branch-key-report.ts',
+    './branch-landing-records.ts',
     './branch-landing-match.ts',
-    './branch-landing-record.ts',
     './branch-landing-service.ts',
     './branch-state.ts',
     './branch-settlement.ts',
@@ -235,28 +263,7 @@ export const modules: ArchitectureModule[] = [
     './other-branch-state.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
-    '../pull-request/pr-admission.ts',
     './task-branch.ts',
-  ]),
-  module('orchestrator/src/agent/agent-probe.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    './agent-registry.ts',
-    './agents.ts',
-    './capabilities.ts',
-    '../database/db.ts',
-    '../jobs/jobs.ts',
-    './model-host.ts',
-    '../mcp/mcp-probe.ts',
-    '../transport/transport.ts',
-  ]),
-  module('orchestrator/src/agent/vendor-probe.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    './agent-registry.ts',
-    '../database/db.ts',
-    '../failure/failure.ts',
-    '../transport/transport.ts',
   ]),
   module('orchestrator/src/agent/agent-registry.ts', [
     '../../../shared/brand.ts',
@@ -329,6 +336,7 @@ export const modules: ArchitectureModule[] = [
     './autonomy.ts',
     './step-catalogue.ts',
   ]),
+  ...workflowCommandModules,
   ...sessionContextModules,
   ...workflowFloorModules,
   ...monitorModules,
@@ -338,15 +346,18 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     '../database/db.ts',
+    '../cleanup/cleanup-sweep-docker.ts',
     '../events.ts',
     '../evidence/evidence-query.ts',
     '../git/git-environment.ts',
     '../hook-tree/hook-tree.ts',
     '../idle-kill.ts',
+    '../process-resource-sampler.ts',
     '../stalled-run.ts',
     './monitor-types.ts',
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
+    '../reclaim/reclaim-kind.ts',
     '../project/projects.ts',
     '../resources/resource-claims.ts',
     '../resources/resource-inventory.ts',
@@ -354,6 +365,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-bootstrap.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
+    '../run/run-number.ts',
     '../run/question-open.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
@@ -373,8 +385,8 @@ export const modules: ArchitectureModule[] = [
     './monitor-types.ts',
     '../review/review-vocabulary.ts',
   ]),
-  module('orchestrator/src/monitor/monitor-types.ts', ['../review/review-vocabulary.ts']),
   module('orchestrator/src/stalled-run.ts', []),
+  module('orchestrator/src/no-follow-file.ts', ['node:fs']),
   module('orchestrator/src/mail/password-reset-mailer.ts', [
     '@aws-sdk/client-sesv2',
     '../../../shared/brand.ts',
@@ -392,7 +404,7 @@ export const modules: ArchitectureModule[] = [
     '../../shared/record/schema.ts',
     './hosted-measures.ts',
     './hosted-report-gather.ts',
-    './hosted-tasks.ts',
+    './hosted-tenant.ts',
     './report-delivery.ts',
   ]),
   module('hub/src/hosted-report-gather.ts', [
@@ -401,7 +413,7 @@ export const modules: ArchitectureModule[] = [
     './report-delivery.ts',
     './report-renderer.ts',
     './hosted-task-reference.ts',
-    './hosted-tasks.ts',
+    './hosted-tenant.ts',
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
@@ -414,6 +426,7 @@ export const modules: ArchitectureModule[] = [
     './hosted-secrets.ts',
   ]),
   module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
+  module('shared/record-client-addresses.ts', []),
   module('shared/machine-config.ts', [
     '@decimalturn/toml-patch',
     'node:fs',
@@ -434,6 +447,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/record-api-url.ts', ['./config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', []),
+  module('shared/caller-classification.ts', []),
   module('shared/keychain.ts', []),
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', ['./brand.ts']),
@@ -485,54 +499,23 @@ export const modules: ArchitectureModule[] = [
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,
-  ...reviewModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
+  ...databaseModules,
+  ...reviewModuleSpecs.map((spec) =>
+    module(spec.file, [
+      ...spec.allowed,
+      ...('typeOnlyAllowed' in spec ? spec.typeOnlyAllowed : []),
+    ]),
+  ),
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../record/outbox-sanitize.ts',
     '../verdict/verdict-payload.ts',
   ]),
-  module('orchestrator/src/project/project-lock.ts', [
-    '../../../shared/brand.ts',
-    '../database/db.ts',
-    '../git/git-environment.ts',
-    '../../../shared/process-identity.ts',
-  ]),
-  module('orchestrator/src/project/project-hosted-write.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    '../../../shared/record-space-membership.ts',
-    '../record/record-api-client.ts',
-    '../record/record-project-destination.ts',
-    '../record/record-project-destination-client.ts',
-    '../record/record-write-authority.ts',
-    './project-settings.ts',
-  ]),
-  module('orchestrator/src/project/project-record-identity.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    '../record/record-api-client.ts',
-    '../record/record-project-destination-client.ts',
-    '../record/record-write-authority.ts',
-    './projects.ts',
-  ]),
-  module('orchestrator/src/project/project-rename.ts', ['../database/db.ts', './projects.ts']),
-  module('orchestrator/src/database/project-register-store.ts', [
-    'bun:sqlite',
-    'node:fs',
-    'node:path',
-    '../../../shared/record-id.ts',
-    '../../../shared/state-directory.ts',
-    '../project/project-settings.ts',
-  ]),
-  module('orchestrator/src/database/machine-identity-store.ts', [
-    'bun:sqlite',
-    '../../../shared/config-directory.ts',
-    '../../../shared/machine-config.ts',
-  ]),
-  module('orchestrator/src/database/identity-inventory.ts', ['bun:sqlite']),
+  ...projectModules,
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
+    '../filesystem-identity-plan.ts',
     '../../../shared/process-identity.ts',
     '../worktree/worktree-attribution.ts',
     '../git/git-environment.ts',
@@ -548,8 +531,13 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
   ]),
-  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', ['../../../shared/brand.ts']),
-  module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
+  module('orchestrator/src/reclaim/orphan-process-reclaim.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/process-identity.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../resources/process-inventory.ts',
+  ]),
   module('orchestrator/src/reclaim/reclaim-residue.ts', [
     '../../../shared/brand.ts',
     'node:fs',
@@ -568,6 +556,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-process.ts',
     '../run/run-alive.ts',
     '../run/run-lease.ts',
+    '../run/run-identifier.ts',
   ]),
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [
@@ -587,6 +576,14 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
+  module('orchestrator/src/review/review-identifier.ts', [
+    '../../../shared/record-id.ts',
+    'bun:sqlite',
+  ]),
+  module('orchestrator/src/review/review-number.ts', [
+    '../database/entity-number.ts',
+    'bun:sqlite',
+  ]),
   module('orchestrator/src/review/review-read.ts', [
     'shared/brand.ts',
     'bun:sqlite',
@@ -631,21 +628,11 @@ export const modules: ArchitectureModule[] = [
     'node:path',
     'node:stream',
   ]),
-  module('orchestrator/src/sandbox/sandbox.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/embedded-assets.ts',
-    '../../../shared/self-spawn.ts',
-    '../../../shared/config-directory.ts',
-    '../../../shared/state-directory.ts',
-    '../database/db.ts',
-    '../mcp/mcp-probe.ts',
-    '../project/projects.ts',
-    './sandbox-runtime.ts',
-  ]),
   ...confinementModules,
   module('orchestrator/src/setup/setup-facts.ts', [
     'node:fs',
     'bun',
+    '../../../shared/record-api-url.ts',
     '../agent/agent-auth.ts',
     '../agent/cli-version.ts',
     '../agent/model-host.ts',
@@ -689,6 +676,7 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     '../resources/resource-claims.ts',
     '../run/run-lease.ts',
+    '../run/run-number.ts',
     '../run/synthetic-lifecycle-job.ts',
     '../recipe/tracked-recipe.ts',
     '../worktree/worktree-create.ts',
@@ -708,6 +696,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
     '../run/branch-owner-guard.ts',
     '../run/run-resume-claim.ts',
+    '../run/run-number.ts',
     '../run/resume-tree.ts',
     '../worktree/worktree.ts',
     '../worktree/worktree-attribution.ts',
@@ -721,6 +710,7 @@ export const modules: ArchitectureModule[] = [
     './step-catalogue-definition.ts',
     './workflow-definition.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
   module('orchestrator/src/workflow/workflow-tree.ts', [
     './step-catalogue.ts',
     './workflow-step-sequences.ts',
@@ -736,6 +726,8 @@ export const modules: ArchitectureModule[] = [
     'bun:sqlite',
     'node:util',
     '../database/db.ts',
+    '../project-space.ts',
+    '../record/record-write-authority.ts',
     './step-catalogue.ts',
     './workflow-step-sequences.ts',
     './workflow-tree.ts',
@@ -775,7 +767,11 @@ export const exactArchitecturePath = (path: string) =>
 
 function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
-  if (target === 'bun') return '(^|/)node_modules/\\.bun/[^/]+/node_modules/@types/bun/'
+  const installedPackageRoots = [
+    '(^|/)node_modules/\\.bun/[^/]+/node_modules/',
+    '(^|/)node_modules/',
+  ]
+  if (target === 'bun') return installedPackageRoots.map((root) => `${root}@types/bun/`).join('|')
   if (target.includes(':')) return exactArchitecturePath(target)
   if (CONCERNS.some((root) => target.startsWith(`${root}/`)) || target.startsWith('shared/')) {
     return exactArchitecturePath(target)
@@ -785,13 +781,12 @@ function architectureDependencyPath(target: string) {
   const packagePath = first?.startsWith('@') ? remainder : [second, ...remainder].filter(Boolean)
   const escapedPackage = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const escapedPath = packagePath.map((part) => part!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const installed = `(^|/)node_modules/\\.bun/[^/]+/node_modules/${escapedPackage}/`
   const unresolved = exactArchitecturePath(target)
-  if (!escapedPath.length) return installed
+  const installed = installedPackageRoots.map((root) => `${root}${escapedPackage}/`)
+  if (!escapedPath.length) return installed.join('|')
   const packageSubpath = escapedPath.join('/')
-  const installedCandidates = Array.from(
-    { length: 5 },
-    (_, depth) => `${installed}${'[^/]+/'.repeat(depth)}${packageSubpath}`,
+  const installedCandidates = installed.flatMap((root) =>
+    Array.from({ length: 5 }, (_, depth) => `${root}${'[^/]+/'.repeat(depth)}${packageSubpath}`),
   )
   const installedResolutions = installedCandidates.flatMap((candidate) => [
     `${candidate}$`,
@@ -812,13 +807,44 @@ type ArchitectureRule = {
     pathNot?: string[]
     dependencyTypes?: string[]
     dependencyTypesNot?: string[]
+    couldNotResolve?: boolean
     circular?: boolean
     reachable?: boolean
   }
 }
 
+const hubWebRouterException = concerns.exceptions[0]!
+const hubDataRouterException = concerns.exceptions[1]!
+const hubWebAllowedConcernImports = [
+  exactArchitecturePath(hubWebRouterException.to),
+  '^hub/ui/src/',
+  '^hub/data/src/',
+  '^hub/site/src/',
+  '^hub/util/src/',
+  '^hub/views/src/',
+]
+const { viewDataRule: hubWebViewDataRule, boundaryRules: hubDataBoundaryRules } =
+  hubDataArchitectureRules(
+    architectureDependencyPath,
+    exactArchitecturePath,
+    HUB_UI_PACKAGE,
+    HUB_DATA_PACKAGE,
+    hubDataRouterException,
+  )
+
+/** The manifest-owned rule set enforced against every proposed hub source write. */
+export function writeTimeArchitectureRules(): ArchitectureRule[] {
+  return [
+    ...uiArchitectureRules(architectureDependencyPath, HUB_UI_PACKAGE),
+    ...viewArchitectureRules(architectureDependencyPath, HUB_VIEWS_PACKAGE),
+    ...hubDataBoundaryRules,
+    ...hubSiteArchitectureRules(architectureDependencyPath),
+    ...hubUtilArchitectureRules(),
+    hubWebViewDataRule,
+  ]
+}
+
 export function architectureRules() {
-  const exception = concerns.exceptions[0]!
   const cycleFiles = [...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1)))]
   const forbidden: ArchitectureRule[] = [
     concernIsolationRule(concerns.roots),
@@ -834,21 +860,21 @@ export function architectureRules() {
     {
       name: 'hub-web-imports-only-router-type',
       severity: 'error',
-      comment: exception.reason,
-      from: { path: `^${exception.from}/` },
+      comment: hubWebRouterException.reason,
+      from: { path: `^${hubWebRouterException.from}/` },
       to: {
         path: '^hub/(?!web/)',
-        pathNot: [exactArchitecturePath(exception.to)],
+        pathNot: hubWebAllowedConcernImports,
       },
     },
     {
       name: 'hub-web-router-is-type-only',
       severity: 'error',
-      comment: exception.reason,
-      from: { path: `^${exception.from}/` },
+      comment: hubWebRouterException.reason,
+      from: { path: `^${hubWebRouterException.from}/` },
       to: {
-        path: exactArchitecturePath(exception.to),
-        dependencyTypesNot: exception.dependencyTypes,
+        path: exactArchitecturePath(hubWebRouterException.to),
+        dependencyTypesNot: hubWebRouterException.dependencyTypes,
       },
     },
     ...modules.map((entry) => ({
@@ -881,31 +907,7 @@ export function architectureRules() {
         },
       })),
     ),
-    {
-      name: 'hub-web-ui-is-a-leaf',
-      severity: 'error',
-      comment:
-        'The component library knows nothing of the app: ui/ imports only ui/, React and icons, through relative paths.',
-      from: { path: '^hub/web/src/ui/' },
-      to: { path: '^(?:hub/web/src/(?!ui/)|@/)' },
-    },
-    {
-      name: 'hub-web-ui-folder-has-a-layer',
-      severity: 'error',
-      comment: 'Every ui/ folder is declared in uiLayers in architecture-ui-layers.ts.',
-      from: {
-        path: '^hub/web/src/ui/',
-        pathNot: uiFolders(uiLayers.flatMap((layer) => layer.folders)),
-      },
-      to: {},
-    },
-    ...uiLayers.slice(0, -1).map((layer, index) => ({
-      name: `hub-web-ui-${layer.name}-imports-no-higher-layer`,
-      severity: 'error' as const,
-      comment: `A ${layer.name} folder may import only its own or a lower ui layer.`,
-      from: { path: uiFolders(layer.folders) },
-      to: { path: uiFolders(uiLayers.slice(index + 1).flatMap((higher) => higher.folders)) },
-    })),
+    ...writeTimeArchitectureRules(),
     {
       name: 'import-cli-boundary',
       severity: 'error',
@@ -1001,6 +1003,10 @@ export function dependencyCruiserConfig() {
     options: {
       tsConfig: { fileName: join(import.meta.dir, '..', 'orchestrator/tsconfig.json') },
       tsPreCompilationDeps: true,
+      enhancedResolveOptions: {
+        exportsFields: ['exports'],
+        conditionNames: ['import', 'require', 'node', 'default', 'types'],
+      },
       doNotFollow: { path: 'node_modules' },
       exclude: { path: '^hub/web/src/routeTree\\.gen\\.ts$' },
     },

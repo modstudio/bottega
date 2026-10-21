@@ -7,8 +7,9 @@
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { gitContext, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
+import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
@@ -19,7 +20,6 @@ import {
   withWorktreeLease,
   worktreeLeaseName,
 } from '../project/project-lock.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
 import {
   type ResourceClaimState,
   recordRetainedRefClaim,
@@ -28,6 +28,7 @@ import {
   settledStateForCloseOut,
 } from '../resources/resource-claims.ts'
 import {
+  conversationWorktreeSpellings,
   liveWorktreeSharers,
   otherConversationWorktreeSharers,
   worktreePathSpellings,
@@ -71,8 +72,13 @@ import {
   retainedBranchReason,
 } from './retained-branch.ts'
 
+const retainedRefForRun = (tip: string | null, runId: string) =>
+  tip ? `refs/orch/retained/${runId}` : null
+const CONVERSATION_IDS_SQL =
+  'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number'
+
 export type CloseOutResult = {
-  runId: number
+  runId: string
   worktree: string | null
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   reportOutcome?: 'kept'
@@ -83,11 +89,11 @@ type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
-function conversationKeepTreeHold(rootId: number, now: string): ConversationKeepTreeHold {
+function conversationKeepTreeHold(rootId: string, now: string): ConversationKeepTreeHold {
   const rows = db()
     .query(
       `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree,branch FROM run
-       WHERE id=? OR parent_run_id=? ORDER BY id`,
+       WHERE record_id=? OR parent_run_record_id=? ORDER BY number`,
     )
     .all(rootId, rootId) as {
     job: string
@@ -140,13 +146,15 @@ function conversationKeepTreeHold(rootId: number, now: string): ConversationKeep
 }
 
 function closeOutKeepTreeDecision(
-  rootId: number,
+  rootId: string,
   intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove',
 ): ConversationKeepTreeHold {
   if (intent === 'tree-remove') return { held: false }
   if (intent === 'sweep') {
     const landing = db()
-      .query('SELECT 1 present FROM run WHERE (id=? OR parent_run_id=?) AND job=? LIMIT 1')
+      .query(
+        'SELECT 1 present FROM run WHERE (record_id=? OR parent_run_record_id=?) AND job=? LIMIT 1',
+      )
       .get(rootId, rootId, LANDING_TREE_JOB)
     if (landing) return { held: false }
   }
@@ -154,32 +162,39 @@ function closeOutKeepTreeDecision(
 }
 
 /** Drop the conversation root's keep-tree hold so terminal close-out can reclaim the tree. */
-export function clearConversationKeepTreeHold(runId: number): void {
+export function clearConversationKeepTreeHold(runId: string): void {
   const root = db()
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(runId) as { root_id: number } | null
+    .query(
+      'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
+    )
+    .get(runId) as { root_record_id: string } | null
   if (!root) throw new Error(`no run ${runId}`)
   writeTransaction(() => {
     db()
-      .query('UPDATE run SET keep_tree=0, keep_tree_until=NULL, keep_tree_reason=NULL WHERE id=?')
-      .run(root.root_id)
+      .query(
+        'UPDATE run SET keep_tree=0, keep_tree_until=NULL, keep_tree_reason=NULL WHERE record_id=?',
+      )
+      .run(root.root_record_id)
   })
 }
 
 /** Release a run and every failover attempt it succeeded, oldest attempt first. */
-export function releaseRunFailoverAttempts(runId: number): CloseOutResult[] {
-  const attempts: number[] = []
-  const seen = new Set<number>()
-  let attemptId: number | null = runId
+export function releaseRunFailoverAttempts(runId: string): CloseOutResult[] {
+  const attempts: string[] = []
+  const seen = new Set<string>()
+  let attemptId: string | null = runId
   while (attemptId !== null) {
-    if (seen.has(attemptId)) throw new Error(`run ${runId} has a retry_of cycle at ${attemptId}`)
+    if (seen.has(attemptId))
+      throw new Error(`run ${runId} has a retry_of_record_id cycle at ${attemptId}`)
     seen.add(attemptId)
     attempts.push(attemptId)
-    const row = db().query('SELECT retry_of FROM run WHERE id=?').get(attemptId) as {
-      retry_of: number | null
+    const row = db()
+      .query('SELECT retry_of_record_id FROM run WHERE record_id=?')
+      .get(attemptId) as {
+      retry_of_record_id: string | null
     } | null
     if (!row) throw new Error(`no run ${attemptId}`)
-    attemptId = row.retry_of
+    attemptId = row.retry_of_record_id
   }
   return attempts.reverse().map((id) => {
     clearConversationKeepTreeHold(id)
@@ -188,19 +203,19 @@ export function releaseRunFailoverAttempts(runId: number): CloseOutResult[] {
 }
 
 export type SandboxReleaseResult = {
-  rootId: number
+  rootId: string
   path: string
   outcome: 'released' | 'absent' | 'kept'
   detail: string
 }
 
-function conversationProcessState(rootId: number): boolean | null {
+function conversationProcessState(rootId: string): boolean | null {
   const inventory = processTable()
   if (!inventory.ascertainable) return null
   const turns = db()
     .query(
       `SELECT pid,agent_pid,agent_pgid FROM run
-       WHERE id=? OR parent_run_id=? ORDER BY id`,
+       WHERE record_id=? OR parent_run_record_id=? ORDER BY number`,
     )
     .all(rootId, rootId) as {
     pid: number | null
@@ -236,16 +251,16 @@ function conversationProcessState(rootId: number): boolean | null {
   )
 }
 
-function recordedWorktreeState(rootId: number): ResourceClaimState | 'no-tree' {
+function recordedWorktreeState(rootId: string): ResourceClaimState | 'no-tree' {
   const claim = db()
     .query(
       `SELECT state FROM resource_claim
-       WHERE root_run_id=? AND kind='worktree' ORDER BY id DESC LIMIT 1`,
+       WHERE root_run_record_id=? AND kind='worktree' ORDER BY id DESC LIMIT 1`,
     )
     .get(rootId) as { state: ResourceClaimState } | null
   if (claim) return claim.state
   const rows = db()
-    .query('SELECT worktree FROM run WHERE id=? OR parent_run_id=?')
+    .query('SELECT worktree FROM run WHERE record_id=? OR parent_run_record_id=?')
     .all(rootId, rootId) as { worktree: string | null }[]
   return rows.some((row) => row.worktree && existsSync(row.worktree)) ? 'claimed' : 'no-tree'
 }
@@ -259,7 +274,7 @@ function pathInside(candidate: string | null, directory: string): boolean {
 
 /** Release one conversation's vendor home after its tree and process claims are settled. */
 export function releaseSandboxDirectoryForConversation(
-  rootId: number,
+  rootId: string,
   options: {
     dryRun?: boolean
     worktreeState?: ResourceClaimState | 'no-tree'
@@ -267,7 +282,7 @@ export function releaseSandboxDirectoryForConversation(
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()
-    .query('SELECT status FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .query('SELECT status FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number')
     .all(rootId, rootId) as { status: string }[]
   const keepTree = conversationKeepTreeHold(rootId, nowIso())
   const decision = sandboxDirectoryRelease({
@@ -334,7 +349,7 @@ export function releaseSandboxDirectoryForConversation(
     const trustClaims = db()
       .query(
         `SELECT allocation_key,identity FROM resource_claim
-         WHERE root_run_id=? AND kind='trust_entry' AND state='claimed'`,
+         WHERE root_run_record_id=? AND kind='trust_entry' AND state='claimed'`,
       )
       .all(rootId) as { allocation_key: string; identity: string | null }[]
     for (const claim of trustClaims) {
@@ -358,7 +373,7 @@ export function releaseSandboxDirectoryForConversation(
 }
 
 function terminalHoldResult(
-  runId: number,
+  runId: string,
   treePath: string,
   status: string,
   hold: ConversationKeepTreeHold,
@@ -388,7 +403,7 @@ function terminalHoldResult(
 }
 
 function ownershipCloseOutResult(input: {
-  runId: number
+  runId: string
   treePath: string
   decision: ReturnType<typeof adoptedTreeCloseOutDecision>
   dryRun?: boolean
@@ -412,17 +427,17 @@ function ownershipCloseOutResult(input: {
   }
 }
 
-function otherConversationKeepTreeHeld(rootId: number, treePath: string): boolean {
+function otherConversationKeepTreeHeld(rootId: string, treePath: string): boolean {
   return otherConversationWorktreeSharers(db(), {
-    id: rootId,
+    record_id: rootId,
     worktree: treePath,
-  }).some((holder) => conversationKeepTreeHold(holder.id, nowIso()).held)
+  }).some((holder) => conversationKeepTreeHold(holder.record_id, nowIso()).held)
 }
 
 function lockedLiveOrForgottenHold(
-  runId: number,
+  runId: string,
   treePath: string,
-  live: { id: number; status: string }[],
+  live: { record_id: string; status: string }[],
   dryRun?: boolean,
 ): CloseOutResult | null {
   const liveResult = liveCloseOutResult(runId, treePath, live)
@@ -450,20 +465,13 @@ function presentTreeOwnershipResult(input: {
   treeAbsent: boolean
   treePath: string
   repoRoot: string
-  conversationIds: number[]
+  conversationIds: string[]
   repo: string | null
-  runId: number
+  runId: string
   dryRun?: boolean
 }): CloseOutResult | null {
   if (input.treeAbsent) return null
-  const branchTemplate = (input.repo ? projectByName(input.repo) : projectAt(input.treePath))
-    ?.settings.worktree?.branch
-  const ownership = inspectTreeOwnership(
-    input.treePath,
-    input.repoRoot,
-    input.conversationIds,
-    branchTemplate,
-  )
+  const ownership = inspectTreeOwnership(input.treePath, input.repoRoot, input.conversationIds)
   return ownershipCloseOutResult({
     runId: input.runId,
     treePath: input.treePath,
@@ -472,9 +480,18 @@ function presentTreeOwnershipResult(input: {
   })
 }
 
+function releasedCloseOut(
+  rootRecordId: string,
+  treePath: string,
+  treeAbsent: boolean,
+  result: Parameters<typeof successfulReleaseResult>[3],
+) {
+  return successfulReleaseResult(rootRecordId, treePath, treeAbsent, result)
+}
+
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
-  runId: number,
+  runId: string,
   options: {
     intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
     dryRun?: boolean
@@ -486,14 +503,14 @@ function attemptCloseOutRun(
 ): CloseOutAttemptResult {
   const row = db()
     .query(
-      `SELECT id, COALESCE(parent_run_id,id) root_id, project_id, job, repo, cwd, worktree, branch,
+      `SELECT record_id, COALESCE(parent_run_record_id,record_id) root_record_id, project_record_id, job, repo, cwd, worktree, branch,
             base_commit, worktree_source, minted_branch, status, agent_pid,session_id,launch_key
-       FROM run WHERE id=?`,
+       FROM run WHERE record_id=?`,
     )
     .get(runId) as {
-    id: number
-    root_id: number
-    project_id: number | null
+    record_id: string
+    root_record_id: string
+    project_record_id: string | null
     job: string
     repo: string | null
     cwd: string | null
@@ -510,17 +527,17 @@ function attemptCloseOutRun(
   if (!row) throw new Error(`no run ${runId}`)
   const root = db()
     .query(
-      `SELECT project_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status,
+      `SELECT project_record_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status,
               session_id,launch_key
-       FROM run WHERE id=?`,
+       FROM run WHERE record_id=?`,
     )
-    .get(row.root_id) as typeof row
+    .get(row.root_record_id) as typeof row
   const resolvedTreePath = row.worktree ?? root?.worktree ?? null
-  const missingTreeResult = missingTreeConversationResult(row.root_id, resolvedTreePath)
+  const missingTreeResult = missingTreeConversationResult(row.root_record_id, resolvedTreePath)
   if (missingTreeResult) return missingTreeResult
   const treePath = resolvedTreePath as string
   const effective = {
-    id: row.root_id,
+    record_id: row.root_record_id,
     job: root?.job ?? row.job,
     repo: root?.repo ?? row.repo,
     cwd: root?.cwd ?? row.cwd,
@@ -534,7 +551,7 @@ function attemptCloseOutRun(
     launch_key: root?.launch_key ?? row.launch_key,
   }
   const landingReleaseInput = {
-    runId: row.root_id,
+    runId: row.root_record_id,
     job: effective.job,
     repo: effective.repo,
     worktree: treePath,
@@ -545,7 +562,7 @@ function attemptCloseOutRun(
     explicitTreeRemovalRequested: options.intent === 'tree-remove',
   }
   const preRemovalHold =
-    terminalHoldResult(row.root_id, treePath, effective.status, options.keepTreeDecision) ??
+    terminalHoldResult(row.root_record_id, treePath, effective.status, options.keepTreeDecision) ??
     (!existsSync(treePath) ? landingTreeReleaseHold(landingReleaseInput) : null)
   if (preRemovalHold) return preRemovalHold
   const retainedBranch = retainedBranchForCloseOut(effective.minted_branch)
@@ -554,14 +571,14 @@ function attemptCloseOutRun(
     if (!retainedBranch || !tip) return
     writeTransaction(() => {
       db()
-        .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
-        .run(retainedBranch, tip, row.root_id)
-      if (row.id !== row.root_id && turnHead) {
+        .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE record_id=?')
+        .run(retainedBranch, tip, row.root_record_id)
+      if (row.record_id !== row.root_record_id && turnHead) {
         db()
-          .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
-          .run(turnHead.branch, turnHead.tip, row.id)
+          .query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE record_id=?')
+          .run(turnHead.branch, turnHead.tip, row.record_id)
         settleClaims(db(), {
-          rootRunId: row.root_id,
+          rootRunId: row.root_record_id,
           kind: 'branch',
           state: 'retained',
           settledAt: nowIso(),
@@ -570,7 +587,7 @@ function attemptCloseOutRun(
         })
       }
       settleClaims(db(), {
-        rootRunId: row.root_id,
+        rootRunId: row.root_record_id,
         kind: 'branch',
         state: 'retained',
         settledAt: nowIso(),
@@ -579,9 +596,9 @@ function attemptCloseOutRun(
       })
       if (retainedRef) {
         recordRetainedRefClaim(db(), {
-          rootRunId: row.root_id,
-          runId: row.id,
-          projectId: root?.project_id ?? row.project_id,
+          rootRunId: row.root_record_id,
+          runId: row.record_id,
+          projectId: root?.project_record_id ?? row.project_record_id,
           ref: retainedRef,
           tip,
           claimedAt: nowIso(),
@@ -590,7 +607,7 @@ function attemptCloseOutRun(
     })
   }
   const absentTree = absentTreeCloseOut({
-    runId: row.root_id,
+    runId: row.root_record_id,
     treePath,
     repo: effective.repo,
     cwd: effective.cwd,
@@ -602,38 +619,36 @@ function attemptCloseOutRun(
   const { absent: treeAbsent, repoRoot } = absentTree
   if (!repoRoot)
     return {
-      runId: row.root_id,
+      runId: row.root_record_id,
       worktree: treePath,
       outcome: 'failed',
       detail: 'repository root not found',
     }
-
   const conversationIds = (
-    db()
-      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-      .all(row.root_id, row.root_id) as { id: number }[]
-  ).map((turn) => turn.id)
+    db().query(CONVERSATION_IDS_SQL).all(row.root_record_id, row.root_record_id) as {
+      record_id: string
+    }[]
+  ).map((turn) => turn.record_id)
   const ownershipResult = presentTreeOwnershipResult({
     treeAbsent,
     treePath,
     repoRoot,
     conversationIds,
     repo: effective.repo,
-    runId: row.root_id,
+    runId: row.root_record_id,
     dryRun: options.dryRun,
   })
   if (ownershipResult) return ownershipResult
-
   const liveRows = () => {
     const sharers = liveWorktreeSharers(db(), {
-      id: row.root_id,
+      record_id: row.root_record_id,
       worktree: treePath,
     })
-    const conversation = aliveConversationTurns(row.root_id)
+    const conversation = aliveConversationTurns(row.root_record_id)
     return [...conversation, ...sharers]
   }
   const live = liveRows()
-  const liveResult = liveCloseOutResult(row.root_id, treePath, live)
+  const liveResult = liveCloseOutResult(row.root_record_id, treePath, live)
   if (liveResult) return liveResult
   // Every recorded spelling of this tree, not one string: a trailing separator
   // or an unresolved symlink makes two rows for one worktree, and matching only
@@ -643,7 +658,7 @@ function attemptCloseOutRun(
     ? (db()
         .query(
           `SELECT agent_pid, agent_pgid FROM run
-          WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
+          WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY number`,
         )
         .all(...spellings) as {
         agent_pid: number | null
@@ -661,7 +676,7 @@ function attemptCloseOutRun(
   const processInventory = processTable()
   if (!processInventory.ascertainable)
     return {
-      runId: row.root_id,
+      runId: row.root_record_id,
       worktree: treePath,
       outcome: 'live',
       detail: `${processInventory.reason}; retained because process liveness could not be established`,
@@ -698,7 +713,7 @@ function attemptCloseOutRun(
     ) || recordedPgids.some((pgid) => vendorGroupAlive(pgid))
   if (treeStillAlive)
     return {
-      runId: row.root_id,
+      runId: row.root_record_id,
       worktree: treePath,
       outcome: 'live',
       detail: 'process tree still alive',
@@ -708,7 +723,7 @@ function attemptCloseOutRun(
   const holder = projectLockState(repoRoot, lease).holder
   if (holder)
     return {
-      runId: row.root_id,
+      runId: row.root_record_id,
       worktree: treePath,
       outcome: 'live',
       detail: `live worktree lease held by pid ${holder.pid}`,
@@ -718,21 +733,21 @@ function attemptCloseOutRun(
     return withWorktreeLease(
       repoRoot,
       treePath,
-      { session: sessionId(), what: `close-out ${row.root_id}` },
+      { session: sessionId(), what: `close-out ${row.root_record_id}` },
       () =>
         withCleanupLock(
           repoRoot,
-          { session: sessionId(), what: `close-out ${row.root_id}` },
+          { session: sessionId(), what: `close-out ${row.root_record_id}` },
           () => {
             const lockedHold = lockedLiveOrForgottenHold(
-              row.root_id,
+              row.root_record_id,
               treePath,
               liveRows(),
               options.dryRun,
             )
             if (lockedHold) return lockedHold
             const scratch = prepareReaderScratchCloseOut({
-              runId: row.root_id,
+              runId: row.root_record_id,
               job: effective.job,
               terminal: TERMINAL.has(effective.status),
               treeAbsent,
@@ -743,17 +758,17 @@ function attemptCloseOutRun(
             })
             if (!scratch.proceed) return scratch.result
             // The coordinator proves its own identity before descendants are signaled.
-            const liveCoordinator = aliveConversationTurns(row.root_id).find(
+            const liveCoordinator = aliveConversationTurns(row.root_record_id).find(
               (turn) => turn.pid !== process.pid,
             )
             if (liveCoordinator)
               return {
-                runId: row.root_id,
+                runId: row.root_record_id,
                 worktree: treePath,
                 outcome: 'live' as const,
-                detail: `coordinator lease for run ${liveCoordinator.id} is still held`,
+                detail: `coordinator lease for run ${liveCoordinator.record_id} is still held`,
               }
-            terminateRunProcesses(row.id, [process.pid])
+            terminateRunProcesses(row.record_id, [process.pid])
             const landingHold = landingTreeReleaseHold(landingReleaseInput)
             if (landingHold) return landingHold
             const archive = archiveReaderScratchForRelease({
@@ -764,20 +779,20 @@ function attemptCloseOutRun(
             })
             if (!archive.ok)
               return {
-                runId: row.root_id,
+                runId: row.root_record_id,
                 worktree: treePath,
                 outcome: 'held' as const,
                 detail: `${archive.detail}; clone and claim retained`,
               }
             const archivedScratchPath = archive.path
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
-            const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
+            const retainedRef = retainedRefForRun(branchSnapshot, row.root_record_id)
             const pinFailure = protectRetainedBranch({
               repoRoot,
               retainedRef,
               branchSnapshot,
               retainedBranch,
-              runId: row.root_id,
+              runId: row.root_record_id,
               treePath,
             })
             if (pinFailure) return pinFailure
@@ -807,7 +822,7 @@ function attemptCloseOutRun(
                 const restored = restoreBranch(repoRoot, retainedBranch, branchSnapshot)
                 if (!restored.ok)
                   return {
-                    runId: row.root_id,
+                    runId: row.root_record_id,
                     worktree: treePath,
                     outcome: 'failed' as const,
                     detail:
@@ -817,7 +832,7 @@ function attemptCloseOutRun(
               } else if (branchAfter !== branchSnapshot) {
                 recordRetainedBranch(branchSnapshot)
                 return {
-                  runId: row.root_id,
+                  runId: row.root_record_id,
                   worktree: treePath,
                   outcome: 'failed' as const,
                   detail:
@@ -827,6 +842,7 @@ function attemptCloseOutRun(
               }
             }
             if (retainedRef) {
+              // branch-ref-guard: non-local refs/orch/
               const unpinned = Bun.spawnSync(
                 ['git', 'update-ref', '-d', retainedRef, branchSnapshot!],
                 {
@@ -838,7 +854,7 @@ function attemptCloseOutRun(
               )
               if (unpinned.exitCode !== 0)
                 return {
-                  runId: row.root_id,
+                  runId: row.root_record_id,
                   worktree: treePath,
                   outcome: 'failed' as const,
                   detail:
@@ -848,7 +864,7 @@ function attemptCloseOutRun(
                 }
               writeTransaction(() => {
                 settleClaims(db(), {
-                  rootRunId: row.root_id,
+                  rootRunId: row.root_record_id,
                   kind: 'retained_ref',
                   state: 'released',
                   settledAt: nowIso(),
@@ -859,7 +875,7 @@ function attemptCloseOutRun(
             }
             if (!result.removed)
               return failedResourceRemovalResult({
-                runId: row.root_id,
+                runId: row.root_record_id,
                 treePath,
                 treeAbsent,
                 teardown: result,
@@ -868,15 +884,15 @@ function attemptCloseOutRun(
             const acquired = liveRows()
             if (acquired.length) {
               return {
-                runId: row.root_id,
+                runId: row.root_record_id,
                 worktree: treePath,
                 outcome: 'failed' as const,
                 detail:
                   `worktree was acquired during cleanup by run(s): ` +
-                  acquired.map((owner) => `${owner.id} (${owner.status})`).join(', '),
+                  acquired.map((owner) => `${owner.record_id} (${owner.status})`).join(', '),
               }
             }
-            const released = successfulReleaseResult(row.root_id, treePath, treeAbsent, result)
+            const released = releasedCloseOut(row.root_record_id, treePath, treeAbsent, result)
             released.detail = readerScratchReleaseDetail(released.detail, archivedScratchPath)
             return released
           },
@@ -886,7 +902,7 @@ function attemptCloseOutRun(
     )
   } catch (error) {
     return {
-      runId: row.root_id,
+      runId: row.root_record_id,
       worktree: treePath,
       outcome: 'failed',
       detail: String((error as Error).message ?? error),
@@ -895,24 +911,8 @@ function attemptCloseOutRun(
 }
 
 /** Extraction evidence belongs to the turn whose tree is being removed. */
-export function extractionRunId(row: { id: number }): number {
-  return row.id
-}
-
-/** Every recorded spelling of each tree this conversation points at, keyed by each spelling. */
-function conversationWorktreeSpellings(rootId: number): Map<string, string[]> {
-  const rows = db()
-    .query(
-      `SELECT DISTINCT worktree FROM run
-        WHERE (id=? OR parent_run_id=?) AND worktree IS NOT NULL`,
-    )
-    .all(rootId, rootId) as { worktree: string }[]
-  const byPath = new Map<string, string[]>()
-  for (const { worktree } of rows) {
-    const spellings = [...new Set([worktree, ...worktreePathSpellings(db(), worktree)])]
-    for (const spelling of spellings) byPath.set(spelling, spellings)
-  }
-  return byPath
+export function extractionRunId(row: { record_id: string }): string {
+  return row.record_id
 }
 
 function settlementLivenessResult(result: CloseOutAttemptResult): CloseOutAttemptResult {
@@ -926,7 +926,7 @@ function settlementLivenessResult(result: CloseOutAttemptResult): CloseOutAttemp
 function appendRetainedBranchDetail(result: CloseOutAttemptResult): CloseOutAttemptResult {
   if (!['released', 'absent', 'forgotten'].includes(result.outcome)) return result
   const retained = db()
-    .query('SELECT branch_kept,repo,launch_key FROM run WHERE id=?')
+    .query('SELECT branch_kept,repo,launch_key FROM run WHERE record_id=?')
     .get(result.runId) as {
     branch_kept: string | null
     repo: string | null
@@ -942,7 +942,7 @@ function appendRetainedBranchDetail(result: CloseOutAttemptResult): CloseOutAtte
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 export function closeOutRun(
-  runId: number,
+  runId: string,
   options: {
     intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
     dryRun?: boolean
@@ -952,14 +952,16 @@ export function closeOutRun(
   },
 ): CloseOutResult {
   const root = db()
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(runId) as { root_id: number } | null
+    .query(
+      'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
+    )
+    .get(runId) as { root_record_id: string } | null
   if (!root) throw new Error(`no run ${runId}`)
-  closeTerminalChainQuestions(root.root_id, Boolean(options.dryRun))
-  const keepTreeDecision = closeOutKeepTreeDecision(root.root_id, options.intent)
+  closeTerminalChainQuestions(root.root_record_id, Boolean(options.dryRun))
+  const keepTreeDecision = closeOutKeepTreeDecision(root.root_record_id, options.intent)
   // Spellings are taken while the tree still exists, because a removed
   // symlinked path no longer resolves to the identity its other rows share.
-  const spellingsBefore = conversationWorktreeSpellings(root.root_id)
+  const spellingsBefore = conversationWorktreeSpellings(db(), root.root_record_id)
   let result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
   if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
     result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
@@ -980,7 +982,7 @@ export function closeOutRun(
         .query(
           `UPDATE run
             SET close_out_outcome=?, close_out_detail=?, close_out_attempted_at=?
-          WHERE id=?`,
+          WHERE record_id=?`,
         )
         .run(result.outcome, result.detail, settledAt, result.runId)
       if (
@@ -992,7 +994,7 @@ export function closeOutRun(
         db()
           .query(
             `UPDATE run SET worktree=NULL
-             WHERE (id=? OR parent_run_id=?)
+             WHERE (record_id=? OR parent_run_record_id=?)
                AND worktree IN (${spellings.map(() => '?').join(',')})`,
           )
           .run(result.runId, result.runId, ...spellings)
@@ -1021,21 +1023,25 @@ export function closeOutRun(
     if (sandbox.outcome === 'kept' || sandbox.outcome === 'released') {
       result.detail = `${result.detail}; ${sandbox.detail}`
       if (!options.dryRun) {
-        db().query('UPDATE run SET close_out_detail=? WHERE id=?').run(result.detail, result.runId)
+        db()
+          .query('UPDATE run SET close_out_detail=? WHERE record_id=?')
+          .run(result.detail, result.runId)
       }
     }
   }
   if (!options.dryRun && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const turns = db()
-      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-      .all(result.runId, result.runId) as { id: number }[]
-    for (const turn of turns) removeFreeRunLease(turn.id)
+      .query(
+        'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
+      )
+      .all(result.runId, result.runId) as { record_id: string }[]
+    for (const turn of turns) removeFreeRunLease(turn.record_id)
   }
   return result
 }
 
 export function reclaimTerminalTree(
-  runId: number,
+  runId: string,
   worktree: Worktree,
   extraPids: number[] = [],
   pgid: number | null = null,

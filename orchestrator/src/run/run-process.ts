@@ -6,6 +6,7 @@
 
 import { createHash } from 'node:crypto'
 import {
+  observeBoundedSubprocess,
   type PidRecordIdentity,
   pidAlive,
   pidRecordIdentity,
@@ -17,19 +18,24 @@ import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 export function childEnv(
   a: (typeof AGENTS)[string],
-  runId?: number,
+  runRecordId?: string,
   runToken?: string,
   extra: Record<string, string> = {},
   includeStore = true,
+  runNumber?: number,
+  endpointEnvironment: Record<string, string> = {},
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined || !isForwardedChildEnvName(k)) continue
     env[k] = v
   }
+  delete env.ORCH_TEST_WORKERS
+  delete env.VITEST_MAX_WORKERS
   env.ORCH_DEPTH = String(depth() + 1)
   /**
    * Which run is asking, for the ask-server the child may call back into.
@@ -40,7 +46,9 @@ export function childEnv(
    * attach a question to another worker's run, and the ruling would be delivered
    * to whichever of them happened to be waiting.
    */
-  if (runId) env.ORCH_RUN_ID = String(runId)
+  if (runRecordId) env.ORCH_RUN_ID = runRecordId
+  if (runNumber) env.ORCH_RUN_NUMBER = String(runNumber)
+  if (runRecordId) env.ORCH_AGENT = a.name
   // The credential half. The id says which run; this says the caller is
   // actually that run, and the environment of a child process is the one place
   // an unrelated process cannot read it from.
@@ -60,10 +68,11 @@ export function childEnv(
    * register.
    */
   if (includeStore) env.ORCH_DB = DB_PATH
-  const child = {
+  const child: Record<string, string> = {
     ...env,
     ...(a.env?.() ?? {}),
-    ...extra,
+    ...(includeStore ? runTestWorkerEnvironment(extra) : extra),
+    ...endpointEnvironment,
     ...workerLaunchEnv(workerHarnessName(a)),
   }
   if (!includeStore) delete child.ORCH_DB
@@ -72,8 +81,8 @@ export function childEnv(
 export type LiveProcess = { pid?: number | null; kill(sig?: number | string): void }
 export const live = new Set<LiveProcess>()
 export type LiveCheckpoint = {
-  runId: number
-  rootId: number
+  runId: string
+  rootId: string
   worktree: string
   branch: string
   taskKey: string
@@ -89,6 +98,7 @@ export function registerLiveGate(terminate: () => Promise<void>): () => void {
 }
 
 type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
+const RUN_PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
 export type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
@@ -124,55 +134,46 @@ export type RunProcessTerminationPlan =
   | VerifiedRunProcessTermination
 
 export function processTable(): ProcessInventory {
-  let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 1_000,
-    })
+    const { process: p, error } = observeBoundedSubprocess(
+      'ps',
+      ['ps', '-axo', 'pid=,ppid=,pgid=,command='],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      RUN_PROCESS_TABLE_PS_TIMEOUT_MS,
+    )
+    if (error) {
+      return {
+        ascertainable: false,
+        reason: `process inventory unavailable: ${error}`,
+      }
+    }
+    return {
+      ascertainable: true,
+      rows: p
+        .stdout!.toString()
+        .split('\n')
+        .flatMap((line): ProcessRow[] => {
+          const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
+          return match
+            ? [
+                {
+                  pid: Number(match[1]),
+                  ppid: Number(match[2]),
+                  pgid: Number(match[3]),
+                  command: match[4]!,
+                },
+              ]
+            : []
+        }),
+    }
   } catch (error) {
     return {
       ascertainable: false,
       reason: `process inventory unavailable: ${String((error as Error).message ?? error)}`,
     }
-  }
-  if (p.exitCode !== 0) {
-    const stderr = p.stderr!.length ? `: ${p.stderr!.toString().trim()}` : ''
-    if (p.exitCode === null && p.signalCode === 'SIGTERM') {
-      return {
-        ascertainable: false,
-        reason: `process inventory did not complete inside 1000ms${stderr}`,
-      }
-    } else if (p.exitCode !== null) {
-      return {
-        ascertainable: false,
-        reason: `process inventory failed with exit ${p.exitCode}${stderr}`,
-      }
-    }
-    return {
-      ascertainable: false,
-      reason: `process inventory ended on signal ${p.signalCode ?? 'unknown'}${stderr}`,
-    }
-  }
-  return {
-    ascertainable: true,
-    rows: p
-      .stdout!.toString()
-      .split('\n')
-      .flatMap((line): ProcessRow[] => {
-        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
-        return match
-          ? [
-              {
-                pid: Number(match[1]),
-                ppid: Number(match[2]),
-                pgid: Number(match[3]),
-                command: match[4]!,
-              },
-            ]
-          : []
-      }),
   }
 }
 
@@ -370,9 +371,9 @@ function reapVerifiedVendor(
   }
 }
 
-function readRunProcessRecord(id: number): RunProcessRecord {
+function readRunProcessRecord(id: string): RunProcessRecord {
   const row = db()
-    .query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE id=?')
+    .query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE record_id=?')
     .get(id) as {
     pid: number | null
     agent_pid: number | null
@@ -394,7 +395,7 @@ function selfPgidFromInventory(inventory: ProcessInventory, pid: number): number
 }
 
 export function planRecordedRunTermination(
-  id: number,
+  id: string,
   exclude: number[] = [],
   deps: TerminateRunProcessesDeps = {},
 ): RunProcessTerminationPlan {
@@ -422,7 +423,7 @@ export function confirmRunProcessTermination(
 }
 
 export function terminateRunProcesses(
-  id: number,
+  id: string,
   exclude: number[] = [],
   deps: TerminateRunProcessesDeps = {},
 ): TerminateRunProcessesResult {
@@ -456,7 +457,7 @@ export function bindSignals() {
           final: true,
         })
         if (result.created || latestCheckpoint(db(), checkpoint.rootId)) {
-          db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(checkpoint.runId)
+          db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(checkpoint.runId)
         }
         if (result.error) {
           console.error(`orch: run ${checkpoint.runId} final checkpoint failed: ${result.error}`)

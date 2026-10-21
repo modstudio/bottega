@@ -83,6 +83,13 @@ const cursor = (spaceId: string) =>
     .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
     .get(`${HOSTED_CHANGES_CURSOR_KEY}.${spaceId}`)?.value ?? null
 
+const snapshotCursor = (spaceId: string) => {
+  const value = db()
+    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+    .get(`${HOSTED_CHANGES_CURSOR_KEY}.snapshot.${spaceId}`)?.value
+  return value ? (JSON.parse(value) as { head: number; cursor: string | null }) : null
+}
+
 const storeChangeCursor = (spaceId: string, value: string) => {
   writeTransaction((conn) => {
     conn
@@ -244,6 +251,7 @@ test('first run reads head, full-pulls, and stores that head', async () => {
       upsertsNoop: 0,
       deletesApplied: 0,
       deletesSkipped: 0,
+      absentParentSkipped: 0,
       resets: 1,
     },
   ])
@@ -253,6 +261,50 @@ test('first run reads head, full-pulls, and stores that head', async () => {
     '/v1/tasks',
     '/v1/changes',
   ])
+})
+
+test('an interrupted first pull resumes after its last applied snapshot page', async () => {
+  let firstCalls = 0
+  const first = routeFetch({
+    changes: () => changePage({ head: 12, next: 0 }),
+    tasks: (_space, taskCursorValue) => {
+      firstCalls++
+      if (taskCursorValue === null)
+        return {
+          ...emptyTasks('page-one'),
+          tasks: [hostedTask()],
+          more: true,
+        }
+      return Response.json({ error: 'interrupted' }, { status: 503 })
+    },
+  })
+  await expect(pull(first.fetch)).rejects.toThrow('interrupted')
+  expect(firstCalls).toBe(2)
+  expect(cursor('space-one')).toBeNull()
+  expect(snapshotCursor('space-one')).toEqual({ head: 12, cursor: 'page-one' })
+  expect(db().query(`SELECT 1 FROM task WHERE record_id=?`).get(taskId)).not.toBeNull()
+
+  const resumedCursors: Array<string | null> = []
+  const resumed = routeFetch({
+    tasks: (_space, taskCursorValue) => {
+      resumedCursors.push(taskCursorValue)
+      return {
+        ...emptyTasks('page-two'),
+        tasks: [
+          hostedTask({
+            id: '01990000-0000-7000-8000-000000001250',
+            key: 'DEV-1250',
+          }),
+        ],
+        more: false,
+      }
+    },
+  })
+  await pull(resumed.fetch)
+  expect(resumedCursors).toEqual(['page-one'])
+  expect(snapshotCursor('space-one')).toBeNull()
+  expect(cursor('space-one')).toBe('12')
+  expect(db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()?.count).toBe(2)
 })
 
 test('a later page applies upserts and advances the cursor in one transaction', async () => {
@@ -651,7 +703,9 @@ test('the collect line prints the change counts and resets per space', () => {
         upsertsNoop: 10,
         deletesApplied: 1,
         deletesSkipped: 0,
+        absentParentSkipped: 0,
         resets: 1,
+        reportAbsentParentSkips: true,
         spaces: [
           {
             spaceId: 'space-one',
@@ -659,12 +713,15 @@ test('the collect line prints the change counts and resets per space', () => {
             upsertsNoop: 10,
             deletesApplied: 1,
             deletesSkipped: 0,
+            absentParentSkipped: 0,
             resets: 1,
           },
         ],
       },
     }),
-  ).toBe('hosted task changes space-one 3 changed, 10 no-op, 1 deleted, 0 skipped, 1 reset')
+  ).toBe(
+    'hosted task changes space-one 3 changed, 10 no-op, 1 deleted, 0 skipped, 0 absent-parent skipped, 1 reset',
+  )
 })
 
 test('the page bound stops a pass and the next pass continues from the stored cursor', async () => {

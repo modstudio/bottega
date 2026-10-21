@@ -13,6 +13,7 @@ import { projectAt, projects, resolvedWorktreeTool, stackAt } from '../project/p
 import { trackedHookBranch } from '../recipe/tracked-recipe.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
+import { nextRunNumber } from '../run/run-number.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -63,6 +64,12 @@ export function hookTreeSeedRequest(input: {
   }
 }
 
+function recordHookTreeFailure(recordId: string, startedAt: string, detail: string): void {
+  db()
+    .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?`)
+    .run(Math.max(0, Date.now() - Date.parse(startedAt)), detail, recordId)
+}
+
 export function createHookTree(input: {
   cwd: string
   name: string
@@ -109,17 +116,18 @@ export function createHookTree(input: {
   const prompt = `hook tree ${input.name}`
   const inserted = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+      `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
         session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
-       VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
+      nextRunNumber(db()),
       startedAt,
       HOOK_TREE_AGENT,
       HOOK_TREE_JOB,
       project.name,
-      project.id,
+      project.recordId,
       project.path,
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       Buffer.byteLength(prompt),
@@ -132,7 +140,7 @@ export function createHookTree(input: {
       stackAt(project.path),
       hookTreeEvidenceDecision().evidenceExcluded,
       process.pid,
-    ) as { id: number }
+    ) as { record_id: string }
 
   const record = (created: Worktree) => {
     writeTransaction(() => {
@@ -140,7 +148,7 @@ export function createHookTree(input: {
         .query(
           `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,worktree_source=?,
                   resource_teardown=CASE WHEN ?='recipe' THEN 'pending' ELSE resource_teardown END
-           WHERE id=?`,
+           WHERE record_id=?`,
         )
         .run(
           created.path,
@@ -150,19 +158,19 @@ export function createHookTree(input: {
           created.base,
           created.source ?? null,
           created.source ?? null,
-          inserted.id,
+          inserted.record_id,
         )
       if (recorded.changes !== 1)
-        throw new Error(`run ${inserted.id} could not record its worktree`)
+        throw new Error(`run ${inserted.record_id} could not record its worktree`)
       recordCreatedWorktreeClaims(db(), {
-        rootRunId: inserted.id,
-        runId: inserted.id,
-        projectId: project.id,
+        rootRunId: inserted.record_id,
+        runId: inserted.record_id,
+        projectId: project.recordId,
         owned: true,
         path: created.path,
         head: created.base,
         mintedBranch: created.mintedBranch ?? null,
-        label: String(inserted.id),
+        label: String(inserted.record_id),
         claimedAt: nowIso(),
       })
     })
@@ -170,11 +178,11 @@ export function createHookTree(input: {
 
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   try {
-    runLease = acquireRunLease(inserted.id)
+    runLease = acquireRunLease(inserted.record_id)
     const created = createWithTool(
       tool,
       project.path,
-      inserted.id,
+      inserted.record_id,
       seedDecision.seed,
       input.key,
       input.base,
@@ -186,25 +194,38 @@ export function createHookTree(input: {
       hookBranch,
     )
     db()
-      .query(`UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE id=?`)
-      .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.id)
+      .query(`UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?`)
+      .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.record_id)
     return created.path
   } catch (error) {
     const detail = String((error as Error)?.message ?? error)
-    db()
-      .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE id=?`)
-      .run(Math.max(0, Date.now() - Date.parse(startedAt)), detail, inserted.id)
+    recordHookTreeFailure(inserted.record_id, startedAt, detail)
     throw error
   } finally {
     runLease?.release()
   }
 }
 
-export function removeHookTree(requestedPath: string): void {
+export type HookTreeRemovalResult =
+  | { outcome: 'released' }
+  | { outcome: 'kept'; reason: string }
+  | { outcome: 'failed'; detail: string }
+
+export function removeHookTreeResult(requestedPath: string): HookTreeRemovalResult {
+  try {
+    return removeRecordedHookTree(requestedPath)
+  } catch (cause) {
+    return { outcome: 'failed', detail: cause instanceof Error ? cause.message : String(cause) }
+  }
+}
+
+function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
   const wanted = canonicalPath(requestedPath)
   const recordedOwners = (
-    db().query(`SELECT id,job,worktree FROM run WHERE worktree IS NOT NULL ORDER BY id`).all() as {
-      id: number
+    db()
+      .query(`SELECT record_id,job,worktree FROM run WHERE worktree IS NOT NULL ORDER BY number`)
+      .all() as {
+      record_id: string
       job: string
       worktree: string
     }[]
@@ -214,11 +235,11 @@ export function removeHookTree(requestedPath: string): void {
     : (
         db()
           .query(
-            `SELECT run.id,run.job,resource_claim.allocation_key worktree
-             FROM resource_claim JOIN run ON run.id=resource_claim.root_run_id
-             WHERE resource_claim.kind='worktree' ORDER BY run.id`,
+            `SELECT run.record_id,run.job,resource_claim.allocation_key worktree
+             FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
+             WHERE resource_claim.kind='worktree' ORDER BY run.number`,
           )
-          .all() as { id: number; job: string; worktree: string }[]
+          .all() as { record_id: string; job: string; worktree: string }[]
       ).filter((row) => isSyntheticLifecycleJob(row.job) && canonicalPath(row.worktree) === wanted)
   if (!owners.length) {
     const project = registeredProjectContaining(wanted)
@@ -233,17 +254,23 @@ export function removeHookTree(requestedPath: string): void {
   }
   if (owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
     throw new Error(
-      `${requestedPath} belongs to run${owners.length === 1 ? '' : 's'} ${owners.map((row) => row.id).join(', ')}, which ${owners.length === 1 ? 'is' : 'are'} not architect tree runs; close ${owners.length === 1 ? 'it' : 'them'} with ${owners.map((row) => `${PLATFORM_SLUG} run close-out ${row.id}`).join('; ')}`,
+      `${requestedPath} belongs to run${owners.length === 1 ? '' : 's'} ${owners.map((row) => row.record_id).join(', ')}, which ${owners.length === 1 ? 'is' : 'are'} not architect tree runs; close ${owners.length === 1 ? 'it' : 'them'} with ${owners.map((row) => `${PLATFORM_SLUG} run close-out ${row.record_id}`).join('; ')}`,
     )
   }
   if (owners.length > 1) {
     throw new Error(
-      `${requestedPath} is claimed by more than one lifecycle run: ${owners.map((row) => row.id).join(', ')}`,
+      `${requestedPath} is claimed by more than one lifecycle run: ${owners.map((row) => row.record_id).join(', ')}`,
     )
   }
   writableDb()
-  const result = closeOutRun(owners[0]!.id, { intent: 'tree-remove' })
-  if (!['released', 'absent'].includes(result.outcome)) {
-    throw new Error(`tree teardown ${result.outcome}: ${result.detail}`)
-  }
+  const result = closeOutRun(owners[0]!.record_id, { intent: 'tree-remove' })
+  if (result.outcome === 'released' || result.outcome === 'absent') return { outcome: 'released' }
+  if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
+  return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
+}
+
+export function removeHookTree(requestedPath: string): void {
+  const result = removeHookTreeResult(requestedPath)
+  if (result.outcome === 'kept') throw new Error(`tree teardown held: ${result.reason}`)
+  if (result.outcome === 'failed') throw new Error(result.detail)
 }

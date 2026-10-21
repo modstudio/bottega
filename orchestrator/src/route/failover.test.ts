@@ -86,7 +86,7 @@ describe('decideFailover', () => {
 test('the detached spec mapping forwards every field to run', () => {
   const resume = {
     kind: 'continue' as const,
-    parent: 11,
+    parent: 'run-record-id-11',
     agent: 'codex',
     session: 'session',
     turn: 2,
@@ -94,7 +94,7 @@ test('the detached spec mapping forwards every field to run', () => {
     worktree: { path: '/tmp/tree', branch: 'DEV-63', base: 'main', repoRoot: '/tmp/repo' },
   }
   expect(
-    detachedRunOptions('implement', 'prompt', 42, {
+    detachedRunOptions('implement', 'prompt', 'run-record-id-42', {
       agent: 'codex',
       schema: '/tmp/schema.json',
       mcp: true,
@@ -109,7 +109,7 @@ test('the detached spec mapping forwards every field to run', () => {
       base: 'main',
       avoid: ['grok'],
       distinctModels: ['other-model'],
-      retryOf: 7,
+      retryOf: 'run-record-id-7',
       cwd: '/tmp/repo',
       noFailover: true,
       noWaitCapacity: true,
@@ -125,17 +125,18 @@ test('the detached spec mapping forwards every field to run', () => {
         tip: 'abc123',
         commitCount: 1,
         mergeBase: 'def456',
-        projectId: 1,
+        projectId: 'project-1',
         projectName: 'project',
-        nominatingRuns: [{ id: 11, sessionId: 'session-a' }],
+        nominatingRuns: [{ record_id: 'run-record-id-11', sessionId: 'session-a' }],
         trunk: 'main',
         worktree: null,
+        worktreeOwnerJob: null,
       },
     }),
   ).toMatchObject({
     job: 'implement',
     prompt: 'prompt',
-    reserveId: 42,
+    reserveId: 'run-record-id-42',
     agent: 'codex',
     schemaPath: '/tmp/schema.json',
     mcp: true,
@@ -150,7 +151,7 @@ test('the detached spec mapping forwards every field to run', () => {
     base: 'main',
     avoid: ['grok'],
     distinctModels: ['other-model'],
-    retryOf: 7,
+    retryOf: 'run-record-id-7',
     cwd: '/tmp/repo',
     noFailover: true,
     noWaitCapacity: true,
@@ -158,7 +159,7 @@ test('the detached spec mapping forwards every field to run', () => {
     resolvedTaskBranch: {
       branch: 'DEV-63-orch-11',
       tip: 'abc123',
-      nominatingRuns: [{ id: 11, sessionId: 'session-a' }],
+      nominatingRuns: [{ record_id: 'run-record-id-11', sessionId: 'session-a' }],
     },
     review: 'feature/DEV-63',
     ownerSession: 'owner',

@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { upsertProject } from '../project/projects.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
@@ -26,8 +27,14 @@ afterEach(() => {
 test('a --cwd from another registered project is refused with both names', () => {
   const subject = repository('doc-canon-subject')
   const other = repository('doc-canon-other')
-  upsertProject({ name: 'subject', path: subject, canon: true, settings: {} })
-  upsertProject({ name: 'other', path: other, canon: true, settings: {} })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'subject',
+    path: subject,
+    canon: true,
+    settings: {},
+  })
+  upsertProject({ recordId: newRecordId(), name: 'other', path: other, canon: true, settings: {} })
 
   expect(() => selectDocWriteTree({ scope: 'canon', subject: 'subject', cwd: other })).toThrow(
     'project other: document project is subject',

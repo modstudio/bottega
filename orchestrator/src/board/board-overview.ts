@@ -23,7 +23,8 @@ export type BoardOverviewFilters = {
 }
 
 type BoardOverviewBase = {
-  id: string
+  recordId: string
+  number: number | null
   kind: BoardKind
   purpose?: import('../../../shared/board-purpose.ts').BoardPurpose
   title: string | null
@@ -67,7 +68,8 @@ export function boardOverview(
     .map((row) => row.message)
     .toSorted(
       (left, right) =>
-        right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.recordId.localeCompare(left.recordId),
     )
 }
 
@@ -87,10 +89,11 @@ function statusEntry(
     state: message.state,
   }
   for (const [field, value] of Object.entries(required)) {
-    if (value === null) throw new Error(`board message ${message.id} is missing ${field}`)
+    if (value === null) throw new Error(`board message ${message.recordId} is missing ${field}`)
   }
   const base: BoardOverviewBase = {
-    id: message.id,
+    recordId: message.recordId,
+    number: message.number,
     kind: message.kind,
     purpose: message.purpose ?? 'information',
     title: message.title as string,
@@ -121,18 +124,22 @@ function statusEntry(
 
 async function localEntries(clock: number): Promise<GatheredBoardOverviewRow[]> {
   const roots = messageRows().filter(
-    (row) => row.thread_root_id === null && (row.kind === 'notice' || row.kind === 'question'),
+    (row) =>
+      row.thread_root_record_id === null && (row.kind === 'notice' || row.kind === 'question'),
   )
-  const replyCounts = new Map<number, number>()
+  const replyCounts = new Map<string, number>()
   for (const row of messageRows()) {
-    if (row.kind !== 'reply' || row.thread_root_id === null) continue
-    replyCounts.set(row.thread_root_id, (replyCounts.get(row.thread_root_id) ?? 0) + 1)
+    if (row.kind !== 'reply' || row.thread_root_record_id === null) continue
+    replyCounts.set(
+      row.thread_root_record_id,
+      (replyCounts.get(row.thread_root_record_id) ?? 0) + 1,
+    )
   }
   const entries = await Promise.all(
     roots.map(async (row) => ({
       message: statusEntry(
-        await boardStatus(String(row.id), { env: {}, clock }),
-        replyCounts.get(row.id) ?? 0,
+        await boardStatus(String(row.number), { env: {}, clock }),
+        replyCounts.get(row.record_id) ?? 0,
         'local',
       ),
       ended: !rowIsLive(row, clock),

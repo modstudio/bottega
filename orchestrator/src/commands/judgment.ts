@@ -10,6 +10,7 @@ import { db, writableDb } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
+import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { recalibrate } from '../score/recalibration.ts'
@@ -18,6 +19,7 @@ import { collect, log, optionFlags, write } from './support.ts'
 
 const commonValueFlags = [
   '--finding',
+  '--duplicate',
   '--note',
   '--note-file',
   '--better-than',
@@ -46,6 +48,17 @@ export function resolveComparisonRunIds(flags: CliFlags): CliFlags {
   }
 }
 
+export function resolveDuplicateRunIds(flags: CliFlags): CliFlags {
+  const resolved = flags.values('duplicate').map((value) => {
+    const parsed = parseDuplicateFinding(value)
+    return `${parsed.ordinal}=${resolveRunIdentifier(db(), parsed.otherRunId)}#${parsed.otherOrdinal}`
+  })
+  return {
+    ...flags,
+    values: (name) => (name === 'duplicate' ? resolved : flags.values(name)),
+  }
+}
+
 export function scoreNote(flags: ReturnType<typeof optionFlags>): string | null {
   const inline = flags.flag('note')
   const file = flags.flag('note-file')
@@ -69,7 +82,7 @@ function auditReason(flags: ReturnType<typeof optionFlags>): string | null {
   return flags.flag('unreviewed') ?? flags.flag('note') ?? null
 }
 
-function pairHint(partner: { id: number; agent: string }): string {
+function pairHint(partner: { id: string; agent: string }): string {
   const reason = 'reason' in partner ? String(partner.reason) : 'same task'
   return `pair: run ${partner.id} (${partner.agent}) is comparable (${reason}) — record with --better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
 }
@@ -86,7 +99,11 @@ const cleanupPresentation: CleanupPresentation = {
 
 function addJudgmentOptions(command: Command): Command {
   command.option('--finding <value>', 'record a finding disposition', collect, [])
-  const descriptions: Record<Exclude<(typeof commonValueFlags)[number], '--finding'>, string> = {
+  command.option('--duplicate <value>', 'link N to the same finding in another run', collect, [])
+  const descriptions: Record<
+    Exclude<(typeof commonValueFlags)[number], '--finding' | '--duplicate'>,
+    string
+  > = {
     '--note': 'record this note with the verdict',
     '--note-file': 'read the verdict note from this file',
     '--better-than': 'record that this run is better than these runs',
@@ -97,7 +114,9 @@ function addJudgmentOptions(command: Command): Command {
     '--limits': 'record the review limits verdict',
     '--overlap': 'record the review overlap verdict',
   }
-  for (const name of commonValueFlags.filter((name) => name !== '--finding'))
+  for (const name of commonValueFlags.filter(
+    (name) => name !== '--finding' && name !== '--duplicate',
+  ))
     command.option(`${name} <value>`, descriptions[name])
   return command
     .option('--scorer <value>', 'record this scorer identity')
@@ -113,7 +132,7 @@ function addJudgmentOptions(command: Command): Command {
 const SCORE_PATH_OPTIONS = ['void', 'unvoid', 'blocked-by-tree', 'scorer'] as const
 
 /** Options only the judge path reads; the score path would drop them silently. */
-const JUDGE_PATH_OPTIONS = ['discard', 'finding'] as const
+const JUDGE_PATH_OPTIONS = ['discard', 'finding', 'duplicate'] as const
 
 /**
  * A findings run is judged with its axes and finding verdicts unless a score-path
@@ -134,12 +153,12 @@ export function scorePathForJob(
   return 'score'
 }
 
-function rootJob(runId: number): string {
+function rootJob(runId: string): string {
   const row = db()
-    .query<{ job: string }, [number]>(
+    .query<{ job: string }, [string]>(
       `SELECT root.job FROM run requested
-       JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
-       WHERE requested.id=?`,
+       JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
+       WHERE requested.record_id=?`,
     )
     .get(runId)
   if (!row) throw new Error(`no run ${runId}`)
@@ -153,11 +172,11 @@ export function register(program: Command): void {
       .alias('judge')
       .description('record a verdict and comparisons for a run'),
   ).action(async (id, words, options) => {
-    const flags = resolveComparisonRunIds(optionFlags(options))
+    const flags = resolveDuplicateRunIds(resolveComparisonRunIds(optionFlags(options)))
     writableDb()
     const runId = resolveRunIdentifier(db(), id)
     const given = (name: string) =>
-      name === 'finding' ? flags.values('finding').length > 0 : flags.has(name)
+      name === 'finding' || name === 'duplicate' ? flags.values(name).length > 0 : flags.has(name)
     if (scorePathForJob(rootJob(runId), given) === 'judge') {
       const result = await judgeRun(
         runId,

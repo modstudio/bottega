@@ -59,3 +59,12 @@ export async function signedInRecordUserId(local: Database = db()): Promise<stri
     return null
   }
 }
+
+/** A pre-reserved run keeps the attribution recorded when its placeholder was created. */
+export async function startedByUserIdForRun(
+  reserved: boolean,
+  local: Database = db(),
+): Promise<string | null> {
+  if (reserved) return null
+  return signedInRecordUserId(local)
+}

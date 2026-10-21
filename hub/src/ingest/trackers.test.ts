@@ -169,7 +169,7 @@ describe('tracker register', () => {
     const rows = [
       {
         id: 1,
-        record_id: null,
+        record_id: '01990000-0000-7000-8000-000000001201',
         name: 'working',
         path: '/working',
         stack: null,
@@ -179,7 +179,7 @@ describe('tracker register', () => {
       },
       {
         id: 2,
-        record_id: null,
+        record_id: '01990000-0000-7000-8000-000000001202',
         name: 'broken',
         path: '/broken',
         stack: null,

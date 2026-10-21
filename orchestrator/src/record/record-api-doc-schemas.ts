@@ -128,6 +128,7 @@ export const recordDocImportSchema = z.object({
   }),
   revisions: z.array(
     z.object({
+      id: z.string().uuid(),
       scope: z.string().min(1),
       subject: z.string().nullable(),
       owner: z.string().uuid().nullable().optional(),
@@ -179,7 +180,11 @@ export const recordCanonImportSchema = canonImportBodySchema
   .extend({
     address: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('user') }),
-      z.object({ kind: z.literal('project'), subject: z.string().trim().min(1) }),
+      z.object({
+        kind: z.literal('project'),
+        subject: z.string().trim().min(1),
+        projectId: z.string().uuid(),
+      }),
     ]),
   })
   .superRefine((input, context) => {

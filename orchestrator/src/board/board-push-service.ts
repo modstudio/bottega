@@ -13,8 +13,9 @@ import {
   refreshHostedBoard,
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
+import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { requireRealSession } from './board-policy.ts'
-import { selectPushNotices } from './board-push-policy.ts'
+import { boardPushDecision } from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
   noteBoardReachRecordingFailure,
@@ -51,7 +52,9 @@ type DeliveryInput = {
 const receiptAt = (database: Database, table: string, id: string | number, session: string) =>
   (database
     .query(
-      `SELECT delivered_at,acknowledged_at FROM ${table} WHERE message_id=? AND reader_session=?`,
+      table === 'board_receipt'
+        ? 'SELECT delivered_at,acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?'
+        : 'SELECT delivered_at,acknowledged_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
     )
     .get(id, session) as {
     delivered_at: string | null
@@ -66,7 +69,7 @@ function localPendingAcknowledgements(
 ): BoardDelivery[] {
   const candidates = messageRows(database)
     .filter((row) => {
-      const receipt = receiptAt(database, 'board_receipt', row.id, session)
+      const receipt = receiptAt(database, 'board_receipt', row.record_id, session)
       return (
         row.kind === 'notice' &&
         row.ack_required === 1 &&
@@ -77,26 +80,38 @@ function localPendingAcknowledgements(
       )
     })
     .map((row) => ({
-      id: String(row.id),
+      id: String(row.number),
       author: originText(boardOrigin(row)),
       title: row.title ?? '',
       body: row.body,
       deadline: row.ack_deadline ?? '',
       requiresAcknowledgement: true,
       createdAt: row.created_at,
-      deliveredAt: receiptAt(database, 'board_receipt', row.id, session).delivered_at,
+      expiresAt: row.expires_at,
+      deliveredAt: receiptAt(database, 'board_receipt', row.record_id, session).delivered_at,
       purpose: row.purpose ?? 'information',
       text: renderPendingAcknowledgement({
-        id: String(row.id),
+        id: String(row.number),
         author: originText(boardOrigin(row)),
         title: row.title ?? '',
         body: row.body,
         deadline: row.ack_deadline ?? '',
-        deliveredAt: receiptAt(database, 'board_receipt', row.id, session).delivered_at,
+        deliveredAt: receiptAt(database, 'board_receipt', row.record_id, session).delivered_at,
         purpose: row.purpose ?? 'information',
       }),
     }))
-  return selectPushNotices(beganAt, candidates).notices
+  return candidates.filter(
+    (candidate) =>
+      boardPushDecision({
+        acknowledgementRequired: true,
+        postedAt: candidate.createdAt,
+        acknowledgementDeadline: candidate.deadline,
+        expiresAt: candidate.expiresAt,
+        purpose: candidate.purpose,
+        readerBeganAt: beganAt,
+        clock,
+      }) === 'acknowledgement',
+  )
 }
 
 function hostedPendingAcknowledgements(
@@ -124,6 +139,7 @@ function hostedPendingAcknowledgements(
       deadline: message.ackDeadline ?? '',
       requiresAcknowledgement: true,
       createdAt: message.createdAt,
+      expiresAt: message.expiresAt ?? message.createdAt,
       deliveredAt: receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
         .delivered_at,
       purpose: message.purpose ?? 'information',
@@ -138,7 +154,18 @@ function hostedPendingAcknowledgements(
         purpose: message.purpose ?? 'information',
       }),
     }))
-  return selectPushNotices(beganAt, candidates).notices
+  return candidates.filter(
+    (candidate) =>
+      boardPushDecision({
+        acknowledgementRequired: true,
+        postedAt: candidate.createdAt,
+        acknowledgementDeadline: candidate.deadline,
+        expiresAt: candidate.expiresAt,
+        purpose: candidate.purpose,
+        readerBeganAt: beganAt,
+        clock,
+      }) === 'acknowledgement',
+  )
 }
 
 export async function pendingBoardDelivery(input: DeliveryInput) {
@@ -152,7 +179,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   const hostedPush = claimCachedHostedForPush(input.session, false, clock, database)
   const unread: BoardDelivery[] = [
     ...localPush.notices.map((message) => ({
-      id: String(message.id),
+      id: String(message.number),
       text:
         boardDeliveryForm(message.purpose, 'running') === 'full' ? message.text : message.oneLine,
       requiresAcknowledgement: message.ackRequired,
@@ -215,22 +242,32 @@ export async function markBoardDeliveryDelivered(input: {
   const deliveredAt = new Date(clock).toISOString()
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
-  const requestedLocal = new Set(input.ids.filter((id) => /^\d+$/.test(id)).map(Number))
-  const local = messageRows(database)
+  const messages = messageRows(database)
+  const resolved = input.ids.flatMap((id) => {
+    const identifier = resolveBoardDeliveryIdentifier(database, id)
+    return identifier ? [identifier] : []
+  })
+  const requestedLocal = new Set(
+    resolved.flatMap((identifier) => (identifier.source === 'local' ? [identifier.recordId] : [])),
+  )
+  const local = messages
     .filter(
       (row) =>
-        requestedLocal.has(row.id) &&
+        requestedLocal.has(row.record_id) &&
         row.author_session !== input.session &&
         rowIsLive(row, clock, database) &&
         deliverableTo(row, input.session, clock, database),
     )
-    .map((row) => row.id)
-  const hosted = input.ids
-    .filter((id) => !/^\d+$/.test(id))
-    .map((id) => ({ id, posting: cachedAudienceAtPosting(id, input.session, database) }))
+    .map((row) => row)
+  const hosted = resolved
+    .filter((identifier) => identifier.source === 'hosted')
+    .map(({ recordId }) => ({
+      id: recordId,
+      posting: cachedAudienceAtPosting(recordId, input.session, database),
+    }))
     .filter((row): row is { id: string; posting: boolean } => row.posting !== null)
   const reach = [
-    ...local.map((id) => ({ source: 'local' as const, id: String(id) })),
+    ...local.map((row) => ({ source: 'local' as const, id: row.record_id })),
     ...hosted.map(({ id }) => ({ source: 'hosted' as const, id })),
   ]
   const prepared: PreparedBoardReach[] = []
@@ -259,11 +296,12 @@ export async function markBoardDeliveryDelivered(input: {
   writeTransaction(() => {
     const localStamp = database.query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const id of local) localStamp.run(id, input.session, deliveredAt, newRecordId())
+    for (const row of local)
+      localStamp.run(row.record_id, input.session, deliveredAt, newRecordId())
     const hostedStamp = database.query(
       `INSERT INTO hosted_board_receipt_cache
        (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)

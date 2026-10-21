@@ -2,9 +2,24 @@ import { expect, test } from 'bun:test'
 import {
   decideMainStackEnsure,
   decideMainStackIdleStop,
+  decideMainStackStopGuard,
   decideTerminalDockerInventory,
   decideWorktreeResourceTeardown,
+  newlyStartedMainStackServices,
 } from './main-stack-decision.ts'
+
+test('main-stack stop guard allows only known-idle liveness', () => {
+  const idle = {
+    execInProgress: false as boolean | 'unknown',
+    liveRun: false,
+    liveSession: false,
+  }
+  expect(decideMainStackStopGuard(idle)).toBe('stop')
+  expect(decideMainStackStopGuard({ ...idle, liveRun: true })).toBe('keep')
+  expect(decideMainStackStopGuard({ ...idle, liveSession: true })).toBe('keep')
+  expect(decideMainStackStopGuard({ ...idle, execInProgress: true })).toBe('keep')
+  expect(decideMainStackStopGuard({ ...idle, execInProgress: 'unknown' })).toBe('report')
+})
 
 test('terminal transitions inventory only chains that recorded a worktree', () => {
   expect(
@@ -110,4 +125,24 @@ test('main-stack ensure decision covers declarations, service subsets, whole sta
       observed: 'unknown',
     }),
   ).toBe('refuse')
+})
+
+test('main stack release names only services started for this consumer', () => {
+  expect(
+    newlyStartedMainStackServices({
+      decision: 'start-services',
+      before: ['pgsql'],
+      requiredServices: ['pgsql', 'redis'],
+    }),
+  ).toEqual(['redis'])
+  expect(
+    newlyStartedMainStackServices({
+      decision: 'start-stack',
+      before: [],
+      after: ['pgsql', 'redis'],
+    }),
+  ).toEqual(['pgsql', 'redis'])
+  expect(
+    newlyStartedMainStackServices({ decision: 'skip', before: ['pgsql'], after: ['pgsql'] }),
+  ).toEqual([])
 })

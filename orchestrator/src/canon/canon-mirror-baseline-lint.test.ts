@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -13,22 +14,15 @@ import { mirrorRepositoryCanon, systemCanonMirrorPort } from './canon-mirror.ts'
 
 function repository(): string {
   const root = mkdtempSync(join(tmpdir(), 'canon-mirror-baseline-lint-'))
-  spawnFixtureGitSync(['init'], { cwd: root })
+  spawnFixtureGitSync(['init', '-b', 'main'], { cwd: root })
+  appendFileSync(
+    join(root, '.git', 'config'),
+    '\n[user]\n\temail = mirror@example.test\n\tname = Mirror Test\n',
+  )
   writeFileSync(join(root, 'README.txt'), 'fixture\n')
   writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\n\nOld managed context.\n')
   spawnFixtureGitSync(['add', '.'], { cwd: root })
-  spawnFixtureGitSync(
-    [
-      '-c',
-      'user.email=mirror@example.test',
-      '-c',
-      'user.name=Mirror Test',
-      'commit',
-      '-m',
-      'fixture',
-    ],
-    { cwd: root },
-  )
+  spawnFixtureGitSync(['commit', '-m', 'fixture'], { cwd: root })
   return root
 }
 
@@ -39,6 +33,7 @@ test('a pre-existing canon lint finding does not stop publication', async () => 
   try {
     installRecordApiClient(createMemoryRecordApiClient())
     upsertProject({
+      recordId: newRecordId(),
       name: 'canon-mirror-baseline-lint',
       path: root,
       canon: true,

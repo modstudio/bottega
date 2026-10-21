@@ -7,7 +7,7 @@ import type { ResumeTreePlan } from './resume-tree.ts'
 
 export function continuationCheckpointContext(input: {
   database: Database
-  rootId: number
+  rootId: string
   worktree: string | null
   treePlan: ResumeTreePlan | null
 }): string | null {

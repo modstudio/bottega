@@ -15,14 +15,14 @@ type RunInboxFlags = { has(name: string): boolean }
 type RunInboxPresentation = {
   log(...values: unknown[]): void
   dur(ms: number | null | undefined): string
-  chainHasPendingDelivery(rootId: number): boolean
-  strandedRecovery(rootId: number): string
+  chainHasPendingDelivery(rootId: string): boolean
+  strandedRecovery(rootId: string): string
 }
 type InboxQuestion = {
   question_id: number
   question_record_id: string
-  run_id: number
   run_record_id: string
+  run_number: number
   answer_id: number
   answer_record_id: string
   job: string
@@ -66,10 +66,10 @@ type WorkflowInboxQuestion = {
 }
 
 type QueriedInboxQuestion = {
-  id: number
+  number: number
   record_id: string
-  run_id: number
   run_record_id: string
+  run_number: number
   asked_at: string
   question: string
   answered_at: string | null
@@ -88,13 +88,25 @@ type QueriedInboxQuestion = {
   agent: string
   job: string
   repo: string | null
+  project_record_id: string | null
   status: string
   session_id: string | null
   root_status: string
   root_voided: number
-  root_id: number
+  root_id: string
+  root_number: number
   root_record_id: string
   session_recent: number
+}
+
+type RecoverableInboxRow = {
+  record_id: string
+  number: number
+  agent: string
+  job: string
+  repo: string | null
+  project_record_id: string | null
+  session_id: string | null
 }
 
 const shellWord = (value: string) =>
@@ -108,19 +120,20 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
   const rows = db()
     .query(
-      `SELECT q.id,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.workflow_slug,c.mode_slug,c.args,
+      `SELECT q.number,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
-        ORDER BY q.asked_at,q.id`,
+        ORDER BY q.asked_at,q.number`,
     )
     .all() as Array<{
-    id: number
+    number: number
     record_id: string
     asked_at: string
     question: string
     cursor_id: number
     project: string
+    project_record_id: string | null
     workflow_slug: string
     mode_slug: string
     args: string
@@ -129,9 +142,10 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     session_id: string | null
   }>
   const visible = rows.filter((row) => {
-    if (scoped) return scopedProject !== null && row.project === scopedProject.name
+    if (scoped) return scopedProject !== null && row.project_record_id === scopedProject.recordId
     if (input.all) return true
-    if (defaultProject) return row.project === defaultProject.name || row.session_id === sid
+    if (defaultProject)
+      return row.project_record_id === defaultProject.recordId || row.session_id === sid
     return sid !== null && row.session_id === sid
   })
   return visible.map((row) => {
@@ -141,7 +155,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     const canAnswer = row.session_id === null || (sid !== null && row.session_id === sid)
     return {
       kind: 'workflow',
-      question_id: row.id,
+      question_id: row.number,
       question_record_id: row.record_id,
       workflow: row.workflow_slug,
       project: row.project,
@@ -169,6 +183,13 @@ export type InboxQuery = {
   requestedCwd?: string
 }
 
+function scopedProjectFilter(
+  scoped: boolean,
+  project: ReturnType<typeof projectAt>,
+): ReturnType<typeof projectAt> | undefined {
+  return scoped ? project : undefined
+}
+
 export async function queryInbox(
   input: InboxQuery,
 ): Promise<{ questions: Array<InboxQuestion | WorkflowInboxQuestion> }> {
@@ -176,36 +197,30 @@ export async function queryInbox(
   const mine = input.scope === 'session' || !input.all
   const scoped = input.scope === 'cli-default' && input.requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(input.requestedCwd!) : null
+  const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const defaultProject =
     input.scope === 'cli-default' && !scoped && mine ? projectAt(process.cwd()) : null
-  const scopedProjectName = scoped ? (scopedProject?.name ?? null) : undefined
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-  const hasSessionSeen = Boolean(
-    db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
-  )
-  const seenJoin = hasSessionSeen
-    ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-    : ''
-  const sessionRecent = hasSessionSeen
-    ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-    : '0'
+  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
+  const sessionRecent =
+    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
   const queriedRows = db()
     .query(
-      `SELECT q.id, q.record_id, q.run_id, r.record_id AS run_record_id,
+      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
             q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, r.status, r.session_id,
-            root.status root_status, root.record_id root_record_id,
+            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
+            root.status root_status, root.record_id root_record_id, root.number root_number,
             ${voidedSql('root')} root_voided,
-            COALESCE(r.parent_run_id, r.id) root_id, ${sessionRecent} session_recent
-       FROM question q JOIN run r ON r.id = q.run_id
-       JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
+            COALESCE(r.parent_run_record_id, r.record_id) root_id, ${sessionRecent} session_recent
+       FROM question q JOIN run r ON r.record_id = q.run_record_id
+       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
        ${seenJoin}
       WHERE q.closed_at IS NULL
-      ORDER BY q.run_id, q.id`,
+      ORDER BY q.run_record_id,q.number`,
     )
-    .all(...(hasSessionSeen ? [cutoff] : [])) as QueriedInboxQuestion[]
+    .all(cutoff) as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       { status: question.root_status, voided: Boolean(question.root_voided) },
@@ -223,16 +238,16 @@ export async function queryInbox(
             isLive(question) &&
             (question.session_id === null || (sid !== null && question.session_id === sid)),
         )
-      : rowsForInboxView(selected, scopedProjectName, defaultProject?.name ?? null, mine, sid)
+      : rowsForInboxView(selected, scopedFilter, defaultProject, mine, sid)
   return {
     questions: [
       ...visible.map(
         (q): InboxQuestion => ({
-          question_id: q.id,
+          question_id: q.number,
           question_record_id: q.record_id,
-          run_id: q.run_id,
           run_record_id: q.run_record_id,
-          answer_id: q.root_id,
+          run_number: q.run_number,
+          answer_id: q.root_number,
           answer_record_id: q.root_record_id,
           job: q.job,
           agent: q.agent,
@@ -264,25 +279,31 @@ export async function queryInbox(
   }
 }
 
-export function rowsForInboxProject<T extends { repo: string | null }>(
+export function rowsForInboxProject<T extends { project_record_id: string | null }>(
   rows: T[],
-  project: string | null,
+  projectRecordId: string | null,
 ): T[] {
-  return project === null ? [] : rows.filter((row) => row.repo === project)
+  return projectRecordId === null
+    ? []
+    : rows.filter((row) => row.project_record_id === projectRecordId)
 }
 
-function rowsForInboxView<T extends { repo: string | null; session_id: string | null }>(
+function rowsForInboxView<
+  T extends { project_record_id: string | null; session_id: string | null },
+>(
   rows: T[],
-  scopedProject: string | null | undefined,
-  defaultProject: string | null,
+  scopedProject: ReturnType<typeof projectAt> | undefined,
+  defaultProject: ReturnType<typeof projectAt>,
   mine: boolean,
   sid: string | null,
 ): T[] {
-  if (scopedProject !== undefined) return rowsForInboxProject(rows, scopedProject)
+  if (scopedProject !== undefined) return rowsForInboxProject(rows, scopedProject?.recordId ?? null)
   if (!mine) return rows
   if (defaultProject)
     return rows.filter(
-      (row) => row.repo === defaultProject || (sid !== null && row.session_id === sid),
+      (row) =>
+        row.project_record_id === defaultProject.recordId ||
+        (sid !== null && row.session_id === sid),
     )
   return rows.filter((row) => sid !== null && row.session_id === sid)
 }
@@ -388,39 +409,34 @@ export async function runInboxCommand(
   const activeOnly = has('active')
   const scoped = requestedCwd !== undefined
   const scopedProject = scoped ? projectAt(requestedCwd) : null
+  const scopedFilter = scopedProjectFilter(scoped, scopedProject)
   const project = scoped ? scopedProject : mine ? projectAt(process.cwd()) : null
-  const scopedProjectName = scoped ? (scopedProject?.name ?? null) : undefined
   const header = await rulingsHeader(project)
   const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-  const hasSessionSeen = Boolean(
-    db().query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`).get(),
-  )
-  const seenJoin = hasSessionSeen
-    ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-    : ''
-  const sessionRecent = hasSessionSeen
-    ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-    : '0'
+  const seenJoin = 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
+  const sessionRecent =
+    'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
   const queriedRows = db()
     .query(
-      `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
+      `SELECT q.number,q.run_record_id,r.number AS run_number,q.asked_at,q.question,q.options,q.recommendation,q.why,
             q.answered_at,
             q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
-            r.agent, r.job, r.repo, r.status, r.session_id,
-            root.status root_status,
+            r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
+            root.status root_status, root.number root_number,
             ${voidedSql('root')} root_voided,
-            COALESCE(r.parent_run_id, r.id) root_id,
+            COALESCE(r.parent_run_record_id, r.record_id) root_id,
             ${sessionRecent} session_recent
-       FROM question q JOIN run r ON r.id = q.run_id
-       JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
+       FROM question q JOIN run r ON r.record_id = q.run_record_id
+       JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
        ${seenJoin}
       WHERE q.closed_at IS NULL
-      ORDER BY q.run_id, q.id`,
+      ORDER BY q.run_record_id,q.number`,
     )
-    .all(...(hasSessionSeen ? [cutoff] : [])) as {
-    id: number
-    run_id: number
+    .all(cutoff) as {
+    number: number
+    run_record_id: string
+    run_number: number
     asked_at: string
     question: string
     answered_at: string | null
@@ -440,11 +456,13 @@ export async function runInboxCommand(
     agent: string
     job: string
     repo: string | null
+    project_record_id: string | null
     status: string
     session_id: string | null
     root_status: string
     root_voided: number
-    root_id: number
+    root_id: string
+    root_number: number
     session_recent: number
   }[]
   const isLive = (question: (typeof queriedRows)[number]) =>
@@ -463,7 +481,7 @@ export async function runInboxCommand(
   // Inside a registered project, the default view is the union of questions in
   // that project and questions owned by this session. Visibility does not make
   // a question owned by another session answerable.
-  const rows = rowsForInboxView(allRows, scopedProjectName, project?.name ?? null, mine, sid)
+  const rows = rowsForInboxView(allRows, scopedFilter, project, mine, sid)
   const workflowRows = workflowInboxQuestions({
     scope: 'cli-default',
     all: has('all'),
@@ -482,50 +500,48 @@ export async function runInboxCommand(
 
   const queriedRecoverable = db()
     .query(
-      `SELECT root.id, root.agent, root.job, root.repo, root.session_id
+      `SELECT root.record_id, root.number, root.agent, root.job, root.repo, root.project_record_id, root.session_id
        FROM run root
-      WHERE root.parent_run_id IS NULL
+      WHERE root.parent_run_record_id IS NULL
         AND (root.status = 'asking' OR EXISTS (
-          SELECT 1 FROM question pending JOIN run owner ON owner.id=pending.run_id
-           WHERE (owner.id=root.id OR owner.parent_run_id=root.id)
+          SELECT 1 FROM question pending JOIN run owner ON owner.record_id=pending.run_record_id
+           WHERE (owner.record_id=root.record_id OR owner.parent_run_record_id=root.record_id)
              AND pending.answered_at IS NOT NULL
              AND pending.delivery_pending_at IS NOT NULL
         ))
-        ${!scoped && mine ? (project ? 'AND (root.repo = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
+        ${!scoped && mine ? (project ? 'AND (root.project_record_id = ? OR root.session_id = ?)' : 'AND root.session_id = ?') : ''}
         AND NOT EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
-           WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
+          SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+           WHERE (owner.record_id = root.record_id OR owner.parent_run_record_id = root.record_id)
              AND ${questionOpenSql('q')}
         )
         AND NOT EXISTS (
           SELECT 1 FROM run active
-           WHERE active.parent_run_id = root.id AND active.status = 'running'
+           WHERE active.parent_run_record_id = root.record_id AND active.status = 'running'
         )
-      ORDER BY root.id`,
+      ORDER BY root.number`,
     )
-    .all(...(!scoped && mine ? (project ? [project.name, sid] : [sid]) : [])) as {
-    id: number
-    agent: string
-    job: string
-    repo: string | null
-    session_id: string | null
-  }[]
-  const recoverable = rowsForInboxView(queriedRecoverable, scopedProjectName, null, false, sid)
+    .all(
+      ...(!scoped && mine ? (project ? [project.recordId, sid] : [sid]) : []),
+    ) as RecoverableInboxRow[]
+  const recoverable = rowsForInboxView(queriedRecoverable, scopedFilter, null, false, sid)
 
   if (!rows.length && !recoverable.length && !workflowRows.length) {
     log(emptyInboxMessage(project, mine))
     return
   }
   presentWorkflowQuestions(workflowRows, log)
-  let lastRun = -1
-  let lastRoot = -1
+  let lastRun = ''
+  let lastRoot = ''
   for (const q of answerable) {
-    if (q.run_id !== lastRun) {
-      log(`\nrun ${q.run_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`)
-      lastRun = q.run_id
+    if (q.run_record_id !== lastRun) {
+      log(
+        `\nrun ${q.run_number} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`,
+      )
+      lastRun = q.run_record_id
     }
     lastRoot = q.root_id
-    log(`  [q${q.id}] ${q.question}`)
+    log(`  [q${q.number}] ${q.question}`)
     if (q.why) log(`        why: ${q.why}`)
     const opts = q.options ? (JSON.parse(q.options) as string[]) : []
     for (const o of opts) log(`        - ${o}`)
@@ -541,23 +557,23 @@ export async function runInboxCommand(
     )
   }
   for (const r of recoverable) {
-    const stranded = chainHasPendingDelivery(r.id)
+    const stranded = chainHasPendingDelivery(r.record_id)
     if (canAnswer(r.session_id)) {
       log(
-        `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
+        `\nrun ${r.number} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
           (stranded
-            ? `asking, but no ruling is open — ${strandedRecovery(r.id)}`
-            : `asking, but no ruling is open — recoverable: ${PLATFORM_SLUG} run continue ${r.id}`),
+            ? `asking, but no ruling is open — ${strandedRecovery(r.record_id)}`
+            : `asking, but no ruling is open — recoverable: ${PLATFORM_SLUG} run continue ${r.record_id}`),
       )
       if (r.session_id === null) {
         log('        unowned — any session may continue it')
       }
     } else {
       log(
-        `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
+        `\nrun ${r.number} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
           `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
           (stranded
-            ? `stranded — only the owning session may use ${PLATFORM_SLUG} run retry ${r.id} --agent … or ${PLATFORM_SLUG} run abandon ${r.id}`
+            ? `stranded — only the owning session may use ${PLATFORM_SLUG} run retry ${r.record_id} --agent … or ${PLATFORM_SLUG} run abandon ${r.record_id}`
             : 'only the owning session may continue it'),
       )
     }
@@ -567,7 +583,7 @@ export async function runInboxCommand(
     for (const q of visible) {
       const liveness = q.session_recent ? 'live' : 'unknown'
       log(
-        `\n  [q${q.id}] run ${q.run_id} · ${q.job} · ${q.agent}` +
+        `\n  [q${q.number}] run ${q.run_number} · ${q.job} · ${q.agent}` +
           `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
           `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
       )
@@ -585,7 +601,7 @@ export async function runInboxCommand(
       `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
         `${status} (terminal)`,
     )
-    log(`  [q${q.id}] ${q.question}`)
+    log(`  [q${q.number}] ${q.question}`)
     presentOverturn(q, log)
     presentFiled(q, log)
   }

@@ -1,12 +1,19 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { machineId } from '../../../shared/machine-config.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
+import {
+  localOutbox,
+  MACHINE_ID,
+  options,
+  PROJECT_ID,
+  RECORD_ID,
+  STAMP,
+} from '../../test/fixtures/record-sync.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -16,66 +23,10 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
-import { syncHostedRecord } from './record-sync-service.ts'
 
-const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
   OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
-
-const RECORD_ID = '01990000-0000-7000-8000-000000000042'
-const MACHINE_ID = machineId()
-const STAMP = '2026-09-15T01:01:00.000Z'
-
-function localOutbox(
-  count: number,
-  projectName: string | null = PLATFORM_SLUG,
-  overrides: Record<string, unknown> = {},
-): Database {
-  const local = new Database(':memory:')
-  local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
-    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
-    quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
-  );
-  CREATE TABLE outbox_quarantine_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
-    error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
-    at TEXT NOT NULL, reason TEXT
-  ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
-  for (let id = 1; id <= count; id++) {
-    const values = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
-    Object.assign(values, {
-      id: `${RECORD_ID.slice(0, -1)}${id}`,
-      spaceId: '01990000-0000-7000-8000-000000000001',
-      projectName,
-      machineId: MACHINE_ID,
-      localId: id,
-      startedAt: STAMP,
-      finishedAt: STAMP,
-      agent: 'codex',
-      job: 'probe',
-      promptSha: 'prompt',
-      promptBytes: 6,
-      promptHead: 'prompt',
-      probe: true,
-      status: 'ok',
-      turn: 1,
-      noFailover: false,
-      automaticFailover: false,
-      workPreserved: false,
-      createdAt: STAMP,
-      updatedAt: STAMP,
-      ...overrides,
-    })
-    local
-      .query(
-        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,'run',?,?,?)",
-      )
-      .run(newRecordId(), id, values.id ?? null, JSON.stringify(values), STAMP)
-  }
-  return local
-}
 
 function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) => void): Database {
   const local = new Database(':memory:')
@@ -96,6 +47,7 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
     id: RECORD_ID,
     spaceId: '01990000-0000-7000-8000-000000000001',
     projectName: PLATFORM_SLUG,
+    projectId: PROJECT_ID,
     machineId: MACHINE_ID,
     localId: 42,
     branch: 'DEV-977-old-shape',
@@ -141,6 +93,7 @@ function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) =
     id: RECORD_ID,
     spaceId: '01990000-0000-7000-8000-000000000001',
     projectName: PLATFORM_SLUG,
+    projectId: PROJECT_ID,
     machineId: MACHINE_ID,
     localId: 42,
     branch: 'DEV-977-old-shape',
@@ -164,77 +117,40 @@ function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) =
 }
 
 function localScoreOutbox(): Database {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
+  local.query("UPDATE outbox SET synced_at=? WHERE kind='run'").run(STAMP)
   local
     .query(
       `INSERT INTO score
-       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 42,'full','right',NULL,'old',?,'architect')`,
+       (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', ?,'full','right',NULL,'old',?,'architect')`,
     )
-    .run(STAMP)
-  enqueueScoreRecord(local, 42, MACHINE_ID)
+    .run(RECORD_ID, STAMP)
+  enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
   return local
 }
 
-const options = (
-  local: Database,
-  remote: ReturnType<typeof fakePostgres>,
-  memberships = [
-    {
-      spaceId: '01990000-0000-7000-8000-000000000001',
-      slug: 'platform',
-      permission: 'write',
-    },
-  ],
-) => ({
-  local,
-  now: () => STAMP,
-  identity: { id: MACHINE_ID, name: 'test-machine' },
-  principal: {
-    userId: '01990000-0000-7000-8000-000000000002',
-    spaceId: '01990000-0000-7000-8000-000000000001',
-  },
-  memberships,
-  client: {
-    whoami: async () => ({
-      user: { id: '01990000-0000-7000-8000-000000000002' },
-      activeSpaceId: '01990000-0000-7000-8000-000000000001',
-      personalSpaceId: '01990000-0000-7000-8000-000000000001',
-      memberships: memberships.map((membership) => ({
-        space_id: membership.spaceId,
-        slug: membership.slug,
-        permission: membership.permission,
-      })),
-    }),
-    sync: (request: Parameters<typeof syncHostedRecord>[0]['request']) =>
-      syncHostedRecord({
-        url: 'postgres://record.test/database',
-        identity: {
-          user: { id: '01990000-0000-7000-8000-000000000002' },
-          activeSpaceId: '01990000-0000-7000-8000-000000000001',
-          personalSpaceId: '01990000-0000-7000-8000-000000000001',
-          memberships: memberships.map((membership) => ({
-            space_id: membership.spaceId,
-            slug: membership.slug,
-            permission: membership.permission,
-          })),
-        },
-        request,
-        postgres: remote.sql,
-      }),
-  },
-})
-
 test('sync upserts once and a second pass has no run mutation', async () => {
-  const local = localOutbox(1)
+  const local = localOutbox(1, PLATFORM_SLUG, {
+    vendorTokens: 101,
+    vendorCostUsd: 1.25,
+    vendorInputTokens: 102,
+    vendorOutputTokens: 103,
+    vendorEstimatedCostUsd: 1.5,
+    vendorCostSource: 'billed',
+    resourceCpuMs: 201,
+    resourcePeakRssBytes: 202,
+    resourceSamples: 203,
+    resourceSource: 'sampled',
+  })
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toEqual({
     pushed: 1,
@@ -247,6 +163,39 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   const firstRunWrites = remote.statements.filter((sql) =>
     sql.toLowerCase().includes('insert into "run"'),
   ).length
+  const runWrite = remote.statements.find((sql) => sql.toLowerCase().includes('insert into "run"'))!
+  const runColumns = runWrite
+    .slice(runWrite.indexOf('(') + 1, runWrite.indexOf(')'))
+    .split(',')
+    .map((column) => column.replaceAll('"', '').trim())
+  const runId = `${RECORD_ID.slice(0, -1)}1`
+  const runParameters = remote.parameters.find(
+    (parameters) => parameters.includes(runId) && parameters.includes(101n),
+  )!
+  const valueFor = (column: string) => runParameters[runColumns.indexOf(column)]
+  expect({
+    vendorTokens: valueFor('vendor_tokens'),
+    vendorCostUsd: valueFor('vendor_cost_usd'),
+    vendorInputTokens: valueFor('vendor_input_tokens'),
+    vendorOutputTokens: valueFor('vendor_output_tokens'),
+    vendorEstimatedCostUsd: valueFor('vendor_estimated_cost_usd'),
+    vendorCostSource: valueFor('vendor_cost_source'),
+    resourceCpuMs: valueFor('resource_cpu_ms'),
+    resourcePeakRssBytes: valueFor('resource_peak_rss_bytes'),
+    resourceSamples: valueFor('resource_samples'),
+    resourceSource: valueFor('resource_source'),
+  }).toEqual({
+    vendorTokens: 101n,
+    vendorCostUsd: 1.25,
+    vendorInputTokens: 102n,
+    vendorOutputTokens: 103n,
+    vendorEstimatedCostUsd: 1.5,
+    vendorCostSource: 'billed',
+    resourceCpuMs: 201n,
+    resourcePeakRssBytes: 202n,
+    resourceSamples: 203,
+    resourceSource: 'sampled',
+  })
   expect(await syncRecord(options(local, remote))).toEqual({
     pushed: 0,
     failed: 0,
@@ -261,6 +210,25 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   local.close()
 })
 
+test('run sync accepts a null resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: null })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  local.close()
+})
+
+test('run sync rejects an unknown resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: 'estimated' })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(
+    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+  ).toBe('run.resourceSource must be sampled, none, unavailable, or null')
+  local.close()
+})
+
 test('a quarantined newer row blocks redaction and becomes final after retry and sync', async () => {
   const remote = fakePostgres(),
     local = localOutbox(1)
@@ -272,26 +240,28 @@ test('a quarantined newer row blocks redaction and becomes final after retry and
 })
 
 test('ordinary sync pushes an asking run before its live question', async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,asked_via)
-       VALUES ('${newRecordId()}',42,?,'Which?','live')`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,asked_via)
+       VALUES (1,'${newRecordId()}',?,?,'Which?','live')`,
     )
-    .run(STAMP)
+    .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
-  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(local, 1)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
+  enqueueQuestionRecord(
+    local,
+    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
+  )
 
   const remote = fakePostgres()
   const result = await syncRecord(options(local, remote))
@@ -393,8 +363,10 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     writesRepo: false,
     findings: false,
     onWrite: () => {
-      local.query("UPDATE score SET note='new', scored_at=? WHERE run_id=42").run(newerStamp)
-      enqueueScoreRecord(local, 42, MACHINE_ID)
+      local
+        .query("UPDATE score SET note='new', scored_at=? WHERE run_record_id=?")
+        .run(newerStamp, RECORD_ID)
+      enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
     },
   })
 
@@ -407,10 +379,15 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     blocked: [],
   })
   expect(
-    local.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!.synced_at,
+    local
+      .query<{ synced_at: string | null }, []>("SELECT synced_at FROM outbox WHERE kind='score'")
+      .get()!.synced_at,
   ).toBeNull()
   expect(
-    JSON.parse(local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload),
+    JSON.parse(
+      local.query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'").get()!
+        .payload,
+    ),
   ).toMatchObject({ note: 'new', scoredAt: newerStamp })
 
   expect(await syncRecord(options(local, remote))).toEqual({
@@ -457,10 +434,12 @@ test.each([
   },
 ])('score sync refuses $name', async ({ job, mutate, message }) => {
   const local = localScoreOutbox()
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const row = local
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'")
+    .get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   mutate(payload)
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  local.query("UPDATE outbox SET payload=? WHERE kind='score'").run(JSON.stringify(payload))
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, job)
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
@@ -470,7 +449,9 @@ test.each([
     configured: true,
   })
   expect(
-    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+    local
+      .query<{ last_error: string }, []>("SELECT last_error FROM outbox WHERE kind='score'")
+      .get()!.last_error,
   ).toContain(message)
   expect(
     remote.statements.some((sql) => sql.toLowerCase().includes('insert into "run_score"')),
@@ -478,32 +459,18 @@ test.each([
   local.close()
 })
 
-test('an old-shape run payload without projectId or withheldFields still syncs by name', async () => {
-  const local = localOutbox(1)
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
-  const payload = JSON.parse(row.payload) as Record<string, unknown>
-  delete payload.withheldFields
-  delete payload.projectId
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
-  const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 1,
-    failed: 0,
-  })
-  expect(remote.parameters.flat()).toContain(null)
-  local.close()
-})
-
 test('an old-shape score payload without projectId or review grades syncs with nulls', async () => {
   const local = localScoreOutbox()
-  const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
+  const row = local
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='score'")
+    .get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   delete payload.reproduced
   delete payload.coverage
   delete payload.limits
   delete payload.overlap
   delete payload.projectId
-  local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
+  local.query("UPDATE outbox SET payload=? WHERE kind='score'").run(JSON.stringify(payload))
   const remote = fakePostgres()
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
@@ -565,15 +532,54 @@ test('an old-shape landing override syncs with a null change group', async () =>
   local.close()
 })
 
+test('a held row stays pending while an independent row syncs and then delivers after upgrade', async () => {
+  const local = localOutbox(2)
+  const first = local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=1').get()!
+  local
+    .query('UPDATE outbox SET payload=? WHERE id=1')
+    .run(JSON.stringify({ ...JSON.parse(first.payload), futureColumn: null }))
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 1,
+    held: [
+      {
+        kind: 'run',
+        rows: 1,
+        reason: expect.stringContaining('unknown columns: futureColumn'),
+      },
+    ],
+  })
+  expect(
+    local.query('SELECT attempts,synced_at,quarantined_at FROM outbox ORDER BY id').all(),
+  ).toEqual([
+    { attempts: 1, synced_at: null, quarantined_at: null },
+    { attempts: 0, synced_at: STAMP, quarantined_at: null },
+  ])
+
+  local.query('UPDATE outbox SET payload=? WHERE id=1').run(first.payload)
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+  })
+  local.close()
+})
+
 test.each([
-  {
-    name: 'an unexpected extra column',
-    mutate: (payload: Record<string, unknown>) => Object.assign(payload, { unexpected: null }),
-  },
   {
     name: 'a missing required column',
     mutate: (payload: Record<string, unknown>) => {
       delete payload.branch
+    },
+  },
+  {
+    name: 'both an extra and a missing column',
+    mutate: (payload: Record<string, unknown>) => {
+      delete payload.branch
+      Object.assign(payload, { unexpected: null })
     },
   },
 ])('triage snapshot sync refuses $name', async ({ mutate }) => {
@@ -645,61 +651,63 @@ test('a whole-request grant failure leaves every row untouched', async () => {
 })
 
 test('a quarantined parent defers its graph until retry delivers the parent', async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',42,?,'Which?')`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES (1,'${newRecordId()}',?,?,'Which?')`,
     )
-    .run(STAMP)
+    .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
-  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(local, 1)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
+  enqueueQuestionRecord(
+    local,
+    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
+  )
   local
     .query(
       `INSERT INTO score
-       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 42,'full','right',NULL,'complete',?,'architect')`,
+       (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', ?,'full','right',NULL,'complete',?,'architect')`,
     )
-    .run(STAMP)
-  enqueueScoreRecord(local, 42, MACHINE_ID)
+    .run(RECORD_ID, STAMP)
+  enqueueScoreRecord(local, RECORD_ID, MACHINE_ID)
   local
     .query(
-      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)",
+      "INSERT INTO review (number,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)",
     )
     .run(STAMP)
   local
     .query(
       `INSERT INTO review_lens
-       (id,record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (1,'01990000-0000-7000-8000-000000000042',1,42,'craft','codex','[]','[]','[]','[]')`,
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('01990000-0000-7000-8000-000000000042','01990000-0000-7000-8000-000000000041',?,'craft','codex','[]','[]','[]','[]')`,
     )
-    .run()
+    .run(RECORD_ID)
   local
     .query(
       `INSERT INTO review_finding
-       (id,record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction)
-       VALUES (1,'01990000-0000-7000-8000-000000000043',1,1,1,'major','a.ts:1','evidence','correct it')`,
+       (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction)
+       VALUES ('01990000-0000-7000-8000-000000000043','01990000-0000-7000-8000-000000000041','01990000-0000-7000-8000-000000000042',1,'major','a.ts:1','evidence','correct it')`,
     )
     .run()
   backfillReviewRecords(local)
   local
     .query(
       `INSERT INTO contention
-       (id,record_id,at,resource_kind,resource_key,event_kind,run_id)
-       VALUES (1,'01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',42)`,
+       (record_id,at,resource_kind,resource_key,event_kind,run_record_id)
+       VALUES ('01990000-0000-7000-8000-000000000077',?,'lock','resource','wait',?)`,
     )
-    .run(STAMP)
-  enqueueContention(local, 1, STAMP)
+    .run(STAMP, RECORD_ID)
+  enqueueContention(local, '01990000-0000-7000-8000-000000000077', STAMP)
   const remote = fakePostgres(
     serverError('new row violates row-level security policy for table "run"', 42501),
   )
@@ -793,25 +801,27 @@ test('retiring a row after its batch is sent does not mark its local snapshot sy
 })
 
 test('a dependent reports a retired parent without attempting delivery', async () => {
-  const local = new Database(':memory:')
-  applyMigrations(local)
+  const local = migratedTestDatabase()
   local
     .query(
       `INSERT INTO run
-       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',42,?,'Which?')`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES (1,'${newRecordId()}',?,?,'Which?')`,
     )
-    .run(STAMP)
+    .run(RECORD_ID, STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
-  enqueueRunRecord(local, 42, MACHINE_ID, STAMP)
-  enqueueQuestionRecord(local, 1)
+  enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
+  enqueueQuestionRecord(
+    local,
+    (local.query('SELECT record_id FROM question').get() as { record_id: string }).record_id,
+  )
   local
     .query(
       `UPDATE outbox SET quarantined_at=?,quarantine_reason='operator review'
@@ -930,121 +940,5 @@ test('every populated JSONB run value is bound as one JSON string', async () => 
   })
   const bound = remote.parameters.flat()
   for (const value of Object.values(jsonValues)) expect(bound).toContain(JSON.stringify(value))
-  local.close()
-})
-
-test('declared project spaces override the active space while an unset project falls back', async () => {
-  const local = localOutbox(2, 'declared')
-  const second = JSON.parse(
-    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
-  ) as Record<string, unknown>
-  second.projectName = 'fallback'
-  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
-  const remote = fakePostgres()
-  const declaredSpace = '01990000-0000-7000-8000-000000000003'
-  const memberships = [
-    { spaceId: declaredSpace, slug: 'team', permission: 'write' },
-    ...options(local, remote).memberships,
-  ]
-  expect(
-    await syncRecord({
-      ...options(local, remote, memberships),
-      projectSpaces: { declared: 'team' },
-    }),
-  ).toEqual({
-    pushed: 2,
-    failed: 0,
-    pending: 0,
-    configured: true,
-    quarantined: [],
-    blocked: [],
-  })
-  expect(remote.transactionSpaceIds).toContain(declaredSpace)
-  expect(remote.transactionSpaceIds).toContain(options(local, remote).principal.spaceId)
-  local.close()
-})
-
-test('two declared projects bind their own spaces in separate transactions', async () => {
-  const local = localOutbox(2, 'alpha')
-  const second = JSON.parse(
-    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
-  ) as Record<string, unknown>
-  second.projectName = 'beta'
-  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
-  const remote = fakePostgres()
-  const alpha = '01990000-0000-7000-8000-000000000003'
-  const beta = '01990000-0000-7000-8000-000000000004'
-  const memberships = [
-    { spaceId: alpha, slug: 'alpha', permission: 'write' },
-    { spaceId: beta, slug: 'beta', permission: 'write' },
-    ...options(local, remote).memberships,
-  ]
-  expect(
-    await syncRecord({
-      ...options(local, remote, memberships),
-      projectSpaces: { alpha: 'alpha', beta: 'beta' },
-    }),
-  ).toMatchObject({ pushed: 2, failed: 0 })
-  expect(remote.transactionSpaceIds.filter((id) => id === alpha)).toHaveLength(1)
-  expect(remote.transactionSpaceIds.filter((id) => id === beta)).toHaveLength(1)
-  local.close()
-})
-
-test('a read-only destination is deferred per row and retried after permission changes', async () => {
-  // Production break watched: classify the read-only refusal as row-fatal and quarantine it.
-  const local = localOutbox(2, 'read-only-project')
-  const second = JSON.parse(
-    local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=2').get()!.payload,
-  ) as Record<string, unknown>
-  second.projectName = 'write-project'
-  local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
-  const remote = fakePostgres()
-  const readOnlySpace = '01990000-0000-7000-8000-000000000003'
-  const baseMemberships = options(local, remote).memberships
-  const projectSpaces = {
-    'read-only-project': 'read-only-space',
-    'write-project': 'platform',
-  }
-
-  expect(
-    await syncRecord({
-      ...options(local, remote, [
-        { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'read' },
-        ...baseMemberships,
-      ]),
-      projectSpaces,
-    }),
-  ).toMatchObject({
-    pushed: 1,
-    failed: 0,
-    pending: 1,
-    quarantined: [],
-    readOnlyDeferred: [{ spaceId: readOnlySpace, rows: 1 }],
-  })
-  expect(
-    local
-      .query<{ attempts: number; last_error: string; quarantined_at: string | null }, []>(
-        'SELECT attempts,last_error,quarantined_at FROM outbox WHERE id=1',
-      )
-      .get(),
-  ).toEqual({
-    attempts: 1,
-    last_error: expect.stringContaining(`record space ${readOnlySpace} membership is read-only`),
-    quarantined_at: null,
-  })
-
-  expect(
-    await syncRecord({
-      ...options(local, remote, [
-        {
-          spaceId: readOnlySpace,
-          slug: 'read-only-space',
-          permission: 'write',
-        },
-        ...baseMemberships,
-      ]),
-      projectSpaces,
-    }),
-  ).toMatchObject({ pushed: 1, failed: 0, pending: 0, quarantined: [] })
   local.close()
 })

@@ -26,7 +26,7 @@ function operations(overrides: Partial<Operations> = {}): Operations {
       rows: [
         {
           lens: 'correctness',
-          run: 71,
+          run: 'run-record-id-71',
           disposition: 'accepted',
           category: null,
           severity: 'high',
@@ -34,7 +34,7 @@ function operations(overrides: Partial<Operations> = {}): Operations {
         },
         {
           lens: 'craft',
-          run: 72,
+          run: 'run-record-id-72',
           disposition: 'skipped',
           category: null,
           severity: null,
@@ -78,7 +78,7 @@ test('writes finished review findings and runs the declared argv in the requeste
         verdict: 'accept',
         severity: 'high',
         location: 'src/a.ts:4',
-        run: 71,
+        run: 'run-record-id-71',
       },
     ],
     skipped: 1,
@@ -139,33 +139,40 @@ test('a failed project command reports its output', () => {
 test('selects every review round on the branch and requires every selected lens to be graded and triaged', () => {
   const database = db()
   const addReview = (project: string, branch: string, lens: string, patchId: string) => {
+    database
+      .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
+      .run(newRecordId(), project, `/fixture/${project}`)
     const run = addRun({ agent: 'codex', job: 'review-lens', lens, repo: project })
-    database.query('UPDATE run SET branch=? WHERE id=?').run(branch, run)
+    database
+      .query(
+        'UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
+      )
+      .run(branch, project, run)
     const review = database
-      .query<{ id: number }, [string, string]>(
+      .query<{ record_id: string }, [string, string]>(
         `INSERT INTO review
-           (record_id,recorded_at,completed_at,patch_id,path_set,tier)
-         VALUES (?,'2026-10-09','2026-10-09',?,'["src/a.ts"]',2) RETURNING id`,
+           (record_id,number,recorded_at,completed_at,patch_id,path_set,tier)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),'2026-10-09','2026-10-09',?,'["src/a.ts"]',2) RETURNING record_id`,
       )
       .get(newRecordId(), patchId)!
     const reviewLens = database
-      .query<{ id: number }, [string, number, number, string]>(
+      .query<{ record_id: string }, [string, string, string, string]>(
         `INSERT INTO review_lens
-           (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,
             could_not_verify,reproduced,coverage,limits,overlap)
          VALUES (?,?,?,?,'codex','model','[]','[]','[]','[]','all','adequate','absent','unique')
-         RETURNING id`,
+         RETURNING record_id`,
       )
-      .get(newRecordId(), review.id, run, lens)!
+      .get(newRecordId(), review.record_id, run, lens)!
     database
       .query(
         `INSERT INTO review_finding
-           (record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,
+           (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,
             disposition,triaged_severity)
          VALUES (?,?,?,1,'high','src/a.ts:1','evidence','fix','accepted','high')`,
       )
-      .run(newRecordId(), review.id, reviewLens.id)
-    return { review: review.id, lens: reviewLens.id, run }
+      .run(newRecordId(), review.record_id, reviewLens.record_id)
+    return { review: review.record_id, lens: reviewLens.record_id, run }
   }
 
   const correctness = addReview('fixture', 'DEV-1246', 'correctness', 'earlier-patch')
@@ -187,14 +194,14 @@ test('selects every review round on the branch and requires every selected lens 
   ])
 
   database
-    .query('UPDATE review_finding SET disposition=NULL WHERE review_id=?')
+    .query('UPDATE review_finding SET disposition=NULL WHERE review_record_id=?')
     .run(correctness.review)
   expect(readProjectReview(database, group).complete).toBeFalse()
 
-  database.query('DELETE FROM review_finding WHERE review_id=?').run(craft.review)
-  database.query('UPDATE review_lens SET reproduced=NULL WHERE id=?').run(craft.lens)
+  database.query('DELETE FROM review_finding WHERE review_record_id=?').run(craft.review)
+  database.query('UPDATE review_lens SET reproduced=NULL WHERE record_id=?').run(craft.lens)
   database
-    .query("UPDATE review_finding SET disposition='accepted' WHERE review_id=?")
+    .query("UPDATE review_finding SET disposition='accepted' WHERE review_record_id=?")
     .run(correctness.review)
   expect(readProjectReview(database, group).complete).toBeFalse()
 })

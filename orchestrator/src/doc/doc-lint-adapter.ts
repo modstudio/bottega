@@ -26,10 +26,10 @@ type StoredDoc = {
 
 const checkoutCache = new Map<string, DocReferenceProject['checkout']>()
 
-function targetProjects(
+export function docReferenceTargetProjects(
   doc: Pick<StoredDoc, 'scope' | 'subject'> & { owner?: string | null },
+  registered: Project[],
 ): Project[] {
-  const registered = projects()
   if (doc.scope === 'canon') {
     if (doc.owner) return registered
     if (doc.subject) return registered.filter(({ name }) => name === doc.subject)
@@ -57,7 +57,7 @@ export function collectDocReferenceProjects(
   doc: Pick<StoredDoc, 'scope' | 'subject'> & { owner?: string | null },
   selectedTree?: CanonWriteTree,
 ): DocReferenceProject[] {
-  return targetProjects(doc).map((project) => {
+  return docReferenceTargetProjects(doc, projects()).map((project) => {
     const path = selectedTree?.project.name === project.name ? selectedTree.root : project.path
     if (!existsSync(path)) return { name: project.name, stack: project.stack, checkout: null }
     try {

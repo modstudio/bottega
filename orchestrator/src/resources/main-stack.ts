@@ -7,7 +7,12 @@ import type { MainStackConsumer } from '../project/project-settings.ts'
 import type { Project } from '../project/projects.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
-import { decideMainStackEnsure, decideMainStackIdleStop } from './main-stack-decision.ts'
+import {
+  decideMainStackEnsure,
+  decideMainStackIdleStop,
+  decideMainStackStopGuard,
+  newlyStartedMainStackServices,
+} from './main-stack-decision.ts'
 
 export const MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT = 4 * 60 * 60 * 1_000
 const MAIN_STACK_IDLE_STOP_AFTER_KEY = 'ORCH_MAIN_STACK_IDLE_STOP_AFTER_MS'
@@ -55,16 +60,59 @@ export function mainStackIdleStopAfterMs(
   return value
 }
 
+function startMissingMainStackServices(input: {
+  projectName: string
+  projectPath: string
+  consumer: MainStackConsumer
+  decision: ReturnType<typeof decideMainStackEnsure>
+  observed: Extract<CommandResult, { ok: true }>
+  required?: string[]
+  remedy: string
+}): string[] {
+  if (input.decision !== 'start-stack' && input.decision !== 'start-services') return []
+  const started = dockerCompose(input.projectPath, [
+    'up',
+    '-d',
+    '--wait',
+    ...(input.decision === 'start-services' ? (input.required ?? []) : []),
+  ])
+  if (!started.ok)
+    throw new Error(
+      `main stack for ${input.projectName}, required by ${input.consumer}, did not become healthy from registered main checkout ${input.projectPath}: ${started.reason}; run ${input.remedy} there, then retry`,
+    )
+  let after: string[] | undefined
+  if (input.decision === 'start-stack') {
+    const confirmed = dockerCompose(input.projectPath, ['ps', '--status', 'running', '--services'])
+    if (!confirmed.ok) {
+      const stopped = dockerCompose(input.projectPath, ['stop'])
+      throw new Error(
+        `main stack for ${input.projectName}, required by ${input.consumer}, started but its newly started services could not be identified: ${confirmed.reason}; ${
+          stopped.ok
+            ? 'the newly started stack was stopped'
+            : `stopping it also failed: ${stopped.reason}`
+        }; run ${input.remedy} there, then retry`,
+      )
+    }
+    after = confirmed.output.split('\n').filter(Boolean)
+  }
+  return newlyStartedMainStackServices({
+    decision: input.decision,
+    before: input.observed.output.split('\n').filter(Boolean),
+    requiredServices: input.required,
+    after,
+  })
+}
+
 /** Start a declared consumer's main stack before the consumer runs. */
 export function ensureMainStackStarted(input: {
-  projectId: number
+  projectId: string
   projectName: string
   projectPath: string
   declaration: { consumers: MainStackConsumer[]; requiredServices?: string[] } | undefined
   consumer: MainStackConsumer
   database?: Database
-}): void {
-  if (!input.declaration?.consumers.includes(input.consumer)) return
+}): { startedServices: string[] } {
+  if (!input.declaration?.consumers.includes(input.consumer)) return { startedServices: [] }
   const required = input.declaration.requiredServices
   const observed = dockerCompose(input.projectPath, [
     'ps',
@@ -86,41 +134,90 @@ export function ensureMainStackStarted(input: {
       `cannot ascertain main stack for ${input.projectName}, required by ${input.consumer}, from registered main checkout ${input.projectPath}: ${observed.ok ? 'unknown state' : observed.reason}; run ${command} there, then retry`,
     )
   }
-  if (decision === 'start-stack' || decision === 'start-services') {
-    const started = dockerCompose(input.projectPath, [
-      'up',
-      '-d',
-      '--wait',
-      ...(decision === 'start-services' ? (required ?? []) : []),
-    ])
-    if (!started.ok)
-      throw new Error(
-        `main stack for ${input.projectName}, required by ${input.consumer}, did not become healthy from registered main checkout ${input.projectPath}: ${started.reason}; run ${command} there, then retry`,
-      )
-  }
-  if (input.projectId === 0) return
+  if (!observed.ok) throw new Error(`main stack observation unexpectedly remained unavailable`)
+  const startedServices = startMissingMainStackServices({
+    projectName: input.projectName,
+    projectPath: input.projectPath,
+    consumer: input.consumer,
+    decision,
+    observed,
+    required,
+    remedy: command,
+  })
+  if (!input.projectId) return { startedServices }
   try {
     const database = input.database ?? writableDb()
     writeTransaction(() => {
       database
         .query(
-          `INSERT INTO main_stack_activity (project_id,last_ensured_at) VALUES (?,?)
-           ON CONFLICT(project_id) DO UPDATE SET last_ensured_at=excluded.last_ensured_at`,
+          `INSERT INTO main_stack_activity (project_record_id,last_ensured_at) VALUES (?,?)
+           ON CONFLICT(project_record_id) DO UPDATE SET last_ensured_at=excluded.last_ensured_at`,
         )
         .run(input.projectId, nowIso())
     }, database)
   } catch {
     // The stack is already available. Missing activity only shortens its idle lease.
   }
+  return { startedServices }
+}
+
+/** Stop only services returned by this consumer's ensure call. */
+export function stopMainStackServices(input: {
+  projectId: string
+  projectName: string
+  projectPath: string
+  consumer: MainStackConsumer
+  startedServices: readonly string[]
+  database?: Database
+  nowMs?: number
+}): { outcome: 'none' | 'stopped' | 'deferred'; detail?: string } {
+  if (input.startedServices.length === 0) return { outcome: 'none' }
+  const database = input.database ?? writableDb()
+  const nowMs = input.nowMs ?? Date.now()
+  let activity: ReturnType<typeof latestActivity>
+  try {
+    activity = latestActivity(database, input.projectId, nowMs)
+  } catch (error) {
+    return {
+      outcome: 'deferred',
+      detail: `main stack services started for ${input.projectName} ${input.consumer} were left running for the idle sweep because liveness could not be ascertained: ${(error as Error).message}`,
+    }
+  }
+  const execObservation = mainStackExecInProgress(input.projectPath)
+  const decision = decideMainStackStopGuard({
+    execInProgress: execObservation.value,
+    liveRun: activity.liveRun,
+    liveSession: activity.liveSession,
+  })
+  if (decision !== 'stop') {
+    const reason =
+      execObservation.value === 'unknown'
+        ? `Docker command activity could not be ascertained: ${execObservation.reason}`
+        : execObservation.value
+          ? 'a Docker exec is in progress'
+          : activity.liveRun
+            ? 'a run is running or asking'
+            : 'an architect session is live'
+    return {
+      outcome: 'deferred',
+      detail: `main stack services started for ${input.projectName} ${input.consumer} were left running for the idle sweep because ${reason}`,
+    }
+  }
+  const stopped = dockerCompose(input.projectPath, ['stop', ...input.startedServices])
+  if (stopped.ok) return { outcome: 'stopped' }
+  const command = ['docker', 'compose', 'stop', ...input.startedServices].join(' ')
+  throw new Error(
+    `main stack services started for ${input.projectName} ${input.consumer} could not be stopped: ${stopped.reason}; run ${command} in ${input.projectPath}, then retry`,
+  )
 }
 
 export function ensureProjectMainStack(
   project: Project,
   consumer: MainStackConsumer,
   database?: Database,
-): void {
-  ensureMainStackStarted({
-    projectId: project.id,
+): { startedServices: string[] } {
+  return ensureMainStackStarted({
+    projectId: project.recordId,
     projectName: project.name,
     projectPath: project.path,
     declaration: project.settings.mainStack,
@@ -204,7 +301,7 @@ export function mainStackExecInProgress(
 
 function latestActivity(
   database: Database,
-  projectId: number,
+  projectId: string,
   nowMs: number,
 ): {
   liveRun: boolean
@@ -214,35 +311,41 @@ function latestActivity(
   lastEnsureAtMs: number | null
 } {
   const liveRows = database
-    .query("SELECT id,status,pid FROM run WHERE project_id=? AND status IN ('running','asking')")
-    .all(projectId) as { id: number; status: string; pid: number | null }[]
+    .query(
+      "SELECT record_id,status,pid FROM run WHERE project_record_id=? AND status IN ('running','asking')",
+    )
+    .all(projectId) as { record_id: string; status: string; pid: number | null }[]
   const liveRun = liveRows.some((row) =>
     runAlive({
       status: row.status,
-      lease: runLeaseState(row.id),
+      lease: runLeaseState(row.record_id),
       pidAlive: Boolean(row.pid && pidAlive(row.pid)),
     }),
   )
   const created = database
-    .query('SELECT MAX(started_at) value FROM run WHERE project_id=? AND worktree IS NOT NULL')
+    .query(
+      'SELECT MAX(started_at) value FROM run WHERE project_record_id=? AND worktree IS NOT NULL',
+    )
     .get(projectId) as { value: string | null }
   const gated = database
     .query(
       `SELECT MAX(g.requested_at) value FROM gate_execution g
-       JOIN run r ON r.id=g.run_id WHERE r.project_id=?`,
+       JOIN run r ON r.record_id=g.run_record_id WHERE r.project_record_id=?`,
     )
     .get(projectId) as { value: string | null }
-  const project = database.query('SELECT name FROM project WHERE id=?').get(projectId) as {
+  const project = database.query('SELECT name FROM project WHERE record_id=?').get(projectId) as {
     name: string
   }
   const sessionCutoff = new Date(nowMs - SESSION_LIVE_MS).toISOString()
   const liveSession = Boolean(
     database
-      .query("SELECT 1 FROM presence WHERE role='architect' AND project=? AND last_seen>=? LIMIT 1")
+      .query(
+        "SELECT 1 FROM presence WHERE role='architect' AND project_record_id=(SELECT record_id FROM project WHERE name=?) AND last_seen>=? LIMIT 1",
+      )
       .get(project.name, sessionCutoff),
   )
   const ensured = database
-    .query('SELECT last_ensured_at value FROM main_stack_activity WHERE project_id=?')
+    .query('SELECT last_ensured_at value FROM main_stack_activity WHERE project_record_id=?')
     .get(projectId) as { value: string | null } | null
   const recordedTime = (value: string | null): number | null => {
     if (value === null) return null
@@ -275,7 +378,7 @@ function sweepIdleMainStack(
 ): boolean {
   let activity: ReturnType<typeof latestActivity>
   try {
-    activity = latestActivity(input.database, project.id, input.nowMs ?? Date.now())
+    activity = latestActivity(input.database, project.recordId, input.nowMs ?? Date.now())
   } catch (error) {
     input.error(`main stack ${project.name}: idleness unavailable: ${(error as Error).message}`)
     return true

@@ -2,7 +2,8 @@ import { afterEach, expect, test } from 'bun:test'
 import { lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createFocusedTestFile, writeFocusedTestFileAtomic } from './focused-test-files.ts'
+import { createNoFollowFile } from '../no-follow-file.ts'
+import { writeFocusedTestFileAtomic } from './focused-test-files.ts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -19,7 +20,7 @@ test('log and result creation never follows worker-planted symlinks', () => {
   writeFileSync(sentinel, 'original')
 
   symlinkSync(sentinel, log)
-  expect(() => createFocusedTestFile(log)).toThrow()
+  expect(() => createNoFollowFile(log)).toThrow()
   expect(readFileSync(sentinel, 'utf8')).toBe('original')
 
   symlinkSync(sentinel, resultTemporary)

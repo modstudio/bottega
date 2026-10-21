@@ -3,11 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { consumeDoc, getDoc, importDoc, listDocRevisions, restoreDoc, setDoc } from './docs.ts'
-import { publishReferenceDocs } from './reference-publish.ts'
+import { publishReferenceDocs, slugLinkedBody } from './reference-publish.ts'
 
 test('reference publishing is the only write path and is idempotent and removing', async () => {
   const root = mkdtempSync(join(tmpdir(), 'reference-publish-'))
@@ -18,7 +19,12 @@ test('reference publishing is the only write path and is idempotent and removing
     const taskFile = 'docs/reference/task.md'
     writeFileSync(join(root, indexFile), '# Command reference\n\n- [task](./task.md)\n')
     writeFileSync(join(root, taskFile), '# task\n\nTasks.\n')
-    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: process.cwd(),
+      settings: {},
+    })
     await setDoc({
       scope: 'project',
       subject: PLATFORM_SLUG,
@@ -102,7 +108,7 @@ test('reference publishing is the only write path and is idempotent and removing
       consumeDoc('project', PLATFORM_SLUG, existing.slug, { reason: 'hand consume' }),
     ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
     await expect(
-      restoreDoc('project', PLATFORM_SLUG, existing.slug, revision.id, {
+      restoreDoc('project', PLATFORM_SLUG, existing.slug, revision.record_id, {
         reason: 'hand restore',
       }),
     ).rejects.toThrow(`${PLATFORM_SLUG} doc reference publish`)
@@ -137,7 +143,12 @@ test('an ordinary article already at a generated slug is converted, not reported
     const taskFile = 'docs/reference/task.md'
     writeFileSync(join(root, indexFile), '# Command reference\n\n- [task](./task.md)\n')
     writeFileSync(join(root, taskFile), '# task\n\nTasks.\n')
-    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: process.cwd(),
+      settings: {},
+    })
     const article = {
       scope: 'project' as const,
       subject: PLATFORM_SLUG,
@@ -165,4 +176,15 @@ test('an ordinary article already at a generated slug is converted, not reported
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('a page link names the sibling slug the reader serves, keeping its anchor', () => {
+  expect(
+    slugLinkedBody(
+      '- [doc](./doc.md)\n- [audit](./doc.md#workshop-doc-canon-audit)\n- [all](./index.md)\n- [here](#x)\n- [web](https://e.x/a.md)\n',
+      'index.md',
+    ),
+  ).toBe(
+    '- [doc](cli-doc)\n- [audit](cli-doc#workshop-doc-canon-audit)\n- [all](cli)\n- [here](#x)\n- [web](https://e.x/a.md)\n',
+  )
 })

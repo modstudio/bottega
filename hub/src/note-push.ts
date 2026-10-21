@@ -10,6 +10,27 @@ const chunks = <T>(rows: T[]): T[][] => {
   return result
 }
 
+function acknowledgementsFor(
+  rows: Record<string, unknown>[],
+  selectedIds: Set<string>,
+  noteById: Map<string, { project: string; projectId: string }>,
+) {
+  return rows
+    .filter((row) => selectedIds.has(row.note_record_id as string))
+    .map((row) => ({
+      id: row.record_id as string,
+      note_id: row.note_record_id as string,
+      project_name: noteById.get(row.note_record_id as string)!.project,
+      projectId: noteById.get(row.note_record_id as string)!.projectId,
+      session_id: row.session_id as string,
+      acknowledged_at: row.acknowledged_at as string,
+      sightings: row.sightings as number,
+      created_at: row.acknowledged_at as string,
+      updated_at: row.acknowledged_at as string,
+      deleted_at: null,
+    }))
+}
+
 export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean } = {}) {
   const notes = db()
     .query<Record<string, unknown>, []>('SELECT * FROM note ORDER BY record_id')
@@ -19,6 +40,7 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
       number: row.number as number,
       project: row.project as string,
       project_name: row.project as string,
+      projectId: row.project_record_id as string,
       text: row.text as string,
       area: row.area as string | null,
       anchors: row.anchors as string,
@@ -44,8 +66,8 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
   const identity = await hostedTaskIdentity(requestOptions)
   const partitioned = partitionProjectRows(notes, projects(), identity)
   const counters = db()
-    .query<{ project: string; next: number }, []>(
-      'SELECT project,next FROM note_counter ORDER BY project',
+    .query<{ project: string; projectId: string; next: number }, []>(
+      'SELECT project,project_record_id AS projectId,next FROM note_counter ORDER BY project',
     )
     .all()
   const partitionedCounters = partitionProjectRows(
@@ -70,21 +92,9 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
   for (const spaceId of destinationSpaceIds) {
     const selectedNotes = partitioned.destinations.get(spaceId) ?? []
     const selectedIds = new Set(selectedNotes.map((note) => note.id))
-    const acknowledgements = acknowledgementRows
-      .filter((row) => selectedIds.has(row.note_record_id as string))
-      .map((row) => ({
-        id: row.record_id as string,
-        note_id: row.note_record_id as string,
-        project_name: noteById.get(row.note_record_id as string)!.project,
-        session_id: row.session_id as string,
-        acknowledged_at: row.acknowledged_at as string,
-        sightings: row.sightings as number,
-        created_at: row.acknowledged_at as string,
-        updated_at: row.acknowledged_at as string,
-        deleted_at: null,
-      }))
+    const acknowledgements = acknowledgementsFor(acknowledgementRows, selectedIds, noteById)
     const selectedCounters = (partitionedCounters.destinations.get(spaceId) ?? []).map(
-      ({ project, next }) => ({ project, next }),
+      ({ project, projectId, next }) => ({ project, projectId, next }),
     )
     const targeted = { ...requestOptions, recordSpace: spaceId }
     try {

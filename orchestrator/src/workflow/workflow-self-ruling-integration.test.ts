@@ -1,11 +1,11 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -23,13 +23,12 @@ const ports = {
   resolveTreeCommit: () => 'abc',
 }
 
-function database(): Database {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   installWorkflowStoreFixture(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run(
     'fixture',
     '/fixture',
     'bun',
@@ -40,8 +39,7 @@ function database(): Database {
       tracker: { protocol: 'hub' },
     }),
   )
-  return d
-}
+})
 
 function resolution(d: Database) {
   const preliminary = composeWorkflow('flow', 'fixture', 'default', args, d)
@@ -199,7 +197,7 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
 test('self-ruling refuses an operator-ruling floor without changing durable state', () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       ...current,
       steps: current.steps.map((step) =>
@@ -210,7 +208,7 @@ test('self-ruling refuses an operator-ruling floor without changing durable stat
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish operator-ruling fixture', 'test', d)
+  promoteStepCatalogueLocal(catalogue.n, 'publish operator-ruling fixture', 'test', d)
   openAtRuling(d)
   expect(() => selfRule(d)).toThrow(/requires an operator ruling.*--from-operator/)
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({

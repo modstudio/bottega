@@ -122,6 +122,14 @@ const kinds: KindCase[] = [
       payload.signal = SECRET
     },
   },
+  {
+    kind: 'branch_disposal',
+    payload: { note: SAFE, reason: 'abandoned' },
+    path: 'note',
+    plant: (payload) => {
+      payload.note = SECRET
+    },
+  },
 ]
 
 test.each(kinds)(
@@ -166,11 +174,16 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
   database
     .query(
       `INSERT INTO run
-       (record_id,id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error)
-       VALUES ('${newRecordId()}',42,'2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?)`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error)
+       VALUES (42,'run-record-42','2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?)`,
     )
     .run(SECRET)
-  enqueueRunRecord(database, 42, '01990000-0000-7000-8000-000000000099', '2026-09-15T01:01:00.000Z')
+  enqueueRunRecord(
+    database,
+    'run-record-42',
+    '01990000-0000-7000-8000-000000000099',
+    '2026-09-15T01:01:00.000Z',
+  )
   const row = database
     .query<
       {
@@ -193,7 +206,9 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
   expect(payload.error).toBe(WITHHELD_SECRET_SHAPED)
   expect(payload.withheldFields).toEqual(['error'])
   expect(row.payload).not.toContain(SECRET)
-  expect(database.query('SELECT error FROM run WHERE id=42').get()).toEqual({ error: SECRET })
+  expect(database.query("SELECT error FROM run WHERE record_id='run-record-42'").get()).toEqual({
+    error: SECRET,
+  })
   expect(outboxRowIsEligible(database, row)).toBe(true)
   database.close()
 })
@@ -208,43 +223,47 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
     .run()
   database
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (1,'01990000-0000-7000-8000-000000000010','2026-09-15T00:00:00Z','codex','implement','sha',1,'head','ok')`,
     )
     .run()
   database
     .query(
-      `INSERT INTO score (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES ('${newRecordId()}', 1,'full','right','faithful',?,'2026-09-15T01:00:00.000Z','architect')`,
+      `INSERT INTO score (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', '01990000-0000-7000-8000-000000000010','full','right','faithful',?,'2026-09-15T01:00:00.000Z','architect')`,
     )
     .run(SECRET)
-  enqueueScoreRecord(database, 1, '01990000-0000-7000-8000-000000000099')
+  enqueueScoreRecord(
+    database,
+    '01990000-0000-7000-8000-000000000010',
+    '01990000-0000-7000-8000-000000000099',
+  )
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,answer) VALUES ('${newRecordId()}',1,'2026-09-15T00:01:00Z','Which?',?) RETURNING id`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer) VALUES (1,'${newRecordId()}','01990000-0000-7000-8000-000000000010','2026-09-15T00:01:00Z','Which?',?) RETURNING record_id`,
     )
-    .get(SECRET) as { id: number }
-  enqueueQuestionRecord(database, question.id)
+    .get(SECRET) as { record_id: string }
+  enqueueQuestionRecord(database, question.record_id)
   database
     .query(
-      "INSERT INTO review (id,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)",
+      "INSERT INTO review (number,record_id,recorded_at,commit_message) VALUES (1,'review-record','2026-09-15T00:02:00Z',?)",
     )
     .run(SECRET)
-  enqueueReview(database, 1)
+  enqueueReview(database, 'review-record')
   database
     .query(
-      `INSERT INTO landing_override (id,record_id,project,branch,tip,tree,reason,at)
-       VALUES (1,'override-record','fixture','DEV-1','tip','tree',?,'2026-09-15T00:03:00Z')`,
+      `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at)
+       VALUES ('override-record','fixture','DEV-1','tip','tree',?,'2026-09-15T00:03:00Z')`,
     )
     .run(SECRET)
-  enqueueLandingOverride(database, 1)
+  enqueueLandingOverride(database, 'override-record')
   database
     .query(
-      `INSERT INTO contention (id,record_id,at,resource_kind,resource_key,event_kind,cause)
-       VALUES (1,'contention-record','2026-09-15T00:04:00Z','lock','resource','wait',?)`,
+      `INSERT INTO contention (record_id,at,resource_kind,resource_key,event_kind,cause)
+       VALUES ('contention-record','2026-09-15T00:04:00Z','lock','resource','wait',?)`,
     )
     .run(SECRET)
-  enqueueContention(database, 1)
+  enqueueContention(database, 'contention-record')
 
   const byKind = Object.fromEntries(
     database
@@ -268,38 +287,38 @@ test('review finding and read enqueue withhold planted leaves', () => {
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
        VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','review-lens','sha',1,'head','ok')`,
     )
     .run()
   database
     .query(
-      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T01:00:00Z')",
+      "INSERT INTO review (number,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T01:00:00Z')",
     )
     .run()
   database
     .query(
       `INSERT INTO review_lens
-       (id,record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (1,'lens-record',1,1,'craft','codex','[]','[]',?,'[]')`,
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('lens-record','review-record','run-record','craft','codex','[]','[]',?,'[]')`,
     )
     .run(JSON.stringify([SECRET]))
   database
     .query(
       `INSERT INTO review_finding
-       (id,record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction)
-       VALUES (1,'finding-record',1,1,1,'major','a.ts:1',?,'correct it')`,
+       (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction)
+       VALUES ('finding-record','review-record','lens-record',1,'major','a.ts:1',?,'correct it')`,
     )
     .run(SECRET)
-  enqueueReviewFinding(database, 1)
+  enqueueReviewFinding(database, 'finding-record')
   database
     .query(
       `INSERT INTO review_read
-       (id,record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
-       VALUES (1,'read-record','fixture','DEV-1','tip','patch','[]',1,?,'2026-09-15T01:02:00Z')`,
+       (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
+       VALUES ('read-record','fixture','DEV-1','tip','patch','[]',1,?,'2026-09-15T01:02:00Z')`,
     )
     .run(SECRET)
-  enqueueReviewRead(database, 1)
+  enqueueReviewRead(database, 'read-record')
   const rows = Object.fromEntries(
     database
       .query<{ kind: string; payload: string }, []>('SELECT kind,payload FROM outbox')

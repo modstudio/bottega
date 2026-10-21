@@ -72,16 +72,16 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
     )
     database.exec(`
       INSERT INTO run
-        (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+        (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
       VALUES
         (1,'01990000-0000-7000-8000-000000001251','2026-10-12T10:00:00Z',
          'codex','implementation','sha',1,'prompt','asking');
-      INSERT INTO question (record_id,run_id,asked_at,question)
-      VALUES ('${newRecordId()}',1,'2026-10-12T10:01:00Z','Which?');
-      INSERT INTO review (id,record_id,recorded_at)
+      INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+      VALUES (1,'${newRecordId()}','01990000-0000-7000-8000-000000001251','2026-10-12T10:01:00Z','Which?');
+      INSERT INTO review (number,record_id,recorded_at)
       VALUES (1,'01990000-0000-7000-8000-000000001252','2026-10-12T10:02:00Z');
-      INSERT INTO landing (id,record_id,project,branch,status,started_at)
-      VALUES (1,'01990000-0000-7000-8000-000000001253','fixture','DEV-1240','landed',
+      INSERT INTO landing (record_id,project,branch,status,started_at)
+      VALUES ('01990000-0000-7000-8000-000000001253','fixture','DEV-1240','landed',
               '2026-10-12T10:03:00Z');
     `)
     startReleaseLedgerEntry(database, {
@@ -92,8 +92,11 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
       rollback: false,
       reason: null,
     })
-    enqueueQuestionRecord(database, 1)
-    enqueueReview(database, 1)
+    const questionRecordId = (
+      database.query('SELECT record_id FROM question').get() as { record_id: string }
+    ).record_id
+    enqueueQuestionRecord(database, questionRecordId)
+    enqueueReview(database, '01990000-0000-7000-8000-000000001252')
     backfillLandingEvidenceRecords(database)
 
     const payloads = database

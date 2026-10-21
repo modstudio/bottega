@@ -1,5 +1,17 @@
 export const runModuleSpecs = [
   {
+    file: 'orchestrator/src/run/run-mcp-mode.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/run/run-number.ts',
+    allowed: ['bun:sqlite', '../database/entity-number.ts'],
+  },
+  {
+    file: 'orchestrator/src/run/question-number.ts',
+    allowed: ['bun:sqlite', '../database/entity-number.ts'],
+  },
+  {
     file: 'orchestrator/src/evidence/premature-final.ts',
     allowed: [],
   },
@@ -9,7 +21,13 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/run-coordinator-log.ts',
-    allowed: ['node:fs', 'node:path', '../../../shared/secret-shaped.ts', './run-artifacts.ts'],
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../filesystem-identity-plan.ts',
+      '../../../shared/secret-shaped.ts',
+      './run-artifacts.ts',
+    ],
   },
   {
     file: 'orchestrator/src/run/run-terminal-premature.ts',
@@ -21,7 +39,13 @@ export const runModuleBoundarySpecs = [
   {
     name: 'run-coordinator-log-boundary',
     file: 'orchestrator/src/run/run-coordinator-log.ts',
-    allowed: ['node:fs', 'node:path', '../../../shared/secret-shaped.ts', './run-artifacts.ts'],
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../filesystem-identity-plan.ts',
+      '../../../shared/secret-shaped.ts',
+      './run-artifacts.ts',
+    ],
     typeOnlyAllowed: [],
     reason: 'Keep coordinator diagnostics independent of run lifecycle policy and database state.',
   },

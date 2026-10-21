@@ -52,6 +52,7 @@ const releaseSchema = strictObject({
     }),
   mergeMethod: z.enum(['squash', 'merge', 'rebase']),
   requiredChecks: z.array(z.string()),
+  mergeQueue: z.boolean().optional(),
   observationWindowHours: z.number().int().positive().optional(),
 })
 
@@ -110,14 +111,56 @@ const signalsSchema = strictObject({
   ),
 })
 
+const reviewRiskSchema = strictObject({
+  paths: z.array(
+    strictObject({
+      pattern: z
+        .custom<string>(
+          (pattern) => typeof pattern === 'string',
+          'must be a regular-expression string; replace it with a valid regular expression over repository-relative paths',
+        )
+        .superRefine((pattern, context) => {
+          try {
+            new RegExp(pattern)
+          } catch (cause) {
+            context.addIssue({
+              code: 'custom',
+              message: `does not compile (${cause instanceof Error ? cause.message : String(cause)}); replace it with a valid regular expression over repository-relative paths`,
+            })
+          }
+        }),
+      tier: z.custom<1 | 2 | 3>(
+        (tier) => tier === 1 || tier === 2 || tier === 3,
+        'must be 1, 2, or 3; replace it with a supported risk tier',
+      ),
+      reason: z.custom<string>(
+        (reason) => typeof reason === 'string' && reason.trim().length > 0,
+        'must be a non-empty short phrase; replace it with the reason for this path risk',
+      ),
+      basis: z.string().trim().min(1).optional(),
+    }),
+  ),
+  unlisted: z.custom<0 | 1 | 2>(
+    (tier) => tier === 0 || tier === 1 || tier === 2,
+    'must be 0, 1, or 2; replace it with the risk tier for an unlisted product path',
+  ),
+})
+
 const reviewSchema = strictObject({
   lenses: z.array(
     strictObject({
       lens: z.string().trim().min(1),
       paths: z.array(z.string().trim().min(1)).optional(),
       minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      basis: z.string().trim().min(1).optional(),
     }),
   ),
+  secondOpinion: strictObject({
+    lens: z.string().trim().min(1),
+    minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+    basis: z.string().trim().min(1).optional(),
+  }).optional(),
+  risk: reviewRiskSchema.optional(),
   record: z.string().trim().min(1).optional(),
 }).superRefine((review, context) => {
   if (!review.record) return
@@ -186,6 +229,7 @@ export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
 export type ReferenceSettings = z.infer<typeof referenceSchema>
 export type SignalsSettings = z.infer<typeof signalsSchema>
+export type ReviewRiskMap = z.infer<typeof reviewRiskSchema>
 export type ReviewSettings = z.infer<typeof reviewSchema>
 export type TestSubstanceSettings = z.infer<typeof testSubstanceSchema>
 type ResolvedDocs = DocsSettings & {
@@ -260,6 +304,7 @@ function resolvedReviewStages(
   projectName: string,
   tracker: TrackerSettings,
   protocol: TrackerProtocol,
+  review: ReviewSettings | undefined,
 ) {
   const reviewStates = Object.entries(tracker.states ?? {}).flatMap(([raw, category]) =>
     category === 'review' ? [raw] : [],
@@ -275,7 +320,14 @@ function resolvedReviewStages(
   const active = tracker.reviewStages?.active ?? reviewStates[0]
   const stage = (state: string | undefined): ResolvedReviewStage =>
     state ? { state, floor: 'tracker-transition' } : { state: 'none', floor: 'recorded-artifact' }
-  return { waitingReview: stage(waiting), inReview: stage(active) }
+  // A declared review-record command writes the review state after the review, so entering
+  // review only records that; the state stays named for the steps that close out.
+  const declared = stage(active)
+  const inReview: ResolvedReviewStage =
+    declared.state !== 'none' && review?.record
+      ? { ...declared, floor: 'recorded-artifact' }
+      : declared
+  return { waitingReview: stage(waiting), inReview }
 }
 
 function resolvedTracker(
@@ -299,7 +351,12 @@ function resolvedTracker(
       return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
     }),
   ) as ResolvedTracker['states']
-  const reviewStages = resolvedReviewStages(project.name, tracker, protocol)
+  const reviewStages = resolvedReviewStages(
+    project.name,
+    tracker,
+    protocol,
+    project.settings.review,
+  )
   if (reviewStages.inReview.state !== 'none') states.review = reviewStages.inReview.state
   return {
     kind: tracker.kind ?? protocol,

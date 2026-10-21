@@ -1,10 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from '../database/migrations.ts'
+import { applyMigrationsBefore } from '../database/migrations.ts'
 import {
   NEVER_BOUND,
   type RecordInstallBinding,
@@ -24,30 +21,18 @@ test('the record install binding is monotonic and records its first binding time
 })
 
 function databaseBeforeBindingMigration(): Database {
-  const folder = mkdtempSync(join(tmpdir(), 'orch-binding-migration-'))
-  mkdirSync(join(folder, 'meta'))
-  const prior = migrationJournal().filter((entry) => entry.tag !== '0079_record_install_binding')
-  for (const entry of prior) {
-    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
-  }
-  writeFileSync(
-    join(folder, 'meta', '_journal.json'),
-    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
-  )
   const database = new Database(':memory:')
-  try {
-    applyMigrations(database, folder)
-    return database
-  } finally {
-    rmSync(folder, { recursive: true, force: true })
-  }
+  applyMigrationsBefore(database, '0079_record_install_binding')
+  return database
 }
 
 function migratedBinding(seed: (database: Database) => void): RecordInstallBinding {
   const database = databaseBeforeBindingMigration()
   try {
     seed(database)
-    expect(applyMigrations(database)).toEqual(['0079_record_install_binding'])
+    expect(applyMigrationsBefore(database, '0080_hosted_board_cache')).toEqual([
+      '0079_record_install_binding',
+    ])
     return readRecordInstallBinding(database)
   } finally {
     database.close()
@@ -58,15 +43,15 @@ test('the binding migration backfills only from successful hosted-record evidenc
   const syncedOutbox = migratedBinding((database) => {
     database
       .query(
-        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,attempts,synced_at) VALUES (?,'run','record-1','{}','2026-10-05',1,'2026-10-05')`,
+        `INSERT INTO outbox (record_id,kind,payload,created_at,attempts,synced_at) VALUES (?,'run','{}','2026-10-05',1,'2026-10-05')`,
       )
       .run(newRecordId())
   })
   const hostedDoc = migratedBinding((database) => {
     database
       .query(
-        `INSERT INTO doc(scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,record_id)
-         VALUES ('global',NULL,'hosted','Hosted','body','inject','["technical"]','2026-10-05','2026-10-05','record-2')`,
+        `INSERT INTO doc(scope,subject,slug,title,body,delivery,created_at,updated_at,record_id)
+         VALUES ('global',NULL,'hosted','Hosted','body','inject','2026-10-05','2026-10-05','record-2')`,
       )
       .run()
   })
@@ -84,7 +69,7 @@ test('the binding migration backfills only from successful hosted-record evidenc
     migratedBinding((database) => {
       database
         .query(
-          `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,attempts) VALUES (?,'run','record-3','{}','2026-10-05',2)`,
+          `INSERT INTO outbox (record_id,kind,payload,created_at,attempts) VALUES (?,'run','{}','2026-10-05',2)`,
         )
         .run(newRecordId())
     }),

@@ -60,7 +60,7 @@ export type RecordDoctorFacts = {
   operatorChecks?: readonly RecordDoctorCheck[]
 }
 
-const API_CONFIGURATION_REMEDY = 'set ORCH_RECORD_API_URL to the hosted record API address'
+const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
 const API_REACHABILITY_REMEDY =
   'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry'
 
@@ -261,10 +261,10 @@ export function localQuestionCountForSpace(
     .query<{ project: string | null }, []>(
       `SELECT COALESCE(run_project.name,cursor.project) AS project
        FROM question q
-       LEFT JOIN run r ON r.id=q.run_id
-       LEFT JOIN project run_project ON run_project.id=r.project_id
+       LEFT JOIN run r ON r.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=r.project_record_id
        LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
-      WHERE q.run_id IS NULL OR EXISTS (
+      WHERE q.run_record_id IS NULL OR EXISTS (
         SELECT 1 FROM outbox o
          WHERE o.kind='run' AND o.row_id=r.record_id AND o.synced_at IS NOT NULL
       )`,

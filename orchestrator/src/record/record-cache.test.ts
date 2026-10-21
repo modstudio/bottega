@@ -146,7 +146,12 @@ describe('record cache pull', () => {
   })
 
   test('routes a subject write to the project destination instead of the active space', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha',
+      path: '/w/alpha',
+      settings: { space: 'alpha' },
+    })
     let destination: string | undefined
     const subject = {
       id: newRecordId(),
@@ -214,11 +219,31 @@ describe('record cache pull', () => {
   })
 
   test('pulls each distinct live or retired project destination only when it is a membership', async () => {
-    upsertProject({ name: 'alpha-one', path: '/w/alpha-one', settings: { space: 'alpha' } })
-    upsertProject({ name: 'alpha-two', path: '/w/alpha-two', settings: { space: 'alpha' } })
-    upsertProject({ name: 'beta-retired', path: '/w/beta', settings: { space: 'beta' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha-one',
+      path: '/w/alpha-one',
+      settings: { space: 'alpha' },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha-two',
+      path: '/w/alpha-two',
+      settings: { space: 'alpha' },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'beta-retired',
+      path: '/w/beta',
+      settings: { space: 'beta' },
+    })
     retireProject('beta-retired')
-    upsertProject({ name: 'outside', path: '/w/outside', settings: { space: 'outside' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'outside',
+      path: '/w/outside',
+      settings: { space: 'outside' },
+    })
     const pulled: string[] = []
     installRecordApiClient(
       clientWith({
@@ -245,8 +270,18 @@ describe('record cache pull', () => {
   })
 
   test('applies live rows and deletions only from the space owning the address', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
-    upsertProject({ name: 'outside', path: '/w/outside', settings: { space: 'outside' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha',
+      path: '/w/alpha',
+      settings: { space: 'alpha' },
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'outside',
+      path: '/w/outside',
+      settings: { space: 'outside' },
+    })
     const globalId = newRecordId()
     const item = (overrides: Record<string, unknown>) => ({
       id: newRecordId(),
@@ -318,7 +353,12 @@ describe('record cache pull', () => {
   })
 
   test('does not apply a subject pulled from a space that does not own its project', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha',
+      path: '/w/alpha',
+      settings: { space: 'alpha' },
+    })
     const updatedAt = '2026-10-08T12:00:00.000Z'
     installRecordApiClient(
       clientWith({
@@ -367,7 +407,12 @@ describe('record cache pull', () => {
   })
 
   test('pulls equal-timestamp subjects across a page boundary and resumes after both', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha',
+      path: '/w/alpha',
+      settings: { space: 'alpha' },
+    })
     const updatedAt = '2026-10-08T12:00:00.000Z'
     const firstId = newRecordId()
     const secondId = newRecordId()
@@ -447,7 +492,12 @@ describe('record cache pull', () => {
   })
 
   test('keeps a cursor per space when the active space changes', async () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'alpha',
+      path: '/w/alpha',
+      settings: { space: 'alpha' },
+    })
     let activeSpaceId = 'space-a'
     const seen: Array<[string, { at: string; id: string } | undefined]> = []
     installRecordApiClient(
@@ -599,7 +649,7 @@ describe('record cache pull', () => {
     expect(
       db()
         .query<{ parent_slug: string | null }, [string]>(
-          'SELECT parent.slug AS parent_slug FROM doc child LEFT JOIN doc parent ON parent.id=child.parent_id WHERE child.record_id=?',
+          'SELECT parent.slug AS parent_slug FROM doc child LEFT JOIN doc parent ON parent.record_id=child.parent_record_id WHERE child.record_id=?',
         )
         .get(childId)?.parent_slug,
     ).toBe('parent')
@@ -643,7 +693,6 @@ describe('record cache pull', () => {
     const updatedDraftId = newRecordId()
     const articleId = newRecordId()
     const supersededId = newRecordId()
-    const adoptedId = newRecordId()
     db()
       .query(
         `INSERT INTO doc
@@ -685,7 +734,6 @@ describe('record cache pull', () => {
                       status: 'superseded',
                       replacementSlug: 'new',
                     }),
-                    item(adoptedId, 'adopted', { status: 'draft', kind: 'article' }),
                   ]
                 : [
                     item(updatedDraftId, 'updated-draft', {
@@ -722,11 +770,6 @@ describe('record cache pull', () => {
       kind: 'working',
       replacement_slug: null,
     })
-    expect(lifecycle(adoptedId)).toEqual({
-      status: 'draft',
-      kind: 'article',
-      replacement_slug: null,
-    })
     expect(
       db()
         .query<{ audiences: string }, [string]>('SELECT audiences FROM doc WHERE record_id=?')
@@ -735,6 +778,49 @@ describe('record cache pull', () => {
 
     await pullRecordCache(db())
     expect(lifecycle(updatedDraftId)?.status).toBe('draft')
+  })
+
+  test('refuses a same-address hosted document with a different UUID without rewriting the key', async () => {
+    const localId = newRecordId()
+    const hostedId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,record_id)
+         VALUES ('global',NULL,'collision','Local','local','demand','["technical"]','a','a',?)`,
+      )
+      .run(localId)
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => ({
+          items: [
+            {
+              id: hostedId,
+              scope: 'global',
+              subject: null,
+              owner: null,
+              slug: 'collision',
+              title: 'Hosted',
+              body: 'hosted',
+              delivery: 'demand',
+              audiences: ['technical'],
+              parentId: null,
+              position: 0,
+              createdAt: '2026-10-19T00:00:00.000Z',
+              updatedAt: '2026-10-19T00:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
+          nextCursor: null,
+        }),
+      }),
+    )
+    await expect(pullRecordCache(db())).rejects.toThrow(
+      `hosted document UUID ${hostedId} collides with local document UUID ${localId} at global/_/collision`,
+    )
+    expect(db().query('SELECT record_id,title FROM doc WHERE slug=?').get('collision')).toEqual({
+      record_id: localId,
+      title: 'Local',
+    })
   })
 
   test('applies an update and a soft delete', async () => {
@@ -793,7 +879,7 @@ describe('record cache pull', () => {
     db()
       .query(
         `INSERT INTO run
-          (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
+          (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
@@ -812,10 +898,10 @@ describe('record cache pull', () => {
       db()
         .query(
           `INSERT INTO score
-            (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+            (record_id, run_record_id,delivery,quality,fidelity,note,scored_at,scored_by)
            VALUES ('${newRecordId()}', ?,'full','right',NULL,'kept',?,'architect')`,
         )
-        .run(localId, scoreAt)
+        .run(recordId, scoreAt)
     }
     db()
       .query(
@@ -850,11 +936,13 @@ describe('record cache pull', () => {
     expect(await pullRecordCache(db())).toMatchObject({ scores: 1 })
     expect(
       db()
-        .query<{ evidence_excluded: string | null }, [number]>(
-          'SELECT evidence_excluded FROM run WHERE id=?',
+        .query<{ evidence_excluded: string | null }, [string]>(
+          'SELECT evidence_excluded FROM run WHERE record_id=?',
         )
-        .get(localId)?.evidence_excluded,
+        .get(recordId)?.evidence_excluded,
     ).toBeNull()
-    expect(db().query('SELECT 1 FROM score WHERE run_id=?').get(localId) !== null).toBe(scored)
+    expect(db().query('SELECT 1 FROM score WHERE run_record_id=?').get(recordId) !== null).toBe(
+      scored,
+    )
   })
 })

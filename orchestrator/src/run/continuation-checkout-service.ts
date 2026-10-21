@@ -5,7 +5,7 @@ import { type Project, projectByName } from '../project/projects.ts'
 import { continuationCheckoutDecision } from './continuation-checkout.ts'
 
 export function requireContinuationCheckout(input: {
-  rootId: number
+  rootId: string
   operation: 'continued' | 'answered' | 'retried'
   requiresRepo: boolean
   latestCwd: string | null
@@ -32,7 +32,7 @@ export function requireContinuationCheckout(input: {
 }
 
 export function continuationCheckoutForAnswer(input: {
-  rootId: number
+  rootId: string
   skipResume: boolean
   ownersLive: boolean
   requiresRepo: boolean

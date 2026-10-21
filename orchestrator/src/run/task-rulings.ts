@@ -10,7 +10,8 @@ export const TASK_RULING_MAX_RULING_CHARS = 2000
 
 export type TaskRulingRow = {
   question_id: number
-  run_id: number | null
+  question_record_id: string
+  run_record_id: string | null
   workflow_cursor_id?: number | null
   question: string
   answer: string
@@ -24,7 +25,8 @@ export type TaskRulingRow = {
 
 type CarriedTaskRuling = {
   questionId: number
-  runId: number | null
+  questionRecordId: string
+  runId: string | null
   workflowCursorId: number | null
   question: string
   ruling: string
@@ -52,7 +54,8 @@ function carriedRuling(row: TaskRulingRow): CarriedTaskRuling {
   const ruling = truncated(row.replacement ?? row.answer, TASK_RULING_MAX_RULING_CHARS)
   return {
     questionId: row.question_id,
-    runId: row.run_id,
+    questionRecordId: row.question_record_id,
+    runId: row.run_record_id,
     workflowCursorId: row.workflow_cursor_id ?? null,
     question: question.value,
     ruling: ruling.value,

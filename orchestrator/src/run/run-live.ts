@@ -21,14 +21,18 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import { appendRunEvent, type StreamEvent, teeTransportEvents } from '../events.ts'
+import {
+  appendRunEvent,
+  recordRunWarning,
+  type StreamEvent,
+  teeTransportEvents,
+} from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
 import {
   formatIdleKillError,
   idleKillMayProceed,
   idlePollMs,
-  sampleProcesses,
   shouldIdleKill,
   terminateProcessGroup,
 } from '../idle-kill.ts'
@@ -37,14 +41,23 @@ import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
 import { deferredWorkerMessageNotice } from '../mailbox/mailbox-notice.ts'
 import { decideOutcome, type OutcomeStatus } from '../outcome.ts'
+import {
+  observeRunProcessTree,
+  type ProcessSample,
+  type RunResourceObserver,
+  sampleProcesses,
+} from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
+  EMPTY_VENDOR_USAGE,
+  type TransportHandle,
   type TransportName,
   type TransportResult,
   type TransportStartOpts,
   transportFor,
+  type VendorUsage,
   valueMatchesStrictSchema,
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -56,6 +69,7 @@ import {
 } from './checkpoint.ts'
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
+import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
 import { STALE_AFTER_MS } from './run-liveness.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
@@ -83,8 +97,47 @@ function replyContract(schemaPath: string | undefined, textContract: boolean): R
   return textContract ? 'text' : 'none'
 }
 
+function outputCeilingReached(
+  reply: { text: string; stopReason?: string | null } | null,
+  ceilingReason: string | null,
+): boolean {
+  return Boolean(
+    reply && !reply.text.trim() && ceilingReason !== null && reply.stopReason === ceilingReason,
+  )
+}
+
+function idleSnapshotObserver(
+  runId: string,
+  stopped: () => boolean,
+  check: (samples: ProcessSample[]) => Promise<void>,
+): (samples: ProcessSample[]) => void {
+  let inFlight = false
+  return (samples) => {
+    if (inFlight || stopped()) return
+    inFlight = true
+    void check(samples)
+      .catch((error) => {
+        console.error(`orch: run ${runId} idle check failed: ${error}`)
+      })
+      .finally(() => {
+        inFlight = false
+      })
+  }
+}
+
+function liveChildEnv(
+  agent: Agent,
+  runRecordId: string,
+  runToken: string,
+  extra: Record<string, string>,
+  includeStore: boolean,
+  runNumber: number,
+): Record<string, string> {
+  return childEnv(agent, runRecordId, runToken, extra, includeStore, runNumber)
+}
+
 function recordConfiguredAsk(input: {
-  runId: number
+  runId: string
   sandbox: SandboxSelection['sandbox']
   transport: ReturnType<typeof transportFor>
   startOpts: TransportStartOpts
@@ -140,7 +193,7 @@ export function replyFileFallbackError(
 type LiveOptions = {
   resume?: {
     kind: 'continue' | 'fresh-session' | 'retry-root'
-    parent: number
+    parent: string
     turn: number
     session?: string
   }
@@ -149,11 +202,55 @@ type LiveOptions = {
   job: string
 }
 
+async function startAfterHostCapacity(input: {
+  repoJob: boolean
+  claim: { id: string }
+  opts: Pick<LiveOptions, 'resume'>
+  transport: ReturnType<typeof transportFor>
+  startOpts: TransportStartOpts
+}): Promise<TransportHandle> {
+  const runId = input.claim.id
+  const result = await startRunAfterHostCapacity({
+    wait: () =>
+      input.repoJob
+        ? waitForRunHostCapacity({
+            database: db(),
+            runId,
+          })
+        : Promise.resolve(null),
+    isRunning: () =>
+      (
+        db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
+          status: string
+        } | null
+      )?.status === 'running',
+    spawn: () =>
+      input.opts.resume?.session && input.opts.resume.kind === 'continue'
+        ? input.transport.resume({
+            ...input.startOpts,
+            session: input.opts.resume.session,
+            resume: true,
+          })
+        : input.transport.start(input.startOpts),
+    stop: (handle) => input.transport.cancel(handle),
+  })
+  const hostWait = result.wait
+  if (hostWait?.boundReached) {
+    const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
+    console.error(`orch: ${message}`)
+    recordRunWarning(runId, message)
+  }
+  if (!result.handle) throw new Error('run stopped while waiting for host capacity')
+  return result.handle
+}
+
+const warnForRun = (runId: string) => (message: string) => recordRunWarning(runId, message)
+
 export type LiveInput = {
   repoJob: boolean
   name: string
   worktree: Worktree | null
-  claim: { id: number }
+  claim: { id: string; recordId: string; number: number }
   provisionedMcpConfig: { measure<T>(operation: () => T): T } | null
   reviewTarget: { branch: string; commit: string; base: string } | null
   sandboxSelection: SandboxSelection
@@ -176,8 +273,8 @@ export type LiveInput = {
   writableRoots: string[]
   gitConfigEnvironment: Record<string, string> | undefined
   sandboxRunDir: string
-  grokMcpEnvironment: Record<string, string>
   recipeEnvironment: Record<string, string>
+  launchEnvironment: Record<string, string>
   scratchDir: string
   writesJob: boolean
   codexSandbox: {
@@ -198,7 +295,7 @@ export type LiveResult = {
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
-  idleTimer: ReturnType<typeof setInterval> | null
+  resourceObserver: RunResourceObserver | null
   timedOut: boolean
   idleKilled: boolean
   idleKillError: string | null
@@ -209,6 +306,7 @@ export type LiveResult = {
   output: string
   vendorTokens: number | null
   costUsd: number | null
+  vendorUsage: VendorUsage
   resolvedSession: string | null
   effectiveModel: string | null
   replyFileError: string | null
@@ -230,6 +328,17 @@ export type LiveResult = {
   workerEvents: StreamEvent[]
 }
 
+type ConfiguredAsk = Parameters<typeof recordConfiguredAsk>[0]
+
+function recordRunAsk(
+  runId: string,
+  sandbox: ConfiguredAsk['sandbox'],
+  transport: ConfiguredAsk['transport'],
+  startOpts: ConfiguredAsk['startOpts'],
+): void {
+  recordConfiguredAsk({ runId, sandbox, transport, startOpts })
+}
+
 function applyRunWallDeadline(input: {
   currentTimer: ReturnType<typeof setTimeout> | null
   facts: RunWallDeadlineFacts
@@ -247,6 +356,40 @@ function applyRunWallDeadline(input: {
 
 async function closeWorkerNoteBroker(broker: WorkerNoteBroker | null): Promise<void> {
   if (broker) await broker.close()
+}
+
+function idleRunRow(runId: string): {
+  status: string
+  last_event_at: string | null
+  started_at: string
+} | null {
+  return db()
+    .query('SELECT status, last_event_at, started_at FROM run WHERE record_id=?')
+    .get(runId) as {
+    status: string
+    last_event_at: string | null
+    started_at: string
+  } | null
+}
+
+function runHasOpenQuestion(runId: string): boolean {
+  return Boolean(
+    db()
+      .query(
+        `SELECT 1 n FROM question WHERE run_record_id=? AND ${questionOpenSql('question')} LIMIT 1`,
+      )
+      .get(runId),
+  )
+}
+
+function recordedRunStatus(runId: string): string | null {
+  return (
+    (
+      db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
+        status: string
+      } | null
+    )?.status ?? null
+  )
 }
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
@@ -277,8 +420,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     writableRoots,
     gitConfigEnvironment,
     sandboxRunDir,
-    grokMcpEnvironment,
     recipeEnvironment,
+    launchEnvironment,
     scratchDir,
     writesJob,
     codexSandbox,
@@ -294,7 +437,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
-  let idleTimer: ReturnType<typeof setInterval> | null = null
+  let resourceObserver: RunResourceObserver | null = null
   let timedOut = false
   let idleKilled = false
   let idleKillError: string | null = null
@@ -305,6 +448,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let output = ''
   let vendorTokens: number | null = null
   let costUsd: number | null = null
+  let vendorUsage = EMPTY_VENDOR_USAGE
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let replyFileError: string | null = null
@@ -340,7 +484,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         ? reviewChangedPaths(worktree.path, reviewTarget.base, inputTree)
         : null
       const measured = db()
-        .query('UPDATE run SET input_tree=?, head_commit=?, changed_paths=? WHERE id=?')
+        .query('UPDATE run SET input_tree=?, head_commit=?, changed_paths=? WHERE record_id=?')
         .run(inputTree, headCommit, changedPaths ? JSON.stringify(changedPaths) : null, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
@@ -380,8 +524,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       cwd,
       prompt,
       outPath,
-      // ACP creates its initial session with session/new. Grok also mints an id
-      // for its CLI launch, but treating that fresh id as resumable makes ACP
+      // ACP uses session/new; treating Grok's fresh CLI id as resumable makes ACP
       // issue session/load against a session that cannot exist yet.
       session:
         transportName === 'acp' && opts.resume?.kind === 'continue'
@@ -407,40 +550,33 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         : undefined,
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
-      env: childEnv(
+      env: liveChildEnv(
         a,
-        claim.id,
+        claim.recordId,
         runToken,
         {
-          ...(gitConfigEnvironment ?? {}),
-          ...sandboxEnvironment,
-          ...grokMcpEnvironment,
-          ...recipeEnvironment,
+          ...launchEnvironment,
           ORCH_SCRATCH: scratchDir,
           ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
         },
         repoJob,
+        claim.number,
       ),
+      onWarning: warnForRun(claim.id),
     }
-    recordConfiguredAsk({
-      runId: claim.id,
-      sandbox: sandboxSelection.sandbox,
+    recordRunAsk(claim.id, sandboxSelection.sandbox, t, startOpts)
+    const handle = await startAfterHostCapacity({
+      repoJob,
+      claim,
+      opts,
       transport: t,
       startOpts,
     })
-    const handle =
-      opts.resume?.session && opts.resume.kind === 'continue'
-        ? await t.resume({
-            ...startOpts,
-            session: opts.resume.session,
-            resume: true,
-          })
-        : await t.start(startOpts)
     proc = handle
     live.add(handle)
     effectiveModel = handle.effectiveModel ?? null
     if (effectiveModel)
-      db().query('UPDATE run SET model=? WHERE id=?').run(effectiveModel, claim.id)
+      db().query('UPDATE run SET model=? WHERE record_id=?').run(effectiveModel, claim.id)
     // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
     // agent exits the worker is still parsing output and writing questions, and
     // a reaper that tested this pid would mark the run stale under a process
@@ -461,11 +597,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const vendorStartTime = vendorPid && vendorPid > 1 ? processStartTime(vendorPid) : null
     db()
       .query(
-        `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?,
-              last_event_at=COALESCE(last_event_at, ?) WHERE id=?`,
+        `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?, host_wait_since=NULL,
+              last_event_at=COALESCE(last_event_at, ?) WHERE record_id=?`,
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
-
     const createCheckpoint = (final = false) => {
       if (!writesJob || !worktree || !launchKey) return null
       const result = checkpointRun({
@@ -500,7 +635,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-
     // Two timeouts, composed, not one: the wall stays, and idle kill is the
     // second, shorter no-activity bound. Do not replace the wall.
     wallArmedAtMs = Date.now()
@@ -536,33 +670,25 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       })
     }
     rearmWallDeadline()
-
     let forceCollect: ((result: TransportResult) => void) | null = null
     const forcedCollect = new Promise<TransportResult>((resolve) => {
       forceCollect = resolve
     })
-    const maybeIdleKill = async () => {
-      const row = db()
-        .query('SELECT status, last_event_at, started_at FROM run WHERE id=?')
-        .get(claim.id) as {
-        status: string
-        last_event_at: string | null
-        started_at: string
-      } | null
+    const maybeIdleKill = async (samples: ProcessSample[]) => {
+      const row = idleRunRow(claim.id)
       if (!row) return
-      const openQuestion = db()
-        .query(`SELECT 1 n FROM question WHERE run_id=? AND ${questionOpenSql('question')} LIMIT 1`)
-        .get(claim.id) as { n: number } | null
+      const openQuestion = runHasOpenQuestion(claim.id)
       const idleThresholdMs = jobIdleKillMs(opts.job, process.env, boundMs)
       const decision = shouldIdleKill({
         lastEventAt: row.last_event_at,
         startedAt: row.started_at,
         pid: handle.pid,
         asking: row.status === 'asking',
-        openQuestion: Boolean(openQuestion),
+        openQuestion,
         alreadyTimedOut: timedOut,
         alreadyIdleKilled: idleKilled,
         thresholdMs: idleThresholdMs,
+        samples,
       })
       if (!decision.kill) return
       idleKilled = true
@@ -573,18 +699,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         boundMs,
       })
       const checkpoint = createCheckpoint(true)
-      const afterCheckpoint = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
-        status: string
-      } | null
-      const askedDuringCheckpoint =
-        afterCheckpoint?.status === 'asking' ||
-        Boolean(
-          db()
-            .query(
-              `SELECT 1 n FROM question WHERE run_id=? AND ${questionOpenSql('question')} LIMIT 1`,
-            )
-            .get(claim.id),
-        )
+      const afterCheckpoint = recordedRunStatus(claim.id)
+      const askedDuringCheckpoint = afterCheckpoint === 'asking' || runHasOpenQuestion(claim.id)
       if (askedDuringCheckpoint) {
         idleKilled = false
         idleKillError = null
@@ -612,7 +728,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         return
       }
       if (checkpoint?.created || prior) {
-        db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
+        db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
       }
       void t.cancel(handle)
       const terminated = await terminateProcessGroup(handle.pid ?? 0, {
@@ -637,6 +753,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           output: '',
           tokens: null,
           costUsd: null,
+          vendorUsage: EMPTY_VENDOR_USAGE,
           sessionId: null,
           stopReason: 'timeout',
           error: idleKillError,
@@ -650,22 +767,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-    let idleCheckInFlight = false
-    idleTimer = setInterval(
-      () => {
-        if (idleCheckInFlight || timedOut || idleKilled) return
-        idleCheckInFlight = true
-        void maybeIdleKill()
-          .catch((error) => {
-            console.error(`orch: run ${claim.id} idle check failed: ${error}`)
-          })
-          .finally(() => {
-            idleCheckInFlight = false
-          })
-      },
+    resourceObserver = observeRunProcessTree(
+      vendorPid,
+      vendorStartTime,
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
+      idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
-
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
     receiptWorkerMessages(
@@ -691,13 +798,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     exitCode = collected.exitCode
     const reply = collected.parsed
     const replyError = reply?.error ?? collected.error
-    const outputCeilingReached =
-      !!reply &&
-      !reply.text.trim() &&
-      a.outputCeilingStopReason !== null &&
-      reply.stopReason === a.outputCeilingStopReason
+    const reachedOutputCeiling = outputCeilingReached(reply, a.outputCeilingStopReason)
     vendorTokens = collected.tokens
     costUsd = collected.costUsd
+    vendorUsage = collected.vendorUsage
     effectiveModel = collected.effectiveModel ?? effectiveModel
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output
@@ -747,7 +851,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         (event.toolKind ? ` (${event.toolKind})` : '')
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${line}` : line
     }
-
     /**
      * A worker that stopped to ask is neither a success nor a failure.
      *
@@ -775,7 +878,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
      */
     const undelivered = unreadWorkerMessages(claim.id)
     if (undelivered.length) {
-      const remedy = deferredWorkerMessageNotice(undelivered[0]!.root_run_id, t.canInjectMidTurn)
+      const remedy = deferredWorkerMessageNotice(
+        undelivered[0]!.root_run_record_id,
+        t.canInjectMidTurn,
+      )
       const header = [
         `undelivered worker messages: ${undelivered.map((message) => message.id).join(', ')}`,
         remedy,
@@ -791,7 +897,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     }
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
     acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
-
     const derived = deriveLiveOutcome({
       writesJob,
       contractStatus: contract?.status ?? null,
@@ -808,7 +913,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       acceptedQuestions: acceptedQuestions.length > 0,
       idleKilled,
       idleKillError,
-      outputCeilingReached,
+      outputCeilingReached: reachedOutputCeiling,
       outputCeilingStopReason: reply?.stopReason ?? null,
       timedOut,
       stderr,
@@ -824,7 +929,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       timedOut,
       excludedGateMsAtTimeout,
     )
-
     if (idleKilled && derived.inputs.completedReply) {
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when idle-killed. ` +
@@ -838,7 +942,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       !replyFileError &&
       !collected.asking &&
       !acceptedQuestions.length &&
-      !outputCeilingReached
+      !reachedOutputCeiling
     ) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.
@@ -866,7 +970,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           gateExclusionNoteSuffix(excludedGateMsAtTimeout),
       )
     }
-
     ;({ status, failureKind } = decideOutcome(derived.inputs))
   } catch (e) {
     // Spawn refused, a pipe broke, the output file could not be written. The row
@@ -885,7 +988,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     proc,
     timer,
     checkpointTimer,
-    idleTimer,
+    resourceObserver,
     timedOut,
     idleKilled,
     idleKillError,
@@ -896,6 +999,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     output,
     vendorTokens,
     costUsd,
+    vendorUsage,
     resolvedSession,
     effectiveModel,
     replyFileError,

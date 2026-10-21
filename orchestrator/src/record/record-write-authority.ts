@@ -1,31 +1,33 @@
 // concern: record-write-authority
 /** Applies shared-state write authority at the hosted-record boundary. */
 
+import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { readRecordInstallBinding, rememberHostedRecord } from './install-binding.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 export const BOUND_RECORD_WRITE_REFUSAL =
   'this install is bound to a hosted record, but ORCH_RECORD_API_URL is not set in this environment\n' +
-  `cleared by: ${PLATFORM_SLUG} record doctor`
+  `cleared by: ${PLATFORM_SLUG} record use <address>`
 
-export function currentRecordWriteDecision(): RecordWriteDecision {
+export function currentRecordWriteDecision(database?: Database): RecordWriteDecision {
   return decideRecordWrite({
     recordApiUrlSet: Boolean(resolveRecordApiUrl()?.trim()),
-    installBound: readRecordInstallBinding().bound,
+    installBound: readRecordInstallBinding(database).bound,
   })
 }
 
-export async function applyRecordWriteAuthority<T>(actions: {
+export function applyRecordWriteAuthority<T>(actions: {
   local(): T | Promise<T>
   hosted(): T | Promise<T>
 }): Promise<T> {
   const decision = currentRecordWriteDecision()
   if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
-  if (decision === 'local-authoritative') return actions.local()
-  const result = await actions.hosted()
-  rememberHostedRecord()
-  return result
+  if (decision === 'local-authoritative') return Promise.resolve(actions.local())
+  return Promise.resolve(actions.hosted()).then((result) => {
+    rememberHostedRecord()
+    return result
+  })
 }
 
 export function requireHostedRecord(command: string): void {
@@ -33,7 +35,7 @@ export function requireHostedRecord(command: string): void {
   if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
   if (decision === 'local-authoritative') {
     throw new Error(
-      `no hosted record is configured for this install; set ORCH_RECORD_API_URL before running \`${command}\``,
+      `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${command}\``,
     )
   }
 }

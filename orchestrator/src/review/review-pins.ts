@@ -30,14 +30,14 @@ export function reviewChangeRange(
   return fallback ? { from: run.base_commit, to: fallback, paths: null } : null
 }
 
-export const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
+export const pinRef = (runId: string) => `refs/orch/reviewed/${runId}`
 
-export function storedChangePathSet(runId: number, database: Database): string[] | null {
+export function storedChangePathSet(runId: string, database: Database): string[] | null {
   const row = database
     .query(
       `SELECT review.path_set FROM review_lens
-       JOIN review ON review.id = review_lens.review_id
-      WHERE review_lens.run_id=?`,
+       JOIN review ON review.record_id = review_lens.review_record_id
+      WHERE review_lens.run_record_id=?`,
     )
     .get(runId) as { path_set: string | null } | null
   if (!row || row.path_set === null) return null
@@ -107,7 +107,8 @@ export function pinReviewedCommits(runs: RunRow[], database: Database): void {
     if (!run.head_commit) continue
     const warn = (why: string) => {
       console.error(
-        `warning: review run ${run.id} recorded but ${pinRef(run.id)} was not created: ` + why,
+        `warning: review run ${run.record_id} recorded but ${pinRef(run.record_id)} was not created: ` +
+          why,
       )
     }
     try {
@@ -120,7 +121,8 @@ export function pinReviewedCommits(runs: RunRow[], database: Database): void {
         warn(`commit ${run.head_commit} is missing from ${repo}`)
         continue
       }
-      const updated = git(repo, ['update-ref', pinRef(run.id), run.head_commit])
+      // branch-ref-guard: non-local refs/orch/
+      const updated = git(repo, ['update-ref', pinRef(run.record_id), run.head_commit])
       if (!updated.ok) warn(`git update-ref failed: ${updated.err}`)
     } catch (cause) {
       warn(String((cause as Error)?.message ?? cause))
@@ -130,8 +132,8 @@ export function pinReviewedCommits(runs: RunRow[], database: Database): void {
 
 export type ReviewPin = {
   project: string
-  runId: number
-  reviewId: number
+  runId: string
+  reviewNumber: number
   commit: string
   completed: boolean
   superseded: boolean
@@ -144,7 +146,8 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
   if (prune) writableDb()
   const registered = new Map(
     (
-      database.query('SELECT name, path, settings FROM project').all() as {
+      database.query('SELECT record_id, name, path, settings FROM project').all() as {
+        record_id: string
         name: string
         path: string
         settings: string
@@ -156,43 +159,46 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
       } catch {
         /* unreadable settings have no trunk */
       }
-      return [project.name, { path: project.path, settings }] as const
+      return [project.record_id, { name: project.name, path: project.path, settings }] as const
     }),
   )
   const rows = database
     .query(
-      `SELECT run.repo, run.branch, run.id AS run_id, rl.review_id, r.completed_at
+      `SELECT run.repo, run.project_record_id, run.branch, run.record_id AS run_record_id,
+              rl.review_record_id, r.number AS review_number, r.completed_at
        FROM review_lens rl
-       JOIN review r ON r.id=rl.review_id
-       JOIN run ON run.id=rl.run_id
+       JOIN review r ON r.record_id=rl.review_record_id
+       JOIN run ON run.record_id=rl.run_record_id
       WHERE run.head_commit IS NOT NULL
-      ORDER BY run.repo, run.id`,
+      ORDER BY run.repo, run.number`,
     )
     .all() as {
     repo: string | null
+    project_record_id: string | null
     branch: string | null
-    run_id: number
-    review_id: number
+    run_record_id: string
+    review_record_id: string
+    review_number: number
     completed_at: string | null
   }[]
   const pins: ReviewPin[] = []
   for (const row of rows) {
-    if (!row.repo) continue
-    const project = registered.get(row.repo)
+    if (!row.project_record_id) continue
+    const project = registered.get(row.project_record_id)
     if (!project) continue
-    const ref = git(project.path, ['rev-parse', '--verify', pinRef(row.run_id)])
+    const ref = git(project.path, ['rev-parse', '--verify', pinRef(row.run_record_id)])
     if (!ref.ok) continue
     const superseded = Boolean(
       database
         .query(
           `SELECT 1
          FROM review_lens newer_lens
-         JOIN review newer ON newer.id=newer_lens.review_id
-         JOIN run newer_run ON newer_run.id=newer_lens.run_id
-        WHERE newer.id>? AND newer_run.repo=? AND newer_run.branch IS ?
+         JOIN review newer ON newer.record_id=newer_lens.review_record_id
+         JOIN run newer_run ON newer_run.record_id=newer_lens.run_record_id
+        WHERE newer.number>? AND newer_run.project_record_id=? AND newer_run.branch IS ?
         LIMIT 1`,
         )
-        .get(row.review_id, row.repo, row.branch),
+        .get(row.review_number, row.project_record_id, row.branch),
     )
     const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
     const landed = Boolean(
@@ -208,15 +214,16 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
     )
     let deleted = false
     if (prune && row.completed_at !== null && landed) {
-      const removal = git(project.path, ['update-ref', '-d', pinRef(row.run_id)])
+      // branch-ref-guard: non-local refs/orch/
+      const removal = git(project.path, ['update-ref', '-d', pinRef(row.run_record_id)])
       if (!removal.ok)
-        throw new Error(`git update-ref -d ${pinRef(row.run_id)} failed: ${removal.err}`)
+        throw new Error(`git update-ref -d ${pinRef(row.run_record_id)} failed: ${removal.err}`)
       deleted = true
     }
     pins.push({
-      project: row.repo,
-      runId: row.run_id,
-      reviewId: row.review_id,
+      project: project.name,
+      runId: row.run_record_id,
+      reviewNumber: row.review_number,
       commit: ref.out,
       completed: row.completed_at !== null,
       superseded,

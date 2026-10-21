@@ -1,8 +1,8 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   type CursorIdentity,
   classifyCheckoutEvidence,
@@ -123,22 +123,13 @@ const ports: FloorEvidencePorts = {
   viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
 }
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
-    'fixture',
-    '/fixture',
-    'bun',
-    '{"trunk":"main"}',
-  )
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
-    'other',
-    '/other',
-    'bun',
-    '{}',
-  )
+const database = testDatabaseFixture((d) => {
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run('fixture', '/fixture', 'bun', '{"trunk":"main"}')
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run('other', '/other', 'bun', '{}')
   d.query(
     `INSERT INTO workflow_cursor
       (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
@@ -147,8 +138,7 @@ const database = () => {
      VALUES ('${newRecordId()}','fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
              1,'2026-09-01','2026-09-01','floors')`,
   ).run()
-  return d
-}
+})
 
 const setTrackerStates = (d: Database, name: string, states: Record<string, string>) => {
   d.query('UPDATE project SET settings=? WHERE name=?').run(
@@ -159,8 +149,10 @@ const setTrackerStates = (d: Database, name: string, states: Record<string, stri
 
 const projectId = (d: Database, name: string) =>
   (
-    d.query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?').get(name) as {
-      id: number
+    d
+      .query<{ id: string }, [string]>('SELECT record_id AS id FROM project WHERE name=?')
+      .get(name) as {
+      id: string
     }
   ).id
 
@@ -177,9 +169,9 @@ const insertRun = (
 ) =>
   (
     d
-      .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
-         VALUES ('${newRecordId()}',?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING id`,
+      .query<{ id: string }, (string | number | null)[]>(
+        `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING record_id AS id`,
       )
       .get(
         input.startedAt ?? '2026-09-01',
@@ -189,7 +181,7 @@ const insertRun = (
         input.launchKey ?? null,
         input.branch ?? null,
         input.sessionId ?? null,
-      ) as { id: number }
+      ) as { id: string }
   ).id
 
 const gather = (
@@ -212,11 +204,11 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
   const d = database()
   d.query(
     `INSERT INTO question
-      (record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
-     VALUES ('${newRecordId()}',1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
+      (number,record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
   ).run()
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   const gathered = gather(d, { ruling: 1, gate: 1 })
@@ -226,6 +218,7 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
     answeredByOperator: true,
     boundToCursor: true,
     boundToStep: true,
+    answeredAt: '2026-09-01',
   })
   expect(gathered.gate).toEqual({
     id: 1,
@@ -244,8 +237,8 @@ test('resolves probe artifacts and task comments through injected ports', () => 
   ).run()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
   expect(gathered.artifact).toEqual({ ref: 'probe:1', exists: true })
@@ -271,13 +264,13 @@ test('a foreign review is refused and a matching review is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',1,'2026-09-01',?)`,
   ).run(projectId(d, 'other'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(foreignRun)
-  expect(() => gather(d, { review: 1 })).toThrow(
+  expect(() => gather(d, { review: '1' })).toThrow(
     "--review 1 project is other, not this cursor's fixture",
   )
 
@@ -287,14 +280,15 @@ test('a foreign review is refused and a matching review is allowed', () => {
     branch: 'DEV-977-work',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',2,'2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',2,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=2),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(matchingRun)
-  expect(gather(d, { review: 2 }).review).toEqual({
-    id: 2,
+  expect(gather(d, { review: '2' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 2,
     allFindingsDisposed: true,
     allLensesGraded: true,
   })
@@ -309,23 +303,24 @@ test('review evidence covers every review of the same change on the branch', () 
   ]
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,record_id,recorded_at,project_id,patch_id,path_set) VALUES
+    `INSERT INTO review (number,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
       (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (3,'${newRecordId()}','2026-09-01',?,'other-patch','["src/other.ts"]')`,
   ).run(project, project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
-     VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
+     VALUES (?,(SELECT record_id FROM review WHERE number=?),?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
   insertLens.run(newRecordId(), 1, runIds[0]!, 'all', 'adequate', 'named', 'unique')
   insertLens.run(newRecordId(), 2, runIds[1]!, null, null, null, null)
   insertLens.run(newRecordId(), 3, runIds[2]!, null, null, null, null)
 
-  expect(gather(d, { review: 1 }).review).toEqual({
-    id: 1,
+  expect(gather(d, { review: '1' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 1,
     allFindingsDisposed: true,
     allLensesGraded: false,
     unfinishedReviewIds: [2],
@@ -333,10 +328,11 @@ test('review evidence covers every review of the same change on the branch', () 
 
   d.query(
     `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='named',overlap='unique'
-      WHERE review_id=2`,
+      WHERE review_record_id=(SELECT record_id FROM review WHERE number=2)`,
   ).run()
-  expect(gather(d, { review: 1 }).review).toEqual({
-    id: 1,
+  expect(gather(d, { review: '1' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 1,
     allFindingsDisposed: true,
     allLensesGraded: true,
   })
@@ -350,13 +346,13 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',1,'2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
-  expect(() => gather(d, { review: 1 })).toThrow(
+  expect(() => gather(d, { review: '1' })).toThrow(
     '--review 1 has no lens run on branch DEV-977-work or launch_key DEV-977',
   )
 })
@@ -369,13 +365,13 @@ test('a review matches when a lens run carries the workflow key on another branc
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+    `INSERT INTO review (record_id,number,recorded_at,project_record_id) VALUES ('${newRecordId()}',1,'2026-09-01',?)`,
   ).run(projectId(d, 'fixture'))
   d.query(
-    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review_lens (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
-  expect(gather(d, { review: 1 }).review?.id).toBe(1)
+  expect(gather(d, { review: '1' }).review?.number).toBe(1)
 })
 
 test('a launch-key-bound review uses its cursor branch review round', () => {
@@ -392,21 +388,22 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
   })
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,record_id,recorded_at,project_id,patch_id,path_set) VALUES
+    `INSERT INTO review (number,record_id,recorded_at,project_record_id,patch_id,path_set) VALUES
       (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
       (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]')`,
   ).run(project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
-     VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
+     VALUES (?,(SELECT record_id FROM review WHERE number=?),?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
   insertLens.run(newRecordId(), 1, namedRun, 'all', 'adequate', 'named', 'unique')
   insertLens.run(newRecordId(), 2, siblingRun, null, null, null, null)
 
-  expect(gather(d, { review: 1 }).review).toEqual({
-    id: 1,
+  expect(gather(d, { review: '1' }).review).toEqual({
+    recordId: expect.any(String),
+    number: 1,
     allFindingsDisposed: true,
     allLensesGraded: false,
     unfinishedReviewIds: [2],
@@ -421,7 +418,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(foreign)
   expect(() => gather(d, { gate: 1 })).toThrow(
@@ -434,7 +431,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(matching)
   expect(gather(d, { gate: 2 }).gate).toEqual({
@@ -449,7 +446,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
 test('a foreign architect gate is refused and a matching architect gate is allowed', () => {
   const d = database()
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/other','abc')`,
   ).run()
   expect(() =>
@@ -467,7 +464,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
   ).toThrow("--gate 1 cwd project is other, not this cursor's fixture")
 
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   expect(gather(d, { gate: 2 }).gate).toEqual({
@@ -482,7 +479,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
 test('an architect gate whose commit is not an ancestor is refused', () => {
   const d = database()
   d.query(
-    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   expect(() =>
@@ -516,9 +513,25 @@ test('a foreign run is refused and a matching run is allowed', () => {
     launchKey: 'DEV-1',
   })
   expect(gather(d, { run: matching }).run).toEqual({
-    id: matching,
+    id: String(matching),
     terminal: true,
     exitCode: 0,
+  })
+})
+
+test('a bare run number artifact resolves through the run record', () => {
+  const d = database()
+  const matching = insertRun(d, {
+    project: 'fixture',
+    branch: 'DEV-977-work',
+    launchKey: 'DEV-1',
+  })
+  const number = (
+    d.query('SELECT number FROM run WHERE record_id=?').get(matching) as { number: number }
+  ).number
+  expect(gather(d, { artifact: String(number) }).artifact).toEqual({
+    ref: String(number),
+    exists: true,
   })
 })
 
@@ -578,7 +591,7 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   ).run()
   expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
     artifact: { ref: 'exec:2', exists: true },
-    exec: { id: 2, exitCode: 0, pullRequestCreate: false },
+    exec: { id: 2, command: 'true', exitCode: 0, pullRequestCreate: false },
   })
   expect(() => gather(d, { artifact: 'probe:2' })).toThrow(
     '--artifact probe:2 is recorded as exec:2',
@@ -621,12 +634,12 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
   const d = database()
   d.query(
     `INSERT INTO question
-      (record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
-     VALUES ('${newRecordId()}',1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
+      (number,record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
   ).run()
   d.query(
-    `INSERT INTO question_mutation_audit (record_id,question_id,action,actor_session,at,reason)
-     VALUES ('${newRecordId()}',1,'rule','adopting-session','2026-09-01',
+    `INSERT INTO question_mutation_audit (record_id,question_record_id,action,actor_session,at,reason)
+     VALUES ('${newRecordId()}',(SELECT record_id FROM question WHERE number=1),'rule','adopting-session','2026-09-01',
              'adopted from gone owner s by adopting-session; Proceed.')`,
   ).run()
   d.query(
@@ -648,37 +661,54 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
 
 test('a foreign doc is refused and a matching doc is allowed', () => {
   const d = database()
+  const foreignId = newRecordId()
   d.query(
-    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_id,record_id)
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','other','note','t','b','inject','["technical"]','t','t',?,?)`,
-  ).run(projectId(d, 'other'), newRecordId())
-  expect(() => gather(d, { artifact: 'doc:1' })).toThrow(
-    "--artifact doc:1 is scoped to other, not this cursor's fixture",
+  ).run(projectId(d, 'other'), foreignId)
+  expect(() => gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+    `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
+  const matchingId = newRecordId()
   d.query(
-    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_id,record_id)
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','fixture','note','t','b','inject','["technical"]','t','t',?,?)`,
-  ).run(projectId(d, 'fixture'), newRecordId())
-  expect(gather(d, { artifact: 'doc:2' }).artifact).toEqual({
-    ref: 'doc:2',
+  ).run(projectId(d, 'fixture'), matchingId)
+  expect(gather(d, { artifact: `doc:${matchingId}` }).artifact).toEqual({
+    ref: 'doc:project/fixture/note',
+    exists: true,
+  })
+})
+
+test('a path-shaped canon slug resolves as the whole address remainder', () => {
+  const d = database()
+  const id = newRecordId()
+  d.query(
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
+     VALUES ('canon','fixture','.agents/rules/10-code.md','t','b','inject','["technical"]','t','t',?,?)`,
+  ).run(projectId(d, 'fixture'), id)
+  expect(gather(d, { artifact: 'doc:canon/fixture/.agents/rules/10-code.md' }).artifact).toEqual({
+    ref: 'doc:canon/fixture/.agents/rules/10-code.md',
     exists: true,
   })
 })
 
 test('a legacy resume doc without a project id is scoped by its project subject', () => {
   const d = database()
+  const matchingId = newRecordId()
+  const foreignId = newRecordId()
   d.query(
-    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_id,record_id)
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('resume','fixture','brief','t','b','demand','["technical"]','t','t',NULL,?),
             ('resume','other','foreign-brief','t','b','demand','["technical"]','t','t',NULL,?)`,
-  ).run(newRecordId(), newRecordId())
+  ).run(matchingId, foreignId)
 
-  expect(gather(d, { artifact: 'doc:1' }).artifact).toEqual({
-    ref: 'doc:1',
+  expect(gather(d, { artifact: `doc:${matchingId}` }).artifact).toEqual({
+    ref: 'doc:resume/fixture/brief',
     exists: true,
   })
-  expect(() => gather(d, { artifact: 'doc:2' })).toThrow(
-    "--artifact doc:2 is scoped to other, not this cursor's fixture",
+  expect(() => gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+    `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
 })
 
@@ -770,8 +800,8 @@ test('a snapshot plus a merged PR satisfies tracker evidence', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(gather(d, { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
@@ -786,8 +816,8 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
     gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) })
@@ -815,8 +845,8 @@ test('an unavailable pull request read is gathered as unmerged', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
-     VALUES ('snap-1','fixture','DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
+      (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
+     VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
     gather(
@@ -866,7 +896,7 @@ test('a keyless branchless cursor accepts a same-session run created after it', 
     startedAt: '2026-09-02',
   })
   expect(gather(d, { run: matching }, {}, planningIdentity).run).toEqual({
-    id: matching,
+    id: String(matching),
     terminal: true,
     exitCode: 0,
   })

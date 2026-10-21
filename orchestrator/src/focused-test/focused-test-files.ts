@@ -13,13 +13,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-
-const CREATE_FLAGS =
-  constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
-
-export function createFocusedTestFile(path: string): number {
-  return openSync(path, CREATE_FLAGS, 0o600)
-}
+import { createNoFollowFile } from '../no-follow-file.ts'
 
 export function ensureFocusedTestDirectory(path: string): void {
   mkdirSync(path, { recursive: true })
@@ -42,7 +36,7 @@ export function removeFocusedTestFile(path: string): void {
 }
 
 export function writeFocusedTestFileExclusive(path: string, value: string): void {
-  const fd = createFocusedTestFile(path)
+  const fd = createNoFollowFile(path)
   try {
     writeFileSync(fd, value)
   } finally {
@@ -54,7 +48,7 @@ export function writeFocusedTestFileAtomic(path: string, value: string): void {
   const temporary = `${path}.tmp`
   let fd: number | null = null
   try {
-    fd = createFocusedTestFile(temporary)
+    fd = createNoFollowFile(temporary)
     writeFileSync(fd, value)
     closeSync(fd)
     fd = null

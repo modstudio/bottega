@@ -5,10 +5,10 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
+import { listHostedNotes } from '../src/hosted-note-list.ts'
 import {
   createHostedNote,
   getHostedNote,
-  listHostedNotes,
   mirrorHostedNotes,
   promoteHostedNote,
   reapHostedNotes,
@@ -25,13 +25,9 @@ import {
   unsubscribeHostedReportSubscription,
   updateHostedReportSubscription,
 } from '../src/hosted-reports.ts'
+import { listHostedTasks } from '../src/hosted-task-list.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from '../src/hosted-task-prune.ts'
-import {
-  createHostedDocument,
-  createHostedTask,
-  type HostedTask,
-  listHostedTasks,
-} from '../src/hosted-tasks.ts'
+import { createHostedDocument, createHostedTask, type HostedTask } from '../src/hosted-tasks.ts'
 import {
   hostedFlightDone,
   hostedNotes,
@@ -55,8 +51,10 @@ import {
 } from '../src/report-delivery-hosted.ts'
 
 const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
-const actorUrl = process.env.ORCH_RECORD_URL
-if (!adminUrl || !actorUrl) throw new Error('Postgres evidence proof requires test and actor URLs')
+const actorDatabaseUrl = process.env.ORCH_RECORD_URL
+if (!adminUrl || !actorDatabaseUrl)
+  throw new Error('Postgres evidence proof requires test and actor URLs')
+const actorUrl = new SQL(actorDatabaseUrl)
 
 const USER = '01990000-0000-7000-8000-000000000650'
 const SECOND_USER = '01990000-0000-7000-8000-000000000651'
@@ -65,6 +63,7 @@ const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
 const SPACE_C = '01990000-0000-7000-8000-00000000066b'
 const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
+const PROJECT_A_OTHER = '01990000-0000-7000-8000-00000000068c'
 const PROJECT_B = '01990000-0000-7000-8000-00000000066c'
 const PROJECT_MOVE = '01990000-0000-7000-8000-00000000067c'
 const MACHINE = '01990000-0000-7000-8000-00000000067d'
@@ -72,6 +71,7 @@ const interval: IntervalEvidence = {
   id: '01990000-0000-7000-8000-000000000690',
   task_key: 'DEV-655',
   project_name: PLATFORM_SLUG,
+  projectId: PROJECT_A,
   source: 'orch',
   agent: 'codex',
   job: 'implementation',
@@ -109,7 +109,7 @@ const day = {
 const FIXED_CLOCK = Date.parse('2026-09-19T20:00:00.000Z')
 
 async function pushEvidence(
-  url: string,
+  url: SQL,
   identity: { userId: string; spaceId: string },
   changes: HostedPushChange[],
 ) {
@@ -119,8 +119,29 @@ async function pushEvidence(
   return outcomes
 }
 
+async function listAllHostedTasks(url: SQL, identity: Parameters<typeof listHostedTasks>[1]) {
+  type Page = Awaited<ReturnType<typeof listHostedTasks>>
+  const rows = {
+    tasks: [] as Page['tasks'],
+    comments: [] as Page['comments'],
+    documents: [] as Page['documents'],
+    statusEvents: [] as Page['statusEvents'],
+  }
+  let cursor: string | undefined
+  for (;;) {
+    const page = await listHostedTasks(url, identity, cursor ? { cursor } : {})
+    rows.tasks.push(...page.tasks)
+    rows.comments.push(...page.comments)
+    rows.documents.push(...page.documents)
+    rows.statusEvents.push(...page.statusEvents)
+    if (!page.more) return rows
+    if (page.cursor === cursor) throw new Error('hosted task list cursor did not advance')
+    cursor = page.cursor
+  }
+}
+
 const pushIntervals = (
-  url: string,
+  url: SQL,
   identity: { userId: string; spaceId: string },
   rows: IntervalEvidence[],
 ) =>
@@ -130,7 +151,7 @@ const pushIntervals = (
     rows.map((row) => ({ table: 'hub_interval', id: row.id, op: 'upsert', row })),
   )
 
-const pushDays = (url: string, identity: { userId: string; spaceId: string }, rows: PushedDay[]) =>
+const pushDays = (url: SQL, identity: { userId: string; spaceId: string }, rows: PushedDay[]) =>
   pushEvidence(
     url,
     identity,
@@ -138,7 +159,7 @@ const pushDays = (url: string, identity: { userId: string; spaceId: string }, ro
   )
 
 const pushIntervalDeletes = (
-  url: string,
+  url: SQL,
   identity: { userId: string; spaceId: string },
   ids: string[],
 ) =>
@@ -160,6 +181,7 @@ try {
     (${SPACE_C}::uuid,'Evidence C','evidence-c',now())`
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES (${PROJECT_A}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now()),
+      (${PROJECT_A_OTHER}::uuid,${SPACE_A}::uuid,'other-project',ARRAY['OTHER'],now()),
       (${PROJECT_B}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},ARRAY['DEV'],now()),
       (${PROJECT_MOVE}::uuid,${SPACE_B}::uuid,'move-proof',ARRAY['MOVE'],now())`
   await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
@@ -212,7 +234,7 @@ try {
       `day duplicate advanced the space change-log head from ${dayHead} to ${dayDuplicateHead}`,
     )
 
-  const client = new SQL(actorUrl)
+  const client = actorUrl
   try {
     const count = async (spaceId: string, table: string) =>
       client.begin(async (tx) => {
@@ -406,6 +428,7 @@ try {
       key: 'DEV-700',
       project: PLATFORM_SLUG,
       project_name: PLATFORM_SLUG,
+      projectId: PROJECT_A,
       title: 'Mirror fixture',
       status: 'open',
       status_category: 'open',
@@ -430,6 +453,7 @@ try {
     ])
     const created = await createHostedTask(actorUrl, identity, {
       project: PLATFORM_SLUG,
+      projectId: PROJECT_A,
       title: 'Allocated fixture',
     })
     if (created.key !== 'DEV-701') throw new Error(`task allocation returned ${created.key}`)
@@ -462,6 +486,7 @@ try {
             task_key: created.key,
             task_id: created.id,
             project_name: created.project_name,
+            projectId: PROJECT_A,
             at: closedAt,
             from_status: created.status,
             to_status: 'done',
@@ -482,7 +507,7 @@ try {
     await applyHostedPushChanges(actorUrl, identity, [
       { table: 'hub_task_document', id: document.id, op: 'delete' },
     ])
-    const visible = await listHostedTasks(actorUrl, identity, {})
+    const visible = await listAllHostedTasks(actorUrl, identity)
     if (visible.tasks.length !== 2) throw new Error('mirror re-push was not idempotent')
     if (visible.documents.some((row) => row.id === document.id))
       throw new Error('soft-deleted document was visible in the default list')
@@ -550,7 +575,7 @@ try {
     if (!hostedDone.data.rows.some((row) => row.key === created.key && row.runs.length === 1))
       throw new Error('hosted done adapter did not return the seeded task and interval')
     const detail = await hostedTaskDetail(actorUrl, identity, created.key)
-    if (detail?.statusHistory.length !== 1 || detail.intervals.length !== 1)
+    if (detail?.statusEvents.length !== 1 || detail.runs.length !== 1)
       throw new Error('hosted task detail did not return status history and intervals')
 
     const legacyCommentId = '01990000-0000-7000-8000-000000000680'
@@ -603,7 +628,7 @@ try {
 
     if (await hostedTaskDetail(actorUrl, { userId: USER, spaceId: SPACE_B }, created.key))
       throw new Error('another space observed hosted task detail')
-    const other = await listHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B }, {})
+    const other = await listAllHostedTasks(actorUrl, { userId: USER, spaceId: SPACE_B })
     if (
       other.tasks.length ||
       other.comments.length ||
@@ -620,6 +645,7 @@ try {
           number: 800,
           project: PLATFORM_SLUG,
           project_name: PLATFORM_SLUG,
+          projectId: PROJECT_A,
           text: 'Existing note',
           area: null,
           anchors: '[]',
@@ -633,10 +659,11 @@ try {
           deleted_at: null,
         },
       ],
-      raiseProjects: [{ project: PLATFORM_SLUG, next: 2 }],
+      raiseProjects: [{ project: PLATFORM_SLUG, projectId: PROJECT_A, next: 2 }],
     })
     const allocatedNote = await createHostedNote(actorUrl, identity, {
       project: PLATFORM_SLUG,
+      projectId: PROJECT_A,
       text: 'Allocated note',
       anchor: JSON.stringify({
         cwd: '/tmp',
@@ -651,6 +678,26 @@ try {
     if (!allocatedNote) throw new Error('allocated note was missing after creation')
     if (allocatedNote.number !== 801)
       throw new Error(`note allocation returned ${allocatedNote.number}`)
+    const allocatedBeforeMismatch = await getHostedNote(actorUrl, identity, allocatedNote.id)
+    let crossProjectSameAsRefused = false
+    try {
+      await createHostedNote(actorUrl, identity, {
+        project: 'other-project',
+        projectId: PROJECT_A_OTHER,
+        text: 'Must not change the original note',
+        anchor: JSON.stringify({ project: 'other-project' }),
+        sameAs: allocatedNote.id,
+      })
+    } catch (error) {
+      crossProjectSameAsRefused = String((error as Error).message).includes(
+        'belongs to another project',
+      )
+    }
+    if (!crossProjectSameAsRefused)
+      throw new Error('sameAs accepted a note owned by another project id')
+    const allocatedAfterMismatch = await getHostedNote(actorUrl, identity, allocatedNote.id)
+    if (allocatedAfterMismatch?.sightings !== allocatedBeforeMismatch?.sightings)
+      throw new Error('a refused cross-project sameAs changed the note')
     await admin`CREATE OR REPLACE FUNCTION fail_hub_task_insert() RETURNS trigger LANGUAGE plpgsql AS
       'BEGIN RAISE EXCEPTION ''forced task insert failure''; END'`
     await admin`CREATE TRIGGER fail_hub_task_insert BEFORE INSERT ON hub_task
@@ -678,6 +725,7 @@ try {
           number: 802,
           project: PLATFORM_SLUG,
           project_name: PLATFORM_SLUG,
+          projectId: PROJECT_A,
           text: 'Re-sighted note',
           area: null,
           anchors: '[]',
@@ -1076,8 +1124,52 @@ try {
     )
       throw new Error('updating a subscription to member-only recipients kept an email row')
     await unsubscribeHostedReportSubscription(actorUrl, identity, emailSubscription.id)
+    await admin`UPDATE project SET name='renamed-project' WHERE id=${PROJECT_A}::uuid`
+    await admin`UPDATE project SET name=${PLATFORM_SLUG} WHERE id=${PROJECT_A_OTHER}::uuid`
+    const renamedProjectTask = await createHostedTask(actorUrl, identity, {
+      project: PLATFORM_SLUG,
+      projectId: PROJECT_A,
+      title: 'Identity survives rename',
+    })
+    const renamedTaskIdentity = await admin`SELECT project_id::text project_id FROM hub_task
+      WHERE id=${renamedProjectTask.id}::uuid`
+    if (renamedTaskIdentity[0]?.project_id !== PROJECT_A)
+      throw new Error('task creation resolved the stale name instead of the sent id')
+    const renamedProjectSubscription = await createHostedReportSubscription(actorUrl, identity, {
+      scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
+      cadence: 'daily',
+      hour: 8,
+      zone: 'America/New_York',
+      recipientUserIds: [USER],
+    })
+    if (
+      renamedProjectSubscription.project_id !== PROJECT_A ||
+      renamedProjectSubscription.project_name !== 'renamed-project'
+    )
+      throw new Error('project report creation resolved the stale name instead of the sent id')
+    const renamedProjectUpdate = await updateHostedReportSubscription(
+      actorUrl,
+      identity,
+      renamedProjectSubscription.id,
+      {
+        scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
+        cadence: 'daily',
+        hour: 9,
+        zone: 'America/New_York',
+        recipientUserIds: [USER],
+        enabled: true,
+      },
+    )
+    if (
+      renamedProjectUpdate.project_id !== PROJECT_A ||
+      renamedProjectUpdate.project_name !== 'renamed-project'
+    )
+      throw new Error('project report update resolved the stale name instead of the sent id')
+    await unsubscribeHostedReportSubscription(actorUrl, identity, renamedProjectSubscription.id)
+    await admin`UPDATE project SET name='other-project' WHERE id=${PROJECT_A_OTHER}::uuid`
+    await admin`UPDATE project SET name=${PLATFORM_SLUG} WHERE id=${PROJECT_A}::uuid`
     const subscription = await createHostedReportSubscription(actorUrl, identity, {
-      scope: { kind: 'project', project: PLATFORM_SLUG },
+      scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
       cadence: 'weekly',
       hour: 8,
       weekday: 'monday',
@@ -1104,7 +1196,7 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${historicalSend[0]!.id}::uuid,
        ${SECOND_USER}::uuid,'Hub Second','hub-second@example.test',now())`
     await updateHostedReportSubscription(actorUrl, identity, subscription.id, {
-      scope: { kind: 'project', project: PLATFORM_SLUG },
+      scope: { kind: 'project', project: PLATFORM_SLUG, projectId: PROJECT_A },
       cadence: 'weekly',
       hour: 8,
       weekday: 'monday',
@@ -1241,6 +1333,7 @@ try {
         id: '01990000-0000-7000-8000-000000000692',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'orch',
         agent: 'grok',
         job: 'implement',
@@ -1259,6 +1352,7 @@ try {
         id: '01990000-0000-7000-8000-000000000693',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'orch',
         agent: 'codex',
         job: 'implement',
@@ -1277,6 +1371,7 @@ try {
         id: '01990000-0000-7000-8000-000000000694',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'claude',
         agent: null,
         job: null,
@@ -1295,6 +1390,7 @@ try {
         id: '01990000-0000-7000-8000-000000000695',
         task_key: null,
         project_name: PLATFORM_SLUG,
+        projectId: PROJECT_A,
         source: 'claude',
         agent: null,
         job: null,
@@ -1321,6 +1417,7 @@ try {
           key: 'DEV-758',
           project: PLATFORM_SLUG,
           project_name: PLATFORM_SLUG,
+          projectId: PROJECT_A,
           title: 'Measures',
           status: 'done',
           status_category: 'done',

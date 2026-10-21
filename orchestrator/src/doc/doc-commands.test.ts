@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -39,7 +40,9 @@ import {
 
 const listPairs = () =>
   db()
-    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .query(
+      'SELECT record_id,source_project_record_id,target_project_record_id,created_at FROM port_pair ORDER BY created_at,record_id',
+    )
     .all() as PortPair[]
 
 test('user document addressing refuses a subject', () => {
@@ -118,6 +121,14 @@ async function command(args: string[], stdin = '') {
 }
 
 describe('scoped operator docs', () => {
+  test(`${PLATFORM_SLUG} doc get keeps the not-found message when an omitted subject has no match`, async () => {
+    const result = await command(['doc', 'get', 'absent-brief', '--scope', 'resume'])
+    expect(result.code).toBe(1)
+    expect(result.err).toBe(
+      `no resume doc "absent-brief"; use ${PLATFORM_SLUG} doc list --scope resume`,
+    )
+  })
+
   test(`${PLATFORM_SLUG} doc list keyword filters return the union as full documents`, async () => {
     await setDoc({
       scope: 'global',
@@ -154,7 +165,12 @@ describe('scoped operator docs', () => {
   })
 
   test('subject-only matches cannot consume the keyword result cap', async () => {
-    upsertProject({ name: 'needle-cap-project', path: '/w/needle-cap-project', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'needle-cap-project',
+      path: '/w/needle-cap-project',
+      settings: {},
+    })
     for (let index = 0; index < 50; index++) {
       await setDoc({
         scope: 'project',
@@ -249,8 +265,14 @@ describe('scoped operator docs', () => {
   })
 
   test(`${PLATFORM_SLUG} doc port exposes baseline, skip, ledger resolution, correction, and doctrine lifecycle`, async () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({
+      recordId: newRecordId(),
+      name: 'source-invented',
+      path: '/w/source',
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
       name: 'target-invented',
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },
@@ -261,7 +283,7 @@ describe('scoped operator docs', () => {
         .code,
     ).toBe(0)
     const pair = listPairs()[0]!
-    expect(baselineForPair(pair.id)?.source_commit).toBe('abc')
+    expect(baselineForPair(pair.record_id)?.source_commit).toBe('abc')
     expect(
       (
         await command([
@@ -276,7 +298,9 @@ describe('scoped operator docs', () => {
         ])
       ).code,
     ).toBe(0)
-    expect(listSkips(pair.id)).toMatchObject([{ candidate: 'old-feature', reason: 'superseded' }])
+    expect(listSkips(pair.record_id)).toMatchObject([
+      { candidate: 'old-feature', reason: 'superseded' },
+    ])
 
     const sources = JSON.stringify([
       { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
@@ -301,7 +325,7 @@ describe('scoped operator docs', () => {
       (await command(['port', 'ref', 'resolve', 'TGT-7', '--project', 'target-invented', '--json']))
         .code,
     ).toBe(0)
-    expect(ledgerRef(pair.target_project_id, 'TGT-7')).toMatchObject({
+    expect(ledgerRef(pair.target_project_record_id, 'TGT-7')).toMatchObject({
       task_key: 'TGT-7',
       resolved_at: expect.any(String),
     })
@@ -311,7 +335,7 @@ describe('scoped operator docs', () => {
       (await command(['port', 'ref', 'delete-error', 'TGT-7', '--project', 'target-invented']))
         .code,
     ).toBe(0)
-    expect(ledgerRef(pair.target_project_id, 'TGT-7')).toBeNull()
+    expect(ledgerRef(pair.target_project_record_id, 'TGT-7')).toBeNull()
 
     expect(
       (
@@ -327,7 +351,12 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test(`${PLATFORM_SLUG} doc port refuses unknown registered project names`, async () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'source-invented',
+      path: '/w/source',
+      settings: {},
+    })
     const unknown = await command(['port', 'baseline', 'show', 'source-invented', 'missing'])
     expect(unknown.code).toBe(1)
     expect(unknown.err).toContain('unknown project "missing"')
@@ -378,8 +407,14 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test('MCP port tools use registered names and preserve resolved provenance', async () => {
-    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({
+      recordId: newRecordId(),
+      name: 'source-invented',
+      path: '/w/source',
+      settings: {},
+    })
+    upsertProject({
+      recordId: newRecordId(),
       name: 'target-invented',
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },
@@ -469,7 +504,14 @@ describe('scoped operator docs', () => {
   })
 
   test(`${PLATFORM_SLUG} doc subjects --json lists project, agent and job names`, async () => {
-    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'known',
+      path: '/w/known',
+      stack: null,
+      canon: true,
+      settings: {},
+    })
     expect(docSubjects()).toEqual({
       project: ['known'],
       stack: [],
@@ -519,7 +561,9 @@ describe('scoped operator docs', () => {
       title: 'Lint me',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This was called legacy.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This was called legacy.', stored.record_id)
     const result = await command(['doc', 'lint', '--scope', 'global', '--json'])
     expect(result.code).toBe(1)
     expect(JSON.parse(result.out)).toEqual([
@@ -540,7 +584,9 @@ describe('scoped operator docs', () => {
       title: 'Lint warning',
       body: 'Current.',
     })
-    db().query('UPDATE doc SET body=? WHERE id=?').run('This is no longer required.', stored.id)
+    db()
+      .query('UPDATE doc SET body=? WHERE record_id=?')
+      .run('This is no longer required.', stored.record_id)
     const result = await command(['doc', 'lint', '--scope', 'global'])
     expect(result.code).toBe(0)
     expect(result.out).toContain('doc/history warning')
@@ -598,11 +644,12 @@ describe('scoped operator docs', () => {
       reason: 'second',
     })
     const rows = listDocRevisions('global', null, 'cli-history')
-    const newerId = rows[0]!.id
-    const originalId = rows[1]!.id
+    const newerId = rows[0]!.record_id
+    const originalId = rows[1]!.record_id
     expect(rows.map((row) => row.reason)).toEqual(['second', 'first'])
     expect(rows[0]).toMatchObject({
-      id: expect.any(Number),
+      number: expect.any(Number),
+      record_id: expect.any(String),
       op: 'set',
       author: expect.any(String),
       reason: 'second',

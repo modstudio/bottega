@@ -16,6 +16,7 @@ import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { confirmCount } from './hosted-tasks.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import {
   hostedUnavailableRemedy,
   hostedWriteMode,
@@ -36,10 +37,15 @@ import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
-import { projects } from './projects.ts'
+import { projects, type RegisteredProject } from './projects.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
-import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
-import { applyHostedTask } from './task-cache.ts'
+import {
+  attachLocalTaskEvidenceInTransaction,
+  createLocalTaskInTransaction,
+  duplicateCandidates,
+  type TaskRow,
+} from './task.ts'
+import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
@@ -50,6 +56,7 @@ export type NoteAnchor = {
   project: string
   files: { path: string; line: number; content: string }[]
   run_id: number | null
+  run_record_id?: string | null
   branch: string | null
   commit: string | null
   session_id: string | null
@@ -69,6 +76,7 @@ const noteAnchorSchema: z.ZodType<NoteAnchor> = z.object({
     }),
   ),
   run_id: z.number().nullable(),
+  run_record_id: z.string().uuid().nullable().optional(),
   branch: z.string().nullable(),
   commit: z.string().nullable(),
   session_id: z.string().nullable(),
@@ -154,9 +162,11 @@ function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): 
   }
 }
 
-function registeredProject(name: string): void {
-  if (!projects().some((candidate) => candidate.name === name))
+function registeredProject(name: string): RegisteredProject {
+  const project = projects().find((candidate) => candidate.name === name)
+  if (!project)
     throw new Error(`project '${name}' is not registered; run \`${PLATFORM_SLUG} project list\``)
+  return project
 }
 
 function writeMode(
@@ -168,7 +178,7 @@ function writeMode(
   const decision = projectWriteDecisionFor(
     project,
     readInstallBinding(),
-    hosted?.baseUrl ?? process.env.HUB_HOSTED_URL,
+    hosted?.baseUrl ?? resolveHostedUrl(),
   )
   if (decision.mode === 'refused') throw new Error(decision.reason)
   return decision.mode
@@ -266,13 +276,15 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
   if (!project) throw new Error(`cannot file note: no registered project contains ${cwd}`)
   const projectPath = projects().find((candidate) => candidate.name === project)?.path ?? cwd
   const files = deriveNoteFileAnchors(text, projectPath)
-  const run = Number(env.ORCH_RUN_ID ?? 0)
+  const runRecordId = env.ORCH_RUN_ID
+  const runNumber = Number(env.ORCH_RUN_NUMBER)
   return {
     id: newRecordId(),
     cwd,
     project,
     files,
-    run_id: Number.isSafeInteger(run) && run > 0 ? run : null,
+    run_id: Number.isSafeInteger(runNumber) && runNumber > 0 ? runNumber : null,
+    run_record_id: runRecordId && hasRecordIdShape(runRecordId) ? runRecordId.toLowerCase() : null,
     branch: git(cwd, 'branch', '--show-current') || null,
     commit: git(cwd, 'rev-parse', 'HEAD') || null,
     session_id: env.CLAUDE_CODE_SESSION_ID ?? env.CODEX_THREAD_ID ?? null,
@@ -544,7 +556,7 @@ export async function createNote(
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
   const anchor = identifiedAnchor(input.anchor ?? deriveNoteAnchor(text, input.cwd))
   const targetProject = input.project ?? anchor.project
-  registeredProject(targetProject)
+  const registered = registeredProject(targetProject)
   const candidates = noteCandidates(text, targetProject)
   const mode = writeMode(targetProject, options.hosted)
   if (input.sameAs) {
@@ -612,6 +624,7 @@ export async function createNote(
   const hosted = await hostedCreateNote(
     {
       project: targetProject,
+      projectId: registered.record_id,
       text,
       area: input.area?.trim() || null,
       anchor: JSON.stringify(anchor),
@@ -631,8 +644,6 @@ export async function promoteNote(
     throw new Error(`note ${note.label} is already promoted to ${note.promoted_task}`)
   const project = projects().find((candidate) => candidate.name === note.project)!
   const destination = taskCreationDestination(project)
-  if (options.existingTaskKey && destination !== 'tracker')
-    throw new Error('--task is valid only for a project that owns its tracker')
   if (destination === 'tracker' && !options.existingTaskKey)
     throw new Error(`project ${note.project} owns task creation in its tracker`)
   if (options.existingTaskKey) {
@@ -655,6 +666,27 @@ export async function promoteNote(
             'UPDATE note SET promoted_task=?, promoted_task_record_id=NULL, last_seen_at=? WHERE record_id=?',
           )
           .run(options.existingTaskKey!, nowIso(), row.record_id)
+      })
+      return getNote(note.record_id)
+    }
+    if (options.existingTaskKey) {
+      writeTransaction((conn) => {
+        const row = decode(noteRow(conn, note.record_id))
+        if (row.promoted_task)
+          throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
+        const at = nowIso()
+        const task = attachLocalTaskEvidenceInTransaction(
+          conn,
+          options.existingTaskKey!,
+          row.project,
+          promotionTaskInput(row).body,
+          at,
+        )
+        conn
+          .query(
+            'UPDATE note SET promoted_task=?, promoted_task_record_id=?, last_seen_at=? WHERE record_id=?',
+          )
+          .run(task.task_key, task.task_record_id, at, row.record_id)
       })
       return getNote(note.record_id)
     }
@@ -689,6 +721,7 @@ export async function promoteNote(
   const hosted = await hostedPromoteNote(note.record_id, options.existingTaskKey, hostedOptions)
   writeTransaction((conn) => {
     if (hosted.task) applyHostedTask(conn, hosted.task)
+    if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
     applyHostedNote(conn, hosted.note)
   })
   return getNote(note.record_id)
@@ -745,20 +778,20 @@ export type StaleResult = {
 }
 
 type StaleDeps = {
-  runExists(ids: number[]): Promise<Set<number>>
+  runExists(ids: string[]): Promise<Set<string>>
   git(cwd: string, ...args: string[]): string | null
   now(): Date
   hosted: NoteClientOptions
 }
 
-async function defaultRunExists(ids: number[]): Promise<Set<number>> {
+async function defaultRunExists(ids: string[]): Promise<Set<string>> {
   const rows = await readRunsById(ids)
-  return new Set(rows.flatMap((row) => ('unknown' in row ? [] : [row.id])))
+  return new Set(rows.flatMap((row) => ('unknown' in row ? [] : [row.record_id])))
 }
 
 function vanishedReason(
   note: NoteRow,
-  existingRuns: Set<number>,
+  existingRuns: Set<string>,
   runGit: StaleDeps['git'],
 ): string | null {
   const registered = projects().find((project) => project.name === note.project)
@@ -776,12 +809,14 @@ function vanishedAnchorReason(
   anchor: NoteAnchor,
   projectPath: string,
   trunk: string,
-  existingRuns: Set<number>,
+  existingRuns: Set<string>,
   runGit: StaleDeps['git'],
 ): string | null {
   const fileReason = vanishedFileReason(anchor)
   if (fileReason) return fileReason
-  if (anchor.run_id && !existingRuns.has(anchor.run_id)) return `run ${anchor.run_id} aged out`
+  if (anchor.run_record_id && !existingRuns.has(anchor.run_record_id)) {
+    return `run ${anchor.run_id ?? anchor.run_record_id} aged out`
+  }
   if (anchor.branch && anchor.branch !== trunk) {
     if (!runGit(projectPath, 'show-ref', '--verify', `refs/heads/${anchor.branch}`))
       return `branch ${anchor.branch} was deleted`
@@ -812,7 +847,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const runIds = [
     ...new Set(
       notes.flatMap((note) =>
-        note.anchors.flatMap((anchor) => (anchor.run_id ? [anchor.run_id] : [])),
+        note.anchors.flatMap((anchor) => (anchor.run_record_id ? [anchor.run_record_id] : [])),
       ),
     ),
   ]
@@ -832,7 +867,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     .all(cutoff)
     .filter((row) => row.stale_at !== null || markedIds.has(row.record_id))
   const deletedIds = deletedRows.map((row) => row.record_id)
-  const url = deps.hosted?.baseUrl ?? process.env.HUB_HOSTED_URL
+  const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
     throw new Error(
       `this install belongs to a hosted space; local writes are refused while hosting is unavailable. ${hostedUnavailableRemedy(url)}`,

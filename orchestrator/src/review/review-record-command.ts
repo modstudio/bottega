@@ -62,14 +62,14 @@ export function readProjectReview(
   group: ChangeGroup,
 ): { complete: boolean; rows: ReviewRecordRow[] } {
   const selectedReviews = reviewsForTriage(database, group).branchReviews
-  const selectedIds = new Set(selectedReviews.map(({ reviewId }) => reviewId))
+  const selectedIds = new Set(selectedReviews.map(({ reviewRecordId }) => reviewRecordId))
   const rows = database
     .query<
       {
-        review: number
-        finding: number | null
+        review: string
+        finding: string | null
         lens: string
-        run: number
+        run: string
         disposition: ReviewRecordRow['disposition']
         category: string | null
         severity: string | null
@@ -77,14 +77,14 @@ export function readProjectReview(
       },
       [string, string]
     >(
-      `SELECT r.id AS review,rf.id AS finding,rl.lens,rl.run_id AS run,rf.disposition,
+      `SELECT r.record_id AS review,rf.record_id AS finding,rl.lens,rl.run_record_id AS run,rf.disposition,
               rf.rejection_category AS category,
               rf.triaged_severity AS severity,rf.location
-         FROM review_lens rl JOIN run ON run.id=rl.run_id
-         JOIN review r ON r.id=rl.review_id
-         LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
-        WHERE run.repo=? AND run.branch=?
-        ORDER BY rl.id,rf.id`,
+         FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
+         JOIN review r ON r.record_id=rl.review_record_id
+         LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
+        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?) AND run.branch=?
+        ORDER BY run.started_at,rl.record_id,rf.ordinal`,
     )
     .all(group.project, group.branch)
     .filter(({ review }) => selectedIds.has(review))

@@ -36,7 +36,7 @@ export function registerLensCommands(
     )
   jsonOption(lens.command('show <lens>').description('show a review lens'))
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
       const argv = productArgv('lens', ['show', id], options)
       showLensCommand(argv, lensEmitter(argv, presentation))
     })
@@ -55,11 +55,15 @@ export function registerLensCommands(
     ),
   )
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
       const argv = productArgv('lens', ['set', id], options)
-      setLensCommand(argv, lensEmitter(argv, presentation))
+      await setLensCommand(argv, lensEmitter(argv, presentation))
     })
 
+  registerProfileCommands(lens, presentation)
+}
+
+function registerProfileCommands(lens: Command, presentation: { log(value: string): void }): void {
   const profile = lens
     .command('profile')
     .description('inspect and change review lens profiles')
@@ -72,7 +76,12 @@ export function registerLensCommands(
     .action(() => {
       throw new Error(`unknown: ${PLATFORM_SLUG} review lens profile. Try list | show | set`)
     })
-  jsonOption(profile.command('list [lens]').description('list review lens profiles'))
+  jsonOption(
+    profile
+      .command('list [lens]')
+      .description('list review lens profiles')
+      .option('--project <value>', 'use the project space catalogue'),
+  )
     .allowExcessArguments(false)
     .action((id, options) => {
       const argv = productArgv('lens', ['profile', 'list', ...(id ? [id] : [])], options)
@@ -83,7 +92,8 @@ export function registerLensCommands(
       .command('show <lens>')
       .description('show a review lens profile')
       .option('--axis <value>', 'select the profile axis')
-      .option('--name <value>', 'select the profile name'),
+      .option('--name <value>', 'select the profile name')
+      .option('--project <value>', 'use the project space catalogue'),
   )
     .allowExcessArguments(false)
     .action((id, options) => {
@@ -99,12 +109,13 @@ export function registerLensCommands(
         .option('--name <value>', 'set the profile name')
         .option('--body <value>', 'supply the profile body inline')
         .option('--body-file <value>', 'read the profile body from this file')
-        .option('--enabled <value>', 'enable or disable the profile'),
+        .option('--enabled <value>', 'enable or disable the profile')
+        .option('--project <value>', 'use the project space catalogue'),
     ),
   )
     .allowExcessArguments(false)
-    .action((id, options) => {
+    .action(async (id, options) => {
       const argv = productArgv('lens', ['profile', 'set', id], options)
-      setProfileCommand(argv, lensEmitter(argv, presentation))
+      await setProfileCommand(argv, lensEmitter(argv, presentation))
     })
 }

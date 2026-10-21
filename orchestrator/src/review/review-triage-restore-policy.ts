@@ -11,8 +11,8 @@ export const TRIAGE_RESTORE_SKIP_REASONS = {
 } as const
 
 export type TriageRestoreFinding = {
-  id: number
   reviewRecordId: string
+  displayHandle: string
   ordinal: number
   severity: string
   location: string
@@ -25,7 +25,6 @@ export type TriageRestoreSource = {
   outboxId: number
   recordId: string
   reviewRecordId: string
-  localId: number
   ordinal: number
   severity: string
   location: string
@@ -54,7 +53,6 @@ export function matchesTriageRestoreIdentity(
 ): boolean {
   const withheld = new Set(source.withheldFields)
   return (
-    source.localId === finding.id &&
     source.reviewRecordId === finding.reviewRecordId &&
     source.ordinal === finding.ordinal &&
     (withheld.has('severity') || source.severity === finding.severity) &&

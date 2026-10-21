@@ -1,13 +1,16 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { HostedApiUpgradeRequiredError } from '../record/outbox-held-contract.ts'
 import { quarantineOutboxRow } from '../record/outbox-quarantine.ts'
-import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
+import {
+  outboxConditions,
+  outboxQuarantineConditions,
+  outboxRetiredParentConditions,
+} from './monitor-outbox.ts'
 
 test('a quarantined outbox row is a clearing monitor condition', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,9,'score','record-9','{}','2026-09-28T00:00:00.000Z')`,
@@ -24,9 +27,39 @@ test('a quarantined outbox row is a clearing monitor condition', () => {
   database.close()
 })
 
+test('held outbox rows produce one upgrade condition per kind', () => {
+  const database = migratedTestDatabase()
+  const runReason = new HostedApiUpgradeRequiredError('run', ['futureRun']).message
+  const scoreReason = new HostedApiUpgradeRequiredError('score', ['futureScore']).message
+  database
+    .query(
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,last_error) VALUES
+       (?,7,'run','run-7','{}','2026-10-21T00:00:00.000Z',?),
+       (?,8,'run','run-8','{}','2026-10-21T00:01:00.000Z',?),
+       (?,9,'score','score-9','{}','2026-10-21T00:02:00.000Z',?)`,
+    )
+    .run(newRecordId(), runReason, newRecordId(), runReason, newRecordId(), scoreReason)
+  const conditions = outboxConditions(database, new Date('2026-10-21T00:10:00.000Z').getTime())
+  expect(conditions).toHaveLength(2)
+  expect(conditions).toEqual([
+    expect.objectContaining({
+      kind: 'outbox-held-for-upgrade',
+      subject: 'outbox-kind:run',
+      ageMs: 600_000,
+      detail: expect.stringContaining('2 run outbox row(s) held; oldest age 10m;'),
+    }),
+    expect.objectContaining({
+      kind: 'outbox-held-for-upgrade',
+      subject: 'outbox-kind:score',
+      ageMs: 480_000,
+      detail: expect.stringContaining('futureScore'),
+    }),
+  ])
+  database.close()
+})
+
 test('an active outbox row blocked by a retired parent is a clearing monitor condition', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
@@ -44,8 +77,7 @@ test('an active outbox row blocked by a retired parent is a clearing monitor con
 })
 
 test('a synced parent with a later retired snapshot does not raise the condition', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,synced_at,retired_at,retirement_reason) VALUES (?,7,'run','parent','{}','2026-09-28','2026-09-28',NULL,NULL),
@@ -58,8 +90,7 @@ test('a synced parent with a later retired snapshot does not raise the condition
 })
 
 test('a malformed retired lens payload is an explicit unreadable-parent condition', () => {
-  const database = new Database(':memory:')
-  applyMigrations(database)
+  const database = migratedTestDatabase()
   database
     .query(
       `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'review_lens','lens-parent','{','2026-09-28','2026-09-28','bad payload'),

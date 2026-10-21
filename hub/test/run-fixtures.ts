@@ -9,7 +9,8 @@ import { MIGRATIONS_TABLE } from '../src/migrations.ts'
 import { clearOrchCache } from '../src/serve.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
-const fixtureRecordId = (id: number) => `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
+export const fixtureRecordId = (id: number) =>
+  `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
 
 export function resetFixtureStore(assertSafe?: () => void) {
   refreshKeyPrefixes()
@@ -38,12 +39,13 @@ export function resetFixtureStore(assertSafe?: () => void) {
 
 export const questionFixture = (overrides: Record<string, unknown> = {}) => {
   const id = Number(overrides.id ?? 1)
-  const runId = Number(overrides.run_id ?? 9001)
+  const runNumber = Number(overrides.run_number ?? overrides.run_id ?? 9001)
+  const { run_id: _legacyRunId, ...fields } = overrides
   return {
     id,
     record_id: fixtureRecordId(id),
-    run_id: runId,
-    run_record_id: fixtureRecordId(runId),
+    run_number: runNumber,
+    run_record_id: fixtureRecordId(runNumber),
     asked_at: '2026-09-03T00:00:00.000Z',
     answered_at: null,
     asked_via: 'reply',
@@ -53,14 +55,17 @@ export const questionFixture = (overrides: Record<string, unknown> = {}) => {
     closed_at: null,
     close_reason: null,
     deliveries: [],
-    ...overrides,
+    ...fields,
   }
 }
 
 export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => {
+  const number = Number(overrides.number ?? overrides.id ?? 9001)
+  const { id: _id, number: _number, record_id: _recordId, ...fields } = overrides
   const fixture = {
-    id: 9001,
-    record_id: fixtureRecordId(Number(overrides.id ?? 9001)),
+    id: fixtureRecordId(number),
+    number,
+    record_id: fixtureRecordId(number),
     started_at: '2026-09-03T00:00:00.000Z',
     agent: 'grok',
     job: 'implement',
@@ -78,31 +83,39 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
     delivery: null,
     quality: null,
     questions: [] as Record<string, unknown>[],
-    ...overrides,
+    ...fields,
   }
   if (Array.isArray(fixture.questions)) {
     fixture.questions = fixture.questions.map((question) => {
       const value = question as Record<string, unknown>
       const questionId = Number(value.id)
-      const runId = Number(value.run_id)
+      const runNumber = Number(value.run_number ?? value.run_id)
+      const { run_id: _legacyRunId, ...questionFields } = value
       return {
         record_id: fixtureRecordId(questionId),
-        run_record_id: fixtureRecordId(runId),
+        run_number: runNumber,
+        run_record_id: fixtureRecordId(runNumber),
         asked_via: null,
         answerer_kind: null,
         answer_channel: null,
         overturned_at: null,
         closed_at: null,
         close_reason: null,
-        ...value,
+        ...questionFields,
         deliveries: Array.isArray(value.deliveries)
           ? value.deliveries.map((delivery) => {
               const item = delivery as Record<string, unknown>
-              const deliveryRunId = item.run_id === null ? null : Number(item.run_id)
+              const deliveryRunNumber =
+                (item.run_number ?? item.run_id) === null
+                  ? null
+                  : Number(item.run_number ?? item.run_id)
+              const { run_id: _legacyDeliveryRunId, ...deliveryFields } = item
               return {
                 question_record_id: fixtureRecordId(questionId),
-                run_record_id: deliveryRunId === null ? null : fixtureRecordId(deliveryRunId),
-                ...item,
+                run_number: deliveryRunNumber,
+                run_record_id:
+                  deliveryRunNumber === null ? null : fixtureRecordId(deliveryRunNumber),
+                ...deliveryFields,
               }
             })
           : [],
@@ -112,14 +125,29 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
   if (Array.isArray((fixture as Record<string, unknown>).turns)) {
     ;(fixture as Record<string, unknown>).turns = (
       (fixture as Record<string, unknown>).turns as Record<string, unknown>[]
-    ).map((turn) => ({ record_id: fixtureRecordId(Number(turn.id)), ...turn }))
+    ).map((turn) => {
+      const turnNumber = Number(turn.number ?? turn.id)
+      return {
+        ...turn,
+        id: fixtureRecordId(turnNumber),
+        number: turnNumber,
+        record_id: fixtureRecordId(turnNumber),
+      }
+    })
+  }
+  if (typeof (fixture as Record<string, unknown>).retry_of === 'number') {
+    ;(fixture as Record<string, unknown>).retry_record_id = fixtureRecordId(
+      (fixture as Record<string, unknown>).retry_of as number,
+    )
   }
   return fixture as unknown as OrchRun
 }
 
-export async function ingestStdout(stdout: string, rulings = '[]') {
+export async function ingestStdout(stdout: string, rulings = '[]', identities = '[]') {
   const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
-    stdout: new Blob([args.includes('ruling') ? rulings : stdout]),
+    stdout: new Blob([
+      args.includes('ruling') ? rulings : args.includes('identity-map') ? identities : stdout,
+    ]),
     stderr: new Blob(['']),
     exited: Promise.resolve(0),
   })) as unknown as typeof Bun.spawn)

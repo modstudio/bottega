@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import type { TaskRow } from './task.ts'
+import { UNATTRIBUTED } from './task-attribution.ts'
 import { closeThenPrune } from './task-close.ts'
 import { decideTaskClose } from './task-close-decision.ts'
 
@@ -53,7 +54,7 @@ describe('task close decision', () => {
 describe('task close claim release', () => {
   test('releases claims after close even when branches are kept', async () => {
     let released = ''
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
       close: async () => closedTask,
       releaseClaims: async (project, key) => {
         released = `${project}:${key}`
@@ -65,7 +66,7 @@ describe('task close claim release', () => {
   })
 
   test('surfaces a claim release error', async () => {
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
       close: async () => closedTask,
       releaseClaims: async () => {
         throw new Error('orch unavailable')
@@ -75,7 +76,7 @@ describe('task close claim release', () => {
   })
 
   test('returns the closed task when claim release fails', async () => {
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
       close: async () => closedTask,
       releaseClaims: async () => {
         throw new Error('release failed')

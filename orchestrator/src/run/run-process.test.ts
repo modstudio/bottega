@@ -4,6 +4,15 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
+test('repository workers receive test caps while inline workers do not', () => {
+  const defaults = childEnv(AGENTS.codex!, undefined, undefined, {}, true)
+  expect(defaults.ORCH_TEST_WORKERS).toBeDefined()
+  expect(defaults.VITEST_MAX_WORKERS).toBe(defaults.ORCH_TEST_WORKERS)
+  expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false)).not.toHaveProperty(
+    'ORCH_TEST_WORKERS',
+  )
+})
+
 test('worker context controls override inherited values only for grok', () => {
   const parentAgents = process.env.GROK_CLAUDE_AGENTS_ENABLED
   const parentHooks = process.env.GROK_CLAUDE_HOOKS_ENABLED
@@ -73,6 +82,16 @@ test('a Codex worker environment uses its chain-scoped CODEX_HOME', () => {
     childEnv(AGENTS.codex!, undefined, undefined, { CODEX_HOME: '/runs/sandbox-41/codex' }, false)
       .CODEX_HOME,
   ).toBe('/runs/sandbox-41/codex')
+})
+
+test('a worker receives UUID machine identity, a separate display number and its agent', () => {
+  const recordId = '42000000-0000-4000-8000-000000000000'
+  expect(childEnv(AGENTS.codex!, recordId, 'token', {}, false, 42)).toMatchObject({
+    ORCH_RUN_ID: recordId,
+    ORCH_RUN_NUMBER: '42',
+    ORCH_RUN_TOKEN: 'token',
+    ORCH_AGENT: AGENTS.codex!.name,
+  })
 })
 
 const FILED_DEFECT_BIRTH = 'Thu Oct  8 12:00:00 2026'
@@ -153,7 +172,7 @@ test('filed-defect terminate signals the vendor and leaves the shared coordinato
   const coordinator = 42402
   const vendor = 42922
   db()
-    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
     .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
   const signaled: number[] = []
   const result = terminateRunProcesses(id, [coordinator], {
@@ -207,7 +226,7 @@ test('filed-defect terminate leaves the row unreaped when the vendor stays alive
   const coordinator = 42402
   const vendor = 42922
   db()
-    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
     .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
   const result = terminateRunProcesses(id, [coordinator], {
     inventory: () => filedDefectInventory(coordinator, vendor),
@@ -230,7 +249,7 @@ test('filed-defect terminate signals nothing when vendor identity does not match
   const coordinator = 42402
   const vendor = 42922
   db()
-    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
     .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
   const signaled: number[] = []
   const result = terminateRunProcesses(id, [coordinator], {
@@ -264,7 +283,7 @@ test('a live vendor pid excluded as the coordinator is a mismatch, not gone', ()
   const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const coordinator = 42402
   db()
-    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
     .run(coordinator, coordinator, coordinator, FILED_DEFECT_BIRTH, id)
   const signaled: number[] = []
   const result = terminateRunProcesses(id, [coordinator], {
@@ -297,7 +316,7 @@ test('an own-group vendor leader receives a negative-pid signal', () => {
   const coordinator = 42402
   const vendor = 42922
   db()
-    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
     .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
   const groups: number[] = []
   terminateRunProcesses(id, [coordinator], {
@@ -340,7 +359,9 @@ test('a vendor in another group is not group-signaled with or without a coordina
   for (const inventory of inventories) {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
-      .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+      .query(
+        'UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?',
+      )
       .run(coordinator, vendor, sharedGroup, FILED_DEFECT_BIRTH, id)
     const groups: number[] = []
     terminateRunProcesses(id, [coordinator], {
@@ -364,7 +385,7 @@ test('a descendant that survives SIGTERM is SIGKILLed after the root dies', () =
   const vendor = 42922
   const child = 43000
   db()
-    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
     .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
   const killed: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
   const dead = new Set<number>()
@@ -402,7 +423,7 @@ test('a descendant that survives SIGKILL is still-alive', () => {
   const vendor = 42922
   const child = 43000
   db()
-    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
     .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
   const result = terminateRunProcesses(id, [coordinator], {
     inventory: () => ({

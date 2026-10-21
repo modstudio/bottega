@@ -47,48 +47,48 @@ import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from
 
 export type RunControlPresentation = {
   dur(ms: number | null | undefined): string
-  scoreHint(id: number, jobName: string, parent: number | null): string
+  scoreHint(id: string, jobName: string, parent: string | null): string
   argvResumeLimit(agentName: string): number | undefined
-  printRunId(id: number): void
+  printRunId(id: string): void
 }
 
 export function continuationInstructionsForFreshRetry(
   writesRepo: boolean,
-  requestedId: number,
-  rootId: number,
+  requestedId: string,
+  rootId: string,
 ): ContinuationInstruction[] {
   if (!writesRepo || requestedId !== rootId) return []
   const turns = db()
     .query(
-      `SELECT id, started_at
+      `SELECT record_id, started_at
          FROM run
-        WHERE parent_run_id = ?
-        ORDER BY turn, id`,
+        WHERE parent_run_record_id = ?
+        ORDER BY turn, number`,
     )
-    .all(rootId) as { id: number; started_at: string }[]
+    .all(rootId) as { record_id: string; started_at: string }[]
   const audits = db()
     .query(
-      `SELECT rowid, turn_id, action, at, reason
+      `SELECT rowid, turn_run_record_id, action, at, reason
          FROM run_mutation_audit
-        WHERE root_id = ? AND action IN ('answer', 'continue', 'retry')
+        WHERE root_run_record_id = ? AND action IN ('answer', 'continue', 'retry')
         ORDER BY at, rowid`,
     )
     .all(rootId) as {
     rowid: number
-    turn_id: number | null
+    turn_run_record_id: string | null
     action: 'answer' | 'continue' | 'retry'
     at: string
     reason: string | null
   }[]
   const claimed = new Set<number>()
   const attributed: {
-    id: number
+    id: string
     rowid: number
     action: 'answer' | 'continue' | 'retry'
     at: string
     reason: string | null
   }[] = []
-  const refuse = (turnId: number): never => {
+  const refuse = (turnId: string): never => {
     throw new Error(
       `run ${rootId} continuation turn ${turnId} has no recoverable continue instructions. ` +
         `Re-send the instructions with ${PLATFORM_SLUG} run continue ${rootId} --file <spec>, ` +
@@ -96,7 +96,7 @@ export function continuationInstructionsForFreshRetry(
     )
   }
   for (const turn of turns) {
-    const identified = audits.filter((audit) => audit.turn_id === turn.id)
+    const identified = audits.filter((audit) => audit.turn_run_record_id === turn.record_id)
     const identifiedRetries = identified.filter((audit) => audit.action === 'retry')
     const identifiedAnswers = identified.filter((audit) => audit.action === 'answer')
     const identifiedContinues = identified.filter((audit) => audit.action === 'continue')
@@ -105,22 +105,22 @@ export function continuationInstructionsForFreshRetry(
       (!identifiedRetries.length && identifiedAnswers.length > 1) ||
       (!identifiedRetries.length && !identifiedAnswers.length && identifiedContinues.length > 1)
     ) {
-      refuse(turn.id)
+      refuse(turn.record_id)
     }
     let audit = identifiedRetries[0] ?? identifiedAnswers[0] ?? identifiedContinues[0]
     if (!audit) {
       const startedAt = Date.parse(turn.started_at)
       const candidates = audits.filter(
         (candidate) =>
-          candidate.turn_id === null &&
+          candidate.turn_run_record_id === null &&
           !claimed.has(candidate.rowid) &&
           Math.abs(Date.parse(candidate.at) - startedAt) <= 10_000,
       )
-      if (candidates.length !== 1) refuse(turn.id)
+      if (candidates.length !== 1) refuse(turn.record_id)
       audit = candidates[0]!
     }
     claimed.add(audit.rowid)
-    attributed.push({ id: turn.id, ...audit })
+    attributed.push({ id: turn.record_id, ...audit })
   }
   return attributed
     .sort((left, right) => left.at.localeCompare(right.at) || left.rowid - right.rowid)
@@ -143,25 +143,25 @@ function runEvidenceNote(row: { evidence_excluded: string | null }): string {
  * the work. Neither holds it any more.
  */
 export async function follow(
-  id: number,
+  id: string,
   quiet: boolean,
   exitOnFailure = true,
   presentation: RunControlPresentation,
 ): Promise<string> {
   const deadline = Date.now() + RUN_FOLLOW_TIMEOUT_MS
   const q = db().query(
-    `SELECT id, status, agent, job, parent_run_id, latency_ms, vendor_tokens,
+    `SELECT record_id, status, agent, job, parent_run_record_id, latency_ms, vendor_tokens,
             output_path, error, route_reason, evidence_excluded
-       FROM run WHERE id = ?`,
+       FROM run WHERE record_id = ?`,
   )
   for (;;) {
     const chain = resolveFailover(db(), id)
     const row = q.get(chain.finalId) as {
-      id: number
+      record_id: string
       status: string
       agent: string
       job: string
-      parent_run_id: number | null
+      parent_run_record_id: string | null
       latency_ms: number | null
       vendor_tokens: number | null
       output_path: string | null
@@ -188,29 +188,32 @@ export async function follow(
       if (row.status === 'asking') {
         const open = db()
           .query(
-            `SELECT q.question FROM question q JOIN run r ON r.id = q.run_id
-            WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}
-            ORDER BY q.id`,
+            `SELECT q.question FROM question q JOIN run r ON r.record_id = q.run_record_id
+            WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
+            ORDER BY q.number`,
           )
-          .all(row.parent_run_id ?? chain.finalId, row.parent_run_id ?? chain.finalId) as {
+          .all(
+            row.parent_run_record_id ?? chain.finalId,
+            row.parent_run_record_id ?? chain.finalId,
+          ) as {
           question: string
         }[]
         console.error(
-          `\n— run ${row.id} · ${row.agent} · stopped to ask` +
+          `\n— run ${row.record_id} · ${row.agent} · stopped to ask` +
             (row.latency_ms ? ` after ${presentation.dur(row.latency_ms)}` : '') +
             '\n' +
             open.map((q) => `  · ${q.question}`).join('\n') +
             `\n\n  ${outcome.line}` +
             `\n  ${PLATFORM_SLUG} question inbox              the questions in full` +
-            `\n  ${PLATFORM_SLUG} question answer ${row.parent_run_id ?? chain.finalId} ...   rule, and it resumes where it stopped` +
-            `\n  ${PLATFORM_SLUG} run diff ${row.parent_run_id ?? chain.finalId}          what it changed before it asked`,
+            `\n  ${PLATFORM_SLUG} question answer ${row.parent_run_record_id ?? chain.finalId} ...   rule, and it resumes where it stopped` +
+            `\n  ${PLATFORM_SLUG} run diff ${row.parent_run_record_id ?? chain.finalId}          what it changed before it asked`,
         )
         return row.status
       }
       if (!outcome.ok) {
         if (exitOnFailure) {
           console.error(
-            `\n— run ${row.id} · ${row.agent} · ${row.status}: ${row.error ?? 'no output'}`,
+            `\n— run ${row.record_id} · ${row.agent} · ${row.status}: ${row.error ?? 'no output'}`,
           )
           process.exit(1)
         }
@@ -218,13 +221,13 @@ export async function follow(
       }
       if (quiet) return row.status
       console.error(
-        `\n— run ${row.id} · ${row.agent}` +
+        `\n— run ${row.record_id} · ${row.agent}` +
           (row.route_reason ? ` (${row.route_reason})` : '') +
           ` · ${presentation.dur(row.latency_ms ?? 0)}` +
           (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
           okOutcomeNote(row) +
-          `\n  score it:  ${presentation.scoreHint(chain.finalId, row.job, row.parent_run_id)}` +
-          branchNote(db(), row.id) +
+          `\n  score it:  ${presentation.scoreHint(chain.finalId, row.job, row.parent_run_record_id)}` +
+          branchNote(db(), row.record_id) +
           runEvidenceNote(row),
       )
       return row.status
@@ -239,7 +242,7 @@ export async function follow(
       process.exit(2)
     }
     const observed = reapStale()
-    if (Array.isArray(observed) && observed.some((dead) => dead.id === chain.finalId)) {
+    if (Array.isArray(observed) && observed.some((dead) => dead.record_id === chain.finalId)) {
       console.error(
         `run ${chain.finalId}: process gone, not terminalised (read-only linked worktree)`,
       )
@@ -250,19 +253,21 @@ export async function follow(
   }
 }
 
-export function refuseEscapedChain(id: number): void {
+export function refuseEscapedChain(id: string): void {
   const root = db()
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(id) as { root_id: number } | null
+    .query(
+      'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
+    )
+    .get(id) as { root_record_id: string } | null
   const rows = root
     ? (db()
         .query(
-          `SELECT id, failure_kind, pre_confinement FROM run
-      WHERE (id=? OR parent_run_id=?) AND failure_kind IN ('escaped','confinement_unverified')
-      ORDER BY id DESC`,
+          `SELECT record_id, failure_kind, pre_confinement FROM run
+      WHERE (record_id=? OR parent_run_record_id=?) AND failure_kind IN ('escaped','confinement_unverified')
+      ORDER BY number DESC`,
         )
-        .all(root.root_id, root.root_id) as {
-        id: number
+        .all(root.root_record_id, root.root_record_id) as {
+        record_id: string
         failure_kind: string
         pre_confinement: string | null
       }[])
@@ -280,7 +285,7 @@ export function refuseEscapedChain(id: number): void {
 }
 
 export type ChainTurn = {
-  id: number
+  record_id: string
   agent: string
   vendor_session: string | null
   turn: number
@@ -298,7 +303,7 @@ export type ChainTurn = {
  * did start. Numbering counts every row, so a turn number never repeats.
  */
 export function continuationTurn(
-  rootId: number,
+  rootId: string,
   chain: readonly ChainTurn[],
 ): { latest: ChainTurn; nextTurn: number } {
   const started = chain.filter((turn) => turn.agent !== '(pending)')
@@ -345,11 +350,11 @@ export function resumeLaunchFromStored(row: StoredResumeLaunch): ResumeLaunchOpt
 }
 
 /** Read the root's launch row and return the detach options a resumed turn inherits. */
-export function resumeLaunchForRoot(rootId: number): ResumeLaunchOptions {
+export function resumeLaunchForRoot(rootId: string): ResumeLaunchOptions {
   const row = db()
     .query(
       `SELECT launch_seed, launch_key, launch_base, base_commit, no_failover, mcp, mcp_error, lens
-       FROM run WHERE id=?`,
+       FROM run WHERE record_id=?`,
     )
     .get(rootId) as StoredResumeLaunch | null
   if (!row) throw new Error(`no run ${rootId}`)
@@ -357,11 +362,15 @@ export function resumeLaunchForRoot(rootId: number): ResumeLaunchOptions {
 }
 
 function continuationTree(
-  id: number,
+  id: string,
   row: { branch_kept: string | null; branch_kept_tip: string | null },
   latest: ChainTurn,
   project: Project | null,
 ) {
+  const runRecordId = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(id)?.record_id
+  if (!runRecordId) throw new Error(`no run ${id}`)
   const latestBranchTip =
     latest.branch && project
       ? gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${latest.branch}^{commit}`)
@@ -400,7 +409,7 @@ function continuationTree(
             project.path,
             'rev-parse',
             '--verify',
-            `refs/orch/retained/${id}^{commit}`,
+            `refs/orch/retained/${runRecordId}^{commit}`,
           ),
           recordedTip: row.branch_kept_tip,
         })
@@ -441,7 +450,7 @@ function inheritedResumeWorktree(
 }
 
 export function refuseHeldContinuationBranch(
-  id: number,
+  id: string,
   projectPath: string | null,
   recordedTreePath: string | null,
   plan: ResumeTreePlan | null,
@@ -481,7 +490,7 @@ function recreatedTreePlan(
 }
 
 function recordContinuationTreeSource(
-  childId: number,
+  childId: string,
   branchSource: ReturnType<typeof continuationBranchPlan>['source'],
   treePlan: ResumeTreePlan | null,
 ): void {
@@ -501,27 +510,31 @@ function producedContinuationMessage(
   return produceMessage ? produceMessage() : message
 }
 
-function openQuestionContinueRemedy(id: number, n: number): string {
+function openQuestionContinueRemedy(id: string, n: number): string {
   return `run ${id} is waiting on ${n} question(s): ${PLATFORM_SLUG} question answer ${id} ...`
 }
 
 /** Resume a root run through the one path shared by `continue` and writing retries. */
+function runningTurnRefusal(id: string, running: { record_id: string; turn: number }): string {
+  return `run ${id} already has running turn ${running.record_id} (turn ${running.turn})`
+}
+
 export async function continueRun(
-  id: number,
+  id: string,
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
   produceMessage?: () => string | undefined,
-): Promise<{ childId: number; job: string }> {
+): Promise<{ childId: string; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(
-      `SELECT id, job, parent_run_id, status, cwd, repo, base_commit,
-              branch_kept, branch_kept_tip FROM run WHERE id = ?`,
+      `SELECT record_id, job, parent_run_record_id, status, cwd, repo, base_commit,
+              branch_kept, branch_kept_tip FROM run WHERE record_id = ?`,
     )
     .get(id) as {
-    id: number
+    record_id: string
     job: string
-    parent_run_id: number | null
+    parent_run_record_id: string | null
     status: string
     cwd: string | null
     repo: string | null
@@ -531,15 +544,15 @@ export async function continueRun(
   } | null
   if (!row) throw new Error(`no run ${id}`)
   refuseEscapedChain(id)
-  if (row.parent_run_id) {
-    throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
+  if (row.parent_run_record_id) {
+    throw new Error(`run ${id} is a turn of run ${row.parent_run_record_id}; continue that one`)
   }
   if (row.status === 'stale') {
     throw new Error(`run ${id} is ${row.status} and cannot be continued`)
   }
   const recordedReview = db()
-    .query('SELECT review_id FROM review_lens WHERE run_id=?')
-    .get(row.id) as { review_id: number } | null
+    .query('SELECT review_record_id FROM review_lens WHERE run_record_id=?')
+    .get(row.record_id) as { review_record_id: string } | null
   if (recordedReview) {
     throw new Error(
       `run ${id} has a recorded review and cannot be continued\n` +
@@ -549,18 +562,16 @@ export async function continueRun(
   }
   const running = db()
     .query(
-      `SELECT id, turn FROM run
-      WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-      ORDER BY turn, id LIMIT 1`,
+      `SELECT record_id, turn FROM run
+      WHERE (record_id = ? OR parent_run_record_id = ?) AND status = 'running'
+      ORDER BY turn, number LIMIT 1`,
     )
-    .get(id, id) as { id: number; turn: number } | null
-  if (running) {
-    throw new Error(`run ${id} already has running turn ${running.id} (turn ${running.turn})`)
-  }
+    .get(id, id) as { record_id: string; turn: number } | null
+  if (running) throw new Error(runningTurnRefusal(id, running))
   const open = db()
     .query(
-      `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-      WHERE (r.id = ? OR r.parent_run_id = ?) AND ${questionOpenSql('q')}`,
+      `SELECT COUNT(*) n FROM question q JOIN run r ON r.record_id = q.run_record_id
+      WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}`,
     )
     .get(id, id) as { n: number }
   // A worker waiting on a ruling must be RULED ON, not talked past. Continuing
@@ -573,8 +584,8 @@ export async function continueRun(
     id,
     db()
       .query(
-        `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
-         FROM run WHERE id = ? OR parent_run_id = ?`,
+        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+         FROM run WHERE record_id = ? OR parent_run_record_id = ?`,
       )
       .all(id, id) as ChainTurn[],
   )
@@ -608,13 +619,13 @@ export async function continueRun(
       ? latest
       : (db()
           .query(
-            `SELECT id, agent, vendor_session, turn
-           FROM run WHERE (id = ? OR parent_run_id = ?)
+            `SELECT record_id, agent, vendor_session, turn
+           FROM run WHERE (record_id = ? OR parent_run_record_id = ?)
              AND agent <> '(pending)' AND vendor_session IS NOT NULL
           ORDER BY turn DESC LIMIT 1`,
           )
           .get(id, id) as {
-          id: number
+          record_id: string
           agent: string
           vendor_session: string
           turn: number
@@ -624,8 +635,8 @@ export async function continueRun(
   }
   if (!checkpointContext && !latest.vendor_session) {
     console.error(
-      `run ${id}: newest turn ${latest.id} recorded no session id; ` +
-        `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.id} (turn ${sessionFrom!.turn})`,
+      `run ${id}: newest turn ${latest.record_id} recorded no session id; ` +
+        `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
     )
   }
   const readerBase = latest.base_commit ?? row.base_commit
@@ -642,7 +653,7 @@ export async function continueRun(
   })
   let prompt: string
   if (checkpointContext) {
-    const rootPrompt = db().query('SELECT prompt_path FROM run WHERE id=?').get(id) as {
+    const rootPrompt = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(id) as {
       prompt_path: string | null
     }
     if (!rootPrompt.prompt_path || !existsSync(rootPrompt.prompt_path)) {
@@ -682,7 +693,7 @@ export async function continueRun(
     authority = reauthorizeRunMutation(authority, 'continue')
     const adopted = adoptRunMutation(authority, 'continue')
     // Stop preserves the artifact specifically so this transition can reopen it.
-    db().query("UPDATE run SET status='failed' WHERE id=? AND status='stopped'").run(id)
+    db().query("UPDATE run SET status='failed' WHERE record_id=? AND status='stopped'").run(id)
     return adopted
   })
   const childId = await detach(row.job, prompt, {
@@ -708,7 +719,7 @@ export async function continueRun(
 }
 
 export async function reportContinuedRun(
-  childId: number,
+  childId: string,
   jobName: string,
   flags: { detach: boolean; follow: boolean; quiet: boolean },
   presentation: RunControlPresentation,

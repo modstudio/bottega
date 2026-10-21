@@ -15,11 +15,11 @@ import {
 import { postNotice } from './board-service.ts'
 
 const row = ({
-  id,
+  recordId,
   messageId,
   ...input
-}: Partial<BoardReachRow> & Pick<BoardReachRow, 'id' | 'messageId'>): BoardReachRow => ({
-  id,
+}: Partial<BoardReachRow> & Pick<BoardReachRow, 'recordId' | 'messageId'>): BoardReachRow => ({
+  recordId,
   messageSource: 'local',
   messageId,
   readerSession: 'reader',
@@ -39,28 +39,33 @@ const row = ({
 
 test('counts project concern, unqualified and older pushes, and stop acknowledgement weight', () => {
   const result = countBoardReach([
-    row({ id: 1, messageId: 'one' }),
+    row({ recordId: newRecordId(), messageId: 'one' }),
     row({
-      id: 2,
+      recordId: newRecordId(),
       messageId: 'one',
       readerProject: 'beta',
       concern: 'not-concerned',
     }),
-    row({ id: 3, messageId: 'unqualified', audience: 'architects', concern: 'unqualified' }),
     row({
-      id: 4,
+      recordId: newRecordId(),
+      messageId: 'unqualified',
+      audience: 'architects',
+      concern: 'unqualified',
+    }),
+    row({
+      recordId: newRecordId(),
       messageId: 'old',
       postingTiming: 'before-session',
       postedAt: '2026-10-13T10:00:00.000Z',
     }),
     row({
-      id: 5,
+      recordId: newRecordId(),
       messageId: 'blocking-info',
       deliveryPoint: 'stop',
       blockedStop: true,
     }),
     row({
-      id: 6,
+      recordId: newRecordId(),
       messageId: 'blocking-ack',
       deliveryPoint: 'stop',
       blockedStop: true,
@@ -105,12 +110,22 @@ test('counts project concern, unqualified and older pushes, and stop acknowledge
   })
   expect(
     countBoardReach([
-      row({ id: 1, messageId: 'info', blockedStop: true, acknowledgementRequired: false }),
+      row({
+        recordId: newRecordId(),
+        messageId: 'info',
+        blockedStop: true,
+        acknowledgementRequired: false,
+      }),
     ]).stopsBlockedWithoutAcknowledgement,
   ).toBe(1)
   expect(
     countBoardReach([
-      row({ id: 1, messageId: 'ack', blockedStop: true, acknowledgementRequired: true }),
+      row({
+        recordId: newRecordId(),
+        messageId: 'ack',
+        blockedStop: true,
+        acknowledgementRequired: true,
+      }),
     ]).stopsBlockedWithoutAcknowledgement,
   ).toBe(0)
 })
@@ -153,7 +168,7 @@ test('an empty reach window has no pushes or worst messages', () => {
 test('an unqualified message reports every way its pushes failed to show concern', () => {
   const result = countBoardReach([
     row({
-      id: 1,
+      recordId: newRecordId(),
       messageId: 'plain-architects',
       audience: 'architects',
       readerProject: 'beta',
@@ -161,7 +176,7 @@ test('an unqualified message reports every way its pushes failed to show concern
       postingTiming: 'before-session',
     }),
     row({
-      id: 2,
+      recordId: newRecordId(),
       messageId: 'plain-architects',
       audience: 'architects',
       readerProject: 'alpha',
@@ -193,8 +208,8 @@ test('rendering identifies a removed message by id alone', async () => {
   const session = 'removed-message-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test','alpha','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test','alpha',(SELECT record_id FROM project WHERE name='alpha'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -204,17 +219,17 @@ test('rendering identifies a removed message by id alone', async () => {
   )
   await markBoardDeliveryDelivered({
     session,
-    ids: [String(posted.id)],
+    ids: [String(posted.number)],
     emissionId: 'removed-emission',
     deliveryPoint: 'after-tool-call',
     clock: clock + 1,
   })
   expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
-    `${posted.id} — Soon gone [architects:all]`,
+    `${posted.recordId} — Soon gone [architects:all]`,
   )
-  db().query('DELETE FROM board_message WHERE id=?').run(posted.id)
+  db().query('DELETE FROM board_message WHERE record_id=?').run(posted.recordId)
   expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
-    `${posted.id} [architects:all]: 1 not shown to concern`,
+    `${posted.recordId} [architects:all]: 1 not shown to concern`,
   )
 })
 
@@ -254,8 +269,8 @@ test('a reach recording failure does not prevent delivery stamping', async () =>
   const session = 'recording-failure-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','reach-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','reach-project',(SELECT record_id FROM project WHERE name='reach-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -268,7 +283,7 @@ test('a reach recording failure does not prevent delivery stamping', async () =>
     BEGIN SELECT RAISE(ABORT, 'injected reach recorder failure'); END`)
   await markBoardDeliveryDelivered({
     session,
-    ids: [String(posted.id)],
+    ids: [String(posted.number)],
     emissionId: 'failed-emission',
     deliveryPoint: 'after-tool-call',
     clock: clock + 1,
@@ -276,8 +291,10 @@ test('a reach recording failure does not prevent delivery stamping', async () =>
 
   expect(
     db()
-      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(posted.id, session),
+      .query(
+        'SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(posted.recordId, session),
   ).toEqual({ delivered_at: new Date(clock + 1).toISOString() })
   expect(db().query('SELECT COUNT(*) count FROM board_reach_recording_failure').get()).toEqual({
     count: 1,
@@ -289,8 +306,8 @@ test('delivery records its point and the reader project in the reach window', as
   const session = 'recorded-reach-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','reach-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','reach-project',(SELECT record_id FROM project WHERE name='reach-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -306,7 +323,7 @@ test('delivery records its point and the reader project in the reach window', as
 
   await markBoardDeliveryDelivered({
     session,
-    ids: [String(posted.id)],
+    ids: [String(posted.number)],
     emissionId: 'measured-emission',
     deliveryPoint: 'stop',
     blockedStop: true,
@@ -314,7 +331,7 @@ test('delivery records its point and the reader project in the reach window', as
   })
 
   const measured = boardReachReport(1, clock + 2, db()).rows.find(
-    (delivery) => delivery.messageId === String(posted.id),
+    (delivery) => delivery.messageId === String(posted.recordId),
   )
   expect(measured).toMatchObject({
     readerSession: session,
@@ -334,8 +351,8 @@ test('an emission retry records once while a later reminder records twice', asyn
   const session = 'emission-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude-code','architect','test','alpha','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test','alpha',(SELECT record_id FROM project WHERE name='alpha'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
@@ -352,7 +369,7 @@ test('an emission retry records once while a later reminder records twice', asyn
   const stamp = (emissionId: string, at: number) =>
     markBoardDeliveryDelivered({
       session,
-      ids: [String(posted.id)],
+      ids: [String(posted.number)],
       emissionId,
       deliveryPoint: 'after-tool-call',
       clock: at,

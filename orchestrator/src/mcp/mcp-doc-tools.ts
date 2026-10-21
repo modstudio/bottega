@@ -14,6 +14,8 @@ import {
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
+import { db } from '../database/db.ts'
+import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
 import {
   consumeDoc,
@@ -117,6 +119,27 @@ async function docToolOwner(user: boolean | undefined, subject: string | null | 
   return user ? await signedInDocOwner() : null
 }
 
+function registerDocRevisionTool(server: McpServer): void {
+  server.registerTool(
+    'get_doc_revision',
+    {
+      description: 'Get one operator document revision, including its body.',
+      inputSchema: z.object({
+        id: z.union([z.number().int().positive(), z.string().uuid()]),
+        user: z.boolean().optional(),
+      }),
+    },
+    async ({ id, user }) => {
+      const revision = getDocRevision(
+        resolveDocRevisionIdentifier(db(), id),
+        user ? await signedInDocOwner() : null,
+      )
+      if (!revision) throw new Error(`no doc revision ${id}`)
+      return text(revision)
+    },
+  )
+}
+
 export function registerDocTools(
   server: McpServer,
   ports: {
@@ -199,9 +222,9 @@ export function registerDocTools(
       if (!user && !scope) throw new Error('scope is required unless user is true')
       const resolvedScope = user ? 'canon' : scope!
       const doc = audience
-        ? getDocForAudience(resolvedScope, user ? null : (subject ?? null), slug, audience, owner)
-        : getDoc(resolvedScope, user ? null : (subject ?? null), slug, owner)
-      if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
+        ? getDocForAudience(resolvedScope, user ? null : subject, slug, audience, owner)
+        : getDoc(resolvedScope, user ? null : subject, slug, owner)
+      if (!doc) throw new Error(`no ${resolvedScope} doc "${slug}"`)
       return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },
   )
@@ -410,16 +433,5 @@ export function registerDocTools(
     },
   )
 
-  server.registerTool(
-    'get_doc_revision',
-    {
-      description: 'Get one operator document revision, including its body.',
-      inputSchema: z.object({ id: z.number().int().positive(), user: z.boolean().optional() }),
-    },
-    async ({ id, user }) => {
-      const revision = getDocRevision(id, user ? await signedInDocOwner() : null)
-      if (!revision) throw new Error(`no doc revision ${id}`)
-      return text(revision)
-    },
-  )
+  registerDocRevisionTool(server)
 }

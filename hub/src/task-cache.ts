@@ -17,6 +17,31 @@ type HostedChangeRow =
   | HostedChanges['documents'][number]
   | HostedChanges['statusEvents'][number]
 
+type HostedTaskChild = Exclude<HostedChangeRow, HostedChanges['tasks'][number]>
+
+export function childTaskRecordId(
+  conn: Database,
+  row: { task_id?: string | null; task_key: string; project_name: string },
+) {
+  if (row.task_id) {
+    return (
+      conn
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
+        .get(row.task_id)?.record_id ?? null
+    )
+  }
+  return taskRecordIdFor(conn, row.task_key, row.project_name)
+}
+
+function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskChild) {
+  const taskRecordId = childTaskRecordId(conn, row)
+  if (!taskRecordId)
+    throw new Error(
+      `live task ${kind} ${row.id} for task ${row.task_id ?? row.task_key} has no parent record id`,
+    )
+  return taskRecordId
+}
+
 export function reconcileParentRecordIds(conn: Database) {
   for (const relationship of taskIdentityRelationships) {
     if (relationship.table !== 'task') continue
@@ -57,7 +82,8 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       ? stored
       : incoming
   conn
-    .query(`INSERT INTO task
+    .query(
+      `INSERT INTO task
       (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
        closed_at,updated_at,source,first_seen,last_seen,next_document_number)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
@@ -68,7 +94,8 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,
       closed_at=excluded.closed_at,updated_at=excluded.updated_at,source=excluded.source,
       first_seen=excluded.first_seen,last_seen=excluded.last_seen,
-      next_document_number=MAX(task.next_document_number,excluded.next_document_number)`)
+      next_document_number=MAX(task.next_document_number,excluded.next_document_number)`,
+    )
     .run(
       row.id,
       row.key,
@@ -91,23 +118,46 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     )
 }
 
-function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
-  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  if (row.deleted_at) {
-    conn.query(`DELETE FROM task_comment WHERE record_id=?`).run(row.id)
-    return
-  }
+export function applyHostedTaskComment(conn: Database, row: HostedChanges['comments'][number]) {
+  const taskRecordId = requireChildTaskRecordId(conn, 'comment', row)
   const updated = conn
     .query(
-      `UPDATE task_comment SET task_key=?,task_record_id=?,body=?,created_at=? WHERE record_id=?`,
+      `UPDATE task_comment SET task_key=?,task_record_id=?,body=?,created_at=?,updated_at=?,deleted_at=?,
+       actor_user_id=COALESCE(?,actor_user_id),actor_name=COALESCE(?,actor_name),
+       agent=COALESCE(?,agent),run_id=COALESCE(?,run_id) WHERE record_id=?`,
     )
-    .run(row.task_key, taskRecordId, row.body, row.created_at, row.id)
+    .run(
+      row.task_key,
+      taskRecordId,
+      row.body,
+      row.created_at,
+      row.updated_at,
+      row.deleted_at,
+      row.actor_user_id ?? null,
+      row.actor_name ?? null,
+      row.agent ?? null,
+      row.run_id ?? null,
+      row.id,
+    )
   if (!updated.changes)
     conn
       .query(
-        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
+        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at,updated_at,deleted_at,
+         actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(row.id, row.task_key, taskRecordId, row.body, row.created_at)
+      .run(
+        row.id,
+        row.task_key,
+        taskRecordId,
+        row.body,
+        row.created_at,
+        row.updated_at,
+        row.deleted_at,
+        row.actor_user_id ?? null,
+        row.actor_name ?? null,
+        row.agent ?? null,
+        row.run_id ?? null,
+      )
 }
 
 function applyDocument(conn: Database, row: HostedChanges['documents'][number]) {
@@ -115,8 +165,7 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
     conn.query(`DELETE FROM task_document WHERE record_id=?`).run(row.id)
     return
   }
-  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  if (!taskRecordId) throw new Error(`no task ${row.task_key} in project ${row.project_name}`)
+  const taskRecordId = requireChildTaskRecordId(conn, 'document', row)
   if (row.number === null)
     throw new Error(`live task document ${row.id} for task ${row.task_key} has no number`)
   const collision = conn
@@ -203,15 +252,40 @@ function writeStatusEvent(
 ) {
   const updated = conn
     .query(
-      `UPDATE task_status_event SET task_key=?,task_record_id=COALESCE(?,task_record_id),at=?,from_status=?,to_status=? WHERE record_id=?`,
+      `UPDATE task_status_event SET task_key=?,task_record_id=COALESCE(?,task_record_id),at=?,from_status=?,to_status=?,
+       actor_user_id=COALESCE(?,actor_user_id),actor_name=COALESCE(?,actor_name),
+       agent=COALESCE(?,agent),run_id=COALESCE(?,run_id) WHERE record_id=?`,
     )
-    .run(row.task_key, taskRecordId, row.at, row.from_status, row.to_status, row.id)
+    .run(
+      row.task_key,
+      taskRecordId,
+      row.at,
+      row.from_status,
+      row.to_status,
+      row.actor_user_id ?? null,
+      row.actor_name ?? null,
+      row.agent ?? null,
+      row.run_id ?? null,
+      row.id,
+    )
   if (!updated.changes)
     conn
       .query(
-        `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status) VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status,
+         actor_user_id,actor_name,agent,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
+      .run(
+        row.id,
+        row.task_key,
+        taskRecordId,
+        row.at,
+        row.from_status,
+        row.to_status,
+        row.actor_user_id ?? null,
+        row.actor_name ?? null,
+        row.agent ?? null,
+        row.run_id ?? null,
+      )
 }
 
 function retargetStatusEvent(
@@ -226,11 +300,11 @@ function retargetStatusEvent(
 }
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
-  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
   if (row.deleted_at) {
     conn.query(`DELETE FROM task_status_event WHERE record_id=?`).run(row.id)
     return
   }
+  const taskRecordId = requireChildTaskRecordId(conn, 'status event', row)
   const existing = conn
     .query<{ record_id: string }, [string]>(
       `SELECT record_id FROM task_status_event WHERE record_id=?`,
@@ -247,7 +321,7 @@ export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
   })
   reconcileParentRecordIds(conn)
   changes.comments.forEach((row) => {
-    applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyComment)
+    applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyHostedTaskComment)
   })
   changes.documents.forEach((row) => {
     applySnapshotRow(conn, 'hub_task_document', row.id, row, applyDocument)
@@ -276,8 +350,14 @@ function applySnapshotRow(
 
 const hostedTaskChangeTables = {
   hub_task: { machine: HOSTED_MACHINE_TABLES.hub_task, apply: applyHostedTask },
-  hub_task_comment: { machine: HOSTED_MACHINE_TABLES.hub_task_comment, apply: applyComment },
-  hub_task_document: { machine: HOSTED_MACHINE_TABLES.hub_task_document, apply: applyDocument },
+  hub_task_comment: {
+    machine: HOSTED_MACHINE_TABLES.hub_task_comment,
+    apply: applyHostedTaskComment,
+  },
+  hub_task_document: {
+    machine: HOSTED_MACHINE_TABLES.hub_task_document,
+    apply: applyDocument,
+  },
   hub_task_status_event: {
     machine: HOSTED_MACHINE_TABLES.hub_task_status_event,
     apply: applyStatusEvent,
@@ -292,6 +372,12 @@ export const HOSTED_TASK_CHANGE_TABLE_QUERY = (
 
 export function isHostedTaskChangeTable(table: string): table is HostedTaskChangeTable {
   return Object.hasOwn(hostedTaskChangeTables, table)
+}
+
+export function isHostedTaskChildTable(
+  table: string,
+): table is Exclude<HostedTaskChangeTable, 'hub_task'> {
+  return isHostedTaskChangeTable(table) && table !== 'hub_task'
 }
 
 export function applyHostedChangeUpsert(

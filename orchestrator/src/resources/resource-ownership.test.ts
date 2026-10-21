@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -14,13 +15,18 @@ afterEach(() => {
 
 test('a terminal child leaves its live conversation resource untouched', () => {
   const parent = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+  const parentRecordId = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(parent)!.record_id
   const failed = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent, turn: 2 })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(dir, parent)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(dir, parent)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     commands.push(command)
-    if (command.startsWith('docker ps -a')) return result(`app-orch-${parent}-web`)
+    if (command.startsWith('docker ps -a')) {
+      return result(`app-orch-${parent}-web\t${parentRecordId}\t\t`)
+    }
     if (command.startsWith('docker volume ls')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
     return result('')
@@ -131,7 +137,9 @@ test('a dry-run retains a main-checkout resource just like the real path', () =>
 
 test('an absent unregistered tree with no resources is already clean', () => {
   const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(join(dir, 'absent-worktree'), terminal)
+  db()
+    .query('UPDATE run SET worktree=? WHERE record_id=?')
+    .run(join(dir, 'absent-worktree'), terminal)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))
@@ -155,9 +163,9 @@ test('a registered project root resolves safety after the worktree is gone', () 
   const project = `registered-root-${terminal}`
   const repo = join(dir, project)
   const tree = join(repo, '.claude', 'worktrees', `orch-${terminal}`)
-  upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
   db()
-    .query('UPDATE run SET repo=?,cwd=?,worktree=? WHERE id=?')
+    .query('UPDATE run SET repo=?,cwd=?,worktree=? WHERE record_id=?')
     .run(project, join(dir, 'also-gone'), tree, terminal)
 
   expect(terminalDockerRetentionReasonForRun(db(), terminal)).toBeNull()
@@ -165,7 +173,7 @@ test('a registered project root resolves safety after the worktree is gone', () 
 
 test('stopped runs with gone trees treat disposable infrastructure as ordinary cleanup', () => {
   const stopped = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
-  db().query('UPDATE run SET worktree=? WHERE id=?').run(join(dir, 'gone-worktree'), stopped)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(join(dir, 'gone-worktree'), stopped)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     commands.push(args.join(' '))

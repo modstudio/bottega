@@ -2,26 +2,45 @@ import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CHECK_EXECUTION_FILE_ENV, type CheckExecutionRecord } from '../shared/check-execution'
-import { decideGateOutcome, type GateStepResult } from './check-outcome'
+import {
+  CHECK_EXECUTION_FILE_ENV,
+  type CheckExecutionRecord,
+  UNIT_TEST_CHECK_CATEGORY,
+} from '../shared/check-execution'
+import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
+import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
+  type CheckArguments,
   type CommandCpuSample,
+  cpuBudgetMs,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
+  parseCheckArguments,
+  runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
+  selectedCheckLegs,
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
-import { readRemainingReport } from './remaining-report'
+import { readRemainingReport } from './remaining-report.ts'
 
-type Command = { cwd: string; argv: string[] }
-type Leg = { name: string; commands: Command[] }
+type Command = { cwd: string; argv: string[]; category?: string }
+type Leg = { name: (typeof CHECK_LEGS)[number]['name']; typecheck: Command; suite: Command[] }
+type RunnableLeg = { name: string; commands: Command[] }
 type LegResult = GateStepResult & { tail: string[] }
 type StaticCheck = { name: string; argv: string[]; category?: string; reportPath?: string }
 type ExecutionObservation = Pick<StaticCheck, 'category' | 'reportPath'> & { check?: string }
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const checkArguments: CheckArguments = (() => {
+  try {
+    return parseCheckArguments(Bun.argv.slice(2))
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+})()
 const checkStartedAt = performance.now()
 const KILLED_CHILD_EXIT_TIMEOUT_MS = 5_000
 const executionFile = process.env[CHECK_EXECUTION_FILE_ENV]
@@ -91,12 +110,12 @@ function printSummary(): { elapsedMs: number; cpuMs: number } | undefined {
   const elapsedMs = performance.now() - checkStartedAt - excludedGateWaitMs
   const attributed = attributeCommandCpu(commandCpu)
   console.log(
-    `suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`,
+    `${checkArguments.mode} runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`,
   )
   console.log(
-    `suite cpu: ${(attributed.totalMs / 1000).toFixed(2)}s / ${(SUITE_CPU_BUDGET_MS / 1000).toFixed(0)}s budget`,
+    `${checkArguments.mode} cpu: ${(attributed.totalMs / 1000).toFixed(2)}s / ${(cpuBudgetMs(checkArguments.mode) / 1000).toFixed(0)}s budget`,
   )
-  console.log('suite cpu by command:')
+  console.log(`${checkArguments.mode} cpu by command:`)
   for (const command of attributed.commands) {
     console.log(
       `  ${command.cpuMs.toFixed(2)}ms ${(command.share * 100).toFixed(2)}% ${command.name}`,
@@ -151,45 +170,20 @@ function track(
   return child
 }
 
-const legs: Leg[] = [
-  {
-    name: 'orchestrator',
-    commands: [
-      { cwd: `${root}orchestrator`, argv: ['bun', 'run', 'typecheck'] },
-      // The unit gate runs once under the shared host-load hold.
-      { cwd: `${root}orchestrator`, argv: ['bun', 'run', 'test:gate'] },
+const legs: Leg[] = CHECK_LEGS.map((leg) => ({
+  name: leg.name,
+  typecheck: { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] },
+  suite: leg.suite.map(({ argv, unitTests }) => ({
+    cwd: `${root}${leg.directory}`,
+    ...(unitTests ? { category: UNIT_TEST_CHECK_CATEGORY } : {}),
+    argv: [
+      ...argv,
+      ...(leg.name === 'orchestrator' && checkArguments.shard
+        ? [`--shard=${checkArguments.shard.value}`]
+        : []),
     ],
-  },
-  {
-    name: 'hub',
-    commands: [
-      { cwd: `${root}hub`, argv: ['bun', 'run', 'typecheck'] },
-      { cwd: `${root}hub`, argv: ['bun', 'run', 'test'] },
-    ],
-  },
-  {
-    name: 'hub/web',
-    commands: [
-      { cwd: `${root}hub/web`, argv: ['bun', 'run', 'typecheck'] },
-      { cwd: `${root}hub/web`, argv: ['bun', 'run', 'test'] },
-      { cwd: `${root}hub/web`, argv: ['bun', 'run', 'build'] },
-    ],
-  },
-  {
-    name: 'hub/deploy/site',
-    commands: [
-      { cwd: `${root}hub/deploy/site`, argv: ['bun', 'run', 'typecheck'] },
-      { cwd: `${root}hub/deploy/site`, argv: ['bun', 'run', 'test'] },
-    ],
-  },
-  {
-    name: 'retrieval',
-    commands: [
-      { cwd: `${root}retrieval`, argv: ['bun', 'run', 'typecheck'] },
-      { cwd: `${root}retrieval`, argv: ['bun', 'run', 'test'] },
-    ],
-  },
-]
+  })),
+}))
 
 async function inherit(argv: string[], cwd = root, observation: ExecutionObservation = {}) {
   const startedAt = performance.now()
@@ -273,14 +267,14 @@ async function pump(
   }
 }
 
-async function runLeg(leg: Leg): Promise<LegResult> {
+async function runLeg(leg: RunnableLeg): Promise<LegResult> {
   const tail: string[] = []
   for (const command of leg.commands) {
     const startedAt = performance.now()
     const child = track(
       Bun.spawn(command.argv, { cwd: command.cwd, stdout: 'pipe', stderr: 'pipe' }),
       describeCommand(command.argv, command.cwd),
-      {},
+      { category: command.category },
       startedAt,
     )
     const readers = [
@@ -305,181 +299,226 @@ function printFailedLegTails(results: LegResult[]) {
 
 if ((await inherit(['bun', 'install', '--silent'])) !== 0) process.exit(1)
 
-if ((await inherit([`${root}node_modules/.bin/biome`, 'ci', '.'])) !== 0) process.exit(1)
+const dependencyAuditExitCode = await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
+  check: 'dependency audit',
+})
+if (dependencyAuditExitCode !== 0) process.exit(1)
 
-if (
-  (await inherit([
-    // Every .githooks test must be named here. The list is explicit rather than a
-    // glob so this runs in a fixed order before the legs, and the cost of that is
-    // that an unnamed hook test is not gated at all - which reports safety it is
-    // not providing.
-    'bun',
-    'test',
-    './scripts/check-machine-state.test.ts',
-    './scripts/check-runtime.test.ts',
-    './scripts/check-outcome.test.ts',
-    './scripts/check-gitleaks-plan.test.ts',
-    './scripts/check-cascade-preservation.test.ts',
-    './scripts/check-outbox-payload-contracts.test.ts',
-    './scripts/postgres-migration-rls.test.ts',
-    './scripts/check-test-placement.test.ts',
-    './shared/change-view.test.ts',
-    './orchestrator/src/ratchet/biome-adapter.test.ts',
-    './orchestrator/src/ratchet/ratchet-plan.test.ts',
-    './scripts/check-file-ceiling.test.ts',
-    './scripts/command-descriptions.test.ts',
-    './scripts/command-reference.test.ts',
-    './scripts/check-cognitive-ceiling.test.ts',
-    './scripts/check-harness-mirror.test.ts',
-    './scripts/check-canon-drift.test.ts',
-    './scripts/check-postgres-array-bindings.test.ts',
-    './scripts/check-self-spawn.test.ts',
-    './scripts/check-source-root.test.ts',
-    './scripts/build-binary.test.ts',
-    './scripts/build-release.test.ts',
-    './scripts/build-release-artifacts.test.ts',
-    './scripts/publish-release.test.ts',
-    './cli/dispatch.test.ts',
-    './cli/routes.test.ts',
-    './cli/legacy-calls.test.ts',
-    './shared/self-spawn.test.ts',
-    './scripts/quality/dead-code.test.ts',
-    './scripts/architecture.test.ts',
-    './scripts/import-scanner.test.ts',
-    './shared/test-substance/test-substance.test.ts',
-    './shared/test-substance/no-assertion.test.ts',
-    './shared/test-substance/test-substance-php.test.ts',
-    './shared/test-substance/self-comparison.test.ts',
-    './shared/ratchet.test.ts',
-    './shared/check-execution.test.ts',
-    './scripts/quality/test-timing-decision.test.ts',
-    './shared/file-kind.test.ts',
-    './shared/git.test.ts',
-    './shared/orch-contract.test.ts',
-    './shared/interval.test.ts',
-    './shared/trackers-protocols.test.ts',
-  ])) !== 0
-)
-  process.exit(1)
+const rootTests = [
+  // Every .githooks test must be named here. The list is explicit rather than a
+  // glob so this runs in a fixed order, and the cost of that is
+  // that an unnamed hook test is not gated at all - which reports safety it is
+  // not providing.
+  'bun',
+  'test',
+  './scripts/check-machine-state.test.ts',
+  './scripts/check-legacy-names.test.ts',
+  './scripts/check-docker-workspaces.test.ts',
+  './scripts/check-dependency-audit.test.ts',
+  './scripts/check-runtime.test.ts',
+  './scripts/check-ci-workflow.test.ts',
+  './scripts/check-storybook.test.ts',
+  './scripts/check-outcome.test.ts',
+  './scripts/check-gitleaks-plan.test.ts',
+  './scripts/check-cascade-preservation.test.ts',
+  './scripts/identity-inventory.test.ts',
+  './scripts/check-outbox-payload-contracts.test.ts',
+  './scripts/postgres-migration-rls.test.ts',
+  './scripts/check-test-placement.test.ts',
+  './shared/change-view.test.ts',
+  './orchestrator/src/ratchet/biome-adapter.test.ts',
+  './orchestrator/src/ratchet/ratchet-plan.test.ts',
+  './scripts/check-file-ceiling.test.ts',
+  './scripts/command-descriptions.test.ts',
+  './scripts/command-reference.test.ts',
+  './scripts/check-cognitive-ceiling.test.ts',
+  './scripts/check-harness-mirror.test.ts',
+  './scripts/check-canon-drift.test.ts',
+  './scripts/check-postgres-array-bindings.test.ts',
+  './scripts/check-self-spawn.test.ts',
+  './scripts/check-source-root.test.ts',
+  './scripts/build-binary.test.ts',
+  './scripts/build-release.test.ts',
+  './scripts/build-release-artifacts.test.ts',
+  './scripts/publish-release.test.ts',
+  './cli/dispatch.test.ts',
+  './cli/routes.test.ts',
+  './cli/legacy-calls.test.ts',
+  './shared/self-spawn.test.ts',
+  './scripts/quality/dead-code.test.ts',
+  './scripts/architecture.test.ts',
+  './scripts/architecture-hub-packages.test.ts',
+  './scripts/import-scanner.test.ts',
+  './shared/test-substance/test-substance.test.ts',
+  './shared/test-substance/no-assertion.test.ts',
+  './shared/test-substance/test-substance-php.test.ts',
+  './shared/test-substance/self-comparison.test.ts',
+  './shared/ratchet.test.ts',
+  './shared/check-execution.test.ts',
+  './scripts/quality/test-timing-decision.test.ts',
+  './shared/file-kind.test.ts',
+  './shared/git.test.ts',
+  './shared/orch-contract.test.ts',
+  './shared/interval.test.ts',
+  './shared/trackers-protocols.test.ts',
+  './shared/shard.test.ts',
+  './scripts/test-focused.test.ts',
+  './scripts/check-sql-literal-schema.test.ts',
+  './scripts/check-hosted-sql-schema.test.ts',
+]
 
+const selected = new Set(selectedCheckLegs(checkArguments))
 const results = await Promise.all(
-  legs.map((leg) =>
-    runLeg({
-      name: leg.name,
-      commands: leg.commands,
-    }),
-  ),
+  legs
+    .filter((leg) => selected.has(leg.name))
+    .map((leg) =>
+      runLeg({
+        name: leg.name,
+        commands: checkArguments.mode === 'static' ? [leg.typecheck] : leg.suite,
+      }),
+    ),
 )
 printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...results]
-let qualityMode: string
-try {
-  qualityMode = qualityBaseArgument()
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
+if (checkArguments.mode === 'suite' && runsRootSuiteTests(checkArguments)) {
+  gateSteps.push({
+    name: 'root tests',
+    exitCode: await inherit(rootTests, root, { category: UNIT_TEST_CHECK_CATEGORY }),
+  })
 }
-const staticChecks: StaticCheck[] = [
-  { name: 'project checks', argv: ['bun', `${root}orchestrator/scripts/check-projects.ts`] },
-  {
-    name: 'orchestrator identity inventory',
-    argv: ['bun', `${root}orchestrator/scripts/identity-inventory.ts`],
-  },
-  staticCheck('scripts/check-machine-state.ts'),
-  staticCheck('scripts/check-cascade-preservation.ts'),
-  staticCheck('scripts/check-postgres-migrations.ts'),
-  staticCheck('scripts/check-postgres-array-bindings.ts'),
-  staticCheck('scripts/check-outbox-payload-contracts.ts'),
-  staticCheck('scripts/check-record-migrations-apply.ts'),
-  staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
-  staticCheck('scripts/check-architecture.ts'),
-  staticCheck('scripts/check-review-boundary.ts'),
-  staticCheck('scripts/check-outcome-boundary.ts'),
-  staticCheck('scripts/check-contract-boundary.ts'),
-  staticCheck('scripts/check-evidence-boundary.ts'),
-  staticCheck('scripts/check-git-environment-spawn.ts'),
-  staticCheck('scripts/check-self-spawn.ts'),
-  staticCheck('scripts/check-source-root.ts'),
-  staticCheck('scripts/check-launchd-templates.ts'),
-  staticCheck('scripts/check-gitleaks.ts'),
-  staticCheck('scripts/check-write-transaction-site.ts'),
-  staticCheck('scripts/check-command-descriptions.ts'),
-  staticCheck('scripts/reference.ts'),
-  staticCheck('scripts/check-file-ceiling.ts', [], 'file-length', true),
-  staticCheck('scripts/check-cognitive-ceiling.ts', [qualityMode], 'cognitive-complexity', true),
-  {
-    name: 'function length and naming ratchet',
-    argv: [
-      'bun',
-      `${root}orchestrator/src/cli/orch.ts`,
-      'ratchet',
-      '--format',
-      'biome',
-      qualityMode,
-      '--support',
-      'biome.jsonc',
-      '--support',
-      'hub/web/lint',
-      '--',
-      `${root}node_modules/.bin/biome`,
-      'lint',
-      '--vcs-use-ignore-file=false',
-      '--only=complexity/noExcessiveLinesPerFunction',
-      '--only=style/useNamingConvention',
-      '--reporter=json',
-      '{files}',
-    ],
-  },
-  staticCheck('scripts/check-test-fixtures.ts'),
-  staticCheck('scripts/check-test-placement.ts'),
-  staticCheck('scripts/check-test-spawns.ts'),
-  staticCheck('scripts/check-dead-code.ts', [qualityMode], 'unused-exports', true),
-  staticCheck('scripts/check-brand.ts'),
-  staticCheck('scripts/check-doc-editor-rich-style.ts'),
-  staticCheck('scripts/check-harness-mirror.ts'),
-  staticCheck('scripts/check-canon-drift.ts'),
-  staticCheck('scripts/generate-recipe-schema.ts', ['--check']),
-  staticCheck('orchestrator/scripts/check-pack-budget.ts'),
-  staticCheck('orchestrator/scripts/check-canon-lint.ts'),
-]
-for (const check of staticChecks) gateSteps.push(await recordGateStep(check))
 
-gateSteps.push(
-  await recordGateStep(
+if (checkArguments.mode === 'static') {
+  gateSteps.push({
+    name: 'Biome',
+    exitCode: await inherit([`${root}node_modules/.bin/biome`, 'ci', '.']),
+  })
+  let qualityMode: string
+  try {
+    qualityMode = qualityBaseArgument()
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+  const staticChecks: StaticCheck[] = [
+    { name: 'project checks', argv: ['bun', `${root}orchestrator/scripts/check-projects.ts`] },
+    {
+      name: 'orchestrator identity inventory',
+      argv: ['bun', `${root}scripts/check-identity-inventory.ts`, qualityMode],
+    },
+    { name: 'SQL literal schema', argv: ['bun', `${root}scripts/check-sql-literal-schema.ts`] },
+    { name: 'hosted SQL schema', argv: ['bun', `${root}scripts/check-hosted-sql-schema.ts`] },
+    staticCheck('scripts/check-machine-state.ts'),
+    staticCheck('scripts/check-cascade-preservation.ts'),
+    staticCheck('scripts/check-postgres-migrations.ts'),
+    staticCheck('scripts/check-postgres-array-bindings.ts'),
+    staticCheck('scripts/check-outbox-payload-contracts.ts'),
+    staticCheck('scripts/check-record-migrations-apply.ts'),
+    staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
+    staticCheck('scripts/check-docker-workspaces.ts'),
+    staticCheck('scripts/check-hub-packages.ts'),
+    staticCheck('scripts/check-hub-ui-styles.ts'),
+    staticCheck('scripts/check-storybook.ts'),
+    staticCheck('scripts/check-architecture.ts'),
+    staticCheck('scripts/check-review-boundary.ts'),
+    staticCheck('scripts/check-outcome-boundary.ts'),
+    staticCheck('scripts/check-contract-boundary.ts'),
+    staticCheck('scripts/check-evidence-boundary.ts'),
+    staticCheck('scripts/check-git-environment-spawn.ts'),
+    staticCheck('scripts/check-self-spawn.ts'),
+    staticCheck('scripts/check-source-root.ts'),
+    staticCheck('scripts/check-launchd-templates.ts'),
+    staticCheck('scripts/check-gitleaks.ts'),
+    staticCheck('scripts/check-write-transaction-site.ts'),
+    staticCheck('scripts/check-branch-ref-mutation-site.ts'),
+    staticCheck('scripts/check-command-descriptions.ts'),
+    staticCheck('scripts/reference.ts'),
+    staticCheck('scripts/check-file-ceiling.ts', [], 'file-length', true),
+    staticCheck('scripts/check-cognitive-ceiling.ts', [qualityMode], 'cognitive-complexity', true),
+    {
+      name: 'function length and naming ratchet',
+      argv: [
+        'bun',
+        `${root}orchestrator/src/cli/orch.ts`,
+        'ratchet',
+        '--format',
+        'biome',
+        qualityMode,
+        '--support',
+        'biome.jsonc',
+        '--support',
+        'hub/web/lint',
+        '--',
+        `${root}node_modules/.bin/biome`,
+        'lint',
+        '--vcs-use-ignore-file=false',
+        '--only=complexity/noExcessiveLinesPerFunction',
+        '--only=style/useNamingConvention',
+        '--reporter=json',
+        '{files}',
+      ],
+    },
+    staticCheck('scripts/check-test-fixtures.ts'),
+    staticCheck('scripts/check-test-placement.ts'),
+    staticCheck('scripts/check-test-spawns.ts'),
+    staticCheck('scripts/check-dead-code.ts', [qualityMode], 'unused-exports', true),
+    staticCheck('scripts/check-brand.ts'),
+    staticCheck('scripts/check-legacy-names.ts'),
+    staticCheck('scripts/check-doc-editor-rich-style.ts'),
+    staticCheck('scripts/check-harness-mirror.ts'),
+    staticCheck('scripts/check-canon-drift.ts'),
+    staticCheck('scripts/check-ci-workflow.ts'),
+    staticCheck('scripts/generate-recipe-schema.ts', ['--check']),
+    staticCheck('orchestrator/scripts/check-pack-budget.ts'),
+    staticCheck('orchestrator/scripts/check-canon-lint.ts'),
     staticCheck('scripts/quality/check-test-substance.ts', [qualityMode], 'test-substance'),
-  ),
-)
+  ]
+  const omittedChecks = new Set(
+    checkArguments.omit.flatMap((group) => STATIC_OMIT_GROUPS[group].checks),
+  )
+  for (const group of checkArguments.omit) {
+    const plan = STATIC_OMIT_GROUPS[group]
+    console.log(`omitting ${group} static checks (${plan.checks.join(', ')}): ${plan.reason}`)
+  }
+  for (const check of staticChecks) {
+    if (!omittedChecks.has(check.name)) gateSteps.push(await recordGateStep(check))
+  }
+}
 
 if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true })
 
 clearTimeout(runtimeDeadline)
 const summary = printSummary()
-if (!summary) throw new Error('suite summary printed before budget checks')
+if (!summary) throw new Error('check summary printed before budget checks')
 const { elapsedMs, cpuMs } = summary
-const runtimeBudgetVerdict = decideRuntimeBudget({
-  elapsedMs,
-  budgetMs: SUITE_RUNTIME_BUDGET_MS,
-  ci: Boolean(process.env.CI),
-  measure: 'wall',
-})
-if (runtimeBudgetVerdict === 'over-informational') {
-  console.log(
-    'suite runtime budget is informational because wall clock cannot separate a slower suite from a busier machine',
-  )
-}
 const cpuBudgetVerdict = decideRuntimeBudget({
   elapsedMs: cpuMs,
-  budgetMs: SUITE_CPU_BUDGET_MS,
-  ci: Boolean(process.env.CI),
+  budgetMs: cpuBudgetMs(checkArguments.mode),
+  ci: checkArguments.mode === 'suite' && Boolean(process.env.CI),
   measure: 'cpu',
 })
-if (cpuBudgetVerdict === 'over-informational') {
-  console.log('suite CPU budget is informational locally')
+if (checkArguments.mode === 'suite') {
+  const runtimeBudgetVerdict = decideRuntimeBudget({
+    elapsedMs,
+    budgetMs: SUITE_RUNTIME_BUDGET_MS,
+    ci: Boolean(process.env.CI),
+    measure: 'wall',
+  })
+  if (runtimeBudgetVerdict === 'over-informational') {
+    console.log(
+      'suite runtime budget is informational because wall clock cannot separate a slower suite from a busier machine',
+    )
+  }
+  if (cpuBudgetVerdict === 'over-informational') {
+    console.log('suite CPU budget is informational locally')
+  }
+  if (cpuBudgetVerdict === 'over-fatal') {
+    console.error(
+      `suite CPU budget exceeded by ${((cpuMs - SUITE_CPU_BUDGET_MS) / 1000).toFixed(2)}s`,
+    )
+  }
 }
-if (cpuBudgetVerdict === 'over-fatal') {
-  console.error(
-    `suite CPU budget exceeded by ${((cpuMs - SUITE_CPU_BUDGET_MS) / 1000).toFixed(2)}s`,
-  )
+if (checkArguments.mode === 'static' && cpuBudgetVerdict === 'over-informational') {
+  console.log('static CPU budget is informational because static work runs on varying hosts')
 }
 const gate = decideGateOutcome(gateSteps)
 if (gate.failures.length > 0) {

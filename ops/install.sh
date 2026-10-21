@@ -79,7 +79,8 @@ remove_skipped_agent() {
   fi
 }
 
-mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
+mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/docker-prune" \
+  "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
   "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-canon-audit" \
   "$HOME/Library/Logs/orch-canon-mirror" "$HOME/Library/Logs/orch-board-watch"
@@ -165,7 +166,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|orch-board-watch|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|docker-prune|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|orch-board-watch|hub-note-maintenance' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

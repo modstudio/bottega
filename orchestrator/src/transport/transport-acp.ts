@@ -6,6 +6,7 @@ import * as acp from '@agentclientprotocol/sdk'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
+import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
@@ -33,6 +34,20 @@ import {
   type TransportStartOpts,
   withTransportDeadline,
 } from './transport.ts'
+import { acpRunUsage } from './transport-acp-usage.ts'
+
+type AcpMessageUsage = {
+  inputTokens?: number | null
+  outputTokens?: number | null
+  totalTokens?: number | null
+  cost?: number | null
+  costSource?: 'provider_reported' | 'estimated' | null
+}
+
+export type AcpMessageUsageUpdate = {
+  sessionUpdate: 'message_usage'
+  usage?: AcpMessageUsage
+}
 
 type AcpUpdate = {
   sessionUpdate: string
@@ -43,10 +58,21 @@ type AcpUpdate = {
   kind?: string
   used?: number
   cost?: { amount?: number; currency?: string } | null
+  accumulatedInputTokens?: number
+  accumulatedOutputTokens?: number
+  messageId?: string | null
+  usage?: AcpMessageUsage
   locations?: Array<{ path?: string }>
   rawInput?: unknown
   rawOutput?: unknown
 }
+export type AcpPromptUsage = {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  costUsd?: number
+} | null
+
 type AcpTurnInput = {
   sessionId?: string | null
   updates: unknown[]
@@ -55,12 +81,16 @@ type AcpTurnInput = {
   error?: string | null
   timedOut?: boolean
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
-  usage?: {
-    inputTokens?: number
-    outputTokens?: number
-    totalTokens?: number
-    costUsd?: number
-  } | null
+  usage?: AcpPromptUsage
+}
+
+async function resolveWorkerRunId(value: string | undefined): Promise<string | null> {
+  if (!value) return null
+  const [{ resolveRunIdentifier }, { db }] = await Promise.all([
+    import('../run/run-identifier.ts'),
+    import('../database/db.ts'),
+  ])
+  return resolveRunIdentifier(db(), value)
 }
 
 export function resolveAcpEditLocations(
@@ -86,6 +116,7 @@ type GrokSessionResponse = {
 }
 
 const ACP_HANDSHAKE_TIMEOUT_MS = 60_000
+const MARK_RUN_ASKING_SQL = "UPDATE run SET status='asking' WHERE record_id=? AND status='running'"
 type AcpHandshakeStage = 'initialize' | 'session/load' | 'session/new'
 
 /** Bound a startup request before callers have a transport handle or wall timer. */
@@ -157,6 +188,10 @@ function asUpdate(value: unknown): AcpUpdate | null {
   return value as AcpUpdate
 }
 
+function isMessageUsageUpdate(update: AcpUpdate): update is AcpMessageUsageUpdate {
+  return update.sessionUpdate === 'message_usage'
+}
+
 function textOf(content: AcpUpdate['content']): string {
   if (
     content &&
@@ -215,17 +250,7 @@ function toolCallResult(update: AcpUpdate): string | undefined {
 export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   const events: NormalizedEvent[] = []
   const chunks: string[] = []
-  const reportedInput = typeof input.usage?.inputTokens === 'number'
-  const reportedOutput = typeof input.usage?.outputTokens === 'number'
-  const reportedTotal = typeof input.usage?.totalTokens === 'number'
-  let tokens: number | null = null
-  if (reportedInput || reportedOutput) {
-    tokens = (input.usage!.inputTokens ?? 0) + (input.usage!.outputTokens ?? 0)
-  } else if (reportedTotal) {
-    tokens = input.usage!.totalTokens!
-  }
-  let costUsd: number | null = null
-  if (typeof input.usage?.costUsd === 'number') costUsd = input.usage.costUsd
+  const usageUpdates: AcpMessageUsageUpdate[] = []
   const sessionId = input.sessionId ?? null
   if (sessionId) events.push({ kind: 'session', sessionId })
   for (const event of input.permissionEvents ?? []) events.push(event)
@@ -241,6 +266,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   for (const raw of input.updates) {
     const update = asUpdate(isRecord(raw) && 'update' in raw ? raw.update : raw)
     if (!update) continue
+    if (isMessageUsageUpdate(update)) usageUpdates.push(update)
     switch (update.sessionUpdate) {
       case 'agent_message_chunk': {
         const text = textOf(update.content)
@@ -290,17 +316,19 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
         break
       }
       case 'usage_update':
-        if (typeof update.used === 'number') {
-          tokens = update.used
-          const amount = update.cost?.amount
-          costUsd = update.cost?.currency === 'USD' && typeof amount === 'number' ? amount : null
-          events.push({ kind: 'usage', tokens, costUsd })
-        }
+        // ACP `used` is context-window occupancy. Goose's custom notification
+        // also carries session-cumulative counters, but per-message updates are
+        // the run-local source and avoid double-counting resumed sessions.
+        break
+      case 'message_usage':
         break
       default:
         break
     }
   }
+
+  const { tokens, costUsd, vendorUsage } = acpRunUsage(usageUpdates, input.usage ?? null)
+  if (tokens !== null) events.push({ kind: 'usage', tokens, costUsd })
 
   if (input.elicitation) {
     events.push({ kind: 'elicitation', message: input.elicitation.message })
@@ -342,6 +370,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
     parsed: { text: output, tokens, costUsd, stopReason, error: error ?? undefined },
     tokens,
     costUsd,
+    vendorUsage,
     sessionId,
     stopReason,
     error,
@@ -380,6 +409,14 @@ export function acpHarnessArgv(harness: string, leaderSocket?: string | null): s
   return []
 }
 
+export function acpClientCapabilities(harness: string): acp.ClientCapabilities {
+  return {
+    fs: { readTextFile: true, writeTextFile: true },
+    elicitation: { form: {} },
+    ...(harness === 'goose' ? { _meta: { goose: { customNotifications: true } } } : {}),
+  }
+}
+
 function readTextFile(path: string, line?: number | null, limit?: number | null): string {
   const body = readFileSync(path, 'utf8')
   if (line == null && limit == null) return body
@@ -409,7 +446,21 @@ export function acpLeaderSocketPath(outPath: string, runtimeDir?: string): strin
   return runtimeDir ? join(runtimeDir, 'grok-leader.sock') : `${outPath}.leader.sock`
 }
 
-function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
+function opencodeConfigContent(baseUrl: string, model: string, apiKey: string): string {
+  return JSON.stringify({
+    model: `orch-local/${model}`,
+    provider: {
+      'orch-local': {
+        npm: '@ai-sdk/openai-compatible',
+        name: 'orch local backend',
+        options: { baseURL: baseUrl, apiKey },
+        models: { [model]: { name: model } },
+      },
+    },
+  })
+}
+
+export function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
   const env: Record<string, string> = {
     ...opts.env,
     ...opts.recipeEnvironment,
@@ -418,17 +469,11 @@ function acpEnvironment(opts: TransportStartOpts): Record<string, string> {
   }
   if (opts.model) env.CODEX_CONFIG = JSON.stringify({ model: opts.model })
   if (opts.agent.harness === 'opencode' && opts.agent.baseUrl && opts.model) {
-    env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-      model: `orch-local/${opts.model}`,
-      provider: {
-        'orch-local': {
-          npm: '@ai-sdk/openai-compatible',
-          name: 'orch local backend',
-          options: { baseURL: opts.agent.baseUrl, apiKey: 'local' },
-          models: { [opts.model]: { name: opts.model } },
-        },
-      },
-    })
+    env.OPENCODE_CONFIG_CONTENT = opencodeConfigContent(
+      opts.agent.baseUrl,
+      opts.model,
+      opts.env.OPENAI_API_KEY!,
+    )
   }
   if (opts.agent.harness === 'goose') {
     const stateDir = opts.srt?.runtimeDir ?? dirname(opts.outPath)
@@ -483,10 +528,37 @@ function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   ]
 }
 
+function observeAcpUpdate(
+  params: unknown,
+  updates: unknown[],
+  outPath: string,
+  sessionId: string | null,
+  pushEvent: (event: NormalizedEvent) => void,
+): void {
+  updates.push(params)
+  persistAcpUpdates(outPath, sessionId, updates)
+  const folded = normalizeAcpTurn({ sessionId, updates: [params] })
+  for (const event of folded.events) {
+    if (event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
+  }
+}
+
 export function configuredAcpAsk(opts: TransportStartOpts): string[] | null {
   if (opts.agent.name === 'grok') return opts.agent.askServerCommand?.(opts.env) ?? null
   const server = acpMcpServers(opts).find((entry) => entry.name === 'orch-ask')
   return server && 'command' in server ? [server.command, ...(server.args ?? [])] : null
+}
+
+function spawnAcpChild(launch: string[], opts: TransportStartOpts) {
+  return lowerRunChildPriority(
+    spawn(launch[0]!, launch.slice(1), {
+      cwd: opts.cwd,
+      env: acpEnvironment(opts),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
+    }),
+    opts.onWarning,
+  )
 }
 
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
@@ -497,12 +569,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
   const launch = await acpLaunchArgv(opts, profile, bin, agentArgv)
-  const child = spawn(launch[0]!, launch.slice(1), {
-    cwd: opts.cwd,
-    env: acpEnvironment(opts),
-    stdio: ['pipe', 'pipe', 'pipe'],
-    detached: true,
-  })
+  const child = spawnAcpChild(launch, opts)
   const trace = createAcpTrace(
     opts.env.ORCH_ACP_TRACE,
     opts.env.ORCH_RUN_ID ?? 'unknown-run',
@@ -513,12 +580,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     profile !== null,
   )
   installAcpChildTrace(trace, child)
-
   const stderrChunks: Buffer[] = []
   child.stderr?.on('data', (chunk: Buffer) => {
     stderrChunks.push(chunk)
   })
-
   const updates: unknown[] = []
   const liveEvents: NormalizedEvent[] = []
   const permissionEvents: Extract<NormalizedEvent, { kind: 'permission' }>[] = []
@@ -537,6 +602,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     const wait = eventWaiters.shift()
     if (wait) wait(event)
   }
+  const observeUpdate = (req: { params: unknown }) =>
+    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent)
 
   const app = acp
     .client({ name: 'orch' })
@@ -583,11 +650,11 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           )
         })
         if (fields.length === 1 && stringFields.length === 1) {
-          const runId = Number(opts.env.ORCH_RUN_ID ?? 0)
+          const runId = await resolveWorkerRunId(opts.env.ORCH_RUN_ID)
           if (runId) {
             const { ask } = await import('../ask/ask.ts')
             const { db } = await import('../database/db.ts')
-            db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(runId)
+            db().query(MARK_RUN_ASKING_SQL).run(runId)
             const answer = await ask({
               runId,
               question: req.params.message,
@@ -595,7 +662,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
             })
             if (answer.answered) {
               db()
-                .query("UPDATE run SET status='running' WHERE id=? AND status='asking'")
+                .query("UPDATE run SET status='running' WHERE record_id=? AND status='asking'")
                 .run(runId)
               elicitation = null
               return {
@@ -632,16 +699,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       writeFileSync(confined, req.params.content)
       return {}
     })
-    .onNotification(acp.methods.client.session.update, (req) => {
-      // orch records the update as a run event; the store never holds ACP.
-      updates.push(req.params)
-      persistAcpUpdates(opts.outPath, sessionId, updates)
-      const folded = normalizeAcpTurn({ sessionId, updates: [req.params] })
-      for (const event of folded.events) {
-        if (event.kind === 'session' || event.kind === 'stop') continue
-        pushEvent(event)
-      }
-    })
+    .onNotification(acp.methods.client.session.update, observeUpdate)
+    .onNotification('_goose/unstable/session/update', (params) => params, observeUpdate)
 
   const stream = webStream(child, trace)
   connection = app.connect(stream)
@@ -664,10 +723,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         // ACP has no result object, so the reply file is the one advertised write.
         // Gap: usage_update.used is session context, not CLI input+output.
         protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-          elicitation: { form: {} },
-        },
+        clientCapabilities: acpClientCapabilities(opts.agent.harness ?? opts.agent.name),
         clientInfo: { name: 'orch', version: '0.1.0' },
       }),
       'initialize',
@@ -759,6 +815,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           /* schema is best-effort on the wire; run.ts validates */
         }
       }
+      updates.length = 0
       const promptWork = ctx.request(acp.methods.agent.session.prompt, {
         // orch sends the bound prompt as text blocks; schema is also inlined.
         sessionId,

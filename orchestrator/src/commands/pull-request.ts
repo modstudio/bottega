@@ -53,7 +53,9 @@ export function register(program: Command): void {
     .option('--cwd <tree>', 'verify and merge from this worktree')
     .allowExcessArguments(false)
     .action((target: string, options) => {
-      log(mergePullRequest(target, options.cwd ?? process.cwd()))
+      const outcome = mergePullRequest(target, options.cwd ?? process.cwd())
+      log(outcome.output)
+      if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     })
 
   pr.command('override')

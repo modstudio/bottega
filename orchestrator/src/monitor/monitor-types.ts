@@ -1,7 +1,10 @@
 // concern: monitor-types
 /** Owns the plain data shapes shared by monitor composition, conditions, notices, and reporting. */
 
+import type { HostLoadSample } from '../host-load-sample.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
+
+export type MonitorHostLoad = HostLoadSample
 
 export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'abandoned-bootstrap': 'revalidated',
@@ -11,6 +14,7 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   idle: 'revalidated',
   'observation-error': 'append-only',
   'outbox-quarantined': 'revalidated',
+  'outbox-held-for-upgrade': 'revalidated',
   'outbox-retired-parent': 'revalidated',
   'stale-run': 'append-only',
   'stalled-run': 'revalidated',
@@ -66,10 +70,11 @@ export type MonitorResult = {
   conditions: MonitorCondition[]
   errors: string[]
   canon: { findings: number; docs: number }
+  hostLoad: MonitorHostLoad
 }
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
-  noticeId: `condition:${number}` | `landing:${number}` | `board:${string}`
+  noticeId: `condition:${number}` | `landing:${string}` | `board:${string}`
   detail: string
 }
 
@@ -86,4 +91,5 @@ export type MonitorHistoryRow = {
   findings: number
   errors: number
   conditions: unknown[]
+  host_load: MonitorHostLoad | null
 }

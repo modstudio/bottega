@@ -31,11 +31,24 @@ const parseJobs = (value: string | undefined) =>
       ? null
       : value.split(',').map((entry) => entry.trim())
 
+function assertApiKeyFlags(argv: string[], value: string | undefined): void {
+  if (value !== undefined && argv.includes('--clear-api-key-secret'))
+    throw new Error('--api-key-secret and --clear-api-key-secret are mutually exclusive')
+}
+
+function booleanFlag(name: string, value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  if (value !== 'true' && value !== 'false') throw new Error(`--${name} must be true or false`)
+  return value === 'true'
+}
+
 function mutation(argv: string[]): AgentMutation {
   const flag = (name: string) => flagValue(argv, name)
-  const enabled = flag('enabled')
-  if (enabled !== undefined && enabled !== 'true' && enabled !== 'false')
-    throw new Error('--enabled must be true or false')
+  const apiKeySecret = flag('api-key-secret')
+  assertApiKeyFlags(argv, apiKeySecret)
+  const enabled = booleanFlag('enabled', flag('enabled'))
+  const billing = flag('billing')
+  const routeMetered = booleanFlag('route-metered', flag('route-metered'))
   const context = flag('context-tokens'),
     jobs = flag('jobs'),
     prefer = flag('prefer'),
@@ -45,8 +58,12 @@ function mutation(argv: string[]): AgentMutation {
     ...(flag('backend') ? { backend: flag('backend') as Backend } : {}),
     ...(flag('model') ? { model: flag('model')! } : {}),
     ...(flag('base-url') ? { baseUrl: flag('base-url')! } : {}),
+    ...(apiKeySecret ? { apiKeySecret } : {}),
+    ...(argv.includes('--clear-api-key-secret') ? { apiKeySecret: null } : {}),
+    ...(billing ? { billing: billing as AgentMutation['billing'] } : {}),
+    ...(routeMetered !== undefined ? { routeMetered } : {}),
     ...(context ? { contextTokens: Number(context) } : {}),
-    ...(enabled !== undefined ? { enabled: enabled === 'true' } : {}),
+    ...(enabled !== undefined ? { enabled } : {}),
     ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),
     ...(jobs !== undefined ? { jobs: parseJobs(jobs) } : {}),
     ...(prefer !== undefined ? { preferredJobs: parseJobs(prefer) ?? [] } : {}),
@@ -96,7 +113,7 @@ function showCommand(name: string, presentation: Presentation): void {
   if (!row) throw new Error(`unknown agent "${name}"`)
   const judged = db()
     .query(
-      'SELECT job, COUNT(*) AS count FROM run r JOIN score s ON s.run_id=r.id WHERE r.agent=? GROUP BY job ORDER BY job',
+      'SELECT job, COUNT(*) AS count FROM run r JOIN score s ON s.run_record_id=r.record_id WHERE r.agent=? GROUP BY job ORDER BY job',
     )
     .all(name) as { job: string; count: number }[]
   presentation.log(
@@ -132,6 +149,7 @@ function listedRow(row: ReturnType<typeof agentRows>[number]) {
     backend: row.backend,
     model: row.model,
     baseUrl: row.base_url,
+    apiKeySecret: row.api_key_secret,
     transport: row.transport,
     caps,
     billing: row.billing,
@@ -141,6 +159,7 @@ function listedRow(row: ReturnType<typeof agentRows>[number]) {
     jobs: row.jobs ? JSON.parse(row.jobs) : null,
     preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
     maxConcurrent: row.max_concurrent,
+    routeMetered: Boolean(row.route_metered),
     probedAt: row.probed_at,
     probeResult: probe,
     legacy: !['codex', 'grok', 'opencode', 'goose', 'claude-code'].includes(row.harness),

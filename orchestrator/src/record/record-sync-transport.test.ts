@@ -111,6 +111,9 @@ test('malformed refusal fields mark no local row', async () => {
   for (const result of [
     { id: 1, status: 'quarantined' as const },
     { id: 1, status: 'quarantined' as const, reason: '' },
+    { id: 1, status: 'held' as const },
+    { id: 1, status: 'held' as const, reason: '' },
+    { id: 1, status: 'held' as const, reason: 'unknown columns: futureColumn' },
     { id: 1, status: 'deferred' as const, reason: 'read-only' },
     { id: 1, status: 'deferred' as const, reason: '', spaceId: 'space' },
     { id: 1, status: 'deferred' as const, reason: 'read-only', spaceId: '' },

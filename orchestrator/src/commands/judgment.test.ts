@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
-import { resolveComparisonRunIds, scoreNote, scorePathForJob } from './judgment.ts'
+import {
+  resolveComparisonRunIds,
+  resolveDuplicateRunIds,
+  scoreNote,
+  scorePathForJob,
+} from './judgment.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -35,7 +40,7 @@ test('comparison flags resolve mixed run numbers and UUIDs and deduplicate by ro
   const first = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const second = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const secondRecordId = (
-    db().query('SELECT record_id FROM run WHERE id=?').get(second) as { record_id: string }
+    db().query('SELECT record_id FROM run WHERE record_id=?').get(second) as { record_id: string }
   ).record_id
   const mixed = resolveComparisonRunIds({
     has: () => false,
@@ -59,7 +64,20 @@ test('comparison flags refuse an unknown run UUID', () => {
       values: () => [],
       flag: (name) => (name === 'worse-than' ? '01990000-0000-7000-8000-000000000099' : undefined),
     }).flag('worse-than'),
-  ).toThrow('no run has UUID')
+  ).toThrow('no run matches')
+})
+
+test('duplicate flags resolve the other run while preserving both finding ordinals', () => {
+  const other = addRun({ agent: 'codex', job: 'review-lens', status: 'ok' })
+  const number = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(other)!.number
+  const resolved = resolveDuplicateRunIds({
+    has: () => false,
+    flag: () => undefined,
+    values: (name) => (name === 'duplicate' ? [`2=${number}#3`] : []),
+  })
+  expect(resolved.values('duplicate')).toEqual([`2=${other}#3`])
 })
 
 test('findings jobs take the judge path and another job takes the score path', () => {

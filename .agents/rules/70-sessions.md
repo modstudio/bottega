@@ -19,7 +19,7 @@ Never continue or land a chain while its worker has an unanswered question, beca
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and merge it with `bottega pr merge`. `bottega pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `bottega pr merge` repeats that review-admission check for the head commit and refuses when it does not hold. It also refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. It merges exactly the commit it admitted and proved. The local gate proves the commit; the pull request admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. `bottega pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `bottega pr merge` repeats that review-admission check for the head commit and refuses when it does not hold. It also refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. Where the project declares a merge queue, it enqueues the admitted head, waits for the queue to land it, and does not apply the landing-branch freshness refusal, because the queue tests each pull request on top of the current trunk. CI proves the commit; the merge queue admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 
@@ -29,4 +29,4 @@ On any other machine, install a release in its own directory and update it by re
 
 ## Close out the session
 
-Release terminal worktrees with `bottega run close-out`, prune landed run branches with `bottega tree branch prune`, which sweep also runs, close landed tasks with `bottega task`, and offer a resume brief through `bottega doc`. A session with held trees, unscored runs, or unclosed landed tasks is paused rather than finished.
+Run `bottega session close-out` to release everything the session owns through its ordinary owner and prove that nothing remains. Dispose of unique unproved branches only through `bottega tree branch dispose`, which archives their work before recording the ruling. Close landed tasks with `bottega task` and offer a resume brief through `bottega doc`. A session with live runs, held resources, queued landings, incomplete reviews, unresolved process items, unscored runs, or unclosed landed tasks is paused rather than finished.

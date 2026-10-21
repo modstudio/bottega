@@ -40,7 +40,9 @@ export type HostedCacheNotice = {
   text: string
   oneLine: string
   ackRequired: boolean
+  ackDeadline: string | null
   createdAt: string
+  expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
 }
 
@@ -131,7 +133,11 @@ export function cacheHostedBoardReceipt(
        audience_at_posting=excluded.audience_at_posting,
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
        acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
-       pending_sync=0,sync_error=NULL`,
+       pending_sync=CASE WHEN hosted_board_receipt_cache.pending_sync=1 AND (
+         (hosted_board_receipt_cache.delivered_at IS NOT NULL AND excluded.delivered_at IS NULL) OR
+         (hosted_board_receipt_cache.acknowledged_at IS NOT NULL AND excluded.acknowledged_at IS NULL)
+       ) THEN 1 ELSE 0 END,
+       sync_error=NULL`,
     )
     .run(
       receipt.messageId,
@@ -141,6 +147,37 @@ export function cacheHostedBoardReceipt(
       receipt.acknowledgedAt,
       receipt.messageId,
     )
+}
+
+export function queueHostedBoardAcknowledgement(
+  messageId: string,
+  readerSession: string,
+  audienceAtPosting: boolean,
+  acknowledgedAt: string,
+  database: Database = writableDb(),
+): void {
+  const result = database
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       SELECT ?,?,?,?, ?,1 WHERE EXISTS (
+         SELECT 1 FROM hosted_board_message_cache WHERE id=?
+       ) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       audience_at_posting=excluded.audience_at_posting,
+       delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
+       acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
+       pending_sync=1,sync_error=NULL`,
+    )
+    .run(
+      messageId,
+      readerSession,
+      audienceAtPosting ? 1 : 0,
+      acknowledgedAt,
+      acknowledgedAt,
+      messageId,
+    )
+  if (result.changes === 0)
+    throw new Error(`hosted board notice ${messageId} is not cached; refresh the board and retry`)
 }
 
 function replacePage(database: Database, page: HostedBoardChanges): number {
@@ -230,10 +267,17 @@ async function flushReceipts(
 ): Promise<void> {
   const rows = database
     .query(
-      `SELECT message_id,reader_session,audience_at_posting FROM hosted_board_receipt_cache
-       WHERE pending_sync=1 AND delivered_at IS NOT NULL`,
+      `SELECT message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at
+       FROM hosted_board_receipt_cache
+       WHERE pending_sync=1 AND (delivered_at IS NOT NULL OR acknowledged_at IS NOT NULL)`,
     )
-    .all() as { message_id: string; reader_session: string; audience_at_posting: number }[]
+    .all() as {
+    message_id: string
+    reader_session: string
+    audience_at_posting: number
+    delivered_at: string | null
+    acknowledged_at: string | null
+  }[]
   for (const row of rows) {
     try {
       await within(
@@ -243,7 +287,8 @@ async function flushReceipts(
               messageId: row.message_id,
               readerSession: row.reader_session,
               audienceAtPosting: row.audience_at_posting === 1,
-              delivered: true,
+              delivered: row.delivered_at !== null,
+              acknowledged: row.acknowledged_at !== null,
             },
             signal,
           ),
@@ -378,9 +423,9 @@ export const hostedMessageIsLive = (message: HostedBoardMessage, clock: number):
 const readerMatchesAuthor = (message: HostedBoardMessage, reader: string, database: Database) => {
   if (message.authorUserId !== meta(database, BOARD_REFRESH_USER_KEY)) return false
   if (reader === OPERATOR_READER) return message.authorSession === null
-  const run = /^run:(\d+)$/.exec(reader)
+  const run = /^run:([0-9a-f-]{36})$/.exec(reader)
   if (!run) return message.authorSession === reader
-  const root = database.query('SELECT record_id FROM run WHERE id=?').get(Number(run[1])) as {
+  const root = database.query('SELECT record_id FROM run WHERE record_id=?').get(run[1]!) as {
     record_id: string | null
   } | null
   return Boolean(root?.record_id && root.record_id === message.origin.runId)
@@ -553,7 +598,9 @@ export function claimCachedHosted(
         ackRequired: message.ackRequired,
       }),
       ackRequired: message.ackRequired,
+      ackDeadline: message.ackDeadline,
       createdAt: message.createdAt,
+      expiresAt: message.expiresAt,
       purpose: message.purpose ?? 'information',
     }))
 }
@@ -564,9 +611,15 @@ export function claimCachedHostedForPush(
   clock = Date.now(),
   database: Database = db(),
 ): { notices: HostedCacheNotice[]; withheldOlderCount: number; warning: string | null } {
-  const beganAt = reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database)
+  const beganAt =
+    reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
+  const selected = selectPushNotices(
+    beganAt,
+    claimCachedHosted(reader, all, clock, database),
+    clock,
+  )
   return {
-    ...selectPushNotices(beganAt, claimCachedHosted(reader, all, clock, database)),
+    ...selected,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

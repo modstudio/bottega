@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { lintProse } from '../canon/prose-lint.ts'
 import {
-  filedDocRef,
   operatorAttributedRuling,
   renderCanonProposalNote,
   renderRulingFileText,
@@ -16,10 +15,12 @@ const filed = renderRulingFileText({
   question: 'Which shape should DEV-963 take?',
   ruling: 'Keep the existing 2 variants.',
   answererKind: 'operator',
-  runId: 42,
+  runId: '42',
+  runRecordId: '42000000-0000-4000-8000-000000000000',
   taskKey: 'DEV-963',
   date: '2026-09-25T12:00:00.000Z',
   questionId: 7,
+  questionRecordId: '70000000-0000-4000-8000-000000000000',
 })
 
 describe('filed ruling text', () => {
@@ -27,8 +28,10 @@ describe('filed ruling text', () => {
     expect(filed).toBe(
       [
         '---',
-        'question_id: 7',
-        'run: 42',
+        'question_id: 70000000-0000-4000-8000-000000000000',
+        'question_number: 7',
+        'run: 42000000-0000-4000-8000-000000000000',
+        'run_number: 42',
         'task: DEV-963',
         'date: 2026-09-25T12:00:00.000Z',
         'answerer: operator',
@@ -52,10 +55,12 @@ describe('filed ruling text', () => {
         basis: 'specification line 4',
         answererKind: 'agent',
         runId: null,
+        runRecordId: null,
         workflow: { slug: 'flow', mode: 'default', cursorId: 3 },
         taskKey: 'DEV-1294',
         date: '2026-10-13T12:00:00.000Z',
         questionId: 8,
+        questionRecordId: '80000000-0000-4000-8000-000000000000',
       }),
     ).toContain('ruling: |\n  Keep it.\nbasis: |\n  specification line 4')
   })
@@ -103,12 +108,5 @@ describe('operator file-offer hint', () => {
     expect(operatorAttributedRuling({ fromOperator: false, channel: 'ui' })).toBe(true)
     expect(operatorAttributedRuling({ fromOperator: false, channel: 'cli' })).toBe(false)
     expect(operatorAttributedRuling({ fromOperator: false, channel: 'mcp' })).toBe(false)
-  })
-})
-
-describe('filed refs', () => {
-  test('joins a doc id and revision', () => {
-    expect(filedDocRef(12, 'rev-1')).toBe('12@rev-1')
-    expect(filedDocRef(12, null)).toBe('12')
   })
 })

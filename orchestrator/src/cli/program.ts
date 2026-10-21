@@ -9,6 +9,7 @@ import { register as registerConfig } from '../commands/config.ts'
 import { register as registerContext } from '../commands/context.ts'
 import { register as registerDocs } from '../commands/docs.ts'
 import { register as registerHealth } from '../commands/health.ts'
+import { register as registerHubImport } from '../commands/hub-import.ts'
 import { register as registerInbox } from '../commands/inbox.ts'
 import { register as registerJudgment } from '../commands/judgment.ts'
 import { register as registerLogic } from '../commands/logic.ts'
@@ -21,6 +22,7 @@ import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
 import { register as registerRulings } from '../commands/rulings.ts'
 import { register as registerRunListing } from '../commands/run-listing.ts'
+import { register as registerSession } from '../commands/session.ts'
 import { register as registerSettings } from '../commands/settings.ts'
 import { register as registerSetup } from '../commands/setup.ts'
 import { register as registerSubjects } from '../commands/subjects.ts'
@@ -55,6 +57,7 @@ registerDocs(program)
 registerSubjects(program)
 registerRunListing(program)
 registerHealth(program)
+registerHubImport(program)
 registerInbox(program)
 registerCleanup(program)
 registerConfig(program)
@@ -64,6 +67,7 @@ registerRouting(program)
 registerRulings(program)
 registerLogic(program)
 registerSettings(program)
+registerSession(program)
 registerSetup(program)
 registerSync(program)
 registerTestSubstance(program)

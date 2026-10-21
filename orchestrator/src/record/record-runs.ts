@@ -2,9 +2,11 @@
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import type { RunDetailReviewLens } from '../../../shared/review-presentation.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import type { RecordCursor } from './record-cursor.ts'
+import { recordPresentation, reviewLensPresentation } from './review-presentation.ts'
 
 type RecordScore = {
   runId?: string
@@ -32,6 +34,10 @@ export type RecordRun = {
   failureKind: string | null
   vendorTokens: number | null
   vendorCostUsd: number | null
+  vendorInputTokens: number | null
+  vendorOutputTokens: number | null
+  vendorEstimatedCostUsd: number | null
+  vendorCostSource: string | null
   label: string | null
   lens: string | null
   parentRunId: string | null
@@ -40,7 +46,10 @@ export type RecordRun = {
   probe: boolean
   score: RecordScore | null
 }
-export type RecordRunDetail = RecordRun & Record<string, unknown> & { reviews: unknown[] }
+export type RecordRunDetail = RecordRun &
+  Record<string, unknown> & {
+    reviews: RunDetailReviewLens[]
+  }
 
 type RunListInput = TenantPrincipal & {
   url: string
@@ -77,19 +86,6 @@ export type RecordRunsWindow = {
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 const numeric = (value: unknown) => (value == null ? null : Number(value))
-const camel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
-const presentation = (row: Record<string, unknown>) =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [
-      camel(key),
-      value instanceof Date
-        ? value.toISOString()
-        : typeof value === 'bigint'
-          ? Number(value)
-          : value,
-    ]),
-  )
-
 function runRow(row: Record<string, unknown>): RecordRun {
   return {
     id: String(row.id),
@@ -107,6 +103,10 @@ function runRow(row: Record<string, unknown>): RecordRun {
     failureKind: row.failure_kind == null ? null : String(row.failure_kind),
     vendorTokens: numeric(row.vendor_tokens),
     vendorCostUsd: numeric(row.vendor_cost_usd),
+    vendorInputTokens: numeric(row.vendor_input_tokens),
+    vendorOutputTokens: numeric(row.vendor_output_tokens),
+    vendorEstimatedCostUsd: numeric(row.vendor_estimated_cost_usd),
+    vendorCostSource: row.vendor_cost_source == null ? null : String(row.vendor_cost_source),
     label: row.label == null ? null : String(row.label),
     lens: row.lens == null ? null : String(row.lens),
     parentRunId: row.parent_run_id == null ? null : String(row.parent_run_id),
@@ -143,7 +143,9 @@ export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> 
       SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job,
         r.status, r.latency_ms, r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens,
-        r.vendor_cost_usd, r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded,
+        r.vendor_cost_usd, r.vendor_input_tokens, r.vendor_output_tokens,
+        r.vendor_estimated_cost_usd, r.vendor_cost_source, r.label, r.lens,
+        r.parent_run_id, r.turn, r.evidence_excluded,
         r.probe, s.delivery, s.quality, s.fidelity, s.scored_at
       FROM run r JOIN space sp ON sp.id=r.space_id
       LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
@@ -254,6 +256,8 @@ export async function viewRecordRuns(input: RecordRunsWindowInput): Promise<Reco
       SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job, r.status, r.latency_ms,
         r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens, r.vendor_cost_usd,
+        r.vendor_input_tokens, r.vendor_output_tokens, r.vendor_estimated_cost_usd,
+        r.vendor_cost_source,
         r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded, r.probe,
         s.delivery, s.quality, s.fidelity, s.scored_at
       FROM run r JOIN space sp ON sp.id=r.space_id
@@ -294,12 +298,13 @@ export async function getRecordRun(input: {
       })
     const lenses = await tx`
       SELECT l.*, rv.project_id AS review_project_id, rv.recorded_at, rv.completed_at,
-        rv.tier, rv.patch_id, rv.commit_message,
+        NULL::integer AS review_number, rv.tier, rv.patch_id, rv.commit_message,
         COALESCE(json_agg(f ORDER BY f.ordinal) FILTER (WHERE f.id IS NOT NULL), '[]') AS findings
       FROM review_lens l JOIN review rv ON rv.id=l.review_id LEFT JOIN review_finding f ON f.review_lens_id=l.id
-      WHERE l.run_id=${input.id}::uuid GROUP BY l.id, rv.id ORDER BY rv.recorded_at DESC, l.id DESC
+      WHERE l.run_id=${input.id}::uuid GROUP BY l.id, rv.id
+      ORDER BY rv.recorded_at DESC, l.created_at DESC, l.lens, l.agent
     `
-    const detail = presentation(row)
+    const detail = recordPresentation(row)
     for (const key of [
       'delivery',
       'quality',
@@ -314,7 +319,7 @@ export async function getRecordRun(input: {
       ...detail,
       ...base,
       score: base.score,
-      reviews: lenses.map((lens: Record<string, unknown>) => presentation(lens)),
+      reviews: lenses.map((lens: Record<string, unknown>) => reviewLensPresentation(lens)),
     } as RecordRunDetail
   })
 }

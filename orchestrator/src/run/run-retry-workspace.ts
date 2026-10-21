@@ -30,7 +30,7 @@ export type WritingRetryWorkspace = {
 }
 
 export function resolveRetryTree(input: {
-  rootId: number
+  rootId: string
   projectName: string | null
   projectPath: string | null
   readsRepo: boolean
@@ -84,23 +84,23 @@ function branchTipRelation(
 }
 
 export function resolveWritingRetryWorkspace(input: {
-  id: number
-  rootId: number
+  id: string
+  rootId: string
   job: string
   launchKey: string | null
   repo: string | null
-  projectId: number | null
+  projectId: string | null
   branchKept: string | null
   branchKeptTip: string | null
   strandedRecordOnly: boolean
 }): WritingRetryWorkspace {
   const latest = db()
     .query(
-      `SELECT id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid
-       FROM run WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC LIMIT 1`,
+      `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid
+       FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
     .get(input.rootId, input.rootId) as {
-    id: number
+    record_id: string
     cwd: string | null
     worktree: string | null
     branch: string | null
@@ -137,7 +137,7 @@ export function resolveWritingRetryWorkspace(input: {
       !input.strandedRecordOnly &&
       runAlive({
         status: latest.status,
-        lease: runLeaseState(latest.id),
+        lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
       }),
     branchTipRelation: relation,
@@ -156,7 +156,7 @@ export function resolveWritingRetryWorkspace(input: {
   }
   if (decision.action === 'refuse-live-owner') {
     throw new Error(
-      `run ${latest.id} still has a live owner on worktree ${latest.worktree}; ` +
+      `run ${latest.record_id} still has a live owner on worktree ${latest.worktree}; ` +
         `wait for or stop it, then retry ${PLATFORM_SLUG} run retry ${input.id}`,
     )
   }
@@ -164,7 +164,6 @@ export function resolveWritingRetryWorkspace(input: {
     branch,
     conversationRootId: input.rootId,
     projectId: input.projectId,
-    projectName: input.repo,
     retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
   })
   if (!liveTip) throw new Error(`run ${input.id} branch ${branch} has no live tip`)

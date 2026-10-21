@@ -17,51 +17,51 @@ test('landing evidence backfill enqueues references in order, maps every column,
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
     .query(`INSERT INTO run
-      (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
       VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','test','sha',1,'head','ok')`)
     .run()
   database
     .query(
-      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T00:01:00Z')",
+      "INSERT INTO review (number,record_id,recorded_at) VALUES (1,'review-record','2026-09-15T00:01:00Z')",
     )
     .run()
   database
     .query(`INSERT INTO landing
-      (id,record_id,project,branch,tip,trunk_before,status,error,session_id,started_at,finished_at,
+      (record_id,project,branch,tip,trunk_before,status,error,session_id,started_at,finished_at,
        heartbeat_delivered_at,path_set,requested_at,steps,claim_pid,claim_session)
-      VALUES (1,'01990000-0000-7000-8000-000000000021','fixture','DEV-1','tip','trunk','landed',NULL,
+      VALUES ('01990000-0000-7000-8000-000000000021','fixture','DEV-1','tip','trunk','landed',NULL,
        'session','2026-09-15T00:02:00Z','2026-09-15T00:03:00Z','2026-09-15T00:04:00Z','["a.ts"]',
        '2026-09-15T00:01:00Z','["gate"]',42,'claim')`)
     .run()
   database
     .query(`INSERT INTO landing
-      (id,record_id,project,branch,status,started_at,causing_landing_id)
-      VALUES (2,'01990000-0000-7000-8000-000000000022','fixture','DEV-2','refused',
-       '2026-09-15T00:05:00Z',1)`)
+      (record_id,project,branch,status,started_at,causing_landing_record_id)
+      VALUES ('01990000-0000-7000-8000-000000000022','fixture','DEV-2','refused',
+       '2026-09-15T00:05:00Z','01990000-0000-7000-8000-000000000021')`)
     .run()
   database
     .query(`INSERT INTO landing_override
-      (id,record_id,project,branch,tip,tree,patch_id,path_set,reason,session_id,at)
-      VALUES (1,'01990000-0000-7000-8000-000000000023','fixture','DEV-1','tip','tree','patch',
+      (record_id,project,branch,tip,tree,patch_id,path_set,reason,session_id,at)
+      VALUES ('01990000-0000-7000-8000-000000000023','fixture','DEV-1','tip','tree','patch',
        '["a.ts"]','reason','session','2026-09-15T00:06:00Z')`)
     .run()
   database
     .query(`INSERT INTO landing_review_carry
-      (id,record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
+      (record_id,project,branch,tip,tree,review_record_id,reviewed_commit,reviewed_tree,patch_id,
        old_base,new_base,session_id,at)
-      VALUES (1,'01990000-0000-7000-8000-000000000024','fixture','DEV-1','tip','tree',1,'commit',
+      VALUES ('01990000-0000-7000-8000-000000000024','fixture','DEV-1','tip','tree','review-record','commit',
        'reviewed-tree','patch','old','new','session','2026-09-15T00:07:00Z')`)
     .run()
   database
     .query(`INSERT INTO contention
-      (id,record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_id,landing_id)
-      VALUES (1,'01990000-0000-7000-8000-000000000025','2026-09-15T00:08:00Z','session','lock',
-       'resource','wait',12,'cause',1,1)`)
+      (record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_record_id,landing_record_id)
+      VALUES ('01990000-0000-7000-8000-000000000025','2026-09-15T00:08:00Z','session','lock',
+       'resource','wait',12,'cause','run-record','01990000-0000-7000-8000-000000000021')`)
     .run()
   database
     .query(`INSERT INTO test_flake
-      (id,record_id,test,file,load_at_failure,signal,at)
-      VALUES (1,'01990000-0000-7000-8000-000000000026','test name','test.ts','{"load":1}','SIGTERM',
+      (record_id,test,file,load_at_failure,signal,at)
+      VALUES ('01990000-0000-7000-8000-000000000026','test name','test.ts','{"load":1}','SIGTERM',
        '2026-09-15T00:09:00Z')`)
     .run()
 

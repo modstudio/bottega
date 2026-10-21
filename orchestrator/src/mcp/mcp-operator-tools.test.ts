@@ -38,16 +38,16 @@ async function withClient<T>(run: (client: Client) => Promise<T>): Promise<T> {
   }
 }
 
-function addQuestion(runId: number, question: string, waiting = false): number {
+function addQuestion(runId: string, question: string, waiting = false): number {
   const at = new Date().toISOString()
   return (
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at)
-         VALUES ('${newRecordId()}',?,?,?,?) RETURNING id`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,awaiting_operator_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?) RETURNING number`,
       )
-      .get(runId, at, question, waiting ? at : null) as { id: number }
-  ).id
+      .get(runId, at, question, waiting ? at : null) as { number: number }
+  ).number
 }
 
 describe('operator MCP tools', () => {
@@ -60,6 +60,11 @@ describe('operator MCP tools', () => {
       repo: PLATFORM_SLUG,
     })
     const questionId = addQuestion(runId, 'Which shape?', true)
+    const runNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as {
+        number: number
+      }
+    ).number
 
     const result = await withClient((client) =>
       client.callTool({ name: 'list_open_questions', arguments: {} }),
@@ -67,8 +72,8 @@ describe('operator MCP tools', () => {
 
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
-      questions: [{ question_id: questionId, answer_id: runId, can_answer: true }],
-      waiting_on_operator: [{ kind: 'question', id: questionId, run_id: runId }],
+      questions: [{ question_id: questionId, answer_id: runNumber, can_answer: true }],
+      waiting_on_operator: [{ kind: 'question', id: questionId, run_record_id: runId }],
     })
   })
 
@@ -79,7 +84,7 @@ describe('operator MCP tools', () => {
       status: 'asking',
       session: SESSION,
     })
-    db().query('UPDATE run SET repo=NULL WHERE id=?').run(ownRun)
+    db().query('UPDATE run SET repo=NULL WHERE record_id=?').run(ownRun)
     const ownQuestion = addQuestion(ownRun, 'Owned without a project?', true)
     const foreignRun = addRun({
       agent: 'codex',
@@ -111,13 +116,13 @@ describe('operator MCP tools', () => {
       status: 'running',
       session: SESSION,
     })
-    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, runId)
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
     const questionId = addQuestion(runId, 'Which shape?')
     const runRecordId = (
-      db().query('SELECT record_id FROM run WHERE id=?').get(runId) as { record_id: string }
+      db().query('SELECT record_id FROM run WHERE record_id=?').get(runId) as { record_id: string }
     ).record_id
     const questionRecordId = (
-      db().query('SELECT record_id FROM question WHERE id=?').get(questionId) as {
+      db().query('SELECT record_id FROM question WHERE number=?').get(questionId) as {
         record_id: string
       }
     ).record_id
@@ -126,7 +131,7 @@ describe('operator MCP tools', () => {
       client.callTool({
         name: 'answer_questions',
         arguments: {
-          run_id: runRecordId.toUpperCase(),
+          run_record_id: runRecordId.toUpperCase(),
           rulings: [
             { question_id: questionRecordId.toUpperCase(), ruling: 'Use the existing shape.' },
           ],
@@ -137,15 +142,13 @@ describe('operator MCP tools', () => {
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
       outcome: 'delivered-live',
-      run_id: runId,
-      resumed_as: null,
-    })
-    expect(result.structuredContent).toMatchObject({
-      record_id: runRecordId,
+      run_record_id: runId,
+      run_number: expect.any(Number),
+      resumed_number: null,
       resumed_record_id: null,
     })
     expect(
-      db().query('SELECT answer,answer_channel FROM question WHERE id=?').get(questionId),
+      db().query('SELECT answer,answer_channel FROM question WHERE number=?').get(questionId),
     ).toEqual({ answer: 'Use the existing shape.', answer_channel: 'mcp' })
   })
 
@@ -167,14 +170,14 @@ describe('operator MCP tools', () => {
           status: 'running',
           session: SESSION,
         })
-        db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, runId)
+        db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
         const questionId = addQuestion(runId, `Literal ${index}?`)
         const fromOperator = index === literals.length - 1
 
         const result = await client.callTool({
           name: 'answer_questions',
           arguments: {
-            run_id: runId,
+            run_record_id: runId,
             rulings: [{ question_id: questionId, ruling }],
             from_operator: fromOperator,
           },
@@ -183,7 +186,7 @@ describe('operator MCP tools', () => {
         expect(result.isError).not.toBe(true)
         expect(
           db()
-            .query('SELECT answer,answered_by,answer_channel FROM question WHERE id=?')
+            .query('SELECT answer,answered_by,answer_channel FROM question WHERE number=?')
             .get(questionId),
         ).toEqual({
           answer: ruling,
@@ -208,7 +211,7 @@ describe('operator MCP tools', () => {
       client.callTool({
         name: 'answer_questions',
         arguments: {
-          run_id: runId,
+          run_record_id: runId,
           rulings: [{ question_id: first, ruling: 'Only one ruling.' }],
           record_only: true,
         },
@@ -236,7 +239,7 @@ describe('operator MCP tools', () => {
     db()
       .query(
         `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
-         WHERE id=?`,
+         WHERE number=?`,
       )
       .run('Original ruling.', answeredAt, SESSION, 'agent', 'cli', questionId)
 
@@ -269,7 +272,7 @@ describe('operator MCP tools', () => {
     )
     const { upsertProject } = await import('../project/projects.ts')
     installRecordApiClient(createMemoryRecordApiClient())
-    upsertProject({ name: 'file-ruling-project', path: process.cwd() })
+    upsertProject({ recordId: newRecordId(), name: 'file-ruling-project', path: process.cwd() })
     const runId = addRun({
       agent: 'codex',
       job: 'file-question',
@@ -281,7 +284,7 @@ describe('operator MCP tools', () => {
     db()
       .query(
         `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
-         WHERE id=?`,
+         WHERE number=?`,
       )
       .run('Keep it.', new Date().toISOString(), SESSION, 'operator', 'cli', questionId)
 
@@ -297,12 +300,12 @@ describe('operator MCP tools', () => {
       question_id: questionId,
       filed_as: 'doc',
       filed_ref: expect.stringMatching(/@/),
-      filed_record_id: null,
+      filed_record_id: expect.any(String),
       filed_label: null,
       filed_at: expect.any(String),
     })
     expect(result.structuredContent).toMatchObject({ question_record_id: expect.any(String) })
-    expect(db().query('SELECT filed_as FROM question WHERE id=?').get(questionId)).toEqual({
+    expect(db().query('SELECT filed_as FROM question WHERE number=?').get(questionId)).toEqual({
       filed_as: 'doc',
     })
 
@@ -317,7 +320,7 @@ describe('operator MCP tools', () => {
     db()
       .query(
         `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?
-         WHERE id=?`,
+         WHERE number=?`,
       )
       .run('Keep it.', new Date().toISOString(), SESSION, 'operator', 'cli', workerQuestionId)
     process.env.ORCH_RUN_ID = 'mcp-worker'

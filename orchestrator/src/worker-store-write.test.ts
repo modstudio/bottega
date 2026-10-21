@@ -1,6 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { newRecordId } from '../../shared/record-id.ts'
+import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
 import { applyMigrations } from './database/migrations.ts'
 import { importCanon } from './doc/canon-import.ts'
 import { consumeDoc, importDoc, importDocs, removeDoc, restoreDoc, setDoc } from './doc/docs.ts'
@@ -12,6 +14,7 @@ import {
   promoteStepCatalogue,
   retireStepCatalogue,
   setStepCatalogue,
+  setStepCatalogueLocal,
 } from './workflow/step-catalogue.ts'
 import { seedWorkflows } from './workflow/workflow-seeds.ts'
 import {
@@ -21,18 +24,25 @@ import {
   promoteWorkflow,
   retireWorkflow,
   setWorkflow,
+  setWorkflowLocal,
 } from './workflow/workflows.ts'
 
 let priorRunId: string | undefined
+let priorRecordUrl: string | undefined
 
 beforeEach(() => {
   priorRunId = process.env.ORCH_RUN_ID
+  priorRecordUrl = process.env.ORCH_RECORD_API_URL
   delete process.env.ORCH_RUN_ID
+  delete process.env.ORCH_RECORD_API_URL
 })
 
 afterEach(() => {
   if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
   else process.env.ORCH_RUN_ID = priorRunId
+  if (priorRecordUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+  else process.env.ORCH_RECORD_API_URL = priorRecordUrl
+  installRecordApiClient(createMemoryRecordApiClient())
 })
 
 describe('worker shared-text store writes', () => {
@@ -98,11 +108,11 @@ describe('worker shared-text store writes', () => {
       refusal,
     )
     await expect(
-      restoreDoc('global', null, created.slug, 1, { reason: 'worker fixture' }),
+      restoreDoc('global', null, created.slug, newRecordId(), { reason: 'worker fixture' }),
     ).rejects.toThrow(refusal)
     await expect(
       importCanon({
-        address: { kind: 'project', subject: 'unused', projectId: 1 },
+        address: { kind: 'project', subject: 'unused', projectId: 'project-1' },
         rows: [],
         reason: 'worker fixture',
       }),
@@ -115,14 +125,14 @@ describe('worker shared-text store writes', () => {
     applyMigrations(d)
     seedWorkflows(d)
     const catalogue = productionStepCatalogue(d)
-    const workflow = productionWorkflows(d)[0]!
-    const architectCatalogue = setStepCatalogue(
+    const workflow = productionWorkflows(d, null)[0]!
+    const architectCatalogue = setStepCatalogueLocal(
       catalogue.definition,
       'architect catalogue fixture',
       'architect',
       d,
     )
-    const architectWorkflow = setWorkflow(
+    const architectWorkflow = setWorkflowLocal(
       'worker-guard-architect',
       workflow.definition,
       'architect workflow fixture',
@@ -151,10 +161,13 @@ describe('worker shared-text store writes', () => {
     const catalogueWrites = [
       () => setStepCatalogue(catalogue.definition, 'worker fixture', 'worker', d),
       () => importStepCatalogue(catalogue.definition, 'worker fixture', 'worker', d),
-      () => forkStepCatalogue(undefined, 'worker fixture', 'worker', d),
+      () => forkStepCatalogue(undefined, 'worker fixture', 'fixture', 'worker', d),
       () => promoteStepCatalogue(architectCatalogue.n, 'worker fixture', 'worker', d),
       () => retireStepCatalogue(catalogue.n, 'worker fixture', 'worker', d),
     ]
+    for (const write of [...workflowWrites, ...catalogueWrites]) expect(write).toThrow(refusal)
+    process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+    installRecordApiClient(createMemoryRecordApiClient())
     for (const write of [...workflowWrites, ...catalogueWrites]) expect(write).toThrow(refusal)
     d.close()
   })

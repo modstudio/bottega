@@ -1,10 +1,9 @@
-import { Database } from 'bun:sqlite'
 import { afterAll, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { appendWorkflowOutput, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 
@@ -23,15 +22,11 @@ function initializeProbeRepository(): void {
   probeRepositoryInitialized = true
 }
 
-const database = () => {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
-  d.query("INSERT INTO project (name,path,settings) VALUES ('probe-project',?,'{}')").run(
-    probeRepository,
-  )
-  return d
-}
+const database = testDatabaseFixture((d) => {
+  d.query(
+    "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'probe-project',?,'{}')",
+  ).run(probeRepository)
+})
 
 test('records command, cwd, commit, exit and a bounded tail', async () => {
   initializeProbeRepository()
@@ -64,7 +59,9 @@ test('records command, cwd, commit, exit and a bounded tail', async () => {
 test('records the selected cwd and its head commit', async () => {
   const d = database()
   const cwd = process.cwd()
-  d.query("INSERT INTO project (name,path,settings) VALUES ('cwd-project',?,'{}')").run(cwd)
+  d.query(
+    "INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'cwd-project',?,'{}')",
+  ).run(cwd)
   const head = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd, stdout: 'pipe' })
     .stdout.toString()
     .trim()

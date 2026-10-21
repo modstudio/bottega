@@ -6,6 +6,7 @@ import {
   recordRequestNature,
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
+import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
   OperatorEmailBudgetExceededError,
@@ -14,7 +15,6 @@ import {
 import type { ReportMailClient } from './report-delivery.ts'
 import { sesReportMailClient } from './report-delivery-hosted.ts'
 
-type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = {
   fetch?: typeof fetch
   mail?: ReportMailClient
@@ -25,7 +25,7 @@ const TEST_REFUSAL =
 
 export async function operatorWaitingEmailApi(
   request: Request,
-  config: Config,
+  config: HostedRouteConfig,
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)

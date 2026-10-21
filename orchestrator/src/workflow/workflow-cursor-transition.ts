@@ -17,6 +17,142 @@ export type CursorTransition =
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
 
+export type OutcomeDecision = { action: 'allow' } | { action: 'refuse'; message: string }
+
+/** Decide whether a supplied close outcome matches the current catalogue step. */
+export function decideStepOutcome(
+  stepSlug: string,
+  allowed: readonly string[] | undefined,
+  outcome: string | undefined,
+): OutcomeDecision {
+  if (!allowed?.length)
+    return outcome === undefined
+      ? { action: 'allow' }
+      : {
+          action: 'refuse',
+          message: `step "${stepSlug}" declares no outcomes; omit --outcome`,
+        }
+  if (outcome === undefined)
+    return {
+      action: 'refuse',
+      message: `step "${stepSlug}" requires --outcome <slug>; allowed values: ${allowed.join(', ')}`,
+    }
+  return allowed.includes(outcome)
+    ? { action: 'allow' }
+    : {
+        action: 'refuse',
+        message: `step "${stepSlug}" does not allow outcome "${outcome}"; allowed values: ${allowed.join(', ')}`,
+      }
+}
+
+const AUTOMATIC_REENTRY_LIMIT = 1
+const FIRST_VISIT = 1
+
+type ConditionalStep = {
+  slug: string
+  when?: { step: string; outcome: string[] }
+  reenter?: { to: string; outcome: string }
+}
+type OutcomeTrailEntry = {
+  slug: string
+  outcome?: string
+  reentered?: { to: string; pass: number }
+}
+
+export type ConditionalAdvance = {
+  ordinal: number | null
+  skipped: Array<{ ordinal: number; step: ConditionalStep }>
+  reentered?: { to: string; pass: number }
+  requireRuling: boolean
+}
+
+/** Pass number for a served step: 1 plus re-entries whose target is at or before it. */
+export function stepPass(
+  trail: readonly OutcomeTrailEntry[],
+  steps: readonly { slug: string }[],
+  currentOrdinal: number,
+): number {
+  return (
+    1 +
+    trail.filter((entry) => {
+      if (!entry.reentered) return false
+      const toOrdinal = steps.findIndex((step) => step.slug === entry.reentered!.to)
+      return toOrdinal >= 0 && toOrdinal <= currentOrdinal
+    }).length
+  )
+}
+
+function forwardAdvance(
+  steps: readonly ConditionalStep[],
+  trail: readonly OutcomeTrailEntry[],
+  nextOrdinal: number,
+): Pick<ConditionalAdvance, 'ordinal' | 'skipped'> {
+  const skipped: ConditionalAdvance['skipped'] = []
+  let ordinal = nextOrdinal
+  while (ordinal < steps.length) {
+    const step = steps[ordinal]!
+    if (!step.when) return { ordinal, skipped }
+    const recorded = trail.findLast((entry) => entry.slug === step.when!.step)?.outcome
+    if (recorded !== undefined && step.when.outcome.includes(recorded)) return { ordinal, skipped }
+    skipped.push({ ordinal, step })
+    ordinal += 1
+  }
+  return { ordinal: null, skipped }
+}
+
+/** Select the next ordinal, skips, any re-entry, and whether a ruling floor applies. */
+export function decideConditionalAdvance(
+  steps: readonly ConditionalStep[],
+  trail: readonly OutcomeTrailEntry[],
+  currentOrdinal: number,
+  outcome: string | undefined,
+): ConditionalAdvance {
+  const current = steps[currentOrdinal]
+  const reenter = current?.reenter
+  if (reenter && outcome === reenter.outcome) {
+    const toOrdinal = steps.findIndex((step) => step.slug === reenter.to)
+    if (toOrdinal >= 0 && toOrdinal < currentOrdinal) {
+      const taken = trail.filter((entry) => entry.slug === current.slug && entry.reentered).length
+      return {
+        ordinal: toOrdinal,
+        skipped: [],
+        reentered: { to: reenter.to, pass: FIRST_VISIT + taken + 1 },
+        requireRuling: taken >= AUTOMATIC_REENTRY_LIMIT,
+      }
+    }
+  }
+  const trailWithClose = [...trail, { slug: current?.slug ?? '', ...(outcome ? { outcome } : {}) }]
+  return {
+    ...forwardAdvance(steps, trailWithClose, currentOrdinal + 1),
+    requireRuling: false,
+  }
+}
+
+/** Decide which stored composition a serve should reuse. */
+export function decideCursorCompositionInput(
+  cursor: {
+    state: CursorState
+    args: string
+    workflow_version: number
+    catalogue_version: number
+  } | null,
+  args: Record<string, string>,
+  mode: string,
+) {
+  const startDecision = decideCursorStart(cursor?.state ?? null)
+  if (!cursor || startDecision === 'retire')
+    return { startDecision, effectiveArgs: args, selection: { mode } }
+  return {
+    startDecision,
+    effectiveArgs: JSON.parse(cursor.args) as Record<string, string>,
+    selection: {
+      mode,
+      version: cursor.workflow_version,
+      catalogueVersion: cursor.catalogue_version,
+    },
+  }
+}
+
 export const cursorValue = (
   ordinal: number,
   stepSlug: string,

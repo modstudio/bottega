@@ -73,6 +73,25 @@ DECLARED = re.compile(r"\bNEEDS[-_ ]?WEB\b", re.I)
 URL = re.compile(r"https?://")
 
 
+def mint_uuid7():
+    """Mint an RFC 9562 UUIDv7 on both new and old Python runtimes."""
+    standard = getattr(uuid, "uuid7", None)
+    if callable(standard):
+        return standard()
+    timestamp = int(time.time() * 1000) & ((1 << 48) - 1)
+    random_bits = int.from_bytes(os.urandom(10), "big") & ((1 << 74) - 1)
+    random_a = random_bits >> 62
+    random_b = random_bits & ((1 << 62) - 1)
+    value = (
+        (timestamp << 80)
+        | (0b0111 << 76)
+        | (random_a << 64)
+        | (0b10 << 62)
+        | random_b
+    )
+    return uuid.UUID(int=value)
+
+
 def session_id(payload):
     """Which session this is.
 
@@ -121,7 +140,7 @@ def log(decision, why, inp, event, payload=None):
         # Python is the hook's language-local minter; a Bun process per event would make the gate expensive.
         # Mint inside the same fail-open boundary as the write so a minter failure is recorded like any
         # other failed spawn write, without inventing a substitute identity.
-        row = (str(uuid.uuid7()), *row[1:])
+        row = (str(mint_uuid7()), *row[1:])
         # No CREATE TABLE here: orch owns the schema and creates it on open.
         # Taking a schema lock on every spawn only contended with the writers
         # this then had to wait for.

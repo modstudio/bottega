@@ -10,6 +10,9 @@ export type ClosedStep = {
   evidence?: Array<{ flag: string; value: string }>
   deferred?: { id: number; floor: string; reason: string }
   satisfied?: number
+  outcome?: string
+  skipped?: { step: string; outcome: string[] }
+  reentered?: { to: string; pass: number }
 }
 
 export type ArgumentReboundEvent = {
@@ -22,7 +25,7 @@ export type ArgumentReboundEvent = {
 
 export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
 
-const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
+export const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 
 export function completedWorkflowSummary(name: string, entries: CursorTrailEntry[]): string {
   const closed = entries.filter(isClosedStep)
@@ -34,6 +37,19 @@ export function completedWorkflowSummary(name: string, entries: CursorTrailEntry
 
 export const hasClosedStep = (trail: string): boolean =>
   (JSON.parse(trail) as CursorTrailEntry[]).some(isClosedStep)
+
+/** Floor input that requires a ruling answered after this step's last re-entry close. */
+export function reentryBoundFloorInput(
+  requireRuling: boolean,
+  closedJson: string,
+  slug: string,
+): { freshRulingAfter?: string } {
+  if (!requireRuling) return {}
+  const at = (JSON.parse(closedJson) as CursorTrailEntry[])
+    .filter(isClosedStep)
+    .findLast((entry) => entry.slug === slug && entry.reentered)?.at
+  return { freshRulingAfter: at ?? '' }
+}
 
 export function currentStepActivatedAt(
   row: { ordinal: number; created_at: string; closed: string; step_slug: string },

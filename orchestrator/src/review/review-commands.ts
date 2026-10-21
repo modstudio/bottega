@@ -17,6 +17,7 @@ import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
+import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
@@ -34,6 +35,8 @@ import { reviewRoundIdentity } from './review-yield.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void }
+const TIER_RUN_SQL =
+  'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
@@ -109,9 +112,7 @@ function resolveTierTarget(
   if (classifyRunIdentifier(value)) {
     return (() => {
       const runId = resolveRunIdentifier(db(), value)
-      const row = db()
-        .query('SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE id=?')
-        .get(runId) as {
+      const row = db().query(TIER_RUN_SQL).get(runId) as {
         repo: string | null
         job: string
         branch: string | null
@@ -168,7 +169,6 @@ function resolveTierTarget(
       return { repo: project.path, from, to: reviewed, branch: row.branch!, project }
     })()
   }
-
   const project = projectAt(cwd)
   if (!project) throw new Error('review tier target is not inside a registered project')
   const repo = gitToplevel(cwd)
@@ -240,6 +240,7 @@ function reviewTierOutput(value: string, cwd: string) {
     },
     lens_profiles: output.lenses.map((id) => ({
       id,
+      basis: output.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
@@ -256,6 +257,7 @@ function printReviewTier(
   }
   log(`tier ${output.tier}`)
   log(`risk ${output.risk}`)
+  log(`risk map ${output.risk_map}`)
   log(`size ${output.size}`)
   if (output.review_budget.unclassifiableReviewCount > 0) {
     log(
@@ -281,10 +283,20 @@ function printReviewTier(
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    log(`lens ${lens.id}${sources ? `  ${sources}` : ''}`)
+    log(`lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}`)
   }
-  for (const reason of output.reasons) log(reason)
+  if (output.secondOpinion) {
+    log(
+      `second opinion ${output.secondOpinion}${basisLabel(output.secondOpinionBasis)}: dispatch this lens a second time on a different model ` +
+        `with --distinct-from <the first run of ${output.secondOpinion} on this tip>`,
+    )
+  }
+  output.reasons.forEach((reason, index) => {
+    log(`${reason}${index === 0 ? basisLabel(output.riskBasis) : ''}`)
+  })
 }
+
+const basisLabel = (basis: string | null | undefined): string => (basis ? `  basis: ${basis}` : '')
 
 export function listReviewCommand(flags: ReviewFlags, presentation: ReviewPresentation): void {
   const { has, flag } = flags
@@ -308,7 +320,7 @@ export function listReviewCommand(flags: ReviewFlags, presentation: ReviewPresen
     )
     for (const row of rows)
       log(
-        `${String(row.id).padEnd(3)} ${row.recorded_at.padEnd(25)} ${row.completed_at ? 'yes' : 'no '}        ` +
+        `${String(row.number).padEnd(3)} ${row.recorded_at.padEnd(25)} ${row.completed_at ? 'yes' : 'no '}        ` +
           `${(row.project ?? '—').padEnd(8)} ${(row.branches.join(',') || '—').padEnd(9)} ` +
           `${`${row.tier ?? '—'}/${row.risk ?? '—'}/${row.size ?? '—'}`.padEnd(14)} ${String(row.lens_count).padEnd(7)} ` +
           `${row.findings.total}/${row.findings.triaged}/${row.findings.accepted}/${row.findings.modified}/${row.findings.rejected}/${row.findings.skipped}              ${row.coverage ?? '—'}`,
@@ -321,19 +333,17 @@ export function showReviewCommand(
   flags: ReviewFlags,
   { log }: ReviewPresentation,
 ): void {
-  const reviewId = Number(argv[2])
-  if (!Number.isInteger(reviewId) || reviewId <= 0)
-    throw new Error(`${PLATFORM_SLUG} review show <id> [--json]`)
-  const review = getReview(reviewId)
+  if (!argv[2]) throw new Error(`${PLATFORM_SLUG} review show <number|uuid> [--json]`)
+  const review = getReview(resolveReviewIdentifier(db(), argv[2]))
   if (flags.has('json')) log(JSON.stringify(review))
   else {
     log(
-      `review ${review.id} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'} current=${review.current_class ?? '—'}`,
+      `review ${review.number} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'} current=${review.current_class ?? '—'}`,
     )
     if (review.outdated_reason) log(`outdated ${review.outdated_at}: ${review.outdated_reason}`)
     for (const lens of review.lenses) {
       log(
-        `lens run ${lens.run_id}: ${lens.lens} ${lens.agent}/${lens.model ?? '—'} tree=${lens.reviewed_tree ?? '—'} head=${lens.head_commit ?? '—'}`,
+        `lens run ${lens.run_record_id}: ${lens.lens} ${lens.agent}/${lens.model ?? '—'} tree=${lens.reviewed_tree ?? '—'} head=${lens.head_commit ?? '—'}`,
       )
       log(`  ref ${lens.review_ref}: ${lens.pin.resolves ? lens.pin.commit : 'unresolved'}`)
       log(
@@ -397,9 +407,11 @@ export function coverageAuditReviewCommand(flags: ReviewFlags, { log }: ReviewPr
     else
       log(
         `${audit.count} completed review${audit.count === 1 ? '' : 's'} reviewed trunk` +
-          (audit.review_ids.length ? `: ${audit.review_ids.join(', ')}` : '') +
+          (audit.review_record_ids.length ? `: ${audit.review_record_ids.join(', ')}` : '') +
           `\npartial reviews: ${
-            audit.partial_review_ids.length ? audit.partial_review_ids.join(', ') : 'none'
+            audit.partial_review_record_ids.length
+              ? audit.partial_review_record_ids.join(', ')
+              : 'none'
           }`,
       )
   } finally {
@@ -415,7 +427,7 @@ export function recordReviewCommand(
   const runIds = argv.slice(2).map((value) => resolveRunIdentifier(db(), value))
   if (!runIds.length) throw new Error(`${PLATFORM_SLUG} review record <run-id>...`)
   const entries = runIds.map((runId) => {
-    const row = db().query('SELECT output_path FROM run WHERE id=?').get(runId) as {
+    const row = db().query('SELECT output_path FROM run WHERE record_id=?').get(runId) as {
       output_path: string | null
     } | null
     if (!row?.output_path || !existsSync(row.output_path)) {
@@ -425,10 +437,13 @@ export function recordReviewCommand(
     if (!output) throw new Error(`run ${runId} output does not satisfy the review contract`)
     return { runId, output }
   })
-  const reviewId = recordReviews(entries)
+  const reviewRecordId = recordReviews(entries)
+  const review = getReview(reviewRecordId)
   const mirrorRuns = entries
     .filter(({ runId }) => {
-      const row = db().query(`SELECT mcp_connected, mcp_error FROM run WHERE id=?`).get(runId) as {
+      const row = db()
+        .query(`SELECT mcp_connected, mcp_error FROM run WHERE record_id=?`)
+        .get(runId) as {
         mcp_connected: number | null
         mcp_error: string | null
       }
@@ -436,7 +451,7 @@ export function recordReviewCommand(
     })
     .map(({ runId }) => runId)
   log(
-    `recorded review ${reviewId}` +
+    `recorded review ${review.number}` +
       (mirrorRuns.length
         ? ` — MIRROR lens run${mirrorRuns.length === 1 ? '' : 's'} ${mirrorRuns.join(', ')}`
         : ''),
@@ -448,16 +463,24 @@ export function triageReviewCommand(
   flags: ReviewFlags,
   { log }: ReviewPresentation,
 ): void {
-  const reviewId = Number(argv[2])
+  const reviewInput = argv[2]
   const finding = Number(argv[3])
   const disposition = argv[4] as Disposition
-  if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
+  if (!reviewInput || !finding || !DISPOSITIONS.includes(disposition)) {
     throw new Error(
       `${PLATFORM_SLUG} review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`,
     )
   }
-  triageFinding(reviewId, finding, disposition, flags.flag('category'), flags.flag('severity'))
-  log(`triaged review ${reviewId} finding ${finding}: ${disposition}`)
+  const reviewRecordId = resolveReviewIdentifier(db(), reviewInput)
+  triageFinding(
+    reviewRecordId,
+    finding,
+    disposition,
+    flags.flag('category'),
+    flags.flag('severity'),
+  )
+  const reviewNumber = getReview(reviewRecordId).number
+  log(`triaged finding ${reviewNumber}/${finding}: ${disposition}`)
 }
 
 export function completeReviewCommand(
@@ -465,10 +488,11 @@ export function completeReviewCommand(
   _flags: ReviewFlags,
   { log }: ReviewPresentation,
 ): void {
-  const reviewId = Number(argv[2])
-  if (!reviewId) throw new Error(`${PLATFORM_SLUG} review complete <review-id>`)
-  completeReview(reviewId)
-  log(`completed review ${reviewId}`)
+  const reviewInput = argv[2]
+  if (!reviewInput) throw new Error(`${PLATFORM_SLUG} review complete <number|uuid>`)
+  const reviewRecordId = resolveReviewIdentifier(db(), reviewInput)
+  completeReview(reviewRecordId)
+  log(`completed review ${getReview(reviewRecordId).number}`)
 }
 
 export function pinsReviewCommand(flags: ReviewFlags, { log }: ReviewPresentation): void {
@@ -479,7 +503,7 @@ export function pinsReviewCommand(flags: ReviewFlags, { log }: ReviewPresentatio
   }
   for (const pin of pins) {
     log(
-      `${pin.project} review ${pin.reviewId} run ${pin.runId} ${pin.commit} ` +
+      `${pin.project} review ${pin.reviewNumber} run ${pin.runId} ${pin.commit} ` +
         `completed=${pin.completed} superseded=${pin.superseded} landed=${pin.landed}` +
         (pin.deleted ? ' deleted' : ''),
     )

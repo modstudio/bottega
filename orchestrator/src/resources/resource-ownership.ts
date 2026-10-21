@@ -4,11 +4,11 @@
  */
 import type { Database } from 'bun:sqlite'
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { resolveRunsDirectory } from '../database/database-location.ts'
 import { nowIso, sessionId } from '../database/db.ts'
-import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
+import { runEventsPath } from '../events.ts'
+import { EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { repoRootOf } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
@@ -27,11 +27,11 @@ import {
   decideWorktreeResourceTeardown,
 } from './main-stack-decision.ts'
 
-export type WorktreeSharerRow = { id: number; status: string; scored: number }
+export type WorktreeSharerRow = { record_id: string; status: string; scored: number }
 
 function worktreeSharers(
   database: Database,
-  row: { id: number; worktree: string },
+  row: { record_id: string; worktree: string },
   liveOnly: boolean,
 ): WorktreeSharerRow[] {
   // Match every recorded spelling of this tree, not one string. Two rows naming
@@ -41,40 +41,40 @@ function worktreeSharers(
   if (!spellings.length) return []
   const candidates = database
     .query(
-      `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
+      `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id,
             r.status, r.pid, ${EVIDENCE_CLOSED_SQL} AS scored
-       FROM run r ${chainScoreJoin('r', 's')}
+       FROM run r LEFT JOIN score s ON s.run_record_id=COALESCE(r.parent_run_record_id,r.record_id)
       WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
-        AND COALESCE(r.parent_run_id, r.id) <>
-            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-        ${liveOnly ? "AND r.status IN ('running','asking')" : ''}
-      ORDER BY r.id`,
+        AND COALESCE(r.parent_run_record_id, r.record_id) <>
+            COALESCE((SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?), ?)
+        AND (?=0 OR r.status IN ('running','asking'))
+      ORDER BY r.number`,
     )
-    .all(...spellings, row.id, row.id) as (WorktreeSharerRow & {
-    root_id: number
+    .all(...spellings, row.record_id, row.record_id, liveOnly ? 1 : 0) as (WorktreeSharerRow & {
+    root_record_id: string
     pid: number | null
   })[]
-  const roots = new Set<number>()
+  const roots = new Set<string>()
   return candidates.flatMap((candidate) => {
     if (
       liveOnly &&
       !runAlive({
         status: candidate.status,
-        lease: runLeaseState(candidate.id),
+        lease: runLeaseState(candidate.record_id),
         pidAlive: Boolean(candidate.pid && pidAlive(candidate.pid)),
       })
     )
       return []
-    if (roots.has(candidate.root_id)) return []
-    roots.add(candidate.root_id)
-    return [{ ...candidate, id: candidate.root_id }]
+    if (roots.has(candidate.root_record_id)) return []
+    roots.add(candidate.root_record_id)
+    return [{ ...candidate, record_id: candidate.root_record_id }]
   })
 }
 
 /** Other conversations alive on this tree now, collapsed to one row per root. */
 export function liveWorktreeSharers(
   database: Database,
-  row: { id: number; worktree: string },
+  row: { record_id: string; worktree: string },
 ): WorktreeSharerRow[] {
   return worktreeSharers(database, row, true)
 }
@@ -82,7 +82,7 @@ export function liveWorktreeSharers(
 /** Every other conversation that still points at this tree, collapsed to one row per root. */
 export function otherConversationWorktreeSharers(
   database: Database,
-  row: { id: number; worktree: string },
+  row: { record_id: string; worktree: string },
 ): WorktreeSharerRow[] {
   return worktreeSharers(database, row, false)
 }
@@ -126,9 +126,33 @@ export function worktreePathSpellings(database: Database, worktree: string): str
     })
 }
 
+/** Every recorded spelling of each tree one conversation points at. */
+export function conversationWorktreeSpellings(
+  database: Database,
+  rootRecordId: string,
+): Map<string, string[]> {
+  const rows = database
+    .query(
+      `SELECT DISTINCT worktree FROM run
+        WHERE (record_id=? OR parent_run_record_id=?) AND worktree IS NOT NULL`,
+    )
+    .all(rootRecordId, rootRecordId) as { worktree: string }[]
+  const byPath = new Map<string, string[]>()
+  for (const { worktree } of rows) {
+    const spellings = [...new Set([worktree, ...worktreePathSpellings(database, worktree)])]
+    for (const spelling of spellings) byPath.set(spelling, spellings)
+  }
+  return byPath
+}
+
 function terminalWorktreeSafety(
   database: Database,
-  row: { worktree: string | null; repo: string | null; cwd: string | null },
+  row: {
+    worktree: string | null
+    repo: string | null
+    project_record_id: string | null
+    cwd: string | null
+  },
 ): TerminalWorktreeSafety {
   const { worktree } = row
   let identity: string | null = null
@@ -141,8 +165,10 @@ function terminalWorktreeSafety(
   }
   let repoRoot: string | null
   try {
-    const registered = row.repo
-      ? (database.query('SELECT path FROM project WHERE name=?').get(row.repo) as {
+    const registered = row.project_record_id
+      ? (database
+          .query('SELECT path FROM project WHERE record_id=?')
+          .get(row.project_record_id) as {
           path: string
         } | null)
       : null
@@ -162,7 +188,12 @@ function terminalWorktreeSafety(
 
 function terminalDockerRetentionReason(
   database: Database,
-  row: { worktree: string | null; repo: string | null; cwd: string | null },
+  row: {
+    worktree: string | null
+    repo: string | null
+    project_record_id: string | null
+    cwd: string | null
+  },
 ): TerminalDockerRetentionReason | null {
   const safety = terminalWorktreeSafety(database, row)
   return safety.safe ? null : safety.reason
@@ -171,17 +202,22 @@ function terminalDockerRetentionReason(
 /** Explain why a surviving run-labeled resource was retained by a terminal turn in its chain. */
 export function terminalDockerRetentionReasonForRun(
   database: Database,
-  runId: number,
+  runId: string,
 ): TerminalDockerRetentionReason | null {
   const rows = database
     .query(
-      `SELECT worktree,repo,cwd FROM run
-      WHERE COALESCE(parent_run_id, id) =
-        (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)
+      `SELECT worktree,repo,project_record_id,cwd FROM run
+      WHERE COALESCE(parent_run_record_id,record_id) =
+        (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
         AND status IN ('ok','failed','stale','stopped')
-      ORDER BY id DESC`,
+      ORDER BY number DESC`,
     )
-    .all(runId) as { worktree: string | null; repo: string | null; cwd: string | null }[]
+    .all(runId) as {
+    worktree: string | null
+    repo: string | null
+    project_record_id: string | null
+    cwd: string | null
+  }[]
   for (const row of rows) {
     const reason = terminalDockerRetentionReason(database, row)
     if (reason) return reason
@@ -193,14 +229,14 @@ function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
   const identity = worktreeIdentity(worktree)
   const live = database
     .query(
-      "SELECT id,status,pid,worktree FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')",
+      "SELECT record_id,status,pid,worktree FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')",
     )
-    .all() as { id: number; status: string; pid: number | null; worktree: string }[]
+    .all() as { record_id: string; status: string; pid: number | null; worktree: string }[]
   return live.some(
     (row) =>
       runAlive({
         status: row.status,
-        lease: runLeaseState(row.id),
+        lease: runLeaseState(row.record_id),
         pidAlive: Boolean(row.pid && pidAlive(row.pid)),
       }) && worktreeIdentity(row.worktree) === identity,
   )
@@ -215,6 +251,7 @@ type TerminalRunRow = {
   status: string
   worktree: string | null
   repo: string | null
+  project_record_id: string | null
   cwd: string | null
 }
 
@@ -225,18 +262,18 @@ type TerminalDockerRemovalResult = {
   reason: TerminalDockerRetentionReason | null
 }
 
-function chainHasLiveRun(database: Database, runId: number): boolean {
+function chainHasLiveRun(database: Database, runId: string): boolean {
   const candidates = database
     .query(
-      `SELECT id,status,pid FROM run WHERE COALESCE(parent_run_id,id)=
-       (SELECT COALESCE(parent_run_id,id) FROM run WHERE id=?)
+      `SELECT record_id,status,pid FROM run WHERE COALESCE(parent_run_record_id,record_id)=
+       (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
        AND status IN ('running','asking')`,
     )
-    .all(runId) as { id: number; status: string; pid: number | null }[]
+    .all(runId) as { record_id: string; status: string; pid: number | null }[]
   return candidates.some((candidate) =>
     runAlive({
       status: candidate.status,
-      lease: runLeaseState(candidate.id),
+      lease: runLeaseState(candidate.record_id),
       pidAlive: Boolean(candidate.pid && pidAlive(candidate.pid)),
     }),
   )
@@ -245,7 +282,7 @@ function chainHasLiveRun(database: Database, runId: number): boolean {
 function removeTerminalDockerResources(input: {
   database: Database
   inventory: ReturnType<typeof resourcesForRuns>
-  resourceRunIds: Set<number>
+  resourceRunIds: Set<string>
   row: TerminalRunRow
   chainLive: boolean
   dryRun: boolean
@@ -276,7 +313,7 @@ function removeTerminalDockerResources(input: {
 function removeTerminalDockerResourceGroup(input: {
   database: Database
   inventory: ReturnType<typeof resourcesForRuns>
-  id: number
+  id: string
   row: TerminalRunRow
   chainLive: boolean
   dryRun: boolean
@@ -357,7 +394,7 @@ function previewRetention(
 
 function underTerminalCleanupLock(
   safety: Extract<TerminalWorktreeSafety, { safe: true }>,
-  runId: number,
+  runId: string,
   remove: () => void,
 ): void {
   const identity = { session: sessionId(), what: `terminal Docker teardown for run ${runId}` }
@@ -376,7 +413,7 @@ function underTerminalCleanupLock(
 
 function terminalDockerInventory(
   database: Database,
-  ids: { id: number }[],
+  ids: { record_id: string }[],
   suppliedInventory?: DockerInventory,
 ): DockerInventory {
   const inventory =
@@ -389,26 +426,26 @@ function terminalDockerInventory(
       ).map(({ path }) => path),
     )
   return resourcesForRuns(
-    ids.map(({ id }) => id),
+    ids.map(({ record_id }) => record_id),
     inventory,
   )
 }
 
 function terminalTeardownTarget(
   database: Database,
-  runId: number,
+  runId: string,
   inventorySupplied: boolean,
-): { row: TerminalRunRow; ids: { id: number; worktree: string | null }[] } | null {
+): { row: TerminalRunRow; ids: { record_id: string; worktree: string | null }[] } | null {
   const row = database
-    .query('SELECT status, worktree,repo,cwd FROM run WHERE id=?')
+    .query('SELECT status,worktree,repo,project_record_id,cwd FROM run WHERE record_id=?')
     .get(runId) as TerminalRunRow | null
   if (!row || !['ok', 'failed', 'stale', 'stopped'].includes(row.status)) return null
   const ids = database
     .query(
-      `SELECT id,worktree FROM run WHERE COALESCE(parent_run_id, id) =
-      (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+      `SELECT record_id,worktree FROM run WHERE COALESCE(parent_run_record_id,record_id) =
+      (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)`,
     )
-    .all(runId) as { id: number; worktree: string | null }[]
+    .all(runId) as { record_id: string; worktree: string | null }[]
   const inventoryDecision = decideTerminalDockerInventory({
     inventorySupplied,
     chainHasRecordedWorktree: ids.some(({ worktree }) => worktree !== null),
@@ -419,7 +456,7 @@ function terminalTeardownTarget(
 /** Best-effort container reclamation for every terminal transition in a conversation. */
 export function teardownTerminalRunResources(
   database: Database,
-  runId: number,
+  runId: string,
   suppliedInventory?: DockerInventory,
   options: { dryRun?: boolean } = {},
 ): TerminalDockerTeardown {
@@ -467,7 +504,7 @@ export function teardownTerminalRunResources(
   }
   if (result.failures.size) {
     try {
-      const path = join(resolveRunsDirectory(process.env), String(runId), 'events.jsonl')
+      const path = runEventsPath(runId)
       mkdirSync(dirname(path), { recursive: true })
       appendFileSync(
         path,
@@ -503,9 +540,9 @@ export function teardownTerminalRunResources(
 function executeTerminalDockerRemoval(input: {
   database: Database
   inventory: ReturnType<typeof resourcesForRuns>
-  resourceRunIds: Set<number>
+  resourceRunIds: Set<string>
   row: TerminalRunRow
-  runId: number
+  runId: string
   initialSafety: Extract<TerminalWorktreeSafety, { safe: true }>
   dryRun: boolean
 }): TerminalDockerRemovalResult {

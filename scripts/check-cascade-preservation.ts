@@ -8,6 +8,7 @@ import {
   splitMigrationSource,
   stripSqlComments,
 } from '../orchestrator/src/database/migrations.ts'
+import { newRecordId } from '../shared/record-id.ts'
 
 export type CascadeExemption = {
   migration: string
@@ -32,9 +33,71 @@ type Migration = { tag: string; source: string }
 type AstNode = Node & Record<string, unknown>
 type ForeignKey = { parent: string; dependent: string }
 
+const PROJECT_UUID_REBUILD_CASCADE_EDGES = [
+  ['workflow_cursor', 'workflow_step_text'],
+  ['run', 'question'],
+  ['run', 'review_lens'],
+  ['run', 'blocker'],
+  ['run', 'calibration'],
+  ['run', 'compared_pair'],
+  ['run', 'duel'],
+  ['run', 'run_carried_ruling'],
+  ['run', 'run_checkpoint'],
+  ['run', 'score'],
+  ['run', 'gate_execution'],
+  ['run', 'run_message'],
+  ['run', 'worker_note_request'],
+  ['doc', 'doc_related_subject'],
+  ['port_pair', 'port_baseline'],
+  ['port_pair', 'port_skip'],
+  ['port_ref', 'port_ref_source'],
+  ['project_lens_profile', 'project_lens_profile_revision'],
+  ['review', 'review_lens'],
+  ['review', 'review_finding'],
+  ['project', 'main_stack_activity'],
+  ['project', 'project_lens_profile'],
+] as const
+
 // These migrations may already be applied. The repair restores every
 // missing review_finding row from its outbox payload, whichever migration removed it.
 const EXEMPTIONS: readonly CascadeExemption[] = [
+  ...[
+    ['project_lens_profile', 'project_lens_profile_revision'],
+    ['lens_profile', 'lens_profile_revision'],
+    ['lens', 'lens_revision'],
+    ['lens', 'lens_profile'],
+    ['lens', 'project_lens_profile'],
+    ['port_ref', 'port_ref_source'],
+    ['port_pair', 'port_baseline'],
+    ['port_pair', 'port_skip'],
+  ].map(([deletedTable, dependentTable]) => ({
+    migration: '0131_lens_port_uuid_key',
+    deletedTable: deletedTable!,
+    dependentTable: dependentTable!,
+    remedy:
+      'DEV-1214: bound-store cleanup explicitly deletes the matching NULL-space dependent rows before their parent and the migration refuses any foreign_key_check violation before commit',
+  })),
+  ...PROJECT_UUID_REBUILD_CASCADE_EDGES.map(([deletedTable, dependentTable]) => ({
+    migration: '0117_project_uuid_key',
+    deletedTable,
+    dependentTable,
+    remedy:
+      'DEV-1214: migration runner disables foreign keys for the direct rebuild and refuses any foreign_key_check violation before commit',
+  })),
+  {
+    migration: '0115_project_identity_contract',
+    deletedTable: 'project',
+    dependentTable: 'main_stack_activity',
+    remedy:
+      'DEV-1214: rebuild with foreign keys disabled and refuse any foreign_key_check violation before commit',
+  },
+  {
+    migration: '0115_project_identity_contract',
+    deletedTable: 'project',
+    dependentTable: 'project_lens_profile',
+    remedy:
+      'DEV-1214: rebuild with foreign keys disabled and refuse any foreign_key_check violation before commit',
+  },
   {
     migration: '0019_run_close_out_forgotten',
     deletedTable: 'review_lens',
@@ -96,7 +159,7 @@ function destructiveTables(statement: AstNode): string[] {
 }
 
 function selectedTable(statement: AstNode): string | null {
-  const from = nodes(statement, 'from_clause')[0]
+  const from = nodes(statement, 'from_clause').at(-1)
   return from ? name(from.expr) : null
 }
 
@@ -359,6 +422,9 @@ function candidates(
   } else if (type.includes('BLOB')) {
     values.push(new Uint8Array([1]))
   } else {
+    if (related.some((check) => /\bjson_(?:valid|type|array_length)\s*\(/i.test(check))) {
+      values.push('["probe"]', '{}', '[]')
+    }
     values.push(
       ...related.flatMap(stringLiterals),
       `probe-${ordinal}`,
@@ -609,13 +675,34 @@ function counts(database: Database): Map<string, number> {
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
   if (!stripSqlComments(ddl).trim()) return
-  database.exec('BEGIN IMMEDIATE')
+  const rebuildsRequiredProjectIdentity =
+    migration.tag === '0115_project_identity_contract' || migration.tag === '0117_project_uuid_key'
+  const legacyAlterTable = (
+    database.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
+  ).legacy_alter_table
+  if (rebuildsRequiredProjectIdentity)
+    database.exec('PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=OFF')
   try {
+    database.exec('BEGIN IMMEDIATE')
     database.exec(ddl)
+    const violations = database.query('PRAGMA foreign_key_check').all()
+    if (violations.length)
+      throw new Error(
+        `${migration.tag} left ${violations.length} foreign key violation(s): ${JSON.stringify(violations.slice(0, 3))}`,
+      )
     database.exec('COMMIT')
   } catch (error) {
-    database.exec('ROLLBACK')
+    try {
+      database.exec('ROLLBACK')
+    } catch {
+      /* migration statement already ended the transaction */
+    }
     throw error
+  } finally {
+    if (rebuildsRequiredProjectIdentity) {
+      database.exec('PRAGMA foreign_keys=ON')
+      database.exec(`PRAGMA legacy_alter_table=${legacyAlterTable}`)
+    }
   }
 }
 
@@ -627,6 +714,13 @@ function probeDestructiveMigration(
   result: CascadeProbe,
 ): void {
   result.unprobed.push(...seedTables(database, migration.tag))
+  if (migration.tag === '0115_project_identity_contract') {
+    const missing = database
+      .query<{ id: number }, []>('SELECT id FROM project WHERE record_id IS NULL')
+      .all()
+    const fill = database.query('UPDATE project SET record_id=? WHERE id=?')
+    for (const row of missing) fill.run(newRecordId(), row.id)
+  }
   const before = counts(database)
   const relationships = foreignKeys(database)
   execute(database, migration)

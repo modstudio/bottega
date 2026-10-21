@@ -20,7 +20,7 @@ export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact':
-    'record or attach the artifact and pass `--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>`',
+    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
@@ -53,8 +53,8 @@ export type ArtifactRef =
   | { kind: 'comment'; key: string; id: string }
   | { kind: 'probe'; id: number }
   | { kind: 'exec'; id: number }
-  | { kind: 'doc'; id: number }
-  | { kind: 'run'; id: number }
+  | { kind: 'doc'; address: string }
+  | { kind: 'run'; id: string }
   | { kind: 'attached-text'; id: number }
   | { kind: 'pull-request'; url: string }
   | { kind: 'id'; id: number }
@@ -71,17 +71,19 @@ type ValidatedSatisfy =
     }
 
 export type ValidatedEvidence = {
-  runOffered?: number
-  artifactRunOffered?: number
+  runOffered?: string | number
+  artifactRunOffered?: string
   ruling?: {
     id: number
     answered: boolean
     answeredByOperator: boolean
     boundToCursor: boolean
     boundToStep: boolean
+    answeredAt?: string | null
   }
   review?: {
-    id: number
+    recordId: string
+    number: number
     allFindingsDisposed: boolean
     allLensesGraded: boolean
     unfinishedReviewIds?: number[]
@@ -93,10 +95,11 @@ export type ValidatedEvidence = {
     project: string | null
     commit: string | null
   }
-  run?: { id: number; terminal: boolean; exitCode: number | null }
+  run?: { id: string; terminal: boolean; exitCode: number | null }
   probe?: { id: number; exitCode: number }
   exec?: {
     id: number
+    command: string
     exitCode: number
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
@@ -146,6 +149,7 @@ export type FloorSatisfactionInput = {
   enforcement: EnforcementMode
   finishing: boolean
   openObligations: OpenObligation[]
+  freshRulingAfter?: string
 }
 
 export function flagForFloor(kind: FloorKind): string {
@@ -153,7 +157,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>'
+    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -168,17 +172,17 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (probe) return { kind: 'probe', id: Number(probe[1]) }
   const exec = /^exec:(\d+)$/i.exec(trimmed)
   if (exec) return { kind: 'exec', id: Number(exec[1]) }
-  const doc = /^doc:(\d+)$/i.exec(trimmed)
-  if (doc) return { kind: 'doc', id: Number(doc[1]) }
-  const run = /^run:(\d+)$/i.exec(trimmed)
-  if (run) return { kind: 'run', id: Number(run[1]) }
+  const doc = /^doc:(\S+)$/i.exec(trimmed)
+  if (doc) return { kind: 'doc', address: doc[1]! }
+  const run = /^run:(\S+)$/i.exec(trimmed)
+  if (run) return { kind: 'run', id: run[1]! }
   const attachedText = /^attached-text:(\d+)$/i.exec(trimmed)
   if (attachedText) return { kind: 'attached-text', id: Number(attachedText[1]) }
   if (/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i.test(trimmed))
     return { kind: 'pull-request', url: trimmed }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
   return {
-    error: `--artifact ${trimmed} is not a doc id, task:<KEY>, task:<KEY>#comment:<id>, run id, probe:<id>, exec:<id>, attached-text:<id>, or GitHub pull-request link`,
+    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number, probe:<id>, exec:<id>, attached-text:<id>, or a GitHub pull-request link`,
   }
 }
 
@@ -212,35 +216,105 @@ export function catalogueFloors(
   })
 }
 
-export function catalogueFloorsFor(step: {
-  floor: readonly string[]
-  deferrable?: readonly string[]
-  expectedStatus?: string | readonly string[]
-  requirePullRequest?: boolean
-  operatorRuling?: boolean
-  commandEvidence?: CommandEvidence
-}): Floor[] {
-  return catalogueFloors(
-    step.floor,
+function catalogueFloorsFor(
+  step: {
+    floor: readonly string[]
+    deferrable?: readonly string[]
+    expectedExitCodes?: Readonly<Record<string, number>>
+    expectedStatus?: string | readonly string[]
+    requirePullRequest?: boolean
+    operatorRuling?: boolean
+    commandEvidence?: CommandEvidence
+  },
+  outcome?: string,
+  kinds: readonly string[] = step.floor,
+): Floor[] {
+  const floors = catalogueFloors(
+    kinds,
     step.deferrable,
     step.expectedStatus,
     step.requirePullRequest,
     step.operatorRuling,
     step.commandEvidence,
   )
+  const expectedExitCode = outcome === undefined ? undefined : step.expectedExitCodes?.[outcome]
+  return expectedExitCode === undefined
+    ? floors
+    : floors.map((floor) =>
+        floor.kind === 'command-exit' ? { ...floor, expectedExitCode } : floor,
+      )
 }
 
-function rulingMet(floor: Floor, evidence: ValidatedEvidence): boolean {
+type CloseFloorStep = Parameters<typeof catalogueFloorsFor>[0] & {
+  rulingOutcomes?: readonly string[]
+}
+
+/** Floors that apply to a close: a ruling outcome (or a forced ruling) replaces the ordinary floor. */
+export function decideCloseFloors(
+  step: CloseFloorStep,
+  outcome: string | undefined,
+  forceRuling = false,
+): Floor[] {
+  if (forceRuling || (outcome !== undefined && step.rulingOutcomes?.includes(outcome)))
+    return catalogueFloorsFor(step, outcome, ['ruling'])
+  return catalogueFloorsFor(step, outcome)
+}
+
+/** Whether the effective floor for this close accepts a ruling made by the agent. */
+export function mayCloseOnAgentSelfRuling(
+  step: CloseFloorStep,
+  outcome: string | undefined,
+  forceRuling = false,
+): boolean {
+  return decideCloseFloors(step, outcome, forceRuling).some(
+    (floor) => floor.kind === 'ruling' && !floor.operatorRuling,
+  )
+}
+
+export function reentryBoundRefusal(
+  reenterOutcome: string,
+  outcomes: readonly string[] | undefined,
+): string {
+  const alternative = (outcomes ?? []).filter((item) => item !== reenterOutcome)
+  const named = alternative.length ? ` (${alternative.join(', ')})` : ''
+  return (
+    `automatic re-entry bound is reached; call \`${PLATFORM_SLUG} workflow await\`, ` +
+    `then \`${PLATFORM_SLUG} workflow rule\`, or close with a non-re-entering outcome${named}`
+  )
+}
+
+export function allowedCloseFloor(
+  floor: FloorDecision,
+  requireRuling: boolean,
+  step: { reenter?: { outcome: string }; outcomes?: string[] },
+): Extract<FloorDecision, { action: 'allow' }> {
+  if (floor.action === 'refuse')
+    throw new Error(
+      requireRuling
+        ? reentryBoundRefusal(step.reenter?.outcome ?? '', step.outcomes)
+        : floor.message,
+    )
+  return floor
+}
+
+function rulingMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?: string): boolean {
   const ruling = evidence.ruling
   const review = evidence.review
+  const fresh =
+    freshRulingAfter === undefined ||
+    Boolean(ruling?.answeredAt && ruling.answeredAt > freshRulingAfter)
   const question = Boolean(
     ruling?.answered &&
       ruling.boundToCursor &&
       ruling.boundToStep &&
-      (!floor.operatorRuling || ruling.answeredByOperator),
+      (!floor.operatorRuling || ruling.answeredByOperator) &&
+      fresh,
   )
   const triaged = Boolean(
-    !floor.operatorRuling && review?.allFindingsDisposed && review.allLensesGraded,
+    freshRulingAfter === undefined &&
+      !floor.operatorRuling &&
+      review?.allFindingsDisposed &&
+      review.allLensesGraded,
   )
   return question || triaged
 }
@@ -309,8 +383,8 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   return !floor.requirePullRequest || task.mergedPullRequest
 }
 
-function floorIsMet(floor: Floor, evidence: ValidatedEvidence): boolean {
-  if (floor.kind === 'ruling') return rulingMet(floor, evidence)
+function floorIsMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?: string): boolean {
+  if (floor.kind === 'ruling') return rulingMet(floor, evidence, freshRulingAfter)
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
   if (floor.kind === 'recorded-artifact')
     return floor.commandEvidence === 'pull-request'
@@ -384,6 +458,23 @@ function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   return null
 }
 
+function commandExitFailureRefusal(
+  floors: Floor[],
+  evidence: ValidatedEvidence,
+  met: Floor[],
+): string | null {
+  const exec = evidence.exec
+  if (!exec || evidence.artifact?.ref !== `exec:${exec.id}`) return null
+  if (!met.some((floor) => floor.kind === 'recorded-artifact')) return null
+  if (met.some((floor) => floor.kind === 'command-exit')) return null
+  const commandExit = floors.find((floor) => floor.kind === 'command-exit')
+  if (!commandExit || exec.exitCode === commandExit.expectedExitCode) return null
+  return (
+    `command-exit evidence exec:${exec.id} command \`${exec.command}\` exited ${exec.exitCode}; ` +
+    `rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`
+  )
+}
+
 function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
   if (!evidence.ruling || !floors.some((floor) => floor.operatorRuling)) return null
   return evidence.ruling.answered &&
@@ -403,7 +494,7 @@ function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): 
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   const refs: EvidenceRef[] = []
   if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
-  if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.id) })
+  if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.number) })
   if (evidence.gate) refs.push({ flag: '--gate', value: String(evidence.gate.id) })
   if (evidence.run) refs.push({ flag: '--run', value: String(evidence.run.id) })
   if (evidence.artifact) refs.push({ flag: '--artifact', value: evidence.artifact.ref })
@@ -478,7 +569,10 @@ function deferralOf(
   return { defer: { floor: deferrable.kind, reason: deferReason } }
 }
 
-function satisfyOf(evidence: ValidatedEvidence): FloorDecision | { satisfyId?: number } {
+function satisfyOf(
+  evidence: ValidatedEvidence,
+  freshRulingAfter?: string,
+): FloorDecision | { satisfyId?: number } {
   const satisfy = evidence.satisfy
   if (!satisfy) return {}
   if (
@@ -487,7 +581,7 @@ function satisfyOf(evidence: ValidatedEvidence): FloorDecision | { satisfyId?: n
       satisfy.open &&
       !satisfy.abandoned &&
       satisfy.cursorMatches &&
-      floorIsMet(satisfy.floor, evidence)
+      floorIsMet(satisfy.floor, evidence, freshRulingAfter)
     )
   )
     return refuseSatisfy(satisfy)
@@ -516,7 +610,11 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
-  const met = input.floors.filter((floor) => floorIsMet(floor, input.evidence))
+  const met = input.floors.filter((floor) =>
+    floorIsMet(floor, input.evidence, input.freshRulingAfter),
+  )
+  const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
+  if (commandFailure) return { action: 'refuse', message: commandFailure }
   const bindingRefusal = commandExitBindingRefusal(input.evidence)
   if (
     met.length === 0 &&
@@ -528,7 +626,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   if ('action' in deferred) return deferred
   if (met.length === 0 && !deferred.defer)
     return { action: 'refuse', message: unmetMessage(input.floors, input.evidence) }
-  const satisfied = satisfyOf(input.evidence)
+  const satisfied = satisfyOf(input.evidence, input.freshRulingAfter)
   if ('action' in satisfied) return satisfied
   const remaining = input.openObligations.filter((row) => row.id !== input.evidence.satisfy?.id)
   const finishing = finishOf(input.finishing, remaining, deferred.defer)

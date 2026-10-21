@@ -12,22 +12,83 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
+import { rememberProjectSpace } from '../project-space.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
-import { promoteWorkflow, setWorkflow } from '../workflow/workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 
 describe('orch MCP', () => {
+  test('list_workflows lists workflows from the server project hosted space', async () => {
+    const project = 'mcp-hosted-workflow-list'
+    const spaceId = newRecordId()
+    const workflowId = newRecordId()
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: process.cwd(),
+      settings: {},
+    })
+    rememberProjectSpace(db(), project, spaceId)
+    applyWorkflowCatalogueRow(db(), 'workflow', {
+      id: workflowId,
+      spaceId,
+      slug: 'hosted-list-only',
+      generation: 1,
+      createdAt: '2026-10-21T12:00:00.000Z',
+    })
+    applyWorkflowCatalogueRow(db(), 'workflow_version', {
+      id: newRecordId(),
+      spaceId,
+      ownerId: workflowId,
+      n: 1,
+      status: 'production',
+      definition: JSON.stringify({
+        title: 'Hosted list only',
+        description: 'Exists only in the project hosted space.',
+        arguments: [],
+        modes: [],
+      }),
+      author: 'test',
+      reason: 'hosted list fixture',
+      createdAt: '2026-10-21T12:00:00.000Z',
+      promotedAt: '2026-10-21T12:00:00.000Z',
+      retiredAt: null,
+    })
+
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const result = await client.callTool({ name: 'list_workflows', arguments: {} })
+      expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toContainEqual({
+        slug: 'hosted-list-only',
+        title: 'Hosted list only',
+        production_n: 1,
+        draft_n: null,
+      })
+    } finally {
+      await client.close()
+      await server.close()
+      removeProject(project)
+    }
+  })
+
   test('workflow ruling tools return the durable question id', async () => {
+    upsertProject({ recordId: newRecordId(), name: 'fixture', path: '/fixture', settings: {} })
     db()
       .query(
         `INSERT INTO workflow_cursor
-        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+        (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
          workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES ('${newRecordId()}','fixture','fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
+       VALUES ('${newRecordId()}','fixture',(SELECT record_id FROM project WHERE name='fixture'),'fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
                0,'diagnose','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
       )
       .run()
@@ -133,6 +194,7 @@ describe('orch MCP', () => {
   test('worker-facing workflow tools refuse session ship-to names', async () => {
     const project = 'mcp-ship-to'
     upsertProject({
+      recordId: newRecordId(),
       name: project,
       path: '/mcp-ship-to',
       stack: 'bun',
@@ -187,7 +249,7 @@ describe('orch MCP', () => {
   test('next_workflow_step names the MCP mode remedy when no default exists', async () => {
     const slug = 'mcp-no-default-mode'
     const step = productionStepCatalogue().definition.steps[0]!
-    const draft = setWorkflow(
+    const draft = setWorkflowLocal(
       slug,
       {
         title: 'MCP mode refusal',
@@ -201,7 +263,7 @@ describe('orch MCP', () => {
       'test MCP cursor mode resolution',
       'test',
     )
-    promoteWorkflow(slug, draft.n, 'publish', 'test')
+    promoteWorkflowLocal(slug, draft.n, 'publish', 'test')
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -289,6 +351,7 @@ describe('orch MCP', () => {
   test('every MCP workflow operation routes by cursor handle', async () => {
     const project = 'mcp-cursor-handles'
     upsertProject({
+      recordId: newRecordId(),
       name: project,
       path: '/mcp-cursor-handles',
       stack: 'bun',
@@ -347,11 +410,22 @@ describe('orch MCP', () => {
           cursor: first.id,
         }),
       ).toContain(`cursor ${first.id}`)
+      const evidenceRun = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+      db()
+        .query(
+          `UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name=?),
+                  launch_key=?,branch=?,exit_code=0 WHERE record_id=?`,
+        )
+        .run(project, 'DEV-1082-MCP-A', 'DEV-1082-MCP-A-work', evidenceRun)
+      const evidenceRunNumber = db()
+        .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+        .get(evidenceRun)!.number
       await call('next_workflow_step', {
         ...common,
         args: args('DEV-1082-MCP-A'),
         cursor: first.id,
         note: 'closed through MCP handle',
+        run: evidenceRunNumber,
       })
       await call('await_workflow_ruling', {
         ...common,
@@ -377,6 +451,7 @@ describe('orch MCP', () => {
     } finally {
       await client.close()
       await server.close()
+      db().query('DELETE FROM run WHERE repo=?').run(project)
       removeProject(project)
     }
   })
@@ -478,15 +553,23 @@ describe('orch MCP', () => {
 
   test('get_doc_revision resolves user canon only when user is true', async () => {
     const owner = '01990000-0000-7000-8000-000000000001'
-    const revision = db()
-      .query<{ id: number }, [string]>(
-        `INSERT INTO doc_revision
-          (doc_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at,record_id)
-         VALUES (1,'canon',NULL,?1,'.agents/rules/private.md','create','Private','body',
-           'demand','["technical"]','operator','mcp owner proof','2026-01-01','${newRecordId()}')
-         RETURNING id`,
+    const docRecordId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc
+          (record_id,scope,subject,owner,slug,title,body,delivery,audiences,created_at,updated_at)
+         VALUES (?,'canon',NULL,?,'.agents/rules/private.md','Private','body','demand','["technical"]','2026-01-01','2026-01-01')`,
       )
-      .get(owner)!
+      .run(docRecordId, owner)
+    const revision = db()
+      .query<{ record_id: string }, [string, string, string]>(
+        `INSERT INTO doc_revision
+          (record_id,number,doc_record_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM doc_revision),?,'canon',NULL,?,'.agents/rules/private.md','create','Private','body',
+           'demand','["technical"]','operator','mcp owner proof','2026-01-01')
+         RETURNING record_id`,
+      )
+      .get(newRecordId(), docRecordId, owner)!
     const session = memoryRecordSession()
     const priorApiUrl = process.env.ORCH_RECORD_API_URL
     process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
@@ -500,17 +583,17 @@ describe('orch MCP', () => {
     try {
       const ordinary = await client.callTool({
         name: 'get_doc_revision',
-        arguments: { id: revision.id },
+        arguments: { id: revision.record_id },
       })
       expect(ordinary.isError).toBe(true)
 
       const owned = await client.callTool({
         name: 'get_doc_revision',
-        arguments: { id: revision.id, user: true },
+        arguments: { id: revision.record_id, user: true },
       })
       expect(owned.isError).not.toBe(true)
       expect(JSON.parse((owned.content as { text: string }[])[0]!.text)).toMatchObject({
-        id: revision.id,
+        record_id: revision.record_id,
         owner,
       })
     } finally {

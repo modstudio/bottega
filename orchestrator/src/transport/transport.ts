@@ -1,19 +1,22 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
+import { assetPath } from '../../../shared/install-root.ts'
 import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
+import type { VendorUsage } from './vendor-usage.ts'
 
-const requireTransport = createRequire(import.meta.url)
+export {
+  EMPTY_VENDOR_USAGE,
+  type VendorCostSource,
+  type VendorUsage,
+} from './vendor-usage.ts'
 
 /** Task that owns the ACP go/no-go. Named in every refusal. */
 export const ACP_PILOT_TASK = 'DEV-352'
 
-/** Read-only jobs the ACP pilot may run. Anything else is refused. */
+/** Jobs eligible for automatic ACP routing. */
 const ACP_PILOT_JOBS = [
   'understand',
   'file-question',
@@ -21,6 +24,8 @@ const ACP_PILOT_JOBS = [
   'verify-claim',
   'summarize',
 ] as const
+
+const NAMED_ACP_JOBS = ['review-lens', 'review-lens-inline'] as const
 
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
@@ -168,6 +173,7 @@ export type TransportResult = {
   parsed: ParsedReply | null
   tokens: number | null
   costUsd: number | null
+  vendorUsage: VendorUsage
   sessionId: string | null
   stopReason: string | null
   error: string | null
@@ -217,6 +223,8 @@ export type TransportStartOpts = {
   bin?: string
   /** First turn vs resumeArgv. Session may exist on a first grok turn too. */
   resume?: boolean
+  /** Best-effort run warning recorder owned by the lifecycle adapter. */
+  onWarning?: (message: string) => void
 }
 
 export type TransportHandle = {
@@ -310,6 +318,18 @@ export function isAcpPilotJob(name: string): name is AcpPilotJob {
   return (ACP_PILOT_JOBS as readonly string[]).includes(name)
 }
 
+function acpJobAllowed(
+  jobName: string,
+  agentExplicit: boolean,
+  mayAutoRouteNamedJob: boolean,
+): boolean {
+  return (
+    isAcpPilotJob(jobName) ||
+    ((agentExplicit || mayAutoRouteNamedJob) &&
+      (NAMED_ACP_JOBS as readonly string[]).includes(jobName))
+  )
+}
+
 export function resolveTransportName(
   explicit?: string | null,
   env = process.env.ORCH_TRANSPORT,
@@ -332,14 +352,16 @@ export function selectAgentForTransport(
 /**
  * Refuse an ACP opt-in that the pilot does not cover.
  *
- * Writing jobs name the pilot task explicitly. Other jobs outside the
- * allow-list are refused too — the spec listed four read-only jobs, not
- * every job that happens not to write.
+ * Writing jobs name the pilot task explicitly. Other jobs outside the one
+ * complete rule in acpJobAllowed are refused too. Automatic metered-route
+ * eligibility is decided by route.ts and supplied here as an input.
  */
 export function assertAcpAllowed(
   jobName: string,
   agentName: string | undefined,
   registered?: TransportAgent,
+  agentExplicit = false,
+  mayAutoRouteNamedJob = false,
 ): void {
   if (
     agentName &&
@@ -350,15 +372,36 @@ export function assertAcpAllowed(
       `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for registered ACP agents`,
     )
   }
-  if (isAcpPilotJob(jobName)) return
+  if (acpJobAllowed(jobName, agentExplicit, mayAutoRouteNamedJob)) return
   if (job(jobName).needs.writesRepo) {
     throw new Error(
       `ACP transport is a ${ACP_PILOT_TASK} pilot and is not available for writing jobs`,
     )
   }
   throw new Error(
-    `ACP transport is a ${ACP_PILOT_TASK} pilot; allowed jobs: ${ACP_PILOT_JOBS.join(', ')}`,
+    `ACP transport is a ${ACP_PILOT_TASK} pilot; routed jobs: ${ACP_PILOT_JOBS.join(', ')}; ${NAMED_ACP_JOBS.join(' and ')} require an agent named with --agent`,
   )
+}
+
+/** Explain whether an agent can honor a transport pin before failover selects it. */
+export function transportPinIneligibility(
+  jobName: string,
+  agentName: string,
+  registered: TransportAgent,
+  transport: TransportName,
+  mayAutoRouteNamedJob = false,
+): string | null {
+  if (transport === 'cli') {
+    return registered.defaultTransport === 'cli'
+      ? null
+      : `agent ${agentName} uses ${registered.defaultTransport}, not pinned cli transport`
+  }
+  try {
+    assertAcpAllowed(jobName, agentName, registered, false, mayAutoRouteNamedJob)
+    return null
+  } catch (error) {
+    return String((error as Error).message ?? error)
+  }
 }
 
 /**
@@ -373,18 +416,7 @@ export function resolveCodexAcpBin(opts?: {
 }): string {
   const override = (opts?.env ?? process.env).ORCH_ACP_BIN
   if (override) return override
-  const checkoutBin =
-    opts?.checkoutBin ??
-    (embeddedDistributionManifest()
-      ? null
-      : join(
-          dirname(fileURLToPath(import.meta.url)),
-          '..',
-          '..',
-          'node_modules',
-          '.bin',
-          'codex-acp',
-        ))
+  const checkoutBin = opts?.checkoutBin ?? assetPath('node_modules', '.bin', 'codex-acp')
   if (checkoutBin && (opts?.exists ?? existsSync)(checkoutBin)) return checkoutBin
   const found = (opts?.which ?? ((name: string) => Bun.which(name)))('codex-acp')
   if (found) return found
@@ -434,7 +466,8 @@ function missingAcpExecutableGap(
 
 export function acpRuntimeGaps(opts?: AcpRuntimeGapOptions): string | null {
   const sdkResolve =
-    opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
+    opts?.sdkResolve ??
+    (() => Bun.resolveSync('@agentclientprotocol/sdk', assetPath('orchestrator')))
   const ajvResolve =
     opts?.ajvResolve ??
     (() => {

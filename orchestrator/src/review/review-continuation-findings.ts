@@ -12,7 +12,7 @@ import {
 } from './review-group.ts'
 
 export type ContinuationFinding = {
-  reviewId: number
+  reviewNumber: number
   ordinal: number
   lens: string
   reviewerSeverity: string
@@ -38,8 +38,8 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
         .filter(({ disposition }) => disposition === null)
         .map(({ ordinal }) => ordinal)
       return ordinals.length
-        ? `review ${review.reviewId}: untriaged finding ordinal(s) ${ordinals.join(', ')}`
-        : `review ${review.reviewId}: review grading is incomplete`
+        ? `review ${review.reviewNumber}: untriaged finding ordinal(s) ${ordinals.join(', ')}`
+        : `review ${review.reviewNumber}: review grading is incomplete`
     })
     throw new Error(
       `review round is not triage-complete:\n${details.join('\n')}\n` +
@@ -47,12 +47,13 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
     )
   }
 
-  const reviewIds = round.map(({ reviewId }) => reviewId)
+  const reviewIds = round.map(({ reviewRecordId }) => reviewRecordId)
   const placeholders = reviewIds.map(() => '?').join(',')
   const rows = database
     .query<
       {
-        review_id: number
+        review_record_id: string
+        review_number: number
         ordinal: number
         lens: string
         severity: string
@@ -62,14 +63,15 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
         evidence: string
         proposed_correction: string
       },
-      number[]
+      string[]
     >(
-      `SELECT rf.review_id,rf.ordinal,rl.lens,rf.severity,rf.triaged_severity,
+      `SELECT rf.review_record_id,review.number AS review_number,rf.ordinal,rl.lens,rf.severity,rf.triaged_severity,
               rf.disposition,rf.location,rf.evidence,rf.proposed_correction
-         FROM review_finding rf JOIN review_lens rl ON rl.id=rf.review_lens_id
-        WHERE rf.review_id IN (${placeholders})
+         FROM review_finding rf JOIN review_lens rl ON rl.record_id=rf.review_lens_record_id
+         JOIN review ON review.record_id=rf.review_record_id
+        WHERE rf.review_record_id IN (${placeholders})
           AND rf.disposition IN ('accepted','modified')
-        ORDER BY rf.review_id,rf.ordinal`,
+        ORDER BY rf.review_record_id,rf.ordinal`,
     )
     .all(...reviewIds)
   if (!rows.length) {
@@ -79,7 +81,7 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
     )
   }
   return rows.map((row) => ({
-    reviewId: row.review_id,
+    reviewNumber: row.review_number,
     ordinal: row.ordinal,
     lens: row.lens,
     reviewerSeverity: row.severity,
@@ -110,7 +112,7 @@ export function renderContinuationFindings(
         ? "\n   Modified: the architect message overrides the reviewer's proposed correction."
         : ''
     return (
-      `${index + 1}. Review ${finding.reviewId}, finding ${finding.ordinal}\n` +
+      `${index + 1}. Finding ${finding.reviewNumber}/${finding.ordinal}\n` +
       `   Lens: ${finding.lens}\n` +
       `   Severity: ${severity}\n` +
       `   Location: ${finding.location}\n` +
@@ -138,12 +140,12 @@ export function continuationFindings(
 /** Resolve a run's current branch review round and render it for continuation. */
 export function continuationFindingsForRun(
   database: Database,
-  runId: number,
+  runId: string,
   architectMessage: string | undefined,
 ): string {
   const run = database
-    .query<{ repo: string | null; branch: string | null; branch_kept: string | null }, [number]>(
-      'SELECT repo,branch,branch_kept FROM run WHERE id=?',
+    .query<{ repo: string | null; branch: string | null; branch_kept: string | null }, [string]>(
+      'SELECT repo,branch,branch_kept FROM run WHERE record_id=?',
     )
     .get(runId)
   if (!run) throw new Error(`no run ${runId}`)

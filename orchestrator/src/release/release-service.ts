@@ -20,6 +20,7 @@ import {
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
+  releaseAncestryFromExitCode,
   releaseCapturedText,
   releaseCommandEnvironment,
   releaseLockDecision,
@@ -112,6 +113,17 @@ function shell(
   return run(['/bin/sh', '-lc', command], cwd, extraEnvironment)
 }
 
+function releaseAncestry(live: string | null, candidate: string, cwd: string): boolean | null {
+  if (live === null) return null
+  try {
+    return releaseAncestryFromExitCode(
+      run(['git', 'merge-base', '--is-ancestor', live, candidate], cwd).exitCode,
+    )
+  } catch {
+    return null
+  }
+}
+
 function capturedReleaseText(text: string): string {
   return releaseCapturedText(text, containsSecretShaped(text))
 }
@@ -138,7 +150,7 @@ function checkoutFacts(path: string, branch: string) {
 export function newestSuccessfulReleasedCommit(project: string, rung: string): string | null {
   const row = writableDb()
     .query<{ candidate_commit: string }, [string, string]>(
-      'SELECT candidate_commit FROM release_ledger WHERE project=? AND rung=? AND exit_code=0 ORDER BY id DESC LIMIT 1',
+      'SELECT candidate_commit FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND exit_code=0 ORDER BY id DESC LIMIT 1',
     )
     .get(project, rung)
   return row?.candidate_commit ?? null
@@ -206,11 +218,7 @@ export function releaseProject(
       const live = selected.live
         ? releaseLiveCommit(selected.live, project.path, 'pre-deploy live', selected.name)
         : newestSuccessfulReleasedCommit(projectName, selected.name)
-      const contained =
-        live === null
-          ? null
-          : run(['git', 'merge-base', '--is-ancestor', live, checkout.head], project.path)
-              .exitCode === 0
+      const contained = releaseAncestry(live, checkout.head, project.path)
       const forward = forwardReleaseDecision({
         candidate: checkout.head,
         live,
@@ -229,7 +237,7 @@ export function releaseProject(
       const deployed = shell(
         deploy,
         project.path,
-        releaseCommandEnvironment(projectName, selected.name, checkout.head),
+        releaseCommandEnvironment(projectName, selected.name, checkout.head, forward.rollback),
       )
       let after: string | null = null
       let matches: boolean | null = null
@@ -271,9 +279,13 @@ export function releaseLog(project: string, rung?: string): ReleaseLedgerRow[] {
   if (!projectByName(project)) throw new Error(`no project "${project}"`)
   return rung
     ? (db()
-        .query('SELECT * FROM release_ledger WHERE project=? AND rung=? ORDER BY id DESC')
+        .query(
+          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? ORDER BY id DESC',
+        )
         .all(project, rung) as ReleaseLedgerRow[])
     : (db()
-        .query('SELECT * FROM release_ledger WHERE project=? ORDER BY id DESC')
+        .query(
+          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY id DESC',
+        )
         .all(project) as ReleaseLedgerRow[])
 }

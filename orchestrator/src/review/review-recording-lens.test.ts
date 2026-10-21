@@ -21,25 +21,37 @@ describe('review discipline', () => {
     ])
     const rows = db()
       .query(
-        `SELECT rl.run_id, rl.lens, rl.agent, rl.model, r.completed_at
-         FROM review_lens rl JOIN review r ON r.id=rl.review_id ORDER BY rl.run_id`,
+        `SELECT rl.run_record_id, rl.lens, rl.agent, rl.model, r.completed_at
+         FROM review_lens rl JOIN review r ON r.record_id=rl.review_record_id ORDER BY rl.run_record_id`,
       )
       .all() as {
-      run_id: number
+      run_record_id: string
       lens: string
       agent: string
       model: string
       completed_at: string | null
     }[]
     expect(rows).toEqual([
-      { run_id: first, lens: 'safety', agent: 'codex', model: 'effective-a', completed_at: null },
-      { run_id: second, lens: 'craft', agent: 'grok', model: 'effective-b', completed_at: null },
+      {
+        run_record_id: first,
+        lens: 'safety',
+        agent: 'codex',
+        model: 'effective-a',
+        completed_at: null,
+      },
+      {
+        run_record_id: second,
+        lens: 'craft',
+        agent: 'grok',
+        model: 'effective-b',
+        completed_at: null,
+      },
     ])
     const identities = db()
-      .query<{ record_id: string }, [number, number, number]>(
-        `SELECT record_id FROM review WHERE id=?
-         UNION ALL SELECT record_id FROM review_lens WHERE review_id=?
-         UNION ALL SELECT record_id FROM review_finding WHERE review_id=?`,
+      .query<{ record_id: string }, [string, string, string]>(
+        `SELECT record_id FROM review WHERE record_id=?
+         UNION ALL SELECT record_id FROM review_lens WHERE review_record_id=?
+         UNION ALL SELECT record_id FROM review_finding WHERE review_record_id=?`,
       )
       .all(review, review, review)
     expect(identities.length).toBeGreaterThan(0)
@@ -50,14 +62,14 @@ describe('review discipline', () => {
     }
     expect(
       db()
-        .query<{ kind: string; count: number }, []>(
+        .query<{ kind: string; count: number }, [string, string, string]>(
           `SELECT kind, count(*) AS count FROM outbox
-           WHERE row_id=(SELECT record_id FROM review WHERE id=${review})
-              OR row_id IN (SELECT record_id FROM review_lens WHERE review_id=${review})
-              OR row_id IN (SELECT record_id FROM review_finding WHERE review_id=${review})
+           WHERE row_id=(SELECT record_id FROM review WHERE record_id=?)
+              OR row_id IN (SELECT record_id FROM review_lens WHERE review_record_id=?)
+              OR row_id IN (SELECT record_id FROM review_finding WHERE review_record_id=?)
            GROUP BY kind ORDER BY kind`,
         )
-        .all(),
+        .all(review, review, review),
     ).toEqual(
       expect.arrayContaining([
         { kind: 'review', count: 1 },
@@ -69,7 +81,7 @@ describe('review discipline', () => {
     triageFinding(review, 1, 'accepted')
     completeReview(review)
     expect(
-      db().query('SELECT completed_at FROM review WHERE id=?').get(review) as {
+      db().query('SELECT completed_at FROM review WHERE record_id=?').get(review) as {
         completed_at: string
       },
     ).toHaveProperty('completed_at')
@@ -81,7 +93,9 @@ describe('review discipline', () => {
       BEGIN SELECT RAISE(ABORT, 'forced lens insert failure'); END`)
     try {
       expect(() => recordReview(runId, reviewReply(1), db())).toThrow('forced lens insert failure')
-      expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(runId)).toBeNull()
+      expect(
+        db().query('SELECT record_id FROM review_lens WHERE run_record_id=?').get(runId),
+      ).toBeNull()
       expect(
         db().query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get(),
       ).toEqual(before)
@@ -114,7 +128,7 @@ describe('review discipline', () => {
     expect(
       db()
         .query(
-          'SELECT tree_inspected, reviewed_tree FROM review_lens WHERE review_id=? ORDER BY id',
+          'SELECT tree_inspected, reviewed_tree FROM review_lens WHERE review_record_id=? ORDER BY record_id',
         )
         .all(review),
     ).toEqual([
@@ -157,7 +171,7 @@ describe('review discipline', () => {
     const stderr = spyOn(console, 'error').mockImplementation(() => {})
     try {
       const reviewId = recordReview(runId, reviewReply(0), db())
-      expect(reviewId).toBeGreaterThan(0)
+      expect(reviewId).toMatch(/^[0-9a-f-]{36}$/)
       expect(stderr).toHaveBeenCalledWith(
         expect.stringContaining(
           `refs/orch/reviewed/${runId} was not created: project not-registered is not registered`,
@@ -171,7 +185,9 @@ describe('review discipline', () => {
           overlap: 'none',
         }),
       ).not.toThrow()
-      expect(db().query('SELECT COUNT(*) AS n FROM review WHERE id=?').get(reviewId)).toEqual({
+      expect(
+        db().query('SELECT COUNT(*) AS n FROM review WHERE record_id=?').get(reviewId),
+      ).toEqual({
         n: 1,
       })
     } finally {
@@ -181,7 +197,9 @@ describe('review discipline', () => {
   test('a findings run without a branch records the same change measurement as a branch run', () => {
     const repository = resolve(import.meta.dir, '../../..')
     db()
-      .query('INSERT INTO project (name,path,settings) VALUES (?,?,?)')
+      .query(
+        'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+      )
       .run('measurement-fixture', repository, JSON.stringify({ trunk: 'main' }))
     const withoutBranch = addRun({
       agent: 'codex',
@@ -199,7 +217,12 @@ describe('review discipline', () => {
       repo: 'measurement-fixture',
       headCommit: 'tip',
     })
-    db().query("UPDATE run SET branch='DEV-977' WHERE id=?").run(withBranch)
+    db()
+      .query(
+        "UPDATE run SET project_record_id=(SELECT record_id FROM project WHERE name='measurement-fixture') WHERE record_id IN (?,?)",
+      )
+      .run(withoutBranch, withBranch)
+    db().query("UPDATE run SET branch='DEV-977' WHERE record_id=?").run(withBranch)
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
       const args = command[1] === '-C' ? command.slice(3) : command.slice(1)
       let exitCode = 0
@@ -223,8 +246,8 @@ describe('review discipline', () => {
     try {
       const implicitReview = recordReview(withoutBranch, reviewReply(0), db())
       const explicitReview = recordReview(withBranch, reviewReply(0), db())
-      const measurement = (reviewId: number) =>
-        db().query('SELECT patch_id, path_set, tier FROM review WHERE id=?').get(reviewId)
+      const measurement = (reviewId: string) =>
+        db().query('SELECT patch_id, path_set, tier FROM review WHERE record_id=?').get(reviewId)
 
       expect(measurement(implicitReview)).toEqual(measurement(explicitReview))
       expect(measurement(implicitReview)).toEqual({
@@ -244,21 +267,21 @@ describe('review discipline', () => {
     )
 
     expect(
-      db().query('SELECT patch_id, path_set, tier FROM review WHERE id=?').get(reviewId),
+      db().query('SELECT patch_id, path_set, tier FROM review WHERE record_id=?').get(reviewId),
     ).toEqual({ patch_id: null, path_set: null, tier: null })
   })
   test('triage records explicit severity agreement and leaves omission unassessed', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })
     const reviewId = recordReview(runId, reviewReply(2), db())
     db()
-      .query("UPDATE review_finding SET severity='high' WHERE review_id=? AND ordinal=2")
+      .query("UPDATE review_finding SET severity='high' WHERE review_record_id=? AND ordinal=2")
       .run(reviewId)
     triageFinding(reviewId, 1, 'accepted', undefined, 'critical')
     triageFinding(reviewId, 2, 'modified', undefined, 'high')
     expect(
       db()
         .query(
-          'SELECT ordinal, severity, triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
+          'SELECT ordinal, severity, triaged_severity FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
         )
         .all(reviewId),
     ).toEqual([
@@ -270,7 +293,7 @@ describe('review discipline', () => {
     )
     expect(() =>
       db()
-        .query("UPDATE review_finding SET triaged_severity='banana' WHERE review_id=?")
+        .query("UPDATE review_finding SET triaged_severity='banana' WHERE review_record_id=?")
         .run(reviewId),
     ).toThrow()
   })

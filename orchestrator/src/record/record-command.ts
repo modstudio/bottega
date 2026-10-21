@@ -32,6 +32,7 @@ import {
   recordSpaceRole,
   switchRecordSpace,
 } from './record-space.ts'
+import { ensureAllSpaceBuiltIns } from './record-space-built-ins.ts'
 import { moveRecordProjectSpace } from './record-space-move.ts'
 import { recordTunnelFailure } from './record-tunnel-error.ts'
 
@@ -72,6 +73,10 @@ export async function recordMigrateCommand(presentation: Presentation): Promise<
       `record migration confirmation failed: applied ${after}; shipped ${shipped}; resolve the schema mismatch before deploying`,
     )
   }
+  const builtIns = await ensureAllSpaceBuiltIns(url)
+  presentation.log(
+    `space built-ins inserted ${builtIns.inserted}; already present ${builtIns.alreadyPresent}`,
+  )
 }
 
 export async function recordPublicDocDesignateCommand(
@@ -79,11 +84,14 @@ export async function recordPublicDocDesignateCommand(
   projectName: string,
   presentation: Presentation,
 ): Promise<void> {
+  const project = projectByName(projectName)
+  if (!project) throw new Error(`no project "${projectName}"`)
   const result = await designatePublicDocProject({
     actorUrl: recordUrl(),
     ownerUrl: recordOwnerUrl(),
     spaceSlug,
     projectName,
+    projectId: project.recordId,
   })
   presentation.log(
     result.changed
@@ -122,11 +130,14 @@ export async function recordPublicDocClearCommand(
   projectName: string,
   presentation: Presentation,
 ): Promise<void> {
+  const project = projectByName(projectName)
+  if (!project) throw new Error(`no project "${projectName}"`)
   const result = await clearPublicDocProject({
     actorUrl: recordUrl(),
     ownerUrl: recordOwnerUrl(),
     spaceSlug,
     projectName,
+    projectId: project.recordId,
   })
   presentation.log(`cleared ${spaceSlug}\t${projectName}\t${result.spaceId}\t${result.projectId}`)
 }

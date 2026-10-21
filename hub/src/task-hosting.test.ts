@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import {
@@ -9,6 +10,7 @@ import {
 } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
+import { UNATTRIBUTED } from './task-attribution.ts'
 import { applyHostedTaskRows } from './task-cache.ts'
 import {
   hostedCreateDocument,
@@ -37,7 +39,7 @@ describe('hosted-only task safety', () => {
         },
         body: JSON.stringify({ project: 'workshop', title: 'Bound write' }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -80,7 +82,7 @@ describe('hosted-only task safety', () => {
           },
           body: JSON.stringify({ project: 'workshop', title: 'Refused write' }),
         }),
-        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+        hostedRouteTestConfig,
         {
           fetch: async () =>
             Response.json({
@@ -112,7 +114,7 @@ describe('hosted-only task safety', () => {
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
         body: JSON.stringify({ project: 'workshop', title: 'Active write' }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -135,7 +137,7 @@ describe('hosted-only task safety', () => {
       new Request('https://hub.example.test/v1/tasks', {
         headers: { authorization: 'Bearer test', 'x-record-space': 'not-a-member' },
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -145,7 +147,14 @@ describe('hosted-only task safety', () => {
           }),
         list: async (_url, _identity) => {
           reads++
-          return { tasks: [], comments: [], documents: [], statusEvents: [], cursor: '' }
+          return {
+            tasks: [],
+            comments: [],
+            documents: [],
+            statusEvents: [],
+            cursor: '',
+            more: false,
+          }
         },
       },
     )
@@ -160,6 +169,7 @@ describe('hosted-only task safety', () => {
     await expect(
       createHostedTaskInTransaction(transaction([]), identity, {
         project: 'missing',
+        projectId: 'project-missing',
         title: 'Missing',
       }),
     ).rejects.toThrow(
@@ -169,7 +179,7 @@ describe('hosted-only task safety', () => {
       createHostedTaskInTransaction(
         transaction([{ id: 'project-1', key_prefixes: [] }]),
         identity,
-        { project: 'present', title: 'No prefix' },
+        { project: 'present', projectId: 'project-1', title: 'No prefix' },
       ),
     ).rejects.toThrow("project 'present' has no key prefix")
   })
@@ -316,7 +326,7 @@ describe('hosted-only task safety', () => {
   test('close never prunes after a hosted close failure', async () => {
     let pruned = false
     await expect(
-      closeThenPrune('DEV-1', {}, false, undefined, {
+      closeThenPrune('DEV-1', {}, false, undefined, UNATTRIBUTED, {
         close: async () => {
           throw new Error('hosted close failed')
         },
@@ -353,10 +363,7 @@ describe('hosted-only task safety', () => {
         new Request('https://hub.example.test/v1/tasks', {
           headers: { authorization: 'Bearer test' },
         }),
-        {
-          recordApiUrl: 'https://record.example.test',
-          recordDatabaseUrl: 'postgres://real',
-        },
+        hostedRouteTestConfig,
       ),
     ).rejects.toThrow('unless stubs are injected')
   })
@@ -366,10 +373,7 @@ describe('hosted-only task safety', () => {
       new Request('https://hub.example.test/v1/tasks/identity', {
         headers: { authorization: 'Bearer test' },
       }),
-      {
-        recordApiUrl: 'https://record.example.test',
-        recordDatabaseUrl: 'postgres://unused',
-      },
+      hostedRouteTestConfig,
       {
         fetch: async () =>
           Response.json({
@@ -386,6 +390,7 @@ describe('hosted-only task safety', () => {
     expect(response?.status).toBe(200)
     expect(await response?.json()).toEqual({
       userId: 'user-1',
+      userName: null,
       activeSpaceId: 'space-a',
       memberships: [
         { spaceId: 'space-a', slug: 'workshop', permission: 'write' },
@@ -427,7 +432,7 @@ describe('hosted-only task safety', () => {
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
         body: JSON.stringify({ pairs: [{ space_id: 'space-b', key: 'STO-1' }] }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: whoami,
         presence: async (_url, identity, pairs) => ({
@@ -447,7 +452,7 @@ describe('hosted-only task safety', () => {
         headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
         body: JSON.stringify({ ids: ['task-1'], confirmation: 1 }),
       }),
-      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+      hostedRouteTestConfig,
       {
         fetch: whoami,
         deleteTasks: async (_url, identity, ids, confirmation) => ({
@@ -480,7 +485,7 @@ describe('hosted-only task safety', () => {
           headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
           body: JSON.stringify({}),
         }),
-        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://test' },
+        hostedRouteTestConfig,
         {
           fetch: async () =>
             Response.json({

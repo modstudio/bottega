@@ -78,10 +78,31 @@ export async function ensurePersonalSpace(
   })
 }
 
-function personalSpacePort(client: SQL): PersonalSpacePort {
+export type SpaceBuiltInsPort = {
+  ensure(input: {
+    url: string
+    userId: string
+    spaceId: string
+    spaceIds: string[]
+  }): Promise<unknown>
+}
+
+export const noSpaceBuiltIns: SpaceBuiltInsPort = {
+  ensure: async () => {},
+}
+
+function personalSpacePort(
+  url: string,
+  client: SQL,
+  builtIns: SpaceBuiltInsPort,
+): PersonalSpacePort {
+  const install = async (userId: string, personal: PersonalSpace) => {
+    await builtIns.ensure({ url, userId, spaceId: personal.id, spaceIds: [personal.id] })
+    return personal
+  }
   return {
     async find(userId) {
-      return client.begin(async (tx) => {
+      const personal = await client.begin(async (tx) => {
         await tx`SELECT set_config('app.user_id', ${userId}, true)`
         const rows = await tx`
           SELECT s.id, s.name, s.slug
@@ -92,13 +113,13 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
             AND m.id IS NOT NULL
         `
         const row = rows[0]
-        return row?.id
-          ? { id: String(row.id), name: String(row.name), slug: String(row.slug) }
-          : null
+        if (!row?.id) return null
+        return { id: String(row.id), name: String(row.name), slug: String(row.slug) }
       })
+      return personal ? install(userId, personal) : null
     },
     async create(input) {
-      return client.begin(async (tx) => {
+      const personal = await client.begin(async (tx) => {
         const users = await tx`
           SELECT name, personal_space_id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE
         `
@@ -140,6 +161,7 @@ function personalSpacePort(client: SQL): PersonalSpacePort {
         `
         return { id: input.id, name: String(owner.name), slug: input.slug }
       })
+      return install(input.userId, personal)
     },
   }
 }
@@ -218,13 +240,34 @@ function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof pers
 type ResetPasswordSender = typeof sendPasswordResetEmail
 type InvitationSender = typeof sendRecordInvitationEmail
 
+function invitationOnlySignUp(client: SQL) {
+  return Object.assign(
+    async (input: unknown) => {
+      const context = input as { path?: string; body?: Record<string, unknown> }
+      if (context.path !== '/sign-up/email') return
+      const candidateEmail =
+        typeof context.body?.email === 'string' ? context.body.email.trim().toLowerCase() : ''
+      const rows = await client`SELECT public.invitation_open_for(${candidateEmail}) AS invited`
+      if (rows[0]?.invited !== true)
+        throw APIError.from('FORBIDDEN', {
+          code: 'SIGN_UP_REQUIRES_INVITATION',
+          message: RECORD_SIGN_UP_INVITATION_REQUIRED,
+        })
+    },
+    { options: {} },
+  )
+}
+
 export function recordAuth(
   url: string,
-  environment: RecordAuthEnvironment = process.env,
-  authDatabaseUrl?: string,
-  sendReset: ResetPasswordSender = sendPasswordResetEmail,
-  sendInvitation: InvitationSender = sendRecordInvitationEmail,
+  environment: RecordAuthEnvironment,
+  authDatabaseUrl: string | undefined,
+  sendReset: ResetPasswordSender | undefined,
+  sendInvitation: InvitationSender | undefined,
+  builtIns: SpaceBuiltInsPort,
 ) {
+  sendReset ??= sendPasswordResetEmail
+  sendInvitation ??= sendRecordInvitationEmail
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
   const trustedOrigins = recordAllowedOrigins(environment)
@@ -234,25 +277,7 @@ export function recordAuth(
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
   const authClient = authDatabaseUrl ? new SQL(authDatabaseUrl, { max: 1 }) : client
-  const personalSpaces = personalSpacePort(client)
-  const invitationOnlySignUp = Object.assign(
-    async (input: unknown) => {
-      const context = input as { path?: string; body?: Record<string, unknown> }
-      if (context.path !== '/sign-up/email') return
-      const candidateEmail =
-        typeof context.body?.email === 'string' ? context.body.email.trim().toLowerCase() : ''
-      const rows = await client`
-        SELECT public.invitation_open_for(${candidateEmail}) AS invited
-      `
-      if (rows[0]?.invited !== true) {
-        throw APIError.from('FORBIDDEN', {
-          code: 'SIGN_UP_REQUIRES_INVITATION',
-          message: RECORD_SIGN_UP_INVITATION_REQUIRED,
-        })
-      }
-    },
-    { options: {} },
-  )
+  const personalSpaces = personalSpacePort(url, client, builtIns)
   return betterAuth({
     secret,
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
@@ -279,7 +304,7 @@ export function recordAuth(
       max: 100,
       customRules: { '/request-password-reset': { window: 60 * 60, max: 5 } },
     },
-    hooks: { before: invitationOnlySignUp },
+    hooks: { before: invitationOnlySignUp(client) },
     user: { modelName: 'user' },
     session: { modelName: 'session' },
     account: { modelName: 'account' },
@@ -296,6 +321,16 @@ export function recordAuth(
         invitationExpiresIn: RECORD_INVITATION_EXPIRES_IN_SECONDS,
         // Invitation ids are unguessable and are delivered only in the invitation email.
         requireEmailVerificationOnInvitation: false,
+        organizationHooks: {
+          afterCreateOrganization: async ({ organization: created, user: owner }) => {
+            await builtIns.ensure({
+              url,
+              userId: owner.id,
+              spaceId: created.id,
+              spaceIds: [created.id],
+            })
+          },
+        },
         sendInvitationEmail: async ({ id, email, organization: invitedSpace, inviter, role }) => {
           if (!hubUrl)
             throw new Error(
@@ -396,7 +431,7 @@ export async function setActiveRecordSpaceForSession(
   headers: Headers,
   spaceId: string,
 ): Promise<void> {
-  const auth = recordAuth(url)
+  const auth = recordAuth(url, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
   const current = await auth.api.getSession({ headers })
   if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
   const sql = new SQL(url)

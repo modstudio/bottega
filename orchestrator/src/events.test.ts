@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { addRun } from '../test/fixtures/store.ts'
 import { registrationProbeReadsRepo } from './agent/agent-probe.ts'
 import { db } from './database/db.ts'
@@ -10,6 +10,7 @@ import {
   formatPeek,
   idleLabel,
   peekRun,
+  recordRunWarning,
   runEventsPath,
 } from './events.ts'
 import type { NormalizedEvent } from './transport/transport.ts'
@@ -71,6 +72,7 @@ describe('vendor event log', () => {
       ts: '2026-10-15T12:00:00.000Z',
       type: 'focused_test',
       paths: ['tests/one.test.ts'],
+      started: true,
       exitCode: 1,
       timedOut: false,
       elapsedMs: 42,
@@ -80,6 +82,7 @@ describe('vendor event log', () => {
     expect(peek.events.at(-1)).toEqual({
       type: 'focused_test',
       paths: ['tests/one.test.ts'],
+      started: true,
       exitCode: 1,
       timedOut: false,
       elapsedMs: 42,
@@ -92,16 +95,28 @@ describe('vendor event log', () => {
 
   test('non-worker activity appends without moving the activity clock', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    db().query('UPDATE run SET last_event_at=? WHERE id=?').run('worker-time', id)
+    db().query('UPDATE run SET last_event_at=? WHERE record_id=?').run('worker-time', id)
     appendRunEvent(id, { ts: 'server-time', type: 'ask_initialized' }, runEventsPath(id))
+    recordRunWarning(id, 'capacity bound reached')
     expect(
-      (db().query('SELECT last_event_at FROM run WHERE id=?').get(id) as { last_event_at: string })
-        .last_event_at,
+      (
+        db().query('SELECT last_event_at FROM run WHERE record_id=?').get(id) as {
+          last_event_at: string
+        }
+      ).last_event_at,
     ).toBe('worker-time')
+    expect(peekRun(id).events.at(-1)).toEqual({
+      type: 'warning',
+      text: 'capacity bound reached',
+    })
+    expect(formatPeek(peekRun(id))).toContain('warning capacity bound reached')
     appendRunEvent(id, { ts: 'next-worker-time', type: 'text', text: 'worker output' })
     expect(
-      (db().query('SELECT last_event_at FROM run WHERE id=?').get(id) as { last_event_at: string })
-        .last_event_at,
+      (
+        db().query('SELECT last_event_at FROM run WHERE record_id=?').get(id) as {
+          last_event_at: string
+        }
+      ).last_event_at,
     ).toBe('next-worker-time')
   })
 
@@ -180,7 +195,7 @@ describe('vendor event log', () => {
       { ts: 't5', type: 'usage', tokens: 9, costUsd: null },
     ])
     expect(JSON.stringify(lines)).not.toContain('secret body')
-    const row = db().query('SELECT last_event_at FROM run WHERE id=?').get(id) as {
+    const row = db().query('SELECT last_event_at FROM run WHERE record_id=?').get(id) as {
       last_event_at: string
     }
     expect(row.last_event_at).toBe('t5')
@@ -316,7 +331,7 @@ describe('vendor event log', () => {
 })
 
 describe('the live log is observation, never outcome', () => {
-  test('new note events round-trip UUIDs and labels while old numeric lines still read', () => {
+  test('new note events round-trip UUIDs and labels while old numeric lines are skipped', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     appendRunEvent(id, {
       ts: '2026-10-09T12:00:00.000Z',
@@ -325,15 +340,12 @@ describe('the live log is observation, never outcome', () => {
       noteLabel: 'workshop#71',
       candidates: [{ recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' }],
     })
-    appendRunEvent(id, {
-      ts: '2026-10-09T12:01:00.000Z',
-      type: 'note',
-      noteId: 72,
-      candidateIds: [9],
-    })
+    appendFileSync(
+      runEventsPath(id),
+      `${JSON.stringify({ ts: '2026-10-09T12:01:00.000Z', type: 'note', noteId: 72, candidateIds: [9] })}\n`,
+    )
     expect(peekRun(id, { events: 2 }).events).toEqual([
       { type: 'note', noteLabel: 'workshop#71', candidateLabels: ['workshop#8'] },
-      { type: 'note', noteLabel: '72', candidateLabels: ['9'] },
     ])
   })
 
@@ -349,16 +361,16 @@ describe('the live log is observation, never outcome', () => {
       // The parent of the path is a regular file, so mkdir and append both fail.
       const bad = join(dir, 'parent', 'events.jsonl')
       expect(() =>
-        appendRunEvent(0, { ts: new Date().toISOString(), type: 'text', text: 'x' }, bad),
+        appendRunEvent('0', { ts: new Date().toISOString(), type: 'text', text: 'x' }, bad),
       ).not.toThrow()
       expect(() =>
-        appendRunEvent(0, { ts: new Date().toISOString(), type: 'text', text: 'x' }, blocker),
+        appendRunEvent('0', { ts: new Date().toISOString(), type: 'text', text: 'x' }, blocker),
       ).not.toThrow()
       async function* broken() {
         yield { kind: 'text', text: 'one' }
         throw new Error('vendor stream broke')
       }
-      await expect(teeTransportEvents(broken(), 0)).resolves.toBeUndefined()
+      await expect(teeTransportEvents(broken(), '0')).resolves.toBeUndefined()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

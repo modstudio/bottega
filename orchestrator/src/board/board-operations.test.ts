@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import {
   boardAccept,
@@ -73,16 +74,17 @@ const hostedMessage = (id = newRecordId()) => ({
 
 beforeEach(() => {
   db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+  db().query('DELETE FROM board_hosted_adoption_ledger').run()
   db().query('DELETE FROM board_message').run()
   db().query('DELETE FROM board_claim').run()
   db()
     .query(
-      "INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-route-project','/tmp/board-route-project','{}')",
+      "INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-route-project','/tmp/board-route-project','{}')",
     )
     .run()
   db()
     .query(
-      "INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-route-architect',?,'{}')",
+      "INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'board-route-architect',?,'{}')",
     )
     .run(process.cwd())
 })
@@ -96,9 +98,10 @@ test('an unadopted install keeps a post local and renders its id as a string', a
       cwd: process.cwd(),
     },
   )
-  expect(result.id).toBeString()
+  expect(result.recordId).toBeString()
   expect(result).toEqual({
-    id: result.id,
+    recordId: result.recordId,
+    number: result.number,
     dropped: false,
     reached: 1,
     warning: null,
@@ -126,14 +129,98 @@ test('hosted post and reply expose unavailable posting counts as null', async ()
   }
   await expect(
     boardPost({ audience: 'operator', title: 'Hosted', body: 'body' }, { env, client }),
-  ).resolves.toEqual({ id: root.id, dropped: false, reached: null, warning: null })
+  ).resolves.toEqual({
+    recordId: root.id,
+    number: null,
+    dropped: false,
+    reached: null,
+    warning: null,
+  })
   await expect(boardReply(root.id, 'reply', { env, client })).resolves.toEqual({
-    id: reply.id,
+    recordId: reply.id,
+    number: null,
     rootId: root.id,
     dropped: false,
     reached: null,
     warning: null,
   })
+})
+
+test('uploaded message and claim UUIDs route to hosted rows instead of retired local shadows', async () => {
+  const clock = Date.parse('2026-10-05T12:00:00Z')
+  const localMessage = postNotice(
+    { audience: 'operator', title: 'Adopted message', body: 'retired local shadow' },
+    {},
+    clock,
+  )
+  const localClaim = await boardClaimTake(
+    { subject: 'resource:adopted', project: 'board-route-project' },
+    { env: noRecordEnv, clock },
+  )
+  const retiredAt = new Date(clock + 1).toISOString()
+  db()
+    .query('UPDATE board_message SET withdrawn_at=? WHERE record_id=?')
+    .run(retiredAt, localMessage.recordId)
+  db()
+    .query("UPDATE board_claim SET closed_at=?,close_reason='released' WHERE record_id=?")
+    .run(retiredAt, localClaim.recordId)
+  const ledger = db().query(
+    `INSERT INTO board_hosted_adoption_ledger
+     (source_record_id,local_kind,state,refusal,created_at,updated_at)
+     VALUES (?,?,'uploaded',NULL,?,?)`,
+  )
+  ledger.run(localMessage.recordId, 'notice', retiredAt, retiredAt)
+  ledger.run(localClaim.recordId, 'claim', retiredAt, retiredAt)
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+
+  const hostedRow = { ...hostedMessage(localMessage.recordId), withdrawnAt: retiredAt }
+  const hostedClaim = {
+    id: localClaim.recordId,
+    project: localClaim.project,
+    subject: localClaim.subject,
+    holder: localClaim.holder,
+    note: 'hosted row with shared UUID',
+    runId: null,
+    takenAt: localClaim.takenAt,
+    renewedAt: new Date(clock + 2).toISOString(),
+    lapsesAt: localClaim.lapsesAt,
+    live: true,
+    closedAt: null,
+    closeReason: null,
+    previousClaimIds: [],
+    supersededByClaimId: null,
+  }
+  const calls: string[] = []
+  const client = {
+    ...createMemoryRecordApiClient(),
+    withdrawBoardMessage: async (id: string) => {
+      calls.push(`withdraw:${id}`)
+      return hostedRow
+    },
+    renewBoardClaim: async (id: string) => {
+      calls.push(`renew:${id}`)
+      return hostedClaim
+    },
+  }
+  const adoptedContext = { env, client, clock: clock + 2 }
+
+  await expect(boardWithdraw(localMessage.recordId, adoptedContext)).resolves.toEqual({
+    withdrawn: localMessage.recordId,
+  })
+  await expect(boardClaimRenew(localClaim.recordId, adoptedContext)).resolves.toMatchObject({
+    recordId: localClaim.recordId,
+    note: 'hosted row with shared UUID',
+    live: true,
+  })
+  expect(calls).toEqual([`withdraw:${localMessage.recordId}`, `renew:${localClaim.recordId}`])
+  expect(
+    db()
+      .query('SELECT withdrawn_at FROM board_message WHERE record_id=?')
+      .get(localMessage.recordId),
+  ).toEqual({ withdrawn_at: retiredAt })
+  expect(
+    db().query('SELECT closed_at FROM board_claim WHERE record_id=?').get(localClaim.recordId),
+  ).toEqual({ closed_at: retiredAt })
 })
 
 test('local and hosted note filing render one common origin shape', () => {
@@ -164,12 +251,13 @@ test('thread results have one pinned shape in local and hosted modes', async () 
     { env: noRecordEnv, clock },
   )
   db()
-    .query('UPDATE board_message SET note_record_id=?,note_label=? WHERE id=?')
-    .run('01990000-0000-7000-8000-000000000042', 'fixture#42', Number(question.id))
-  const local = await boardThread(question.id, { env: noRecordEnv, clock })
+    .query('UPDATE board_message SET note_record_id=?,note_label=? WHERE record_id=?')
+    .run('01990000-0000-7000-8000-000000000042', 'fixture#42', question.recordId)
+  const local = await boardThread(question.recordId, { env: noRecordEnv, clock })
   expect(local).toEqual({
     root: {
-      id: question.id,
+      recordId: question.recordId,
+      number: question.number,
       kind: 'question',
       purpose: 'request',
       threadRootId: null,
@@ -219,10 +307,12 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       getBoardThread: async () => ({ root: message, replies: [] }),
     },
   })
-  const { noteId: _noteId, ...hostedRoot } = message
+  const { noteId: _noteId, id: hostedRecordId, ...hostedRoot } = message
   expect(hosted).toEqual({
     root: {
       ...hostedRoot,
+      recordId: hostedRecordId,
+      number: null,
       purpose: 'information',
       noteRecordId: unresolvedNoteId,
       noteLabel: null,
@@ -234,14 +324,16 @@ test('thread results have one pinned shape in local and hosted modes', async () 
 
 test('reading a thread stamps its printed root and replies while acknowledgement remains pending', async () => {
   db()
-    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('push-project',?,'{}')`)
+    .query(
+      `INSERT OR IGNORE INTO project(record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'push-project',?,'{}')`,
+    )
     .run(postingCwd)
   const clock = Date.parse('2026-10-08T13:00:00.000Z')
   const session = 'thread-reader'
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const question = askQuestion(
@@ -251,7 +343,7 @@ test('reading a thread stamps its printed root and replies while acknowledgement
     postingCwd,
   )
   const reply = replyToThread(
-    question.id,
+    question.recordId,
     'Reply body',
     { CLAUDE_CODE_SESSION_ID: 'thread-author' },
     clock + 1,
@@ -269,11 +361,11 @@ test('reading a thread stamps its printed root and replies while acknowledgement
     clock + 2,
   )
 
-  await boardThread(String(question.id), {
+  await boardThread(String(question.recordId), {
     env: { CLAUDE_CODE_SESSION_ID: session },
     clock: clock + 3,
   })
-  await boardThread(String(acknowledgement.id), {
+  await boardThread(String(acknowledgement.recordId), {
     env: { CLAUDE_CODE_SESSION_ID: session },
     clock: clock + 3,
   })
@@ -281,14 +373,16 @@ test('reading a thread stamps its printed root and replies while acknowledgement
 
   expect(pending.delivery).toEqual([])
   expect(pending.pendingAcknowledgements.map((message) => message.id)).toEqual([
-    String(acknowledgement.id),
+    String(acknowledgement.number),
   ])
   const stamped = db()
     .query(
-      'SELECT message_id FROM board_receipt WHERE reader_session=? AND delivered_at IS NOT NULL ORDER BY message_id',
+      'SELECT message_record_id FROM board_receipt WHERE reader_session=? AND delivered_at IS NOT NULL ORDER BY message_record_id',
     )
-    .all(session) as { message_id: number }[]
-  expect(stamped.map((row) => row.message_id)).toEqual([question.id, reply.id, acknowledgement.id])
+    .all(session) as { message_record_id: string }[]
+  expect(stamped.map((row) => row.message_record_id).sort()).toEqual(
+    [question.recordId, reply.recordId, acknowledgement.recordId].sort(),
+  )
 })
 
 test('status results have one pinned shape in local and hosted modes', async () => {
@@ -297,10 +391,11 @@ test('status results have one pinned shape in local and hosted modes', async () 
     { audience: 'operator', title: 'Local status', body: 'Status body' },
     { env: noRecordEnv, clock },
   )
-  const local = await boardStatus(posted.id, { env: noRecordEnv, clock })
+  const local = await boardStatus(posted.recordId, { env: noRecordEnv, clock })
   expect(local).toEqual({
     message: {
-      id: posted.id,
+      recordId: posted.recordId,
+      number: posted.number,
       kind: 'notice',
       purpose: 'information',
       threadRootId: null,
@@ -339,7 +434,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
     },
     receipts: [
       {
-        messageId: posted.id,
+        messageId: posted.recordId,
         readerUserId: null,
         readerSession: 'operator',
         audienceAtPosting: true,
@@ -369,10 +464,12 @@ test('status results have one pinned shape in local and hosted modes', async () 
       getBoardStatus: async () => ({ message, receipts: [receipt] }),
     },
   })
-  const { noteId: _noteId, ...hostedMessageFields } = message
+  const { noteId: _noteId, id: hostedRecordId, ...hostedMessageFields } = message
   expect(hosted).toEqual({
     message: {
       ...hostedMessageFields,
+      recordId: hostedRecordId,
+      number: null,
       purpose: 'information',
       noteRecordId: null,
       noteLabel: null,
@@ -391,9 +488,9 @@ test('claim verbs stringify every id and share the same local and hosted result 
     { subject: 'resource:local', project: 'board-route-project' },
     { env: noRecordEnv, clock },
   )
-  expect(local.id).toMatch(/^[1-9]\d*$/)
+  expect(local.recordId).toMatch(/^[0-9a-f-]{36}$/)
   expect(local).toEqual({
-    id: local.id,
+    recordId: local.recordId,
     project: 'board-route-project',
     subject: { kind: 'resource', value: 'local' },
     holder: 'operator',
@@ -406,18 +503,21 @@ test('claim verbs stringify every id and share the same local and hosted result 
     live: true,
     closedAt: null,
     closeReason: null,
-    previousClaimIds: [],
-    supersededByClaimId: null,
+    previousClaimRecordIds: [],
+    supersededByClaimRecordId: null,
     action: 'taken',
   })
   const { action: _action, ...localView } = local
-  const localRenewed = await boardClaimRenew(local.id, { env: noRecordEnv, clock: clock + 1_000 })
+  const localRenewed = await boardClaimRenew(local.recordId, {
+    env: noRecordEnv,
+    clock: clock + 1_000,
+  })
   expect(localRenewed).toEqual({
     ...localView,
     renewedAt: '2026-10-05T12:00:01.000Z',
     lapsesAt: '2026-10-05T16:00:01.000Z',
   })
-  const localReleased = await boardClaimRelease(local.id, {
+  const localReleased = await boardClaimRelease(local.recordId, {
     env: noRecordEnv,
     clock: clock + 2_000,
   })
@@ -448,7 +548,16 @@ test('claim verbs stringify every id and share the same local and hosted result 
     previousClaimIds: [newRecordId()],
     supersededByClaimId: null,
   }
-  const hostedResult = { ...hostedClaim, run_record_id: hostedClaim.runId }
+  const hostedResult = {
+    ...hostedClaim,
+    recordId: hostedClaim.id,
+    previousClaimRecordIds: hostedClaim.previousClaimIds,
+    supersededByClaimRecordId: hostedClaim.supersededByClaimId,
+    run_record_id: hostedClaim.runId,
+  }
+  delete (hostedResult as Partial<typeof hostedResult>).id
+  delete (hostedResult as Partial<typeof hostedResult>).previousClaimIds
+  delete (hostedResult as Partial<typeof hostedResult>).supersededByClaimId
   const hostedClient = {
     ...createMemoryRecordApiClient(),
     takeBoardClaim: async () => ({ ...hostedClaim, action: 'taken' as const }),
@@ -487,11 +596,11 @@ test('a local claim run id is exposed as an opaque string', async () => {
   const inserted = db()
     .query(
       `INSERT INTO run
-       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
-       VALUES ('${newRecordId()}','2026-10-05','codex','implement','board-route-architect','sha',1,'prompt',
-               'running','claim-route-session') RETURNING id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
+       VALUES ('${newRecordId()}',1,'2026-10-05','codex','implement','board-route-architect','sha',1,'prompt',
+               'running','claim-route-session') RETURNING record_id AS id`,
     )
-    .get() as { id: number }
+    .get() as { id: string }
   const result = await boardClaimTake(
     { subject: 'resource:run-bound', runId: inserted.id },
     {
@@ -502,8 +611,11 @@ test('a local claim run id is exposed as an opaque string', async () => {
   )
   expect(result.runId).toBe(String(inserted.id))
   expect(result.run_record_id).toBe(
-    (db().query('SELECT record_id FROM run WHERE id=?').get(inserted.id) as { record_id: string })
-      .record_id,
+    (
+      db().query('SELECT record_id FROM run WHERE record_id=?').get(inserted.id) as {
+        record_id: string
+      }
+    ).record_id,
   )
 })
 
@@ -601,8 +713,8 @@ test('machine audiences stay local after adoption and ids are validated for the 
     { audience: 'machine:host', title: 'Machine', body: 'local' },
     { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL }, client },
   )
-  expect(local.id).toMatch(/^\d+$/)
-  await expect(boardThread(local.id, { env, client })).rejects.toThrow(
+  expect(local.recordId).toMatch(/^[0-9a-f-]{36}$/)
+  await expect(boardThread(local.recordId, { env, client })).rejects.toThrow(
     /not readable by this session/,
   )
 })
@@ -628,15 +740,15 @@ test('an adopted install routes every positive-integer id only to the local serv
   }
   const localId = '999999'
   const operations: [() => Promise<unknown>, RegExp][] = [
-    [() => boardReply(localId, 'reply', { env, client }), /no board message/],
-    [() => boardThread(localId, { env, client }), /no board message/],
-    [() => boardWithdraw(localId, { env, client }), /no board notice/],
-    [() => boardAcknowledge(localId, { env, client }), /not addressed to this reader/],
-    [() => boardStatus(localId, { env, client }), /no board notice/],
-    [() => boardAccept(localId, localId, { env, client }), /no board message/],
-    [() => boardFileNote(localId, { env, client }), /no board message/],
-    [() => boardClaimRenew(localId, { env, client }), /no board claim/],
-    [() => boardClaimRelease(localId, { env, client }), /no board claim/],
+    [() => boardReply(localId, 'reply', { env, client }), /no board message has number/],
+    [() => boardThread(localId, { env, client }), /no board message has number/],
+    [() => boardWithdraw(localId, { env, client }), /no board message has number/],
+    [() => boardAcknowledge(localId, { env, client }), /no board message has number/],
+    [() => boardStatus(localId, { env, client }), /no board message has number/],
+    [() => boardAccept(localId, localId, { env, client }), /no board message has number/],
+    [() => boardFileNote(localId, { env, client }), /no board message has number/],
+    [() => boardClaimRenew(localId, { env, client }), /invalid board claim identifier/],
+    [() => boardClaimRelease(localId, { env, client }), /invalid board claim identifier/],
   ]
   for (const [operation, expected] of operations)
     await expect(operation()).rejects.toThrow(expected)
@@ -762,20 +874,70 @@ test('hosted acknowledgement uses the reserved operator reader without a session
   })
 })
 
-test('hosted acknowledgement refuses when the service is unreachable', async () => {
+test('hosted acknowledgement is cached and queued when the service is unreachable', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const id = newRecordId()
+  const message = hostedMessage(id)
+  db()
+    .query(
+      `INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(id, message.kind, message.threadRootId, message.revision, JSON.stringify(message))
+  await expect(
+    boardAcknowledge(id, {
+      clock: Date.parse('2026-10-16T12:00:00.000Z'),
+      env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+      client: {
+        ...createMemoryRecordApiClient(),
+        putBoardReceipt: async () => {
+          throw new RecordApiRequestError('record service offline', 'unreachable', 503)
+        },
+      },
+    }),
+  ).resolves.toEqual({
+    acknowledged: id,
+    queued: true,
+    message: 'hosted change saved and queued',
+  })
+  expect(
+    db()
+      .query(
+        `SELECT delivered_at,acknowledged_at,pending_sync
+         FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?`,
+      )
+      .get(id, 'operator'),
+  ).toEqual({
+    delivered_at: '2026-10-16T12:00:00.000Z',
+    acknowledged_at: '2026-10-16T12:00:00.000Z',
+    pending_sync: 1,
+  })
+})
+
+test('hosted acknowledgement refusal is rejected without caching a pending acknowledgement', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const id = newRecordId()
+  const message = hostedMessage(id)
+  db()
+    .query(
+      `INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(id, message.kind, message.threadRootId, message.revision, JSON.stringify(message))
   await expect(
     boardAcknowledge(id, {
       env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
       client: {
         ...createMemoryRecordApiClient(),
         putBoardReceipt: async () => {
-          throw new Error('record service offline')
+          throw new RecordApiRequestError('acknowledgement refused', 'refused', 403)
         },
       },
     }),
-  ).rejects.toThrow('record service offline')
+  ).rejects.toThrow('acknowledgement refused')
+  expect(
+    db().query('SELECT count(*) count FROM hosted_board_receipt_cache WHERE message_id=?').get(id),
+  ).toEqual({ count: 0 })
 })
 
 test('an adopted install without hosted configuration refuses instead of writing locally', async () => {

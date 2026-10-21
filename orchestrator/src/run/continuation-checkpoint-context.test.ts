@@ -10,7 +10,7 @@ test('uses the resolved continuation tree tip as the checkpoint prompt start', (
   db()
     .query(
       `INSERT INTO run_checkpoint
-         (record_id, run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+         (record_id, run_record_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
        VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
     )
     .run(rootId, 2, 'earlier-checkpoint', null, 0, new Date().toISOString())
@@ -37,11 +37,11 @@ test('uses the resolved continuation tree tip as the checkpoint prompt start', (
 
 test('a checkpoint without a resolved continuation tree gives the fresh-run remedy', () => {
   const rootId = addRun({ agent: 'codex', job: 'implement' })
-  db().query('UPDATE run SET launch_key=? WHERE id=?').run('DEV-970', rootId)
+  db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DEV-970', rootId)
   db()
     .query(
       `INSERT INTO run_checkpoint
-         (record_id, run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+         (record_id, run_record_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
        VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
     )
     .run(rootId, 1, 'checkpoint-without-tree', null, 0, new Date().toISOString())

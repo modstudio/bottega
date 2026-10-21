@@ -72,19 +72,21 @@ describe('customer guide command write check', () => {
       expectedRevision: seeded.revision!,
     })
     const revisions = listDocRevisions('global', null, input.slug)
-    const unknownRevision = revisions.find(({ id }) =>
-      getDocRevision(id)?.body.includes('not-a-command'),
+    const unknownRevision = revisions.find(({ record_id }) =>
+      getDocRevision(record_id)?.body.includes('not-a-command'),
     )
-    const knownRevision = revisions.find(({ id }) => getDocRevision(id)?.body.includes('task show'))
+    const knownRevision = revisions.find(({ record_id }) =>
+      getDocRevision(record_id)?.body.includes('task show'),
+    )
 
     await expect(
-      restoreDoc('global', null, input.slug, unknownRevision!.id, {
+      restoreDoc('global', null, input.slug, unknownRevision!.record_id, {
         reason: 'try unknown command revision',
         expectedRevision: known.revision!,
       }),
     ).rejects.toThrow(`${PLATFORM_SLUG} task not-a-command`)
     await expect(
-      restoreDoc('global', null, input.slug, knownRevision!.id, {
+      restoreDoc('global', null, input.slug, knownRevision!.record_id, {
         reason: 'restore known command revision',
         expectedRevision: known.revision!,
       }),

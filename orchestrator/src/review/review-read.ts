@@ -33,8 +33,8 @@ export function latestArchitectRead(database: Database, project: string, branch:
   const row = database
     .query<{ tip: string; note: string; recorded_at: string }, [string, string]>(
       `SELECT tip,note,recorded_at FROM review_read
-       WHERE project=? AND branch=?
-       ORDER BY recorded_at DESC,id DESC LIMIT 1`,
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
+       ORDER BY recorded_at DESC,record_id DESC LIMIT 1`,
     )
     .get(project, branch)
   return row ? { tip: row.tip, note: row.note, recordedAt: row.recorded_at } : null
@@ -67,7 +67,7 @@ export function recordArchitectRead(
   suppliedDatabase?: Database,
   runGit: Git = git,
   recordedAt = nowIso(),
-): number {
+): string {
   if (process.env.ORCH_DEPTH !== undefined) {
     throw new Error(
       `${PLATFORM_SLUG} review read is reserved for architect sessions; ORCH_DEPTH is set`,
@@ -97,11 +97,11 @@ export function recordArchitectRead(
   return writeTransaction(() => {
     const row = database
       .query<
-        { id: number },
+        { record_id: string },
         [
           string,
           string,
-          number,
+          string,
           string,
           string,
           string,
@@ -113,13 +113,13 @@ export function recordArchitectRead(
         ]
       >(
         `INSERT INTO review_read
-          (record_id,project,project_id,branch,tip,patch_id,path_set,tier,note,session_id,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+          (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,session_id,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
         project.name,
-        project.id,
+        project.recordId,
         branch,
         tip,
         measured.group.patchId,
@@ -129,8 +129,8 @@ export function recordArchitectRead(
         caller,
         recordedAt,
       )!
-    enqueueReviewRead(database, row.id)
-    return row.id
+    enqueueReviewRead(database, row.record_id)
+    return row.record_id
   }, database)
 }
 
@@ -140,10 +140,10 @@ export function recordArchitectReadCommand(
   presentation: Presentation,
 ): void {
   if (argv.length !== 2) throw new Error(`${PLATFORM_SLUG} review read [--sha <tip>] --note <text>`)
-  const id = recordArchitectRead({
+  const recordId = recordArchitectRead({
     cwd: resolveReviewCommandCwd(flags.flag('cwd')),
     sha: flags.flag('sha'),
     note: flags.flag('note') ?? '',
   })
-  presentation.log(`recorded architect review read ${id}`)
+  presentation.log(`recorded architect review read ${recordId}`)
 }

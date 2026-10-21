@@ -19,6 +19,7 @@ import {
   hostedBoardCursor,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
+  queueHostedBoardAcknowledgement,
   reapHostedBoardCache,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
@@ -149,8 +150,8 @@ test('refresh records an unreachable service without throwing and exposes verifi
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run(createdAt, createdAt)
   const cached = message()
@@ -196,8 +197,8 @@ test('routing narrows own-user audiences and withholds questions from worker cha
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp','DEV-968',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp','DEV-968',?,?)`,
     )
     .run(createdAt, '2026-10-05T12:01:00.000Z')
   const own = message({ audience: 'architects' })
@@ -248,14 +249,14 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
     .run(BOARD_CACHE_OWNER_KEY, userId)
   database
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp','DEV-968',?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp','DEV-968',?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z')
   database
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
-       VALUES ('${newRecordId()}',?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
     )
     .run(
       '2026-10-05T11:30:00.000Z',
@@ -264,14 +265,14 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   const recordId = newRecordId()
   const root = database
     .query(
-      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,record_id,turn)
-       VALUES (?,'codex','implement','cache-project','sha',1,'prompt','running','DEV-968',?,?,1) RETURNING id`,
+      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,record_id,turn)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','running','DEV-968',?,?,1) RETURNING record_id AS id`,
     )
     .get(
       '2026-10-05T11:30:00.000Z',
       JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']),
       recordId,
-    ) as { id: number }
+    ) as { id: string }
   const clock = Date.parse('2026-10-05T12:02:00.000Z')
   const addressed = (audience: string, reader: string, tags: HostedBoardChange['tags'] = []) =>
     cachedMessageAddressed({ message: message({ audience }), tags }, reader, clock, database)
@@ -286,7 +287,7 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   database
     .query(
       `INSERT INTO board_claim
-       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
+       (project,subject_kind,subject_value,holder_kind,holder_session,note,run_record_id,duration_ms,
         taken_at,renewed_at,lapses_at,closed_at,close_reason,record_id)
        VALUES ('cache-project','task','DEV-CLAIM','architect','claim-holder',NULL,NULL,3600000,
                ?,?,?,NULL,NULL,?)`,
@@ -339,11 +340,11 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const addPresence = database.query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude','architect','machine',?,'/tmp',NULL,?,?)`,
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude','architect','machine',?,(SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
   )
-  addPresence.run('cache-reader', 'cache-project', createdAt, createdAt)
-  addPresence.run('cache-reader-other', 'other-project', createdAt, createdAt)
+  addPresence.run('cache-reader', 'cache-project', 'cache-project', createdAt, createdAt)
+  addPresence.run('cache-reader-other', 'other-project', 'other-project', createdAt, createdAt)
   const recordResponse = (authorProjectId: string | null, revision: string) =>
     hostedBoardMessageView(
       {
@@ -356,7 +357,7 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
         author_user_id: userId,
         author_session: 'author',
         author_harness: 'claude',
-        author_run_id: null,
+        author_run_record_id: null,
         author_project_id: authorProjectId,
         author_project_name: null,
         created_at: createdAt,
@@ -412,8 +413,8 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run('2026-10-05T11:00:00.000Z', createdAt)
   const cached = message()
@@ -715,6 +716,92 @@ test('receipt flushing follows change fetch; network failure stays pending and r
       .query('SELECT pending_sync,sync_error FROM hosted_board_receipt_cache WHERE message_id=?')
       .get(cached.id),
   ).toEqual({ pending_sync: 0, sync_error: 'receipt no longer visible' })
+
+  queueHostedBoardAcknowledgement(cached.id, 'cache-reader', true, '2026-10-05T12:05:00.000Z')
+  let sent: unknown
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...base,
+      listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
+      putBoardReceipt: async (input) => {
+        sent = input
+        return {
+          messageId: input.messageId,
+          readerUserId: userId,
+          readerSession: input.readerSession,
+          audienceAtPosting: input.audienceAtPosting,
+          deliveredAt: '2026-10-05T12:05:00.000Z',
+          acknowledgedAt: '2026-10-05T12:05:00.000Z',
+        }
+      },
+    },
+  })
+  expect(sent).toMatchObject({ delivered: true, acknowledged: true })
+  expect(
+    db()
+      .query('SELECT pending_sync,sync_error FROM hosted_board_receipt_cache WHERE message_id=?')
+      .get(cached.id),
+  ).toEqual({ pending_sync: 0, sync_error: null })
+})
+
+test('a delivered-only receipt refresh preserves and flushes a queued acknowledgement', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const cached = message({ ackRequired: true })
+  const base = createMemoryRecordApiClient()
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...base,
+      listBoardChanges: async () => ({
+        userId,
+        items: [change(cached)],
+        highestRevision: cached.revision,
+      }),
+    },
+  })
+  queueHostedBoardAcknowledgement(cached.id, 'cache-reader', true, '2026-10-05T12:05:00.000Z')
+  let sent: Parameters<typeof base.putBoardReceipt>[0] | undefined
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { ORCH_RECORD_API_URL: 'x' },
+    client: {
+      ...base,
+      listBoardChanges: async () => ({
+        userId,
+        items: [
+          {
+            ...change(cached),
+            receipts: [
+              {
+                messageId: cached.id,
+                readerUserId: userId,
+                readerSession: 'cache-reader',
+                audienceAtPosting: true,
+                deliveredAt: '2026-10-05T12:04:00.000Z',
+                acknowledgedAt: null,
+              },
+            ],
+          },
+        ],
+        highestRevision: cached.revision,
+      }),
+      putBoardReceipt: async (input) => {
+        sent = input
+        return {
+          messageId: input.messageId,
+          readerUserId: userId,
+          readerSession: input.readerSession,
+          audienceAtPosting: input.audienceAtPosting,
+          deliveredAt: '2026-10-05T12:05:00.000Z',
+          acknowledgedAt: '2026-10-05T12:05:00.000Z',
+        }
+      },
+    },
+  })
+  expect(sent).toMatchObject({ delivered: true, acknowledged: true })
 })
 
 test('cache pruning removes an expired unaccepted thread and keeps an accepted thread', () => {
@@ -847,9 +934,9 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
   const database = db()
   database
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('early-session','claude','architect','machine','cache-project','/tmp',NULL,?,?),
-              ('late-session','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('early-session','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?),
+              ('late-session','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run(
       '2026-10-05T11:00:00.000Z',
@@ -859,16 +946,16 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
     )
   const earlyRun = database
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T11:00:00.000Z') as { id: number }
+    .get('2026-10-05T11:00:00.000Z') as { id: string }
   const lateRun = database
     .query(
-      `INSERT INTO run(record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T13:00:00.000Z') as { id: number }
+    .get('2026-10-05T13:00:00.000Z') as { id: string }
   const cached = message()
   database
     .query(
@@ -886,8 +973,8 @@ test('hosted push selection withholds every older message and keeps newer messag
   const beganAt = '2026-10-05T12:00:00.000Z'
   database
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
     )
     .run(beganAt, beganAt)
   const setMeta = database.query(

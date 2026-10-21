@@ -1,22 +1,13 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { TaskSheet } from '@/components/task-sheet'
+import { createFileRoute } from '@tanstack/react-router'
+import { TaskRoute, taskSearch } from './-task-route'
 
 export const Route = createFileRoute('/board/tasks/$key')({
-  validateSearch: (search: Record<string, unknown>) => ({
-    id: typeof search.id === 'string' ? search.id : undefined,
-  }),
+  validateSearch: taskSearch,
   component: BoardTask,
 })
 
 function BoardTask() {
   const { key } = Route.useParams()
-  const { id } = Route.useSearch()
-  const navigate = useNavigate()
-  return (
-    <TaskSheet
-      taskKey={key}
-      recordId={id}
-      onClose={() => void navigate({ to: '/board', resetScroll: false })}
-    />
-  )
+  const { id, doc } = Route.useSearch()
+  return <TaskRoute taskKey={key} id={id} doc={doc} list="/board" />
 }

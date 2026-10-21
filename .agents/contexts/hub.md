@@ -5,20 +5,31 @@ paths: ["hub/**"]
 
 # Web application
 
-The Vite and React application lives in `hub/web`. Route modules live in
-`hub/web/src/routes`, and TanStack Router generates the route tree. Static paths resolve
-from the built distribution; other non-tRPC paths return the application entry point so
-direct navigation and hard refresh enter the client router.
+The Vite and React application lives in `hub/web`. Its source holds only route modules, the
+router entry and the application stylesheet; TanStack Router generates the route tree. `scripts/check-hub-packages.ts`
+enforces `hub-web-source-placement`, and `bottega gate hub-import judge` refuses a misplaced
+source file when it is written. Static paths resolve from the built distribution; other
+non-tRPC paths return the application entry point so direct navigation and hard refresh enter
+the client router.
 
 Every screen reads through a procedure in `hub/src/trpc/routers`. Procedures call the
 canonical hub operation rather than duplicating its query or write. A screen therefore
 adds a route, a procedure over the canonical operation, and navigation without defining a
 second data model in the browser.
 
-The selected window, filters and navigation counts share the external store in
-`hub/web/src/lib/window.ts`. Live-query polling pauses while redrawing would disrupt an
-open control, and it reads only completed collection state because collection has its
-own cadence and lease.
+Data access and the hub mode live only in `@bottega/hub-data`. Route modules call its hooks
+and pass plain data and actions to components; an action has `run`, `pending`, `error`, and
+an optional refusal reason. Components never select a data adapter and never own router
+navigation. `scripts/check-hub-packages.ts` enforces package exports and workspace dependencies.
+`scripts/check-architecture.ts` enforces `hub-web-views-do-not-fetch-data-or-read-hub-mode`,
+`hub-data-imports-no-ui-or-web`, `hub-data-router-is-type-only`, and
+`hub-views-docs-do-not-name-data-modes`; `orchestrator/hooks/hub-import-guard.py` refuses the same
+import and mode-literal violations when a file is written.
+
+The selected window, filters and navigation counts live in hub-data's window store,
+`@bottega/hub-data/window`. Live-query polling pauses while redrawing would disrupt an open
+control, and it reads only completed collection state because collection has its own cadence
+and lease.
 
 Serve the current worktree before checking a screen, then verify direct navigation and a
 hard refresh against that server. Filtering happens before any cap, because capping first
@@ -26,21 +37,53 @@ can hide matching rows behind another project's traffic.
 
 # Design system
 
-Build screens from `hub/web/src/ui`, and leave no control wearing the browser's own
-appearance. `ui/` imports nothing from the app, its layers are declared in
-`architecture.ts`, and `hub/web/lint/layout-only-classname.grit` refuses appearance
-classes passed to its components: change a component's look through a variant it owns and
-pass it margin, size and placement only. Browser behavior, such as the dialog element,
-the popover attribute and anchor positioning, is used beneath our own styling; no
-component library is added, and a component's keyboard behavior follows its WAI-ARIA APG
-pattern.
+Presentation has three layers. `@bottega/hub-ui` owns generic controls,
+`@bottega/hub-views` owns document and feature surfaces, the task's among them, that render
+the plain data and actions they are given, and `@bottega/hub-web` owns routes and the screens
+that decide where data comes from. Leave no control wearing the browser's
+own appearance. A hub package depends only on the workspace packages its entry in
+`hubWorkspaceDependencies` allows, and code outside a package imports it only through a
+declared export subpath. Every non-test source file in `hub/ui/src` and `hub/views/src` has
+exactly one export entry derived from its path. `scripts/check-hub-packages.ts` enforces the
+dependency table and export maps; `scripts/check-architecture.ts` enforces package imports,
+layer folders, and the hub-views data and router boundary; and
+`orchestrator/hooks/hub-import-guard.py` refuses the same violations when a file is written.
+`@bottega/hub-util` holds pure helpers with no dependency beyond `shared/`, enforced by
+`scripts/check-hub-packages.ts` and `scripts/check-architecture.ts`.
 
-Presentation that knows no domain belongs in `ui/`, while a component that knows what a
-project, run or tracker is belongs beside the screens using it. `ProjectName` renders a
-name and a color; `ProjectMark` knows where a project's color comes from.
+The UI and views packages know nothing of data access, routing or the hub mode, and their
+internal imports stay relative; `scripts/check-architecture.ts` enforces this boundary,
+`hub-ui-does-not-import-itself-by-package-subpath`,
+`hub-views-does-not-import-itself-by-package-subpath`, and the layers declared in
+`scripts/architecture-ui-layers.ts`. UI and views source filenames are kebab-case and use named
+exports without barrels or export-all declarations; the package overrides in `biome.jsonc`
+enforce these rules. `hub/web/lint/layout-only-classname.grit` refuses appearance classes passed
+to UI components: change a component's look through a variant it owns and pass it margin, size
+and placement only. Browser behavior, such as the dialog element, the popover attribute and
+anchor positioning, is used beneath our own styling; no component library is added, and a
+component's keyboard behavior follows its WAI-ARIA APG pattern.
 
-Color, type and measurement come from `hub/web/src/styles/tokens.css` through the
-Tailwind bridge in `hub/web/src/styles/theme.css`: raw values, then the meanings the
+Every hub-ui and hub-views component has stories beside it. Each preview fails on accessibility
+violations, with reasoned per-story exceptions only. Story tests run in CI as part of the
+aggregate `ci` check. `scripts/check-hub-ui-styles.ts` enforces story coverage,
+`scripts/check-storybook.ts` enforces the accessibility default and reasoned exceptions,
+and `scripts/check-ci-workflow.ts` enforces the CI job.
+
+A hub-ui or hub-views component's appearance is defined only in its sibling styles file through
+`hub/ui/src/text/variant.ts`. Nothing else imports `tailwind-variants` or
+`tailwind-merge`, and the shared merge knows the design system's theme keys.
+`scripts/check-architecture.ts` enforces the variant dependency boundary;
+`scripts/check-hub-ui-styles.ts` enforces styles-file use, theme-key synchronization and
+the generated component list in `hub/web/lint/layout-only-classname.grit`.
+
+A reusable control belongs in `hub/ui`. A document or feature composition that renders plain
+data belongs in `hub/views` whatever domain it draws, so local and hosted screens share one
+front end. A component that knows where its data comes from belongs beside the screens using
+it. `ProjectName` renders a name and a color; `ProjectMark` knows where a
+project's color comes from.
+
+Color, type and measurement come from `hub/ui/src/styles/tokens.css` through the
+Tailwind bridge in `hub/ui/src/styles/theme.css`: raw values, then the meanings the
 `dark` class overrides, then shared measurements. Name a token; never write a color
 literal or a default Tailwind palette class. Color that reports a status is selected by
 `data-tone`, which derives that role's whole triad from one anchor. Check a new pair's

@@ -1,4 +1,3 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,7 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
 import {
   HOSTED_AUTONOMY_TIMEOUT_MS,
@@ -19,13 +18,10 @@ const steps = [
   { slug: 'verify', stage: 'implement' as const, autonomy: 'auto' as const },
 ]
 const database = (settings = '{}') => {
-  const d = new Database(':memory:')
-  applyMigrations(d)
-  d.query('INSERT INTO project (name,path,settings) VALUES (?,?,?)').run(
-    'fixture',
-    '/fixture',
-    settings,
-  )
+  const d = migratedTestDatabase()
+  d.query(
+    'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+  ).run('fixture', '/fixture', settings)
   return d
 }
 const missingConfig = { BOTTEGA_CONFIG_HOME: '/missing-fixture-config' }
@@ -280,10 +276,10 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
   const d = database(JSON.stringify({ autonomy: { rulings: 'agent' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
+      (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
        catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
        created_at,updated_at)
-     VALUES (?,'fixture','flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
+     VALUES (?,'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
   )
   insert.run(
     newRecordId(),

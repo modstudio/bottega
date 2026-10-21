@@ -35,7 +35,7 @@ the project register
 
 ## bottega project add
 
-**Synopsis:** `bottega project add [path] [--name <value>] [--stack <value>] [--settings <value>] [--no-canon] [--allow-incomplete] [--json]`
+**Synopsis:** `bottega project add [path] [--name <value>] [--stack <value>] [--space <value>] [--settings <value>] [--no-canon] [--allow-incomplete] [--json]`
 
 register a project
 
@@ -43,6 +43,7 @@ register a project
 
 - `--name <value>`: set the project or profile name
 - `--stack <value>`: set the project stack
+- `--space <value>`: select a record space by id or slug
 - `--settings <value>`: set project settings from JSON
 - `--no-canon`: disable canon for the project
 - `--allow-incomplete`: allow incomplete worktree settings

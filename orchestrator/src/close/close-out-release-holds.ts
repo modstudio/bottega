@@ -8,14 +8,14 @@ import { projectAt } from '../project/projects.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
 type ReleaseHoldResult = {
-  runId: number
+  runId: string
   worktree: string
   outcome: 'held' | 'failed'
   detail: string
 }
 
 export function landingTreeReleaseHold(input: {
-  runId: number
+  runId: string
   job: string
   repo: string | null
   worktree: string
@@ -35,7 +35,8 @@ export function landingTreeReleaseHold(input: {
       db()
         .query(
           `SELECT 1 FROM landing
-           WHERE project=? AND branch=? AND status IN ('queued','running') LIMIT 1`,
+           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+             AND branch=? AND status IN ('queued','running') LIMIT 1`,
         )
         .get(project, input.branch),
   )
@@ -50,10 +51,11 @@ export function protectRetainedBranch(input: {
   retainedRef: string | null
   branchSnapshot: string | null
   retainedBranch: string | null
-  runId: number
+  runId: string
   treePath: string
 }): ReleaseHoldResult | null {
   if (!input.retainedRef || !input.branchSnapshot) return null
+  // branch-ref-guard: non-local refs/orch/
   const pinned = Bun.spawnSync(['git', 'update-ref', input.retainedRef, input.branchSnapshot], {
     cwd: input.repoRoot,
     env: targetGitEnvironment(input.repoRoot),

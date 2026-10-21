@@ -3,7 +3,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { candidates } from '../route/route.ts'
+import { enqueueRunRecord } from './run-outbox.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
 import { abandonRun, stoppedRunLine, stopRun, stopTerminationRefusal } from './run-stop.ts'
 
@@ -21,7 +23,7 @@ const presentation = () => {
 }
 async function invoke(
   action: 'stop' | 'abandon',
-  id: number,
+  id: string,
   opts: {
     note?: string
     checkpoint?: (name: string) => void
@@ -59,7 +61,9 @@ beforeEach(() => {
 })
 
 test('stop reports an identity mismatch with an inspect-then-signal remedy and does not claim stopped', () => {
-  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'identity-mismatch', pid: 42922 })).toBe(
+  expect(
+    stopTerminationRefusal({ record_id: '42' }, { outcome: 'identity-mismatch', pid: 42922 }),
+  ).toBe(
     'run 42 pid 42922 identity could not be confirmed; the run remains running; after checking ps -p 42922 -o lstart=,command=, run kill -TERM 42922 only if the start time matches the recorded agent_start_time',
   )
 })
@@ -67,7 +71,7 @@ test('stop reports an identity mismatch with an inspect-then-signal remedy and d
 test('stop reports a vendor that survived SIGKILL after the row is recorded stopped', () => {
   expect(
     stopTerminationRefusal(
-      { id: 42 },
+      { record_id: '42' },
       { outcome: 'still-alive', pid: 42922, reason: 'process did not exit after SIGKILL' },
     ),
   ).toBe(
@@ -76,31 +80,35 @@ test('stop reports a vendor that survived SIGKILL after the row is recorded stop
 })
 
 test('stop uses the plain success line after a proven termination', () => {
-  expect(stoppedRunLine(42)).toBe('stopped run 42')
-  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'no-pid' })).toBeNull()
-  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'no-vendor' })).toBeNull()
-  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'gone' })).toBeNull()
-  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'signaled', signaled: [42922] })).toBeNull()
+  expect(stoppedRunLine('42')).toBe('stopped run 42')
+  expect(stopTerminationRefusal({ record_id: '42' }, { outcome: 'no-pid' })).toBeNull()
+  expect(stopTerminationRefusal({ record_id: '42' }, { outcome: 'no-vendor' })).toBeNull()
+  expect(stopTerminationRefusal({ record_id: '42' }, { outcome: 'gone' })).toBeNull()
+  expect(
+    stopTerminationRefusal({ record_id: '42' }, { outcome: 'signaled', signaled: [42922] }),
+  ).toBeNull()
 })
 
 test('abandon retires an asking run from the live inbox and keeps it in all as terminal', async () => {
   const id = insert('asking')
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(id, new Date().toISOString(), 'which design?')
   expect((await invoke('abandon', id, { note: 'superseded' })).code).toBe(0)
-  expect(db().query('SELECT status,error,failure_kind FROM run WHERE id=?').get(id)).toEqual({
-    status: 'stale',
-    error: 'abandoned by architect: superseded',
-    failure_kind: 'abandoned',
-  })
+  expect(db().query('SELECT status,error,failure_kind FROM run WHERE record_id=?').get(id)).toEqual(
+    {
+      status: 'stale',
+      error: 'abandoned by architect: superseded',
+      failure_kind: 'abandoned',
+    },
+  )
   expect(
     db()
       .query(
         `SELECT answer,answered_by,answerer_kind,answer_channel,delivery_pending_at
-           FROM question WHERE run_id=?`,
+           FROM question WHERE run_record_id=?`,
       )
       .get(id),
   ).toEqual({
@@ -117,8 +125,8 @@ test('abandon retires an older answered pending delivery through the chain servi
   db()
     .query(
       `INSERT INTO question
-        (record_id,run_id,asked_at,question,answer,answered_at,delivery_pending_at)
-       VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+        (number,record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
     )
     .run(
       id,
@@ -131,13 +139,13 @@ test('abandon retires an older answered pending delivery through the chain servi
 
   expect((await invoke('abandon', id)).code).toBe(0)
   expect(
-    db().query('SELECT answer,delivery_pending_at FROM question WHERE run_id=?').get(id),
+    db().query('SELECT answer,delivery_pending_at FROM question WHERE run_record_id=?').get(id),
   ).toEqual({ answer: 'earlier ruling', delivery_pending_at: null })
   expect(
     db()
       .query(
         `SELECT mode,outcome,error FROM question_delivery
-         WHERE question_id=(SELECT id FROM question WHERE run_id=?)`,
+         WHERE question_record_id=(SELECT record_id FROM question WHERE run_record_id=?)`,
       )
       .get(id),
   ).toEqual({ mode: 'record-only', outcome: 'retired', error: 'abandoned' })
@@ -146,16 +154,20 @@ test('abandon retires an older answered pending delivery through the chain servi
 test('a foreign session can neither stop nor abandon an owned run', async () => {
   const running = insert('running')
   const asking = insert('asking')
-  db().query('UPDATE run SET session_id=? WHERE id IN (?,?)').run('other-session', running, asking)
+  db()
+    .query('UPDATE run SET session_id=? WHERE record_id IN (?,?)')
+    .run('other-session', running, asking)
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(asking, new Date().toISOString(), 'which shape?')
   expect((await invoke('stop', running)).err).toContain('owned by session other-session')
   expect((await invoke('abandon', asking)).err).toContain('owned by session other-session')
   expect(
-    db().query('SELECT status FROM run WHERE id IN (?,?) ORDER BY id').all(running, asking),
+    db()
+      .query('SELECT status FROM run WHERE record_id IN (?,?) ORDER BY number')
+      .all(running, asking),
   ).toEqual([{ status: 'running' }, { status: 'asking' }])
 })
 
@@ -163,12 +175,12 @@ test('stop refuses a run that is not running without changing it', async () => {
   const id = insert('ok')
   const result = await invoke('stop', id)
   expect(result.err).toContain(`${id} turn 1 ok`)
-  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'ok' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({ status: 'ok' })
 })
 
 test('stop refuses an identity mismatch and leaves the run running', async () => {
   const id = insert('running')
-  db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
+  db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(42402, 42922, id)
   let terminated = false
   const result = await invoke('stop', id, {
     plan: () => ({ outcome: 'identity-mismatch', pid: 42922 }),
@@ -183,12 +195,14 @@ test('stop refuses an identity mismatch and leaves the run running', async () =>
   expect(result.err).toContain('the run remains running')
   expect(result.err).toContain('kill -TERM 42922')
   expect(result.out).not.toContain(`stopped run ${id}`)
-  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'running' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+    status: 'running',
+  })
 })
 
 test('stop refuses when the vendor stays alive after the row is recorded stopped', async () => {
   const id = insert('running')
-  db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
+  db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(42402, 42922, id)
   const result = await invoke('stop', id, {
     plan: () => verifiedVendor,
     terminate: () => ({
@@ -201,18 +215,21 @@ test('stop refuses when the vendor stays alive after the row is recorded stopped
   expect(result.err).toContain('is recorded stopped')
   expect(result.err).toContain('process 42922 is still alive')
   expect(result.err).toContain('kill -KILL 42922')
-  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+    status: 'stopped',
+  })
 })
 
 test('stop calls terminate only after the row already reads stopped', async () => {
   const id = insert('running')
-  db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
+  db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(42402, 42922, id)
   const statusesDuringTerminate: string[] = []
   const result = await invoke('stop', id, {
     plan: () => verifiedVendor,
     terminate: () => {
       statusesDuringTerminate.push(
-        (db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status,
+        (db().query('SELECT status FROM run WHERE record_id=?').get(id) as { status: string })
+          .status,
       )
       return { outcome: 'signaled', signaled: [42922] }
     },
@@ -220,12 +237,14 @@ test('stop calls terminate only after the row already reads stopped', async () =
   expect(statusesDuringTerminate).toEqual(['stopped'])
   expect(result.code).toBe(0)
   expect(result.out).toContain(`stopped run ${id}`)
-  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+    status: 'stopped',
+  })
 })
 
 test('stop records a setup run with no vendor and signals nothing', async () => {
   const id = insert('running')
-  db().query('UPDATE run SET pid=? WHERE id=?').run(42402, id)
+  db().query('UPDATE run SET pid=? WHERE record_id=?').run(42402, id)
   let terminated = false
   const result = await invoke('stop', id, {
     plan: () => ({ outcome: 'no-vendor' }),
@@ -237,16 +256,20 @@ test('stop records a setup run with no vendor and signals nothing', async () => 
   expect(terminated).toBe(false)
   expect(result.code).toBe(0)
   expect(result.out).toContain(`stopped run ${id}`)
-  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+    status: 'stopped',
+  })
 })
 
 test('stopping a running turn records the conversation root as stopped', async () => {
   const root = insert('asking')
   const turn = insert('running')
-  db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, turn)
+  db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
   expect((await invoke('stop', turn)).code).toBe(0)
   expect(
-    db().query('SELECT id,status FROM run WHERE id IN (?,?) ORDER BY id').all(root, turn),
+    db()
+      .query('SELECT record_id AS id,status FROM run WHERE record_id IN (?,?) ORDER BY number')
+      .all(root, turn),
   ).toEqual([
     { id: root, status: 'stopped' },
     { id: turn, status: 'stopped' },
@@ -257,11 +280,11 @@ test('stop closes an unanswered question on the chain', async () => {
   const id = insert('running')
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(id, new Date().toISOString(), 'which design?')
   expect((await invoke('stop', id)).code).toBe(0)
-  expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(id)).toEqual({
+  expect(db().query('SELECT close_reason FROM question WHERE run_record_id=?').get(id)).toEqual({
     close_reason: 'chain-stopped',
   })
 })
@@ -269,18 +292,18 @@ test('stop closes an unanswered question on the chain', async () => {
 test('stop by a chain root stops its running child turn', async () => {
   const root = insert('ok')
   const turn = insert('running')
-  db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, turn)
+  db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
   const result = await invoke('stop', root)
   expect(result.out).toContain(`stopped run ${turn}`)
-  expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root)).toEqual([
-    { action: 'stop' },
-  ])
+  expect(
+    db().query('SELECT action FROM run_mutation_audit WHERE root_run_record_id=?').all(root),
+  ).toEqual([{ action: 'stop' }])
 })
 
 test('stop omits a reviewed branch that the conversation did not mint', async () => {
   const id = insert('running', 'review-lens')
   db()
-    .query('UPDATE run SET worktree=?, branch=?, minted_branch=NULL WHERE id=?')
+    .query('UPDATE run SET worktree=?, branch=?, minted_branch=NULL WHERE record_id=?')
     .run('/tmp/review-tree', 'DEV-930-orch-6210', id)
 
   const result = await invoke('stop', id)
@@ -293,7 +316,7 @@ test('stop names a branch minted by its conversation', async () => {
   const id = insert('running')
   const branch = `DEV-934-orch-${id}`
   db()
-    .query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
+    .query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE record_id=?')
     .run('/tmp/writer-tree', branch, branch, id)
 
   const result = await invoke('stop', id)
@@ -305,49 +328,55 @@ test('stop names a branch minted by its conversation', async () => {
 
 test('stop waits for a concurrent continuation claim and stops the claimed turn', async () => {
   const root = insert('asking')
-  let turn = 0
+  let turn = ''
   const result = await invoke('stop', root, {
     checkpoint: () => {
       turn = insert('running')
-      db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, turn)
+      db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
     },
   })
   expect(result.out).toContain(`stopped run ${turn}`)
-  expect(db().query('SELECT status FROM run WHERE id=?').get(turn)).toEqual({ status: 'stopped' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(turn)).toEqual({
+    status: 'stopped',
+  })
 })
 
 test('abandon loses cleanly to a concurrent continuation claim', async () => {
   const root = insert('asking')
-  let turn = 0
+  let turn = ''
   const result = await invoke('abandon', root, {
     checkpoint: () => {
       turn = insert('running')
-      db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, turn)
+      db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
     },
   })
   expect(result.err).toContain(`${turn} turn 2 running`)
   expect(result.err).toContain(`run ${PLATFORM_SLUG} run stop ${root}`)
-  expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'asking' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
+    status: 'asking',
+  })
 })
 
 test('stop refuses when its candidate completes before the immediate transaction', async () => {
   const root = insert('asking')
   const turn = insert('running')
-  db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, turn)
+  db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
   const result = await invoke('stop', root, {
     checkpoint: () => {
-      db().query("UPDATE run SET status='ok' WHERE id=?").run(turn)
+      db().query("UPDATE run SET status='ok' WHERE record_id=?").run(turn)
     },
   })
   expect(result.err).toContain(`${turn} turn 2 ok`)
-  expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root)).toEqual([])
+  expect(
+    db().query('SELECT action FROM run_mutation_audit WHERE root_run_record_id=?').all(root),
+  ).toEqual([])
 })
 
 test('abandon refuses a completed run without changing it', async () => {
   const id = insert('ok')
   const result = await invoke('abandon', id)
   expect(result.err).toContain(`${id} turn 1 ok`)
-  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'ok' })
+  expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({ status: 'ok' })
 })
 
 test('an abandoned run is not routing evidence', async () => {
@@ -360,35 +389,50 @@ test('an abandoned run is not routing evidence', async () => {
 
 test("abandoning a resumed turn keeps the root's prior failure kind", async () => {
   const root = insert('failed')
-  db().query("UPDATE run SET failure_kind='timeout',error='timed out' WHERE id=?").run(root)
+  db().query("UPDATE run SET failure_kind='timeout',error='timed out' WHERE record_id=?").run(root)
+  enqueueRunRecord(db(), root, machineId(), new Date().toISOString())
   const child = insert('asking')
-  db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+  db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, child)
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(child, new Date().toISOString(), 'child question?')
   expect((await invoke('abandon', child)).code).toBe(0)
-  expect(db().query('SELECT status,error,failure_kind FROM run WHERE id=?').get(root)).toEqual({
+  expect(
+    db().query('SELECT status,error,failure_kind FROM run WHERE record_id=?').get(root),
+  ).toEqual({
     status: 'stale',
     error: 'abandoned by architect',
     failure_kind: 'timeout',
   })
+  const rootPayloads = db()
+    .query<{ payload: string }, [string]>(
+      `SELECT payload FROM outbox
+       WHERE kind='run' AND row_id=(SELECT record_id FROM run WHERE record_id=?) ORDER BY id`,
+    )
+    .all(root)
+  expect(rootPayloads.map(({ payload }) => JSON.parse(payload))).toMatchObject([
+    { status: 'failed', failureKind: 'timeout' },
+    { status: 'stale', failureKind: 'timeout' },
+  ])
 })
 
 test('abandon by a chain root retires its asking child turn', async () => {
   const root = insert('asking')
   const child = insert('asking')
-  db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+  db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, child)
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
     )
     .run(child, new Date().toISOString(), 'last question?')
   const result = await invoke('abandon', root, { note: 'superseded' })
   expect(result.out).toContain(`abandoned run ${child}`)
   expect(
-    db().query('SELECT id,status FROM run WHERE id IN (?,?) ORDER BY id').all(root, child),
+    db()
+      .query('SELECT record_id AS id,status FROM run WHERE record_id IN (?,?) ORDER BY number')
+      .all(root, child),
   ).toEqual([
     { id: root, status: 'stale' },
     { id: child, status: 'stale' },

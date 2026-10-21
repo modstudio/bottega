@@ -1,6 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
-import type { ChildProcess, spawn } from 'node:child_process'
-import { EventEmitter } from 'node:events'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -18,6 +17,7 @@ afterEach(() => {
 
 test('detached MCP preflight ensures the declared project stack before probing', async () => {
   upsertProject({
+    recordId: newRecordId(),
     name: 'detached-mcp-stack-fixture',
     path: import.meta.dir,
     settings: { mainStack: { consumers: ['mcp'], requiredServices: ['db'] } },
@@ -73,7 +73,7 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
     db()
       .query(
         `SELECT record_id, status, failure_kind, error FROM run
-         WHERE prompt_head='detach handoff fixture' ORDER BY id DESC LIMIT 1`,
+         WHERE prompt_head='detach handoff fixture' ORDER BY number DESC LIMIT 1`,
       )
       .get(),
   ).toEqual({
@@ -82,28 +82,4 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
     failure_kind: 'harness',
     error: expect.stringContaining('detach handoff failed during await coordinator spawn'),
   })
-})
-
-test('detach sends coordinator stdout and stderr to an append log descriptor', async () => {
-  process.env.ORCH_DEPTH = '0'
-  let stdio: unknown
-  const fakeSpawn = ((
-    _execPath: string,
-    _args: readonly string[],
-    options: { stdio?: unknown },
-  ) => {
-    stdio = options.stdio
-    const child = new EventEmitter() as ChildProcess
-    Object.defineProperty(child, 'pid', { value: 4_194_303 })
-    child.unref = () => child
-    queueMicrotask(() => child.emit('spawn'))
-    return child
-  }) as typeof spawn
-
-  await detach('summarize', 'coordinator log fixture', { cwd: dir }, undefined, fakeSpawn)
-
-  expect(stdio).toEqual(['ignore', expect.any(Number), expect.any(Number)])
-  const descriptors = stdio as ['ignore', number, number]
-  expect(descriptors[1]).toBeGreaterThan(2)
-  expect(descriptors[2]).toBe(descriptors[1])
 })

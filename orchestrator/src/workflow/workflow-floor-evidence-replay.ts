@@ -28,7 +28,7 @@ type HubTaskRead = {
 
 export type FloorEvidencePorts = {
   readTask?: (key: string, options: { fresh: true }) => HubTaskRead
-  runHasArtifacts?: (runId: number) => boolean
+  runHasArtifacts?: (runId: string) => boolean
   resolveCheckout?: (
     cwd: string,
     headCommit: string | null,

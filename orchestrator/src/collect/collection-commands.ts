@@ -2,7 +2,8 @@
 /** Owns collection command behavior and exit mappings. Must not know CLI grammar. */
 import type { Database } from 'bun:sqlite'
 import { formatPeek, peekRun } from '../events.ts'
-import { job } from '../jobs/jobs.ts'
+import { resolveRecordedRunJob } from '../jobs/jobs.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
@@ -14,7 +15,7 @@ type Presentation = {
 }
 
 export function peekCommand(
-  id: number,
+  id: string,
   options: { events?: number; json: boolean },
   presentation: Presentation,
 ): void {
@@ -35,20 +36,31 @@ export function resultCommand(
     argv,
     scoreSuffix,
     presentation,
-    (jobName) => !isSyntheticLifecycleJob(jobName) && Boolean(job(jobName).needs.writesRepo),
+    (job, branch, mintedBranch) =>
+      !isSyntheticLifecycleJob(job) &&
+      resolveRecordedRunJob({ job, branch, minted_branch: mintedBranch }).writesRepo,
   )
-  const chain = resolveFailover(database, Number(argv[1]))
+  const chain = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
   const row = database
-    .query('SELECT job, status, latency_ms, probe, output_path FROM run WHERE id=?')
+    .query(
+      'SELECT job, status, latency_ms, probe, output_path, branch, minted_branch FROM run WHERE record_id=?',
+    )
     .get(chain.finalId) as {
     job: string
     status: string
     latency_ms: number | null
     probe: number
     output_path: string | null
+    branch: string | null
+    minted_branch: string | null
   }
   if (isSyntheticLifecycleJob(row.job)) return
-  const warning = thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) })
+  const recordedJob = resolveRecordedRunJob(row)
+  if (!recordedJob.declared && !recordedJob.writesRepo) return
+  const warning = thinOutputWarning({
+    ...row,
+    writesRepo: recordedJob.writesRepo,
+  })
   if (warning) presentation.error(warning)
 }
 

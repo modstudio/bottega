@@ -1,78 +1,55 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { runFilePaths } from './run-artifacts.ts'
 import { claimRun } from './run-claim.ts'
 
-test("a later findings turn inherits its root's implicit review branch", async () => {
+test('a later claim records a UUID ruling identity and never resurrects a failed reservation', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
   const reserved = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
   const reservedRecordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(reserved)!.record_id
   expect(reservedRecordId[14]).toBe('7')
-  const carriedQuestionId = (
+  const carriedQuestionRecordId = (
     db()
-      .query<{ id: number }, [string, number]>(
-        `INSERT INTO question (record_id,run_id,asked_at,question)
-         VALUES (?,?,'2026-10-14','Which?') RETURNING id`,
+      .query<{ record_id: string }, [string, string]>(
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+         VALUES (1,?,?,'2026-10-14','Which?') RETURNING record_id`,
       )
-      .get(newRecordId(), root) as { id: number }
-  ).id
-  db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-1147-reviewed', root)
+      .get(newRecordId(), root) as { record_id: string }
+  ).record_id
   const runsDir = mkdtempSync(join(tmpdir(), 'later-findings-claim-'))
-  const repository = join(runsDir, 'repository')
-  Bun.spawnSync(['git', 'init', '-b', 'main', repository])
-  writeFileSync(join(repository, 'fixture.txt'), 'fixture\n')
-  Bun.spawnSync(['git', 'add', 'fixture.txt'], { cwd: repository })
-  Bun.spawnSync(
-    [
-      'git',
-      '-c',
-      'user.name=Fixture',
-      '-c',
-      'user.email=fixture@example.com',
-      'commit',
-      '-m',
-      'fixture',
-    ],
-    { cwd: repository },
-  )
-  const head = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repository })
-    .stdout.toString()
-    .trim()
-  const paths = runFilePaths(runsDir, Date.now(), 'later', 'codex', 'review-lens')
 
   try {
-    const claimed = await claimRun({
+    const claimInput: Parameters<typeof claimRun>[0] = {
       opts: {
         job: 'review-lens',
         reserveId: reserved,
+        transport: 'cli',
         resume: {
           kind: 'continue',
           parent: root,
           agent: 'codex',
           turn: 2,
           sessionId: null,
-          worktree: { path: repository, branch: '', base: head, repoRoot: repository },
+          worktree: null,
         },
       },
       runsDir,
-      paths,
       stamp: 'later-findings-claim',
       name: 'codex',
       generatedSchema: null,
       originalPrompt: 'review the change',
       prompt: 'review the change',
-      callerCwd: repository,
+      callerCwd: runsDir,
       seed: undefined,
       writesJob: false,
-      repoJob: true,
+      repoJob: false,
       runProjectName: null,
       runProjectId: null,
       reason: 'test',
@@ -86,32 +63,102 @@ test("a later findings turn inherits its root's implicit review branch", async (
       declaredDeliverables: [],
       timeoutMinutes: undefined,
       timeoutMs: 60_000,
-      forbidsRepo: false,
+      forbidsRepo: true,
       reviewTarget: null,
       implicitReview: { branch: null, findings: true },
       coverageBase: null,
-      readOnlyBase: head,
-      deferredCwdMcpPreflight: false,
+      readOnlyBase: null,
+      deferredCwdMcpPlan: [],
       usingMcp: false,
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
-      carriedQuestionIds: [carriedQuestionId],
-    })
+      carriedQuestionIds: [carriedQuestionRecordId],
+    }
+    const claimed = await claimRun(claimInput)
 
     expect(claimed.claim.id).toBe(reserved)
-    expect(db().query('SELECT branch,record_id FROM run WHERE id=?').get(claimed.claim.id)).toEqual(
+    expect(
+      db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(claimed.claim.id),
+    ).toEqual({ transport_explicit: 1 })
+    expect(db().query('SELECT record_id FROM run WHERE record_id=?').get(claimed.claim.id)).toEqual(
       {
-        branch: 'DEV-1147-reviewed',
         record_id: reservedRecordId,
       },
     )
     expect(
       db()
-        .query<{ record_id: string }, [number]>(
-          'SELECT record_id FROM run_carried_ruling WHERE run_id=?',
+        .query<{ record_id: string }, [string]>(
+          'SELECT record_id FROM run_carried_ruling WHERE run_record_id=?',
         )
         .get(claimed.claim.id)?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+
+    const implicit = await claimRun({
+      ...claimInput,
+      opts: { job: 'review-lens' },
+      stamp: 'implicit-transport-claim',
+      carriedQuestionIds: [],
+    })
+    expect(
+      db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
+    ).toEqual({ transport_explicit: 0 })
+
+    const failedReservation = addRun({
+      agent: '(pending)',
+      job: 'review-lens',
+      status: 'failed',
+    })
+    await expect(
+      claimRun({
+        ...claimInput,
+        opts: { job: 'review-lens', reserveId: failedReservation },
+        stamp: 'failed-reservation-claim',
+        carriedQuestionIds: [],
+      }),
+    ).rejects.toThrow('is no longer claimable')
+    expect(
+      db().query('SELECT status, agent FROM run WHERE record_id=?').get(failedReservation),
+    ).toEqual({ status: 'failed', agent: '(pending)' })
+
+    const setupFailureRoot = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
+    const setupFailureTurn = addRun({
+      agent: '(pending)',
+      job: 'review-lens',
+      status: 'running',
+      parent: setupFailureRoot,
+      turn: 2,
+    })
+    await expect(
+      claimRun({
+        ...claimInput,
+        opts: {
+          job: 'review-lens',
+          reserveId: setupFailureTurn,
+          resume: {
+            kind: 'continue',
+            parent: setupFailureRoot,
+            agent: 'codex',
+            turn: 2,
+            sessionId: null,
+            worktree: null,
+          },
+        },
+        stamp: 'post-claim-setup-failure',
+        carriedQuestionIds: [],
+        deferredCwdMcpPlan: ['ensure-main-stack'],
+      }),
+    ).rejects.toThrow('deferred MCP main-stack step ran before project preflight')
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(setupFailureTurn),
+    ).toEqual({ status: 'failed', failure_kind: 'harness' })
+    expect(
+      db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(setupFailureRoot),
+    ).toEqual({ status: 'failed', failure_kind: 'harness' })
+    expect(
+      db()
+        .query("SELECT count(*) AS count FROM outbox WHERE kind='run' AND row_id=?")
+        .get(setupFailureTurn),
+    ).toEqual({ count: 1 })
   } finally {
     rmSync(runsDir, { recursive: true, force: true })
   }

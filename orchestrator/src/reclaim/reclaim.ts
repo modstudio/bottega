@@ -2,12 +2,13 @@ import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { assertBranchRefMayBeDeleted, restoreBranch } from '../branch/branch-ref-guard.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
 import { classifyMintedBranch } from '../branch/branches.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
 import {
   withCleanupLock,
   withWorktreeCreateLock,
@@ -29,6 +30,19 @@ import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
 import { reclaimDirtyTreeRefusal } from './reclaim-worktree-dirty.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }
+type ReclaimWorktreeOptions = {
+  dryRun?: boolean
+  clock?: number
+  allowDirty?: boolean
+  beforeLockedProof?: () => void
+}
+
+function prepareExactBranchDeletion(repoRoot: string, branch: string): void {
+  writableDb()
+  assertBranchRefMayBeDeleted(repoRoot, branch)
+}
+const CLEAR_RETAINED_BRANCH_SQL =
+  'UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE record_id=?'
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
   const result = Bun.spawnSync(['git', ...args], {
@@ -50,14 +64,14 @@ function refuse(missing: string): ReclaimResult {
 function runRows(path: string): ReclaimRun[] {
   const rows = db()
     .query(
-      `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id, r.repo, r.worktree,
+      `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) root_record_id, r.repo, r.worktree,
             r.branch, r.branch_kept, r.branch_kept_tip, r.minted_branch,
             r.base_commit, r.worktree_source, r.status,
             r.pid, r.agent_pid, r.session_id, seen.last_seen session_last_seen,
             ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree, r.keep_tree_until, r.started_at
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-      WHERE r.worktree IS NOT NULL ORDER BY r.id`,
+      WHERE r.worktree IS NOT NULL ORDER BY r.record_id`,
     )
     .all() as ReclaimRun[]
   const canonical = (candidate: string) => {
@@ -74,10 +88,10 @@ function runRows(path: string): ReclaimRun[] {
 function liveOwner(row: ReclaimRun): string | null {
   return runAlive({
     status: row.status,
-    lease: runLeaseState(row.id),
+    lease: runLeaseState(row.record_id),
     pidAlive: Boolean(row.pid && pidAlive(row.pid)),
   })
-    ? `run ${row.id} is alive`
+    ? `run ${row.record_id} is alive`
     : null
 }
 
@@ -113,21 +127,21 @@ function proveRunOwners(
       if (live) return refuse(live)
     }
     if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
-      return refuse(`run ${row.id} status ${row.status} is not terminal`)
+      return refuse(`run ${row.record_id} status ${row.status} is not terminal`)
     }
   }
   return null
 }
 
-function fullClaimRefusal(path: string, runId: number): ReclaimResult | null {
+function sharedWorktreeRefusal(path: string, runId: string): ReclaimResult | null {
   const sharers = otherConversationWorktreeSharers(db(), {
-    id: runId,
+    record_id: runId,
     worktree: path,
   })
   if (!sharers.length) return null
   return refuse(
     `worktree ${path} is still claimed by other conversation(s): ` +
-      sharers.map((row) => `run ${row.id} (${row.status})`).join(', '),
+      sharers.map((row) => `run ${row.record_id} (${row.status})`).join(', '),
   )
 }
 
@@ -188,7 +202,7 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
         }).held
       )
         return {
-          result: refuse(`run ${lockedRow.id} records keep_tree; its worktree is protected`),
+          result: refuse(`run ${lockedRow.record_id} records keep_tree; its worktree is protected`),
         }
     }
   }
@@ -220,16 +234,21 @@ export function proveWorktreeReconstructible(
   return proveWorktree(path, options.clock ?? Date.now(), options.allowDirty).result
 }
 
+function lockedWorktreeProof(path: string, options: ReclaimWorktreeOptions): WorktreeProof {
+  options.beforeLockedProof?.()
+  return proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
+}
+
 /** Reclaim one worktree only after its run rows and git state prove it reconstructible. */
 export function reclaimWorktree(
   requestedPath: string,
-  options: { dryRun?: boolean; clock?: number; allowDirty?: boolean } = {},
+  options: ReclaimWorktreeOptions = {},
 ): ReclaimResult {
   const path = existsSync(requestedPath) ? realpathSync(requestedPath) : resolve(requestedPath)
   const preview = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
   if (!preview.result.ok) return preview.result
   const previewOwner = preview.rows?.[0]
-  const previewClaim = previewOwner ? fullClaimRefusal(path, previewOwner.id) : null
+  const previewClaim = previewOwner ? sharedWorktreeRefusal(path, previewOwner.record_id) : null
   if (previewClaim) return previewClaim
   if (options.dryRun) return preview.result
   const project = preview.project!
@@ -243,13 +262,12 @@ export function reclaimWorktree(
         project.path,
         owner,
         () => {
-          const proof = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
+          const proof = lockedWorktreeProof(path, options)
           if (!proof.result.ok) return proof.result
           const lockedRows = proof.rows ?? []
           const lockedRow = lockedRows[0]
-          const lockedClaim = lockedRow ? fullClaimRefusal(path, lockedRow.id) : null
+          const lockedClaim = lockedRow ? sharedWorktreeRefusal(path, lockedRow.record_id) : null
           if (lockedClaim) return lockedClaim
-
           writableDb()
           const headRef = existsSync(path)
             ? git(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
@@ -270,11 +288,11 @@ export function reclaimWorktree(
             project.path,
             false,
             keepBranch,
-            lockedRow?.id,
+            lockedRow?.record_id,
           )
           if (!removed.removed) return refuse(removed.detail)
           if (lockedRow) {
-            const sharersAfter = fullClaimRefusal(path, lockedRow.id)
+            const sharersAfter = sharedWorktreeRefusal(path, lockedRow.record_id)
             if (sharersAfter) return sharersAfter
           }
           if (keepBranch && minted && branchBefore) {
@@ -293,12 +311,12 @@ export function reclaimWorktree(
             }
           }
           if (lockedRows.length) {
-            const clear = db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+            const clear = db().query(CLEAR_RETAINED_BRANCH_SQL)
             writeTransaction(() => {
               lockedRows.forEach((record) => {
-                clear.run(minted || null, branchBefore, record.id)
+                clear.run(minted || null, branchBefore, record.record_id)
                 settleClaims(db(), {
-                  rootRunId: record.root_id,
+                  rootRunId: record.root_record_id,
                   kind: 'worktree',
                   state: 'released',
                   settledAt: new Date().toISOString(),
@@ -307,7 +325,7 @@ export function reclaimWorktree(
                 })
                 if (keepBranch && minted && branchBefore) {
                   settleClaims(db(), {
-                    rootRunId: record.root_id,
+                    rootRunId: record.root_record_id,
                     kind: 'branch',
                     state: 'retained',
                     settledAt: new Date().toISOString(),
@@ -442,8 +460,8 @@ export function reclaimBranch(
           const lockedProof = prove()
           if (!lockedProof.result.ok) return lockedProof.result
           const tip = lockedProof.tip!
-
-          writableDb()
+          prepareExactBranchDeletion(project.path, branch)
+          // branch-ref-guard: assertBranchRefMayBeDeleted
           const deleted = git(project.path, ['update-ref', '-d', `refs/heads/${branch}`, tip])
           if (!deleted.ok || branchTip(project.path, branch) !== null) {
             return refuse(

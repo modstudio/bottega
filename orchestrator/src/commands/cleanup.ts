@@ -17,13 +17,16 @@ function keptBranchLine(
   branch: string,
   uniqueCount: number,
   afterCutCount: number | null,
-  id: number,
+  id: string,
 ): string {
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }
+  ).number
   const reason =
     afterCutCount === null
       ? `${uniqueCount} commit(s) reachable only from this branch`
       : `deleting it would lose commits reachable from no other ref; ${afterCutCount} commit(s) after the cut`
-  return `kept branch ${branch}: ${reason} — merge it, or ${PLATFORM_SLUG} run discard ${id} --force to delete it after checking no other run owns it`
+  return `kept branch ${branch}: ${reason} — merge it, or ${PLATFORM_SLUG} run discard ${number} --force to delete it after checking no other run owns it`
 }
 
 const presentation: CleanupPresentation = {
@@ -58,12 +61,14 @@ export function register(program: Command): void {
     .option('--project <value>', 'registered project whose resources are swept')
     .option('--force', 'continue despite a project sweep failure')
     .option('--dry-run', 'report releases without applying them')
+    .option('--verbose', 'list every kept run artifact')
     .allowExcessArguments(false)
     .action(async (options) => {
       const flags = optionFlags(options)
       await sweepRuns(
         {
           dryRun: flags.has('dry-run'),
+          verbose: flags.has('verbose'),
           project: flags.flag('project'),
           force: flags.has('force'),
           presentation,

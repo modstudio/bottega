@@ -13,8 +13,11 @@ import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
+import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
+import { resolveReviewIdentifier } from '../review/review-identifier.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   type ArtifactRef,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -42,9 +45,9 @@ export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
 
 export type WorkflowEvidenceInput = {
   ruling?: number
-  review?: number
+  review?: string
   gate?: number
-  run?: number
+  run?: string
   artifact?: string
   task?: string
   defer?: string
@@ -174,11 +177,15 @@ export const productionFloorPorts = (): FloorEvidencePorts => ({
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 function runHasRecordedArtifacts(
-  runId: number,
+  runId: string,
   runsDir = resolveRunsDirectory(process.env),
 ): boolean {
-  const artifacts = runArtifactsDir(runId, runsDir)
-  const reply = join(runScratchDir(runId, runsDir), 'reply.json')
+  const recordId = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(runId)?.record_id
+  if (!recordId) return false
+  const artifacts = runArtifactsDir(recordId, runsDir)
+  const reply = join(runScratchDir(recordId, runsDir), 'reply.json')
   if (existsSync(reply)) return true
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }
@@ -212,7 +219,7 @@ function recordedLandingCommit(project: string, branch: string | null, d: Databa
     d
       .query<{ merge_commit: string | null }, [string, string]>(
         `SELECT merge_commit FROM branch_landing_record
-          WHERE project=? AND branch=?
+          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
           ORDER BY merged_at DESC, pr_number DESC LIMIT 1`,
       )
       .get(project, branch)?.merge_commit ?? null
@@ -279,8 +286,8 @@ function gatherRuling(
       },
       [number]
     >(
-      `SELECT id,answered_at,answerer_kind,workflow_cursor_id,workflow_step_ordinal,workflow_step_slug
-         FROM question WHERE id=?`,
+      `SELECT number id,answered_at,answerer_kind,workflow_cursor_id,workflow_step_ordinal,workflow_step_slug
+         FROM question WHERE number=?`,
     )
     .get(id)
   if (!row) throw new Error(`--ruling ${id} does not exist`)
@@ -290,49 +297,51 @@ function gatherRuling(
     answeredByOperator: row.answerer_kind === 'operator',
     boundToCursor: row.workflow_cursor_id === cursorId,
     boundToStep: row.workflow_step_ordinal === stepOrdinal && row.workflow_step_slug === stepSlug,
+    answeredAt: row.answered_at,
   }
 }
 
 function gatherReview(
-  id: number,
+  recordId: string,
   identity: CursorIdentity,
   d: Database,
 ): ValidatedEvidence['review'] {
   const review = d
     .query<
       {
-        id: number
+        record_id: string
+        number: number
         project_name: string | null
         patch_id: string | null
         path_set: string | null
       },
-      [number]
+      [string]
     >(
-      `SELECT r.id, p.name AS project_name, r.patch_id, r.path_set
-         FROM review r LEFT JOIN project p ON p.id=r.project_id
-        WHERE r.id=?`,
+      `SELECT r.record_id,r.number, p.name AS project_name, r.patch_id, r.path_set
+         FROM review r LEFT JOIN project p ON p.record_id=r.project_record_id
+        WHERE r.record_id=?`,
     )
-    .get(id)
-  if (!review) throw new Error(`--review ${id} does not exist`)
+    .get(recordId)
+  if (!review) throw new Error(`--review ${recordId} does not exist`)
   if (review.project_name !== identity.project)
     throw new Error(
-      `--review ${id} project is ${review.project_name ?? 'unset'}, not this cursor's ${identity.project}`,
+      `--review ${review.number} project is ${review.project_name ?? 'unset'}, not this cursor's ${identity.project}`,
     )
   const bound = d
     .query<
       { branch: string | null },
-      [number, string | null, string | null, string, string | null]
+      [string, string | null, string | null, string, string | null]
     >(
       `SELECT ru.branch
-         FROM review_lens rl JOIN run ru ON ru.id=rl.run_id
-        WHERE rl.review_id=?
+         FROM review_lens rl JOIN run ru ON ru.record_id=rl.run_record_id
+        WHERE rl.review_record_id=?
           AND ((? IS NOT NULL AND ru.branch=?) OR ru.launch_key=?)
-        ORDER BY CASE WHEN ru.branch=? THEN 0 ELSE 1 END, rl.id LIMIT 1`,
+        ORDER BY CASE WHEN ru.branch=? THEN 0 ELSE 1 END, ru.started_at,rl.record_id LIMIT 1`,
     )
-    .get(id, identity.branch, identity.branch, identity.workflowKey, identity.branch)
+    .get(recordId, identity.branch, identity.branch, identity.workflowKey, identity.branch)
   if (!bound)
     throw new Error(
-      `--review ${id} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
+      `--review ${review.number} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
     )
   const branch = identity.branch ?? bound.branch
   const grouped = reviewsForTriage(
@@ -343,17 +352,18 @@ function gatherReview(
       patchId: review.patch_id ?? '',
       pathSet: review.path_set === null ? [] : (JSON.parse(review.path_set) as string[]),
     },
-    id,
+    recordId,
   )
   const reviews =
     review.patch_id === null || review.path_set === null
-      ? grouped.branchReviews.filter(({ reviewId }) => reviewId === id)
+      ? grouped.branchReviews.filter(({ reviewRecordId }) => reviewRecordId === recordId)
       : grouped.reviews
   const unfinishedReviewIds = reviews
     .filter((review) => !reviewRoundTriageComplete(review))
-    .map(({ reviewId }) => reviewId)
+    .map(({ reviewNumber }) => reviewNumber)
   return {
-    id,
+    recordId,
+    number: review.number,
     allFindingsDisposed: reviews.every(({ findings }) =>
       findings.every(({ disposition }) => disposition !== null),
     ),
@@ -364,7 +374,7 @@ function gatherReview(
   }
 }
 
-function loadRunBinding(runId: number, d: Database): BoundRun | null {
+function loadRunBinding(runId: string, d: Database): BoundRun | null {
   const row = d
     .query<
       {
@@ -375,11 +385,11 @@ function loadRunBinding(runId: number, d: Database): BoundRun | null {
         started_at: string
         project_name: string | null
       },
-      [number]
+      [string]
     >(
       `SELECT r.repo, r.launch_key, r.branch, r.session_id, r.started_at, p.name AS project_name
-         FROM run r LEFT JOIN project p ON p.id=r.project_id
-        WHERE r.id=?`,
+         FROM run r LEFT JOIN project p ON p.record_id=r.project_record_id
+        WHERE r.record_id=?`,
     )
     .get(runId)
   if (!row) return null
@@ -400,7 +410,7 @@ function loadAdoptionReasons(
   return d
     .query<{ reason: string | null }, [number, string]>(
       `SELECT a.reason
-         FROM question q JOIN question_mutation_audit a ON a.question_id=q.id
+         FROM question q JOIN question_mutation_audit a ON a.question_record_id=q.record_id
         WHERE q.workflow_cursor_id=? AND a.action='rule' AND a.actor_session=?`,
     )
     .all(cursorId, actorSession)
@@ -488,18 +498,18 @@ function gatherGate(
       {
         finished_at: string | null
         exit_code: number | null
-        run_id: number | null
+        run_record_id: string | null
         cwd: string | null
         head_commit: string | null
       },
       [number]
-    >('SELECT finished_at,exit_code,run_id,cwd,head_commit FROM gate_execution WHERE id=?')
+    >('SELECT finished_at,exit_code,run_record_id,cwd,head_commit FROM gate_execution WHERE id=?')
     .get(id)
   if (!row) throw new Error(`--gate ${id} does not exist`)
   let project: string | null
-  if (row.run_id !== null) {
-    const run = loadRunBinding(row.run_id, d)
-    if (!run) throw new Error(`--gate ${id} run ${row.run_id} does not exist`)
+  if (row.run_record_id !== null) {
+    const run = loadRunBinding(row.run_record_id, d)
+    if (!run) throw new Error(`--gate ${id} run ${row.run_record_id} does not exist`)
     requireRunBinding(`--gate ${id}`, run, identity, cursorId, d)
     project = run.project
   } else {
@@ -523,14 +533,14 @@ function gatherGate(
 }
 
 function gatherRun(
-  id: number,
+  id: string,
   identity: CursorIdentity,
   cursorId: number,
   d: Database,
 ): ValidatedEvidence['run'] {
   const row = d
-    .query<{ status: string; exit_code: number | null }, [number]>(
-      'SELECT status,exit_code FROM run WHERE id=?',
+    .query<{ status: string; exit_code: number | null }, [string]>(
+      'SELECT status,exit_code FROM run WHERE record_id=?',
     )
     .get(id)
   if (!row) throw new Error(`--run ${id} does not exist`)
@@ -544,22 +554,21 @@ function gatherRun(
   }
 }
 
-function requireDoc(flag: string, docId: number, identity: CursorIdentity, d: Database): void {
-  const row = d
-    .query<{ scope: string; subject: string | null; project_name: string | null }, [number]>(
-      `SELECT doc.scope, doc.subject, p.name AS project_name
-         FROM doc LEFT JOIN project p ON p.id=doc.project_id
-        WHERE doc.id=?`,
+function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database): string {
+  const row = resolveDocReference(value, d)
+  const flag = `--artifact doc:${value}`
+  if (!row)
+    throw new Error(
+      `${flag} does not exist; use doc:<scope>/<subject-or-_>/<slug> or doc:<document-UUID>`,
     )
-    .get(docId)
-  if (!row) throw new Error(`${flag} does not exist`)
   const scoped =
-    row.project_name === identity.project ||
+    row.projectName === identity.project ||
     (docScopeHasProjectSubject(row.scope) && row.subject === identity.project)
   if (!scoped)
     throw new Error(
-      `${flag} is scoped to ${row.project_name ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
+      `${flag} is scoped to ${row.projectName ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
     )
+  return row.address
 }
 
 function resolveNumericArtifact(
@@ -567,27 +576,19 @@ function resolveNumericArtifact(
   identity: CursorIdentity,
   cursorId: number,
   d: Database,
-  runHasArtifacts: (runId: number) => boolean,
+  runHasArtifacts: (runId: string) => boolean,
 ): { ref: string; exists: boolean } {
-  const doc = d.query('SELECT id FROM doc WHERE id=?').get(id)
-  const run = d.query('SELECT id FROM run WHERE id=?').get(id) as {
-    id: number
+  const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
+    record_id: string
   } | null
-  const runOk = run !== null && runHasArtifacts(id)
-  if (doc && runOk)
-    throw new Error(`--artifact ${id} matches both a doc and a run; pass doc:${id} or run:${id}`)
-  if (doc) {
-    requireDoc(`--artifact ${id}`, id, identity, d)
-    return { ref: String(id), exists: true }
-  }
+  const runOk = run !== null && runHasArtifacts(run.record_id)
   if (run) {
-    const binding = loadRunBinding(id, d)
-    if (!binding)
-      throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
+    const binding = loadRunBinding(run.record_id, d)
+    if (!binding) throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
     requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
     return { ref: String(id), exists: runOk }
   }
-  throw new Error(`--artifact ${id} is not a recorded doc or a run with artifacts or a reply`)
+  throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
 }
 
 function resolveTaskArtifact(
@@ -666,8 +667,7 @@ function resolveArtifact(
       ports.runHasArtifacts ?? runHasRecordedArtifacts,
     )
   if (ref.kind === 'doc') {
-    requireDoc(`--artifact doc:${ref.id}`, ref.id, identity, d)
-    return { ref: raw, exists: true }
+    return { ref: `doc:${resolveDocArtifact(ref.address, identity, d)}`, exists: true }
   }
   if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
   if (ref.kind === 'probe' || ref.kind === 'exec') {
@@ -691,12 +691,13 @@ function resolveArtifact(
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
-    const run = loadRunBinding(ref.id, d)
+    const recordId = resolveRunIdentifier(d, ref.id)
+    const run = loadRunBinding(recordId, d)
     if (!run) throw new Error(`--artifact run:${ref.id} does not exist`)
     requireRunBinding(`--artifact run:${ref.id}`, run, identity, binding.cursorId, d)
     return {
       ref: raw,
-      exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(ref.id),
+      exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(recordId),
     }
   }
   return resolveTaskArtifact(ref, raw, identity, ports)
@@ -826,6 +827,7 @@ function gatheredCommandEvidence(
   return {
     exec: {
       id,
+      command: recordedCommand(row.command),
       exitCode: row.exit_code,
       sessionMatches: session.sessionMatches,
       sessionAdoptedCursor: session.sessionAdoptedCursor,
@@ -849,13 +851,28 @@ function isPullRequestCreateCommand(raw: string): boolean {
   )
 }
 
+function recordedCommand(value: string): string {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (Array.isArray(parsed) && parsed.every((part) => typeof part === 'string'))
+      return parsed.join(' ')
+  } catch {
+    // Older and withheld records are already printable text.
+  }
+  return value
+}
+
 function offeredArtifactRunEvidence(
   parsed: ArtifactRef,
   d: Database,
 ): Pick<ValidatedEvidence, 'artifactRunOffered'> {
   if (parsed.kind === 'run') return { artifactRunOffered: parsed.id }
-  if (parsed.kind === 'id' && d.query('SELECT id FROM run WHERE id=?').get(parsed.id))
-    return { artifactRunOffered: parsed.id }
+  if (parsed.kind === 'id') {
+    const run = d.query('SELECT record_id FROM run WHERE number=?').get(parsed.id) as {
+      record_id: string
+    } | null
+    if (run) return { artifactRunOffered: run.record_id }
+  }
   return {}
 }
 
@@ -892,13 +909,13 @@ export function gatherValidatedEvidence(input: {
       : null,
   }
   const ruling = positive(input.evidence.ruling, '--ruling')
-  const review = positive(input.evidence.review, '--review')
+  const review = input.evidence.review
   const gate = positive(input.evidence.gate, '--gate')
-  const run = positive(input.evidence.run, '--run')
+  const run = input.evidence.run
   const satisfies = positive(input.evidence.satisfies, '--satisfies')
   if (ruling)
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
-  if (review) gathered.review = gatherReview(review, input.identity, d)
+  if (review) gathered.review = gatherReview(resolveReviewIdentifier(d, review), input.identity, d)
   if (gate) gathered.gate = gatherGate(gate, input.identity, input.cursorId, resolveCheckout, d)
   if (run) {
     gathered.runOffered = run
@@ -926,12 +943,7 @@ export function gatherValidatedEvidence(input: {
     if (parsed.kind === 'probe' || parsed.kind === 'exec') {
       const row = d
         .query<
-          {
-            command: string
-            exit_code: number
-            session_id: string | null
-            created_at: string
-          },
+          { command: string; exit_code: number; session_id: string | null; created_at: string },
           [number]
         >('SELECT command,exit_code,session_id,created_at FROM probe WHERE id=?')
         .get(parsed.id)!

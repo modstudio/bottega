@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
+import { queryClient, trpc } from '@bottega/hub-data/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MessagesContent } from '@/routes/messages'
 import { AcceptedNoteWarning, MessageReceipts } from '@/routes/messages.$id'
-import { queryClient, trpc } from '@/trpc/client'
 
 const origin = {
   kind: 'operator',

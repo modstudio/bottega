@@ -1,28 +1,13 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
+import { applyMigrationsBefore } from './migrations.ts'
+import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const AUTHOR_BACKFILL = '0098_doc_revision_author_backfill'
 const PERSON_ID = '01990000-0000-7000-8000-000000001289'
 
-function databaseBeforeAuthorBackfill(): { database: Database; folder: string } {
-  const folder = mkdtempSync(join(tmpdir(), 'orch-doc-author-backfill-'))
-  mkdirSync(join(folder, 'meta'))
-  const journal = migrationJournal()
-  const migration = journal.findIndex((entry) => entry.tag === AUTHOR_BACKFILL)
-  const prior = journal.slice(0, migration)
-  for (const entry of prior)
-    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
-  writeFileSync(
-    join(folder, 'meta', '_journal.json'),
-    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
-  )
-  const database = new Database(':memory:')
-  applyMigrations(database, folder)
-  return { database, folder }
+function databaseBeforeAuthorBackfill(): Database {
+  return migrationBoundaryTestDatabase(AUTHOR_BACKFILL)
 }
 
 function seedDoc(database: Database, slug: string): number {
@@ -59,10 +44,10 @@ test('author backfill uses the cached person before the cutoff and is repeatable
   const populated = databaseBeforeAuthorBackfill()
   const uncached = databaseBeforeAuthorBackfill()
   try {
-    populated.database
+    populated
       .query("INSERT INTO schema_meta (key,value) VALUES ('record_signed_in_user', ?)")
       .run(JSON.stringify({ id: PERSON_ID }))
-    const docId = seedDoc(populated.database, 'authors')
+    const docId = seedDoc(populated, 'authors')
     const cases = [
       ['session id', 'session-1289', 'session-one', '2026-10-13T01:59:50.000Z', PERSON_ID],
       ['unknown', 'unknown', 'session-two', '2026-10-13T01:59:51.000Z', PERSON_ID],
@@ -73,14 +58,12 @@ test('author backfill uses the cached person before the cutoff and is repeatable
       ['at cutoff', 'cutoff-user', 'session-seven', '2026-10-13T02:00:00.000Z', 'cutoff-user'],
     ] as const
     for (const [reason, author, sessionId, at] of cases)
-      seedRevision(populated.database, docId, reason, author, sessionId, at)
+      seedRevision(populated, docId, reason, author, sessionId, at)
 
-    expect(applyMigrations(populated.database)).toContain(AUTHOR_BACKFILL)
-    expect(applyMigrations(populated.database)).toEqual([])
+    expect(applyMigrationsBefore(populated, '0099_board_reach')).toContain(AUTHOR_BACKFILL)
+    expect(applyMigrationsBefore(populated, '0099_board_reach')).toEqual([])
     expect(
-      populated.database
-        .query('SELECT reason,author,session_id FROM doc_revision ORDER BY id')
-        .all(),
+      populated.query('SELECT reason,author,session_id FROM doc_revision ORDER BY id').all(),
     ).toEqual(
       cases.map(([reason, , sessionId, , author]) => ({
         reason,
@@ -89,24 +72,22 @@ test('author backfill uses the cached person before the cutoff and is repeatable
       })),
     )
 
-    const uncachedDocId = seedDoc(uncached.database, 'uncached')
+    const uncachedDocId = seedDoc(uncached, 'uncached')
     seedRevision(
-      uncached.database,
+      uncached,
       uncachedDocId,
       'uncached',
       'unknown',
       'session-uncached',
       '2026-10-13T01:59:50.000Z',
     )
-    expect(applyMigrations(uncached.database)).toContain(AUTHOR_BACKFILL)
-    expect(uncached.database.query('SELECT author,session_id FROM doc_revision').get()).toEqual({
+    expect(applyMigrationsBefore(uncached, '0099_board_reach')).toContain(AUTHOR_BACKFILL)
+    expect(uncached.query('SELECT author,session_id FROM doc_revision').get()).toEqual({
       author: 'unknown',
       session_id: 'session-uncached',
     })
   } finally {
-    populated.database.close()
-    uncached.database.close()
-    rmSync(populated.folder, { recursive: true, force: true })
-    rmSync(uncached.folder, { recursive: true, force: true })
+    populated.close()
+    uncached.close()
   }
 })

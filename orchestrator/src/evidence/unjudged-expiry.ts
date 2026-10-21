@@ -7,7 +7,7 @@ import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { UNSCORED_WHERE } from './evidence-query.ts'
 
 export type UnjudgedRun = {
-  id: number
+  record_id: string
   session_id: string | null
   session_last_seen: string | null
   run_last_activity: string
@@ -16,9 +16,9 @@ export type UnjudgedRun = {
 export const UNJUDGED_EXCLUSION_REASON = 'unjudged: owner gone'
 
 /** Exclude one run from evidence and enqueue the changed hosted record atomically. */
-export function settleRunEvidence(runId: number, reason: string, changedAt: string): void {
+export function settleRunEvidence(runId: string, reason: string, changedAt: string): void {
   writeTransaction(() => {
-    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(reason, runId)
+    db().query('UPDATE run SET evidence_excluded=? WHERE record_id=?').run(reason, runId)
     enqueueRunRecord(db(), runId, machineId(), changedAt)
   })
 }
@@ -34,18 +34,18 @@ type UnjudgedExpiryDecision = (facts: {
 export function unjudgedRuns(projectName: string | null): UnjudgedRun[] {
   return db()
     .query(
-      `SELECT r.id, r.session_id, seen.last_seen AS session_last_seen,
+      `SELECT r.record_id, r.session_id, seen.last_seen AS session_last_seen,
               (SELECT COALESCE(turn.last_event_at, turn.started_at)
                  FROM run turn
-                WHERE turn.id=r.id OR turn.parent_run_id=r.id
-                ORDER BY turn.turn DESC, turn.id DESC LIMIT 1) AS run_last_activity
+                WHERE turn.record_id=r.record_id OR turn.parent_run_record_id=r.record_id
+                ORDER BY turn.turn DESC, turn.number DESC LIMIT 1) AS run_last_activity
          FROM run r
-         LEFT JOIN score s ON s.run_id=r.id
+         LEFT JOIN score s ON s.run_record_id=r.record_id
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-         LEFT JOIN project ON project.id=r.project_id
+         LEFT JOIN project ON project.record_id=r.project_record_id
         WHERE ${UNSCORED_WHERE}
-          AND (? IS NULL OR COALESCE(r.repo, project.name)=?)
-        ORDER BY r.id`,
+          AND (? IS NULL OR project.name=?)
+        ORDER BY r.number`,
     )
     .all(projectName, projectName) as UnjudgedRun[]
 }
@@ -60,17 +60,17 @@ export function expireUnjudgedRun(
   writeTransaction(() => {
     const fresh = db()
       .query(
-        `SELECT r.id, r.session_id, seen.last_seen AS session_last_seen,
+        `SELECT r.record_id, r.session_id, seen.last_seen AS session_last_seen,
                 (SELECT COALESCE(turn.last_event_at, turn.started_at)
                    FROM run turn
-                  WHERE turn.id=r.id OR turn.parent_run_id=r.id
-                  ORDER BY turn.turn DESC, turn.id DESC LIMIT 1) AS run_last_activity
+                  WHERE turn.record_id=r.record_id OR turn.parent_run_record_id=r.record_id
+                  ORDER BY turn.turn DESC, turn.number DESC LIMIT 1) AS run_last_activity
            FROM run r
-           LEFT JOIN score s ON s.run_id=r.id
+           LEFT JOIN score s ON s.run_record_id=r.record_id
            LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-          WHERE r.id=? AND ${UNSCORED_WHERE}`,
+          WHERE r.record_id=? AND ${UNSCORED_WHERE}`,
       )
-      .get(row.id) as UnjudgedRun | null
+      .get(row.record_id) as UnjudgedRun | null
     if (
       !fresh ||
       !shouldExpire({
@@ -86,12 +86,14 @@ export function expireUnjudgedRun(
     }
     const recordId =
       db()
-        .query<{ record_id: string | null }, [number]>('SELECT record_id FROM run WHERE id=?')
-        .get(row.id)?.record_id ?? newRecordId()
+        .query<{ record_id: string | null }, [string]>(
+          'SELECT record_id FROM run WHERE record_id=?',
+        )
+        .get(row.record_id)?.record_id ?? newRecordId()
     db()
-      .query('UPDATE run SET evidence_excluded=?, record_id=? WHERE id=?')
-      .run(UNJUDGED_EXCLUSION_REASON, recordId, row.id)
-    enqueueRunRecord(db(), row.id, machineId(), fresh.run_last_activity)
+      .query('UPDATE run SET evidence_excluded=?, record_id=? WHERE record_id=?')
+      .run(UNJUDGED_EXCLUSION_REASON, recordId, row.record_id)
+    enqueueRunRecord(db(), row.record_id, machineId(), fresh.run_last_activity)
     expired = true
   })
   return expired

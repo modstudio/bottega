@@ -13,14 +13,15 @@ const candidate = {
   tip: 'abc123',
   commitCount: 2,
   mergeBase: 'def456',
-  projectId: 1,
+  projectId: 'project-1',
   projectName: 'project',
   nominatingRuns: [
-    { id: 7000, sessionId: 'session-a' },
-    { id: 7001, sessionId: 'session-a' },
+    { record_id: '7000', sessionId: 'session-a' },
+    { record_id: '7001', sessionId: 'session-a' },
   ],
   trunk: 'main',
   worktree: null,
+  worktreeOwnerJob: null,
 }
 
 describe('task branch nominating session ownership', () => {

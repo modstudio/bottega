@@ -1,16 +1,17 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bindTenant } from '../../shared/record/tenant.ts'
+import { MISSING_PROJECT_ID_REMEDY } from '../../shared/record-project-identity.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
 import { hostedTaskReference, taskIdFor } from './hosted-task-reference.ts'
 import {
   confirmCount,
   createHostedTaskInTransaction,
+  type HostedComment,
   type HostedTask,
   mirrorCollisionDecision,
-  type TaskIdentity,
 } from './hosted-tasks.ts'
+import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import { nextNoteNumber } from './note-number.ts'
 
@@ -52,64 +53,9 @@ export const hostedNotePullSerializers = {
 } as const
 
 const rows = <T>(value: unknown) => value as T[]
-async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, identity)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
-}
 
-export async function listHostedNotes(
-  url: string,
-  identity: TaskIdentity,
-  filters: {
-    project?: string
-    stale?: boolean
-    actionable?: boolean
-    updatedSince?: string
-    includeDeleted?: boolean
-    cursor?: string
-  },
-) {
-  return tenant(url, identity, async (tx) => {
-    const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
-    const notes = rows<HostedNote>(
-      await tx`SELECT hub_note.*,number::int number FROM hub_note
-      WHERE space_id=${identity.spaceId}::uuid
-      AND (${filters.project ?? null}::text IS NULL OR project=${filters.project ?? null})
-      AND (${filters.stale === undefined ? null : filters.stale}::boolean IS NULL
-        OR (${filters.stale ?? false} AND stale_at IS NOT NULL)
-        OR (NOT ${filters.stale ?? false} AND stale_at IS NULL))
-      AND (NOT ${filters.actionable ?? false} OR (stale_at IS NULL AND promoted_task IS NULL))
-      AND updated_at > ${since}::timestamptz
-      AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
-      ORDER BY updated_at,hub_note.number`,
-    ).map(hostedNotePullSerializers.hub_note)
-    const acknowledgements = rows<HostedAcknowledgement>(
-      await tx`SELECT * FROM hub_note_acknowledgement
-      WHERE space_id=${identity.spaceId}::uuid AND updated_at > ${since}::timestamptz
-      AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL) ORDER BY updated_at,id`,
-    ).map(hostedNotePullSerializers.hub_note_acknowledgement)
-    const cursor = [...notes, ...acknowledgements].reduce((latest, row) => {
-      const stamp = new Date(row.updated_at).toISOString()
-      return stamp > latest ? stamp : latest
-    }, since)
-    const projectCounters = rows<{ project: string; next: string }>(
-      await tx`SELECT p.name project,s.next::text next FROM seq s JOIN project p
-        ON p.space_id=s.space_id AND p.id=s.project_id
-        WHERE s.space_id=${identity.spaceId}::uuid AND s.name='note' ORDER BY p.name`,
-    ).map((row) => ({ project: row.project, next: Number(row.next) }))
-    return { notes, acknowledgements, projectCounters, cursor }
-  })
-}
-
-export async function getHostedNote(url: string, identity: TaskIdentity, recordId: string) {
-  return tenant(
+export async function getHostedNote(url: SQL, identity: TaskIdentity, recordId: string) {
+  return withHostedTenant(
     url,
     identity,
     async (tx) =>
@@ -120,8 +66,8 @@ export async function getHostedNote(url: string, identity: TaskIdentity, recordI
   )
 }
 
-async function lockNoteNumbers(tx: SQL, identity: TaskIdentity, project: string) {
-  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${identity.spaceId}:${project}:note`}, 0))`
+async function lockNoteNumbers(tx: SQL, projectId: string) {
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${projectId}:note`}, 0))`
 }
 
 export function noteMirrorCollision(
@@ -164,38 +110,45 @@ export function noteMirrorCollision(
 }
 
 export async function createHostedNote(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: {
     project: string
+    projectId?: string | null
     text: string
     area?: string | null
     anchor: string
     sameAs?: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
+    if (!input.projectId)
+      throw new Error(
+        `project-scoped hosted note write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+      )
     if (input.sameAs) {
       const current = rows<HostedNote>(
-        await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
+        await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number
+        FROM hub_note WHERE space_id=${identity.spaceId}::uuid
         AND id=${input.sameAs}::uuid AND deleted_at IS NULL FOR UPDATE`,
       )[0]
       if (!current) return null
-      if (current.project !== input.project)
+      if (current.projectId !== input.projectId)
         throw new Error('the matching note belongs to another project')
       const anchors = JSON.stringify([...JSON.parse(current.anchors), JSON.parse(input.anchor)])
       return rows<HostedNote>(
         await tx`UPDATE hub_note SET anchors=${anchors},sightings=sightings+1,
         last_seen_at=now(),stale_at=NULL,stale_reason=NULL,updated_at=now()
-        WHERE space_id=${identity.spaceId}::uuid AND id=${input.sameAs}::uuid RETURNING *,number::int number`,
+        WHERE space_id=${identity.spaceId}::uuid AND project_id=${input.projectId}::uuid
+        AND id=${input.sameAs}::uuid RETURNING *,number::int number`,
       )[0]!
     }
     const project = rows<{ id: string }>(
       await tx`SELECT id FROM project
-      WHERE space_id=${identity.spaceId}::uuid AND name=${input.project}`,
+      WHERE space_id=${identity.spaceId}::uuid AND id=${input.projectId}::uuid`,
     )[0]
     if (!project) throw new Error(`unknown project '${input.project}'`)
-    await lockNoteNumbers(tx, identity, input.project)
+    await lockNoteNumbers(tx, project.id)
     const maxima = rows<{ highest: string; next: string }>(
       await tx`SELECT
       COALESCE((SELECT max(number) FROM hub_note WHERE space_id=${identity.spaceId}::uuid
@@ -217,28 +170,36 @@ export async function createHostedNote(
 }
 
 export async function promoteHostedNote(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   recordId: string,
   input: { task?: string } = {},
   createTask = createHostedTaskInTransaction,
-): Promise<{ note: HostedNote; task: HostedTask | null } | null> {
-  return tenant(url, identity, async (tx) => {
+): Promise<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null } | null> {
+  return withHostedTenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
-      await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
+      await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
       AND id=${recordId}::uuid AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!note) return null
+    if (!note.projectId) throw new Error('project-scoped hosted note is missing projectId')
+    const noteProjectId = note.projectId
     if (note.promoted_task)
       throw new Error(
         `note ${note.project}#${note.number} is already promoted to ${note.promoted_task}`,
       )
+    let promotionProject:
+      | { key_prefixes: string[]; tracker: { protocol?: string } | null }
+      | undefined
     if (input.task !== undefined) {
-      const project = rows<{ key_prefixes: string[]; tracker: { protocol?: string } | null }>(
+      promotionProject = rows<{
+        key_prefixes: string[]
+        tracker: { protocol?: string } | null
+      }>(
         await tx`SELECT key_prefixes,tracker FROM project
-        WHERE space_id=${identity.spaceId}::uuid AND name=${note.project}`,
+        WHERE space_id=${identity.spaceId}::uuid AND id=${noteProjectId}::uuid`,
       )[0]
-      validateHostedPromotionTaskKey(input.task, note.project, project)
+      validateHostedPromotionTaskKey(input.task, note.project, promotionProject)
     }
     const anchors = JSON.parse(note.anchors) as Array<Record<string, unknown>>
     const evidence = anchors
@@ -251,21 +212,40 @@ export async function promoteHostedNote(
       input.task,
       async (key) =>
         rows<HostedTask>(
-          await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_name=${note.project} AND key=${key}`,
+          await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_id=${noteProjectId}::uuid
+          AND key=${key} AND source='local' AND deleted_at IS NULL`,
         )[0] ?? null,
       () =>
         createTask(tx, identity, {
           project: note.project,
+          projectId: noteProjectId,
           title: note.text,
           body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
         }),
+      input.task !== undefined && !projectHasRemoteTracker(promotionProject?.tracker),
+      note.project,
     )
     const { task } = selected
+    let comment: HostedComment | null = null
+    if (input.task !== undefined && task && !projectHasRemoteTracker(promotionProject?.tracker)) {
+      const body = `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
+      comment = rows<HostedComment>(
+        await tx`INSERT INTO hub_task_comment
+          (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,created_at,updated_at)
+          VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${note.project},${noteProjectId}::uuid,
+          ${task.key},${task.id}::uuid,${body},${identity.userId}::uuid,now(),now())
+          RETURNING *,task_id::text task_id`,
+      )[0]!
+      await tx`UPDATE hub_task
+        SET updated_at=GREATEST(updated_at,${comment.updated_at}::timestamptz),
+          last_seen=GREATEST(last_seen,${comment.updated_at}::timestamptz)
+        WHERE space_id=${identity.spaceId}::uuid AND id=${task.id}::uuid`
+    }
     const promoted = rows<HostedNote>(
       await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number`,
     )[0]!
-    return { note: promoted, task }
+    return { note: promoted, task, comment }
   })
 }
 
@@ -276,8 +256,10 @@ export function validateHostedPromotionTaskKey(
     | { key_prefixes: readonly string[]; tracker: { protocol?: string } | null | undefined }
     | undefined,
 ): void {
-  if (!project || !projectHasRemoteTracker(project.tracker))
-    throw new Error(`project '${projectName}' does not have a remote tracker`)
+  if (!project)
+    throw new Error(
+      `project '${projectName}' was not found; run \`${PLATFORM_SLUG} task list --project ${projectName}\``,
+    )
   const prefix = key.split('-', 1)[0]?.toUpperCase()
   const prefixes = project.key_prefixes.map((candidate) => candidate.toUpperCase())
   if (!prefix || !prefixes.includes(prefix))
@@ -290,14 +272,23 @@ export async function selectPromotionTask(
   existingKey: string | undefined,
   find: (key: string) => Promise<HostedTask | null>,
   mint: () => Promise<HostedTask>,
+  requireExisting = false,
+  project = '',
 ): Promise<{ key: string; task: HostedTask | null }> {
-  if (existingKey) return { key: existingKey, task: await find(existingKey) }
+  if (existingKey) {
+    const task = await find(existingKey)
+    if (requireExisting && task?.source !== 'local')
+      throw new Error(
+        `no hub task ${existingKey.toUpperCase()} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
+      )
+    return { key: existingKey.toUpperCase(), task }
+  }
   const task = await mint()
   return { key: task.key, task }
 }
 
 export async function reapHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   input: {
     stale: Array<{ recordId: string; reason: string; at: string }>
@@ -306,7 +297,7 @@ export async function reapHostedNotes(
     cutoff: string
   },
 ) {
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     for (const row of input.stale)
       await tx`UPDATE hub_note SET stale_at=${row.at}::timestamptz,
       stale_reason=${row.reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
@@ -334,14 +325,19 @@ export async function reapHostedNotes(
 }
 
 async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedNote) {
-  await lockNoteNumbers(tx, identity, row.project_name)
+  const projectId = await storedHubProjectId(tx, identity.spaceId, {
+    projectId: row.projectId,
+    projectName: row.project_name,
+  })
+  if (!projectId) throw new Error('project-scoped hosted note is missing projectId')
+  await lockNoteNumbers(tx, projectId)
   const promotedReference = hostedTaskReference('hub_note', row)
   const promotedTaskId = promotedReference.key
     ? await taskIdFor(tx, identity.spaceId, promotedReference.key, promotedReference.id)
     : null
   const existingByNumber = rows<{ id: string; space_id: string }>(
     await tx`SELECT id, space_id FROM hub_note
-      WHERE space_id=${identity.spaceId}::uuid AND project_name=${row.project_name}
+      WHERE space_id=${identity.spaceId}::uuid AND project_id=${projectId}::uuid
       AND number=${row.number} FOR UPDATE`,
   )[0]
   const existingById = rows<{ id: string; number: number; project_name: string; space_id: string }>(
@@ -388,7 +384,7 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
         )[0]
   if (!written) throw new Error(`hosted note ${row.number} mirror wrote nothing`)
   const project = rows<{ id: string }>(
-    await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND name=${row.project_name}`,
+    await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND id=${projectId}::uuid`,
   )[0]
   if (project)
     await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
@@ -398,39 +394,49 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
 }
 
 export async function mirrorHostedNotes(
-  url: string,
+  url: SQL,
   identity: TaskIdentity,
   body: {
     notes: HostedNote[]
     acknowledgements?: HostedAcknowledgement[]
-    raiseProjects?: Array<{ project: string; next: number }>
+    raiseProjects?: Array<{ project: string; projectId?: string | null; next: number }>
   },
 ) {
   if (body.notes.length + (body.acknowledgements?.length ?? 0) > 500)
     throw new Error('mirror accepts at most 500 rows')
-  return tenant(url, identity, async (tx) => {
+  return withHostedTenant(url, identity, async (tx) => {
     const noteIds: Array<{ number: number; id: string }> = []
     for (const row of body.notes) noteIds.push(await mirrorOneHostedNote(tx, identity, row))
-    for (const row of body.acknowledgements ?? [])
+    for (const row of body.acknowledgements ?? []) {
+      const parent = rows<{ project_id: string }>(
+        await tx`SELECT project_id FROM hub_note WHERE id=${row.note_id}::uuid`,
+      )[0]
+      if (!parent)
+        throw new Error(`hosted note acknowledgement ${row.id} has no parent note ${row.note_id}`)
       await tx`INSERT INTO hub_note_acknowledgement
       (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
       VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},
-       ${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
+       ${parent.project_id}::uuid,
        ${row.note_id}::uuid,
        ${row.session_id},${row.acknowledged_at}::timestamptz,${row.sightings},${row.created_at}::timestamptz,
        ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
       ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET project_name=excluded.project_name,
        project_id=excluded.project_id,acknowledged_at=excluded.acknowledged_at,
        sightings=excluded.sightings,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
+    }
     for (const item of body.raiseProjects ?? []) {
+      if (!item.projectId)
+        throw new Error(
+          `project-scoped hosted note counter write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
+        )
       const project = rows<{ id: string }>(
-        await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND name=${item.project}`,
+        await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND id=${item.projectId}::uuid`,
       )[0]
       if (project) {
-        await lockNoteNumbers(tx, identity, item.project)
+        await lockNoteNumbers(tx, project.id)
         const highest = rows<{ next: string }>(
           await tx`SELECT (COALESCE(max(number),0)+1)::text next FROM hub_note
-            WHERE space_id=${identity.spaceId}::uuid AND project_name=${item.project}`,
+            WHERE space_id=${identity.spaceId}::uuid AND project_id=${item.projectId}::uuid`,
         )[0]!.next
         await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
         (${identity.spaceId}::uuid,${project.id}::uuid,'note',${BigInt(highest) > BigInt(item.next) ? BigInt(highest) : BigInt(item.next)})
@@ -441,8 +447,8 @@ export async function mirrorHostedNotes(
   })
 }
 
-export async function hostedNoteCounts(url: string, identity: TaskIdentity) {
-  return tenant(url, identity, async (tx) => ({
+export async function hostedNoteCounts(url: SQL, identity: TaskIdentity) {
+  return withHostedTenant(url, identity, async (tx) => ({
     note: Number(
       rows<{ count: number }>(
         await tx`SELECT count(*)::int count FROM hub_note

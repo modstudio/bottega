@@ -3,7 +3,11 @@
 
 import type { AutonomyPreset } from './autonomy.ts'
 
-export type WorkflowModeStep = string | { sequence: string }
+export type WorkflowStepCondition = { step: string; outcome: string[] }
+export type WorkflowModeStep =
+  | string
+  | { sequence: string; omit?: string[] }
+  | { step: string; when: WorkflowStepCondition }
 
 type WorkflowArgument = {
   name: string

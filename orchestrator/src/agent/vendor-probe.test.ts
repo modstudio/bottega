@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import { pick } from '../route/route.ts'
 import {
   type AgentTransport,
+  EMPTY_VENDOR_USAGE,
   registerTransport,
   type TransportHandle,
   type TransportResult,
@@ -32,6 +33,7 @@ function result(
     parsed: { text: partial.output, tokens: null, costUsd: null, stopReason: 'end_turn' },
     tokens: null,
     costUsd: null,
+    vendorUsage: EMPTY_VENDOR_USAGE,
     sessionId: null,
     stopReason: partial.status === 'ok' ? 'end_turn' : null,
     error: partial.error ?? null,

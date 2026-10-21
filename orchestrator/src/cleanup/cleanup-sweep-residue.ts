@@ -24,7 +24,7 @@ type Liveness = 'dead' | 'live' | 'unknown'
 export type UnattendedResidueCandidate = {
   kind: UnattendedReclaimKind
   subject: string
-  runId: number
+  runId: string
   project: string | null
   liveness: Liveness
 }
@@ -41,7 +41,7 @@ type ReclaimResult = { ok: boolean; action: string }
 
 export type UnattendedResidueDependencies = {
   inventory?: (selectedProject: string | null) => Inventory
-  ownerFacts?: (runId: number, now: number) => OwnerFacts
+  ownerFacts?: (runId: string, now: number) => OwnerFacts
   liveness?: (candidate: UnattendedResidueCandidate) => Liveness
   reclaim?: (
     kind: ResidueKind,
@@ -50,13 +50,13 @@ export type UnattendedResidueDependencies = {
   ) => ReclaimResult
 }
 
-function conversationLiveness(runId: number): Liveness {
+function conversationLiveness(runId: string): Liveness {
   const member = db()
-    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(runId) as { root_id: number } | null
+    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
+    .get(runId) as { root_id: string } | null
   if (!member) return 'unknown'
   const rows = db()
-    .query('SELECT status,pid,agent_pid FROM run WHERE id=? OR parent_run_id=?')
+    .query('SELECT status,pid,agent_pid FROM run WHERE record_id=? OR parent_run_record_id=?')
     .all(member.root_id, member.root_id) as {
     status: string
     pid: number | null
@@ -77,11 +77,11 @@ type ProjectSelection = (project: string | null) => boolean
 
 function staleRunCandidates(selected: ProjectSelection): UnattendedResidueCandidate[] {
   return staleRunConditions().flatMap((condition) => {
-    const runId = Number(condition.subject.slice('run:'.length))
+    const runId = condition.subject.slice('run:'.length)
     const row = db()
       .query(
         `SELECT COALESCE(project.name,r.repo) project
-           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+           FROM run r LEFT JOIN project ON project.record_id=r.project_record_id WHERE r.record_id=?`,
       )
       .get(runId) as { project: string | null } | null
     return row && selected(row.project)
@@ -105,7 +105,7 @@ export function unattendedProcessCandidates(
     const row = db()
       .query(
         `SELECT COALESCE(project.name,r.repo) project
-           FROM run r LEFT JOIN project ON project.id=r.project_id WHERE r.id=?`,
+           FROM run r LEFT JOIN project ON project.record_id=r.project_record_id WHERE r.record_id=?`,
       )
       .get(observation.runId) as { project: string | null } | null
     return (selectedProject === null || row?.project === selectedProject) && row
@@ -180,9 +180,9 @@ function sandboxCandidates(selected: ProjectSelection): Inventory {
         .query(
           `SELECT COALESCE(project.name,root.repo) project
              FROM run member
-             JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
-             LEFT JOIN project ON project.id=root.project_id
-            WHERE member.id=?`,
+             JOIN run root ON root.record_id=COALESCE(member.parent_run_record_id,member.record_id)
+             LEFT JOIN project ON project.record_id=root.project_record_id
+            WHERE member.record_id=?`,
         )
         .get(directory.rootId) as { project: string | null } | null
       return selected(row?.project ?? null)
@@ -225,18 +225,18 @@ function defaultInventory(selectedProject: string | null): Inventory {
   }
 }
 
-function defaultOwnerFacts(runId: number, now: number): OwnerFacts {
+function defaultOwnerFacts(runId: string, now: number): OwnerFacts {
   const row = db()
     .query(
       `SELECT root.session_id,seen.last_seen,
               (SELECT COALESCE(turn.last_event_at,turn.started_at)
                  FROM run turn
-                WHERE turn.id=root.id OR turn.parent_run_id=root.id
-                ORDER BY turn.turn DESC,turn.id DESC LIMIT 1) run_last_activity
+                WHERE turn.record_id=root.record_id OR turn.parent_run_record_id=root.record_id
+                ORDER BY turn.turn DESC,turn.number DESC LIMIT 1) run_last_activity
          FROM run member
-         JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
+         JOIN run root ON root.record_id=COALESCE(member.parent_run_record_id,member.record_id)
          LEFT JOIN session_seen seen ON seen.session_id=root.session_id
-        WHERE member.id=?`,
+        WHERE member.record_id=?`,
     )
     .get(runId) as {
     session_id: string | null

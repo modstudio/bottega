@@ -13,11 +13,12 @@ import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { ask, createAskMcpServer } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
 
 async function askClient(
-  runId: number,
+  runId: string,
   token = '',
   timeoutMs?: number,
   dependencies?: Parameters<typeof createAskMcpServer>[3],
@@ -52,8 +53,8 @@ describe('the live ask channel always answers', () => {
   test('reports the tools actually registered for writers, readers, and unauthenticated runs', async () => {
     const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
-    db().query('UPDATE run SET run_token=? WHERE id=?').run('writer-token', writer)
-    const toolsFor = async (runId: number, token = '') => {
+    db().query('UPDATE run SET run_token=? WHERE record_id=?').run('writer-token', writer)
+    const toolsFor = async (runId: string, token = '') => {
       let reported: string[] = []
       const server = createAskMcpServer(runId, token, undefined, {
         fileWorkerNote: async () => ({
@@ -137,7 +138,7 @@ describe('the live ask channel always answers', () => {
   test('check_orchestrator_messages emits hosted beside local once with the failed-refresh warning', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'ask-project' })
     const startedAt = (
-      db().query('SELECT started_at FROM run WHERE id=?').get(run) as { started_at: string }
+      db().query('SELECT started_at FROM run WHERE record_id=?').get(run) as { started_at: string }
     ).started_at
     const pushedAt = new Date(Date.parse(startedAt) + 1).toISOString()
     db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -204,7 +205,7 @@ describe('the live ask channel always answers', () => {
       const first = resultText(
         await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }),
       )
-      expect(first).toContain(`Board message ${local.id}: Local ask`)
+      expect(first).toContain(`Board message ${local.number}: Local ask`)
       expect(first).toContain(`Board message ${hosted.id}: Hosted ask`)
       expect(first).toContain('ask refresh offline')
       expect(first).toContain('offline Forged-Warning: ask')
@@ -212,7 +213,7 @@ describe('the live ask channel always answers', () => {
       const second = resultText(
         await connection.client.callTool({ name: 'check_orchestrator_messages', arguments: {} }),
       )
-      expect(second).not.toContain(`Board message ${local.id}: Local ask`)
+      expect(second).not.toContain(`Board message ${local.number}: Local ask`)
       expect(second).not.toContain(`Board message ${hosted.id}: Hosted ask`)
       expect(second).toContain('ask refresh offline')
       expect(second).not.toContain('offline\nForged-Warning: ask')
@@ -278,7 +279,9 @@ describe('the live ask channel always answers', () => {
       )
       expect(
         (
-          db().query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_id=?').get(writer) as {
+          db()
+            .query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_record_id=?')
+            .get(writer) as {
             n: number
           }
         ).n,
@@ -292,11 +295,13 @@ describe('the live ask channel always answers', () => {
   test('run_gate returns at its bound, then rejoins the same execution for its result', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
-      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
+      )
       .get('gate-wait-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)
     let nowMs = Date.now()
     let waits = 0
     const connection = await askClient(run, '', undefined, {
@@ -311,12 +316,20 @@ describe('the live ask channel always answers', () => {
         wait: async () => {
           nowMs += 2
           waits += 1
+          if (waits === 1) {
+            db()
+              .query('UPDATE gate_execution SET output_tail=? WHERE run_record_id=?')
+              .run(
+                'waiting 2ms for host capacity (gates=1 loadavg=8 ncpu=8 free_mb=2048 floor_mb=1024 pressure=normal held_on=load)',
+                run,
+              )
+          }
           if (waits === 2) {
             db()
               .query(
                 `UPDATE gate_execution
                     SET finished_at=?,exit_code=0,timed_out=0,elapsed_ms=4,output_tail='passed'
-                  WHERE run_id=?`,
+                  WHERE run_record_id=?`,
               )
               .run(new Date(nowMs).toISOString(), run)
           }
@@ -329,6 +342,8 @@ describe('the live ask channel always answers', () => {
       expect(resultText(first)).toContain('The gate is still running after')
       expect(resultText(first)).toContain('ms.')
       expect(resultText(first)).toContain('Call run_gate again to wait for this same execution')
+      expect(resultText(first)).toContain('waiting 2ms for host capacity')
+      expect(resultText(first)).toContain('held_on=load')
 
       const second = await connection.client.callTool({ name: 'run_gate', arguments: {} })
       expect(second.isError).toBeUndefined()
@@ -336,7 +351,7 @@ describe('the live ask channel always answers', () => {
       expect(resultText(second)).toContain('passed')
       expect(
         (
-          db().query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_id=?').get(run) as {
+          db().query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_record_id=?').get(run) as {
             n: number
           }
         ).n,
@@ -346,14 +361,79 @@ describe('the live ask channel always answers', () => {
     }
   })
 
+  test('run_gate reports no evidence paths when an occupied log prevented log creation', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const project = db()
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING record_id AS id`,
+      )
+      .get(
+        newRecordId(),
+        'gate-occupied-log-fixture',
+        '/fixture',
+        'bun',
+        JSON.stringify({ gate: 'bun run check' }),
+      ) as {
+      id: number
+    }
+    db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)
+    let nowMs = Date.now()
+    const connection = await askClient(run, '', undefined, {
+      fileWorkerNote: async () => ({
+        noteRecordId: '01990000-0000-7000-8000-000000000001',
+        noteLabel: 'workshop#1',
+        candidateNotes: [],
+      }),
+      gate: {
+        waitMs: 2,
+        now: () => nowMs,
+        wait: async () => {
+          nowMs += 1
+          db()
+            .query(
+              `UPDATE gate_execution
+                  SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=1,
+                      output_tail=?,output_artifact=NULL
+                WHERE run_record_id=?`,
+            )
+            .run(
+              new Date(nowMs).toISOString(),
+              'gate broker failed: gate log path is occupied; gate did not run\n',
+              run,
+            )
+        },
+      },
+    })
+    try {
+      const result = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      expect(result.isError).toBeUndefined()
+      const output = resultText(result)
+      expect(output).toContain('No gate log was created.')
+      expect(output).toContain('gate log path is occupied')
+      expect(output).not.toContain('Full output now:')
+      expect(output).not.toContain('moves to the run artifacts')
+      const execution = db()
+        .query('SELECT id FROM gate_execution WHERE run_record_id=?')
+        .get(run) as {
+        id: number
+      }
+      expect(output).not.toContain(`${runScratchDir(run)}/gate-${execution.id}.log`)
+      expect(output).not.toContain(`${runArtifactsDir(run)}/gate-${execution.id}.log`)
+    } finally {
+      await connection.close()
+    }
+  })
+
   test('an aborted run_gate call leaves its result pending for the next call', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
-      .query(`INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?) RETURNING id`)
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
+      )
       .get('gate-abort-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
       id: number
     }
-    db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+    db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)
     const controller = new AbortController()
     let waitCalls = 0
     const connection = await askClient(run, '', undefined, {
@@ -372,7 +452,7 @@ describe('the live ask channel always answers', () => {
             .query(
               `UPDATE gate_execution
                   SET finished_at=?,exit_code=0,timed_out=0,elapsed_ms=4,output_tail='passed after abort'
-                WHERE run_id=?`,
+                WHERE run_record_id=?`,
             )
             .run(new Date().toISOString(), run)
         },
@@ -394,7 +474,7 @@ describe('the live ask channel always answers', () => {
       expect(waitCalls).toBe(1)
       expect(
         (
-          db().query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_id=?').get(run) as {
+          db().query('SELECT COUNT(*) AS n FROM gate_execution WHERE run_record_id=?').get(run) as {
             n: number
           }
         ).n,
@@ -407,7 +487,7 @@ describe('the live ask channel always answers', () => {
   test('gate_result returns the newest finished gate for the reader project and exact commit', async () => {
     const project = db()
       .query(
-        `INSERT INTO project (name,path,stack,settings) VALUES ('gate-result-fixture','/fixture','bun','{}') RETURNING id`,
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'gate-result-fixture','/fixture','bun','{}') RETURNING record_id AS id`,
       )
       .get() as { id: number }
     const reader = addRun({
@@ -420,12 +500,12 @@ describe('the live ask channel always answers', () => {
     const newerWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'reviewed-commit' })
     const otherWriter = addRun({ agent: 'codex', job: 'implement', headCommit: 'other-commit' })
     for (const run of [reader, olderWriter, newerWriter, otherWriter]) {
-      db().query('UPDATE run SET project_id=? WHERE id=?').run(project.id, run)
+      db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)
     }
     db()
       .query(
         `INSERT INTO gate_execution
-          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+          (record_id, run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
          VALUES ('${newRecordId()}', ?,?,?,?,?,?,?,?)`,
       )
       .run(
@@ -441,7 +521,7 @@ describe('the live ask channel always answers', () => {
     db()
       .query(
         `INSERT INTO gate_execution
-          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+          (record_id, run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
          VALUES ('${newRecordId()}', ?,?,?,?,?,?,?,?)`,
       )
       .run(
@@ -457,7 +537,7 @@ describe('the live ask channel always answers', () => {
     db()
       .query(
         `INSERT INTO gate_execution
-          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+          (record_id, run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
          VALUES ('${newRecordId()}', ?,?,?,?,?,?,?,?)`,
       )
       .run(
@@ -497,21 +577,25 @@ describe('the live ask channel always answers', () => {
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(live, new Date().toISOString(), 'which table?')
-    const answerable = (id: number) => {
-      const r = db().query('SELECT status, parent_run_id FROM run WHERE id = ?').get(id) as {
+    const answerable = (id: string) => {
+      const r = db()
+        .query('SELECT status, parent_run_record_id FROM run WHERE record_id = ?')
+        .get(id) as {
         status: string
-        parent_run_id: number | null
+        parent_run_record_id: string | null
       }
       const open = db()
         .query(
-          `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-          WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
+          `SELECT COUNT(*) n FROM question q JOIN run r ON r.record_id = q.run_record_id
+          WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND q.answered_at IS NULL`,
         )
         .get(id, id) as { n: number }
-      return !r.parent_run_id && open.n > 0 && (r.status === 'running' || r.status === 'asking')
+      return (
+        !r.parent_run_record_id && open.n > 0 && (r.status === 'running' || r.status === 'asking')
+      )
     }
     expect(answerable(live)).toBe(true)
     expect(answerable(addRun({ agent: 'codex', job: 'implement', status: 'running' }))).toBe(false)
@@ -521,22 +605,24 @@ describe('the live ask channel always answers', () => {
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id, asked_at, question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`,
       )
       .run(child, new Date().toISOString(), 'and now what?')
     const open = db()
       .query(
-        `SELECT q.id FROM question q JOIN run r ON r.id = q.run_id
-        WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
+        `SELECT q.record_id FROM question q JOIN run r ON r.record_id = q.run_record_id
+        WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND q.answered_at IS NULL`,
       )
-      .all(root, root) as { id: number }[]
+      .all(root, root) as { record_id: string }[]
     expect(open.length).toBe(1)
   })
   test('an unanswered question survives the timeout', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     await ask({ runId: run, question: 'still open', timeoutMs: 50 })
     const open = db()
-      .query('SELECT asked_via,record_id FROM question WHERE run_id = ? AND answered_at IS NULL')
+      .query(
+        'SELECT asked_via,record_id FROM question WHERE run_record_id = ? AND answered_at IS NULL',
+      )
       .get(run)
     expect(open).toEqual({ asked_via: 'live', record_id: expect.stringMatching(/^[0-9a-f-]{36}$/) })
     expect(db().query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([
@@ -565,14 +651,14 @@ describe('the live ask channel always answers', () => {
       expect(resultText(message)).toContain('Call message_orchestrator again')
       expect(
         (
-          db().query('SELECT COUNT(*) AS n FROM question WHERE run_id = ?').get(run) as {
+          db().query('SELECT COUNT(*) AS n FROM question WHERE run_record_id = ?').get(run) as {
             n: number
           }
         ).n,
       ).toBe(0)
       expect(
         (
-          db().query('SELECT COUNT(*) AS n FROM run_message WHERE run_id = ?').get(run) as {
+          db().query('SELECT COUNT(*) AS n FROM run_message WHERE run_record_id = ?').get(run) as {
             n: number
           }
         ).n,
@@ -585,11 +671,13 @@ describe('the live ask channel always answers', () => {
   test('note derives run identity and reports the filed and candidate ids', async () => {
     const run = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const project = db()
-      .query(`INSERT INTO project (name,path,settings) VALUES (?,?,?) RETURNING id,name`)
+      .query(
+        `INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?) RETURNING record_id AS id,name`,
+      )
       .get('worker-note-project', '/projects/worker-note', '{}') as { id: number; name: string }
     db()
       .query(
-        `UPDATE run SET project_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE id=?`,
+        `UPDATE run SET project_record_id=?,worktree=?,branch=?,session_id=?,head_commit=? WHERE record_id=?`,
       )
       .run(project.id, '/runs/review-tree', 'DEV-1029-review', 'session-1029', 'abc123', run)
     const seen: unknown[] = []
@@ -634,7 +722,12 @@ describe('the live ask channel always answers', () => {
       })
       expect(seen).toEqual([
         {
-          id: run,
+          id: (
+            db().query('SELECT number FROM run WHERE record_id=?').get(run) as { number: number }
+          ).number,
+          recordId: db()
+            .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+            .get(run)!.record_id,
           project: project.name,
           projectPath: '/projects/worker-note',
           tree: '/runs/review-tree',
@@ -684,7 +777,7 @@ describe('the live ask channel always answers', () => {
 
   test('every tool gives an unauthorized caller blocked-status guidance', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    db().query('UPDATE run SET run_token = ? WHERE id = ?').run('right-token', run)
+    db().query('UPDATE run SET run_token = ? WHERE record_id = ?').run('right-token', run)
     const { client, close } = await askClient(run, 'wrong-token')
     try {
       const question = await client.callTool({

@@ -1,11 +1,19 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { groupMonitorConditions, monitor, monitorHistory } from './monitor.ts'
+import {
+  groupMonitorConditions,
+  monitor,
+  monitorHistory,
+  prunableWorktreeAction,
+} from './monitor.ts'
 import { claimMonitorNotices, markMonitorNoticesDelivered } from './monitor-notices.ts'
 
 const condition = (
@@ -21,9 +29,16 @@ const condition = (
 })
 function insertRun4177PackRows(): string {
   const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
-  upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
+  upsertProject({
+    recordId: newRecordId(),
+    name: PLATFORM_SLUG,
+    path: root,
+    settings: { trunk: 'main' },
+  })
   const projectId = (
-    db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
+    db().query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
+      id: string
+    }
   ).id
   const docs = JSON.stringify([
     {
@@ -37,7 +52,7 @@ function insertRun4177PackRows(): string {
   ])
   const insert = db().query(
     `INSERT INTO canon_pack
-     (record_id,job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+     (record_id,job,project,project_record_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
      VALUES (?,?,?,?,?,?,?,?,?,0)`,
   )
   insert.run(
@@ -66,6 +81,25 @@ function insertRun4177PackRows(): string {
 }
 
 describe('operational monitor conditions', () => {
+  test('a prunable worktree action names a surviving index lock before prune', () => {
+    const commonDir = mkdtempSync(join(tmpdir(), 'prunable-worktree-common-'))
+    const projectPath = '/projects/example'
+    const worktreePath = '/runs/missing/tree'
+    const adminDir = join(commonDir, 'worktrees', 'missing')
+    const indexLock = join(adminDir, 'index.lock')
+    try {
+      mkdirSync(adminDir, { recursive: true })
+      writeFileSync(join(adminDir, 'gitdir'), `${worktreePath}/.git\n`)
+      writeFileSync(indexLock, '')
+
+      expect(prunableWorktreeAction(projectPath, worktreePath, commonDir)).toBe(
+        `resolve ${indexLock} before running git -C ${projectPath} worktree prune`,
+      )
+    } finally {
+      rmSync(commonDir, { recursive: true, force: true })
+    }
+  })
+
   test('identical conditions collapse without an anomaly', () => {
     const duplicate = condition()
     expect(groupMonitorConditions([duplicate, { ...duplicate }])).toEqual({
@@ -159,7 +193,12 @@ describe('operational monitor conditions', () => {
 
   test('a failed local branch inventory marks the monitor pass partial', async () => {
     const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
-    upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: root,
+      settings: { trunk: 'main' },
+    })
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((
       command: string[] | { cmd: string[] },
     ) => {
@@ -187,11 +226,16 @@ describe('operational monitor conditions', () => {
   test('an absent terminal tree names close-out as the retained Docker resource remedy', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
     const project = `monitor-absent-${runId}`
-    upsertProject({ name: project, path: `/registered/${project}`, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: `/registered/${project}`,
+      settings: { trunk: 'main' },
+    })
     db()
       .query(
         `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,
-                        resource_teardown='pending' WHERE id=?`,
+                        resource_teardown='pending' WHERE record_id=?`,
       )
       .run(
         project,
@@ -202,8 +246,11 @@ describe('operational monitor conditions', () => {
       )
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const command = args.join(' ')
+      const runRecordId = db()
+        .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+        .get(runId)!.record_id
       const stdout = command.startsWith('docker ps -a --format')
-        ? `app-orch-${runId}-web\torch.run=${runId}`
+        ? `app-orch-${runId}-web\t${runRecordId}`
         : ''
       return {
         exitCode: 0,
@@ -228,12 +275,20 @@ describe('operational monitor conditions', () => {
 
   test('a legacy absent recipe run does not offer close-out for Docker resources', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    const runRecordId = db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+      .get(runId)!.record_id
     const project = `monitor-legacy-${runId}`
-    upsertProject({ name: project, path: `/registered/${project}`, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: `/registered/${project}`,
+      settings: { trunk: 'main' },
+    })
     db()
       .query(
         `UPDATE run SET repo=?,cwd=?,worktree=?,worktree_source='recipe',recipe_snapshot=?,
-                        resource_teardown=NULL WHERE id=?`,
+                        resource_teardown=NULL WHERE record_id=?`,
       )
       .run(
         project,
@@ -244,7 +299,7 @@ describe('operational monitor conditions', () => {
       )
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const stdout = args.join(' ').startsWith('docker ps -a --format')
-        ? `app-orch-${runId}-web\torch.run=${runId}`
+        ? `app-orch-${runId}-web\torch.run=${runRecordId}`
         : ''
       return {
         exitCode: 0,
@@ -269,12 +324,15 @@ describe('operational monitor conditions', () => {
 
   test('an absent attached tree is no longer retained for manual Docker review', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    const runRecordId = db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+      .get(runId)!.record_id
     db()
-      .query('UPDATE run SET worktree=?,worktree_source=? WHERE id=?')
+      .query('UPDATE run SET worktree=?,worktree_source=? WHERE record_id=?')
       .run(`/gone/orch-${runId}`, 'git', runId)
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
       const stdout = args.join(' ').startsWith('docker ps -a --format')
-        ? `app-orch-${runId}-web\torch.run=${runId}`
+        ? `app-orch-${runId}-web\torch.run=${runRecordId}`
         : ''
       return {
         exitCode: 0,
@@ -447,7 +505,7 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,id, run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?,?)`,
+        `INSERT INTO question (record_id,number, run_record_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?,?)`,
       )
       .run(2000, runId, '2026-09-04T19:30:00.000Z', 'which way?')
     const clock = Date.parse('2026-09-04T20:00:00.000Z')
@@ -549,8 +607,8 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,why,answer,answered_at)
-         VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,why,answer,answered_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(id, nowIso(), 'fixture question', 'catches stale asking status', 'answered', nowIso())
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {

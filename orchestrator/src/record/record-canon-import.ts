@@ -18,7 +18,7 @@ import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import { recordCanonTreeWriteRefusal } from './record-doc-tree.ts'
 
 export type RecordCanonImportInput = {
-  address: { kind: 'user' } | { kind: 'project'; subject: string }
+  address: { kind: 'user' } | { kind: 'project'; subject: string; projectId: string }
   rows: Array<{ slug: string; title: string; body: string }>
   expectedRevisions: Record<string, string>
   reason: string
@@ -207,7 +207,12 @@ export async function importRecordCanon(
         : {
             subject: input.address.subject,
             owner: null,
-            projectId: await hostedArticleProjectId(tx, input.spaceId, input.address.subject),
+            projectId: await hostedArticleProjectId(
+              tx,
+              input.spaceId,
+              input.address.subject,
+              input.address.projectId,
+            ),
           }
     if (input.address.kind === 'user') {
       await tx`SELECT id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE`

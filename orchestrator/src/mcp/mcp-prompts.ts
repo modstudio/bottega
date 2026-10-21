@@ -5,11 +5,8 @@ import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.t
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor, mcpWorkflowCursorContext } from '../workflow/workflow-cursor.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
-import {
-  composeWorkflow,
-  productionWorkflows,
-  type WorkflowDefinition,
-} from '../workflow/workflows.ts'
+import { composeWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
+import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
 type ProductionWorkflow = { slug: string; definition: WorkflowDefinition }
 
@@ -30,13 +27,13 @@ type BoundWorkflowPromptArguments = {
 
 function bindingRefusal(definition: WorkflowDefinition, token: string): string {
   const modes = definition.modes.map((mode) => mode.slug)
-  const arguments_ = definition.arguments.map((argument) => argument.name)
+  const argumentNames = definition.arguments.map((argument) => argument.name)
   const examples = [
     `mode=${token}`,
     `project=${token}`,
-    ...arguments_.map((name) => `${name}=${token}`),
+    ...argumentNames.map((name) => `${name}=${token}`),
   ]
-  return `Could not place prompt token "${token}". Workflow modes: ${modes.join(', ')}. Declared arguments: ${arguments_.join(', ') || '(none)'}. Use a named value such as ${examples.join(', ')}.`
+  return `Could not place prompt token "${token}". Workflow modes: ${modes.join(', ')}. Declared arguments: ${argumentNames.join(', ') || '(none)'}. Use a named value such as ${examples.join(', ')}.`
 }
 
 type PromptSlot = 'mode' | 'project' | 'autonomy'
@@ -185,7 +182,7 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
   )
 
 export function registerWorkflowPrompts(server: McpServer): void {
-  for (const workflow of productionWorkflows()) {
+  for (const workflow of resolveMcpWorkflowSpace(process.cwd()).workflows) {
     const prompt = workflowPromptDefinitions([workflow])[0]!
     server.registerPrompt(
       prompt.name,

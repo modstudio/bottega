@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.ts'
 import {
   callerIdentityRefusal,
   classifyCaller,
   resolveCallerIdentity,
-  WORKER_ENVIRONMENT_MARKERS,
 } from './caller-classification.ts'
 
 describe('caller classification', () => {

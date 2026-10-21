@@ -1,6 +1,7 @@
 // concern: monitor
 /** Resolves a sampled database writer to process and run identity using read-only work. */
 
+import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../database/db.ts'
 import { sampleWalWriteLock } from '../database/store-write-lock.ts'
 
@@ -13,7 +14,7 @@ export type StoreWriteLockReport =
       sampleCount: number
       pid: number | null
       command: string | null
-      runId: number | null
+      runId: string | null
       isRunSupervisor: boolean
     }
   | {
@@ -24,24 +25,31 @@ export type StoreWriteLockReport =
       sampleCount: number
     }
 
+const STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS = 10_000
+
 function holderCommand(pid: number): string | null {
-  const result = Bun.spawnSync(['/bin/ps', '-p', String(pid), '-o', 'command='], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const { process: result } = observeBoundedSubprocess(
+    'ps',
+    ['/bin/ps', '-p', String(pid), '-o', 'command='],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS,
+  )
   if (result.exitCode !== 0) return null
-  return new TextDecoder().decode(result.stdout).trim() || null
+  return new TextDecoder().decode(result.stdout ?? new Uint8Array()).trim() || null
 }
 
-function supervisedRun(storePath: string, pid: number): number | null {
+function supervisedRun(storePath: string, pid: number): string | null {
   const database = openReadOnlyDatabase(storePath)
   try {
     const row = database
-      .query<{ id: number }, [number]>(
-        "SELECT id FROM run WHERE pid=? AND status IN ('running','asking') ORDER BY id DESC LIMIT 1",
+      .query<{ record_id: string }, [number]>(
+        "SELECT record_id FROM run WHERE pid=? AND status IN ('running','asking') ORDER BY number DESC LIMIT 1",
       )
       .get(pid)
-    return row?.id ?? null
+    return row?.record_id ?? null
   } finally {
     database.close()
   }

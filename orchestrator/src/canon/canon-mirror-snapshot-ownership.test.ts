@@ -15,7 +15,7 @@ test('a foreign snapshot at a matching remote tip does not establish ownership',
     await registerManagedMirror(root, 'cm-foreign-snapshot')
     db()
       .query(`INSERT INTO landing_triage_snapshot
-      (record_id,project,branch,tip,tree,pr_number,review_ids,patch_id,tier,lens_rounds,finding_count,at)
+      (record_id,project,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
       VALUES ('foreign-snapshot','cm-foreign-snapshot','DEV-1002-canon-mirror',?,'tree',9,'[]','patch',0,0,0,'2026-09-28')`)
       .run(tip)
     const result = await mirrorRepositoryCanon({

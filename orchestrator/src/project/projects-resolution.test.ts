@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
+import { PROJECT_REFERENCES } from './project-reference-counts.ts'
 import {
   type ProjectReferenceCounts,
   projectAt,
@@ -24,19 +25,9 @@ import {
   validateProjectSettings,
 } from './projects.ts'
 
-const none: ProjectReferenceCounts = {
-  run: 0,
-  resource_claim: 0,
-  canon_pack: 0,
-  landing: 0,
-  landing_override: 0,
-  landing_review_carry: 0,
-  landing_triage_snapshot: 0,
-  review_read: 0,
-  doc: 0,
-  doc_revision: 0,
-  review: 0,
-}
+const none = Object.fromEntries(
+  PROJECT_REFERENCES.map(([key]) => [key, 0]),
+) as ProjectReferenceCounts
 
 let projectDirectory: string | null = null
 
@@ -201,7 +192,7 @@ describe('projects are data, not code', () => {
 
   test('a directory belongs to the project that contains it', () => {
     const path = repository('alpha')
-    upsertProject({ name: 'alpha', path, stack: 'php-laravel' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path, stack: 'php-laravel' })
     expect(projectAt(path)?.name).toBe('alpha')
     expect(projectAt(join(path, 'src/deep/file'))?.name).toBe('alpha')
     // The case the old path regex could never handle, and the reason
@@ -211,7 +202,7 @@ describe('projects are data, not code', () => {
   })
 
   test('an unregistered directory is null, not a guess', () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
+    upsertProject({ recordId: newRecordId(), name: 'alpha', path: '/w/alpha' })
     expect(projectAt('/somewhere/else')).toBeNull()
     // Not '/w/alphabet': containment must respect the path separator, or a
     // project named as a prefix of another would swallow it.
@@ -220,7 +211,7 @@ describe('projects are data, not code', () => {
 
   test('an arbitrarily named non-repository project never resolves from cwd', () => {
     projectDirectory = mkdtempSync(join(tmpdir(), 'orch-tasks-project-'))
-    upsertProject({ name: 'notes-only', path: projectDirectory })
+    upsertProject({ recordId: newRecordId(), name: 'notes-only', path: projectDirectory })
     expect(projectAt(projectDirectory)).toBeNull()
     expect(projectAt(join(projectDirectory, 'child'))).toBeNull()
     expect(projectRepositoryRefusal(projectByName('notes-only')!)).toBe(
@@ -230,6 +221,7 @@ describe('projects are data, not code', () => {
 
   test('code search refuses a caller checkout outside the selected project', async () => {
     upsertProject({
+      recordId: newRecordId(),
       name: 'alpha',
       path: '/w/alpha',
       settings: { search: { code: true } },
@@ -249,8 +241,8 @@ describe('projects are data, not code', () => {
   test('the longest matching path wins, so nesting resolves inward', () => {
     const outer = repository('outer')
     const inner = repository('outer/inner')
-    upsertProject({ name: 'outer', path: outer })
-    upsertProject({ name: 'inner', path: inner })
+    upsertProject({ recordId: newRecordId(), name: 'outer', path: outer })
+    upsertProject({ recordId: newRecordId(), name: 'inner', path: inner })
     expect(projectAt(join(inner, 'src'))?.name).toBe('inner')
     expect(projectAt(join(outer, 'other'))?.name).toBe('outer')
   })
@@ -258,6 +250,7 @@ describe('projects are data, not code', () => {
   test('settings survive a round trip', () => {
     const path = repository('alpha-settings')
     upsertProject({
+      recordId: newRecordId(),
       name: 'alpha',
       path,
       settings: { trunk: 'develop', states: { in_progress: 'active' } },
@@ -307,45 +300,120 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
   })
 
   test('a project with a run refuses removal and keeps the run attributed', () => {
-    upsertProject({ name: 'kept-run', path: '/w/kept-run' })
+    upsertProject({ recordId: newRecordId(), name: 'kept-run', path: '/w/kept-run' })
     const project = projectByName('kept-run')!
     writableDb()
     db()
       .query(
-        `INSERT INTO run (record_id,started_at, agent, job, project_id, prompt_sha, prompt_bytes, prompt_head, status)
-         VALUES ('${newRecordId()}','t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
+        `INSERT INTO run (record_id,number,started_at, agent, job, project_record_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
       )
-      .run(project.id)
+      .run(project.recordId)
     expect(() => removeProject('kept-run')).toThrow(
       'project kept-run is referenced by 1 run(s); removing it would blank their project attribution\n' +
         `cleared by: ${PLATFORM_SLUG} project retire kept-run`,
     )
-    expect(projectByName('kept-run')?.id).toBe(project.id)
+    expect(projectByName('kept-run')?.recordId).toBe(project.recordId)
     expect(
       (
-        db().query('SELECT project_id FROM run WHERE project_id=?').get(project.id) as {
-          project_id: number
+        db()
+          .query('SELECT project_record_id FROM run WHERE project_record_id=?')
+          .get(project.recordId) as {
+          project_record_id: string
         }
-      ).project_id,
-    ).toBe(project.id)
+      ).project_record_id,
+    ).toBe(project.recordId)
   })
 
   test('a project with nothing referencing it still removes', () => {
-    upsertProject({ name: 'ephemeral', path: '/w/ephemeral' })
+    upsertProject({ recordId: newRecordId(), name: 'ephemeral', path: '/w/ephemeral' })
     expect(removeProject('ephemeral')).toBe(true)
     expect(projectByName('ephemeral')).toBeNull()
   })
 
+  test('local-only lens selections and port rows still refuse removal', () => {
+    upsertProject({ recordId: newRecordId(), name: 'local-catalogue', path: '/w/local-catalogue' })
+    const project = projectByName('local-catalogue')!
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO project_lens_profile
+         (record_id,project_record_id,lens_record_id,axis,profile_name,selection_version,space_id)
+         VALUES (?,?,NULL,'framework','default',1,NULL)`,
+      )
+      .run(newRecordId(), project.recordId)
+    db()
+      .query(
+        `INSERT INTO port_ref
+         (record_id,task_key,target_project_record_id,note,created_at,version,space_id)
+         VALUES (?,'DEV-1404',?,'local','2026-10-19T00:00:00.000Z',1,NULL)`,
+      )
+      .run(newRecordId(), project.recordId)
+
+    expect(() => removeProject('local-catalogue')).toThrow(
+      '1 port_ref(s), 1 project_lens_profile(s)',
+    )
+    expect(projectByName('local-catalogue')).not.toBeNull()
+  })
+
+  test('hosted catalogue rows neither block removal nor disappear with the local project', () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'hosted-catalogue',
+      path: '/w/hosted-catalogue',
+    })
+    const project = projectByName('hosted-catalogue')!
+    const space = newRecordId()
+    const pair = newRecordId()
+    const ref = newRecordId()
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO project_lens_profile
+         (record_id,project_record_id,lens_record_id,axis,profile_name,selection_version,space_id)
+         VALUES (?,?,NULL,'framework','default',1,?)`,
+      )
+      .run(newRecordId(), project.recordId, space)
+    db()
+      .query(
+        `INSERT INTO port_pair
+         (record_id,source_project_record_id,target_project_record_id,created_at,space_id)
+         VALUES (?,?,?,'2026-10-19T00:00:00.000Z',?)`,
+      )
+      .run(pair, project.recordId, newRecordId(), space)
+    db()
+      .query(
+        `INSERT INTO port_ref
+         (record_id,task_key,target_project_record_id,note,created_at,version,space_id)
+         VALUES (?,'DEV-1404',?,'hosted','2026-10-19T00:00:00.000Z',1,?)`,
+      )
+      .run(ref, project.recordId, space)
+    db()
+      .query(
+        `INSERT INTO port_ref_source
+         (record_id,ref_record_id,source_project_record_id,commits,paths,note,position,space_id)
+         VALUES (?,?,?,'[]','[]','hosted',1,?)`,
+      )
+      .run(newRecordId(), ref, project.recordId, space)
+
+    expect(removeProject('hosted-catalogue')).toBe(true)
+    expect(projectByName('hosted-catalogue')).toBeNull()
+    for (const table of ['project_lens_profile', 'port_pair', 'port_ref', 'port_ref_source'])
+      expect(db().query(`SELECT COUNT(*) AS n FROM ${table} WHERE space_id=?`).get(space)).toEqual({
+        n: 1,
+      })
+  })
+
   test('retire stamps retired_at and hides the row from acting reads', () => {
     const path = repository('tombstoned')
-    upsertProject({ name: 'tombstoned', path })
+    upsertProject({ recordId: newRecordId(), name: 'tombstoned', path })
     expect(retireProject('tombstoned')).toBe('retired')
     const retired = projects({ retired: true }).find((project) => project.name === 'tombstoned')
     expect(retired?.retiredAt).toBeTruthy()
     expect(projects().some((project) => project.name === 'tombstoned')).toBe(false)
     expect(projectByName('tombstoned')).toBeNull()
     expect(projectAt(path)).toBeNull()
-    expect(retiredProjectByName('tombstoned')?.id).toBe(retired!.id)
+    expect(retiredProjectByName('tombstoned')?.recordId).toBe(retired!.recordId)
     expect(retiredProjectAt(path)?.name).toBe('tombstoned')
     expect(retiredProjectRefusal('tombstoned')).toBe(
       `project tombstoned is retired; cleared by: ${PLATFORM_SLUG} project retire tombstoned --undo`,
@@ -354,13 +422,18 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
   })
 
   test('undo and re-add restore a retired name', () => {
-    upsertProject({ name: 'restored', path: '/w/restored' })
+    upsertProject({ recordId: newRecordId(), name: 'restored', path: '/w/restored' })
     expect(retireProject('restored')).toBe('retired')
     expect(unretireProject('restored')).toBe(true)
     expect(projectByName('restored')?.path).toBe('/w/restored')
     expect(projectByName('restored')?.retiredAt).toBeNull()
     expect(retireProject('restored')).toBe('retired')
-    upsertProject({ name: 'restored', path: '/w/restored-next', stack: 'node' })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'restored',
+      path: '/w/restored-next',
+      stack: 'node',
+    })
     const live = projectByName('restored')
     expect(live?.path).toBe('/w/restored-next')
     expect(live?.stack).toBe('node')

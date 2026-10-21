@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   type HostedProjectColumns,
   hostedProjectColumns,
+  hostedProjectSettings,
   PROJECT_SETTING_COLUMNS,
   PROJECT_SETTINGS_NOT_IMPORTED,
 } from './record-project-columns.ts'
@@ -27,7 +28,11 @@ const samples = {
     column: 'reference',
     value: { directory: 'docs/reference', publish: 'publish-reference' },
   },
-  release: { setting: { depth: 'pr' }, column: 'release', value: { depth: 'pr' } },
+  release: {
+    setting: { mergeQueue: true },
+    column: 'release',
+    value: { mergeQueue: true },
+  },
   requireCleanMain: { setting: false, column: 'requireCleanMain', value: false },
   secretPaths: { setting: ['secret'], column: 'secretPaths', value: ['secret'] },
   signals: {
@@ -123,5 +128,23 @@ describe('hostedProjectColumns', () => {
     const columns = hostedProjectColumns({}, 'absent')
     expect(columns.mcpProbeTool).toBeNull()
     expect(columns.mcpReaderTools).toBeNull()
+  })
+
+  test('maps hosted columns back to local project settings', () => {
+    const columns = hostedProjectColumns(
+      {
+        trunk: 'main',
+        managedContext: true,
+        requireCleanMain: false,
+        mcp: { probe_tool: 'ping', reader_tools: { orch: ['list'] } },
+      },
+      'round-trip',
+    )
+    expect(hostedProjectSettings(columns)).toMatchObject({
+      trunk: 'main',
+      managedContext: true,
+      requireCleanMain: false,
+      mcp: { probe_tool: 'ping', reader_tools: { orch: ['list'] } },
+    })
   })
 })

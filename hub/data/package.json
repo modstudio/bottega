@@ -1,0 +1,61 @@
+{
+  "name": "@bottega/hub-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./client": "./src/client.ts",
+    "./docs/actions": "./src/docs/actions.ts",
+    "./docs/edit-permission": "./src/docs/edit-permission.ts",
+    "./docs/field-write": "./src/docs/field-write.ts",
+    "./docs/location": "./src/docs/location.ts",
+    "./docs/map": "./src/docs/map.ts",
+    "./docs/mode": "./src/docs/mode.ts",
+    "./docs/search-input": "./src/docs/search-input.ts",
+    "./docs/use-doc-reorder": "./src/docs/use-doc-reorder.ts",
+    "./docs/use-docs": "./src/docs/use-docs.ts",
+    "./hub-mode": "./src/hub-mode.ts",
+    "./hosted-auth": "./src/hosted-auth.ts",
+    "./hosted-organization": "./src/hosted-organization.ts",
+    "./operator-waiting": "./src/operator-waiting.ts",
+    "./record-request": "./src/record-request.ts",
+    "./use-health": "./src/use-health.ts",
+    "./use-machine-permission": "./src/use-machine-permission.ts",
+    "./use-board": "./src/use-board.ts",
+    "./use-operator-waiting": "./src/use-operator-waiting.ts",
+    "./use-project-colors": "./src/use-project-colors.ts",
+    "./use-projects": "./src/use-projects.ts",
+    "./use-ratio": "./src/use-ratio.ts",
+    "./use-reports": "./src/use-reports.ts",
+    "./use-reviews": "./src/use-reviews.ts",
+    "./use-routing": "./src/use-routing.ts",
+    "./use-spend": "./src/use-spend.ts",
+    "./use-task": "./src/use-task.ts",
+    "./use-task-list": "./src/use-task-list.ts",
+    "./transport": "./src/transport.ts",
+    "./window-input": "./src/window-input.ts",
+    "./window": "./src/window.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.104.5",
+    "@trpc/client": "^11.19.0",
+    "@trpc/server": "^11.19.0",
+    "@trpc/tanstack-react-query": "^11.19.0",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "20.14.5",
+    "@testing-library/react": "16.3.3",
+    "@types/bun": "latest",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react-dom": "^19.3.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.5"
+  }
+}

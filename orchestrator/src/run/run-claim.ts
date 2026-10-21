@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
-import type { TaskBranchCandidate } from '../branch/task-branch.ts'
+import { type TaskBranchCandidate, taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -22,34 +22,23 @@ import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, gitContext, repoRootOf } from '../git/git-environment.ts'
 import {
-  assertGrokTrustEligible,
+  type DeferredCwdMcpStep,
   type McpConnection,
   type McpMode,
   type McpRequest,
-  mcpAttachRefusal,
-  mcpConnectionFor,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
-import { readMcpConfig, wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, stackAt } from '../project/projects.ts'
-import { ensureProjectMainStack } from '../resources/main-stack.ts'
 import {
   claimRecipePort,
   RECIPE_PORT_BAND,
   recordCreatedWorktreeClaims,
   recordDatabaseClaim,
-  recordSandboxDirectoryClaim,
-  recordTrustEntryClaims,
 } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { attributedLaunchKey } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
-import {
-  addedGrokTrustHeadings,
-  grokTrustHeadings,
-  grokTrustStorePath,
-} from '../sandbox/grok-trust.ts'
 import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
@@ -64,48 +53,48 @@ import {
   type prepareWorkerMcpConfig,
 } from '../worktree/worktree-mcp.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
-import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
+import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './question-close.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
-  type runFilePaths,
+  prepareFiles,
   runScratchDir,
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
+import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
-  decideClaimTreePlan,
+  claimTreePlanForCandidate,
   resumeCreationLifecycle,
   resumeCreationTool,
   retryRootTreeValidation,
   shouldResolveTaskBranch,
   taskBranchKey,
 } from './run-claim-plan.ts'
+import { nextRunNumber } from './run-number.ts'
 import { errorTail, sha } from './run-process.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
+import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
-import {
-  grokReaderServersForRun,
-  prepareClaimedGrokMcpScope,
-  prepareClaimedWorkerMcpConfig,
-} from './run-worker-home.ts'
 
 type ClaimOptions = {
-  reserveId?: number
+  reserveId?: string
+  agentExplicit?: boolean
+  transport?: 'cli' | 'acp'
   schemaPath?: string
   job: string
   label?: string
   probe?: boolean
-  retryOf?: number
+  retryOf?: string
   ownerSession?: string | null
   automaticFailover?: boolean
   review?: string
@@ -123,10 +112,12 @@ type ClaimOptions = {
   resume?: RunResumeOptions
 }
 
+const explicitRunFlags = (opts: ClaimOptions) =>
+  [opts.automaticFailover ? 1 : 0, opts.agentExplicit ? 1 : 0, opts.transport ? 1 : 0] as const
+
 export type ClaimInput = {
   opts: ClaimOptions
   runsDir: string
-  paths: ReturnType<typeof runFilePaths>
   stamp: string
   name: string
   generatedSchema: unknown
@@ -137,7 +128,7 @@ export type ClaimInput = {
   writesJob: boolean
   repoJob: boolean
   runProjectName: string | null
-  runProjectId: number | null
+  runProjectId: string | null
   reason: string
   vendorSession: string | null
   pack: Pack | null
@@ -154,44 +145,50 @@ export type ClaimInput = {
   implicitReview: { branch: string | null; findings: boolean }
   coverageBase: string | null
   readOnlyBase: string | null
-  deferredCwdMcpPreflight: boolean
+  deferredCwdMcpPlan: DeferredCwdMcpStep[]
   usingMcp: boolean
   startedByUserId: string | null
   replySchemaName: string
-  carriedQuestionIds: number[]
-}
-
-function recordIdForClaim(reserveId: number | undefined): string {
-  if (!reserveId) return newRecordId()
-  const reservation = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-    .get(reserveId)
-  if (!reservation) throw new Error(`reserved run ${reserveId} does not exist`)
-  return reservation.record_id
+  carriedQuestionIds: string[]
 }
 
 import type { ClaimResult } from './run-claim-types.ts'
 
 export type { ClaimResult } from './run-claim-types.ts'
 
-function claimedGrokReaderConfig(
-  agent: Agent,
-  writesRepository: boolean,
-  cwd: string,
-  project: NonNullable<ReturnType<typeof projectAt>>,
-) {
-  const treeConfig = readMcpConfig(cwd)
-  return {
-    treeConfig,
-    readerServers: grokReaderServersForRun(agent, true, writesRepository, treeConfig, project, cwd),
-  }
+function sandboxRootForRun(runId: string): { record_id: string } {
+  return db()
+    .query<{ record_id: string }, [string]>(
+      `SELECT root.record_id FROM run member
+       JOIN run root ON root.record_id=COALESCE(member.parent_run_record_id,member.record_id)
+       WHERE member.record_id=?`,
+    )
+    .get(runId)!
+}
+
+function claimRecordId(reserveId: string | undefined): string {
+  if (!reserveId) return newRecordId()
+  const reservation = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(reserveId)
+  if (!reservation) throw new Error(`reserved run ${reserveId} does not exist`)
+  return reserveId
+}
+
+function claimableRow<T>(
+  reserveId: string | undefined,
+  updateReserved: () => T | null,
+  insertFresh: () => T,
+): T {
+  const row = reserveId ? updateReserved() : insertFresh()
+  if (!row) throw new Error(`reserved run ${reserveId} is no longer claimable`)
+  return row
 }
 
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
     runsDir,
-    paths,
     stamp,
     name,
     generatedSchema,
@@ -219,7 +216,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     implicitReview,
     coverageBase,
     readOnlyBase,
-    deferredCwdMcpPreflight,
+    deferredCwdMcpPlan,
     usingMcp,
     startedByUserId,
     replySchemaName,
@@ -227,21 +224,19 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   } = input
   const resume = resumeFacts(
     opts.resume?.kind ?? null,
-    opts.reserveId ?? 0,
+    opts.reserveId ?? '',
     opts.resume?.parent ?? null,
   )
   const claimedPrompt = opts.reserveId
-    ? (
-        db().query('SELECT prompt_path FROM run WHERE id=?').get(opts.reserveId) as {
+    ? ((
+        db().query('SELECT prompt_path FROM run WHERE record_id=?').get(opts.reserveId) as {
           prompt_path: string | null
         } | null
-      )?.prompt_path
+      )?.prompt_path ?? null)
     : null
-  const promptPath = claimedPrompt ?? paths.prompt
-  writeFileSync(promptPath, originalPrompt)
-  // Beside the prompt it wraps, whatever that file is called: a detached run's
-  // prompt path was named by detach() before this stamp existed.
-
+  const recordId = claimRecordId(opts.reserveId)
+  const { promptPath, outputPath } = prepareFiles(runsDir, recordId, claimedPrompt, originalPrompt)
+  // Beside the prompt it wraps; detach() may already have named that prompt path.
   /**
    * The return contract, written to disk because that is how both agents take
    * one: codex's `--output-schema` wants a path and grok's `--json-schema`
@@ -253,9 +248,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   const originalSchemaPath = writeGeneratedSchema(runsDir, stamp, generatedSchema, opts.schemaPath)
   const textReplyContract = !opts.schemaPath && generatedSchema === TEXT_REPLY_SCHEMA
-  // Codex's --output-schema is OpenAI strict structured output. Its copy is
-  // normalized beside the prompt; the caller's file remains byte-for-byte
-  // untouched for Grok, whose --json-schema accepts ordinary JSON Schema.
+  // Normalize Codex's strict schema beside the prompt; leave the caller's file untouched for Grok.
   const schemaPath =
     name === 'codex' && originalSchemaPath
       ? (() => {
@@ -264,9 +257,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           return p
         })()
       : originalSchemaPath
-
   const started = Date.now()
-  const recordId = recordIdForClaim(opts.reserveId)
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
@@ -317,12 +308,18 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       resolvedTaskBranch = null
     }
   }
+  const { attachedTree, claimTreePlan } = claimTreePlanForCandidate({
+    candidate: resolvedTaskBranch,
+    forbidsRepo,
+    repoJob,
+    hasWorktree: Boolean(opts.resume?.worktree),
+    refusalMessage: taskBranchLandingTreeRefusal,
+  })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({
     branch: existingBranch,
     conversationRootId: resumePlan?.rootId ?? null,
     projectId: runProjectId,
-    projectName: runProjectName,
   })
   // A repository row has no artifact address until creation returns one.
   const claimedCwd = repoJob ? null : callerCwd
@@ -334,12 +331,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const updateReservedRun = () =>
     db()
       .query(
-        `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_id=?, cwd=?, prompt_sha=?, spec_sha=?,
-                        prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
-                        route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
+        `UPDATE run SET record_id=?, started_at=?, agent=?, job=?, repo=?, project_record_id=?, cwd=?, prompt_sha=?, spec_sha=?,
+                        prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of_record_id=?,
+                        route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
-                        automatic_failover=?, review_ref=?, pid=?, mcp=?, transport=?
-          WHERE id=? RETURNING id`,
+                        automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, pid=?, mcp=?, transport=?
+          WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -358,7 +355,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.retryOf ?? null,
         reason,
         claimedBranch,
-        identity.parent_run_id,
+        identity.parent_run_record_id,
         identity.turn,
         vendorSession,
         pack?.docs.length ?? 0,
@@ -370,23 +367,24 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0,
+        ...explicitRunFlags(opts),
         opts.review ?? null,
         process.pid,
         storedMcpRequest(mcpRequest),
         transportName,
         opts.reserveId!,
-      ) as { id: number }
+      ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
     db()
       .query(
-        `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
-                          automatic_failover, review_ref, pid, mcp, transport, started_by_user_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+                          automatic_failover, agent_explicit, transport_explicit, review_ref, pid, mcp, transport, started_by_user_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
+        nextRunNumber(db()),
         nowIso(),
         name,
         opts.job,
@@ -406,7 +404,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.retryOf ?? null,
         reason,
         claimedBranch,
-        identity.parent_run_id,
+        identity.parent_run_record_id,
         identity.turn,
         vendorSession,
         pack?.docs.length ?? 0,
@@ -418,26 +416,26 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0,
+        ...explicitRunFlags(opts),
         opts.review ?? null,
         process.pid,
         storedMcpRequest(mcpRequest),
         transportName,
         startedByUserId,
-      ) as { id: number }
+      ) as { record_id: string; number: number }
   const claim = writeTransaction(() => {
-    const claimed = opts.reserveId ? updateReservedRun() : insertClaimedRun()
-
+    const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
+    const claimed = { id: claimedRow.record_id, number: claimedRow.number }
     /**
      * A child that asked has finished that turn once its successor exists.
      *
      * The root is deliberately excluded here: it carries the conversation's
      * rolled-up outcome and is routing evidence, while a child is independently
-     * excluded from routing by `parent_run_id IS NULL`. `ok` records what
+     * excluded from routing by `parent_run_record_id IS NULL`. `ok` records what
      * happened without fabricating a failure or an operator stop: the worker
      * fulfilled its contract by asking, the question was ruled on, and the
      * conversation moved to a later turn. The root's counterpart is
-     * `resolveRootFromLastTurn`, which inherits the last turn's terminal status
+     * `rollUpRootAndEnqueue`, which inherits the last turn's terminal status
      * once the chain has ended.
      *
      * Match the row's own facts even though continueRun already refuses an open
@@ -452,7 +450,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
     }
     const recordCarry = db().query(
-      'INSERT INTO run_carried_ruling (record_id,run_id,question_id) VALUES (?,?,?)',
+      'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
     )
     for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
     return claimed
@@ -463,7 +461,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       ? (() => {
           const parent = db()
             .query(
-              'SELECT keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run WHERE id=?',
+              'SELECT keep_tree,keep_tree_until,keep_tree_reason,started_at FROM run WHERE record_id=?',
             )
             .get(opts.resume!.parent) as {
             keep_tree: number
@@ -493,7 +491,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     .query(
       `UPDATE run SET stack=?, model=?, run_token=?, mcp=?, mcp_server=?,
                       mcp_connected=?, mcp_error=?, schema_path=?, lens=?, keep_tree=?,
-                      keep_tree_until=?, keep_tree_reason=? WHERE id=?`,
+                      keep_tree_until=?, keep_tree_reason=? WHERE record_id=?`,
     )
     .run(
       stackAt(callerCwd),
@@ -511,18 +509,17 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       keepTree?.reason ?? null,
       claim.id,
     )
-  const scratchDir = runScratchDir(claim.id)
+  const scratchDir = runScratchDir(recordId)
   mkdirSync(scratchDir, { recursive: true })
   prompt = `${replyFileInstruction(replySchemaName, scratchDir)}\n\n${prompt}`
-  writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+  writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
-    .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+    .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
     .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
   writeDispatchState(claim.id, {
     deliverables: declaredDeliverables,
     timeoutMinutes: timeoutMinutes ?? null,
   })
-
   /**
    * A repository worker never runs in the caller's checkout.
    *
@@ -534,7 +531,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   let worktree: Worktree | null = opts.resume?.worktree ?? null
   let carried: CarriedWorkingState | null = null
-  const changes: Changes | null = null
   let isolatedCwd: string | null = null
   let removeIsolatedCwd: (() => void) | null = null
   let provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null = null
@@ -543,20 +539,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let mcpTrustGranted = false,
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
-  const sandboxRoot = (
-    db().query('SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?').get(claim.id) as {
-      id: number
-    }
-  ).id
-  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
+  const sandboxRoot = sandboxRootForRun(claim.id)
+  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot.record_id}`)
   const sandboxRunDirExisted = existsSync(sandboxRunDir)
-  const attachedTree = resolvedTaskBranch?.worktree ?? null
-  const claimTreePlan = decideClaimTreePlan({
-    hasResolvedTaskWorktree: attachedTree !== null,
-    forbidsRepo,
-    repoJob,
-    hasWorktree: Boolean(worktree),
-  })
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -583,7 +568,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         isolatedCwd = noRepoIsolatePath(claim.id, runsDir)
         removeIsolatedCwd = createIsolatedWorkerDirectory(isolatedCwd)
         cwd = isolatedCwd
-        db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
+        db().query('UPDATE run SET cwd=? WHERE record_id=?').run(cwd, claim.id)
         break
       }
       case 'create': {
@@ -621,7 +606,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               .query(
                 `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=?,
                         resource_teardown=CASE WHEN ?='recipe' THEN 'pending' ELSE resource_teardown END
-                 WHERE id=?`,
+                 WHERE record_id=?`,
               )
               .run(
                 created.path,
@@ -636,7 +621,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             if (result.changes !== 1)
               throw new Error(`run ${claim.id} could not record its worktree`)
             recordCreatedWorktreeClaims(db(), {
-              rootRunId: sandboxRoot,
+              rootRunId: sandboxRoot.record_id,
               runId: claim.id,
               projectId: runProjectId,
               owned: true,
@@ -653,7 +638,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         > = (resource) => {
           writeTransaction(() => {
             const identity = {
-              rootRunId: sandboxRoot,
+              rootRunId: sandboxRoot.record_id,
               runId: claim.id,
               projectId: runProjectId,
               claimedAt: nowIso(),
@@ -668,7 +653,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const claimRecipeServePort = () =>
           writeTransaction(() =>
             claimRecipePort(db(), {
-              rootRunId: sandboxRoot,
+              rootRunId: sandboxRoot.record_id,
               runId: claim.id,
               projectId: runProjectId,
               claimedAt: nowIso(),
@@ -681,7 +666,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             branch: existingBranch,
             conversationRootId: resumePlan?.rootId ?? claim.id,
             projectId: runProjectId,
-            projectName: runProjectName,
           })
           prepareResumeBranchIfNeeded(repoRoot, resumePlan)
           // The PROJECT owns its worktrees. A bare `git worktree add` here would
@@ -716,13 +700,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             provisionTimeoutMs: timeoutMs,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
-          const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as {
+          const current = db().query('SELECT status FROM run WHERE record_id=?').get(claim.id) as {
             status: string
           }
           if (current.status === 'stopped') {
             const cleanup = removeFor(restored, restored.repoRoot, false, false, claim.id)
             settleCreateTimeBranchCleanup(restored, claim.id)
-            if (cleanup.removed) db().query('UPDATE run SET worktree=NULL WHERE id=?').run(claim.id)
+            if (cleanup.removed)
+              db().query('UPDATE run SET worktree=NULL WHERE record_id=?').run(claim.id)
             throw new Error(
               `run ${claim.id} was stopped during worktree creation; cleanup: ` +
                 `${cleanup.removed ? 'removed' : cleanup.detail}`,
@@ -775,7 +760,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           const inherited = db()
             .query(
               `SELECT carry_base_commit, carry_tracked_paths, carry_untracked_paths
-                 FROM run WHERE id=?`,
+                 FROM run WHERE record_id=?`,
             )
             .get(opts.resume!.parent) as {
             carry_base_commit: string | null
@@ -808,7 +793,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         db()
           .query(
             `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=?, carry_happened=?,
-                            carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE id=?`,
+                            carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE record_id=?`,
           )
           .run(
             inheritedWorktree.path,
@@ -843,7 +828,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                   branch: inheritedWorktree.branch,
                   conversationRootId: claim.id,
                   projectId: resolvedTaskBranch!.projectId,
-                  projectName: resolvedTaskBranch!.projectName,
                 })
                 if (!worktreeExists(inheritedWorktree.path)) {
                   throw new Error(
@@ -922,169 +906,63 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       // The original file remains the caller's resumable spec. The bound file
       // and row describe what was actually sent after the worktree had an
       // address, which is the evidence an audit needs.
-      writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+      writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
       db()
-        .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+        .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
     }
-    if (deferredCwdMcpPreflight) {
-      const project = projectAt(callerCwd)
-      if (!project)
-        throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
-      ensureProjectMainStack(project, 'mcp')
-      const grokScope = prepareClaimedGrokMcpScope(
-        {
-          agent: a,
-          runDir: sandboxRunDir,
-          runDirExisted: sandboxRunDirExisted,
-          cwd,
-          project,
-          config: prepareClaimedWorkerMcpConfig({
-            cwd,
-            checkout: project.path,
-            inherited: resume.workspaceSource === 'retained',
-            writesRepository: writesJob,
-          }),
-          ...claimedGrokReaderConfig(a, writesJob, cwd, project),
-        },
-        () =>
-          writeTransaction(() => {
-            recordSandboxDirectoryClaim(db(), {
-              rootRunId: sandboxRoot,
-              runId: claim.id,
-              projectId: runProjectId,
-              path: sandboxRunDir,
-              claimedAt: nowIso(),
-            })
-          }),
-      )
-      provisionedMcpConfig = grokScope.config
-      mcpSetupHeader = grokScope.header
-      const server = grokScope.server
-      if (grokScope.error) {
-        mcpConnection = { server, connected: false, error: grokScope.error }
-      } else {
-        const grokTrust = name === 'grok'
-        grokMcpEnvironment = grokScope.environment
-        const recorded = db()
-          .query('SELECT id, cwd, worktree, worktree_source FROM run WHERE id=?')
-          .get(claim.id) as {
-          id: number
-          cwd: string | null
-          worktree: string | null
-          worktree_source: string | null
-        } | null
-        if (grokTrust) {
-          assertGrokTrustEligible(
-            cwd,
-            recorded,
-            noRepoIsolatePath(recorded?.id ?? claim.id, runsDir),
-          )
-        }
-        const beforeTrust = grokTrust ? grokTrustHeadings(grokMcpEnvironment) : []
-        mcpTrustGranted = grokTrust
-        // Record the attempt before doctor: the trusted invocation may write its
-        // store and then fail, and that remains a grant orch made.
-        if (grokTrust) db().query('UPDATE run SET mcp_trust_granted=1 WHERE id=?').run(claim.id)
-        try {
-          mcpConnection = mcpConnectionFor(
-            name,
-            cwd,
-            server,
-            grokTrust,
-            repoJob,
-            grokMcpEnvironment,
-          )
-        } finally {
-          if (grokTrust) {
-            const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(grokMcpEnvironment))
-            writeTransaction(() => {
-              db()
-                .query('UPDATE run SET mcp_trust_path=? WHERE id=?')
-                .run(added.length ? JSON.stringify(added) : null, claim.id)
-              recordTrustEntryClaims(db(), {
-                rootRunId: sandboxRoot,
-                runId: claim.id,
-                projectId: runProjectId,
-                headings: added,
-                storePath: grokTrustStorePath(grokMcpEnvironment),
-                claimedAt: nowIso(),
-              })
-            })
-          }
-        }
-      }
-      if (
-        mcpTrustGranted &&
-        mcpConnection.connected === false &&
-        /folder untrusted|repo-local server not started/i.test(mcpConnection.error ?? '')
-      ) {
-        throw new Error(
-          `Grok remained untrusted after scoped trust for ${cwd}: ${mcpConnection.error}`,
-        )
-      }
-      const mismatched = wrongProjectReason(server, mcpConnection.namesSeen ?? [])
-      if (mismatched) {
-        mcpConnection = { ...mcpConnection, connected: false, error: mismatched }
-      }
-      if (mcpConnection.connected === false && mcpMode === 'prefer') {
-        mcpConnection = {
-          ...mcpConnection,
-          error: mcpConnection.error?.startsWith('wrong project:')
-            ? mcpConnection.error
-            : `mirror: ${mcpConnection.error ?? `server '${server}' could not be attached`}`,
-        }
-        usingMcp = false
-      }
-      db()
-        .query(`UPDATE run SET mcp_server=?, mcp_connected=?, mcp_error=? WHERE id=?`)
-        .run(
-          mcpConnection.server,
-          mcpConnection.connected == null ? null : mcpConnection.connected ? 1 : 0,
-          mcpConnection.error,
-          claim.id,
-        )
-      const refusal = mcpAttachRefusal(mcpConnection)
-      if (refusal && mcpMode === 'require') throw new Error(refusal)
-    } else if (mcpConnection?.connected === false && mcpMode === 'prefer') {
-      mcpConnection = {
-        ...mcpConnection,
-        error: `mirror: ${mcpConnection.error ?? `server '${mcpConnection.server}' could not be attached`}`,
-      }
-      usingMcp = false
-      db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
-    }
+    ;({
+      provisionedMcpConfig,
+      mcpSetupHeader,
+      mcpTrustGranted,
+      grokMcpEnvironment,
+      mcpConnection,
+      usingMcp,
+    } = executeClaimedMcpPlan({
+      plan: deferredCwdMcpPlan,
+      callerCwd,
+      agent: a,
+      agentName: name,
+      sandboxRunDir,
+      sandboxRunDirExisted,
+      sandboxRootId: sandboxRoot.record_id,
+      runId: claim.id,
+      runProjectId,
+      runsDir,
+      cwd,
+      inherited: resume.workspaceSource === 'retained',
+      writesJob,
+      repoJob,
+      mcpMode,
+      mcpConnection,
+      usingMcp,
+    }))
   } catch (e) {
     removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))
-    db()
-      .query(
-        // 'harness': setting a worktree up is orch's job, and failing at it says
-        // nothing whatever about the agent that was about to be given it.
-        `UPDATE run SET
-           status=CASE WHEN status='stopped' THEN status ELSE 'failed' END,
-           error=CASE WHEN status='stopped' THEN error ELSE ? END,
-           failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END,
-           latency_ms=? WHERE id=?`,
-      )
-      .run(why, Date.now() - started, claim.id)
-    teardownTerminalRunResources(db(), claim.id)
+    try {
+      // Setting a worktree up is orch's job, so this shared harness failure
+      // must publish the child and roll its outcome up to a continuation root.
+      recordRunStartupFailure(claim.id, why, started)
+    } finally {
+      teardownTerminalRunResources(db(), claim.id)
+    }
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
-
   return {
     promptPath,
+    outputPath,
     originalSchemaPath,
     textReplyContract,
     schemaPath,
     started,
     launchKey,
     runToken,
-    claim,
+    claim: { ...claim, recordId },
     keepTree,
     scratchDir,
     worktree,
-    changes,
+    changes: null,
     isolatedCwd,
     removeIsolatedCwd,
     provisionedMcpConfig,

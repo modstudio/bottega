@@ -5,20 +5,21 @@ import type { TriageDecision } from './triage-decision.ts'
 const incomplete: TriageDecision = {
   complete: false,
   snapshot: {
-    reviewIds: [],
+    reviewRecordIds: [],
     patchId: 'patch-a',
     tier: 1,
     lensRounds: 0,
     findingCount: 0,
     admissionPath: 'exact_review',
-    readId: null,
+    readRecordId: null,
   },
   missingReview: true,
-  unfinishedReviewIds: [],
+  unfinishedReviewNumbers: [],
   undisposedFindings: [],
   missingLenses: ['correctness'],
+  missingSecondOpinion: null,
   architectReadRequired: false,
-  earlierReviewId: null,
+  earlierReviewNumber: null,
   earlierReviewTier: null,
   finalTierRaised: false,
 }
@@ -33,7 +34,7 @@ const change = {
 }
 
 const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride => ({
-  id: 17,
+  recordId: 'override-17',
   ...change,
   ...values,
 })
@@ -42,7 +43,7 @@ describe('pull-request admission decision', () => {
   test('an override for the exact tip and change group admits', () => {
     expect(decideAdmission(change, incomplete, [override()])).toEqual({
       complete: true,
-      overrideId: 17,
+      overrideId: 'override-17',
       triage: incomplete,
     })
   })
@@ -71,7 +72,7 @@ describe('pull-request admission decision', () => {
     })
     const complete: TriageDecision = {
       complete: true,
-      snapshot: { ...incomplete.snapshot, reviewIds: [4], lensRounds: 1 },
+      snapshot: { ...incomplete.snapshot, reviewRecordIds: ['review-4'], lensRounds: 1 },
     }
     expect(decideAdmission(change, complete, [])).toEqual({
       complete: true,

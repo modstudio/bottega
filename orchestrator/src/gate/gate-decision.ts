@@ -34,7 +34,9 @@ export function brokerGateEnvironment(
   const hostPaths: Record<string, string> = {}
   if (source.HOME) hostPaths.HOME = source.HOME
   if (source.TMPDIR) hostPaths.TMPDIR = source.TMPDIR
-  return { ...base, ...hostPaths, ...overlay }
+  const environment = { ...base, ...hostPaths, ...overlay }
+  delete environment.ORCH_GATE_PIDS
+  return environment
 }
 
 function quoteShellWord(word: string): string {
@@ -56,6 +58,35 @@ export function decideGateHeadCommit(input: {
   porcelainPaths: readonly string[]
 }): string | null {
   return input.headCommit && input.porcelainPaths.length === 0 ? input.headCommit : null
+}
+
+/** Prefer the live trunk merge-base so a rebased worker excludes trunk-only changes. */
+export function decideGateToolingDiffBase(input: {
+  recordedBase: string
+  mergeBase: string | null
+}): string {
+  return input.mergeBase?.trim() || input.recordedBase
+}
+
+/** Reduce process state to the durable broker completion fields. */
+export function decideGateExecutionFinalization(input: {
+  exitCode: number
+  timedOut: boolean
+  cancelledReason: string | null
+  logCreated: boolean
+  artifactPath: string
+}): {
+  exitCode: number
+  timedOut: boolean
+  cancelledReason: string | null
+  artifactPath: string | null
+} {
+  return {
+    exitCode: input.exitCode,
+    timedOut: input.timedOut,
+    cancelledReason: input.cancelledReason,
+    artifactPath: input.logCreated ? input.artifactPath : null,
+  }
 }
 
 export type GateEligibility =
@@ -160,6 +191,17 @@ export function isGateToolingPath(path: string, gateCommand: string): boolean {
   )
 }
 
+/** Reduce the repository observations to the sorted gate inputs recorded as evidence. */
+export function changedGateToolingPaths(input: {
+  diffPaths: readonly string[]
+  untrackedPaths: readonly string[]
+  gateCommand: string
+}): string[] {
+  return [...new Set([...input.diffPaths, ...input.untrackedPaths])]
+    .filter((path) => isGateToolingPath(path, input.gateCommand))
+    .sort()
+}
+
 /** Keep the last complete UTF-8 text that fits in the worker-context bound. */
 export function boundedGateOutputTail(output: string, bound = GATE_OUTPUT_TAIL_BYTES): string {
   const bytes = Buffer.from(output)
@@ -175,8 +217,8 @@ export type GateResult = {
   timedOut: boolean
   elapsedMs: number
   outputTail: string
-  outputPath: string
-  artifactPath: string
+  outputPath?: string
+  artifactPath?: string
 }
 
 export function shapeGateResult(input: {
@@ -184,8 +226,8 @@ export function shapeGateResult(input: {
   timedOut: boolean
   elapsedMs: number
   output: string
-  outputPath: string
-  artifactPath: string
+  outputPath?: string
+  artifactPath?: string
 }): GateResult {
   return {
     exitCode: input.exitCode,
@@ -202,8 +244,12 @@ export function formatGateResult(result: GateResult): string {
     `Gate exit code: ${result.exitCode}`,
     `Timed out: ${result.timedOut}`,
     `Elapsed: ${result.elapsedMs}ms`,
-    `Full output now: ${result.outputPath}`,
-    `This log moves to the run artifacts at close: ${result.artifactPath}`,
+    ...(result.outputPath && result.artifactPath
+      ? [
+          `Full output now: ${result.outputPath}`,
+          `This log moves to the run artifacts at close: ${result.artifactPath}`,
+        ]
+      : ['No gate log was created.']),
     'Combined output tail:',
     result.outputTail || '(no output)',
   ].join('\n')

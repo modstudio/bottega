@@ -10,7 +10,6 @@ const source: TriageRestoreSource = {
   outboxId: 10,
   recordId: 'original-finding',
   reviewRecordId: 'review-record',
-  localId: 4,
   ordinal: 2,
   severity: 'high',
   location: 'file.ts:2',
@@ -25,7 +24,7 @@ const source: TriageRestoreSource = {
 function facts(overrides: Partial<TriageRestoreFacts> = {}): TriageRestoreFacts {
   return {
     finding: {
-      id: 4,
+      displayHandle: '41/2',
       reviewRecordId: 'review-record',
       ordinal: 2,
       severity: 'high',
@@ -63,7 +62,7 @@ test('ignores withheld identity fields but still requires structural identity', 
     source: withheldSource,
   })
   expect(
-    decideTriageRestore(facts({ source: { ...withheldSource, localId: source.localId + 1 } })),
+    decideTriageRestore(facts({ source: { ...withheldSource, reviewRecordId: 'other-review' } })),
   ).toEqual({ action: 'skip', reason: TRIAGE_RESTORE_SKIP_REASONS.identityMismatch })
 })
 

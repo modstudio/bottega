@@ -10,7 +10,12 @@ import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { machineId } from './record/machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
-import { enqueueReview } from './review/review-outbox.ts'
+import {
+  duplicateFindingRefusal,
+  type ParsedDuplicateFinding,
+  parseDuplicateFinding,
+} from './review/review-duplicate-link.ts'
+import { enqueueReview, enqueueReviewFinding } from './review/review-outbox.ts'
 import {
   assertRunReviewFindingIntegrity,
   completeReview,
@@ -76,10 +81,10 @@ type ScoreOptions = JudgeOptions & { dashboardAuthorized: boolean }
 type JudgmentPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
-  pairHint(partner: { id: number; agent: string }): string
+  pairHint(partner: { id: string; agent: string }): string
 }
 function recordScoreVerdict(
-  id: number,
+  id: string,
   delivery: Delivery,
   quality: Quality | null,
   fidelity: Fidelity | null,
@@ -89,9 +94,9 @@ function recordScoreVerdict(
 ): void {
   db()
     .query(
-      `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+      `INSERT INTO score (record_id, run_record_id, delivery, quality, fidelity, note, scored_at, scored_by)
      VALUES (?,?,?,?,?,?,?,?)
-     ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
+     ON CONFLICT(run_record_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
                                        fidelity=excluded.fidelity,
                                        note=CASE
                                          WHEN score.note IS NULL OR trim(score.note) = ''
@@ -107,7 +112,7 @@ function recordScoreVerdict(
 }
 
 type JudgeableRun = {
-  id: number
+  record_id: string
   agent: string
   job: string
   status: string
@@ -123,13 +128,13 @@ type JudgeableRun = {
 }
 
 function requireJudgeableRun(
-  requestedId: number,
+  requestedId: string,
   row: JudgeableRun | null,
   flags: JudgmentFlags,
   options: JudgeOptions,
 ): JudgeableRun {
   if (!row) throw new Error(`no run ${requestedId}`)
-  const id = row.id
+  const id = row.record_id
   if (['running', 'asking'].includes(row.status)) {
     throw new Error(`run ${id} is ${row.status}, not terminal`)
   }
@@ -159,7 +164,7 @@ function requireJudgeableRun(
 }
 
 function refuseForeignScore(
-  id: number,
+  id: string,
   owner: ReturnType<typeof judgeability>,
   flags: JudgmentFlags,
   dashboardAuthorized: boolean,
@@ -214,27 +219,27 @@ function scoredVoidFidelity(
 }
 
 function enqueueTerminalRunRecord(
-  id: number,
+  id: string,
   evidenceUnvoid: { note: string } | null = null,
 ): void {
   const row = db()
-    .query<{ record_id: string | null; finished_at: string }, [number]>(
+    .query<{ record_id: string | null; finished_at: string }, [string]>(
       `SELECT record_id, COALESCE(last_event_at, started_at) AS finished_at FROM run
-        WHERE id=? AND status IN ('ok','failed','stale','stopped')`,
+        WHERE record_id=? AND status IN ('ok','failed','stale','stopped')`,
     )
     .get(id)
   if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at, evidenceUnvoid)
 }
 
-function clearUnjudgedOwnerExclusion(id: number): boolean {
+function clearUnjudgedOwnerExclusion(id: string): boolean {
   return (
     db()
-      .query('UPDATE run SET evidence_excluded=NULL WHERE id=? AND evidence_excluded=?')
+      .query('UPDATE run SET evidence_excluded=NULL WHERE record_id=? AND evidence_excluded=?')
       .run(id, UNJUDGED_EXCLUSION_REASON).changes > 0
   )
 }
 
-function reviveUnjudgedOwnerEvidence(id: number): void {
+function reviveUnjudgedOwnerEvidence(id: string): void {
   if (clearUnjudgedOwnerExclusion(id)) enqueueTerminalRunRecord(id)
 }
 
@@ -253,11 +258,11 @@ function requestedEvidenceExclusion(
   return 'blocked-by-tree'
 }
 
-function refuseScoredBlockedByTree(id: number, exclusion: EvidenceExclusion): void {
+function refuseScoredBlockedByTree(id: string, exclusion: EvidenceExclusion): void {
   if (exclusion !== 'blocked-by-tree') return
   const verdict = db()
-    .query<{ delivery: string; quality: string | null }, [number]>(
-      'SELECT delivery, quality FROM score WHERE run_id=?',
+    .query<{ delivery: string; quality: string | null }, [string]>(
+      'SELECT delivery, quality FROM score WHERE run_record_id=?',
     )
     .get(id)
   if (!verdict) return
@@ -268,7 +273,7 @@ function refuseScoredBlockedByTree(id: number, exclusion: EvidenceExclusion): vo
 }
 
 function recordEvidenceExclusion(
-  id: number,
+  id: string,
   row: { failure_kind: string | null; job: string },
   exclusion: EvidenceExclusion,
   flags: JudgmentFlags,
@@ -291,7 +296,7 @@ function recordEvidenceExclusion(
   writeTransaction(() => {
     authority = reauthorizeRunMutation(authority, 'void')
     authority = adoptRunMutation(authority, 'void')
-    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(excludedReason, id)
+    db().query('UPDATE run SET evidence_excluded=? WHERE record_id=?').run(excludedReason, id)
     if (!blocked && !cannotRecord && delivery) {
       recordScoreVerdict(
         id,
@@ -309,7 +314,7 @@ function recordEvidenceExclusion(
     const hasLiveTurn = db()
       .query(
         `SELECT 1 FROM run
-          WHERE (id=? OR parent_run_id=?) AND status IN ('running','asking')
+          WHERE (record_id=? OR parent_run_record_id=?) AND status IN ('running','asking')
           LIMIT 1`,
       )
       .get(id, id)
@@ -334,7 +339,7 @@ function recordEvidenceExclusion(
 }
 
 function recordEvidenceUnvoid(
-  id: number,
+  id: string,
   evidenceExcluded: string | null,
   flags: JudgmentFlags,
   options: ScoreOptions,
@@ -352,30 +357,156 @@ function recordEvidenceUnvoid(
   let authority = authorizeRunMutation(id, 'unvoid')
   writeTransaction(() => {
     authority = adoptRunMutation(authority, 'unvoid')
-    db().query('UPDATE run SET evidence_excluded=NULL WHERE id=?').run(id)
+    db().query('UPDATE run SET evidence_excluded=NULL WHERE record_id=?').run(id)
     enqueueTerminalRunRecord(id, { note })
     auditRunMutation(authority, 'unvoid', note)
   })
   presentation.log(`unvoided run ${id}: routing evidence restored; existing verdict unchanged`)
 }
+function storedReviewFindings(reviewRecordId: string) {
+  return db()
+    .query(
+      'SELECT ordinal, disposition FROM review_finding WHERE review_record_id=? ORDER BY ordinal',
+    )
+    .all(reviewRecordId) as { ordinal: number; disposition: string | null }[]
+}
+
+function findingForRunReviewOrdinal(
+  runId: string,
+  ordinal: number,
+): {
+  record_id: string
+  review_record_id: string
+  duplicate_of_finding_record_id: string | null
+} | null {
+  return db()
+    .query<
+      {
+        record_id: string
+        review_record_id: string
+        duplicate_of_finding_record_id: string | null
+      },
+      [number, string]
+    >(
+      `SELECT finding.record_id,finding.review_record_id,finding.duplicate_of_finding_record_id
+         FROM review_lens scored_lens
+         JOIN review_finding finding
+           ON finding.review_record_id=scored_lens.review_record_id AND finding.ordinal=?
+         JOIN review_lens finding_lens ON finding_lens.record_id=finding.review_lens_record_id
+        WHERE scored_lens.run_record_id=? AND finding_lens.run_record_id=scored_lens.run_record_id`,
+    )
+    .get(ordinal, runId)
+}
+
+function recordDuplicateFindingLink(currentRunId: string, link: ParsedDuplicateFinding): void {
+  const current = findingForRunReviewOrdinal(currentRunId, link.ordinal)
+  const other = findingForRunReviewOrdinal(link.otherRunId, link.otherOrdinal)
+  const runs = db()
+    .query<{ record_id: string; job: string; head_commit: string | null }, [string, string]>(
+      'SELECT record_id,job,head_commit FROM run WHERE record_id IN (?,?)',
+    )
+    .all(currentRunId, link.otherRunId)
+  const currentRun = runs.find((run) => run.record_id === currentRunId)
+  const otherRun = runs.find((run) => run.record_id === link.otherRunId)
+  const refusal = duplicateFindingRefusal({
+    currentRunId,
+    currentFindingId: current?.record_id ?? null,
+    currentReviewId: current?.review_record_id ?? null,
+    currentTip: currentRun?.head_commit ?? null,
+    otherRunId: link.otherRunId,
+    otherFindingsJob: Boolean(otherRun && JOBS[otherRun.job]?.findings),
+    otherFindingId: other?.record_id ?? null,
+    otherReviewId: other?.review_record_id ?? null,
+    otherTip: otherRun?.head_commit ?? null,
+    currentDuplicateOfFindingId: current?.duplicate_of_finding_record_id ?? null,
+  })
+  if (refusal) {
+    throw new Error(
+      `refused --duplicate ${link.ordinal}=${link.otherRunId}#${link.otherOrdinal}: ${refusal}`,
+    )
+  }
+  db()
+    .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')
+    .run(other!.record_id, current!.record_id)
+  enqueueReviewFinding(db(), current!.record_id)
+}
+
+function completeReviewWithoutFindings(reviewRecordId: string, scoredAt: string): void {
+  db().query('UPDATE review SET completed_at=? WHERE record_id=?').run(scoredAt, reviewRecordId)
+  enqueueReview(db(), reviewRecordId)
+}
+
+type ParsedFindingTriage = {
+  ordinal: number
+  disposition: Disposition
+  category: string | undefined
+  severity: string | undefined
+}
+
+function parseFindingFlags(flags: JudgmentFlags): ParsedFindingTriage[] {
+  const findings = flags.values('finding').map((value) => {
+    const matched = value.match(/^(\d+)=(accepted|modified|rejected|skipped):(.+)$/)
+    if (!matched) {
+      throw new Error(
+        `bad --finding ${JSON.stringify(value)}; use N=accepted:high or N=rejected:below-bar`,
+      )
+    }
+    const ordinal = Number(matched[1])
+    const disposition = matched[2] as Disposition
+    const detail = matched[3]!
+    if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as ReviewSeverity)) {
+      throw new Error(`finding ${ordinal} severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
+    }
+    return {
+      ordinal,
+      disposition,
+      category: disposition === 'rejected' ? detail : undefined,
+      severity: disposition === 'rejected' ? undefined : detail,
+    }
+  })
+  if (new Set(findings.map((finding) => finding.ordinal)).size !== findings.length) {
+    throw new Error('--finding names the same finding more than once')
+  }
+  return findings
+}
+
+function finishReview(
+  reviewRecordId: string,
+  runId: string,
+  findings: ParsedFindingTriage[],
+  duplicates: ParsedDuplicateFinding[],
+): void {
+  for (const finding of findings) {
+    triageFinding(
+      reviewRecordId,
+      finding.ordinal,
+      finding.disposition,
+      finding.category,
+      finding.severity,
+    )
+  }
+  for (const link of duplicates) recordDuplicateFindingLink(runId, link)
+  completeReview(reviewRecordId)
+}
+
 export async function judgeRun(
-  requestedId: number,
+  requestedId: string,
   flags: JudgmentFlags,
   options: JudgeOptions,
   presentation: JudgmentPresentation,
 ) {
   const loaded = db()
     .query(
-      `SELECT root.id, root.agent, root.job, root.status, root.session_id, root.failure_kind,
+      `SELECT root.record_id, root.agent, root.job, root.status, root.session_id, root.failure_kind,
           root.output_path, root.repo, root.cwd, root.worktree, root.branch, root.base_commit,
           root.worktree_source
      FROM run requested
-     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-    WHERE requested.id=?`,
+     JOIN run root ON root.record_id = COALESCE(requested.parent_run_record_id, requested.record_id)
+    WHERE requested.record_id=?`,
     )
     .get(requestedId) as JudgeableRun | null
   const row = requireJudgeableRun(requestedId, loaded, flags, options)
-  const id = row.id
+  const id = row.record_id
   assertAgentWorkRun(id, row.job, 'judged')
   const words = options.words
   const delivery = words[0] as Delivery | undefined
@@ -418,20 +549,20 @@ export async function judgeRun(
     }
   }
   let parsedOutput: ReturnType<typeof parseReviewOutput> = null
-  let reviewId: number | null = null
+  let reviewRecordId: string | null = null
   let storedGrades: Partial<Record<(typeof gradeNames)[number], string>> = {}
   let reviewFindings: { ordinal: number; disposition: string | null }[] = []
   if (findingsJob) {
     const lens = db()
       .query(
-        'SELECT review_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
+        'SELECT review_record_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_record_id=?',
       )
       .get(id) as
-      | ({ review_id: number } & Record<(typeof gradeNames)[number], string | null>)
+      | ({ review_record_id: string } & Record<(typeof gradeNames)[number], string | null>)
       | null
-    reviewId = lens?.review_id ?? null
+    reviewRecordId = lens?.review_record_id ?? null
     assertRunReviewFindingIntegrity(id)
-    if (delivery !== 'none' && !reviewId) {
+    if (delivery !== 'none' && !reviewRecordId) {
       if (row.output_path && existsSync(row.output_path)) {
         parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
       }
@@ -443,36 +574,16 @@ export async function judgeRun(
       storedGrades = Object.fromEntries(
         gradeNames.flatMap((name) => (lens?.[name] ? [[name, lens[name]]] : [])),
       )
-      reviewFindings = db()
-        .query('SELECT ordinal, disposition FROM review_finding WHERE review_id=? ORDER BY ordinal')
-        .all(reviewId) as { ordinal: number; disposition: string | null }[]
+      reviewFindings = storedReviewFindings(reviewRecordId!)
     }
   }
   const gradeValues = Object.fromEntries(
     gradeNames.map((name) => [name, suppliedGrades[name] ?? storedGrades[name]]),
   ) as Record<(typeof gradeNames)[number], string | undefined>
-  const parsedFindings = flags.values('finding').map((value) => {
-    const matched = value.match(/^(\d+)=(accepted|modified|rejected|skipped):(.+)$/)
-    if (!matched) {
-      throw new Error(
-        `bad --finding ${JSON.stringify(value)}; use N=accepted:high or N=rejected:below-bar`,
-      )
-    }
-    const ordinal = Number(matched[1])
-    const disposition = matched[2] as Disposition
-    const detail = matched[3]!
-    if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as ReviewSeverity)) {
-      throw new Error(`finding ${ordinal} severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
-    }
-    return {
-      ordinal,
-      disposition,
-      category: disposition === 'rejected' ? detail : undefined,
-      severity: disposition === 'rejected' ? undefined : detail,
-    }
-  })
-  if (new Set(parsedFindings.map((finding) => finding.ordinal)).size !== parsedFindings.length) {
-    throw new Error('--finding names the same finding more than once')
+  const parsedFindings = parseFindingFlags(flags)
+  const parsedDuplicates = flags.values('duplicate').map(parseDuplicateFinding)
+  if (new Set(parsedDuplicates.map((link) => link.ordinal)).size !== parsedDuplicates.length) {
+    throw new Error('--duplicate names the same finding more than once')
   }
   const partners = pairPartners(id, sessionId())
   const comparisonNames = ['better-than', 'worse-than', 'same-as'] as const
@@ -484,10 +595,10 @@ export async function judgeRun(
   const comparisonIds = comparison ? parseRunIds(flags.flag(comparison)!, `--${comparison}`) : []
   if (findingsJob && delivery !== 'none') {
     for (const name of gradeNames) if (!gradeValues[name]) missing.push(`--${name}`)
-    const allowed = reviewId
+    const allowed = reviewRecordId
       ? reviewFindings.map((finding) => finding.ordinal)
       : parsedOutput!.findings.map((_, index) => index + 1)
-    const expected = reviewId
+    const expected = reviewRecordId
       ? reviewFindings
           .filter((finding) => finding.disposition === null)
           .map((finding) => finding.ordinal)
@@ -499,19 +610,22 @@ export async function judgeRun(
     }
     const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))
     if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
-  } else if (parsedFindings.length || gradeNames.some((name) => suppliedGrades[name])) {
+  } else if (
+    [parsedFindings.length, parsedDuplicates.length].some(Boolean) ||
+    gradeNames.some((name) => suppliedGrades[name])
+  ) {
     throw new Error(`${row.job} does not take findings close-out flags`)
   }
   if (partners.length && !comparison) {
     missing.push(
-      `--better-than ${partners.map((partner) => partner.id).join(',')} | ` +
-        `--worse-than ${partners.map((partner) => partner.id).join(',')} | ` +
-        `--same-as ${partners.map((partner) => partner.id).join(',')}`,
+      `--better-than ${partners.map((partner) => partner.record_id).join(',')} | ` +
+        `--worse-than ${partners.map((partner) => partner.record_id).join(',')} | ` +
+        `--same-as ${partners.map((partner) => partner.record_id).join(',')}`,
     )
   }
   if (comparison) {
-    const expected = partners.map((partner) => partner.id).sort((a, b) => a - b)
-    const actual = [...comparisonIds].sort((a, b) => a - b)
+    const expected = partners.map((partner) => partner.record_id).sort((a, b) => a.localeCompare(b))
+    const actual = [...comparisonIds].sort((a, b) => a.localeCompare(b))
     if (
       expected.length !== actual.length ||
       expected.some((value, index) => value !== actual[index])
@@ -529,32 +643,20 @@ export async function judgeRun(
   const note = options.note
   let authority = runMutationActor(id)
   const scoredAt = nowIso()
-  const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
+  const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_record_id=?').get(id))
   const scorer = process.env.ORCH_SCORER ?? 'claude'
   const scoredFidelity = writes && delivery !== 'none' ? (fidelity ?? null) : null
   writeTransaction(() => {
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
     if (findingsJob && delivery !== 'none') {
-      reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
+      reviewRecordId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
     }
     recordScoreVerdict(id, delivery!, quality ?? null, scoredFidelity, note, scoredAt, scorer)
     reviveUnjudgedOwnerEvidence(id)
-    if (reviewId) {
+    if (reviewRecordId) {
       if (delivery === 'none') {
-        db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
-        enqueueReview(db(), reviewId)
-      } else {
-        for (const finding of parsedFindings) {
-          triageFinding(
-            reviewId,
-            finding.ordinal,
-            finding.disposition,
-            finding.category,
-            finding.severity,
-          )
-        }
-        completeReview(reviewId)
-      }
+        completeReviewWithoutFindings(reviewRecordId, scoredAt)
+      } else finishReview(reviewRecordId, id, parsedFindings, parsedDuplicates)
     }
     if (comparison === 'better-than')
       recordDuels(id, comparisonIds, sessionId(), scoredAt, flags.has('force'))
@@ -566,10 +668,10 @@ export async function judgeRun(
     enqueueScoreRecord(db(), id, machineId())
   })
   presentation.log(
-    `judged run ${id}: score${reviewId ? `, completed review ${reviewId}` : ''}` +
+    `judged run ${id}: score${reviewRecordId ? ', completed review' : ''}` +
       `${comparison ? ', pair recorded' : ''}`,
   )
-  return { id, row, reviewId, comparison }
+  return { id, row, reviewId: reviewRecordId, comparison }
 }
 const REVIEW_GRADE_FLAGS = ['reproduced', 'coverage', 'limits', 'overlap'] as const
 
@@ -631,7 +733,7 @@ function refuseAxesEarly(
  */
 function scoringHelp(
   refusal: VerdictRefusal,
-  id: number,
+  id: string,
   delivery: string | undefined,
   quality: string | undefined,
   jobName: string,
@@ -667,7 +769,7 @@ function scoringHelp(
 }
 
 function recordRequestedUnvoid(
-  id: number,
+  id: string,
   jobName: string,
   evidenceExcluded: string | null,
   flags: JudgmentFlags,
@@ -681,7 +783,7 @@ function recordRequestedUnvoid(
 }
 
 function refusePendingAgentScore(
-  id: number,
+  id: string,
   agent: string,
   failureKind: string | null,
   flags: JudgmentFlags,
@@ -692,38 +794,38 @@ function refusePendingAgentScore(
 }
 
 /** Refuses a --void aimed at a child turn before any write; routing reads roots only. */
-function assertVoidTargetsRoot(requestedId: number, rootId: number, voidRequested: boolean): void {
+function assertVoidTargetsRoot(requestedId: string, rootId: string, voidRequested: boolean): void {
   const refusal = refuseChildTurnVoid(requestedId, rootId, voidRequested)
   if (refusal) throw new Error(refusal)
 }
 
 export async function scoreRun(
-  requestedId: number,
+  requestedId: string,
   flags: JudgmentFlags,
   options: ScoreOptions,
   presentation: JudgmentPresentation,
 ): Promise<void> {
   const row = db()
     .query(
-      `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,
+      `SELECT root.record_id, root.agent, root.job, root.session_id, root.parent_run_record_id,
           root.failure_kind, root.output_path, root.probe, root.evidence_excluded
      FROM run requested
-     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-    WHERE requested.id = ?`,
+     JOIN run root ON root.record_id = COALESCE(requested.parent_run_record_id, requested.record_id)
+    WHERE requested.record_id = ?`,
     )
     .get(requestedId) as {
-    id: number
+    record_id: string
     agent: string
     job: string
     session_id: string | null
-    parent_run_id: number | null
+    parent_run_record_id: string | null
     failure_kind: string | null
     output_path: string | null
     probe: number
     evidence_excluded: string | null
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
-  const id = row.id
+  const id = row.record_id
   assertVoidTargetsRoot(requestedId, id, flags.has('void'))
   if (recordRequestedUnvoid(id, row.job, row.evidence_excluded, flags, options, presentation))
     return
@@ -803,11 +905,11 @@ export async function scoreRun(
   if (findingsJob && delivery !== 'none') {
     const existing = db()
       .query(
-        `SELECT rl.id, COUNT(rf.id) AS findings
-       FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
-      WHERE rl.run_id=? GROUP BY rl.id`,
+        `SELECT rl.record_id, COUNT(rf.record_id) AS findings
+       FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
+      WHERE rl.run_record_id=? GROUP BY rl.record_id`,
       )
-      .get(id) as { id: number; findings: number } | null
+      .get(id) as { record_id: string; findings: number } | null
     let output: ReturnType<typeof parseReviewOutput> = null
     if (!existing) {
       if (!row.output_path || !existsSync(row.output_path)) {
@@ -884,7 +986,7 @@ export async function scoreRun(
       recordTies(id, otherIds, sessionId(), comparedAt, flags.has('force'))
     }
   }
-  const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
+  const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_record_id=?').get(id))
   const scoredAt = nowIso()
   const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
   writeTransaction(() => {
@@ -910,6 +1012,6 @@ export async function scoreRun(
   presentation.log(`run ${id} (${row.agent}/${row.job}) scored ${axes}  [${w}]`)
   if (!comparison) {
     for (const partner of pairPartners(id, sessionId()))
-      presentation.log(presentation.pairHint(partner))
+      presentation.log(presentation.pairHint({ id: partner.record_id, agent: partner.agent }))
   }
 }

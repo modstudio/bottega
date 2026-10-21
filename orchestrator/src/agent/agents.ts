@@ -34,6 +34,7 @@ export type Agent = {
   harness?: string
   backend?: string | null
   baseUrl?: string | null
+  apiKeySecret?: string | null
   enabled?: boolean
   disabledReason?: string | null
   probedAt?: string | null
@@ -43,12 +44,14 @@ export type Agent = {
   jobs?: string[] | null
   preferredJobs?: string[]
   maxConcurrent?: number | null
+  /** Whether automatic routing may spend this metered agent on read-only jobs. */
+  routeMetered?: boolean
   bin: string
   /** Exact orch-ask command this harness registration configures, if any. */
   askServerCommand?(environment: Record<string, string>): string[] | null
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
-  /** What its usage costs. Metered is refused; free and none spend no quota. */
+  /** What its usage costs. Metered requires a per-agent read-only routing opt-in. */
   billing: 'subscription' | 'free' | 'metered' | 'none' | 'unknown'
   /** Who operates the agent endpoint. */
   operatedBy: 'vendor' | 'self'

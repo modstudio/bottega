@@ -59,8 +59,10 @@ export function isHelpShapedInvocation(argv: string[]): boolean {
 export function isStoreFreeInvocation(argv: string[]): boolean {
   return (
     isHelpShapedInvocation(argv) ||
+    (argv[0] === 'record' && argv[1] === 'use') ||
     (argv[0] === 'setup' && argv[1] === 'facts') ||
     (argv[0] === 'test-substance' && argv[1] === 'judge') ||
+    (argv[0] === 'hub-import' && argv[1] === 'judge') ||
     (argv[0] === 'release' && argv[1] === 'check')
   )
 }
@@ -87,11 +89,17 @@ async function degradedCollection(argv: string[], error: unknown): Promise<numbe
 }
 
 export async function main(argv: string[]): Promise<number> {
+  return cliEntry(argv, fullCli)
+}
+
+type FullCliEntry = (argv: string[], storeFree: boolean) => Promise<number>
+
+async function cliEntry(argv: string[], enterFullCli: FullCliEntry): Promise<number> {
   const storeFree = isStoreFreeInvocation(argv)
   if (argv.length === 1 && argv[0] === '--version') return versionCommand()
   if (argv[0] === 'init-db' && !storeFree) return initDatabaseCommand(argv)
   try {
-    return await fullCli(argv, storeFree)
+    return await enterFullCli(argv, storeFree)
   } catch (error) {
     if (argv[0] === 'ask-server') {
       const { writeAskServerFailure } = await import('../ask/ask-failure.ts')
@@ -100,6 +108,11 @@ export async function main(argv: string[]): Promise<number> {
     if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
     return degradedCollection(argv, error)
   }
+}
+
+/** Test-only seam proving the executable entry passes store freedom into CLI loading. */
+export function runCliEntryForTest(argv: string[], enterFullCli: FullCliEntry): Promise<number> {
+  return cliEntry(argv, enterFullCli)
 }
 
 /** Structured owner output for the product front door's composite outbox listing. */

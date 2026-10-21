@@ -7,7 +7,7 @@ import { age } from './monitor-conditions.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 type DockerNetworkOwner = {
-  rootId: number
+  rootId: string
   terminal: boolean
   hasWorktree: boolean
 }
@@ -19,7 +19,7 @@ export type ObservedDockerNetworkInventory =
         name: string
         createdAt: string | null
         workingDir: string | null
-        runId: number | null
+        runId: string | null
         workingDirExists: boolean
       }[]
       owners: DockerNetworkOwner[]
@@ -56,6 +56,37 @@ export function orphanDockerNetworkConditions(
   return { conditions, errors: [] }
 }
 
+export type ComposeWorktreeResource = {
+  kind: 'container' | 'compose-project'
+  name: string
+  project: string
+  workingDir: string
+  workingDirExists: boolean
+}
+
+/** Report Compose-owned resources only when their declared worktree directory vanished. */
+export function orphanComposeResourceConditions(
+  resources: readonly ComposeWorktreeResource[],
+): MonitorCondition[] {
+  const reportedProjects = new Set<string>()
+  return resources.flatMap((resource): MonitorCondition[] => {
+    if (resource.workingDirExists || !resource.workingDir.includes('/.claude/worktrees/')) return []
+    if (reportedProjects.has(resource.project)) return []
+    reportedProjects.add(resource.project)
+    const subject = `compose-project:${resource.project}`
+    return [
+      {
+        kind: 'orphan-compose-resource',
+        subject,
+        since: null,
+        ageMs: null,
+        detail: `Compose project ${resource.project} has a missing working directory: ${resource.workingDir}`,
+        action: `report only; lifecycle action is docker compose -p ${resource.project} down`,
+      },
+    ]
+  })
+}
+
 /** Report sandbox homes only after every turn in their conversation is terminal. */
 export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInventory): {
   conditions: MonitorCondition[]
@@ -85,7 +116,7 @@ export type TrustEntryInventory =
   | {
       ascertainable: true
       entries: {
-        runId: number
+        runId: string
         heading: string
         path: string | null
         pathExists: boolean

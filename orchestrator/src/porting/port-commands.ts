@@ -7,9 +7,10 @@ import { DB_PATH } from '../database/db.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import {
   addDoctrineRule,
-  addPair,
   addSkip,
   baselineForPair,
+  type LedgerRef,
+  type LedgerSource,
   ledgerRef,
   listDoctrineRules,
   listLedgerRefs,
@@ -18,18 +19,17 @@ import {
   removeLedgerRef,
   resolveLedgerRef,
   retireDoctrineRule,
-  setBaseline,
+  setBaselineForProjects,
   setLedgerRef,
 } from './porting.ts'
-import {
-  applyImport,
-  ImportRefusalError,
-  planImport,
-  projectsForDryRun,
-  sourceCoverage,
-} from './porting-import.ts'
+import { applyImport, planImport, sourceCoverage } from './porting-import.ts'
+import { ImportRefusalError } from './porting-import-contract.ts'
+import { projectsForDryRun } from './porting-import-projects.ts'
 
-type PortFlags = { has(name: string): boolean; flag(name: string): string | undefined }
+type PortFlags = {
+  has(name: string): boolean
+  flag(name: string): string | undefined
+}
 type PortPresentation = {
   log(...values: unknown[]): void
   writeStdout(value: string): Promise<void>
@@ -40,6 +40,26 @@ function refusePortUsage(usage: string): never {
   throw new Error(`${PLATFORM_SLUG} doc port ${usage}`)
 }
 
+function namedPortProject(name: string) {
+  const project = projectByName(name)
+  if (!project)
+    throw new Error(
+      `unknown project "${name}". Registered: ${projects()
+        .map((row) => row.name)
+        .join(', ')}`,
+    )
+  return project
+}
+
+const portProjectLabel = (recordId: string) =>
+  projects().find((candidate) => candidate.recordId === recordId)?.name ?? `project:${recordId}`
+
+const portRefListLine = (row: LedgerRef) =>
+  `${portProjectLabel(row.target_project_record_id)} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`
+
+const portRefSourceLine = (source: LedgerSource) =>
+  `  ${portProjectLabel(source.source_project_record_id)}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`
+
 export async function portCommand(
   group: string | undefined,
   action: string | undefined,
@@ -49,23 +69,12 @@ export async function portCommand(
 ): Promise<void> {
   const { has, flag } = flags
   const { log, writeStdout, exitCode } = presentation
-  const namedProject = (name: string) => {
-    const project = projectByName(name)
-    if (!project)
-      throw new Error(
-        `unknown project "${name}". Registered: ${projects()
-          .map((row) => row.name)
-          .join(', ')}`,
-      )
-    return project
-  }
-  const namedPair = (sourceName: string, targetName: string, create = false) => {
-    const source = namedProject(sourceName)
-    const target = namedProject(targetName)
-    if (source.id === target.id)
+  const namedPair = (sourceName: string, targetName: string) => {
+    const source = namedPortProject(sourceName)
+    const target = namedPortProject(targetName)
+    if (source.recordId === target.recordId)
       throw new Error('a port source and target must be different projects')
-    const pair =
-      pairByProjects(source.id, target.id) ?? (create ? addPair(source.id, target.id) : null)
+    const pair = pairByProjects(source.recordId, target.recordId)
     return { pair, source, target }
   }
   const output = (value: unknown, line: string) => log(has('json') ? JSON.stringify(value) : line)
@@ -83,12 +92,22 @@ export async function portCommand(
       projects: 'projects.md',
     } as const
     const files = {} as Record<keyof typeof names, string>
-    const ioRefusals: { kind: 'refusal'; what: string; where: string; why: string }[] = []
+    const ioRefusals: {
+      kind: 'refusal'
+      what: string
+      where: string
+      why: string
+    }[] = []
     try {
       if (!statSync(dir).isDirectory()) throw new Error('not a directory')
       readdirSync(dir)
     } catch (error) {
-      ioRefusals.push({ kind: 'refusal', what: 'source directory', where: dir, why: String(error) })
+      ioRefusals.push({
+        kind: 'refusal',
+        what: 'source directory',
+        where: dir,
+        why: String(error),
+      })
     }
     for (const [key, name] of Object.entries(names) as [keyof typeof names, string][]) {
       const path = join(dir, name)
@@ -146,7 +165,10 @@ export async function portCommand(
       const uncoveredSpans = sourceCoverage(plan, files)
       return {
         ...plan,
-        doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
+        doctrine: plan.doctrine.map((row) => ({
+          ...row,
+          bodyLength: row.body.length,
+        })),
         docs: plan.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
         uncoveredSpans,
       }
@@ -171,7 +193,7 @@ export async function portCommand(
         log(`  ${row.taskKey}  note=${JSON.stringify(row.note)}`)
         for (const source of row.sources) {
           log(
-            `    source_project_id=${source.source_project_id} commits=${JSON.stringify(source.commits)} paths=${JSON.stringify(source.paths)} note=${JSON.stringify(source.note)}`,
+            `    source_project_record_id=${source.source_project_record_id} commits=${JSON.stringify(source.commits)} paths=${JSON.stringify(source.paths)} note=${JSON.stringify(source.note)}`,
           )
         }
       }
@@ -230,7 +252,7 @@ export async function portCommand(
       output(null, `no port pair from "${sourceName}" to "${targetName}"`)
       return
     }
-    const value = { pair, baseline: baselineForPair(pair.id) }
+    const value = { pair, baseline: baselineForPair(pair.record_id) }
     output(
       value,
       value.baseline?.source_commit
@@ -249,8 +271,9 @@ export async function portCommand(
       refusePortUsage('baseline set <source> <target> <commit> [--json] | --clear')
     }
     const commit = clear ? null : (rawCommit ?? null)
-    const { pair } = namedPair(sourceName, targetName, true)
-    const baseline = setBaseline(pair!.id, commit)
+    const { source, target } = namedPair(sourceName, targetName)
+    const ids = [source.recordId, target.recordId] as const
+    const { pair, baseline } = await setBaselineForProjects(...ids, commit)
     output(
       { pair, baseline },
       commit
@@ -266,7 +289,7 @@ export async function portCommand(
     if (!sourceName || !targetName)
       throw new Error(`${PLATFORM_SLUG} doc port skip list <source> <target> [--json]`)
     const { pair } = namedPair(sourceName, targetName)
-    const rows = pair ? listSkips(pair.id) : []
+    const rows = pair ? listSkips(pair.record_id) : []
     if (has('json')) {
       log(JSON.stringify(rows))
       return
@@ -288,7 +311,7 @@ export async function portCommand(
       throw new Error(
         `no port pair from "${sourceName}" to "${targetName}"; set its baseline first`,
       )
-    const row = addSkip(pair.id, candidate, reason)
+    const row = await addSkip(pair.record_id, candidate, reason)
     output(row, `skipped ${candidate}: ${reason}`)
     return
   }
@@ -299,12 +322,7 @@ export async function portCommand(
       log(JSON.stringify(rows))
       return
     }
-    for (const row of rows) {
-      const target = projects().find((project) => project.id === row.target_project_id)
-      log(
-        `${target?.name ?? `project:${row.target_project_id}`} ${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`,
-      )
-    }
+    for (const row of rows) log(portRefListLine(row))
     return
   }
 
@@ -313,24 +331,15 @@ export async function portCommand(
     const projectName = flag('project')
     if (!taskKey || !projectName)
       throw new Error(`${PLATFORM_SLUG} doc port ref show <task-key> --project PROJECT [--json]`)
-    const target = namedProject(projectName)
-    const ref = ledgerRef(target.id, taskKey)
+    const target = namedPortProject(projectName)
+    const ref = ledgerRef(target.recordId, taskKey)
     if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     if (has('json')) {
       log(JSON.stringify(ref))
       return
     }
     log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
-    for (const source of ref.sources) {
-      const project = projects().find((candidate) => candidate.id === source.source_project_id)
-      if (!project)
-        throw new Error(
-          `ledger ref ${taskKey} names unregistered project id ${source.source_project_id}`,
-        )
-      log(
-        `  ${project.name}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`,
-      )
-    }
+    for (const source of ref.sources) log(portRefSourceLine(source))
     return
   }
 
@@ -369,15 +378,15 @@ export async function portCommand(
         )
       }
       return {
-        source_project_id: namedProject(source.project).id,
+        source_project_record_id: namedPortProject(source.project).recordId,
         commits: source.commits as string[],
         paths: source.paths as string[],
         note: source.note,
       }
     })
-    const ref = setLedgerRef({
+    const ref = await setLedgerRef({
       taskKey,
-      targetProjectId: namedProject(projectName).id,
+      targetProjectId: namedPortProject(projectName).recordId,
       note,
       sources,
     })
@@ -390,7 +399,7 @@ export async function portCommand(
     const projectName = flag('project')
     if (!taskKey || !projectName)
       throw new Error(`${PLATFORM_SLUG} doc port ref resolve <task-key> --project PROJECT [--json]`)
-    const ref = resolveLedgerRef(namedProject(projectName).id, taskKey)
+    const ref = await resolveLedgerRef(namedPortProject(projectName).recordId, taskKey)
     if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     output(ref, `resolved ${taskKey} at ${ref.resolved_at}`)
     return
@@ -401,7 +410,7 @@ export async function portCommand(
     const projectName = flag('project')
     if (!taskKey || !projectName)
       refusePortUsage('ref delete-error <task-key> --project PROJECT [--json]')
-    const removed = removeLedgerRef(namedProject(projectName).id, taskKey)
+    const removed = await removeLedgerRef(namedPortProject(projectName).recordId, taskKey)
     output(
       { removed },
       removed
@@ -438,7 +447,7 @@ export async function portCommand(
         : (() => {
             throw new Error('no body: pass --file F or pipe text on stdin')
           })()
-    const rule = addDoctrineRule(number, title, body)
+    const rule = await addDoctrineRule(number, title, body)
     output(rule, `added doctrine ${number}: ${title}`)
     return
   }
@@ -448,7 +457,7 @@ export async function portCommand(
     if (!Number.isInteger(number) || number <= 0) {
       throw new Error(`${PLATFORM_SLUG} doc port doctrine retire <number> [--json]`)
     }
-    const retired = retireDoctrineRule(number)
+    const retired = await retireDoctrineRule(number)
     output({ retired }, retired ? `retired doctrine ${number}` : `no active doctrine ${number}`)
     return
   }

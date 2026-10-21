@@ -34,7 +34,7 @@ export function recordWorkflowSelfRuling(
   const refusal = selfRulingRefusal(input.resolvedAutonomy, input.floors, basis)
   if (refusal) throw new Error(refusal)
   const at = nowIso()
-  const questionId = upsertWorkflowQuestion(
+  const question = upsertWorkflowQuestion(
     {
       cursorId: input.cursorId,
       workflowKey: input.workflowKey,
@@ -47,7 +47,7 @@ export function recordWorkflowSelfRuling(
   )
   answerWorkflowQuestion(
     {
-      questionId,
+      questionId: question.recordId,
       cursorId: input.cursorId,
       ruling,
       basis,
@@ -58,5 +58,19 @@ export function recordWorkflowSelfRuling(
     },
     database,
   )
-  return { questionId }
+  return { questionId: question.number }
+}
+
+export function bindCloseSelfRuling<T extends { ruling?: number }>(
+  input: Omit<Parameters<typeof recordWorkflowSelfRuling>[0], 'selfRuling'> & {
+    evidence: T
+    selfRuling?: WorkflowSelfRulingInput
+  },
+  database: Database,
+): T {
+  if (!input.selfRuling) return input.evidence
+  if (input.evidence.ruling !== undefined)
+    throw new Error('--self-ruling and --ruling are mutually exclusive')
+  const recorded = recordWorkflowSelfRuling({ ...input, selfRuling: input.selfRuling }, database)
+  return { ...input.evidence, ruling: recorded.questionId }
 }

@@ -9,7 +9,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import {
   compatibleCatalogueStep,
   productionStepCatalogue,
-  promoteStepCatalogue,
+  promoteStepCatalogueLocal,
   showStepCatalogue,
   validateStepCatalogue,
 } from './step-catalogue.ts'
@@ -72,6 +72,80 @@ test('expectedStatus accepts one string or a non-empty string list', () => {
   }
 })
 
+test('outcomes are unique non-empty slugs', () => {
+  const staged = { ...step, stage: 'plan' as const }
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, outcomes: ['needed', 'not-needed'] }] }),
+  ).toEqual([])
+  expect(validateStepCatalogue({ steps: [{ ...staged, outcomes: [] }] })).toContain(
+    'step "design" outcomes must be a non-empty array',
+  )
+  expect(validateStepCatalogue({ steps: [{ ...staged, outcomes: ['Not Valid'] }] })).toContain(
+    'step "design" outcomes must be well-formed slugs',
+  )
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, outcomes: ['needed', 'needed'] }] }),
+  ).toContain('step "design" outcomes must be unique')
+})
+
+test('expectedExitCodes maps declared outcomes to non-negative integer exits', () => {
+  const staged = {
+    ...step,
+    stage: 'ship' as const,
+    floor: ['command-exit'],
+    outcomes: ['merged', 'merged-with-residue'],
+  }
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, expectedExitCodes: { merged: 0, 'merged-with-residue': 20 } }],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, expectedExitCodes: { unknown: 20 } }] }),
+  ).toContain('step "design" expectedExitCodes key "unknown" is not a step outcome')
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, expectedExitCodes: { 'merged-with-residue': -1 } }],
+    }),
+  ).toContain('step "design" expectedExitCodes.merged-with-residue must be a non-negative integer')
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, floor: ['recorded-artifact'], expectedExitCodes: { merged: 0 } }],
+    }),
+  ).toContain('step "design" expectedExitCodes requires a command-exit floor')
+})
+
+test('rulingOutcomes must be a non-empty unique subset of outcomes', () => {
+  const staged = { ...step, stage: 'plan' as const, outcomes: ['needed', 'clear'] }
+  expect(validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: ['needed'] }] })).toEqual([])
+  expect(validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: [] }] })).toContain(
+    'step "design" rulingOutcomes must be a non-empty array',
+  )
+  expect(validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: ['unknown'] }] })).toContain(
+    'step "design" rulingOutcomes must be a non-empty unique subset of outcomes',
+  )
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, rulingOutcomes: ['needed', 'needed'] }] }),
+  ).toContain('step "design" rulingOutcomes must be a non-empty unique subset of outcomes')
+})
+
+test('reenter.outcome must be one of the step outcomes', () => {
+  const staged = { ...step, stage: 'plan' as const, outcomes: ['changed', 'clean'] }
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, reenter: { to: 'start', outcome: 'changed' } }],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, reenter: { to: 'start', outcome: 'unknown' } }],
+    }),
+  ).toContain('step "design" reenter.outcome must be one of the step\'s outcomes')
+  expect(
+    validateStepCatalogue({ steps: [{ ...staged, reenter: { to: 'start' } }] as never }),
+  ).toContain('step "design" reenter must be { to, outcome }')
+})
+
 test('catalogue sequences reject nesting, duplicate names, and the step namespace', () => {
   const design = { ...step, stage: 'plan' as const }
   const errors = validateStepCatalogue({
@@ -106,6 +180,34 @@ test('operatorRuling requires a ruling floor', () => {
   ).toContain('step "design" operatorRuling requires a ruling floor')
   expect(
     validateStepCatalogue({ steps: [{ ...step, stage: 'ship', operatorRuling: true }] }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...step,
+          stage: 'ship',
+          floor: ['recorded-artifact'],
+          outcomes: ['needed', 'clear'],
+          rulingOutcomes: ['needed'],
+          operatorRuling: true,
+        },
+      ],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...step,
+          stage: 'ship',
+          floor: ['recorded-artifact'],
+          outcomes: ['changed', 'clean'],
+          reenter: { to: 'design', outcome: 'changed' },
+          operatorRuling: true,
+        },
+      ],
+    }),
   ).toEqual([])
   expect(
     validateStepCatalogue({
@@ -209,7 +311,7 @@ test('promoting a stored pre-validator draft revalidates before changing product
       VALUES (?,?,2,'draft',?,'legacy','pre-validator draft','2026-01-01T00:00:00.000Z')`,
   ).run(newRecordId(), production.owner_id, JSON.stringify(invalid))
 
-  expect(() => promoteStepCatalogue(2, 'promote legacy', 'architect', d)).toThrow(
+  expect(() => promoteStepCatalogueLocal(2, 'promote legacy', 'architect', d)).toThrow(
     `step "diagnose" dispatch "${PLATFORM_SLUG} run start diagnose --key {{key}}" must include --file or a double-quoted argument`,
   )
   expect(productionStepCatalogue(d).n).toBe(production.n)

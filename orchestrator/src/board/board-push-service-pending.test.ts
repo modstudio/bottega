@@ -12,8 +12,8 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
   const clock = Date.parse('2026-10-07T12:00:00.000Z')
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('push-reader','claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES ('push-reader','claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
     )
     .run(new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const local = postNotice(
@@ -22,6 +22,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       title: 'Local',
       body: 'Local body',
       ackRequired: true,
+      deadlineMs: 30_000,
       purpose: 'request',
     },
     {},
@@ -33,17 +34,19 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       title: 'Older local',
       body: 'Do not ask this reader to acknowledge.',
       ackRequired: true,
+      deadlineMs: 30_000,
       purpose: 'request',
     },
     {},
     clock - 2_000,
   )
-  const olderStandingLocal = postNotice(
+  postNotice(
     {
       audience: 'project:push-project',
       title: 'Older standing local',
       body: 'Acknowledge this standing rule.',
       ackRequired: true,
+      deadlineMs: 30_000,
       purpose: 'standing',
     },
     {},
@@ -60,7 +63,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     {},
     clock + 1,
   )
-  acknowledgeNotice(acknowledged.id, { CLAUDE_CODE_SESSION_ID: 'push-reader' }, clock + 2)
+  acknowledgeNotice(acknowledged.recordId, { CLAUDE_CODE_SESSION_ID: 'push-reader' }, clock + 2)
   const setMeta = db().query(
     'INSERT INTO schema_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
   )
@@ -140,13 +143,21 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     clock: clock + 3,
   })
   expect(pending.delivery.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), String(olderStandingLocal.id), hosted.id, olderStandingHosted.id].sort(),
+    [String(local.number), hosted.id].sort(),
   )
   expect(pending.pendingAcknowledgements.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), String(olderStandingLocal.id), hosted.id, olderStandingHosted.id].sort(),
+    [String(local.number), hosted.id].sort(),
   )
-  expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.id))
+  expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.number))
   expect(pending.pendingAcknowledgements.map((notice) => notice.id)).not.toContain(olderHosted.id)
+
+  const afterDeadline = await pendingBoardDelivery({
+    session: 'push-reader',
+    budgetMs: 0,
+    clock: clock + 30_001,
+  })
+  expect(afterDeadline.pendingAcknowledgements).toEqual([])
+  expect(afterDeadline.delivery).toEqual([])
 })
 
 test('a hosted acknowledgement immediately clears delivery from verified or unverified cache state', async () => {
@@ -156,11 +167,12 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
   const messageId = newRecordId()
   db()
     .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?,?)`,
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test',?,(SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
     )
     .run(
       session,
+      PLATFORM_SLUG,
       PLATFORM_SLUG,
       new Date(clock - 1_000).toISOString(),
       new Date(clock).toISOString(),

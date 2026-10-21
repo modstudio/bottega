@@ -9,7 +9,7 @@ import {
 } from './continuation-tree-decision.ts'
 
 export function requireContinuationTree(input: {
-  rootId: number
+  rootId: string
   projectName: string | null
   projectPath: string | null
   readsRepo: boolean

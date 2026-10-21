@@ -6,6 +6,7 @@ import type { SubjectList } from './subject-contract.ts'
 
 export const projectSubjectList = (project: string, includeRetired = false) =>
   jsonDocument<SubjectList>([
+    'doc',
     'subject',
     'list',
     project,

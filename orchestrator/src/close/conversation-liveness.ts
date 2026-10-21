@@ -7,22 +7,29 @@ import { db } from '../database/db.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 
-type AliveTurn = { id: number; status: string; pid: number | null; agent_pid: number | null }
+type AliveTurn = {
+  record_id: string
+  status: string
+  pid: number | null
+  agent_pid: number | null
+}
 type ConversationCloseOutResult = {
-  runId: number
+  runId: string
   worktree: string | null
   outcome: 'live' | 'absent'
   detail: string
 }
 
-export function aliveConversationTurns(rootId: number): AliveTurn[] {
+export function aliveConversationTurns(rootId: string): AliveTurn[] {
   const turns = db()
-    .query('SELECT id,status,pid,agent_pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
+    .query(
+      'SELECT record_id,status,pid,agent_pid FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
+    )
     .all(rootId, rootId) as AliveTurn[]
   return turns.filter((turn) =>
     runAlive({
       status: turn.status,
-      lease: runLeaseState(turn.id),
+      lease: runLeaseState(turn.record_id),
       pidAlive: Boolean(
         (turn.pid && pidAlive(turn.pid)) || (turn.agent_pid && pidAlive(turn.agent_pid)),
       ),
@@ -31,21 +38,21 @@ export function aliveConversationTurns(rootId: number): AliveTurn[] {
 }
 
 export function liveCloseOutResult(
-  runId: number,
+  runId: string,
   treePath: string | null,
-  live: { id: number; status: string }[],
+  live: { record_id: string; status: string }[],
 ): ConversationCloseOutResult | null {
   if (!live.length) return null
   return {
     runId,
     worktree: treePath,
     outcome: 'live',
-    detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
+    detail: `live run(s): ${live.map((owner) => `${owner.record_id} (${owner.status})`).join(', ')}`,
   }
 }
 
 export function missingTreeConversationResult(
-  rootId: number,
+  rootId: string,
   treePath: string | null,
 ): ConversationCloseOutResult | null {
   if (treePath !== null && existsSync(treePath)) return null

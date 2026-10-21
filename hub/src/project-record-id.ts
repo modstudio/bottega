@@ -25,26 +25,6 @@ const PROJECT_RECORD_ID_TABLES = [
   { table: 'task_identity_claim', column: 'project' },
 ] as const
 
-/** Fill NULL project_record_id values from the register by name. Unmatched names stay null. */
-function backfillProjectRecordIds(
-  conn: Database,
-  registered: readonly ProjectRecordIdSource[] = projects(),
-): void {
-  const named = namedRegisterProjects(registered)
-  if (!named.length) return
-  for (const { table, column } of PROJECT_RECORD_ID_TABLES) {
-    const update = conn.query(
-      `UPDATE "${table}" SET project_record_id=? WHERE "${column}"=? AND project_record_id IS NULL`,
-    )
-    for (const project of named) update.run(project.record_id, project.name)
-  }
-  const outbox = conn.query(
-    `UPDATE hosted_outbox SET routing_project_record_id=?
-     WHERE routing_project=? AND routing_project_record_id IS NULL`,
-  )
-  for (const project of named) outbox.run(project.record_id, project.name)
-}
-
 /** Rewrite name snapshots that already carry the project's hosted id. */
 function syncProjectNamesFromRegister(
   conn: Database,
@@ -53,21 +33,22 @@ function syncProjectNamesFromRegister(
   const named = namedRegisterProjects(registered)
   if (!named.length) return
   for (const { table, column } of PROJECT_RECORD_ID_TABLES) {
-    const update = conn.query(`UPDATE "${table}" SET "${column}"=? WHERE project_record_id=?`)
-    for (const project of named) update.run(project.name, project.record_id)
+    const update = conn.query(
+      `UPDATE "${table}" SET "${column}"=? WHERE project_record_id=? AND "${column}" IS NOT ?`,
+    )
+    for (const project of named) update.run(project.name, project.record_id, project.name)
   }
   const outbox = conn.query(
-    `UPDATE hosted_outbox SET routing_project=? WHERE routing_project_record_id=?`,
+    `UPDATE hosted_outbox SET routing_project=? WHERE routing_project_record_id=? AND routing_project IS NOT ?`,
   )
-  for (const project of named) outbox.run(project.name, project.record_id)
+  for (const project of named) outbox.run(project.name, project.record_id, project.name)
 }
 
-/** One collect-cycle identity pass: fill missing ids, then names follow the register. */
+/** Keep display-name snapshots aligned with UUID-addressed register rows. */
 export function applyProjectRegisterNames(
   conn: Database,
   registered: readonly ProjectRecordIdSource[] = projects(),
 ): void {
-  backfillProjectRecordIds(conn, registered)
   syncProjectNamesFromRegister(conn, registered)
 }
 

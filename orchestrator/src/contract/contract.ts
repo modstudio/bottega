@@ -642,7 +642,7 @@ export function parseReaderReply(value: unknown): ReaderReply | null {
   }
 }
 
-export function parseReaderOutput(text: string): ReaderReply | null {
+function parseReaderOutput(text: string): ReaderReply | null {
   const candidates = [
     text.trim(),
     ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? []).map((x) =>

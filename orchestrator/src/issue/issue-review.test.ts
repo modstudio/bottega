@@ -16,7 +16,7 @@ const clean = (lens: string): IssueReviewLensResult => ({
   failedToRun: null,
   findingCount: 0,
   findings: [],
-  runId: 1,
+  runId: '1',
 })
 
 describe('filed issue review policy', () => {
@@ -86,7 +86,7 @@ describe('filed issue review policy', () => {
       failedToRun: 'agent exited before returning review output',
       findingCount: null,
       findings: null,
-      runId: 42,
+      runId: '42',
     })
     expect(evidence).toContain('craft lens run: 42; did not run')
     expect(evidence).toContain('agent exited before returning review output')

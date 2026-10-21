@@ -2,6 +2,7 @@
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 export type HostedWriteMode = 'hosted-configured' | 'local-authoritative' | 'hosted-unavailable'
+export type TaskWriteMode = Exclude<HostedWriteMode, 'hosted-unavailable'>
 
 export type InstallBinding = {
   bound: boolean
@@ -34,7 +35,7 @@ type ProjectWriteFacts = {
   project: string
 }
 
-export const MISSING_HOSTED_URL_REMEDY = `Set HUB_HOSTED_URL and run \`${PLATFORM_SLUG} record doctor\`.`
+export const MISSING_HOSTED_URL_REMEDY = `Run \`${PLATFORM_SLUG} record use <address>\`.`
 export const HOSTED_UNREACHABLE_REMEDY = 'Retry when the hosted record is reachable.'
 
 export function hostedUnavailableRemedy(hostedUrl: string | null | undefined): string {

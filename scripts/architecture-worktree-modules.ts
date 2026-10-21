@@ -12,12 +12,16 @@ const module = (file: string, allowed: string[]): WorktreeModule => ({
 })
 
 export const worktreeModules: WorktreeModule[] = [
+  module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
+  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/worktree/worktree-porcelain.ts', []),
   module('orchestrator/src/worktree/worktree-caller.ts', [
     '../project/projects.ts',
     '../git/git-environment.ts',
     './worktree-types.ts',
   ]),
   module('orchestrator/src/worktree/worktree-create.ts', [
+    '../branch/branch-ref-guard.ts',
     '../branch/create-time-settlement.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -39,17 +43,34 @@ export const worktreeModules: WorktreeModule[] = [
     '../git/git-environment.ts',
   ]),
   module('orchestrator/src/worktree/worktree-readonly.ts', [
+    '../branch/branch-ref-guard.ts',
     '../project/projects.ts',
     './worktree-provision.ts',
     './worktree-template.ts',
     '../git/git-environment.ts',
     './worktree-remove.ts',
     './worktree-create.ts',
+    './provisioning-measurement.ts',
     './worktree-types.ts',
   ]),
-  module('orchestrator/src/worktree/worktree-provision.ts', ['node:fs', 'node:path']),
+  module('orchestrator/src/worktree/provision-group-validation.ts', []),
+  module('orchestrator/src/worktree/worktree-provision.ts', [
+    'node:fs',
+    'node:path',
+    './clone-directory.ts',
+    './provision-group-validation.ts',
+  ]),
+  module('orchestrator/src/worktree/provisioning-measurement.ts', [
+    'node:fs',
+    'node:path',
+    '../database/db.ts',
+    '../host-load-sample.ts',
+    '../storage-walk.ts',
+    './worktree-provision.ts',
+  ]),
   module('orchestrator/src/worktree/worktree-remove.ts', [
     '../../../shared/brand.ts',
+    '../branch/branch-ref-guard.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../recipe/recipe.ts',

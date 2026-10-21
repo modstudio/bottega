@@ -26,7 +26,7 @@ export type DocSection = {
   nested: boolean
 }
 
-export function docSectionAudiences(
+function docSectionAudiences(
   attributes: Record<string, string | null> | null | undefined,
 ): string[] {
   const value = attributes?.audience

@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { projects } from '../project/projects.ts'
+import { readBranchLandingRecords } from './branch-landing-records.ts'
 import {
   type BranchLandingRecord,
   decideBranchState,
@@ -14,7 +15,7 @@ import {
 } from './branch-state.ts'
 
 export type OfflineBranchLandingCandidate = {
-  projectId: number
+  projectId: string
   project: string
   branch: string
 }
@@ -59,12 +60,7 @@ function localBranches(project: Project): Map<string, string> {
 }
 
 function recordedLandings(database: Database): BranchLandingRecord[] {
-  return database
-    .query(
-      `SELECT project,branch,tip,pr_number number,merge_commit mergeCommit,merged_at mergedAt
-         FROM branch_landing_record`,
-    )
-    .all() as BranchLandingRecord[]
+  return readBranchLandingRecords(database)
 }
 
 function classifyExistingBranch(input: {
@@ -94,6 +90,7 @@ function classifyExistingBranch(input: {
     patchEquivalent,
     pullRequestCommitCheck: null,
     recordedLanding,
+    containingBranch: null,
     laterTurnBranches: [],
     superseded: false,
   })
@@ -136,7 +133,7 @@ export function offlineBranchLandingObservations(
   database: Database = db(),
 ): OfflineBranchLandingObservation[] {
   const registered = [...projects(undefined, database), ...projects({ retired: true }, database)]
-  const selected = new Map(registered.map((project) => [project.id, project]))
+  const selected = new Map(registered.map((project) => [project.recordId, project]))
   const records = recordedLandings(database)
   return [...Map.groupBy(candidates, (candidate) => candidate.projectId)].flatMap(
     ([projectId, projectCandidates]) => {

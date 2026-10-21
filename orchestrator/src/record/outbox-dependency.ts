@@ -12,6 +12,17 @@ type ParentState = {
   retired_at: string | null
 }
 
+function localRunIsLive(database: Database, recordId: string): boolean {
+  return Boolean(
+    database
+      .query<{ found: number }, [string]>(
+        `SELECT 1 AS found FROM run WHERE record_id=?
+         AND status NOT IN ('ok','failed','stale','stopped')`,
+      )
+      .get(recordId),
+  )
+}
+
 export const outboxParentIdentityKey = (kind: string, recordId: string): string =>
   `${kind}:${recordId}`
 
@@ -27,8 +38,8 @@ function reviewRunIds(database: Database, reviewRecordId: string): string[] {
   return database
     .query<{ record_id: string }, [string]>(
       `SELECT DISTINCT run.record_id FROM review
-       JOIN review_lens ON review_lens.review_id=review.id
-       JOIN run ON run.id=review_lens.run_id
+       JOIN review_lens ON review_lens.review_record_id=review.record_id
+       JOIN run ON run.record_id=review_lens.run_record_id
        WHERE review.record_id=? AND run.record_id IS NOT NULL`,
     )
     .all(reviewRecordId)
@@ -45,7 +56,7 @@ function lensRun(
   const normalized = database
     .query<{ record_id: string }, [string]>(
       `SELECT run.record_id FROM review_lens
-       JOIN run ON run.id=review_lens.run_id
+       JOIN run ON run.record_id=review_lens.run_record_id
        WHERE review_lens.record_id=? AND run.record_id IS NOT NULL`,
     )
     .get(lensRecordId)
@@ -138,7 +149,11 @@ function outboxDependencyState(
       )
       .all(kind, parentRecordId)
     const latest = rows[0]
-    if (!latest || rows.some((row) => row.synced_at !== null)) continue
+    if (!latest) {
+      if (kind === 'run' && localRunIsLive(database, parentRecordId)) deferred = true
+      continue
+    }
+    if (rows.some((row) => row.synced_at !== null)) continue
     if (latest.retired_at === null) {
       deferred = true
       continue

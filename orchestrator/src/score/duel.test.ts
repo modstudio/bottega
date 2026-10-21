@@ -5,10 +5,17 @@ import { duelMatrices, parseRunIds, recordDuels } from './duel.ts'
 
 describe('pairwise judgments', () => {
   test('--better-than accepts a comma list of run ids', () => {
-    expect(parseRunIds('12,13,99', '--better-than')).toEqual([12, 13, 99])
+    const ids = [
+      '01990000-0000-7000-8000-000000000012',
+      '01990000-0000-7000-8000-000000000013',
+      '01990000-0000-7000-8000-000000000099',
+    ]
+    expect(parseRunIds(ids.join(','), '--better-than')).toEqual(ids)
     expect(() => parseRunIds('', '--better-than')).toThrow('at least one run id')
-    expect(() => parseRunIds('12,nope', '--better-than')).toThrow('separated by commas')
-    expect(() => parseRunIds('12,12', '--better-than')).toThrow('same run more than once')
+    expect(() => parseRunIds(`${ids[0]},nope`, '--better-than')).toThrow('separated by commas')
+    expect(() => parseRunIds(`${ids[0]},${ids[0]}`, '--better-than')).toThrow(
+      'same run more than once',
+    )
   })
 
   test('one winner can be recorded against every loser in a fan-out', () => {
@@ -20,21 +27,21 @@ describe('pairwise judgments', () => {
     expect(
       db()
         .query(
-          'SELECT job, winner_run_id, loser_run_id, session_id, at FROM duel ORDER BY loser_run_id',
+          'SELECT job, winner_run_record_id, loser_run_record_id, session_id, at FROM duel ORDER BY loser_run_record_id',
         )
         .all(),
     ).toEqual([
       {
         job: 'craft',
-        winner_run_id: winner,
-        loser_run_id: grok,
+        winner_run_record_id: winner,
+        loser_run_record_id: grok,
         session_id: 'session-A',
         at: '2026-09-02T12:00:00.000Z',
       },
       {
         job: 'craft',
-        winner_run_id: winner,
-        loser_run_id: agy,
+        winner_run_record_id: winner,
+        loser_run_record_id: agy,
         session_id: 'session-A',
         at: '2026-09-02T12:00:00.000Z',
       },

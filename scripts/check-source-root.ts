@@ -18,7 +18,7 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/database/database-location.ts',
-    line: 30,
+    line: 33,
     reason: 'defines the empty installed source root used by explicit embedded-manifest branches',
   },
   {
@@ -43,17 +43,17 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/sandbox/sandbox.ts',
-    line: 291,
+    line: 290,
     reason: 'the source-root sandbox carveout is explicitly omitted for embedded distributions',
   },
   {
     path: 'orchestrator/src/transport/transport.ts',
-    line: 381,
+    line: 391,
     reason: 'the checkout codex-acp candidate is guarded by the embedded-manifest branch',
   },
   {
     path: 'orchestrator/src/transport/transport.ts',
-    line: 437,
+    line: 447,
     reason:
       'ACP SDK presence is resolved for doctor; the SDK is imported by the ACP transport, not loaded as the compiled schema validator',
   },
@@ -69,17 +69,17 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'hub/src/db.ts',
-    line: 53,
+    line: 56,
     reason: 'embedded hub runtime resolution skips checkout discovery and legacy paths',
   },
   {
     path: 'hub/src/hosted.ts',
-    line: 60,
+    line: 68,
     reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
   {
     path: 'hub/src/hosted.ts',
-    line: 67,
+    line: 75,
     reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
 ]

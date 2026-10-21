@@ -9,20 +9,13 @@ import {
 export async function resolveRecordProjectIdentity(
   tx: SQL,
   input: {
-    projectId?: string | null
+    projectId: string
     projectName?: string | null
     spaceId?: string | null
-    liveNameOnly?: boolean
   },
 ): Promise<RecordProjectIdentityResult> {
-  const rows = input.projectId
-    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${input.projectId}::uuid`
-    : input.spaceId
-      ? await tx`SELECT id,name,space_id,retired_at FROM project
-          WHERE space_id=${input.spaceId}::uuid AND name=${input.projectName}
-            AND (${!input.liveNameOnly} OR retired_at IS NULL)`
-      : await tx`SELECT id,name,space_id,retired_at FROM project
-          WHERE name=${input.projectName} AND (${!input.liveNameOnly} OR retired_at IS NULL)`
+  const rows =
+    await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${input.projectId}::uuid`
   const result = recordProjectIdentityDecision({
     requestedId: input.projectId,
     requestedName: input.projectName,

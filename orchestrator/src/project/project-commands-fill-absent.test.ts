@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { fillAbsentProjectSettings } from './project-commands.ts'
 import { projectByName, upsertProject } from './projects.ts'
 
@@ -25,6 +26,7 @@ test('fills recipePath while preserving existing worktree settings', async () =>
   writeFileSync(join(path, recipePath), '{"worktree":{"create":[]}}\n')
   const readonlyProvision = [{ path: 'node_modules', method: 'link' as const }]
   upsertProject({
+    recordId: newRecordId(),
     name: 'setup-worktree-fill',
     path,
     settings: {
@@ -43,12 +45,22 @@ test('fills recipePath while preserving existing worktree settings', async () =>
 })
 
 test('recomputes the branch check when the candidate changes before the write', async () => {
-  upsertProject({ name: 'setup-fill-race', path: '/projects/old', settings: {} })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'setup-fill-race',
+    path: '/projects/old',
+    settings: {},
+  })
   let checks = 0
   spyOn(Bun, 'spawnSync').mockImplementation((() => {
     checks += 1
     if (checks === 1) {
-      upsertProject({ name: 'setup-fill-race', path: '/projects/new', settings: {} })
+      upsertProject({
+        recordId: newRecordId(),
+        name: 'setup-fill-race',
+        path: '/projects/new',
+        settings: {},
+      })
     }
     return spawnResult('main\n')
   }) as typeof Bun.spawnSync)

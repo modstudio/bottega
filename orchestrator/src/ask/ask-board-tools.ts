@@ -6,7 +6,7 @@ import { suggestBoardPost } from '../board/board-suggestions.ts'
 
 export function registerAskBoardTools(input: {
   server: McpServer
-  runId: number
+  runId: string
   authorized: () => boolean
   unauthorized: () => string
   text: (
@@ -39,8 +39,8 @@ export function registerAskBoardTools(input: {
         })
         return input.text(
           saved.dropped
-            ? `Duplicate board suggestion ${saved.id} was already recorded.`
-            : `Board suggestion ${saved.id} was sent to the owning architect.`,
+            ? `Duplicate board suggestion ${saved.number} was already recorded.`
+            : `Board suggestion ${saved.number} was sent to the owning architect.`,
         )
       } catch (error) {
         return input.text(`The board suggestion was not recorded (${String(error)}).`, true)

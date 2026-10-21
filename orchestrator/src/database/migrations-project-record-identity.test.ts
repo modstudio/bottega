@@ -4,7 +4,12 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
+import {
+  applyMigrations,
+  applyMigrationsBefore,
+  MIGRATIONS_FOLDER,
+  migrationJournal,
+} from './migrations.ts'
 
 test('project identity migration preserves rows and adds a nullable unique hosted id', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-project-record-identity-'))
@@ -23,7 +28,9 @@ test('project identity migration preserves rows and adds a nullable unique hoste
   try {
     applyMigrations(database, folder)
     database.query("INSERT INTO project (name,path,settings) VALUES ('one','/one','{}')").run()
-    expect(applyMigrations(database)).toContain('0112_project_record_identity')
+    expect(applyMigrationsBefore(database, '0113_doc_form_reference')).toContain(
+      '0112_project_record_identity',
+    )
     expect(database.query("SELECT record_id FROM project WHERE name='one'").get()).toEqual({
       record_id: null,
     })

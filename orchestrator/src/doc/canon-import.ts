@@ -16,7 +16,13 @@ import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 export type CanonImportRow = { slug: string; title: string; body: string }
 export type LocalCanonImportAddress =
   | { kind: 'user'; owner: string }
-  | { kind: 'project'; subject: string; projectId: number }
+  | { kind: 'project'; subject: string; projectId: string }
+
+function hostedProjectId(projectId: string): string {
+  return db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE record_id=?')
+    .get(projectId)!.record_id
+}
 
 export function hasCanonImportHistory(address: LocalCanonImportAddress): boolean {
   const subject = address.kind === 'project' ? address.subject : null
@@ -29,6 +35,29 @@ export function hasCanonImportHistory(address: LocalCanonImportAddress): boolean
       )
       .get(subject, owner) !== null
   )
+}
+
+function localCanonImportResult(
+  address: LocalCanonImportAddress,
+  rows: CanonImportRow[],
+  current: Doc[],
+): RecordCanonImportResult {
+  return {
+    rows: rows.map((row) => ({
+      slug: row.slug,
+      id: current.find((existing) => existing.slug === row.slug)?.record_id ?? newRecordId(),
+      revisionId: newRecordId(),
+    })),
+    deletions: current
+      .filter((row) => !rows.some((next) => next.slug === row.slug))
+      .map((row) => ({
+        slug: row.slug,
+        id: row.record_id ?? newRecordId(),
+        revisionId: newRecordId(),
+      })),
+    findings: [],
+    bootstrap: !hasCanonImportHistory(address),
+  }
 }
 
 export async function importCanon(input: {
@@ -44,6 +73,7 @@ export async function importCanon(input: {
   const subject = input.address.kind === 'project' ? input.address.subject : null
   const owner = input.address.kind === 'user' ? input.address.owner : null
   const projectId = input.address.kind === 'project' ? input.address.projectId : null
+  const projectRecordId = projectId === null ? null : hostedProjectId(projectId)
   const allRows = listDocsStore({ scope: 'canon', subject, owner })
   const collision = nonCurrentCanonCollisionRefusal({
     rows: allRows,
@@ -63,29 +93,18 @@ export async function importCanon(input: {
     current.flatMap((row) => (row.revision ? [[row.slug, row.revision]] : [])),
   )
   const hosted = await applyRecordWriteAuthority<RecordCanonImportResult>({
-    local: () => ({
-      rows: input.rows.map((row) => ({
-        slug: row.slug,
-        id: current.find((existing) => existing.slug === row.slug)?.record_id ?? newRecordId(),
-        revisionId: newRecordId(),
-      })),
-      deletions: current
-        .filter((row) => !input.rows.some((next) => next.slug === row.slug))
-        .map((row) => ({
-          slug: row.slug,
-          id: row.record_id ?? newRecordId(),
-          revisionId: newRecordId(),
-        })),
-      findings: [],
-      bootstrap: !hasCanonImportHistory(input.address),
-    }),
+    local: () => localCanonImportResult(input.address, input.rows, current),
     hosted: async () => {
       const subject = input.address.kind === 'project' ? input.address.subject : null
       return (await hostedDocClient('canon', subject)).importCanon({
         address:
           input.address.kind === 'user'
             ? { kind: 'user' }
-            : { kind: 'project', subject: input.address.subject },
+            : {
+                kind: 'project',
+                subject: input.address.subject,
+                projectId: projectRecordId!,
+              },
         rows: input.rows,
         expectedRevisions,
         reason: identity.reason,
@@ -111,19 +130,17 @@ export async function importCanon(input: {
       let stored: Doc
       if (existing) {
         db()
-          .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=?, record_id=? WHERE id=?')
-          .run(row.title, row.body, 'demand', at, result.id, existing.id)
-        stored = { ...existing, title: row.title, body: row.body, record_id: result.id }
+          .query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE record_id=?')
+          .run(row.title, row.body, 'demand', at, existing.record_id)
+        stored = { ...existing, title: row.title, body: row.body }
       } else {
         db()
           .query(
             `INSERT INTO doc
-             (scope, subject, owner, project_id, slug, title, body, delivery, audiences, created_at, updated_at, record_id)
-             VALUES ('canon',?,?,?, ?,?,?, 'demand','["technical"]',?,?,?)`,
+             (record_id,scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, created_at, updated_at)
+             VALUES (?,'canon',?,?,?, ?,?,?, 'demand','["technical"]',?,?)`,
           )
-          .get(subject, owner, projectId, row.slug, row.title, row.body, at, at, result.id) as {
-          id: number
-        }
+          .run(result.id, subject, owner, projectId, row.slug, row.title, row.body, at, at)
         stored = getDocStore('canon', subject, row.slug, owner)!
       }
       insertLocalRevision(stored, 'import', identity, at, result.revisionId)
@@ -131,8 +148,8 @@ export async function importCanon(input: {
     for (const result of hosted.deletions) {
       const existing = liveBySlug.get(result.slug)
       if (!existing) throw new Error(`no canon doc "${result.slug}"`)
-      db().query('DELETE FROM doc WHERE id=?').run(existing.id)
       insertLocalRevision(existing, 'delete', identity, at, result.revisionId)
+      db().query('DELETE FROM doc WHERE record_id=?').run(existing.record_id)
     }
     return hosted
   })

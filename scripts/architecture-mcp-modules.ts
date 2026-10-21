@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-workflow-input.ts', ['zod']),
   module('orchestrator/src/mcp/mcp-setup-tools.ts', [
     'node:fs',
     'node:path',
@@ -25,9 +26,11 @@ export const mcpModules: McpModule[] = [
     'zod',
     '../../../shared/board-purpose.ts',
     '../board/board-delivery.ts',
+    '../board/board-message-identifier.ts',
     '../board/board-operations.ts',
     '../board/board-policy.ts',
     '../board/board-suggestions.ts',
+    '../database/db.ts',
     './mcp-board-claim-tools.ts',
   ]),
   module('orchestrator/src/mcp/mcp-board-claim-tools.ts', [
@@ -44,6 +47,7 @@ export const mcpModules: McpModule[] = [
     '../ask/worker-auth.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../run/run-identifier.ts',
   ]),
   module('orchestrator/src/mcp/mcp-operator-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
@@ -101,6 +105,8 @@ export const mcpModules: McpModule[] = [
     '../../../shared/docs.ts',
     '../canon/canon-files.ts',
     '../canon/canon.ts',
+    '../database/db.ts',
+    '../doc/doc-revision-identifier.ts',
     '../doc/doc-write-tree.ts',
     '../doc/docs.ts',
     '../worker-store-write.ts',
@@ -130,6 +136,13 @@ export const mcpModules: McpModule[] = [
     '../workflow/workflow-render.ts',
     '../workflow/workflow-cursor.ts',
     '../workflow/workflow-cursor-selection.ts',
+    '../workflow/workflows.ts',
+    './mcp-workflow-space.ts',
+  ]),
+  module('orchestrator/src/mcp/mcp-workflow-space.ts', [
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../project-space.ts',
     '../workflow/workflows.ts',
   ]),
 ]

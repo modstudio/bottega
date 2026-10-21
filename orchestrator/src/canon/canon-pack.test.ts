@@ -23,24 +23,30 @@ function putCanon(
   body: string,
   status: 'draft' | 'current' = 'current',
 ): void {
-  const projectId = subject
-    ? (db().query('SELECT id FROM project WHERE name=?').get(subject) as { id: number }).id
+  const projectRecordId = subject
+    ? (
+        db().query('SELECT record_id FROM project WHERE name=?').get(subject) as {
+          record_id: string
+        }
+      ).record_id
     : null
-  const id = (
+  const recordId = (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, audiences, status, created_at, updated_at, record_id)
-         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', '["technical"]', ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO doc (scope, subject, project_record_id, slug, title, body, delivery, audiences, status, created_at, updated_at, record_id)
+         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', '["technical"]', ?, ?, ?, ?) RETURNING record_id`,
       )
-      .get(subject, projectId, slug, slug, body, status, AT, AT, newRecordId()) as { id: number }
-  ).id
+      .get(subject, projectRecordId, slug, slug, body, status, AT, AT, newRecordId()) as {
+      record_id: string
+    }
+  ).record_id
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, status, author, reason, at, record_id)
-       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?, ?)`,
+       (record_id, number, doc_record_id, scope, subject, project_record_id, slug, op, title, body, delivery, audiences, status, author, reason, at)
+       VALUES (?, (SELECT COALESCE(MAX(number),0)+1 FROM doc_revision), ?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?)`,
     )
-    .run(id, subject, projectId, slug, slug, body, status, AT, newRecordId())
+    .run(newRecordId(), recordId, subject, projectRecordId, slug, slug, body, status, AT)
 }
 
 function operatorPack(cwd: string): string {
@@ -53,7 +59,12 @@ async function putOperator(body: string): Promise<void> {
 
 describe('worker pack canon', () => {
   test('draft canon is absent from a compiled pack', () => {
-    upsertProject({ name: 'pack-draft-canon', path: repositoryPath, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-draft-canon',
+      path: repositoryPath,
+      settings: { trunk: 'main' },
+    })
     putCanon('pack-draft-canon', 'AGENTS.md', 'CURRENT-CANON-UNIQUE\n')
     putCanon('pack-draft-canon', '.agents/rules/draft.md', 'DRAFT-CANON-UNIQUE\n', 'draft')
     const markdown = compilePack({ job: 'understand', cwd: repositoryPath }).markdown
@@ -63,9 +74,16 @@ describe('worker pack canon', () => {
 
   test(`run 4177 canon-pack-drift review-lens/${PLATFORM_SLUG} resolves global and project rows once`, () => {
     const root = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
-    upsertProject({ name: PLATFORM_SLUG, path: root, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: root,
+      settings: { trunk: 'main' },
+    })
     const projectId = (
-      db().query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }
+      db().query('SELECT record_id AS id FROM project WHERE name=?').get(PLATFORM_SLUG) as {
+        id: number
+      }
     ).id
     const docs = JSON.stringify([
       {
@@ -79,7 +97,7 @@ describe('worker pack canon', () => {
     ])
     const insert = db().query(
       `INSERT INTO canon_pack
-       (record_id,job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+       (record_id,job,project,project_record_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
        VALUES (?,?,?,?,?,?,?,?,?,0)`,
     )
     insert.run(newRecordId(), 'review-lens', null, null, 'global', 1, 1, docs, AT)
@@ -91,7 +109,12 @@ describe('worker pack canon', () => {
   })
 
   test('always-on rows appear in the pack in entry-then-rules order', async () => {
-    upsertProject({ name: 'pack-canon-order', path: repositoryPath, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-canon-order',
+      path: repositoryPath,
+      settings: { trunk: 'main' },
+    })
     await putOperator('OPERATOR-DOC-UNIQUE')
     putCanon('pack-canon-order', 'AGENTS.md', 'ENTRY-BODY-UNIQUE\n')
     putCanon(
@@ -111,7 +134,12 @@ describe('worker pack canon', () => {
   })
 
   test('global always-on rows pack before project rows of the same tier', async () => {
-    upsertProject({ name: 'pack-global-order', path: repositoryPath, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-global-order',
+      path: repositoryPath,
+      settings: { trunk: 'main' },
+    })
     putCanon(null, '.agents/rules/global.md', '---\ndescription: Global\n---\nGLOBAL-RULE-UNIQUE\n')
     putCanon(
       'pack-global-order',
@@ -125,7 +153,12 @@ describe('worker pack canon', () => {
   })
 
   test('a context row contributes one index line and never its body', async () => {
-    upsertProject({ name: 'pack-canon-context', path: repositoryPath, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-canon-context',
+      path: repositoryPath,
+      settings: { trunk: 'main' },
+    })
     await putOperator('operator')
     putCanon(
       'pack-canon-context',
@@ -145,7 +178,12 @@ describe('worker pack canon', () => {
   })
 
   test('a card row contributes nothing', async () => {
-    upsertProject({ name: 'pack-canon-card', path: repositoryPath, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-canon-card',
+      path: repositoryPath,
+      settings: { trunk: 'main' },
+    })
     await putOperator('operator')
     putCanon(
       'pack-canon-card',
@@ -160,7 +198,12 @@ describe('worker pack canon', () => {
   })
 
   test('the pack refuses over budget with a message naming the tier to demote', async () => {
-    upsertProject({ name: 'pack-canon-budget', path: repositoryPath, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-canon-budget',
+      path: repositoryPath,
+      settings: { trunk: 'main' },
+    })
     await putOperator('t')
     putCanon('pack-canon-budget', 'AGENTS.md', `${'E'.repeat(400)}\n`)
     const measured = compilePack({ job: 'understand', cwd: repositoryPath })
@@ -188,7 +231,12 @@ describe('worker pack canon', () => {
   })
 
   test("a project with no canon rows produces today's pack exactly", async () => {
-    upsertProject({ name: 'pack-canon-none', path: repositoryPath, settings: { trunk: 'main' } })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'pack-canon-none',
+      path: repositoryPath,
+      settings: { trunk: 'main' },
+    })
     await setDoc({
       scope: 'job',
       subject: 'understand',

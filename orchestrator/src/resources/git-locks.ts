@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
-import { pidAlive } from '../../../shared/process-identity.ts'
+import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
 export type GitLock = {
@@ -12,6 +12,8 @@ export type GitLock = {
   contentRefs: string[]
   ownerPids: number[] | null
 }
+
+const GIT_LOCK_LSOF_TIMEOUT_MS = 10_000
 
 function git(cwd: string, args: string[]): string | null {
   const p = Bun.spawnSync(['git', ...args], {
@@ -40,7 +42,15 @@ function lockFiles(root: string): string[] {
 function owningPids(path: string): number[] | null {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(['lsof', '-t', '--', path], { stdout: 'pipe', stderr: 'pipe' })
+    ;({ process: p } = observeBoundedSubprocess(
+      'lsof',
+      ['lsof', '-t', '--', path],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      GIT_LOCK_LSOF_TIMEOUT_MS,
+    ))
   } catch {
     return null
   }
@@ -82,22 +92,49 @@ function refsForContents(repoRoot: string, contents: string): string[] {
   return refs ? refs.split('\n').filter(Boolean) : []
 }
 
+function worktreeAdminDirectories(commonDir: string): string[] {
+  const root = join(commonDir, 'worktrees')
+  if (!existsSync(root)) return []
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, entry.name))
+    .sort()
+}
+
+/** Inventory linked-worktree index locks without entering any worktree directory. */
+export function worktreeIndexLockPaths(commonDir: string): string[] {
+  return worktreeAdminDirectories(commonDir)
+    .map((adminDir) => join(adminDir, 'index.lock'))
+    .filter(existsSync)
+}
+
+/** Find a surviving linked-worktree index lock through its administration gitdir pointer. */
+export function worktreeIndexLockForPath(commonDir: string, worktreePath: string): string | null {
+  const expectedGitFile = resolve(worktreePath, '.git')
+  for (const adminDir of worktreeAdminDirectories(commonDir)) {
+    try {
+      const gitFile = resolve(adminDir, readFileSync(join(adminDir, 'gitdir'), 'utf8').trim())
+      const indexLock = join(adminDir, 'index.lock')
+      if (gitFile === expectedGitFile && existsSync(indexLock)) return indexLock
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
+    }
+  }
+  return null
+}
+
 /** Inventory lock files Git may leave behind. Observation never removes or rewrites one. */
 export function gitLocks(repoRoot: string, clock = Date.now()): GitLock[] {
   const commonValue = git(repoRoot, ['rev-parse', '--git-common-dir'])
   if (!commonValue) throw new Error(`${repoRoot} is not a readable git repository`)
   const commonDir = resolve(repoRoot, commonValue)
+  const gitDirValue = git(repoRoot, ['rev-parse', '--git-dir'])
   const paths = new Set<string>([
     ...lockFiles(join(commonDir, 'refs')),
     join(commonDir, 'packed-refs.lock'),
+    ...(gitDirValue ? [join(resolve(repoRoot, gitDirValue), 'index.lock')] : []),
+    ...worktreeIndexLockPaths(commonDir),
   ])
-  const worktrees = git(repoRoot, ['worktree', 'list', '--porcelain']) ?? ''
-  for (const line of worktrees.split('\n')) {
-    if (!line.startsWith('worktree ')) continue
-    const worktree = line.slice('worktree '.length)
-    const gitDirValue = git(worktree, ['rev-parse', '--git-dir'])
-    if (gitDirValue) paths.add(join(resolve(worktree, gitDirValue), 'index.lock'))
-  }
 
   const locks: GitLock[] = []
   for (const path of [...paths].sort()) {

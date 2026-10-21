@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { db } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
@@ -120,7 +121,12 @@ describe('review target', () => {
       writeFileSync(join(repo, 'base.txt'), 'base\n')
       git('add', 'base.txt')
       git('commit', '-m', 'base')
-      upsertProject({ name: 'implicit-review-preflight', path: repo, settings: { trunk: 'main' } })
+      upsertProject({
+        recordId: newRecordId(),
+        name: 'implicit-review-preflight',
+        path: repo,
+        settings: { trunk: 'main' },
+      })
       const before = db().query<{ count: number }, []>('SELECT COUNT(*) AS count FROM run').get()!
 
       expect(() =>

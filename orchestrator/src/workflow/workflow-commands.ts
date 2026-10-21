@@ -5,19 +5,21 @@ import { constants } from 'node:os'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { projects } from '../project/projects.ts'
+import { type Project, projectAt, projects } from '../project/projects.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
+import { resolveReviewIdentifier } from '../review/review-identifier.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
-  forkStepCatalogue,
-  productionStepCatalogue,
   promoteStepCatalogue,
+  resolvedStepCatalogueVersions,
   retireStepCatalogue,
   setStepCatalogue,
-  showStepCatalogue,
-  stepCatalogueVersions,
+  showResolvedStepCatalogue,
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
@@ -41,6 +43,7 @@ import {
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
+import { workflowImportLines } from './workflow-import-output.ts'
 import {
   type ProbeRecord,
   type ProbeRunner,
@@ -48,28 +51,26 @@ import {
   recordWorkflowProbe,
 } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
-import { checkWorkflowRendering, workflowRenderCheckLines } from './workflow-render-check.ts'
+import {
+  checkResolvedWorkflowRendering,
+  resolvedWorkflowRenderCheckLines,
+} from './workflow-render-check-store.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
-import {
-  importWorkflowTree,
-  productionWorkflowTree,
-  type WorkflowTreeImportResult,
-} from './workflow-tree-store.ts'
+import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
 import {
   composeWorkflow,
   forkWorkflow,
   getWorkflowStep,
-  listWorkflows,
-  productionWorkflows,
+  listResolvedWorkflows,
   promoteWorkflow,
+  resolvedWorkflowVersions,
   retireWorkflow,
   setWorkflow,
-  showWorkflow,
+  showResolvedWorkflow,
   workflowModeStepLists,
-  workflowVersions,
 } from './workflows.ts'
 
 export type WorkflowPresentation = {
@@ -101,8 +102,21 @@ export function workflowPrint(json: boolean, presentation: WorkflowPresentation)
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
 }
 
-export function listWorkflowCommand(print: WorkflowPrint): void {
-  const rows = listWorkflows()
+const inspectionProject = (options: WorkflowCommandOptions): Project | null =>
+  projectAt(resolve(options.cwd ?? process.cwd()))
+
+const inspectionProjectName = (options: WorkflowCommandOptions): string | null =>
+  inspectionProject(options)?.name ?? null
+
+export function listWorkflowCommand(
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  const database = db()
+  const rows = listResolvedWorkflows(
+    effectiveProjectSpace(database, inspectionProjectName(options)),
+    database,
+  )
   print(
     rows,
     rows
@@ -114,13 +128,23 @@ export function listWorkflowCommand(print: WorkflowPrint): void {
   )
 }
 
-export function showWorkflowCommand(argv: string[], print: WorkflowPrint): void {
-  print(showWorkflow(argv[2]!, positive(flagValue(argv, 'version'), '--version')))
+export function showWorkflowCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(
+    showResolvedWorkflow(
+      argv[2]!,
+      positive(flagValue(argv, 'version'), '--version'),
+      inspectionProjectName(options),
+    ),
+  )
 }
 
-export function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    promoteWorkflow(
+    await promoteWorkflow(
       argv[2]!,
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
@@ -129,9 +153,9 @@ export function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): vo
   )
 }
 
-export function retireWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function retireWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    retireWorkflow(
+    await retireWorkflow(
       argv[2]!,
       positive(argv[3], 'version')!,
       flagValue(argv, 'reason'),
@@ -140,9 +164,9 @@ export function retireWorkflowCommand(argv: string[], print: WorkflowPrint): voi
   )
 }
 
-export function forkWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function forkWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    forkWorkflow(
+    await forkWorkflow(
       argv[2]!,
       positive(flagValue(argv, 'from'), '--from'),
       flagValue(argv, 'reason'),
@@ -151,18 +175,18 @@ export function forkWorkflowCommand(argv: string[], print: WorkflowPrint): void 
   )
 }
 
-export function workflowVersionsCommand(argv: string[], print: WorkflowPrint): void {
-  print(workflowVersions(argv[2]!))
+export function workflowVersionsCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(resolvedWorkflowVersions(argv[2]!, inspectionProjectName(options)))
 }
 
 export function renderCheckCommand(json: boolean, presentation: WorkflowPresentation): void {
-  const result = checkWorkflowRendering(
-    productionWorkflows(db()),
-    productionStepCatalogue().definition,
-    projects(),
-  )
+  const result = checkResolvedWorkflowRendering(db(), projects())
   if (json) presentation.log(JSON.stringify(result))
-  else for (const line of workflowRenderCheckLines(result)) presentation.log(line)
+  else for (const line of resolvedWorkflowRenderCheckLines(result)) presentation.log(line)
   if (
     result.failures.length ||
     result.unresolvedProjects.length ||
@@ -301,11 +325,15 @@ function presentCommandOutcome(
 }
 
 function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
+  const run = flagValue(argv, 'run')
   return {
     ruling: positive(flagValue(argv, 'ruling'), '--ruling'),
-    review: positive(flagValue(argv, 'review'), '--review'),
+    review:
+      flagValue(argv, 'review') === undefined
+        ? undefined
+        : resolveReviewIdentifier(db(), flagValue(argv, 'review')!),
     gate: positive(flagValue(argv, 'gate'), '--gate'),
-    run: positive(flagValue(argv, 'run'), '--run'),
+    run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
     artifact: flagValue(argv, 'artifact'),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
@@ -383,11 +411,11 @@ export function abandonCommand(argv: string[], print: WorkflowPrint): void {
   print(result, result)
 }
 
-export function setWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const file = flagValue(argv, 'file')
   if (!file) throw new Error('file is required')
   print(
-    setWorkflow(
+    await setWorkflow(
       argv[2]!,
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
@@ -426,7 +454,10 @@ export async function stepCommand(
   const preliminary = composeWorkflow(slug, project, mode, args, undefined, selection)
   const stepSlug = mode
     ? target.step!
-    : resolveWorkflowStepReference(target.step!, workflowModeStepLists(slug, undefined, selection))
+    : resolveWorkflowStepReference(
+        target.step!,
+        workflowModeStepLists(slug, project, undefined, selection),
+      )
   const preliminaryStep = mode
     ? undefined
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection)
@@ -497,6 +528,7 @@ export function nextCommand(argv: string[], print: WorkflowPrint): void {
           question: flagValue(argv, 'question'),
           channel: 'cli',
         },
+    flagValue(argv, 'outcome'),
   )
   print(result, result)
 }
@@ -577,15 +609,24 @@ export function cursorsCommand(argv: string[], print: WorkflowPrint): void {
   print(rows, rows.map(renderWorkflowCursorLine).join('\n'))
 }
 
-export function showCatalogueCommand(argv: string[], print: WorkflowPrint): void {
-  print(showStepCatalogue(positive(flagValue(argv, 'version'), '--version')))
+export function showCatalogueCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(
+    showResolvedStepCatalogue(
+      inspectionProjectName(options),
+      positive(flagValue(argv, 'version'), '--version'),
+    ),
+  )
 }
 
-export function setCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+export async function setCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const file = flagValue(argv, 'file')
   if (!file) throw new Error('file is required')
   print(
-    setStepCatalogue(
+    await setStepCatalogue(
       JSON.parse(readFileSync(file, 'utf8')),
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
@@ -593,9 +634,9 @@ export function setCatalogueCommand(argv: string[], print: WorkflowPrint): void 
   )
 }
 
-export function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+export async function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    promoteStepCatalogue(
+    await promoteStepCatalogue(
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
@@ -603,9 +644,9 @@ export function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): v
   )
 }
 
-export function retireCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+export async function retireCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   print(
-    retireStepCatalogue(
+    await retireStepCatalogue(
       positive(argv[2], 'version')!,
       flagValue(argv, 'reason'),
       flagValue(argv, 'author'),
@@ -613,45 +654,59 @@ export function retireCatalogueCommand(argv: string[], print: WorkflowPrint): vo
   )
 }
 
-export function forkCatalogueCommand(argv: string[], print: WorkflowPrint): void {
-  print(
-    forkStepCatalogue(
-      positive(flagValue(argv, 'from'), '--from'),
-      flagValue(argv, 'reason'),
-      flagValue(argv, 'author'),
-    ),
+export function catalogueVersionsCommand(
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): void {
+  print(resolvedStepCatalogueVersions(inspectionProjectName(options)))
+}
+
+export function workflowProjectRefusal(input: {
+  command: 'hydrate' | 'import'
+  root: string
+  project: string | null
+  recordConfigured: boolean
+}): string | null {
+  if (input.project || !input.recordConfigured) return null
+  return (
+    `refusing workflow ${input.command} in ${input.root}: no registered project owns this directory\n` +
+    "cleared by: run from a registered project's worktree, or pass --cwd for one"
   )
 }
 
-export function catalogueVersionsCommand(print: WorkflowPrint): void {
-  print(stepCatalogueVersions())
-}
-
-function workflowRoot(argv: string[]): string {
-  const cwd = flagValue(argv, 'cwd')
-  if (!cwd) throw new Error('--cwd is required')
-  const resolved = resolve(cwd)
+function workflowCommandProject(
+  command: 'hydrate' | 'import',
+  options: WorkflowCommandOptions,
+): { root: string; project: Project | null } {
+  const resolved = resolve(options.cwd ?? process.cwd())
   const root = gitToplevel(resolved)
   if (!root) throw new Error(`refusing ${resolved}: not a git repository`)
-  return root
+  const project = inspectionProject({ ...options, cwd: root })
+  const refusal = workflowProjectRefusal({
+    command,
+    root,
+    project: project?.name ?? null,
+    recordConfigured: Boolean(resolveRecordApiUrl()),
+  })
+  if (refusal) throw new Error(refusal)
+  return { root, project }
 }
 
-function registeredMainCheckout(root: string): string | null {
-  return projects().find((project) => resolvedPathsEqual(root, project.path))?.path ?? null
-}
-
-export function hydrateCommand(argv: string[], presentation: WorkflowPresentation): void {
-  const root = workflowRoot(argv)
-  const main = registeredMainCheckout(root)
-  if (main) {
+export function hydrateCommand(
+  argv: string[],
+  presentation: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
+): void {
+  const { root, project } = workflowCommandProject('hydrate', options)
+  if (project && resolvedPathsEqual(root, project.path)) {
     throw new Error(
-      `refusing to hydrate registered main checkout ${main}\n` +
+      `refusing to hydrate registered main checkout ${project.path}\n` +
         'invariant: workflow hydration writes a disposable project tree, never the main checkout\n' +
         'cleared by: pass --cwd for a worktree',
     )
   }
   const plan = planWorkflowHydration({
-    store: productionWorkflowTree(),
+    store: productionWorkflowTree(db(), project?.name ?? null),
     tree: collectWorkflowTree(root),
   })
   for (const { path } of plan.writes) presentation.log(`write ${path}`)
@@ -665,23 +720,18 @@ export function hydrateCommand(argv: string[], presentation: WorkflowPresentatio
   presentation.log(`hydrated ${count} paths`)
 }
 
-export function workflowImportLines(result: WorkflowTreeImportResult): string[] {
-  return [
-    ...result.steps.map((slug) => `drafted step ${slug}`),
-    ...result.sequences.map((slug) => `drafted sequence ${slug}`),
-    ...result.workflows.map((slug) => `drafted workflow ${slug}`),
-    ...(result.steps.length || result.sequences.length || result.workflows.length
-      ? []
-      : ['no changes']),
-  ]
-}
-
-export function importCommand(argv: string[], print: WorkflowPrint): void {
-  const root = workflowRoot(argv)
-  const result = importWorkflowTree(
+export async function importCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const { root, project } = workflowCommandProject('import', options)
+  const result = await importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
     flagValue(argv, 'reason'),
     flagValue(argv, 'author'),
+    undefined,
+    project?.name,
   )
   print(result, workflowImportLines(result).join('\n'))
 }

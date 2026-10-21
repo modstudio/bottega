@@ -1,4 +1,31 @@
 export const branchModuleSpecs = [
+  { file: 'orchestrator/src/branch/branch-containment.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/branch/branch-ref-guard.ts',
+    allowed: ['../database/db.ts', '../git/git-environment.ts'],
+  },
+  {
+    file: 'orchestrator/src/branch/branch-proof-observer.ts',
+    allowed: [
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      './branch-landing-match.ts',
+      './branch-state.ts',
+      './merged-pull-request.ts',
+      './task-branch.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/branch/branch-key-report.ts',
+    allowed: [
+      '../project/projects.ts',
+      './branch-containment.ts',
+      './branch-proof-observer.ts',
+      './branch-state.ts',
+      './merged-pull-request.ts',
+      './task-branch.ts',
+    ],
+  },
   {
     file: 'orchestrator/src/branch/branch-base-claim.ts',
     allowed: ['../database/db.ts', '../project/projects.ts'],
@@ -25,8 +52,11 @@ export const branchModuleSpecs = [
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../pull-request/pr-admission.ts',
+      './branch-containment.ts',
       './branch-landing-match.ts',
       './branch-landing-record.ts',
+      './other-branch-state.ts',
+      './task-branch.ts',
     ],
   },
   {
@@ -41,6 +71,7 @@ export const branchModuleSpecs = [
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
+      './branch-landing-records.ts',
       './branch-state.ts',
       './task-branch.ts',
     ],

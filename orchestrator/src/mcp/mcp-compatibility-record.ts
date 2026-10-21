@@ -8,7 +8,7 @@ import { decideMcpCompatibility, type McpCompatibilityVerdict } from './mcp-comp
 import { parseMcpProbe, readMcpConfig } from './mcp-probe.ts'
 
 export type McpListingObservation = {
-  runId: number
+  runId: string
   startedAt: string
   connected: number | null
   listedTools: string[]
@@ -16,18 +16,18 @@ export type McpListingObservation = {
 
 /** Latest catalogue observed for a project server, regardless of which agent probed it. */
 export function latestMcpListing(
-  projectId: number,
+  projectId: string,
   server: string,
   database: Database = db(),
 ): McpListingObservation | null {
   const rows = database
     .query(
-      `SELECT id, started_at, mcp_connected, mcp_probe FROM run
-       WHERE project_id=? AND mcp_server=? AND mcp_probe IS NOT NULL
-       ORDER BY started_at DESC, id DESC`,
+      `SELECT record_id, started_at, mcp_connected, mcp_probe FROM run
+       WHERE project_record_id=? AND mcp_server=? AND mcp_probe IS NOT NULL
+       ORDER BY started_at DESC, number DESC`,
     )
     .all(projectId, server) as {
-    id: number
+    record_id: string
     started_at: string
     mcp_connected: number | null
     mcp_probe: string
@@ -36,7 +36,7 @@ export function latestMcpListing(
     const probe = parseMcpProbe(row.mcp_probe)
     if (probe?.listedTools === undefined) continue
     return {
-      runId: row.id,
+      runId: row.record_id,
       startedAt: row.started_at,
       connected: row.mcp_connected,
       listedTools: probe.listedTools,
@@ -56,27 +56,27 @@ export type McpCompatibilityRow = {
   pattern: string | null
   transport: 'url' | 'command' | 'unknown'
   auth: 'bearer' | 'header' | 'none'
-  lastObservation: { runId: number; time: string; connected: number | null } | null
+  lastObservation: { runId: string; time: string; connected: number | null } | null
 }
 
 function latestAgentObservation(
   agent: string,
-  projectId: number,
+  projectId: string,
   server: string,
   database: Database = db(),
-): { runId: number; time: string; connected: number | null } | null {
+): { runId: string; time: string; connected: number | null } | null {
   const row = database
     .query(
-      `SELECT id, started_at, mcp_connected FROM run
-       WHERE agent=? AND project_id=? AND mcp_server=?
-       ORDER BY started_at DESC, id DESC LIMIT 1`,
+      `SELECT record_id, started_at, mcp_connected FROM run
+       WHERE agent=? AND project_record_id=? AND mcp_server=?
+       ORDER BY started_at DESC, number DESC LIMIT 1`,
     )
     .get(agent, projectId, server) as {
-    id: number
+    record_id: string
     started_at: string
     mcp_connected: number | null
   } | null
-  return row ? { runId: row.id, time: row.started_at, connected: row.mcp_connected } : null
+  return row ? { runId: row.record_id, time: row.started_at, connected: row.mcp_connected } : null
 }
 
 /** Read the derived compatibility record without mutating the store. */
@@ -87,7 +87,7 @@ export function mcpCompatibilityRows(projectFilter?: string): McpCompatibilityRo
   )) {
     const server = project.settings.mcpServer ?? project.name
     const config = readMcpConfig(project.path)[server]
-    const listing = latestMcpListing(project.id, server)
+    const listing = latestMcpListing(project.recordId, server)
     const headers = config?.headers ?? {}
     const auth = Object.entries(headers).some(
       ([name, value]) => name.toLowerCase() === 'authorization' && /^bearer\s+/i.test(value),
@@ -112,7 +112,7 @@ export function mcpCompatibilityRows(projectFilter?: string): McpCompatibilityRo
         pattern: declaration.mcpToolNamePattern ?? null,
         transport: config?.url ? 'url' : config?.command ? 'command' : 'unknown',
         auth,
-        lastObservation: latestAgentObservation(agent, project.id, server),
+        lastObservation: latestAgentObservation(agent, project.recordId, server),
       })
     }
   }

@@ -21,7 +21,7 @@ test('an addressed revision read refuses an id from another document with the hi
     delivery: 'demand',
     reason: 'create other',
   })
-  const id = listDocRevisions('global', null, 'revision-other')[0]!.id
+  const id = listDocRevisions('global', null, 'revision-other')[0]!.record_id
 
   expect(() => readDocRevision('global', null, 'revision-owner', id)).toThrow(
     `revision ${id} does not belong to global/_/revision-owner; run ${PLATFORM_SLUG} doc history global - revision-owner`,
@@ -39,7 +39,7 @@ test('an addressed revision read applies the requested audience projection', asy
     audiences: ['technical', 'internal'],
     reason: 'create audience revision',
   })
-  const id = listDocRevisions('global', null, 'revision-audience')[0]!.id
+  const id = listDocRevisions('global', null, 'revision-audience')[0]!.record_id
 
   const revision = readDocRevision('global', null, 'revision-audience', id, null, 'internal')
 

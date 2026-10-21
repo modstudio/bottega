@@ -1,6 +1,7 @@
+import { resetPassword } from '@bottega/hub-data/hosted-auth'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { HostedResetPassword } from '@bottega/hub-views/password-reset'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
-import { HostedResetPassword } from '@/components/hosted-password-reset'
-import { isHostedMode } from '@/lib/hub-mode'
 
 export const Route = createFileRoute('/reset-password')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -10,6 +11,14 @@ export const Route = createFileRoute('/reset-password')({
   component: function ResetPasswordPage() {
     const search = Route.useSearch()
     if (!isHostedMode()) return <Navigate to="/" />
-    return <HostedResetPassword token={search.token} invalid={search.invalid} />
+    return (
+      <HostedResetPassword
+        token={search.token}
+        invalid={search.invalid}
+        resetPassword={resetPassword}
+        onResetComplete={() => window.location.assign('/sign-in?reset=success')}
+        requestAnotherHref="/forgot-password"
+      />
+    )
   },
 })

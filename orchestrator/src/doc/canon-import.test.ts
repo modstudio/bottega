@@ -87,7 +87,14 @@ test('canon import leaves non-current rows alone and refuses imported-path colli
 })
 
 describe.each([
-  ['project', { kind: 'project', subject: 'history-project' } as const],
+  [
+    'project',
+    {
+      kind: 'project',
+      subject: 'history-project',
+      projectId: '01990000-0000-7000-8000-000000000001',
+    } as const,
+  ],
   ['owner', { kind: 'user' } as const],
 ])('%s canon import history', (_name, address) => {
   test('cannot regain bootstrap after every live row is deleted', async () => {

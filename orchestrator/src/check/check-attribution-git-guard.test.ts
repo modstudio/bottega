@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/preload.ts'
-import { applyMigrations } from '../database/migrations.ts'
+import { writeMigratedTestDatabase } from '../database/test-database.fixture.ts'
 
 const hook = resolve(import.meta.dir, '../../hooks/git-guard.py')
 const fixtureRoots: string[] = []
@@ -27,10 +27,12 @@ function fixture() {
   mkdirSync(outside)
 
   const databasePath = join(root, 'orch.db')
-  const database = new Database(databasePath, { create: true })
-  applyMigrations(database)
+  writeMigratedTestDatabase(databasePath)
+  const database = new Database(databasePath)
   database
-    .query('INSERT INTO project (name,path,settings) VALUES (?,?,?)')
+    .query(
+      'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
+    )
     .run(
       'fixture',
       project,

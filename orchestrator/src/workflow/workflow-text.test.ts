@@ -1,10 +1,10 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
-  promoteStepCatalogue,
-  setStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursorByHandle,
@@ -20,23 +20,22 @@ import {
   WORKFLOW_TEXT_CURSOR_MAX_BYTES,
   workflowTextFacts,
 } from './workflow-text.ts'
-import { promoteWorkflow, setWorkflow } from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const context = { session: 'text-owner' }
 
-function database(): Database {
-  const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys=ON')
-  applyMigrations(d)
+const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
-  d.query('INSERT INTO project (name,path,stack,settings) VALUES (?,?,?,?)').run(
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run(
     'fixture',
     '/fixture',
     'bun',
     JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol: 'orch-docs' } }),
   )
   const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogue(
+  const catalogue = setStepCatalogueLocal(
     {
       steps: [
         ...current.steps,
@@ -56,8 +55,8 @@ function database(): Database {
     'test',
     d,
   )
-  promoteStepCatalogue(catalogue.n, 'publish fixture', 'test', d)
-  const workflow = setWorkflow(
+  promoteStepCatalogueLocal(catalogue.n, 'publish fixture', 'test', d)
+  const workflow = setWorkflowLocal(
     'text-fixture',
     {
       title: 'Text fixture',
@@ -76,9 +75,8 @@ function database(): Database {
     'test',
     d,
   )
-  promoteWorkflow('text-fixture', workflow.n, 'publish fixture', 'test', d)
-  return d
-}
+  promoteWorkflowLocal('text-fixture', workflow.n, 'publish fixture', 'test', d)
+})
 
 function open(d: Database): number {
   return getWorkflowStepWithCursor(

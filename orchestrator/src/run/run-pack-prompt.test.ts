@@ -58,9 +58,9 @@ describe('review instructions', () => {
     expect(prompt).not.toContain('Branch:')
   })
 
-  test('a known lens question appears once in the bound reviewer prompt', () => {
+  test('a known lens question appears once in the bound reviewer prompt', async () => {
     const question = 'Does this exact question appear once?'
-    setLens({
+    await setLens({
       id: 'question-once',
       title: 'Question once',
       question,
@@ -74,7 +74,7 @@ describe('review instructions', () => {
       requiresExecution: false,
       reason: 'prompt fixture',
     })
-    setProfile({
+    await setProfile({
       lensId: 'question-once',
       axis: 'framework',
       name: 'default',
@@ -85,6 +85,7 @@ describe('review instructions', () => {
     const initial = reviewLensPrompt({
       lens: { question, excludes: 'Other questions.' },
       mechanicallyEnforced: [],
+      earlierRejections: { project: 'fixture', branch: null, rows: [] },
       supplied: 'Inspect the change.',
     })
     const prompt = bindReviewInstructions({

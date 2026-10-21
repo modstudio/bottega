@@ -4,6 +4,7 @@ import { type BottegaEntry, bottegaEntryArgv } from '../../../shared/self-spawn.
 import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 
 const noteRowsSchema = z.array(
   z.object({
@@ -23,7 +24,7 @@ export type FiledNoteAnchor = {
   cwd: string
   project: string
   files: { path: string; line: number; content: string }[]
-  run_id: number | null
+  run_record_id: string | null
   branch: string | null
   commit: string | null
   session_id: string | null
@@ -58,11 +59,14 @@ export async function fileNote(
 ) {
   if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
   let cwd = options.cwd ?? process.cwd()
-  const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+  const runMarker = process.env.ORCH_RUN_ID
+  const runId = runMarker ? resolveRunIdentifier(db(), runMarker) : null
   const token = process.env.ORCH_RUN_TOKEN ?? ''
-  if (options.cwd === undefined && runId > 0 && strictlyAuthenticatedWorkerRun(runId, token)) {
+  if (options.cwd === undefined && runId && strictlyAuthenticatedWorkerRun(runId, token)) {
     const worker = db()
-      .query<{ launch_cwd: string | null }, [number]>('SELECT launch_cwd FROM run WHERE id=?')
+      .query<{ launch_cwd: string | null }, [string]>(
+        'SELECT launch_cwd FROM run WHERE record_id=?',
+      )
       .get(runId)
     if (worker?.launch_cwd) cwd = worker.launch_cwd
   }

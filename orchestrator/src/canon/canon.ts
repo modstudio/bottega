@@ -32,7 +32,7 @@ const trackedCache = new Map<string, Set<string>>()
 const scriptsCache = new Map<string, Set<string>>()
 
 export type PackDoc = {
-  revisionId: number
+  revisionId: string
   scope: string
   subject: string | null
   slug: string
@@ -359,9 +359,12 @@ function packedCanonMarkdown(projectName: string | null): {
 function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
   const project = projectAt(cwd)
   const selected = docsForRun({ job, cwd })
-  const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
-  const withRevisions = selected.map((doc: Doc & { revision_id?: number }) => {
-    const revisionId = doc.revision_id ?? (latest.get(doc.id) as { id: number | null }).id
+  const latest = db().query(
+    'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
+  )
+  const withRevisions = selected.map((doc: Doc & { revision_id?: string }) => {
+    const revisionId =
+      doc.revision_id ?? (latest.get(doc.record_id) as { record_id: string } | null)?.record_id
     if (revisionId == null)
       throw new Error(
         `doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing canon`,
@@ -613,12 +616,14 @@ function getDocForPack(packed: PackDoc): Doc {
 export function recordPack(pack: Pack): void {
   if (linkedWorktreeReadOnly) return
   const findings = findingsForPack(pack).reduce((sum, row) => sum + row.findings.length, 0)
+  const projectId = pack.project ? (projectByName(pack.project)?.recordId ?? null) : null
   writeTransaction(() => {
-    db().query('DELETE FROM canon_pack WHERE job=? AND project IS ?').run(pack.job, pack.project)
-    const projectId = pack.project ? (projectByName(pack.project)?.id ?? null) : null
+    db()
+      .query('DELETE FROM canon_pack WHERE job=? AND project_record_id IS ?')
+      .run(pack.job, projectId)
     db()
       .query(`INSERT INTO canon_pack
-      (record_id,job,project,project_id,sha256,bytes,canon_bytes,doc_bytes,doc_count,doc_revisions,compiled_at,findings)
+      (record_id,job,project,project_record_id,sha256,bytes,canon_bytes,doc_bytes,doc_count,doc_revisions,compiled_at,findings)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(
         newRecordId(),
@@ -644,7 +649,7 @@ export type PackDiff = {
   stored: null | { sha256: string; bytes: number; docs: PackDoc[] }
   added: PackDoc[]
   removed: PackDoc[]
-  changed: { slug: string; fromRevision: number; toRevision: number }[]
+  changed: { slug: string; fromRevision: string; toRevision: string }[]
   bytesDelta: number
 }
 
@@ -663,9 +668,10 @@ export function acceptPackDiff(diff: PackDiff): Pack | null {
 
 export function diffPack(input: { job: string; cwd: string }): PackDiff {
   const current = compilePack(input)
+  const projectId = current.project ? (projectByName(current.project)?.recordId ?? null) : null
   const row = db()
-    .query('SELECT * FROM canon_pack WHERE job=? AND project IS ?')
-    .get(current.job, current.project) as {
+    .query('SELECT * FROM canon_pack WHERE job=? AND project_record_id IS ?')
+    .get(current.job, projectId) as {
     sha256: string
     bytes: number
     doc_revisions: string
@@ -692,11 +698,14 @@ export function diffPack(input: { job: string; cwd: string }): PackDiff {
 }
 
 export function allInjectChecks(): { doc: PackDoc; findings: Finding[] }[] {
-  const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
+  const latest = db().query(
+    'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
+  )
   return listDocs()
     .filter((doc) => doc.delivery === 'inject')
     .map((doc) => {
-      const revisionId = (latest.get(doc.id) as { id: number | null }).id ?? 0
+      const revisionId =
+        (latest.get(doc.record_id) as { record_id: string } | null)?.record_id ?? ''
       const packed = {
         revisionId,
         scope: doc.scope,
@@ -723,7 +732,7 @@ export function allInjectChecks(): { doc: PackDoc; findings: Finding[] }[] {
 }
 
 export function storedPackDrift(): PackDiff[] {
-  const rows = db().query('SELECT job, project FROM canon_pack ORDER BY id').all() as {
+  const rows = db().query('SELECT job, project FROM canon_pack ORDER BY job,project').all() as {
     job: string
     project: string | null
   }[]
