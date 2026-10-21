@@ -700,6 +700,7 @@ export const modules: ArchitectureModule[] = [
     './step-catalogue-definition.ts',
     './workflow-definition.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
   module('orchestrator/src/workflow/workflow-tree.ts', [
     './step-catalogue.ts',
     './workflow-step-sequences.ts',

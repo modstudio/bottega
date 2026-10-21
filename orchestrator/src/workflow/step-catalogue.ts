@@ -420,6 +420,7 @@ function catalogueDraft(
   author: string | undefined,
   d: Database,
   project?: string,
+  onHostedWrite?: (n: number) => void,
 ) {
   return applyRecordWriteAuthority({
     local: () => lifecycle.write(CATALOGUE, definition, reason, author, event, d),
@@ -441,6 +442,7 @@ function catalogueDraft(
         },
         { destinationSpaceId: spaceId },
       )
+      onHostedWrite?.(result.versions.at(-1)!.n)
       await applyWorkflowWriteResponse(d, 'step_catalogue', result)
       return selectedStepCatalogue(result.versions.at(-1)!.n, d, spaceId)
     },
@@ -685,9 +687,10 @@ export function importStepCatalogue(
   author?: string,
   d: Database = writableDb(),
   project?: string,
+  onHostedWrite?: (n: number) => void,
 ) {
   assertCatalogueWriteAllowed('import step catalogue')
-  return catalogueDraft('import', definition, undefined, reason, author, d, project)
+  return catalogueDraft('import', definition, undefined, reason, author, d, project, onHostedWrite)
 }
 const importStepCatalogueLocal = (
   definition: unknown,

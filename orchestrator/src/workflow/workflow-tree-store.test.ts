@@ -1,8 +1,14 @@
 import type { Database } from 'bun:sqlite'
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
@@ -23,6 +29,13 @@ import {
 const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
 })
+const HOSTED_SPACE = '01990000-0000-7000-8000-000000000224'
+const hostedAt = '2026-10-20T12:00:00.000Z'
+
+afterEach(() => {
+  delete process.env.ORCH_RECORD_API_URL
+  installRecordApiClient(createMemoryRecordApiClient())
+})
 
 const renderedTree = (d: Database) =>
   planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
@@ -35,13 +48,13 @@ const importAndPromoteCurrentTree = async (d: Database) => {
     'test',
     d,
   )
-  if (imported.steps.length || imported.sequences.length) {
+  if (imported.catalogue.status === 'created') {
     const catalogue = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
     promoteStepCatalogueLocal(catalogue.n, 'compose current tree fixture', 'test', d)
   }
-  for (const slug of imported.workflows) {
+  for (const { slug } of imported.workflowOutcomes.filter(({ status }) => status === 'created')) {
     const workflow = d
       .query(
         "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
@@ -67,7 +80,7 @@ describe('importWorkflowTree', () => {
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number } | null
     if (draft) promoteStepCatalogueLocal(draft.n, 'round-trip fixture', 'test', d)
-    for (const slug of imported.workflows) {
+    for (const { slug } of imported.workflowOutcomes.filter(({ status }) => status === 'created')) {
       const workflowDraft = d
         .query(
           "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
@@ -90,7 +103,7 @@ describe('importWorkflowTree', () => {
 
     const result = await importWorkflowTree(parseWorkflowTree(tree), 'edit lens', 'worker', d)
 
-    expect(result.steps).toEqual(['blast-radius'])
+    expect(result.catalogue.status).toBe('created')
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
@@ -115,7 +128,9 @@ describe('importWorkflowTree', () => {
 
     const result = await importWorkflowTree(parseWorkflowTree(tree), 'add sequence', 'worker', d)
 
-    expect(result).toEqual({ steps: [], sequences: ['quality'], workflows: [] })
+    expect(result).toMatchObject({
+      catalogue: { status: 'created' },
+    })
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
@@ -142,7 +157,11 @@ describe('importWorkflowTree', () => {
         "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug='ship-task' AND v.status='draft'",
       )
       .get() as { n: number }
-    expect(imported.workflows).toContain('ship-task')
+    expect(imported.workflowOutcomes).toContainEqual({
+      slug: 'ship-task',
+      status: 'created',
+      n: shipTask.n,
+    })
     promoteWorkflowLocal('ship-task', shipTask.n, 'compose fixture', 'test', d)
 
     for (const [project, protocol] of [
@@ -306,7 +325,14 @@ describe('importWorkflowTree', () => {
 
     const result = await importWorkflowTree(parseWorkflowTree(tree), 'add tree flow', 'worker', d)
 
-    expect(result).toEqual({ steps: ['tree-step'], sequences: [], workflows: ['tree-flow'] })
+    expect(result).toMatchObject({
+      catalogue: { status: 'created' },
+    })
+    expect(result.workflowOutcomes).toContainEqual({
+      slug: 'tree-flow',
+      status: 'created',
+      n: 1,
+    })
     const draft = d
       .query("SELECT n FROM step_catalogue_version WHERE status='draft' ORDER BY n DESC LIMIT 1")
       .get() as { n: number }
@@ -316,6 +342,9 @@ describe('importWorkflowTree', () => {
     expect(showWorkflow('tree-flow', undefined, d).status).toBe('draft')
     expect(productionStepCatalogue(d).n).toBe(productionCatalogue.n)
     expect(productionWorkflows(d)).toEqual(productionFlows)
+    expect(() =>
+      promoteWorkflowLocal('tree-flow', 1, 'must await catalogue promotion', 'test', d),
+    ).toThrow('references missing step "tree-step"')
   })
 
   test('a production flow missing from the tree refuses the import and writes nothing', () => {
@@ -341,5 +370,131 @@ describe('importWorkflowTree', () => {
     expect(
       (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number }).count,
     ).toBe(before.workflows)
+  })
+
+  test('an import equal to the newest drafts reports no change and writes nothing', async () => {
+    const d = database()
+    const tree = renderedTree(d)
+    const target = tree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
+    target.body = target.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nA stable draft body.\n')
+    const flow = tree.find(({ path }) => path === '.agents/workflows/fix-defect.md')!
+    flow.body = flow.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nA stable workflow draft.\n')
+
+    const first = await importWorkflowTree(parseWorkflowTree(tree), 'first import', 'worker', d)
+    const before = {
+      catalogue: (
+        d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number }
+      ).count,
+      workflows: (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number })
+        .count,
+    }
+    const second = await importWorkflowTree(parseWorkflowTree(tree), 'retry import', 'worker', d)
+
+    expect(first.catalogue.status).toBe('created')
+    expect(first.workflowOutcomes).toContainEqual({ slug: 'fix-defect', status: 'created', n: 2 })
+    expect(second.catalogue).toEqual({ status: 'no change' })
+    expect(second.workflowOutcomes).toContainEqual({ slug: 'fix-defect', status: 'no change' })
+    expect(
+      (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
+        .count,
+    ).toBe(before.catalogue)
+    expect(
+      (d.query('SELECT COUNT(*) count FROM workflow_version').get() as { count: number }).count,
+    ).toBe(before.workflows)
+  })
+
+  test('a hosted failure reports drafts already written and drafts still pending', async () => {
+    const d = database()
+    const production = productionWorkflowTree(d)
+    const catalogueOwnerId = newRecordId()
+    applyWorkflowCatalogueRow(d, 'step_catalogue', {
+      id: catalogueOwnerId,
+      spaceId: HOSTED_SPACE,
+      slug: 'shared',
+      createdAt: hostedAt,
+      updatedAt: hostedAt,
+    })
+    applyWorkflowCatalogueRow(d, 'step_catalogue_version', {
+      id: newRecordId(),
+      spaceId: HOSTED_SPACE,
+      ownerId: catalogueOwnerId,
+      n: 1,
+      status: 'production',
+      definition: JSON.stringify({ steps: production.steps, sequences: production.sequences }),
+      author: 'test',
+      reason: 'fixture',
+      createdAt: hostedAt,
+      promotedAt: hostedAt,
+      retiredAt: null,
+      updatedAt: hostedAt,
+    })
+    const tree = structuredClone(production)
+    tree.steps[0]!.body = `${tree.steps[0]!.body}\nHosted edit.`
+    tree.workflows.find(({ slug }) => slug === 'fix-defect')!.definition.description =
+      'Hosted workflow edit.'
+    const catalogueVersionId = newRecordId()
+    const catalogueEventId = newRecordId()
+    let writes = 0
+    process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      whoami: async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: HOSTED_SPACE,
+        personalSpaceId: HOSTED_SPACE,
+        memberships: [],
+      }),
+      async draftWorkflow(input) {
+        writes++
+        if (writes === 2) throw new Error('second draft failed')
+        return {
+          identity: {
+            id: catalogueOwnerId,
+            spaceId: HOSTED_SPACE,
+            slug: 'shared',
+            generation: 1,
+            createdAt: hostedAt,
+            updatedAt: hostedAt,
+          },
+          versions: [
+            {
+              id: catalogueVersionId,
+              spaceId: HOSTED_SPACE,
+              ownerId: catalogueOwnerId,
+              n: 2,
+              status: 'draft',
+              definition: input.definition!,
+              author: 'worker',
+              reason: 'partial report',
+              createdAt: hostedAt,
+              promotedAt: null,
+              retiredAt: null,
+              updatedAt: hostedAt,
+            },
+          ],
+          events: [
+            {
+              id: catalogueEventId,
+              spaceId: HOSTED_SPACE,
+              ownerVersionId: catalogueVersionId,
+              event: 'import',
+              author: 'worker',
+              reason: 'partial report',
+              sessionId: null,
+              at: hostedAt,
+            },
+          ],
+        }
+      },
+    })
+
+    await expect(importWorkflowTree(tree, 'partial report', 'worker', d)).rejects.toThrow(
+      [
+        'hosted workflow import stopped: second draft failed',
+        'written drafts: catalogue draft 2',
+        'not written: workflow fix-defect',
+        'retry the same import; completed drafts are detected as no change',
+      ].join('\n'),
+    )
   })
 })

@@ -10,7 +10,7 @@ import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { commandOutcome, workflowImportLines, workflowProjectRefusal } from './workflow-commands.ts'
+import { commandOutcome, workflowProjectRefusal } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 import {
@@ -388,7 +388,7 @@ test('workflow import resolves hosted production from the worktree without ORCH_
     else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
     fixture.dispose()
   }
-  expect(lines).toEqual(['no changes'])
+  expect(lines.join('\n')).toMatch(/^catalogue: no change\n(?:.+: no change\n?)+$/)
 })
 
 test('workflow tree project refusal is only required for a configured record without an owner', () => {
@@ -427,12 +427,6 @@ test('workflow hydrate and import refuse an unowned directory when a record is c
     if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
     else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
   }
-})
-
-test('workflow import reports a sequence-only draft as a change', () => {
-  expect(workflowImportLines({ steps: [], sequences: ['review'], workflows: [] })).toEqual([
-    'drafted sequence review',
-  ])
 })
 
 test('mode-less step command resolves autonomy from the fetched catalogue step', async () => {

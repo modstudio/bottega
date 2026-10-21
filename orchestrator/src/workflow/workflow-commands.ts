@@ -43,6 +43,7 @@ import {
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
+import { workflowImportLines } from './workflow-import-output.ts'
 import {
   type ProbeRecord,
   type ProbeRunner,
@@ -58,11 +59,7 @@ import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
-import {
-  importWorkflowTree,
-  productionWorkflowTree,
-  type WorkflowTreeImportResult,
-} from './workflow-tree-store.ts'
+import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -727,17 +724,6 @@ export function hydrateCommand(
   }
   applyWorkflowTreePlan(root, plan)
   presentation.log(`hydrated ${count} paths`)
-}
-
-export function workflowImportLines(result: WorkflowTreeImportResult): string[] {
-  return [
-    ...result.steps.map((slug) => `drafted step ${slug}`),
-    ...result.sequences.map((slug) => `drafted sequence ${slug}`),
-    ...result.workflows.map((slug) => `drafted workflow ${slug}`),
-    ...(result.steps.length || result.sequences.length || result.workflows.length
-      ? []
-      : ['no changes']),
-  ]
 }
 
 export async function importCommand(

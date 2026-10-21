@@ -505,6 +505,7 @@ function hostedDraft(
   d: Database,
   project?: string,
   knownCatalogue?: StepCatalogueDefinition,
+  onHostedWrite?: (n: number) => void,
 ) {
   requireSlug(slug)
   return applyRecordWriteAuthority({
@@ -512,7 +513,7 @@ function hostedDraft(
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await hostedSpace(d, project)
-      requireValid(definition, undefined, hostedProductionCatalogue(d, spaceId))
+      requireValid(definition, undefined, knownCatalogue ?? hostedProductionCatalogue(d, spaceId))
       const result = await recordApiClient().draftWorkflow!(
         {
           kind: 'workflow',
@@ -527,6 +528,7 @@ function hostedDraft(
         },
         { destinationSpaceId: spaceId },
       )
+      onHostedWrite?.(result.versions.at(-1)!.n)
       await applyWorkflowWriteResponse(d, 'workflow', result)
       return hostedWorkflowRow(slug, result.versions.at(-1)!.n, d, spaceId)
     },
@@ -999,6 +1001,7 @@ export function importWorkflow(
   d: Database = writableDb(),
   knownCatalogue?: StepCatalogueDefinition,
   project?: string,
+  onHostedWrite?: (n: number) => void,
 ) {
   assertWorkflowWriteAllowed('import workflow')
   required(reason, 'reason')
@@ -1012,6 +1015,7 @@ export function importWorkflow(
     d,
     project,
     knownCatalogue,
+    onHostedWrite,
   )
 }
 export const importWorkflowLocal = (
