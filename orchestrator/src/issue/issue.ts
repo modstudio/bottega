@@ -13,7 +13,7 @@ import {
 } from '../contract/contract.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
-import { type Project, projectByName } from '../project/projects.ts'
+import { type Project, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { prepareSharedRefGuard } from '../resources/ref-guard.ts'
 import { run } from '../run/run.ts'
@@ -23,6 +23,8 @@ import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/
 import { sandboxRuntimeAvailability, srtInstalled } from '../sandbox/sandbox-runtime.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
+import { createReadOnlyWithTool, createReadOnlyWorktree } from '../worktree/worktree-readonly.ts'
+import { removeReadOnlyTree } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
 import {
@@ -305,11 +307,20 @@ function fixSeedRejection(target: Project, reporting: Project, comments: string[
     : null
 }
 
-function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
+export function issueSeedRequired(
+  stage: 'diagnosis' | 'fix',
+  seeds: readonly string[],
+  seed: string | null,
+): boolean {
+  return stage === 'fix' && seeds.length > 0 && seed === null
+}
+
+export function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
   return `Independently reproduce and diagnose this filed issue in the reporting project's checkout.
 Call project_brief for ${issue.reportingProject} LIVE before concluding where the cause is.
 Do not edit files. Establish whether the cause is ${PLATFORM_NAME}'s own code, the live register row, or this project's own tool.
 NOT REPRODUCIBLE is permitted only after attempting the supplied command in this worktree and environment.
+The reproduction.command in your reply must be one shell command, run from the repository root of the project it names, that exits nonzero while the defect is present and zero once it is fixed. Prefer a focused test.
 Return only the bound structured result. The bounded issue pack contains exactly the filing fields, and nothing else:
 ${boundedIssuePack(issue)}${priorRecord ? `\n\nPrior record on this issue, including any ruling - a ruling here is binding:\n${priorRecord}` : ''}`
 }
@@ -334,10 +345,11 @@ export async function priorIssueRecord(
   return [...comments, ...documents].join('\n\n---\n\n')
 }
 
-function fixPrompt(issue: FiledIssue, diagnosis: Diagnosis): string {
+export function fixPrompt(issue: FiledIssue, diagnosis: Diagnosis): string {
   return `Fix the independently diagnosed issue below. Re-establish the facts; the diagnosis is evidence, not a ruling.
 Commit every completed or partial change to this issue branch before returning. Do not land or push.
 Measure before and after in the failing condition. State the blast radius and what you could not establish.
+The reproduction.command in your reply must be one shell command, run from the repository root of the project it names, that exits nonzero while the defect is present and zero once it is fixed. Prefer a focused test.
 FILED TASK (bounded filing fields only):
 ${boundedIssuePack(issue)}
 
@@ -420,6 +432,90 @@ async function handbackAskingIssue(
   )
 }
 
+async function measureIssueBefore(input: {
+  command: string
+  diagnosisRun: RunResult
+  fixRun: RunResult
+  reporting: Project
+  target: Project
+  sandboxHome: string
+}): Promise<{ ok: boolean; text: string; exitCode: number }> {
+  if (input.target.name === input.reporting.name) {
+    return input.diagnosisRun.worktree
+      ? shell(input.command, input.diagnosisRun.worktree.path, {
+          project: input.reporting,
+          sandboxHome: input.sandboxHome,
+        })
+      : { ok: false, text: 'diagnosis worktree is unavailable', exitCode: -1 }
+  }
+  if (!input.fixRun.worktree) {
+    return { ok: false, text: 'fix worktree is unavailable', exitCode: -1 }
+  }
+
+  const tool = resolvedWorktreeTool(input.target)
+  const beforeTree = tool?.readonly_create
+    ? createReadOnlyWithTool(
+        tool,
+        input.target.path,
+        input.diagnosisRun.record_id,
+        input.fixRun.worktree.base,
+      )
+    : createReadOnlyWorktree(
+        input.target.path,
+        input.diagnosisRun.record_id,
+        input.fixRun.worktree.base,
+        undefined,
+        tool?.readonly_provision,
+      )
+  let measurement: { ok: boolean; text: string; exitCode: number } | null = null
+  let measurementError: unknown = null
+  try {
+    measurement = await shell(input.command, beforeTree.path, {
+      project: input.target,
+      sandboxHome: input.sandboxHome,
+    })
+  } catch (error) {
+    measurementError = error
+  }
+  const removed = removeReadOnlyTree(tool ?? {}, beforeTree)
+  if (!removed.removed) {
+    throw new Error(`could not release before-measurement checkout: ${removed.detail}`)
+  }
+  if (measurementError) throw measurementError
+  if (!measurement) throw new Error('before measurement returned no result')
+  return measurement
+}
+
+function fixVerificationResumeLine(input: {
+  ready: boolean
+  issueKey: string
+  fixRun: RunResult
+  fix: IssueWorkerReply
+  target: Project
+  branchKey: string
+}): string | undefined {
+  return input.ready
+    ? undefined
+    : issueResumeLine(input.issueKey, {
+        runNumber: input.fixRun.number,
+        target: input.target.name,
+        branchKey: input.branchKey,
+        branch: input.fixRun.worktree?.branch ?? input.fix.branch,
+      })
+}
+
+async function reportCauseCorrection(issue: FiledIssue, fix: IssueWorkerReply): Promise<void> {
+  if (fix.cause_matched_report !== false) return
+  await comment(
+    issue.key,
+    `Reporter correction: the established cause differed from the report. ${fix.established_cause ?? 'See the outcome document for the measured cause.'}`,
+  )
+}
+
+function issueReproductionCommand(fix: IssueWorkerReply, diagnosis: Diagnosis): string {
+  return fix.reproduction.command.trim() || diagnosis.reproduction.command.trim()
+}
+
 async function verifyOrHandbackFix(
   issue: FiledIssue,
   diagnosis: Diagnosis,
@@ -439,16 +535,20 @@ async function verifyOrHandbackFix(
     issue.key,
     `Fix run ${fixRun.record_id} completed on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; committed work is durable and coordinator verification is starting.`,
   )
-  const before =
-    diagnosisRun.worktree && issue.reproduceCommand
-      ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
-          project: reporting,
-          sandboxHome,
-        })
-      : { ok: false, text: 'no reproduction command', exitCode: -1 }
+  const reproductionCommand = issueReproductionCommand(fix, diagnosis)
+  const before = reproductionCommand
+    ? await measureIssueBefore({
+        command: reproductionCommand,
+        diagnosisRun,
+        fixRun,
+        reporting,
+        target,
+        sandboxHome,
+      })
+    : { ok: false, text: 'no reproduction command', exitCode: -1 }
   const after =
-    fixRun.worktree && issue.reproduceCommand
-      ? await shell(issue.reproduceCommand, fixRun.worktree.path, {
+    fixRun.worktree && reproductionCommand
+      ? await shell(reproductionCommand, fixRun.worktree.path, {
           project: target,
           sandboxHome,
         })
@@ -481,8 +581,8 @@ async function verifyOrHandbackFix(
   const ready = issueFixReady(
     fix,
     diagnosis,
-    before.text,
-    after.text,
+    before.exitCode,
+    after.exitCode,
     plainGate.ok,
     environmentGate.ok,
     reviewDecision.ready,
@@ -501,18 +601,33 @@ async function verifyOrHandbackFix(
   await handoff(
     issue.key,
     ready ? 'Issue outcome: fixed, ready to land' : 'Issue handback after verification',
-    outcomeDocument(issue, fix, fix, extra),
+    outcomeDocument(
+      issue,
+      fix,
+      fix,
+      extra,
+      fixVerificationResumeLine({ ready, issueKey: issue.key, fixRun, fix, target, branchKey }),
+    ),
   )
   await comment(
     issue.key,
     `${ready ? 'FIXED and ready to land' : 'Handed back'} on branch ${fixRun.worktree?.branch ?? fix.branch ?? 'unknown'}; coordinator evidence is in the task document.`,
   )
-  if (fix.cause_matched_report === false) {
-    await comment(
-      issue.key,
-      `Reporter correction: the established cause differed from the report. ${fix.established_cause ?? 'See the outcome document for the measured cause.'}`,
-    )
-  }
+  await reportCauseCorrection(issue, fix)
+}
+
+export function issueResumeLine(
+  issueKey: string,
+  fix?: {
+    runNumber: number
+    target: string
+    branchKey: string
+    branch: string | null
+  },
+): string {
+  return fix?.branch
+    ? `Resume with: ${PLATFORM_SLUG} tree open ${fix.runNumber}, then ${PLATFORM_SLUG} workflow compose ship-task --project ${fix.target} --mode merge --arg key=${fix.branchKey} --arg branch=${fix.branch} --arg worktree=<path tree open prints>`
+    : `Resume with: ${PLATFORM_SLUG} workflow fix-defect ${issueKey}`
 }
 
 function outcomeDocument(
@@ -520,6 +635,7 @@ function outcomeDocument(
   result: Diagnosis | IssueWorkerReply,
   fix?: IssueWorkerReply,
   extra: string[] = [],
+  resumeLine = issueResumeLine(issue.key),
 ) {
   return [
     `Outcome: ${result.outcome ?? 'handback'}`,
@@ -542,7 +658,7 @@ function outcomeDocument(
       : []),
     ...extra,
     `What could not be established: ${result.not_established}`,
-    `Resume with: ${PLATFORM_SLUG} workflow fix-defect ${issue.key}`,
+    resumeLine,
   ].join('\n\n')
 }
 
@@ -681,24 +797,8 @@ export async function workIssue(key: string): Promise<void> {
     )
     return
   }
-  const seeds = reporting.settings.worktree?.seeds ?? []
   const comments = taskCommentBodies(shown)
   const seed = resolvedSeed(reporting, issue.environment, comments)
-  if (seeds.length && !seed) {
-    const body = requestText(
-      issue,
-      'Which reporting-project database seed should reproduce this issue?',
-      seeds,
-      seeds.includes('none')
-        ? 'none, unless the reported behavior depends on application data'
-        : seeds[0]!,
-      'No isolated reporting-project worktree can be created without this choice.',
-      rejectedSeedAnswer(seeds, comments),
-    )
-    await comment(issue.key, body)
-    console.log(body)
-    return
-  }
 
   const scratch = mkdtempSync(join(tmpdir(), 'orch-issue-'))
   const sandboxHome = join(scratch, 'home')
@@ -780,9 +880,10 @@ export async function workIssue(key: string): Promise<void> {
         .split('.')
         .reverse()
         .reduce<unknown>((value, part) => ({ [part]: value }), proposed)
+      const reproductionCommand = diagnosis.reproduction.command.trim()
       const before =
-        diagnosisRun.worktree && issue.reproduceCommand
-          ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+        diagnosisRun.worktree && reproductionCommand
+          ? await shell(reproductionCommand, diagnosisRun.worktree.path, {
               project: reporting,
               sandboxHome,
             })
@@ -800,8 +901,8 @@ export async function workIssue(key: string): Promise<void> {
         { ...process.env, ORCH_DB: copy },
       )
       const after =
-        applied.ok && diagnosisRun.worktree && issue.reproduceCommand
-          ? await shell(issue.reproduceCommand, diagnosisRun.worktree.path, {
+        applied.ok && diagnosisRun.worktree && reproductionCommand
+          ? await shell(reproductionCommand, diagnosisRun.worktree.path, {
               project: reporting,
               sandboxHome,
               orchStore: copy,
@@ -869,7 +970,7 @@ export async function workIssue(key: string): Promise<void> {
     }
     const targetSeeds = target.settings.worktree?.seeds ?? []
     const fixSeed = target.name === reporting.name ? seed : null
-    if (targetSeeds.length && !fixSeed) {
+    if (issueSeedRequired('fix', targetSeeds, fixSeed)) {
       const body = requestText(
         issue,
         `Which ${target.name} database seed should the fix worktree use?`,

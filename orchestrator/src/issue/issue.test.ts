@@ -9,7 +9,11 @@ import {
 import { JOBS } from '../jobs/jobs.ts'
 import type { Project } from '../project/projects.ts'
 import {
+  diagnosisPrompt,
+  fixPrompt,
   ISSUE_DIAGNOSIS_SCHEMA,
+  issueResumeLine,
+  issueSeedRequired,
   parseIssueReply,
   priorIssueRecord,
   requestText,
@@ -18,6 +22,16 @@ import {
 import type { FiledIssue } from './issue-file.ts'
 
 describe('filed issue coordinator inputs', () => {
+  test('diagnosis and fix prompts define the executable reproduction contract', () => {
+    const issue = {
+      reportingProject: PLATFORM_SLUG,
+    } as FiledIssue
+    const contract =
+      'one shell command, run from the repository root of the project it names, that exits nonzero while the defect is present and zero once it is fixed'
+    expect(diagnosisPrompt(issue, '')).toContain(contract)
+    expect(fixPrompt(issue, {} as never)).toContain(contract)
+  })
+
   test('includes a UUID-addressed handoff in the prior issue record', async () => {
     const id = '01990000-0000-7000-8000-000000001214'
     const requested: string[] = []
@@ -50,6 +64,27 @@ describe('filed issue coordinator inputs', () => {
     expect(
       requestText(issue, 'Which seed?', ['none', 'full'], 'none', 'worktree', 'production'),
     ).toContain('Rejected seed: production; registered options: none | full')
+  })
+
+  test('seed selection blocks only the writing fix tree', () => {
+    expect(issueSeedRequired('diagnosis', ['none', 'full'], null)).toBe(false)
+    expect(issueSeedRequired('fix', ['none', 'full'], null)).toBe(true)
+    expect(issueSeedRequired('fix', ['none', 'full'], 'full')).toBe(false)
+    expect(issueSeedRequired('fix', [], null)).toBe(false)
+  })
+
+  test('a fixed-branch handback ships the existing run while coordinator failure restarts', () => {
+    expect(
+      issueResumeLine('DEV-9', {
+        runNumber: 42,
+        target: 'starship',
+        branchKey: 'STAR-7',
+        branch: 'STAR-7-fix',
+      }),
+    ).toBe(
+      `Resume with: ${PLATFORM_SLUG} tree open 42, then ${PLATFORM_SLUG} workflow compose ship-task --project starship --mode merge --arg key=STAR-7 --arg branch=STAR-7-fix --arg worktree=<path tree open prints>`,
+    )
+    expect(issueResumeLine('DEV-9')).toBe(`Resume with: ${PLATFORM_SLUG} workflow fix-defect DEV-9`)
   })
 
   test('the issue path consumes its chosen seed only for the writing fix run', () => {

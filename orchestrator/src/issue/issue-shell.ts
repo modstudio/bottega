@@ -58,8 +58,8 @@ export function issueFixReady(
     after: string | null
   },
   diagnosis: { cause_location: string | null; before: string | null },
-  before: string,
-  after: string,
+  beforeExit: number,
+  afterExit: number,
   plainGateOk: boolean,
   environmentGateOk: boolean,
   reviewReady: boolean,
@@ -68,9 +68,8 @@ export function issueFixReady(
     fix.status === 'done' &&
     fix.outcome === 'fixed' &&
     fix.cause_location === diagnosis.cause_location &&
-    before === diagnosis.before &&
-    after === fix.after &&
-    before !== after &&
+    beforeExit !== 0 &&
+    afterExit === 0 &&
     plainGateOk &&
     environmentGateOk &&
     reviewReady

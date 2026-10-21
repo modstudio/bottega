@@ -12,6 +12,7 @@ import {
 import {
   filedIssueCommandPlan,
   filedIssueCommandResult,
+  issueFixReady,
   issueRunAsked,
   workerGateEnvironment,
 } from './issue-shell.ts'
@@ -94,6 +95,43 @@ describe('filed issue command confinement', () => {
       issueRunAsked({ status: 'ok' }, { status: 'done', questions: [{ question: 'which?' }] }),
     ).toBe(true)
     expect(issueRunAsked({ status: 'ok' }, { status: 'done', questions: null })).toBe(false)
+  })
+
+  test('fix readiness requires a failing before command and passing after command', () => {
+    const fix = {
+      status: 'done',
+      outcome: 'fixed',
+      cause_location: 'orch-code',
+      after: 'worker prose',
+    }
+    const diagnosis = { cause_location: 'orch-code', before: 'different worker prose' }
+    const ready = (beforeExit: number, afterExit: number) =>
+      issueFixReady(fix, diagnosis, beforeExit, afterExit, true, true, true)
+
+    expect(ready(1, 0)).toBe(true)
+    expect(ready(0, 0)).toBe(false)
+    expect(ready(1, 1)).toBe(false)
+    expect(ready(0, 1)).toBe(false)
+  })
+
+  test('each non-reproduction readiness condition still blocks a fix', () => {
+    const fix = {
+      status: 'done',
+      outcome: 'fixed',
+      cause_location: 'orch-code',
+      after: null,
+    }
+    const diagnosis = { cause_location: 'orch-code', before: null }
+    expect(issueFixReady({ ...fix, status: 'asking' }, diagnosis, 1, 0, true, true, true)).toBe(
+      false,
+    )
+    expect(issueFixReady({ ...fix, outcome: null }, diagnosis, 1, 0, true, true, true)).toBe(false)
+    expect(
+      issueFixReady({ ...fix, cause_location: 'project-tool' }, diagnosis, 1, 0, true, true, true),
+    ).toBe(false)
+    expect(issueFixReady(fix, diagnosis, 1, 0, false, true, true)).toBe(false)
+    expect(issueFixReady(fix, diagnosis, 1, 0, true, false, true)).toBe(false)
+    expect(issueFixReady(fix, diagnosis, 1, 0, true, true, false)).toBe(false)
   })
 
   test('a timed-out command is a failed result naming the limit', () => {
