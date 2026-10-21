@@ -52,6 +52,7 @@ const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
   exec: {
     id: 4,
+    command: `${PLATFORM_SLUG} pr create`,
     exitCode: 0,
     sessionMatches: true,
     sessionAdoptedCursor: false,
@@ -318,6 +319,7 @@ test('an exec with the expected exit satisfies command-exit', () => {
       evidence: {
         exec: {
           id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
           exitCode: 1,
           sessionMatches: true,
           sessionAdoptedCursor: false,
@@ -328,12 +330,108 @@ test('an exec with the expected exit satisfies command-exit', () => {
   ).toBe('refuse')
 })
 
+test('a failed exec cannot use the recorded-artifact alternative on a command-exit step', () => {
+  expect(
+    decide({
+      floors: [commandExit, artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: {
+          id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
+      },
+    }),
+  ).toEqual({
+    action: 'refuse',
+    message: `command-exit evidence exec:4 command \`${PLATFORM_SLUG} pr create\` exited 1; rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
+  })
+})
+
+test('a passing gate wins over a failed exec recorded as an artifact', () => {
+  expect(
+    decide({
+      floors: [commandExit, artifact],
+      evidence: {
+        ...passingGate,
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('a passing terminal run wins over a failed exec recorded as an artifact', () => {
+  expect(
+    decide({
+      floors: [commandExit, artifact],
+      evidence: {
+        ...passingRun,
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('an incidental failed exec does not prevent deferral of command-exit', () => {
+  expect(
+    decide({
+      floors: [deferrableExit],
+      evidence: {
+        deferReason: 'merge after landing',
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }),
+  ).toMatchObject({
+    action: 'allow',
+    defer: { floor: 'command-exit', reason: 'merge after landing' },
+  })
+})
+
+test('an exec matching a nonzero expected exit satisfies command-exit', () => {
+  expect(
+    decide({
+      floors: [{ ...commandExit, expectedExitCode: 1 }, artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: { ...passingExec.exec!, exitCode: 1 },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
+test('a failed exec remains valid for a recorded-artifact-only step', () => {
+  expect(
+    decide({
+      floors: [artifact],
+      evidence: {
+        artifact: { ref: 'exec:4', exists: true },
+        exec: {
+          id: 4,
+          command: `${PLATFORM_SLUG} pr create`,
+          exitCode: 1,
+          sessionMatches: true,
+          sessionAdoptedCursor: false,
+          createdAfterStepActivation: true,
+        },
+      },
+    }).action,
+  ).toBe('allow')
+})
+
 test('an exec from another session is refused with the rerun remedy', () => {
   const decision = decide({
     floors: [commandExit],
     evidence: {
       exec: {
         id: 4,
+        command: 'true',
         exitCode: 0,
         sessionMatches: false,
         sessionAdoptedCursor: false,
@@ -354,6 +452,7 @@ test("an adopting session's exec satisfies command-exit", () => {
       evidence: {
         exec: {
           id: 4,
+          command: 'true',
           exitCode: 0,
           sessionMatches: false,
           sessionAdoptedCursor: true,
@@ -370,6 +469,7 @@ test('an exec older than the active step is refused with the rerun remedy', () =
     evidence: {
       exec: {
         id: 4,
+        command: 'true',
         exitCode: 0,
         sessionMatches: true,
         sessionAdoptedCursor: false,

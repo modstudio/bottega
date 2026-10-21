@@ -591,7 +591,7 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   ).run()
   expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
     artifact: { ref: 'exec:2', exists: true },
-    exec: { id: 2, exitCode: 0 },
+    exec: { id: 2, command: 'true', exitCode: 0 },
   })
   expect(() => gather(d, { artifact: 'probe:2' })).toThrow(
     '--artifact probe:2 is recorded as exec:2',
