@@ -5,6 +5,9 @@ import { type CloneDirectoryOutcome, classifyClonefileErrno } from './clone-dire
 type ClonefileLibrary = ReturnType<typeof loadClonefileLibrary>
 let clonefileLibrary: ClonefileLibrary | undefined
 
+/** Preserve a top-level source symlink instead of following it. From <sys/clonefile.h>. */
+const CLONE_NOFOLLOW = 1
+
 function loadClonefileLibrary() {
   const { dlopen, FFIType, toArrayBuffer } = require('bun:ffi') as typeof import('bun:ffi')
   const library = dlopen('/usr/lib/libSystem.dylib', {
@@ -30,7 +33,7 @@ export function cloneDirectory(source: string, target: string): CloneDirectoryOu
   const result = clonefileLibrary.clonefile(
     Buffer.from(`${source}\0`),
     Buffer.from(`${target}\0`),
-    0,
+    CLONE_NOFOLLOW,
   )
   if (result === 0) return { status: 'cloned' }
   return classifyClonefileErrno(clonefileLibrary.errno())
