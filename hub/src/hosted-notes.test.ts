@@ -29,7 +29,16 @@ describe('hosted note promotion task ownership', () => {
         'hub',
       ),
     ).rejects.toThrow(`${PLATFORM_SLUG} task list --project hub`)
-    const task = { id: 'task-id', key: 'DEV-42' } as HostedTask
+    await expect(
+      selectPromotionTask(
+        'DEV-42',
+        async () => ({ id: 'task-id', key: 'DEV-42', source: 'git' }) as HostedTask,
+        async () => ({}) as HostedTask,
+        true,
+        'hub',
+      ),
+    ).rejects.toThrow(`${PLATFORM_SLUG} task list --project hub`)
+    const task = { id: 'task-id', key: 'DEV-42', source: 'local' } as HostedTask
     await expect(
       selectPromotionTask(
         'DEV-42',

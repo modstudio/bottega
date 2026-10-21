@@ -7,6 +7,7 @@ import { hostedTaskReference, taskIdFor } from './hosted-task-reference.ts'
 import {
   confirmCount,
   createHostedTaskInTransaction,
+  type HostedComment,
   type HostedTask,
   mirrorCollisionDecision,
 } from './hosted-tasks.ts'
@@ -174,7 +175,7 @@ export async function promoteHostedNote(
   recordId: string,
   input: { task?: string } = {},
   createTask = createHostedTaskInTransaction,
-): Promise<{ note: HostedNote; task: HostedTask | null } | null> {
+): Promise<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null } | null> {
   return withHostedTenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
       await tx`SELECT hub_note.*,project_id::text AS "projectId",number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
@@ -212,7 +213,7 @@ export async function promoteHostedNote(
       async (key) =>
         rows<HostedTask>(
           await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_id=${noteProjectId}::uuid
-          AND key=${key} AND deleted_at IS NULL`,
+          AND key=${key} AND source='local' AND deleted_at IS NULL`,
         )[0] ?? null,
       () =>
         createTask(tx, identity, {
@@ -225,20 +226,26 @@ export async function promoteHostedNote(
       note.project,
     )
     const { task } = selected
+    let comment: HostedComment | null = null
     if (input.task !== undefined && task && !projectHasRemoteTracker(promotionProject?.tracker)) {
       const body = `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
-      await tx`INSERT INTO hub_task_comment
-        (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,created_at,updated_at)
-        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${note.project},${noteProjectId}::uuid,
-        ${task.key},${task.id}::uuid,${body},${identity.userId}::uuid,now(),now())`
-      await tx`UPDATE hub_task SET updated_at=now(),last_seen=now()
+      comment = rows<HostedComment>(
+        await tx`INSERT INTO hub_task_comment
+          (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,created_at,updated_at)
+          VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${note.project},${noteProjectId}::uuid,
+          ${task.key},${task.id}::uuid,${body},${identity.userId}::uuid,now(),now())
+          RETURNING *,task_id::text task_id`,
+      )[0]!
+      await tx`UPDATE hub_task
+        SET updated_at=GREATEST(updated_at,${comment.updated_at}::timestamptz),
+          last_seen=GREATEST(last_seen,${comment.updated_at}::timestamptz)
         WHERE space_id=${identity.spaceId}::uuid AND id=${task.id}::uuid`
     }
     const promoted = rows<HostedNote>(
       await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number`,
     )[0]!
-    return { note: promoted, task }
+    return { note: promoted, task, comment }
   })
 }
 
@@ -270,7 +277,7 @@ export async function selectPromotionTask(
 ): Promise<{ key: string; task: HostedTask | null }> {
   if (existingKey) {
     const task = await find(existingKey)
-    if (requireExisting && !task)
+    if (requireExisting && task?.source !== 'local')
       throw new Error(
         `no hub task ${existingKey.toUpperCase()} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
       )

@@ -45,7 +45,7 @@ import {
   duplicateCandidates,
   type TaskRow,
 } from './task.ts'
-import { applyHostedTask } from './task-cache.ts'
+import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
@@ -721,6 +721,7 @@ export async function promoteNote(
   const hosted = await hostedPromoteNote(note.record_id, options.existingTaskKey, hostedOptions)
   writeTransaction((conn) => {
     if (hosted.task) applyHostedTask(conn, hosted.task)
+    if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
     applyHostedNote(conn, hosted.note)
   })
   return getNote(note.record_id)
