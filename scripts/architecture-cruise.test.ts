@@ -1,5 +1,16 @@
 import { expect, test } from 'bun:test'
-import { architectureCruiseCoverageViolations } from './architecture-cruise.ts'
+import {
+  architectureCruiseCoverageViolations,
+  dependencyCruiserNodeVersionRefusal,
+} from './architecture-cruise.ts'
+
+test('dependency-cruiser Node version guard accepts the minimum and refuses older Node', () => {
+  expect(dependencyCruiserNodeVersionRefusal('v24.0.0\n')).toBeUndefined()
+  expect(dependencyCruiserNodeVersionRefusal('v26.12.0\n')).toBeUndefined()
+  expect(dependencyCruiserNodeVersionRefusal('v22.23.0\n')).toBe(
+    'dependency-cruiser found Node v22.23.0; install Node 24 or later, or set it up in CI',
+  )
+})
 
 test('architecture cruise coverage names manifest modules absent from the cruise', () => {
   const violations = architectureCruiseCoverageViolations({

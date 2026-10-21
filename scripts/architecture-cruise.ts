@@ -6,6 +6,7 @@ import { dependencyCruiserConfig } from './architecture.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const TYPESCRIPT_LOADER = join(ROOT, 'scripts/dependency-cruiser-typescript-loader.mjs')
+const MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR = 24
 
 export const ARCHITECTURE_CRUISE_ROOTS = [
   'orchestrator',
@@ -57,6 +58,12 @@ export function architectureCruiseCoverageViolations({
   return violations
 }
 
+export function dependencyCruiserNodeVersionRefusal(version: string): string | undefined {
+  const major = Number.parseInt(version.replace(/^v/, '').split('.')[0] ?? '', 10)
+  if (Number.isInteger(major) && major >= MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR) return undefined
+  return `dependency-cruiser found Node ${version.trim() || '(unknown)'}; install Node ${MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR} or later, or set it up in CI`
+}
+
 type ArchitectureCruiseRequest = {
   entries: readonly string[]
   extraArgs?: string[]
@@ -72,6 +79,36 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
   writeFileSync(generatedConfig, JSON.stringify(request.config ?? dependencyCruiserConfig()))
   try {
     const stdout = request.stdout ?? 'inherit'
+    const cwd = request.cwd ?? ROOT
+    const env = {
+      ...process.env,
+      ARCHITECTURE_CONFIG: generatedConfig,
+      ARCHITECTURE_TYPESCRIPT: join(ROOT, 'node_modules/typescript/lib/typescript.js'),
+      NODE_PATH: [join(ROOT, 'node_modules'), process.env.NODE_PATH]
+        .filter(Boolean)
+        .join(delimiter),
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${TYPESCRIPT_LOADER}`]
+        .filter(Boolean)
+        .join(' '),
+    }
+    const nodeVersionProcess = Bun.spawn(['node', '--version'], {
+      cwd,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [nodeVersion, nodeVersionError, nodeVersionExitCode] = await Promise.all([
+      new Response(nodeVersionProcess.stdout).text(),
+      new Response(nodeVersionProcess.stderr).text(),
+      nodeVersionProcess.exited,
+    ])
+    if (nodeVersionExitCode !== 0) {
+      throw new Error(
+        `dependency-cruiser could not resolve Node from PATH: ${nodeVersionError.trim() || `node --version exited ${nodeVersionExitCode}`}; install Node ${MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR} or later, or set it up in CI`,
+      )
+    }
+    const nodeVersionRefusal = dependencyCruiserNodeVersionRefusal(nodeVersion)
+    if (nodeVersionRefusal) throw new Error(nodeVersionRefusal)
     const child = Bun.spawn(
       [
         join(ROOT, 'node_modules/.bin/depcruise'),
@@ -81,18 +118,8 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
         ...request.entries,
       ],
       {
-        cwd: request.cwd ?? ROOT,
-        env: {
-          ...process.env,
-          ARCHITECTURE_CONFIG: generatedConfig,
-          ARCHITECTURE_TYPESCRIPT: join(ROOT, 'node_modules/typescript/lib/typescript.js'),
-          NODE_PATH: [join(ROOT, 'node_modules'), process.env.NODE_PATH]
-            .filter(Boolean)
-            .join(delimiter),
-          NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${TYPESCRIPT_LOADER}`]
-            .filter(Boolean)
-            .join(' '),
-        },
+        cwd,
+        env,
         stdout,
         stderr: 'inherit',
       },
