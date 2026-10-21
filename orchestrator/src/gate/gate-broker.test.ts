@@ -1,6 +1,15 @@
 import { expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
+import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -16,6 +25,88 @@ async function waitForFinishedGate(id: number): Promise<void> {
   }
   throw new Error(`gate execution ${id} did not finish`)
 }
+
+function git(root: string, ...args: string[]): string {
+  const result = Bun.spawnSync(['git', ...args], { cwd: root })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
+}
+
+test('records machine-readable checks emitted by a worker gate against its execution', async () => {
+  const root = mkdtempSync(join(dir, 'gate-broker-check-execution-'))
+  const scratch = join(root, 'scratch')
+  mkdirSync(join(root, 'scripts'))
+  const gatePath = join(root, 'scripts', 'gate')
+  writeFileSync(
+    gatePath,
+    `#!/bin/sh\nprintf '%s\\n' '{"check":"unit suite","category":"unit-tests","wallMs":1,"exitCode":0}' >> "$${CHECK_EXECUTION_FILE_ENV}"\n`,
+  )
+  chmodSync(gatePath, 0o755)
+  git(root, 'init', '-q')
+  git(root, 'config', 'user.email', 'fixture@example.com')
+  git(root, 'config', 'user.name', 'Fixture')
+  git(root, 'add', 'scripts/gate')
+  git(root, 'commit', '-qm', 'fixture')
+  const head = git(root, 'rev-parse', 'HEAD')
+
+  const projectId = (
+    db()
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING record_id AS id`,
+      )
+      .get(
+        newRecordId(),
+        'gate-broker-check-execution-fixture',
+        root,
+        'bun',
+        JSON.stringify({ gate: 'scripts/gate' }),
+      ) as { id: string }
+  ).id
+  const runId = (
+    db()
+      .query(
+        `INSERT INTO run
+          (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING record_id AS id`,
+      )
+      .get(new Date().toISOString(), 'codex', 'implement', projectId, 'sha', root, head, head) as {
+      id: string
+    }
+  ).id
+  const gateId = (
+    db()
+      .query(
+        `INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES ('${newRecordId()}',?,?) RETURNING id`,
+      )
+      .get(runId, new Date().toISOString()) as { id: number }
+  ).id
+
+  const broker = startGateBroker({
+    runId,
+    scratchDir: scratch,
+    environment: { ORCH_MAIN_CHECKOUT: root },
+    withHostSlot: async (run) => run(),
+  })
+  try {
+    await waitForFinishedGate(gateId)
+    expect(
+      db()
+        .query(
+          `SELECT gate_execution_id,check_name,category,exit_code
+           FROM check_execution WHERE gate_execution_id=?`,
+        )
+        .get(gateId),
+    ).toEqual({
+      gate_execution_id: gateId,
+      check_name: 'unit suite',
+      category: 'unit-tests',
+      exit_code: 0,
+    })
+  } finally {
+    await broker.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('an occupied gate log path fails the execution without following the path', async () => {
   const root = mkdtempSync(join(dir, 'gate-broker-occupied-log-'))

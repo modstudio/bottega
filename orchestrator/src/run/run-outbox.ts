@@ -48,6 +48,8 @@ function resourceValues(row: LocalRun) {
   }
 }
 
+const nullableBoolean = (value: unknown): boolean | null => (value == null ? null : Boolean(value))
+
 /** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
 export function buildRunRecordPayload(
   row: LocalRun,
@@ -97,6 +99,7 @@ export function buildRunRecordPayload(
     linesRemoved: row.lines_removed,
     testsRan: row.tests_ran,
     testsPassed: row.tests_passed,
+    testsClaimDisagrees: nullableBoolean(row.tests_claim_disagrees),
     deviations: row.deviations,
     escalations: row.escalations,
     stack: row.stack,

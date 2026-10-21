@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from './brand.ts'
 
 export const CHECK_EXECUTION_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECK_EXECUTION_FILE`
+export const UNIT_TEST_CHECK_CATEGORY = 'unit-tests'
 
 const CheckExecutionRecordSchema = z
   .object({

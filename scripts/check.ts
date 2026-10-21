@@ -2,7 +2,11 @@ import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CHECK_EXECUTION_FILE_ENV, type CheckExecutionRecord } from '../shared/check-execution'
+import {
+  CHECK_EXECUTION_FILE_ENV,
+  type CheckExecutionRecord,
+  UNIT_TEST_CHECK_CATEGORY,
+} from '../shared/check-execution'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
 import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
@@ -21,7 +25,7 @@ import {
 import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
 
-type Command = { cwd: string; argv: string[] }
+type Command = { cwd: string; argv: string[]; category?: string }
 type Leg = { name: (typeof CHECK_LEGS)[number]['name']; typecheck: Command; suite: Command[] }
 type RunnableLeg = { name: string; commands: Command[] }
 type LegResult = GateStepResult & { tail: string[] }
@@ -169,8 +173,9 @@ function track(
 const legs: Leg[] = CHECK_LEGS.map((leg) => ({
   name: leg.name,
   typecheck: { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] },
-  suite: leg.suite.map((argv) => ({
+  suite: leg.suite.map(({ argv, unitTests }) => ({
     cwd: `${root}${leg.directory}`,
+    ...(unitTests ? { category: UNIT_TEST_CHECK_CATEGORY } : {}),
     argv: [
       ...argv,
       ...(leg.name === 'orchestrator' && checkArguments.shard
@@ -269,7 +274,7 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
     const child = track(
       Bun.spawn(command.argv, { cwd: command.cwd, stdout: 'pipe', stderr: 'pipe' }),
       describeCommand(command.argv, command.cwd),
-      {},
+      { category: command.category },
       startedAt,
     )
     const readers = [
@@ -375,7 +380,10 @@ const results = await Promise.all(
 printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...results]
 if (checkArguments.mode === 'suite' && runsRootSuiteTests(checkArguments)) {
-  gateSteps.push({ name: 'root tests', exitCode: await inherit(rootTests) })
+  gateSteps.push({
+    name: 'root tests',
+    exitCode: await inherit(rootTests, root, { category: UNIT_TEST_CHECK_CATEGORY }),
+  })
 }
 
 if (checkArguments.mode === 'static') {

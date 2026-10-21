@@ -4,6 +4,10 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, mkdirSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  CHECK_EXECUTION_FILE_ENV,
+  type CheckExecutionRecord,
+} from '../../../shared/check-execution.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -14,6 +18,11 @@ import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import {
+  gateCheckExecutionPath,
+  insertGateCheckExecutions,
+  readGateCheckExecutions,
+} from './gate-check-executions.ts'
 import {
   boundedGateOutputTail,
   brokerGateEnvironment,
@@ -155,6 +164,23 @@ function createGateLog(path: string): number {
   }
 }
 
+function finishGateLog(
+  fd: number | null,
+  checkExecutionPath: string,
+  record: (chunk: Buffer | string) => void,
+): CheckExecutionRecord[] {
+  const records = readGateCheckExecutions(checkExecutionPath, record)
+  if (fd !== null) closeSync(fd)
+  return records
+}
+
+function gateExecutionEnvironment(
+  environment: Record<string, string>,
+  checkExecutionPath: string,
+): Record<string, string> {
+  return { ...environment, [CHECK_EXECUTION_FILE_ENV]: checkExecutionPath }
+}
+
 function recordFinishedGate(input: {
   requestId: number
   finishedAt: string
@@ -165,24 +191,29 @@ function recordFinishedGate(input: {
   artifactPath: string | null
   cancelledReason: string | null
   command: string | null
+  checkExecutions: readonly CheckExecutionRecord[]
 }): void {
-  db()
-    .query(
-      `UPDATE gate_execution SET finished_at=?,exit_code=?,timed_out=?,elapsed_ms=?,
+  const database = db()
+  writeTransaction(() => {
+    database
+      .query(
+        `UPDATE gate_execution SET finished_at=?,exit_code=?,timed_out=?,elapsed_ms=?,
        output_tail=?,output_artifact=?,cancelled_reason=?,resolved_command=COALESCE(resolved_command,?)
        WHERE id=?`,
-    )
-    .run(
-      input.finishedAt,
-      input.exitCode,
-      input.timedOut ? 1 : 0,
-      input.elapsedMs,
-      input.tail,
-      input.artifactPath,
-      input.cancelledReason,
-      input.command,
-      input.requestId,
-    )
+      )
+      .run(
+        input.finishedAt,
+        input.exitCode,
+        input.timedOut ? 1 : 0,
+        input.elapsedMs,
+        input.tail,
+        input.artifactPath,
+        input.cancelledReason,
+        input.command,
+        input.requestId,
+      )
+    insertGateCheckExecutions(database, input.requestId, input.checkExecutions)
+  }, database)
 }
 
 function spawnGateChild(input: {
@@ -320,6 +351,8 @@ function startGateExecution(
     let fd: number | null = null
     let tail = ''
     let command: string | null = null
+    let checkExecutions: CheckExecutionRecord[] = []
+    const checkExecutionPath = gateCheckExecutionPath()
     const record = (chunk: Buffer | string) => {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       if (fd === null) throw new Error('gate log is not open')
@@ -335,7 +368,7 @@ function startGateExecution(
           runGateProcess({
             command: command!,
             worktree: prepared.worktree,
-            environment,
+            environment: gateExecutionEnvironment(environment, checkExecutionPath),
             state,
             record,
             stop,
@@ -354,7 +387,7 @@ function startGateExecution(
       tail = boundedGateOutputTail(tail + line)
       if (state.termination) throw error
     } finally {
-      if (fd !== null) closeSync(fd)
+      checkExecutions = finishGateLog(fd, checkExecutionPath, record)
     }
     finishedAt = nowIso()
     const finalization = decideGateExecutionFinalization({
@@ -374,6 +407,7 @@ function startGateExecution(
       artifactPath: finalization.artifactPath,
       cancelledReason: finalization.cancelledReason,
       command,
+      checkExecutions,
     })
   })()
     .finally(() => onFinish?.({ executionId: request.id, at: finishedAt ?? nowIso() }))

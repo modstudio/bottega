@@ -55,6 +55,7 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+import { observedTestOutcome } from './run-test-outcome.ts'
 import { runUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
 
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
@@ -710,6 +711,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     // Never let recording a blocker fail a run that otherwise succeeded.
     console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
   }
+  const testOutcome = writesJob
+    ? observedTestOutcome(db(), claim.id, contract?.tests ?? null)
+    : null
   const terminalSnapshot: TerminalSnapshot = {
     status,
     error,
@@ -730,14 +734,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     changedPaths: writesJob && changes ? JSON.stringify(changes.files) : null,
     linesAdded: writesJob ? (changes?.insertions ?? null) : null,
     linesRemoved: writesJob ? (changes?.deletions ?? null) : null,
-    testsRan: writesJob ? (contract?.tests ? (contract.tests.ran ? 1 : 0) : null) : null,
-    testsPassed: writesJob
-      ? contract?.tests?.passed === undefined
-        ? null
-        : contract.tests.passed
-          ? 1
-          : 0
-      : null,
+    testsRan: testOutcome ? (testOutcome.ran ? 1 : 0) : null,
+    testsPassed: testOutcome?.passed == null ? null : testOutcome.passed ? 1 : 0,
+    testsClaimDisagrees: testOutcome ? (testOutcome.claimDisagrees ? 1 : 0) : null,
     deviations: writesJob ? (contract?.deviations?.length ?? null) : null,
     escalations: writesJob ? acceptedQuestions.length : null,
   }
@@ -800,15 +799,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         db()
           .query(
             `UPDATE run SET files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
-                          tests_ran=?, tests_passed=?, deviations=?, escalations=? WHERE record_id=?`,
+                          tests_ran=?, tests_passed=?, tests_claim_disagrees=?, deviations=?, escalations=?
+             WHERE record_id=?`,
           )
           .run(
             changes?.files.length ?? null,
             changes ? JSON.stringify(changes.files) : null,
             changes?.insertions ?? null,
             changes?.deletions ?? null,
-            contract?.tests ? (contract.tests.ran ? 1 : 0) : null,
-            contract?.tests?.passed === undefined ? null : contract.tests.passed ? 1 : 0,
+            testOutcome!.ran ? 1 : 0,
+            testOutcome!.passed == null ? null : testOutcome!.passed ? 1 : 0,
+            testOutcome!.claimDisagrees ? 1 : 0,
             contract?.deviations?.length ?? null,
             acceptedQuestions.length,
             claim.id,
