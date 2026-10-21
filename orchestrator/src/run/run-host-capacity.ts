@@ -10,8 +10,8 @@ import {
   measureHostLoad,
 } from '../gate-load.ts'
 
-export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
-export const RUN_HOST_WAIT_POLL_MS = 1_000
+const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
+const RUN_HOST_WAIT_POLL_MS = 1_000
 
 type RunningRepositoryFacts = { running: number; recentAdmissions: number }
 
@@ -56,6 +56,7 @@ export async function waitForRunHostCapacity(input: {
   const sleep =
     input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const env = input.env ?? process.env
+  if (env.CI) return null
   const platform = input.platform ?? process.platform
   const started = now()
   const heldOn = new Set<HostHoldCondition>()

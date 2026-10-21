@@ -55,6 +55,7 @@ export const focusedTestModules: ArchitectureModule[] = [
     '../no-follow-file.ts',
     '../project/project-settings.ts',
     '../resources/main-stack.ts',
+    '../run/run-child-priority.ts',
     './focused-test-decision.ts',
     './focused-test-files.ts',
     './focused-test-paths.ts',

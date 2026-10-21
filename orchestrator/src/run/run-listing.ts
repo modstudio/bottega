@@ -103,6 +103,21 @@ function runListingWarningRow(row: Record<string, unknown>): RunListingWarningRo
   }
 }
 
+function lifecyclePresentation(
+  row: Record<string, unknown>,
+  outcome: ReturnType<typeof outcomeOf>,
+): { status: string; detail: string | null } {
+  if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
+  const status = outcome.line.split(' - ', 1)[0]!
+  const hostWaitSince = row.host_wait_since as string | null
+  if (hostWaitSince)
+    return { status: 'waiting', detail: `waiting for host capacity since ${hostWaitSince}` }
+  return {
+    status,
+    detail: row.status === 'asking' ? outcome.line.slice(status.length + 3) : null,
+  }
+}
+
 function resolveRequestedRunIds(values: string[]): { ids: string[]; unknown: string[] } {
   const ids = new Set<string>()
   const unknown: string[] = []
@@ -489,10 +504,7 @@ export async function runListingCommand(
   }
   for (const r of rows) {
     const outcome = outcomeOf(r as OutcomeRow)
-    const stranded = r.stranded === true
-    const status = stranded ? 'stranded' : outcome.line.split(' - ', 1)[0]!
-    const hostWaitSince = r.host_wait_since as string | null
-    const displayedStatus = hostWaitSince ? 'waiting' : status
+    const lifecycle = lifecyclePresentation(r, outcome)
     const identity =
       r.resolved_from === 'turn'
         ? `${r.number} (asked as turn ${r.requested_number})`
@@ -500,13 +512,11 @@ export async function runListingCommand(
     log(
       `${identity.padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
         // 'running' is not a failure, and a null latency is not zero seconds.
-        ` ${String(r.status === 'failed' ? displayedStatus.toUpperCase() : displayedStatus).padEnd(10)}` +
+        ` ${String(r.status === 'failed' ? lifecycle.status.toUpperCase() : lifecycle.status).padEnd(10)}` +
         ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}` +
         (r.idle ? `  ${r.idle}` : ''),
     )
-    if (stranded) log(`      ${r.recovery_hint}`)
-    else if (hostWaitSince) log(`      waiting for host capacity since ${hostWaitSince}`)
-    else if (r.status === 'asking') log(`      ${outcome.line.slice(status.length + 3)}`)
+    if (lifecycle.detail) log(`      ${lifecycle.detail}`)
     if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
       log(
         `      ${failureReason(

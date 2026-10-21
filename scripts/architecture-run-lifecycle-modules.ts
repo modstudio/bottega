@@ -203,7 +203,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../gate/gate-broker.ts',
     '../worktree/worktree-types.ts',
     './run-process.ts',
+    './run-test-workers.ts',
   ]),
+  module('orchestrator/src/run/run-child-priority.ts', ['node:os']),
+  module('orchestrator/src/run/run-test-workers.ts', ['node:os']),
   module('orchestrator/src/run/run-host-capacity.ts', [
     'bun:sqlite',
     '../database/db.ts',

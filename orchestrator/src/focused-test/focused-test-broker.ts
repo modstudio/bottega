@@ -14,6 +14,7 @@ import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
+import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import {
   boundedFocusedTestOutputTail,
   type FocusedTestRequest,
@@ -129,6 +130,30 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
   return parseFocusedTestRequest(JSON.parse(contents))
 }
 
+function spawnFocusedTestChild(input: {
+  invocation: ReturnType<typeof focusedTestInvocation>
+  worktree: string
+  environment: Record<string, string>
+  record: (chunk: Buffer | string) => void
+}) {
+  return lowerRunChildPriority(
+    spawn(input.invocation.command, input.invocation.argv, {
+      cwd: input.worktree,
+      env: {
+        ...brokerGateEnvironment(
+          workerGateEnvironment(process.env),
+          process.env,
+          input.environment,
+        ),
+        [HOST_SLOT_HELD_ENV]: '1',
+      },
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }),
+    (message) => input.record(`warning: ${message}\n`),
+  )
+}
+
 async function runFocusedTestProcess(input: {
   invocation: ReturnType<typeof focusedTestInvocation>
   worktree: string
@@ -138,15 +163,7 @@ async function runFocusedTestProcess(input: {
   stop: () => Promise<void>
 }): Promise<void> {
   const { state } = input
-  state.child = spawn(input.invocation.command, input.invocation.argv, {
-    cwd: input.worktree,
-    env: {
-      ...brokerGateEnvironment(workerGateEnvironment(process.env), process.env, input.environment),
-      [HOST_SLOT_HELD_ENV]: '1',
-    },
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  state.child = spawnFocusedTestChild(input)
   state.child.stdout?.on('data', input.record)
   state.child.stderr?.on('data', input.record)
   state.child.once('error', (error) =>

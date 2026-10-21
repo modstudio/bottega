@@ -42,6 +42,7 @@ import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
   EMPTY_VENDOR_USAGE,
+  type TransportHandle,
   type TransportName,
   type TransportResult,
   type TransportStartOpts,
@@ -172,6 +173,43 @@ type LiveOptions = {
   job: string
   noWaitCapacity?: boolean
 }
+
+async function startAfterHostCapacity(input: {
+  repoJob: boolean
+  claim: { id: string }
+  opts: Pick<LiveOptions, 'noWaitCapacity' | 'resume'>
+  transport: ReturnType<typeof transportFor>
+  startOpts: TransportStartOpts
+}): Promise<TransportHandle> {
+  const runId = input.claim.id
+  const hostWait = input.repoJob
+    ? await waitForRunHostCapacity({
+        database: db(),
+        runId,
+        skip: Boolean(input.opts.noWaitCapacity),
+      })
+    : null
+  if (hostWait?.boundReached) {
+    const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
+    console.error(`orch: ${message}`)
+    appendRunEvent(runId, { ts: nowIso(), type: 'warning', text: message })
+  }
+  try {
+    return input.opts.resume?.session && input.opts.resume.kind === 'continue'
+      ? await input.transport.resume({
+          ...input.startOpts,
+          session: input.opts.resume.session,
+          resume: true,
+        })
+      : await input.transport.start(input.startOpts)
+  } catch (error) {
+    db().query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(runId)
+    throw error
+  }
+}
+
+const recordRunWarning = (runId: string) => (message: string) =>
+  appendRunEvent(runId, { ts: nowIso(), type: 'warning', text: message })
 
 export type LiveInput = {
   repoJob: boolean
@@ -489,36 +527,16 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
       ),
-      onWarning: (message) =>
-        appendRunEvent(claim.id, { ts: nowIso(), type: 'warning', text: message }),
+      onWarning: recordRunWarning(claim.id),
     }
     recordRunAsk(claim.id, sandboxSelection.sandbox, t, startOpts)
-    const hostWait = repoJob
-      ? await waitForRunHostCapacity({
-          database: db(),
-          runId: claim.id,
-          skip: Boolean(opts.noWaitCapacity),
-        })
-      : null
-    if (hostWait?.boundReached) {
-      const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
-      console.error(`orch: ${message}`)
-      appendRunEvent(claim.id, { ts: nowIso(), type: 'warning', text: message })
-    }
-    let handle: Awaited<ReturnType<typeof t.start>>
-    try {
-      handle =
-        opts.resume?.session && opts.resume.kind === 'continue'
-          ? await t.resume({
-              ...startOpts,
-              session: opts.resume.session,
-              resume: true,
-            })
-          : await t.start(startOpts)
-    } catch (error) {
-      db().query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(claim.id)
-      throw error
-    }
+    const handle = await startAfterHostCapacity({
+      repoJob,
+      claim,
+      opts,
+      transport: t,
+      startOpts,
+    })
     proc = handle
     live.add(handle)
     effectiveModel = handle.effectiveModel ?? null

@@ -6,6 +6,7 @@ import * as acp from '@agentclientprotocol/sdk'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
+import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
@@ -16,7 +17,6 @@ import {
   installAcpStreamTrace,
   traceAcpHandshake,
 } from './acp-trace.ts'
-import { lowerRunChildPriority } from './run-child-priority.ts'
 import {
   ACP_PILOT_TASK,
   type AgentTransport,
@@ -549,6 +549,18 @@ export function configuredAcpAsk(opts: TransportStartOpts): string[] | null {
   return server && 'command' in server ? [server.command, ...(server.args ?? [])] : null
 }
 
+function spawnAcpChild(launch: string[], opts: TransportStartOpts) {
+  return lowerRunChildPriority(
+    spawn(launch[0]!, launch.slice(1), {
+      cwd: opts.cwd,
+      env: acpEnvironment(opts),
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
+    }),
+    opts.onWarning,
+  )
+}
+
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
   const genericHarness = opts.agent.harness === 'opencode' || opts.agent.harness === 'goose'
@@ -557,16 +569,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
   const launch = await acpLaunchArgv(opts, profile, bin, agentArgv)
-  const child = spawn(launch[0]!, launch.slice(1), {
-    cwd: opts.cwd,
-    env: acpEnvironment(opts),
-    stdio: ['pipe', 'pipe', 'pipe'],
-    detached: true,
-  })
-  lowerRunChildPriority(child.pid, (message) => {
-    console.error(`orch: ${message}`)
-    opts.onWarning?.(message)
-  })
+  const child = spawnAcpChild(launch, opts)
   const trace = createAcpTrace(
     opts.env.ORCH_ACP_TRACE,
     opts.env.ORCH_RUN_ID ?? 'unknown-run',
