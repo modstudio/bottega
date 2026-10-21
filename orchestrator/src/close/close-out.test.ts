@@ -45,9 +45,16 @@ function landingObservationResult(
   command: string[],
   observation: 'clean' | 'becomes-dirty' | 'missing-branch' | undefined,
   branch: string,
+  head: string,
   state: { statusCalls: number },
 ): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
   const args = normalizedGitArgs(command)
+  if (args[0] === 'for-each-ref') {
+    return {
+      args,
+      result: spawnResult(observation === 'missing-branch' ? '' : `${branch}\t${head}\n`),
+    }
+  }
   if (args[0] === 'status') {
     state.statusCalls++
     const dirty = observation === 'becomes-dirty' && state.statusCalls > 1
@@ -99,7 +106,13 @@ function closeOutFixture(
   }
   const landingState = { statusCalls: 0 }
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
-    const observed = landingObservationResult(command, landingObservation, branch, landingState)
+    const observed = landingObservationResult(
+      command,
+      landingObservation,
+      branch,
+      head,
+      landingState,
+    )
     const { args } = observed
     if (observed.result) return observed.result
     if (args[0] === 'worktree' && args[1] === 'remove') {
@@ -646,12 +659,14 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', () 
   const fixture = absentRecipeFixture()
   const commands: string[] = []
   const head = '1234567890abcdef1234567890abcdef12345678'
+  const branch = `DEV-979-orch-${fixture.id}`
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     const args = normalizedGitArgs(command)
     commands.push(args.join(' '))
     if (args.join(' ') === 'teardown-marker') return spawnResult()
     if (args.includes('--git-common-dir')) return spawnResult('.git')
     if (args.includes('--is-inside-work-tree')) return spawnResult('true')
+    if (args[0] === 'for-each-ref') return spawnResult(`${branch}\t${head}\n`)
     if (args[0] === 'update-ref' && args[1] === '-d') return spawnResult('', 1)
     if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('1')
     if (args[0] === 'rev-parse' || args[0] === 'show-ref' || args[0] === 'update-ref') {
