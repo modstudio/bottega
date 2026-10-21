@@ -35,7 +35,7 @@ import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
-import { nullableVendorCostSource } from './record-run-usage.ts'
+import { runUsageRecordValues } from './record-run-usage.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
 import type {
   RecordPayload as Payload,
@@ -100,12 +100,7 @@ function runValues(row: Payload, projectId: string | null) {
     latencyMs: nullableBigint(row.latencyMs),
     exitCode: nullableNumber(row.exitCode),
     outputBytes: nullableBigint(row.outputBytes),
-    vendorTokens: nullableBigint(row.vendorTokens),
-    vendorCostUsd: nullableNumber(row.vendorCostUsd),
-    vendorInputTokens: nullableBigint(row.vendorInputTokens),
-    vendorOutputTokens: nullableBigint(row.vendorOutputTokens),
-    vendorEstimatedCostUsd: nullableNumber(row.vendorEstimatedCostUsd),
-    vendorCostSource: nullableVendorCostSource(row.vendorCostSource),
+    ...runUsageRecordValues(row),
     probe: Boolean(row.probe),
     failureKind: nullableString(row.failureKind),
     status: String(row.status),

@@ -25,6 +25,10 @@ test('terminal payload maps every hosted run column and no execution-state colum
         outside_worktree_writes: null,
         review_provenance: '{"commands_run":[]}',
         started_by_user_id: '01990000-0000-7000-8000-000000000123',
+        resource_cpu_ms: 12_345,
+        resource_peak_rss_bytes: 67_890,
+        resource_samples: 4,
+        resource_source: 'sampled',
       },
       '01990000-0000-7000-8000-000000000099',
       '2026-09-15T01:01:00.000Z',
@@ -41,6 +45,10 @@ test('terminal payload maps every hosted run column and no execution-state colum
     reviewProvenance: { commands_run: [] },
     startedByUserId: '01990000-0000-7000-8000-000000000123',
     projectId: '01990000-0000-7000-8000-000000001214',
+    resourceCpuMs: 12_345,
+    resourcePeakRssBytes: 67_890,
+    resourceSamples: 4,
+    resourceSource: 'sampled',
   })
   expect(payload).not.toHaveProperty('cwd')
   expect(payload).not.toHaveProperty('outputPath')

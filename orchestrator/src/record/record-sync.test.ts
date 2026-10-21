@@ -164,6 +164,25 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   local.close()
 })
 
+test('run sync accepts a null resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: null })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  local.close()
+})
+
+test('run sync rejects an unknown resource source', async () => {
+  const local = localOutbox(1, PLATFORM_SLUG, { resourceSource: 'estimated' })
+  const remote = fakePostgres()
+
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(
+    local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
+  ).toBe('run.resourceSource must be sampled, none, unavailable, or null')
+  local.close()
+})
+
 test('a quarantined newer row blocks redaction and becomes final after retry and sync', async () => {
   const remote = fakePostgres(),
     local = localOutbox(1)
