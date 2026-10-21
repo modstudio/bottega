@@ -261,6 +261,73 @@ test('a deferred same-batch parent leaves its child pending', async () => {
   ])
 })
 
+test('contention waits for its local run to enqueue a record row', async () => {
+  using local = migratedTestDatabase()
+  const runId = '01990000-0000-7000-8000-000000000010'
+  const contentionId = '01990000-0000-7000-8000-000000000011'
+  local
+    .query(
+      `INSERT INTO run
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (1,?,'2026-10-13T03:00:00.000Z','codex','write','sha',4,'work','running')`,
+    )
+    .run(runId)
+  insertOutboxRow(local, 1, 'contention', contentionId, {
+    id: contentionId,
+    runId,
+  })
+  const deferredBatches: number[][] = []
+
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(deferredBatches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 0, failed: 0, pending: 1 })
+  expect(deferredBatches).toEqual([[]])
+  expect(local.query('SELECT attempts,synced_at FROM outbox WHERE id=1').get()).toEqual({
+    attempts: 0,
+    synced_at: null,
+  })
+
+  insertOutboxRow(local, 2, 'run', runId, { id: runId })
+  const deliveredBatches: number[][] = []
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(deliveredBatches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
+  expect(deliveredBatches).toEqual([[2, 1]])
+  expect(local.query('SELECT id,synced_at FROM outbox ORDER BY id').all()).toEqual([
+    { id: 1, synced_at: STAMP },
+    { id: 2, synced_at: STAMP },
+  ])
+})
+
+test('contention with no local run keeps its existing delivery behavior', async () => {
+  using local = migratedTestDatabase()
+  insertOutboxRow(local, 1, 'contention', 'contention-1', {
+    id: 'contention-1',
+    runId: 'absent-run',
+  })
+  const batches: number[][] = []
+
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(batches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(batches).toEqual([[1]])
+})
+
 test('a synced copy satisfies a parent identity when a later copy is refused', async () => {
   using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })

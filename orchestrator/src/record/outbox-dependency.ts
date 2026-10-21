@@ -12,6 +12,14 @@ type ParentState = {
   retired_at: string | null
 }
 
+function localRunExists(database: Database, recordId: string): boolean {
+  return Boolean(
+    database
+      .query<{ found: number }, [string]>('SELECT 1 AS found FROM run WHERE record_id=?')
+      .get(recordId),
+  )
+}
+
 export const outboxParentIdentityKey = (kind: string, recordId: string): string =>
   `${kind}:${recordId}`
 
@@ -138,7 +146,11 @@ function outboxDependencyState(
       )
       .all(kind, parentRecordId)
     const latest = rows[0]
-    if (!latest || rows.some((row) => row.synced_at !== null)) continue
+    if (!latest) {
+      if (kind === 'run' && localRunExists(database, parentRecordId)) deferred = true
+      continue
+    }
+    if (rows.some((row) => row.synced_at !== null)) continue
     if (latest.retired_at === null) {
       deferred = true
       continue
