@@ -207,22 +207,33 @@ export function catalogueFloors(
   })
 }
 
-function catalogueFloorsFor(step: {
-  floor: readonly string[]
-  deferrable?: readonly string[]
-  expectedStatus?: string | readonly string[]
-  requirePullRequest?: boolean
-  operatorRuling?: boolean
-  commandEvidence?: CommandEvidence
-}): Floor[] {
-  return catalogueFloors(
-    step.floor,
+function catalogueFloorsFor(
+  step: {
+    floor: readonly string[]
+    deferrable?: readonly string[]
+    expectedExitCodes?: Readonly<Record<string, number>>
+    expectedStatus?: string | readonly string[]
+    requirePullRequest?: boolean
+    operatorRuling?: boolean
+    commandEvidence?: CommandEvidence
+  },
+  outcome?: string,
+  kinds: readonly string[] = step.floor,
+): Floor[] {
+  const floors = catalogueFloors(
+    kinds,
     step.deferrable,
     step.expectedStatus,
     step.requirePullRequest,
     step.operatorRuling,
     step.commandEvidence,
   )
+  const expectedExitCode = outcome === undefined ? undefined : step.expectedExitCodes?.[outcome]
+  return expectedExitCode === undefined
+    ? floors
+    : floors.map((floor) =>
+        floor.kind === 'command-exit' ? { ...floor, expectedExitCode } : floor,
+      )
 }
 
 type CloseFloorStep = Parameters<typeof catalogueFloorsFor>[0] & {
@@ -236,15 +247,8 @@ export function decideCloseFloors(
   forceRuling = false,
 ): Floor[] {
   if (forceRuling || (outcome !== undefined && step.rulingOutcomes?.includes(outcome)))
-    return catalogueFloors(
-      ['ruling'],
-      step.deferrable,
-      step.expectedStatus,
-      step.requirePullRequest,
-      step.operatorRuling,
-      step.commandEvidence,
-    )
-  return catalogueFloorsFor(step)
+    return catalogueFloorsFor(step, outcome, ['ruling'])
+  return catalogueFloorsFor(step, outcome)
 }
 
 /** Whether the effective floor for this close accepts a ruling made by the agent. */

@@ -94,6 +94,16 @@ test('a ruling outcome replaces ordinary floors with a ruling floor', () => {
   expect(mayCloseOnAgentSelfRuling({ ...step, operatorRuling: true }, 'fix')).toBe(false)
 })
 
+test('an outcome-specific exit code replaces the command-exit default for that close', () => {
+  const step = {
+    floor: ['command-exit', 'recorded-artifact'] as const,
+    expectedExitCodes: { merged: 0, 'merged-with-residue': 20 },
+  }
+  expect(decideCloseFloors(step, 'merged')[0]?.expectedExitCode).toBe(0)
+  expect(decideCloseFloors(step, 'merged-with-residue')[0]?.expectedExitCode).toBe(20)
+  expect(decideCloseFloors(step, undefined)[0]?.expectedExitCode).toBe(0)
+})
+
 test('the re-entry bound refusal names await and a non-re-entering outcome', () => {
   expect(reentryBoundRefusal('changed', ['changed', 'clean'])).toContain(
     `${PLATFORM_SLUG} workflow await`,
