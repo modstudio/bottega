@@ -224,7 +224,7 @@ export function registerDocTools(
       const doc = audience
         ? getDocForAudience(resolvedScope, user ? null : subject, slug, audience, owner)
         : getDoc(resolvedScope, user ? null : subject, slug, owner)
-      if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
+      if (!doc) throw new Error(`no ${resolvedScope} doc "${slug}"`)
       return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },
   )
