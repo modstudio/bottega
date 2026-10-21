@@ -6,7 +6,7 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { floorGuidance, floorKinds } from './workflow-floor.ts'
+import { type FloorKind, floorGuidance, floorKinds } from './workflow-floor.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -241,7 +241,7 @@ describe('workflow rendering', () => {
         getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
-      `Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: auto (built-in) — meet this step's floor with command-exit evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(
       renderWorkflowStep(
@@ -278,6 +278,40 @@ describe('workflow rendering', () => {
     expect(renderWorkflowStep(getWorkflowStep('forked-next', 'fixture', 'score', {}, d))).toEndWith(
       `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.`,
     )
+  })
+
+  test('autonomy offers self-ruling only when the step has a ruling floor', () => {
+    const step = {
+      slug: 'apply-findings',
+      title: 'Apply review findings',
+      body: 'Apply the accepted findings.',
+      floor: ['command-exit', 'recorded-artifact'] as FloorKind[],
+      expectedStatus: undefined,
+      commandEvidence: undefined,
+      job: null,
+      autonomy: 'auto' as const,
+      needs: [],
+      resolvedAutonomy: { value: 'auto' as const, scope: 'built-in' },
+      workflow: 'ship-task',
+      version: 1,
+      catalogueVersion: 1,
+      project: 'fixture',
+      mode: 'full',
+      facts: {},
+      next: null,
+    }
+    const evidenceRendered = renderWorkflowStep(step)
+    expect(evidenceRendered).toContain(
+      `Autonomy: auto (built-in) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+    )
+    expect(evidenceRendered).not.toContain('self_ruling')
+    expect(evidenceRendered).not.toContain('--self-ruling')
+    expect(evidenceRendered).not.toContain('rule yourself')
+
+    const rulingRendered = renderWorkflowStep({ ...step, floor: ['ruling'] })
+    expect(rulingRendered).toContain('self_ruling')
+    expect(rulingRendered).toContain('--self-ruling')
+    expect(rulingRendered).toContain('rule yourself')
   })
 
   test('an operator-only ruling floor does not tell the agent to rule itself or pass self-ruling', () => {
@@ -334,7 +368,7 @@ describe('workflow rendering', () => {
       next: null,
     })
     expect(rendered).toContain(
-      `Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: auto (built-in) — meet this step's floor with tracker-transition evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(rendered).not.toContain('put an operator ruling')
   })
