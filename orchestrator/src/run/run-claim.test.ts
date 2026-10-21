@@ -8,7 +8,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { claimRun } from './run-claim.ts'
 
-test('a later claim records a UUID identity for its carried ruling', async () => {
+test('a later claim records a UUID ruling identity and never resurrects a failed reservation', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
   const reserved = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
   const reservedRecordId = db()
@@ -102,6 +102,23 @@ test('a later claim records a UUID identity for its carried ruling', async () =>
     expect(
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
     ).toEqual({ transport_explicit: 0 })
+
+    const failedReservation = addRun({
+      agent: '(pending)',
+      job: 'review-lens',
+      status: 'failed',
+    })
+    await expect(
+      claimRun({
+        ...claimInput,
+        opts: { job: 'review-lens', reserveId: failedReservation },
+        stamp: 'failed-reservation-claim',
+        carriedQuestionIds: [],
+      }),
+    ).rejects.toThrow('is no longer claimable')
+    expect(
+      db().query('SELECT status, agent FROM run WHERE record_id=?').get(failedReservation),
+    ).toEqual({ status: 'failed', agent: '(pending)' })
   } finally {
     rmSync(runsDir, { recursive: true, force: true })
   }

@@ -5,31 +5,50 @@ import { machineId } from '../record/machine-identity.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
-export function failReservedRun(reserveId: string | undefined, error: unknown): void {
+function enqueueFailedReservedRun(
+  reserveId: string,
+  database: ReturnType<typeof db>,
+  localMachineId: string,
+  finishedAt: string,
+): void {
+  const reserved = database
+    .query('SELECT parent_run_record_id FROM run WHERE record_id=?')
+    .get(reserveId) as { parent_run_record_id: string | null } | null
+  enqueueRunRecord(database, reserveId, localMachineId, finishedAt)
+  if (reserved?.parent_run_record_id)
+    rollUpRootAndEnqueue(database, reserved.parent_run_record_id, null, localMachineId, finishedAt)
+}
+
+export function publishFailedReservedRun(reserveId: string): void {
+  const finishedAt = nowIso()
+  const localMachineId = machineId()
+  writeTransaction(() => {
+    const database = db()
+    const failed = database
+      .query("SELECT 1 AS failed FROM run WHERE record_id=? AND status='failed'")
+      .get(reserveId)
+    if (failed) enqueueFailedReservedRun(reserveId, database, localMachineId, finishedAt)
+  })
+}
+
+export function failReservedRun(
+  reserveId: string | undefined,
+  error: unknown,
+  started?: number,
+): void {
   if (!reserveId) return
   const message = error instanceof Error ? error.message : String(error)
   const finishedAt = nowIso()
   const localMachineId = machineId()
   writeTransaction(() => {
     const database = db()
-    const reserved = database
-      .query('SELECT parent_run_record_id FROM run WHERE record_id=?')
-      .get(reserveId) as { parent_run_record_id: string | null } | null
     const changed = database
       .query(
-        `UPDATE run SET status='failed', failure_kind='harness', error=?, latency_ms=0
+        `UPDATE run SET status='failed', failure_kind='harness', error=?, latency_ms=?
          WHERE record_id=? AND status='running'`,
       )
-      .run(message, reserveId).changes
+      .run(message, started === undefined ? 0 : Date.now() - started, reserveId).changes
     if (changed !== 1) return
-    enqueueRunRecord(database, reserveId, localMachineId, finishedAt)
-    if (reserved?.parent_run_record_id)
-      rollUpRootAndEnqueue(
-        database,
-        reserved.parent_run_record_id,
-        null,
-        localMachineId,
-        finishedAt,
-      )
+    enqueueFailedReservedRun(reserveId, database, localMachineId, finishedAt)
   })
 }

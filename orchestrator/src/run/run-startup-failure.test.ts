@@ -46,3 +46,16 @@ test('a failed reserved continuation rolls its outcome up to the chain root', ()
       .all(root, turn),
   ).toEqual([{ row_id: root }, { row_id: turn }].sort((a, b) => a.row_id.localeCompare(b.row_id)))
 })
+
+test('a post-claim startup failure records elapsed latency', () => {
+  const id = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+
+  failReservedRun(id, 'worker-home setup failed', Date.now() - 25)
+
+  const row = db().query('SELECT status, latency_ms FROM run WHERE record_id=?').get(id) as {
+    status: string
+    latency_ms: number
+  }
+  expect(row.status).toBe('failed')
+  expect(row.latency_ms).toBeGreaterThanOrEqual(20)
+})

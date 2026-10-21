@@ -767,8 +767,11 @@ export async function run(opts: {
   } catch (e) {
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
-    failReservedRun(claim.id, e)
-    teardownTerminalRunResources(db(), claim.id)
+    try {
+      failReservedRun(claim.id, e, started)
+    } finally {
+      teardownTerminalRunResources(db(), claim.id)
+    }
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
   mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
@@ -859,9 +862,15 @@ export async function run(opts: {
       } catch (error) {
         if ((error as { runId?: string }).runId === claim.id) throw error
         const why = String((error as Error)?.message ?? error)
-        failReservedRun(claim.id, error)
-        await resetSandbox()
-        teardownTerminalRunResources(db(), claim.id)
+        try {
+          failReservedRun(claim.id, error, started)
+        } finally {
+          try {
+            await resetSandbox()
+          } finally {
+            teardownTerminalRunResources(db(), claim.id)
+          }
+        }
         throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
           runId: claim.id,
         })
@@ -876,8 +885,11 @@ export async function run(opts: {
           .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
         if (mismatch.refusalReason) {
           const why = mismatch.refusalReason
-          failReservedRun(claim.id, why)
-          teardownTerminalRunResources(db(), claim.id)
+          try {
+            failReservedRun(claim.id, why, started)
+          } finally {
+            teardownTerminalRunResources(db(), claim.id)
+          }
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
             runId: claim.id,
           })

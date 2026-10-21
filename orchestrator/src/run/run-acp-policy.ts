@@ -8,22 +8,24 @@ import { agentMeteredRouteEligibility } from '../route/route.ts'
 import { assertAcpAllowed } from '../transport/transport.ts'
 import { namedAgentTurn } from './run-resume-kind.ts'
 
+export function assertAcpPolicyAllowed(
+  jobName: string,
+  agentName: string | undefined,
+  agent: Agent | undefined,
+  namedTurn: boolean,
+): void {
+  const automaticallyEligible = agent
+    ? agentMeteredRouteEligibility(jobName, agent, namedTurn ? agent.name : undefined)
+        .mayAutoRouteNamedJob
+    : false
+  assertAcpAllowed(jobName, agentName, agent, namedTurn, automaticallyEligible)
+}
+
 export function assertSelectedAcpAllowed(
   jobName: string,
   agent: Agent,
   agentExplicit: boolean | undefined,
   firstTurn: boolean,
 ): void {
-  const automaticallyEligible = agentMeteredRouteEligibility(
-    jobName,
-    agent,
-    agentExplicit ? agent.name : undefined,
-  ).mayAutoRouteNamedJob
-  assertAcpAllowed(
-    jobName,
-    agent.name,
-    agent,
-    namedAgentTurn(agentExplicit, firstTurn),
-    automaticallyEligible,
-  )
+  assertAcpPolicyAllowed(jobName, agent.name, agent, namedAgentTurn(agentExplicit, firstTurn))
 }

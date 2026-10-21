@@ -5,7 +5,7 @@ import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
+import { resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
 import {
   resolveTaskBranch,
@@ -33,14 +33,15 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { agentMeteredRouteEligibility, pick } from '../route/route.ts'
+import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
+import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { namedAgentTurn } from '../run/run-resume-kind.ts'
 import {
-  assertAcpAllowed,
   assertAcpReady,
   resolveTransportName,
   selectAgentForTransport,
@@ -62,6 +63,10 @@ type Presentation = {
   printRunId(id: number): void
   cwd(): string
 }
+
+export const assertDispatchAcpAllowed = assertAcpPolicyAllowed
+const namedDispatchTurn = (agentName: string | undefined) =>
+  namedAgentTurn(Boolean(agentName), true)
 
 function earlierReviewRejections(
   project: string,
@@ -341,19 +346,6 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
   agentExplicit: Boolean(agent),
 })
 
-export function assertDispatchAcpAllowed(
-  jobName: string,
-  agentName: string | undefined,
-  registered: Agent | undefined,
-  agentExplicit: boolean,
-): void {
-  const automaticallyEligible = registered
-    ? agentMeteredRouteEligibility(jobName, registered, agentExplicit ? registered.name : undefined)
-        .mayAutoRouteNamedJob
-    : false
-  assertAcpAllowed(jobName, agentName, registered, agentExplicit, automaticallyEligible)
-}
-
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
   const flag = (name: string) => flagValue(argv, name)
@@ -374,7 +366,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport =
         !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
     if (transport === 'acp') {
-      assertDispatchAcpAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')))
+      assertDispatchAcpAllowed(jobName, flag('agent'), selected, namedDispatchTurn(flag('agent')))
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
@@ -474,7 +466,7 @@ export async function pickPreviewCommand(
       jobName,
       flag('agent'),
       flag('agent') ? AGENTS[flag('agent')!] : undefined,
-      Boolean(flag('agent')),
+      namedDispatchTurn(flag('agent')),
     )
   pickCommand(
     {

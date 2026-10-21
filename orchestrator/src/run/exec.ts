@@ -23,10 +23,11 @@
  * nothing statically and pulls the rest in dynamically, INSIDE a catch — so a
  * broken sibling becomes a recorded failure with a reason, instead of silence.
  *
- * It loads the shared terminal write only after a startup failure is caught, so
- * a broken sibling still reaches this entry point while an intact database path
- * gets the same guarded write and hosted-record outbox entry as every refusal.
+ * The raw SQLite terminal write happens before the shared publication path: the
+ * current rule is that recording the local failure must not depend on imports,
+ * migrations, machine identity, or hosted-record publication all being healthy.
  */
+import { Database } from 'bun:sqlite'
 import { RefusalError } from '../refusal-error.ts'
 
 export function startupFailureDiagnostic(error: unknown): string {
@@ -37,12 +38,35 @@ export function startupFailureDiagnostic(error: unknown): string {
 /** Record why this run never started, using as little of the codebase as possible. */
 async function recordStartupFailure(id: string, reason: string): Promise<void> {
   if (!id) return
+  const path = process.env.ORCH_DB
+  if (!path) return
+  let changed = 0
   try {
-    const { failReservedRun } = await import('./run-startup-failure.ts')
-    failReservedRun(id, reason.slice(0, 2000))
-  } catch {
-    // Out of places to put it. The stderr line below is the last word, and the
-    // stale sweep remains the backstop it has always been.
+    const database = new Database(path, { readwrite: true, create: false })
+    database.exec('PRAGMA busy_timeout = 15000')
+    changed = database
+      .query(
+        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0
+         WHERE record_id=? AND status IN ('running')`,
+      )
+      .run(reason.slice(0, 2000), id).changes
+    database.close()
+  } catch (error) {
+    console.error(
+      `orch: run ${id} could not record its startup failure: ${startupFailureDiagnostic(error)}`,
+    )
+    return
+  }
+  if (changed !== 1) return
+  try {
+    const { publishFailedReservedRun } = await import('./run-startup-failure.ts')
+    publishFailedReservedRun(id)
+  } catch (error) {
+    // Detached stdio is the run's coordinator.log. Publication is best effort
+    // only after the self-contained write above has made the outcome durable.
+    console.error(
+      `orch: run ${id} could not publish its startup failure: ${startupFailureDiagnostic(error)}`,
+    )
   }
 }
 

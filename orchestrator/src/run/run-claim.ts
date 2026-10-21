@@ -327,7 +327,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                         automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, pid=?, mcp=?, transport=?
-          WHERE record_id=? RETURNING record_id, number`,
+          WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -416,6 +416,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       ) as { record_id: string; number: number }
   const claim = writeTransaction(() => {
     const claimedRow = opts.reserveId ? updateReservedRun() : insertClaimedRun()
+    if (!claimedRow) throw new Error(`reserved run ${opts.reserveId} is no longer claimable`)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
     /**
      * A child that asked has finished that turn once its successor exists.
@@ -945,7 +946,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     teardownTerminalRunResources(db(), claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
-
   return {
     promptPath,
     outputPath,
