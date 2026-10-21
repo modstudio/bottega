@@ -5,9 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
-import { runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
-  hubStoreAccess,
   implicitHubDatabaseCreationRefusal,
   missingHubDatabaseMessage,
   resolveHubRuntime,
@@ -40,54 +38,6 @@ test('implicit creation refuses explicit, linked, and unauthorized resolutions',
 test('implicit creation allows a linked checkout to initialize temporary state', () => {
   const path = join(tmpdir(), `hub-linked-scratch-${randomUUID()}`, 'hub.db')
   expect(implicitHubDatabaseCreationRefusal(false, false, true, path)).toBeNull()
-})
-
-test('a reader checkout resolves the shared hub path as read-only', () => {
-  const runtime = resolveHubRuntime(
-    '/reader/clone',
-    { HOME: '/reader/home', HUB_DB: '/operator/state/hub.db' },
-    () => '/main/checkout',
-  )
-
-  expect(runtime.livePath).toBe('/operator/state/hub.db')
-  expect(hubStoreAccess(runtime.linkedCheckout, runtime.livePath, '/tmp', false)).toEqual({
-    openMode: 'read-only-immutable',
-    writesRefused: true,
-    migrationsRefused: true,
-  })
-})
-
-test('a linked checkout may write an isolated temporary hub store', () => {
-  const path = join(tmpdir(), `hub-linked-write-${randomUUID()}`, 'hub.db')
-  expect(hubStoreAccess(true, path).openMode).toBe('read-write')
-})
-
-test('a worker refuses hub writes and migrations before touching a shared path', () => {
-  const parent = join(process.cwd(), `.dev-1500-worker-store-${randomUUID()}`)
-  const path = join(parent, 'hub.db')
-  const run = (operation: string) =>
-    runHubFixtureProcess(
-      [
-        process.execPath,
-        '--no-env-file',
-        '-e',
-        `import { ${operation} } from './hub/src/db.ts'; try { ${operation}(() => {}) } catch (error) { console.log(error.message) }`,
-      ],
-      {
-        cwd: join(import.meta.dir, '../..'),
-        env: { ...process.env, HUB_DB: path, ORCH_RUN_ID: randomUUID() },
-      },
-    )
-
-  const write = run('writeTransaction')
-  const migration = run('migrateDatabase')
-  const refusal =
-    'refusing to write hub rows to the shared store from a worker, linked worktree, or borrowed clone'
-  expect(write.exitCode).toBe(0)
-  expect(write.stdout.toString()).toContain(refusal)
-  expect(migration.exitCode).toBe(0)
-  expect(migration.stdout.toString()).toContain(refusal)
-  expect(existsSync(parent)).toBeFalse()
 })
 
 test('the migrate creation decision refuses an absent HUB_DB before touching its parent', () => {

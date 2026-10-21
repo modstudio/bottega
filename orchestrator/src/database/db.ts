@@ -8,7 +8,6 @@ import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { decideStoreAccess } from '../../../shared/store-access.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
@@ -99,21 +98,12 @@ function sameStore(a: string, b: string): boolean {
  * a linked binary may read the main store under any name and never writes it.
  * ORCH_DB_WRITE=1 is the operator's explicit, recorded insistence.
  */
-const restrictedLinkedWorktreeActor =
+export const linkedWorktreeReadOnly =
   DATABASE_RESOLUTION.linkedWorktreeBinary &&
+  !linkedWorktreeMigrationAllowed(DB_PATH) &&
   process.env.ORCH_DB_WRITE !== '1' &&
   (DATABASE_RESOLUTION.method !== 'ORCH_DB' ||
     sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
-
-function orchestratorStoreAccess(walOrShmSidecarPresent: boolean) {
-  return decideStoreAccess({
-    restrictedActor: restrictedLinkedWorktreeActor,
-    storePathUnderTemporaryRoot: linkedWorktreeMigrationAllowed(DB_PATH),
-    walOrShmSidecarPresent,
-  })
-}
-
-export const linkedWorktreeReadOnly = orchestratorStoreAccess(false).writesRefused
 
 let registeredStoreWriteProtected = false
 
@@ -127,13 +117,7 @@ export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
  */
 export function openReadOnlyDatabase(path = DB_PATH): Database {
   const sidecarsExist = existsSync(`${path}-wal`) || existsSync(`${path}-shm`)
-  const access = decideStoreAccess({
-    restrictedActor: true,
-    storePathUnderTemporaryRoot: false,
-    walOrShmSidecarPresent: sidecarsExist,
-  })
-  const readOnlyPath =
-    access.openMode === 'read-only-immutable' ? `${pathToFileURL(path).href}?immutable=1` : path
+  const readOnlyPath = sidecarsExist ? path : `${pathToFileURL(path).href}?immutable=1`
   return new Database(readOnlyPath, { readonly: true })
 }
 
@@ -227,17 +211,14 @@ export function db(writable = false): Database {
   if (legacyRefusal) throw new Error(legacyRefusal)
   ensureDatabase()
   requireOpenHooksForWritableMode()
-  const access = orchestratorStoreAccess(
-    existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`),
-  )
-  const databasePath =
-    access.openMode === 'read-only-immutable'
+  const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
+  const readOnlyPath =
+    linkedWorktreeReadOnly && !sidecarsExist
       ? `${pathToFileURL(DB_PATH).href}?immutable=1`
       : DB_PATH
-  const d =
-    access.openMode === 'read-write'
-      ? new Database(databasePath, { readwrite: true, create: false })
-      : new Database(databasePath, { readonly: true })
+  const d = linkedWorktreeReadOnly
+    ? new Database(readOnlyPath, { readonly: true })
+    : new Database(DB_PATH, { readwrite: true, create: false })
   // Several `bottega run start` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record

@@ -78,15 +78,7 @@ function trackedComments(root: string): CommentSource[] {
     .toString()
     .split('\0')
     .filter(Boolean)
-    .flatMap((file) => {
-      try {
-        return commentsInSource(file, readFileSync(resolve(root, file), 'utf8'))
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-        const detail = error instanceof Error ? error.message : String(error)
-        throw new Error(`could not read tracked source file ${file}: ${detail}`)
-      }
-    })
+    .flatMap((file) => commentsInSource(file, readFileSync(resolve(root, file), 'utf8')))
 }
 
 export function trackedCommentFindings(root: string, rules: CommentRules): CommentFinding[] {
