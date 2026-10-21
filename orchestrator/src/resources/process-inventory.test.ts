@@ -1,5 +1,32 @@
 import { expect, test } from 'bun:test'
-import { parseProcessTable } from './process-inventory.ts'
+import { parseProcessTable, processInventorySubprocessError } from './process-inventory.ts'
+
+test('classifies process inventory subprocess failures', () => {
+  expect(
+    processInventorySubprocessError('lsof', 10_000, {
+      exitCode: null,
+      signalCode: 'SIGTERM',
+      exitedDueToTimeout: true,
+      stderr: '',
+    }),
+  ).toBe('lsof timed out after 10000 ms')
+  expect(
+    processInventorySubprocessError('lsof', 10_000, {
+      exitCode: null,
+      signalCode: 'SIGKILL',
+      exitedDueToTimeout: false,
+      stderr: '',
+    }),
+  ).toBe('lsof ended on signal SIGKILL')
+  expect(
+    processInventorySubprocessError('lsof', 10_000, {
+      exitCode: 7,
+      signalCode: null,
+      exitedDueToTimeout: false,
+      stderr: 'permission denied',
+    }),
+  ).toBe('lsof exited 7: permission denied')
+})
 
 test('parses faithful macOS ps etime output', () => {
   expect(parseProcessTable('  91     1    91  2-03:04:05 /usr/bin/node vite --host\n')).toEqual([

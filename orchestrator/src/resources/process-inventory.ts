@@ -19,6 +19,29 @@ export type OrphanProcess = ProcessFact & {
   match: 'cwd' | 'argument'
 }
 
+const PROCESS_CWD_LSOF_TIMEOUT_MS = 10_000
+
+type ProcessInventorySubprocessResult = {
+  exitCode: number | null
+  signalCode: string | number | null | undefined
+  exitedDueToTimeout: boolean
+  stderr: string
+}
+
+/** Classify a completed inventory subprocess without observing the process. */
+export function processInventorySubprocessError(
+  command: string,
+  timeoutMs: number,
+  result: ProcessInventorySubprocessResult,
+): string | null {
+  const detail = result.stderr.trim()
+  const suffix = detail ? `: ${detail}` : ''
+  if (result.exitedDueToTimeout) return `${command} timed out after ${timeoutMs} ms${suffix}`
+  if (result.signalCode) return `${command} ended on signal ${result.signalCode}${suffix}`
+  if (result.exitCode !== 0) return `${command} exited ${result.exitCode}${suffix}`
+  return null
+}
+
 function elapsedSeconds(value: string): number | null {
   const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(value)
   if (!match) return null
@@ -52,20 +75,33 @@ export function parseProcessTable(output: string): ProcessFact[] {
 
 function processCwds(): { values: Map<number, string>; error: string | null } {
   try {
-    const found = Bun.spawnSync(['lsof', '-a', '-d', 'cwd', '-Fpn'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 1_000,
-    })
-    if (found.exitCode !== 0) {
-      return {
-        values: new Map(),
-        error: found.stderr.toString().trim() || `lsof exited ${found.exitCode}`,
+    let found: ProcessInventorySubprocessResult & { stdout: string }
+    for (let attempt = 0; ; attempt += 1) {
+      const child = Bun.spawnSync(['lsof', '-a', '-d', 'cwd', '-Fpn'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: PROCESS_CWD_LSOF_TIMEOUT_MS,
+      })
+      found = {
+        exitCode: child.exitCode,
+        signalCode: child.signalCode,
+        exitedDueToTimeout: child.exitedDueToTimeout === true,
+        stderr: child.stderr.toString(),
+        stdout: child.stdout.toString(),
       }
+      if (found.exitedDueToTimeout !== true || attempt === 1) break
+    }
+    const subprocessError = processInventorySubprocessError(
+      'lsof',
+      PROCESS_CWD_LSOF_TIMEOUT_MS,
+      found,
+    )
+    if (subprocessError) {
+      return { values: new Map(), error: subprocessError }
     }
     const values = new Map<number, string>()
     let pid: number | null = null
-    for (const line of found.stdout.toString().split('\n')) {
+    for (const line of found.stdout.split('\n')) {
       if (line.startsWith('p')) pid = Number(line.slice(1))
       else if (pid && line.startsWith('n')) values.set(pid, line.slice(1))
     }
