@@ -7,8 +7,8 @@ export type RunResourceObservation = {
   project: string
   job: string
   agent: string
-  cpuMs: number
-  peakRssBytes: number
+  cpuMs: number | null
+  peakRssBytes: number | null
 }
 
 const percentile = (values: number[], p: number): number | null => {
@@ -26,32 +26,44 @@ function resourceGroups(rows: readonly RunResourceObservation[], dimension: Reso
     groups.set(key, [...(groups.get(key) ?? []), row])
   }
   return [...groups.entries()]
-    .map(([name, group]) => ({
-      [dimension]: name,
-      runs: group.length,
-      cpuSeconds: {
-        median:
-          (percentile(
-            group.map((row) => row.cpuMs),
+    .map(([name, group]) => {
+      const measured = group.filter(
+        (
+          row,
+        ): row is RunResourceObservation & {
+          cpuMs: number
+          peakRssBytes: number
+        } => row.cpuMs !== null && row.peakRssBytes !== null,
+      )
+      const cpuMedian = percentile(
+        measured.map((row) => row.cpuMs),
+        0.5,
+      )
+      const cpuP90 = percentile(
+        measured.map((row) => row.cpuMs),
+        0.9,
+      )
+      return {
+        [dimension]: name,
+        runs: group.length,
+        measuredRuns: measured.length,
+        unmeasuredRuns: group.length - measured.length,
+        cpuSeconds: {
+          median: cpuMedian === null ? null : cpuMedian / 1_000,
+          p90: cpuP90 === null ? null : cpuP90 / 1_000,
+        },
+        peakRssBytes: {
+          median: percentile(
+            measured.map((row) => row.peakRssBytes),
             0.5,
-          ) ?? 0) / 1_000,
-        p90:
-          (percentile(
-            group.map((row) => row.cpuMs),
+          ),
+          p90: percentile(
+            measured.map((row) => row.peakRssBytes),
             0.9,
-          ) ?? 0) / 1_000,
-      },
-      peakRssBytes: {
-        median: percentile(
-          group.map((row) => row.peakRssBytes),
-          0.5,
-        ),
-        p90: percentile(
-          group.map((row) => row.peakRssBytes),
-          0.9,
-        ),
-      },
-    }))
+          ),
+        },
+      }
+    })
     .sort((a, b) => String(a[dimension]).localeCompare(String(b[dimension])))
 }
 
@@ -70,15 +82,14 @@ export function loadRunResourceReport(database: Database, options: ReportFilterO
       `SELECT COALESCE(project.name,'(none)') project,r.job,r.agent,
               r.resource_cpu_ms cpu_ms,r.resource_peak_rss_bytes peak_rss_bytes
          FROM run r LEFT JOIN project ON project.record_id=r.project_record_id
-        WHERE r.resource_cpu_ms IS NOT NULL AND r.resource_peak_rss_bytes IS NOT NULL
-          AND (? IS NULL OR project.name=?) AND (? IS NULL OR r.started_at>=?)`,
+        WHERE (? IS NULL OR project.name=?) AND (? IS NULL OR r.started_at>=?)`,
     )
     .all(...filter.parameters) as Array<{
     project: string
     job: string
     agent: string
-    cpu_ms: number
-    peak_rss_bytes: number
+    cpu_ms: number | null
+    peak_rss_bytes: number | null
   }>
   return runResourceReport(
     rows.map((row) => ({

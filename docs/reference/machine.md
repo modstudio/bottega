@@ -418,14 +418,15 @@ inspect machine conditions that need attention
 
 ## bottega machine provisioning
 
-**Synopsis:** `bottega machine provisioning [--project <name>] [--since <duration>] [--json]`
+**Synopsis:** `bottega machine provisioning [--project <name>] [--since <duration>] [--resources] [--json]`
 
-report worker-tree provisioning cost
+report worker-tree provisioning cost or run resources
 
 ### Options
 
 - `--project <name>`: limit samples to one project
 - `--since <duration>`: limit samples by age
+- `--resources`: report run CPU time and peak memory instead
 - `--json`: write the report as JSON
 
 ### Related

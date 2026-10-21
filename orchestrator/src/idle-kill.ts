@@ -9,7 +9,12 @@
 
 import { pidAlive } from '../../shared/process-identity.ts'
 import { idleMsSince } from './events.ts'
-import { type ProcessSample, processTreePids, sampleProcesses } from './process-resource-sampler.ts'
+import {
+  liveProcessTreePids,
+  observedProcessTreePids,
+  type ProcessSample,
+  sampleProcesses,
+} from './process-resource-sampler.ts'
 
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed
@@ -59,7 +64,7 @@ export function idlePollMs(thresholdMs = idleKillMs()): number {
  */
 function processGroupCpuPercent(pid: number, samples: ProcessSample[]): number | null {
   if (pid <= 0) return null
-  const pids = new Set(processTreePids(pid, samples))
+  const pids = new Set(observedProcessTreePids(pid, samples))
   if (!pids.size) return null
   let total = 0
   let seen = false
@@ -86,7 +91,7 @@ function isUninterruptible(state: string): boolean {
 }
 
 function groupHasUninterruptible(pid: number, samples: ProcessSample[]): boolean {
-  const pids = new Set(processTreePids(pid, samples))
+  const pids = new Set(observedProcessTreePids(pid, samples))
   return samples.some((row) => pids.has(row.pid) && isUninterruptible(row.state))
 }
 
@@ -155,7 +160,7 @@ function signalTree(
   // unproven assumption.
   if (isGroupKillablePgid(pgid, selfPgid) && pgid != null && signalGroup(pgid, signal, deps))
     return pgid
-  for (const child of processTreePids(pid, samples))
+  for (const child of liveProcessTreePids(pid, samples))
     if (!skipRoot || child !== pid) deps.kill(child, signal)
   return null
 }
@@ -184,7 +189,7 @@ function pidsSharingPgid(pgid: number | null | undefined, samples: ProcessSample
 /**
  * Re-sample, do not trust the T0 census. A grandchild born after the first
  * sample, then reparented when the wrapper died, is invisible to
- * processTreePids(root) and to a tracked set frozen at T0. Union current
+ * the snapshot tree rooted at root and to a tracked set frozen at T0. Union current
  * descendants of every known pid with anyone still in the vendor pgid.
  */
 function rememberTree(
@@ -195,7 +200,7 @@ function rememberTree(
 ): void {
   const seeds = new Set<number>([root, ...tracked, ...pidsSharingPgid(pgid, samples)])
   for (const seed of seeds) {
-    for (const pid of processTreePids(seed, samples)) tracked.add(pid)
+    for (const pid of liveProcessTreePids(seed, samples)) tracked.add(pid)
   }
   for (const pid of pidsSharingPgid(pgid, samples)) tracked.add(pid)
 }
@@ -256,7 +261,13 @@ export async function terminateProcessGroup(
   } = {},
 ): Promise<TerminateResult> {
   if (pid <= 0 || pid === process.pid) {
-    return { exited: true, unkillable: false, reason: null, pgid: null, pids: [] }
+    return {
+      exited: true,
+      unkillable: false,
+      reason: null,
+      pgid: null,
+      pids: [],
+    }
   }
   const deps: TerminateDeps = { ...defaultDeps, ...opts.deps }
   const graceMs = opts.graceMs ?? DEFAULT_IDLE_GRACE_MS
@@ -274,17 +285,29 @@ export async function terminateProcessGroup(
   opts.direct?.kill('SIGTERM') // execa owns the direct child's escalation.
   const pgid = groupPgid ?? trackedPgid
   if (await waitUntilDead(pid, tracked, graceMs, deps, pgid)) {
-    return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
+    return {
+      exited: true,
+      unkillable: false,
+      reason: null,
+      pgid,
+      pids: [...tracked],
+    }
   }
   // Re-sample before SIGKILL. The T0 census cannot see a grandchild born
-  // after the first sample, and processTreePids(root) cannot see one that
+  // after the first sample, and the snapshot tree rooted at root cannot see one that
   // reparented once the wrapper died.
   const beforeKill = deps.sample()
   rememberTree(pid, tracked, beforeKill, pgid)
   signalTree(pid, 'SIGKILL', deps, beforeKill, Boolean(opts.direct))
   signalSurvivors(tracked, 'SIGKILL', deps, opts.direct ? pid : undefined)
   if (await waitUntilDead(pid, tracked, killConfirmMs, deps, pgid)) {
-    return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
+    return {
+      exited: true,
+      unkillable: false,
+      reason: null,
+      pgid,
+      pids: [...tracked],
+    }
   }
   const after = deps.sample()
   const dState =
@@ -359,7 +382,7 @@ export function runHasLiveDescendants(
   const ids = new Set<number>([...extra, ...pidsSharingPgid(pgid, samples)])
   for (const root of [...roots, ...extra]) {
     if (root && root > 1) {
-      for (const pid of processTreePids(root, samples)) ids.add(pid)
+      for (const pid of liveProcessTreePids(root, samples)) ids.add(pid)
     }
   }
   return [...ids].some((pid) => pid > 1 && resolved.alive(pid))
@@ -387,7 +410,11 @@ export function shouldIdleKill(opts: {
   samples?: ProcessSample[]
 }): IdleKillDecision {
   if (opts.alreadyTimedOut || opts.alreadyIdleKilled) {
-    return { kill: false, idleMs: null, reason: 'another terminator owns this run' }
+    return {
+      kill: false,
+      idleMs: null,
+      reason: 'another terminator owns this run',
+    }
   }
   if (opts.asking || opts.openQuestion) {
     return { kill: false, idleMs: null, reason: 'waiting on a ruling' }

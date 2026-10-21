@@ -351,6 +351,20 @@ function runResourceColumnValues(usage: RunResourceUsage | null) {
   ]
 }
 
+/** The terminal resource write shared by finalization and its schema contract test. */
+export function writeTerminalRunResourceUsage(
+  database: Database,
+  runId: string,
+  usage: RunResourceUsage | null,
+): void {
+  database
+    .query(
+      `UPDATE run SET resource_cpu_ms=?, resource_peak_rss_bytes=?, resource_samples=?, resource_source=?
+        WHERE record_id=?`,
+    )
+    .run(...runResourceColumnValues(usage), runId)
+}
+
 function clearRunTimers(
   timer: ReturnType<typeof setTimeout> | null,
   checkpointTimer: ReturnType<typeof setInterval> | null,
@@ -745,7 +759,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
                         host_wait_since=NULL,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
                         review_provenance=?, provenance_status=?,
-                        resource_cpu_ms=?, resource_peak_rss_bytes=?, resource_samples=?, resource_source=?,
                         unreconciled=0 WHERE record_id=?`,
         )
         .run(
@@ -766,9 +779,10 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           confinementEvent ? JSON.stringify(confinementEvent) : null,
           reviewProvenance,
           provenanceSilent ? 'silent' : null,
-          ...runResourceColumnValues(resourceUsage),
           claim.id,
         )
+
+      writeTerminalRunResourceUsage(db(), claim.id, resourceUsage)
 
       recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
 

@@ -159,14 +159,20 @@ const describedCommand = (program: Command, name: string, description: string) =
 function registerMachineAttentionCommands(program: Command): void {
   program
     .command('provisioning')
-    .description('report worker-tree provisioning cost')
+    .description('report worker-tree provisioning cost or run resources')
     .option('--project <name>', 'limit samples to one project')
     .option('--since <duration>', 'limit samples by age')
+    .option('--resources', 'report run CPU time and peak memory instead')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action((options) =>
       provisioningCommand(
-        { project: options.project, since: options.since, json: Boolean(options.json) },
+        {
+          project: options.project,
+          since: options.since,
+          json: Boolean(options.json),
+          resources: Boolean(options.resources),
+        },
         { write: writeStdout },
       ),
     )

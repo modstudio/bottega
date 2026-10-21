@@ -24,9 +24,23 @@ export type RunResourceObserver = {
   stop(): RunResourceUsage
 }
 
-export type RunResourceAccumulator = { usage: RunResourceUsage; active: boolean }
+export type RunResourceAccumulator = {
+  usage: RunResourceUsage
+  active: boolean
+}
 
 type ProcessSnapshot = { rows: ProcessSample[]; available: boolean }
+
+export const PROCESS_SNAPSHOT_FIELDS = [
+  'pid',
+  'ppid',
+  'pgid',
+  '%cpu',
+  'state',
+  'rss',
+  'time',
+  'lstart',
+] as const
 
 function parseCpuTime(value: string): number | null {
   const dayParts = value.split('-')
@@ -59,14 +73,24 @@ export function parseProcessSnapshot(text: string): ProcessSample[] {
     if (!Number.isInteger(pgid) || pgid <= 0) continue
     if (!Number.isFinite(cpu) || !Number.isFinite(rssKb) || rssKb < 0 || cpuMs === null) continue
     const startTime = parts.length > 7 ? parts.slice(7).join(' ') : undefined
-    samples.push({ pid, ppid, pgid, cpu, state, rssBytes: rssKb * 1_024, cpuMs, startTime })
+    samples.push({
+      pid,
+      ppid,
+      pgid,
+      cpu,
+      state,
+      rssBytes: rssKb * 1_024,
+      cpuMs,
+      startTime,
+    })
   }
   return samples
 }
 
 function readProcessSnapshot(): ProcessSnapshot {
   try {
-    const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state=,rss=,time=,lstart='], {
+    const columns = PROCESS_SNAPSHOT_FIELDS.map((field) => `${field}=`).join(',')
+    const p = Bun.spawnSync(['ps', '-axo', columns], {
       env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
       stdout: 'pipe',
       stderr: 'pipe',
@@ -82,8 +106,8 @@ export function sampleProcesses(): ProcessSample[] {
   return readProcessSnapshot().rows
 }
 
-export function processTreePids(root: number, samples: ProcessSample[]): number[] {
-  if (!samples.some((row) => row.pid === root)) return []
+function processTreePids(root: number, samples: ProcessSample[], rootPresent: boolean): number[] {
+  if (!rootPresent) return []
   const children = new Map<number, number[]>()
   for (const row of samples) {
     const list = children.get(row.ppid) ?? []
@@ -103,15 +127,28 @@ export function processTreePids(root: number, samples: ProcessSample[]): number[
   return out
 }
 
+/** A tree whose root was actually observed in this process-table snapshot. */
+export function observedProcessTreePids(root: number, samples: ProcessSample[]): number[] {
+  return processTreePids(
+    root,
+    samples,
+    samples.some((row) => row.pid === root),
+  )
+}
+
+/** A liveness tree keeps the recorded root even when ps omits or truncates its row. */
+export function liveProcessTreePids(root: number, samples: ProcessSample[]): number[] {
+  return processTreePids(root, samples, true)
+}
+
 export function accumulateRunResourceUsage(
   previous: RunResourceUsage,
   root: number,
-  rootStartTime: string,
   snapshot: ProcessSample[],
+  rootPresent: boolean,
 ): RunResourceUsage {
-  const rootRow = snapshot.find((row) => row.pid === root && row.startTime === rootStartTime)
-  if (!rootRow) return previous
-  const pids = new Set(processTreePids(root, snapshot))
+  if (!rootPresent) return previous
+  const pids = new Set(processTreePids(root, snapshot, rootPresent))
   const rows = snapshot.filter((row) => pids.has(row.pid))
   const rssBytes = rows.reduce((total, row) => total + (row.rssBytes ?? 0), 0)
   const cpuMs = rows.reduce((total, row) => total + (row.cpuMs ?? 0), 0)
@@ -126,14 +163,13 @@ export function accumulateRunResourceUsage(
 export function advanceRunResourceUsage(
   previous: RunResourceAccumulator,
   root: number,
-  rootStartTime: string,
   snapshot: ProcessSample[],
+  rootPresent: boolean,
 ): RunResourceAccumulator {
   if (!previous.active) return previous
-  const rootPresent = snapshot.some((row) => row.pid === root && row.startTime === rootStartTime)
   return rootPresent
     ? {
-        usage: accumulateRunResourceUsage(previous.usage, root, rootStartTime, snapshot),
+        usage: accumulateRunResourceUsage(previous.usage, root, snapshot, rootPresent),
         active: true,
       }
     : { ...previous, active: false }
@@ -165,11 +201,14 @@ function observeSubscriber(
     if (!subscriber.rootStartTime) {
       subscriber.active = false
     } else {
+      const rootPresent = snapshot.rows.some(
+        (row) => row.pid === subscriber.root && row.startTime === subscriber.rootStartTime,
+      )
       const next = advanceRunResourceUsage(
         { usage: subscriber.usage, active: subscriber.active },
         subscriber.root,
-        subscriber.rootStartTime,
         snapshot.rows,
+        rootPresent,
       )
       subscriber.usage = next.usage
       subscriber.active = next.active

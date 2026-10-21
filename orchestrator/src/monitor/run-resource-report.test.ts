@@ -4,39 +4,75 @@ import { loadRunResourceReport, runResourceReport } from './run-resource-report.
 
 test('run resources report median and p90 by job, agent, and project', () => {
   const report = runResourceReport([
-    { project: 'app', job: 'fix', agent: 'codex', cpuMs: 1_000, peakRssBytes: 100 },
-    { project: 'app', job: 'fix', agent: 'codex', cpuMs: 2_000, peakRssBytes: 200 },
-    { project: 'other', job: 'review', agent: 'claude', cpuMs: 3_000, peakRssBytes: 300 },
+    {
+      project: 'app',
+      job: 'fix',
+      agent: 'codex',
+      cpuMs: 1_000,
+      peakRssBytes: 100,
+    },
+    {
+      project: 'app',
+      job: 'fix',
+      agent: 'codex',
+      cpuMs: 2_000,
+      peakRssBytes: 200,
+    },
+    {
+      project: 'other',
+      job: 'review',
+      agent: 'claude',
+      cpuMs: 3_000,
+      peakRssBytes: 300,
+    },
   ])
   expect(report.byJob).toEqual([
     {
       job: 'fix',
       runs: 2,
+      measuredRuns: 2,
+      unmeasuredRuns: 0,
       cpuSeconds: { median: 1, p90: 2 },
       peakRssBytes: { median: 100, p90: 200 },
     },
     {
       job: 'review',
       runs: 1,
+      measuredRuns: 1,
+      unmeasuredRuns: 0,
       cpuSeconds: { median: 3, p90: 3 },
       peakRssBytes: { median: 300, p90: 300 },
     },
   ])
-  expect(report.byAgent[0]).toEqual({
-    agent: 'claude',
-    runs: 1,
-    cpuSeconds: { median: 3, p90: 3 },
-    peakRssBytes: { median: 300, p90: 300 },
-  })
-  expect(report.byProject[0]).toEqual({
-    project: 'app',
-    runs: 2,
-    cpuSeconds: { median: 1, p90: 2 },
-    peakRssBytes: { median: 100, p90: 200 },
-  })
+  for (const [groups, expected] of [
+    [
+      report.byAgent,
+      {
+        agent: 'claude',
+        runs: 1,
+        measuredRuns: 1,
+        unmeasuredRuns: 0,
+        cpuSeconds: { median: 3, p90: 3 },
+        peakRssBytes: { median: 300, p90: 300 },
+      },
+    ],
+    [
+      report.byProject,
+      {
+        project: 'app',
+        runs: 2,
+        measuredRuns: 2,
+        unmeasuredRuns: 0,
+        cpuSeconds: { median: 1, p90: 2 },
+        peakRssBytes: { median: 100, p90: 200 },
+      },
+    ],
+  ] as const) {
+    expect(groups[0]).toEqual(expected)
+  }
 })
 
-test('stored resource report skips runs with null measurements', () => {
+test('stored resource report counts measured and unmeasured runs separately', () => {
   const database = new Database(':memory:')
   database.exec(
     `CREATE TABLE project(record_id TEXT PRIMARY KEY,name TEXT NOT NULL);
@@ -48,5 +84,10 @@ test('stored resource report skips runs with null measurements', () => {
   )
   const report = loadRunResourceReport(database, { sinceMs: null })
   expect(report.byJob).toHaveLength(1)
-  expect(report.byJob[0]?.runs).toBe(1)
+  expect(report.byJob[0]).toMatchObject({
+    runs: 2,
+    measuredRuns: 1,
+    unmeasuredRuns: 1,
+    cpuSeconds: { median: 1, p90: 1 },
+  })
 })
