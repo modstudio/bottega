@@ -492,7 +492,6 @@ function startGateExecution(
   let finishedAt: string | null = null
   completion = (async () => {
     mkdirSync(scratchDir, { recursive: true })
-    const scratchPath = join(scratchDir, `gate-${request.id}.log`)
     const artifactPath = join(runArtifactsDir(request.run_record_id), `gate-${request.id}.log`)
     const started = Date.now()
     let fd: number | null = null
@@ -507,7 +506,7 @@ function startGateExecution(
       tail = boundedGateOutputTail(tail + bytes.toString())
     }
     try {
-      fd = createGateLog(scratchPath)
+      fd = createGateLog(join(scratchDir, `gate-${request.id}.log`))
       const prepared = prepareGateExecution({ request, environment, record })
       command = prepared.command
       await hostSlot(
