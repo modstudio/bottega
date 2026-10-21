@@ -40,6 +40,7 @@ describe('run host capacity', () => {
       await waitForRunHostCapacity({
         database: db(),
         runId,
+        env: {},
         platform: 'linux',
         measure: loaded,
         sleep: async () => {
@@ -57,6 +58,7 @@ describe('run host capacity', () => {
     const result = await waitForRunHostCapacity({
       database: db(),
       runId,
+      env: {},
       platform: 'linux',
       measure: loaded,
       now: () => now,
@@ -77,6 +79,7 @@ describe('run host capacity', () => {
       await waitForRunHostCapacity({
         database: db(),
         runId,
+        env: {},
         platform: 'linux',
         measure: loaded,
       }),
@@ -96,6 +99,7 @@ describe('run host capacity', () => {
     const result = await waitForRunHostCapacity({
       database: db(),
       runId: younger,
+      env: {},
       platform: 'linux',
       measure: loaded,
       now: () => now,
@@ -123,6 +127,7 @@ describe('run host capacity', () => {
       await waitForRunHostCapacity({
         database: db(),
         runId,
+        env: {},
         platform: 'linux',
         now: () => now,
         measure: () => ({ ...loaded(), loadavg: 7 }),
@@ -141,6 +146,7 @@ describe('run host capacity', () => {
     const result = await waitForRunHostCapacity({
       database: db(),
       runId,
+      env: {},
       platform: 'linux',
       measure: loaded,
       sleep: async () => {
@@ -214,6 +220,7 @@ describe('run host capacity', () => {
         waitForRunHostCapacity({
           database: db(),
           runId,
+          env: {},
           platform: 'linux',
           measure: loaded,
           sleep: async () => {
@@ -250,6 +257,7 @@ describe('run host capacity', () => {
         waitForRunHostCapacity({
           database: db(),
           runId,
+          env: {},
           platform: 'linux',
           measure: loaded,
           now: () => now,
