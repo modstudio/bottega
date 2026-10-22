@@ -19,7 +19,6 @@ import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
-import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,
@@ -332,21 +331,20 @@ function recordFinishedGate(input: {
 }
 
 export async function gateBrokerLaunchArgv(
-  profile: SandboxRuntimeConfig | null,
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null,
   command: string,
-  launch: typeof sandboxLaunchArgv = sandboxLaunchArgv,
 ): Promise<string[]> {
-  return profile ? launch(profile, 'sh', ['-c', command]) : ['sh', '-c', command]
+  return sandbox ? sandbox.launch('sh', ['-c', command]) : ['sh', '-c', command]
 }
 
 async function spawnGateChild(input: {
   command: string
   worktree: string
   environment: Record<string, string>
-  sandboxProfile: SandboxRuntimeConfig | null
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   record: (chunk: Buffer | string) => void
 }) {
-  const launch = await gateBrokerLaunchArgv(input.sandboxProfile, input.command)
+  const launch = await gateBrokerLaunchArgv(input.sandbox, input.command)
   return lowerRunChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
@@ -369,7 +367,7 @@ async function runGateProcess(input: {
   command: string
   worktree: string
   environment: Record<string, string>
-  sandboxProfile: SandboxRuntimeConfig | null
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -445,7 +443,7 @@ async function runPreparedGate(input: {
   prepared: ReturnType<typeof prepareGateExecution>
   refreshBase: GateBaseRefresh
   environment: Record<string, string>
-  sandboxProfile: SandboxRuntimeConfig | null
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -466,7 +464,7 @@ async function runPreparedGate(input: {
         command: input.prepared.command,
         worktree: input.prepared.worktree,
         environment: input.environment,
-        sandboxProfile: input.sandboxProfile,
+        sandbox: input.sandbox,
         state: input.state,
         record: input.record,
         stop: input.stop,
@@ -520,7 +518,7 @@ function startGateExecution(
   request: PendingGate,
   scratchDir: string,
   environment: Record<string, string>,
-  sandboxProfile: SandboxRuntimeConfig | null,
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null,
   registerActive: (terminate: () => Promise<void>) => () => void,
   onFinish: ((moment: GateExecutionMoment) => void) | undefined,
   hostSlot: HostSlotRunner,
@@ -577,7 +575,7 @@ function startGateExecution(
             prepared,
             refreshBase,
             environment: gateExecutionEnvironment(environment, checkExecutionPath),
-            sandboxProfile,
+            sandbox,
             state,
             record,
             stop,
@@ -625,7 +623,7 @@ export function startGateBroker(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
-  sandboxProfile?: SandboxRuntimeConfig | null
+  sandbox?: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   registerActive?: (terminate: () => Promise<void>) => () => void
   onExecutionStart?: (moment: GateExecutionMoment) => void
   onExecutionFinish?: (moment: GateExecutionMoment) => void
@@ -647,7 +645,7 @@ export function startGateBroker(input: {
       request,
       input.scratchDir,
       input.environment,
-      input.sandboxProfile ?? null,
+      input.sandbox ?? null,
       registerActive,
       input.onExecutionFinish,
       input.withHostSlot ?? withGateSlot,

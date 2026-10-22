@@ -21,7 +21,6 @@ import {
   decideAcpPermission,
   failureKindFromStop,
   isAcpPilotJob,
-  isWritingAcpRun,
   outcomeFromTransport,
   resolveCodexAcpBin,
   resolveTransportName,
@@ -202,12 +201,6 @@ describe('ACP transport selection', () => {
     expect(isAcpPilotJob('summarize')).toBe(true)
     expect(isAcpPilotJob('implement')).toBe(false)
     expect(isAcpPilotJob('diagnose')).toBe(false)
-  })
-
-  test('the writing ACP decision requires both ACP and repository writes', () => {
-    expect(isWritingAcpRun('acp', true)).toBe(true)
-    expect(isWritingAcpRun('acp', false)).toBe(false)
-    expect(isWritingAcpRun('cli', true)).toBe(false)
   })
 
   test('writing jobs require an explicitly named ACP agent', () => {

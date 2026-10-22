@@ -32,10 +32,6 @@ export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
 export type TransportName = 'cli' | 'acp'
 
-export function isWritingAcpRun(transport: TransportName, writesRepo: boolean): boolean {
-  return transport === 'acp' && writesRepo
-}
-
 /**
  * How much of the machine an agent may use.
  *
@@ -244,8 +240,6 @@ export type TransportHandle = {
   collect(): Promise<TransportResult>
 }
 
-export type ConfiguredAsk = { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string }
-
 /**
  * How an agent is driven. Policy and capabilities stay on `Agent`; this is
  * the spawn / protocol seam. Default is `cli`. The CLI transport reads
@@ -256,7 +250,7 @@ export type AgentTransport = {
   /** Whether prompt() can add context while a turn is already running. */
   readonly canInjectMidTurn: boolean
   /** Read-only prelaunch view of the bottega-ask registration this transport will use. */
-  configuredAsk(opts: TransportStartOpts): ConfiguredAsk | null
+  configuredAsk(opts: TransportStartOpts): import('../events.ts').ConfiguredAsk | null
   start(opts: TransportStartOpts): Promise<TransportHandle>
   prompt(handle: TransportHandle, text: string): Promise<void>
   events(handle: TransportHandle): AsyncIterable<NormalizedEvent>

@@ -40,12 +40,13 @@ const brokerProfile: SandboxRuntimeConfig = {
 test('a writing ACP gate launch is wrapped in its writer profile', async () => {
   const seen: Array<{ profile: SandboxRuntimeConfig; bin: string; argv: string[] }> = []
   const launch = await gateBrokerLaunchArgv(
-    brokerProfile,
-    'bun run check',
-    async (profile, bin, argv) => {
-      seen.push({ profile, bin, argv })
-      return ['srt', '--', bin, ...argv]
+    {
+      async launch(bin, argv) {
+        seen.push({ profile: brokerProfile, bin, argv })
+        return ['srt', '--', bin, ...argv]
+      },
     },
+    'bun run check',
   )
   expect(seen).toEqual([{ profile: brokerProfile, bin: 'sh', argv: ['-c', 'bun run check'] }])
   expect(launch).toEqual(['srt', '--', 'sh', '-c', 'bun run check'])

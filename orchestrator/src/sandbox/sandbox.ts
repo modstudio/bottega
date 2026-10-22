@@ -88,7 +88,6 @@ export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.
 
 /** Loopback TCP is allowed on every readonly-lens SRT profile. */
 export const READONLY_LENS_ALLOW_LOCAL_BINDING = true
-const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '[::1]'] as const
 
 /** Reads denied by every SRT profile, including profiles outside normal runs. */
 function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
@@ -325,6 +324,12 @@ export function readonlyLensProfile(input: {
     },
     environment,
   )
+}
+
+const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '[::1]'] as const
+
+export function isWritingAcpRun(transport: 'cli' | 'acp', writesRepo: boolean): boolean {
+  return transport === 'acp' && writesRepo
 }
 
 /** Read-only visibility with writes limited to one writing run's owned paths. */

@@ -15,7 +15,6 @@ import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
-import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   boundedFocusedTestOutputTail,
   type FocusedTestRequest,
@@ -133,23 +132,22 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
 }
 
 export async function focusedTestBrokerLaunchArgv(
-  profile: SandboxRuntimeConfig | null,
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null,
   command: string,
   argv: string[],
-  launch: typeof sandboxLaunchArgv = sandboxLaunchArgv,
 ): Promise<string[]> {
-  return profile ? launch(profile, command, argv) : [command, ...argv]
+  return sandbox ? sandbox.launch(command, argv) : [command, ...argv]
 }
 
 async function spawnFocusedTestChild(input: {
   invocation: ReturnType<typeof focusedTestInvocation>
   worktree: string
   environment: Record<string, string>
-  sandboxProfile: SandboxRuntimeConfig | null
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   record: (chunk: Buffer | string) => void
 }) {
   const launch = await focusedTestBrokerLaunchArgv(
-    input.sandboxProfile,
+    input.sandbox,
     input.invocation.command,
     input.invocation.argv,
   )
@@ -175,7 +173,7 @@ async function runFocusedTestProcess(input: {
   invocation: ReturnType<typeof focusedTestInvocation>
   worktree: string
   environment: Record<string, string>
-  sandboxProfile: SandboxRuntimeConfig | null
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   state: FocusedTestProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -213,7 +211,7 @@ function startFocusedTest(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
-  sandboxProfile: SandboxRuntimeConfig | null
+  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   request: FocusedTestRequest
   registerActive: (terminate: () => Promise<void>) => () => void
 }): ActiveFocusedTest {
@@ -267,7 +265,7 @@ function startFocusedTest(input: {
             invocation,
             worktree: plan.worktree,
             environment: input.environment,
-            sandboxProfile: input.sandboxProfile,
+            sandbox: input.sandbox,
             state,
             record,
             stop,
@@ -313,7 +311,7 @@ export function startFocusedTestBroker(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
-  sandboxProfile?: SandboxRuntimeConfig | null
+  sandbox?: { launch(bin: string, argv: string[]): Promise<string[]> } | null
   registerActive?: (terminate: () => Promise<void>) => () => void
 }): FocusedTestBroker {
   ensureFocusedTestDirectory(input.scratchDir)
@@ -344,7 +342,7 @@ export function startFocusedTestBroker(input: {
     if (!request) return
     const execution = startFocusedTest({
       ...input,
-      sandboxProfile: input.sandboxProfile ?? null,
+      sandbox: input.sandbox ?? null,
       request,
       registerActive: input.registerActive ?? (() => () => {}),
     })

@@ -49,7 +49,11 @@ import {
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
-import { type SandboxSelection, writerBrokerProfile } from '../sandbox/sandbox.ts'
+import {
+  type SandboxSelection,
+  sandboxLaunchArgv,
+  writerBrokerProfile,
+} from '../sandbox/sandbox.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -150,6 +154,16 @@ function recordConfiguredAsk(input: {
   } catch {
     // Configuration evidence is best effort and must never prevent launch.
   }
+}
+
+function brokerSandbox(
+  writingAcp: boolean,
+  profile: SandboxSelection['profile'],
+  needsProjectNetwork: boolean,
+): { launch(bin: string, argv: string[]): Promise<string[]> } | null {
+  if (!writingAcp || !profile) return null
+  const brokerProfile = writerBrokerProfile(profile, needsProjectNetwork)
+  return { launch: (bin, argv) => sandboxLaunchArgv(brokerProfile, bin, argv) }
 }
 
 function replyFileMatches(
@@ -342,6 +356,14 @@ export type LiveResult = {
   workerEvents: StreamEvent[]
 }
 
+function checkpointContainment(input: LiveInput) {
+  return { gitDir: input.checkpointGitDir, disableHooks: input.writingAcp }
+}
+
+function vendorProcessSample(pid: number | null): ProcessSample | undefined {
+  return pid && pid > 1 ? sampleProcesses().find((row) => row.pid === pid) : undefined
+}
+
 type ConfiguredAsk = Parameters<typeof recordConfiguredAsk>[0]
 
 function recordRunAsk(
@@ -510,10 +532,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
-      sandboxProfile:
-        input.writingAcp && sandboxSelection.profile
-          ? writerBrokerProfile(sandboxSelection.profile, input.brokerNeedsNetwork)
-          : null,
+      sandbox: brokerSandbox(input.writingAcp, sandboxSelection.profile, input.brokerNeedsNetwork),
       onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
@@ -540,8 +559,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       cwd,
       prompt,
       outPath,
-      // ACP uses session/new; treating Grok's fresh CLI id as resumable makes ACP
-      // issue session/load against a session that cannot exist yet.
+      // A fresh Grok CLI id is not resumable; ACP would issue session/load for a nonexistent session.
       session:
         transportName === 'acp' && opts.resume?.kind === 'continue'
           ? opts.resume?.session
@@ -594,10 +612,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     effectiveModel = handle.effectiveModel ?? null
     if (effectiveModel)
       db().query('UPDATE run SET model=? WHERE record_id=?').run(effectiveModel, claim.id)
-    // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
-    // agent exits the worker is still parsing output and writing questions, and
-    // a reaper that tested this pid would mark the run stale under a process
-    // about to write its real outcome.
+    // The vendor pid stays the worker's while output and questions are finalized;
+    // testing it then would mark a still-finalizing run stale.
     //
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
@@ -606,10 +622,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     // cannot burn either budget.
     const vendorStartedAt = Date.now()
     const vendorPid = handle.pid ?? null
-    const vendorSample =
-      vendorPid && vendorPid > 1
-        ? sampleProcesses().find((row) => row.pid === vendorPid)
-        : undefined
+    const vendorSample = vendorProcessSample(vendorPid)
     const vendorPgid = vendorSample && vendorSample.pgid > 1 ? vendorSample.pgid : null
     const vendorStartTime = vendorPid && vendorPid > 1 ? processStartTime(vendorPid) : null
     db()
@@ -628,8 +641,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         taskKey: launchKey,
         scratchDir,
         guardEnvironment: gitConfigEnvironment ?? {},
-        gitDir: input.checkpointGitDir,
-        disableHooks: input.writingAcp,
+        ...checkpointContainment(input),
         final,
       })
       if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
@@ -651,8 +663,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           taskKey: launchKey,
           scratchDir,
           guardEnvironment: gitConfigEnvironment ?? {},
-          gitDir: input.checkpointGitDir,
-          disableHooks: input.writingAcp,
+          ...checkpointContainment(input),
         })
       }
     }

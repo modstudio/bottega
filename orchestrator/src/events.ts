@@ -21,6 +21,8 @@ export type StreamEvent =
       locations?: Array<{ path: string }>
     }
 
+export type ConfiguredAsk = { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string }
+
 const DEFAULT_IDLE_WARN_MS = 5 * 60_000
 const DEFAULT_PEEK_EVENTS = 5
 const PEEK_TEXT_CHARS = 120

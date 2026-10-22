@@ -1,7 +1,6 @@
 // concern: bottega-ask lifecycle evidence and its derived turn summary
 import type { JSONRPCMessage, Transport, TransportSendOptions } from '@modelcontextprotocol/server'
-import { appendRunEvent, type RunLogEvent } from '../events.ts'
-import type { ConfiguredAsk } from '../transport/transport.ts'
+import { appendRunEvent, type ConfiguredAsk, type RunLogEvent } from '../events.ts'
 
 export type AskLifecycle = {
   started(tools: string[]): void

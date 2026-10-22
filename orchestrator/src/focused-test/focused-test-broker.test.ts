@@ -19,13 +19,14 @@ test('a writing ACP focused-test launch is wrapped in its writer profile', async
   }
   const seen: Array<{ profile: SandboxRuntimeConfig; bin: string; argv: string[] }> = []
   const launch = await focusedTestBrokerLaunchArgv(
-    profile,
+    {
+      async launch(bin, argv) {
+        seen.push({ profile, bin, argv })
+        return ['srt', '--', bin, ...argv]
+      },
+    },
     'bun',
     ['test', 'one.test.ts'],
-    async (selected, bin, argv) => {
-      seen.push({ profile: selected, bin, argv })
-      return ['srt', '--', bin, ...argv]
-    },
   )
 
   expect(seen).toEqual([{ profile, bin: 'bun', argv: ['test', 'one.test.ts'] }])

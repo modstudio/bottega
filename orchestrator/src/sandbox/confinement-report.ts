@@ -5,7 +5,6 @@
  * homes, sockets, or secret values.
  */
 
-import { isWritingAcpRun, type TransportName } from '../transport/transport.ts'
 import { type CodexSandboxRuling, decideCodexSandbox } from './codex-sandbox.ts'
 import {
   RECORD_CONNECTION_ENV_NAMES,
@@ -14,6 +13,7 @@ import {
 } from './record-connection-env.ts'
 import {
   isReadonlySandboxCandidate,
+  isWritingAcpRun,
   READONLY_LENS_ALLOW_LOCAL_BINDING,
   type RunSandbox,
   readonlyLensDeniesLoginKeychain,
@@ -33,7 +33,7 @@ export type ConfinementReportAgent = {
   readsRepo: boolean
   writesRepo: boolean
   mcp: boolean
-  transport?: TransportName
+  transport?: 'cli' | 'acp'
 }
 
 type ConfinementAccess = {

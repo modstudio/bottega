@@ -37,8 +37,8 @@ import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
-import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
-import { job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
+import { gitContext } from '../git/git-environment.ts'
+import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -79,6 +79,7 @@ import {
 } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
 import {
+  isWritingAcpRun,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxLaunchArgv,
@@ -88,7 +89,6 @@ import {
 import {
   assertAcpReady,
   EMPTY_VENDOR_USAGE,
-  isWritingAcpRun,
   selectAgentForTransport,
   type TransportName,
 } from '../transport/transport.ts'
@@ -96,7 +96,7 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
-import { prepareWritingAcpAsk, WRITING_ACP_GIT_INSTRUCTION } from './run-acp-writer.ts'
+import * as acpWriter from './run-acp-writer.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -112,7 +112,6 @@ import { closeRun } from './run-close.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
-  provisionWriterSharedGitRoots,
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
@@ -139,6 +138,7 @@ import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
 import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
+import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
 import { renderTaskRulings } from './task-rulings.ts'
@@ -357,13 +357,9 @@ export async function run(opts: {
       resumeParent: opts.resume?.parent,
       launchBase: opts.launchBase,
     })
-  // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
-  // that makes it one. `available()` had only ever checked that an endpoint was
-  // CONFIGURED, which stayed true while the local model host was powered off
-  // — so routing kept handing it `file-question`, its best job, and kept
-  // recording the failures against the model. One probe here costs 2ms when the
-  // endpoint is healthy, and when it is not it replaces a run that was going to
-  // fail anyway.
+  // Reachability is routing input, not a run outcome. Configuration alone stays
+  // true while a model host is off, causing jobs and failures to be misrouted.
+  // This cheap probe replaces a run that would fail anyway.
   //
   // Awaited before pick() and cached so a fan-out probes once rather than per run.
   const health = await ensureLocalHealth()
@@ -536,20 +532,7 @@ export async function run(opts: {
   const { agent: name, reason } = launch
   const harnessName = workerHarnessName(a)
   const codexSandbox = decideCodexSandbox()
-  let boundMs: number
-  try {
-    // A durable historical row can name an agent that is no longer registered.
-    // Preserve the reserved resume row long enough for the existing harness
-    // failure path to record that fact; timeout validation must not erase it.
-    boundMs = resolveJobTimeoutMs(
-      requestedJob,
-      a?.timeoutMs ?? requestedJob.timeoutCeilingMs ?? 20 * 60_000,
-      timeoutMinutes,
-    )
-  } catch (e) {
-    recordRunStartupFailure(opts.reserveId, e)
-    throw e
-  }
+  const boundMs = resolveRunBound(requestedJob, a, timeoutMinutes, opts.reserveId)
   if (resume.isFirstTurn) {
     const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
     const split = prompt.lastIndexOf('\n---\n')
@@ -565,7 +548,7 @@ export async function run(opts: {
       throw e
     }
   }
-  if (writingAcp) prompt += `\n\n${WRITING_ACP_GIT_INSTRUCTION}`
+  prompt = acpWriter.bindContract(prompt, writingAcp)
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
@@ -573,9 +556,7 @@ export async function run(opts: {
       throw new Error(versionRefusal)
     }
   }
-  // Route first because the cell keys on the agent ACTUALLY selected. The
-  // suffix reserve above keeps argv eligibility honest; append before any
-  // prompt file, hash, or database prompt metadata is written.
+  // Append after routing but before prompt files, hashes, or metadata are written.
   if (requestedJob.findings && resume.isFirstTurn) {
     const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
     if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES) {
@@ -702,13 +683,10 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
-  // ACP writers cannot write shared Git state; the host owns their checkpoints.
-  const writerGitWriteRoots = provisionWriterSharedGitRoots(
-    worktree,
-    repoJob && writesJob && !writingAcp,
-  )
-  const writableRoots = [scratchDir, ...writerGitWriteRoots]
-  const checkpointGitDir = writingAcp && worktree ? worktreeGitDir(worktree.path) : null
+  const runProject = projectAt(callerCwd)
+  const writableRoots = acpWriter.writableRoots(worktree, writesJob, writingAcp, scratchDir)
+  const checkpointGitDir = acpWriter.checkpointGitDir(worktree, writingAcp)
+  const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
@@ -731,9 +709,8 @@ export async function run(opts: {
   let mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
   let hasRunScopedHome: boolean
-  const runProject = projectAt(callerCwd)
   try {
-    const writingAcpAsk = prepareWritingAcpAsk(writingAcp, claim.id, runToken)
+    const writingAcpAsk = acpWriter.prepareWritingAcpAsk(writingAcp, claim.id, runToken)
     askLoopback = writingAcpAsk.loopback
     sandboxSelection = selectReadonlySandbox({
       agent: name,
@@ -1055,9 +1032,7 @@ export async function run(opts: {
       mcpSetupHeader,
       initialBoardNoticeIds: initialBoard.noticeIds,
       askLoopback,
-      writingAcp,
-      checkpointGitDir,
-      brokerNeedsNetwork: Boolean(runProject?.settings.mainStack?.consumers?.includes('gate')),
+      ...acpWriter.lifecycleFacts(writingAcp, checkpointGitDir, brokerNeedsNetwork),
     }))
   } finally {
     const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
@@ -1085,8 +1060,7 @@ export async function run(opts: {
         failureKind,
         scratchDir,
         gitConfigEnvironment,
-        writingAcp,
-        checkpointGitDir,
+        ...acpWriter.lifecycleFacts(writingAcp, checkpointGitDir, brokerNeedsNetwork),
         opts,
         watchedCheckouts,
         confinementFailures,
