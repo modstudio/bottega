@@ -11,6 +11,7 @@ import {
   type TransportHandle,
   type TransportResult,
 } from '../transport/transport.ts'
+import { setAgent } from './agent-registry.ts'
 import { probeVendor } from './vendor-probe.ts'
 
 function excludeCodex() {
@@ -138,5 +139,24 @@ describe(`${PLATFORM_SLUG} agent probe`, () => {
         )
         .get(),
     ).toEqual({ n: 0 })
+  })
+
+  test('a passing probe of a disabled agent names the disable and the re-enable verb', async () => {
+    const reason = 'Not signed in on this machine (failover run 15922 failed auth, 2026-10-20)'
+    setAgent('codex', { enabled: false, reason })
+    try {
+      installVendor(result({ status: 'ok', output: 'ok' }))
+      const probed = await probeVendor('codex')
+      expect(probed.ok).toBe(true)
+      expect(probed.kind).toBe('ok')
+      expect(probed.message).toContain('still disabled')
+      expect(probed.message).toContain(reason)
+      expect(probed.message).toContain(`${PLATFORM_SLUG} agent show set codex --enabled true`)
+      expect(
+        db().query("SELECT enabled, disabled_reason FROM agent WHERE name='codex'").get(),
+      ).toEqual({ enabled: 0, disabled_reason: reason })
+    } finally {
+      setAgent('codex', { enabled: true })
+    }
   })
 })
