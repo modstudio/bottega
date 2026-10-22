@@ -331,6 +331,40 @@ export function parseWorkerMessageArgs(
   }
 }
 
+export type ContinueArgs = {
+  identifier: string
+  sources: { commandFile?: string; positionals: string[] }
+}
+
+/** Parse continue independently of Commander's option ordering and positional assignment. */
+export function parseContinueArgs(args: string[], usage: string): ContinueArgs {
+  const booleans = new Set(['--follow', '--detach', '--quiet', '--findings'])
+  const positionals: string[] = []
+  let commandFile: string | undefined
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!
+    if (booleans.has(arg)) continue
+    if (arg === '--file' || arg.startsWith('--file=')) {
+      if (commandFile !== undefined)
+        throw new Error(`--file may be supplied only once\nworking form: ${usage}`)
+      const taken = takeFilePath(args, index, usage)
+      commandFile = taken.path
+      index = taken.next - 1
+      continue
+    }
+    if (arg.startsWith('-')) throw new Error(`unknown option ${arg}\nworking form: ${usage}`)
+    positionals.push(arg)
+  }
+  const identifier = positionals.shift()
+  if (!identifier) throw new Error(`exactly one run id is required\nworking form: ${usage}`)
+  if (commandFile !== undefined && positionals.length) {
+    throw new Error(
+      `unexpected positional arguments with --file: ${positionals.join(' ')}\nworking form: ${usage}`,
+    )
+  }
+  return { identifier, sources: { commandFile, positionals } }
+}
+
 export function parseAnswerTextSources(args: string[]): AnswerTextSources {
   return parseWorkerMessageArgs(args, {
     booleans: ANSWER_BOOLEANS,
