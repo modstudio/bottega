@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -113,6 +114,38 @@ describe('idle run classification', () => {
       kind: 'idle',
       subject: 'run:73',
       ageMs: 6 * 60_000,
+    })
+  })
+
+  test('a fresh host wait is not reported', () => {
+    expect(
+      idleRunCondition(
+        {
+          ...row,
+          pidAlive: null,
+          host_wait_since: new Date(clock - 1_000).toISOString(),
+        },
+        clock,
+        5 * 60_000,
+      ),
+    ).toBeNull()
+  })
+
+  test('an over-bound host wait is stuck-host-wait', () => {
+    const since = new Date(clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1).toISOString()
+    expect(
+      idleRunCondition(
+        { ...row, pidAlive: null, pid: null, host_wait_since: since },
+        clock,
+        5 * 60_000,
+      ),
+    ).toMatchObject({
+      kind: 'stuck-host-wait',
+      subject: 'run:73',
+      since,
+      ageMs: RUN_HOST_WAIT_MAX_MS + RUN_HOST_WAIT_POLL_MS + 1,
+      detail: expect.stringContaining('coordinator pid none'),
+      action: expect.stringContaining('run stop 73 if it is dead'),
     })
   })
 })
@@ -818,6 +851,32 @@ describe('operational monitor conditions', () => {
       )
       .run(child, nowIso(), 'and now what?')
     expect(askingRuns().map((run) => run.record_id)).toEqual([])
+  })
+
+  test('a stuck-host-wait notice is claimed while current and dropped after admission', () => {
+    const owner = 'stuck-host-wait-owner'
+    const since = new Date(
+      Date.now() - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1,
+    ).toISOString()
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'running',
+      session: owner,
+    })
+    db().query('UPDATE run SET host_wait_since=? WHERE record_id=?').run(since, runId)
+    persistAddressedCondition('stuck-host-wait', `run:${runId}`, owner, since)
+
+    expect(claimMonitorNotices(owner)).toEqual([
+      expect.objectContaining({
+        kind: 'stuck-host-wait',
+        subject: `run:${runId}`,
+      }),
+    ])
+
+    db().query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(runId)
+
+    expect(claimMonitorNotices(owner)).toEqual([])
   })
 
   test('does not deliver an asking-run condition after the run resumes', () => {

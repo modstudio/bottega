@@ -8,7 +8,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
-import { applicableReview } from '../review/review-applicability.ts'
+import type { ApplicableReview } from '../review/review-applicability.ts'
 import {
   branchRunOwnerSession,
   type ChangeGroup,
@@ -35,6 +35,7 @@ export type PullRequestChange = {
   tree: string
   group: ChangeGroup
   tier: 0 | 1 | 2 | 3
+  applicability: ApplicableReview
 }
 
 const command = (cwd: string, argv: string[], label: string): string => {
@@ -80,6 +81,7 @@ export function resolvePullRequestChange(
     tree,
     group: measured.group,
     tier: measured.tier.tier,
+    applicability: measured.applicability,
   }
 }
 
@@ -101,11 +103,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     pathSet: serializePathSet(change.group.pathSet),
     tip: change.tip,
     tier: change.tier,
-    applicableReview: applicableReview(
-      change.tier,
-      change.group.pathSet,
-      change.project.settings.review,
-    ),
+    applicableReview: change.applicability,
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
     branchReviewGroups,

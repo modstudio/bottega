@@ -302,20 +302,20 @@ function builtInAgentNotice(
     return harness?.path && harness.auth === 'signed-in'
       ? {
           message: `${name} harness is installed and signed in but the ${name} agent is disabled`,
-          fix: `${PLATFORM_SLUG} agent show set ${name} --enabled true`,
+          fix: `${PLATFORM_SLUG} agent set ${name} --enabled true`,
         }
       : null
   }
   if (!harness?.path) {
     return {
       message: `${name} agent is enabled but the ${name} harness is not installed`,
-      fix: `install ${name}, or ${PLATFORM_SLUG} agent show set ${name} --enabled false --reason "${name} is not installed on this machine"`,
+      fix: `install ${name}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
     }
   }
   if (harness.auth === 'signed-out') {
     return {
       message: `${name} agent is enabled but the ${name} harness is not signed in`,
-      fix: `sign in to ${name}, or ${PLATFORM_SLUG} agent show set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
+      fix: `sign in to ${name}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
     }
   }
   if (harness.auth === 'unknown') {
@@ -327,7 +327,7 @@ function builtInAgentNotice(
   return !agent.probePassed
     ? {
         message: `${name} harness is installed and signed in but the ${name} agent cannot take repository work until it is probed`,
-        fix: `${PLATFORM_SLUG} agent show probe ${name}`,
+        fix: `${PLATFORM_SLUG} agent probe ${name}`,
       }
     : null
 }
@@ -346,7 +346,7 @@ function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] 
     ) {
       notices.push({
         message: `${candidate.harness} harness is installed but unregistered`,
-        fix: `${PLATFORM_SLUG} agent show add <name> --harness ${candidate.harness} --backend <backend> --model <model>`,
+        fix: `${PLATFORM_SLUG} agent add <name> --harness ${candidate.harness} --backend <backend> --model <model>`,
       })
     }
   }

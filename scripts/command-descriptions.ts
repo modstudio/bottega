@@ -1,6 +1,7 @@
 import type { Command, Option } from 'commander'
 import type { CommandRoute } from '../cli/routes.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { takesVariadicArgument } from '../shared/commander-public-path.ts'
 
 export type CommandPrograms = Readonly<Record<'orch' | 'hub', Command>>
 export type CommandGroup = readonly [name: string, description: string]
@@ -66,7 +67,7 @@ function commandAt(program: Command, path: readonly string[]): Command | null {
     const next = command.commands.find(
       (candidate) => candidate.name() === name || candidate.aliases().includes(name),
     )
-    if (!next) return null
+    if (!next) return takesVariadicArgument(command) ? command : null
     command = next
   }
   return command
@@ -241,10 +242,7 @@ function routeCommandUnit(
 }
 
 function isArgsStyle(command: Command): boolean {
-  return (
-    command.commands.length === 0 &&
-    command.registeredArguments.some((argument) => argument.variadic)
-  )
+  return command.commands.length === 0 && takesVariadicArgument(command)
 }
 
 function compositeRouteUnits(
