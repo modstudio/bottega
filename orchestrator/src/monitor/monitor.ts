@@ -24,7 +24,7 @@ import {
 } from '../project/projects.ts'
 import { observeRecipeDatabaseConnections } from '../recipe/database-connection-observation.ts'
 import { observeRecipeDatabases } from '../recipe/database-inventory.ts'
-import { reclaimBranch, reclaimWorktree } from '../reclaim/reclaim.ts'
+import { reclaimBranchesDryRun, reclaimWorktree } from '../reclaim/reclaim.ts'
 import {
   classifiedDockerResources,
   dockerNetworkInventory,
@@ -101,6 +101,30 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
+
+function monitorBranchReclaimActions(
+  reclaimProject: Project | null,
+  project: Project,
+  candidates: readonly { branch: string }[],
+): Map<string, string> {
+  return reclaimProject?.name === project.name
+    ? reclaimBranchesDryRun(
+        project.name,
+        candidates.map((candidate) => candidate.branch),
+      )
+    : new Map()
+}
+
+function monitorBranchAction(
+  reclaimProject: Project | null,
+  project: Project,
+  branch: string,
+  actions: ReadonlyMap<string, string>,
+): string {
+  return reclaimProject?.name === project.name
+    ? actions.get(branch)!
+    : `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
+}
 
 async function initialMonitorObservations(
   database: ReturnType<typeof writableDb>,
@@ -852,24 +876,19 @@ export async function monitor(
       localHeads,
     )
     errors.push(...branchInventory.errors)
+    const reclaimActions = monitorBranchReclaimActions(
+      reclaimProject,
+      project,
+      branchInventory.branches,
+    )
     for (const branch of branchInventory.branches) {
       const subject = `${project.name}:${branch.branch}`
-      let action: string
-      if (reclaimProject?.name !== project.name) {
-        action = `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
-      } else {
-        try {
-          action = reclaimBranch(subject, { dryRun: true }).action
-        } catch (cause) {
-          action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}`
-        }
-      }
       add({
         kind: 'branch-without-worktree',
         subject,
         since: branch.started_at,
         detail: `${project.name} branch ${branch.branch} has no worktree`,
-        action,
+        action: monitorBranchAction(reclaimProject, project, branch.branch, reclaimActions),
         affectedProject: project.name,
       })
     }

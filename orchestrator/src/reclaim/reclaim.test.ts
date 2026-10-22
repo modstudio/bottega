@@ -1,12 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { branchesReport } from '../branch/branches.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { decideBranchReclaimEvidence, reclaimWorktree } from './reclaim.ts'
+import {
+  decideBranchReclaimEvidence,
+  reclaimBranch,
+  reclaimBranchesDryRun,
+  reclaimWorktree,
+} from './reclaim.ts'
 
 function git(cwd: string, args: string[]): void {
   const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
@@ -70,6 +76,93 @@ test('reclaim locked recheck preserves a worktree when a terminal sharer appears
 })
 
 describe('branch reclaim landing evidence', () => {
+  test('one project branch report serves every monitor dry-run candidate', () => {
+    const report = { projects: [] } as ReturnType<typeof branchesReport>
+    let gathers = 0
+    const seenReports: (typeof report)[] = []
+    const actions = reclaimBranchesDryRun('sample', ['first', 'second'], {
+      gatherReport: () => {
+        gathers += 1
+        return report
+      },
+      reclaim: (subject, sharedReport) => {
+        seenReports.push(sharedReport)
+        return { ok: true, action: `would reclaim ${subject}` }
+      },
+    })
+    expect(actions).toEqual(
+      new Map([
+        ['first', 'would reclaim sample:first'],
+        ['second', 'would reclaim sample:second'],
+      ]),
+    )
+    expect(gathers).toBe(1)
+    expect(seenReports).toEqual([report, report])
+  })
+
+  test('a dry-run gives the same decision with a shared or freshly gathered report', () => {
+    const root = mkdtempSync(join(tmpdir(), 'shared-branch-report-'))
+    const bin = mkdtempSync(join(tmpdir(), 'shared-branch-report-bin-'))
+    const project = `shared-report-${newRecordId()}`
+    const projectRecordId = newRecordId()
+    const branch = 'DEV-1592-shared-report'
+    const originalPath = process.env.PATH
+    try {
+      git(root, ['init', '--quiet', '--initial-branch=main'])
+      writeFileSync(join(root, 'README.md'), 'fixture\n')
+      git(root, ['add', 'README.md'])
+      git(root, [
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@example.test',
+        'commit',
+        '-qm',
+        'fixture',
+      ])
+      git(root, ['remote', 'add', 'origin', root])
+      git(root, ['checkout', '-qb', branch])
+      writeFileSync(join(root, 'README.md'), 'branch work\n')
+      git(root, [
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@example.test',
+        'commit',
+        '-am',
+        'DEV-1592 branch work',
+        '--quiet',
+      ])
+      git(root, ['checkout', '-q', 'main'])
+      writeFileSync(join(bin, 'gh'), "#!/bin/sh\nprintf '%s\\n' '[]'\n")
+      chmodSync(join(bin, 'gh'), 0o755)
+      process.env.PATH = `${bin}:${originalPath ?? ''}`
+
+      upsertProject({
+        recordId: projectRecordId,
+        name: project,
+        path: root,
+        settings: { trunk: 'main' },
+      })
+      const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+      db()
+        .query(
+          'UPDATE run SET project_record_id=?,launch_key=?,branch=?,minted_branch=? WHERE record_id=?',
+        )
+        .run(projectRecordId, 'DEV-1592', branch, branch, runId)
+
+      const shared = branchesReport({ project })
+      expect(reclaimBranch(`${project}:${branch}`, { dryRun: true, branchReport: shared })).toEqual(
+        reclaimBranch(`${project}:${branch}`, { dryRun: true }),
+      )
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+      rmSync(root, { recursive: true, force: true })
+      rmSync(bin, { recursive: true, force: true })
+    }
+  })
+
   test('refuses unreachable commits without a safe prune classification', () => {
     expect(
       decideBranchReclaimEvidence({
