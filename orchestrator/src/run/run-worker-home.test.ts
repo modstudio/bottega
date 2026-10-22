@@ -10,11 +10,13 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveHubDatabase } from '../../../shared/state-directory.ts'
 import type { Agent } from '../agent/agents.ts'
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
 import { prepareClaimedWorkerMcpConfig, prepareWorkerHomeLaunch } from './run-worker-home.ts'
 
+const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
 const roots: string[] = []
 afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
@@ -77,7 +79,7 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
   )
   const proxies = {
     project: {
-      command: '/bin/bottega',
+      command: FRONT_DOOR,
       args: ['mcp-reader-proxy', 'fixture', 'project', reader],
     },
   }

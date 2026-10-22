@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test'
-import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { join } from 'node:path'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { grokReaderMcpInspectionError } from './grok-reader-mcp-inspect.ts'
 
-const proxy = { project: { command: '/bin/bottega', args: ['mcp-reader-proxy'] } }
+const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
+const proxy = { project: { command: FRONT_DOOR, args: ['mcp-reader-proxy'] } }
 const runConfig = '/run/config.toml'
 const source = { type: 'configToml', path: runConfig }
 const configSources = { layers: [{ role: 'user', path: runConfig }] }
@@ -13,9 +15,9 @@ test('Grok reader inspection accepts exactly platform and proxy servers', () => 
       {
         configSources,
         mcpServers: [
-          { name: MCP_SERVER_NAME, target: '/bin/bottega', source },
-          { name: WORKER_MCP_SERVER_NAME, target: '/bin/bottega', source },
-          { name: 'project', target: '/bin/bottega', source },
+          { name: MCP_SERVER_NAME, target: FRONT_DOOR, source },
+          { name: WORKER_MCP_SERVER_NAME, target: FRONT_DOOR, source },
+          { name: 'project', target: FRONT_DOOR, source },
           { name: 'disabled-cursor', target: '/bin/direct', disabled: true },
         ],
       },
@@ -32,7 +34,7 @@ test('Grok reader inspection rejects an extra server and names its source', () =
       {
         configSources,
         mcpServers: [
-          { name: 'project', target: '/bin/bottega', source },
+          { name: 'project', target: FRONT_DOOR, source },
           {
             name: 'alias',
             target: '/bin/direct',
@@ -75,10 +77,10 @@ test('Grok reader inspection rejects a same-command server from the working tree
       {
         configSources,
         mcpServers: [
-          { name: WORKER_MCP_SERVER_NAME, target: '/bin/bottega', source },
+          { name: WORKER_MCP_SERVER_NAME, target: FRONT_DOOR, source },
           {
             name: 'project',
-            target: '/bin/bottega',
+            target: FRONT_DOOR,
             source: { type: 'configToml', path: '/tree/.grok/config.toml' },
           },
         ],
@@ -97,7 +99,7 @@ test('Grok reader inspection rejects missing proxies and platform servers', () =
     grokReaderMcpInspectionError(
       {
         configSources,
-        mcpServers: [{ name: WORKER_MCP_SERVER_NAME, target: '/bin/bottega', source }],
+        mcpServers: [{ name: WORKER_MCP_SERVER_NAME, target: FRONT_DOOR, source }],
       },
       proxy,
       runConfig,
@@ -117,8 +119,8 @@ test('Grok reader inspection does not require orchestrator when the run home omi
       {
         configSources,
         mcpServers: [
-          { name: WORKER_MCP_SERVER_NAME, target: '/bin/bottega', source },
-          { name: 'project', target: '/bin/bottega', source },
+          { name: WORKER_MCP_SERVER_NAME, target: FRONT_DOOR, source },
+          { name: 'project', target: FRONT_DOOR, source },
         ],
       },
       proxy,
@@ -139,8 +141,8 @@ test('Grok reader inspection rejects a project config layer before server checks
           ],
         },
         mcpServers: [
-          { name: WORKER_MCP_SERVER_NAME, target: '/bin/bottega', source },
-          { name: 'project', target: '/bin/bottega', source },
+          { name: WORKER_MCP_SERVER_NAME, target: FRONT_DOOR, source },
+          { name: 'project', target: FRONT_DOOR, source },
         ],
       },
       proxy,
@@ -157,8 +159,8 @@ test('Grok reader inspection rejects missing config sources', () => {
     grokReaderMcpInspectionError(
       {
         mcpServers: [
-          { name: WORKER_MCP_SERVER_NAME, target: '/bin/bottega', source },
-          { name: 'project', target: '/bin/bottega', source },
+          { name: WORKER_MCP_SERVER_NAME, target: FRONT_DOOR, source },
+          { name: 'project', target: FRONT_DOOR, source },
         ],
       },
       proxy,
@@ -174,8 +176,8 @@ test('Grok reader inspection rejects a sole config layer outside the run home', 
       {
         configSources: { layers: [{ role: 'project', path: '/tree/.grok/config.toml' }] },
         mcpServers: [
-          { name: WORKER_MCP_SERVER_NAME, target: '/bin/bottega', source },
-          { name: 'project', target: '/bin/bottega', source },
+          { name: WORKER_MCP_SERVER_NAME, target: FRONT_DOOR, source },
+          { name: 'project', target: FRONT_DOOR, source },
         ],
       },
       proxy,

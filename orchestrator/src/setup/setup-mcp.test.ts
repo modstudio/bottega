@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   captureHarnessMcpFacts,
@@ -13,6 +14,8 @@ import {
   stableMcpServers,
 } from './setup-mcp.ts'
 import { mcpRegistrationWriteRefusal } from './setup-registration-write.ts'
+
+const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
 
 const result = (stdout: string, exitCode = 0, stderr = ''): SetupCommandResult => ({
   exitCode,
@@ -30,13 +33,13 @@ test('captures absent and registered CLI read-backs through the bounded runner',
       return result('', 1, "Error: No MCP server named 'missing' found.")
     return result(
       JSON.stringify({
-        transport: { type: 'stdio', command: '/bin/bottega', args: ['mcp'] },
+        transport: { type: 'stdio', command: FRONT_DOOR, args: ['mcp'] },
       }),
     )
   }
   expect(readMcpRegistration('codex', '/bin/codex', 'orch', runner)).toEqual({
     status: 'registered',
-    command: '/bin/bottega',
+    command: FRONT_DOOR,
     args: ['mcp'],
   })
   expect(readMcpRegistration('codex', '/bin/codex', 'missing' as 'orch', runner)).toEqual({
@@ -115,8 +118,8 @@ test('rules out timeout and spawn errors before missing-server diagnostics', () 
 
 test('captures Grok list rows and marks unsupported harnesses manual', () => {
   const runner = () =>
-    result(JSON.stringify([{ name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] }]))
-  const server: McpServer = { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] }
+    result(JSON.stringify([{ name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }]))
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
   expect(
     captureHarnessMcpFacts(
       'grok',
@@ -129,7 +132,7 @@ test('captures Grok list rows and marks unsupported harnesses manual', () => {
   ).toMatchObject({
     support: 'automatic',
     registrations: {
-      [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/bottega', args: ['mcp'] },
+      [MCP_SERVER_NAME]: { status: 'registered', command: FRONT_DOOR, args: ['mcp'] },
     },
   })
   expect(
@@ -221,7 +224,7 @@ test('stable persisted registrations share the platform entry', () => {
 })
 
 test('uses each harness exact user-scope add form', () => {
-  const server: McpServer = { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] }
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
   expect(mcpAddArgv('claude', '/bin/claude', server)).toEqual([
     '/bin/claude',
     'mcp',
@@ -230,7 +233,7 @@ test('uses each harness exact user-scope add form', () => {
     'user',
     MCP_SERVER_NAME,
     '--',
-    '/bin/bottega',
+    FRONT_DOOR,
     'mcp',
   ])
   expect(mcpAddArgv('codex', '/bin/codex', server)).toEqual([
@@ -239,7 +242,7 @@ test('uses each harness exact user-scope add form', () => {
     'add',
     MCP_SERVER_NAME,
     '--',
-    '/bin/bottega',
+    FRONT_DOOR,
     'mcp',
   ])
   expect(mcpAddArgv('grok', '/bin/grok', server)).toContain('user')
