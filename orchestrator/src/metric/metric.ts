@@ -349,9 +349,11 @@ export async function collect(windowDays = 30, options: MetricCollectionOptions<
           nowIso(),
         )
       }
+      // Keep the final deadline check inside the transaction: if synchronous
+      // insertion consumes the remaining budget, throwing here rolls it back.
+      deadline.checkpoint()
     })
     write()
-    deadline.checkpoint()
     return allDays.size
   } finally {
     deadline.finish()

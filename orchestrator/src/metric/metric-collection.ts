@@ -27,7 +27,6 @@ export class MetricCollectionDeadline {
     this.signal = this.controller.signal
     this.expiresAt = Date.now() + milliseconds
     this.timer = setTimeout(() => this.abort(), milliseconds)
-    this.timer.unref()
   }
 
   beginFile(file: string): void {
@@ -55,11 +54,13 @@ export class MetricCollectionDeadline {
   }
 
   private abort(): void {
-    const file = this.currentFile ?? this.lastFile ?? '(no transcript opened)'
+    const context = this.currentFile
+      ? `while reading transcript ${this.currentFile}`
+      : this.lastFile
+        ? `after reading transcript ${this.lastFile}`
+        : 'before a transcript was opened'
     this.controller.abort(
-      new Error(
-        `metric collection deadline of ${this.milliseconds}ms exceeded while reading transcript ${file}`,
-      ),
+      new Error(`metric collection deadline of ${this.milliseconds}ms exceeded ${context}`),
     )
   }
 }

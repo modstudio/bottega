@@ -1,6 +1,8 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { Readable } from 'node:stream'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { writeProjectRegisterRow } from '../database/project-register-store.ts'
 import type { MetricTranscriptSource } from './metric-collection.ts'
 import { collect, metricCalendarDay } from './metric.ts'
 
@@ -80,5 +82,53 @@ describe('metric collection transcript lifecycle', () => {
       canon_tokens: 0,
       other_tokens: 11,
     })
+  })
+
+  test('git history that outlives the deadline writes no rows', async () => {
+    const now = new Date()
+    const file = '/fixtures/read-before-git-history.jsonl'
+    const transcript: MetricTranscriptSource = {
+      file,
+      modifiedAt: now,
+      open: () =>
+        Readable.from([
+          `${JSON.stringify({
+            timestamp: now.toISOString(),
+            message: { usage: { cache_read_input_tokens: 1, input_tokens: 1 } },
+          })}\n`,
+        ]),
+    }
+    writeProjectRegisterRow(db(), {
+      recordId: newRecordId(),
+      name: 'slow-history',
+      path: '/fixtures/slow-history',
+      canon: true,
+    })
+    const timeouts: number[] = []
+    spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: { timeout?: number }) => {
+      expect(args.slice(0, 4)).toEqual(['git', '-C', '/fixtures/slow-history', 'log'])
+      timeouts.push(options?.timeout ?? 0)
+      const finish = Date.now() + 20
+      while (Date.now() < finish) {
+        // Model a synchronous child that returns only after its assigned budget.
+      }
+      return {
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+        exitCode: null,
+        signalCode: 'SIGTERM',
+        success: false,
+        exitedDueToTimeout: true,
+        resourceUsage: {},
+      }
+    }) as typeof Bun.spawnSync)
+
+    await expect(collect(30, { deadlineMs: 10, transcripts: [transcript] })).rejects.toThrow(
+      `metric collection deadline of 10ms exceeded after reading transcript ${file}`,
+    )
+    expect(timeouts).toHaveLength(1)
+    expect(timeouts[0]).toBeGreaterThan(0)
+    expect(timeouts[0]).toBeLessThanOrEqual(10)
+    expect(db().query('SELECT COUNT(*) AS count FROM metric').get()).toEqual({ count: 0 })
   })
 })
