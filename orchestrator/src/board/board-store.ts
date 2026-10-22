@@ -28,6 +28,7 @@ import {
   standingPostingRefusal,
   validatePostNoticeInput,
 } from './board-policy.ts'
+import { reportReplySuccessorDecision } from './board-push-policy.ts'
 import { boardNoticeMatches } from './board-routing.ts'
 import {
   type BoardTag,
@@ -182,20 +183,28 @@ export function boardActor(env: Environment = process.env): BoardActor {
 function architectPresenceFacts(database: ReturnType<typeof db>) {
   return (
     database
-      .query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence')
+      .query(
+        `SELECT presence.session_id,presence.project,presence.machine,presence.last_seen,
+                presence.current_task_key,session_seen.last_seen AS session_last_seen
+         FROM presence LEFT JOIN session_seen ON session_seen.session_id=presence.session_id`,
+      )
       .all() as {
       session_id: string
       project: string
       machine: string
       last_seen: string
       current_task_key: string | null
+      session_last_seen: string | null
     }[]
   ).map((row) => ({
     reader: row.session_id,
     role: 'architect' as const,
     project: row.project,
     machine: row.machine,
-    lastSeen: Date.parse(row.last_seen),
+    lastSeen: Math.max(
+      Date.parse(row.last_seen),
+      row.session_last_seen ? Date.parse(row.session_last_seen) : Number.NEGATIVE_INFINITY,
+    ),
     taskKeys: new Set(row.current_task_key ? [row.current_task_key] : []),
   }))
 }
@@ -720,6 +729,41 @@ export function addressed(
       message.author_project,
     ).includes(reader)
   )
+}
+
+export function replySuccessorPush(
+  reply: MessageRow,
+  reader: string,
+  clock: number,
+  database = db(),
+): boolean {
+  if (reply.kind !== 'reply' || reply.thread_root_record_id === null) return false
+  const root = messageRows(database).find(
+    (candidate) => candidate.record_id === reply.thread_root_record_id,
+  )
+  if (!root?.author_session || !root.author_project) return false
+  const facts = presenceFacts(database, clock)
+  const readerFact = facts.find((row) => row.reader === reader && !row.taskAudienceOnly)
+  return reportReplySuccessorDecision({
+    rootAuthorLive: resolveAudience(
+      { kind: 'session', value: root.author_session },
+      facts,
+      clock,
+      SESSION_LIVE_MS,
+    ).includes(root.author_session),
+    readerIsArchitect: readerFact?.role === 'architect',
+    readerProject: readerFact?.project ?? '',
+    rootProject: root.author_project,
+    readerIsParticipant: hasReceipt(reply.record_id, reader, database),
+    successorAlreadyReceived: Boolean(
+      database
+        .query(
+          `SELECT 1 AS ok FROM board_receipt
+           WHERE message_record_id=? AND audience_at_posting=0 AND delivered_at IS NOT NULL`,
+        )
+        .get(reply.record_id),
+    ),
+  })
 }
 
 export function rowIsLive(message: MessageRow, clock: number, database = db()): boolean {

@@ -37,6 +37,7 @@ export type BoardReachRow = {
   postingTiming: 'before-session' | 'after-session'
   concern: BoardReachConcern
   recordedAt: string
+  late: boolean
 }
 
 export type BoardReachRecordingInput = {
@@ -299,6 +300,7 @@ export function countBoardReach(rows: BoardReachRow[]) {
     pushesNotConcerned: rows.filter((row) => row.concern === 'not-concerned').length,
     pushesUnqualified: rows.filter((row) => row.concern === 'unqualified').length,
     pushesOlderThanSession: rows.filter((row) => row.postingTiming === 'before-session').length,
+    lateDeliveries: rows.filter((row) => row.late).length,
     stopsBlockedWithoutAcknowledgement: rows.filter(
       (row) => row.blockedStop && !row.acknowledgementRequired,
     ).length,
@@ -358,6 +360,7 @@ const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
   postingTiming: row.posting_timing as 'before-session' | 'after-session',
   concern: row.concern as BoardReachConcern,
   recordedAt: String(row.recorded_at),
+  late: row.audience_at_posting === 0,
 })
 
 export function boardReachReport(
@@ -375,7 +378,20 @@ export function boardReachReport(
   const rows = (
     database
       .query(
-        `SELECT ${BOARD_REACH_DELIVERY_COLUMNS} FROM board_reach_delivery WHERE recorded_at>=? ORDER BY recorded_at,record_id`,
+        `SELECT ${BOARD_REACH_DELIVERY_COLUMNS},
+                CASE message_source
+                  WHEN 'local' THEN (
+                    SELECT audience_at_posting FROM board_receipt
+                    WHERE message_record_id=board_reach_delivery.message_record_id
+                      AND reader_session=board_reach_delivery.reader_session
+                  )
+                  ELSE (
+                    SELECT audience_at_posting FROM hosted_board_receipt_cache
+                    WHERE message_id=board_reach_delivery.message_record_id
+                      AND reader_session=board_reach_delivery.reader_session
+                  )
+                END AS audience_at_posting
+         FROM board_reach_delivery WHERE recorded_at>=? ORDER BY recorded_at,record_id`,
       )
       .all(windowStart) as Record<string, unknown>[]
   ).map(reachRow)
@@ -412,6 +428,7 @@ export function renderBoardReach(report: ReturnType<typeof boardReachReport>): s
     `Pushes not concerning the reader's project: ${totals.pushesNotConcerned}`,
     `Pushes of unqualified messages: ${totals.pushesUnqualified}`,
     `Pushes older than the session: ${totals.pushesOlderThanSession}`,
+    `Late deliveries: ${totals.lateDeliveries}`,
     `Stops blocked without acknowledgement required: ${totals.stopsBlockedWithoutAcknowledgement}`,
   ]
   if (totals.worstMessages.length) {

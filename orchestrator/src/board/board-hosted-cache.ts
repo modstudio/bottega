@@ -1,7 +1,7 @@
 // concern: hosted-board-read-cache
 /** Refreshes the hosted read cache and narrows visible rows to this machine's readers. */
 import type { Database } from 'bun:sqlite'
-import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { db, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -18,8 +18,13 @@ import {
   messageIsLive,
   OPERATOR_READER,
   parseAudience,
+  resolveAudience,
 } from './board-policy.ts'
-import { missingReaderStartWarning, selectPushNotices } from './board-push-policy.ts'
+import {
+  missingReaderStartWarning,
+  reportReplySuccessorDecision,
+  selectPushNotices,
+} from './board-push-policy.ts'
 import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
@@ -44,6 +49,7 @@ export type HostedCacheNotice = {
   createdAt: string
   expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
+  reportReplySuccessor?: boolean
 }
 
 type RefreshInput = {
@@ -450,6 +456,42 @@ const replyAddressesReader = (
   )
 }
 
+function hostedReplySuccessorPush(
+  message: HostedBoardMessage,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  const rootId = message.threadRootId
+  if (message.kind !== 'reply' || !rootId) return false
+  const root = cachedRows(database)
+    .map((item) => item.message)
+    .find((candidate) => candidate.id === rootId)
+  if (!root?.authorSession || !root.origin.project) return false
+  const facts = presenceFacts(database, clock)
+  const readerFact = facts.find((row) => row.reader === reader && !row.taskAudienceOnly)
+  return reportReplySuccessorDecision({
+    rootAuthorLive: resolveAudience(
+      { kind: 'session', value: root.authorSession },
+      facts,
+      clock,
+      SESSION_LIVE_MS,
+    ).includes(root.authorSession),
+    readerIsArchitect: readerFact?.role === 'architect',
+    readerProject: readerFact?.project ?? '',
+    rootProject: root.origin.project,
+    readerIsParticipant: replyAddressesReader(message, reader, clock, database),
+    successorAlreadyReceived: Boolean(
+      database
+        .query(
+          `SELECT 1 AS ok FROM hosted_board_receipt_cache
+           WHERE message_id=? AND audience_at_posting=0 AND delivered_at IS NOT NULL`,
+        )
+        .get(message.id),
+    ),
+  })
+}
+
 export function cachedMessageAddressed(
   row: { message: HostedBoardMessage; tags: BoardTag[] },
   reader: string,
@@ -457,7 +499,11 @@ export function cachedMessageAddressed(
   database: Database,
 ): boolean {
   const { message, tags } = row
-  if (message.kind === 'reply') return replyAddressesReader(message, reader, clock, database)
+  if (message.kind === 'reply')
+    return (
+      replyAddressesReader(message, reader, clock, database) ||
+      hostedReplySuccessorPush(message, reader, clock, database)
+    )
   if (!message.audience || !hostedMessageIsLive(message, clock)) return false
   const audience = parseAudience(message.audience)
   const signedIn = meta(database, BOARD_REFRESH_USER_KEY)
@@ -585,24 +631,29 @@ export function claimCachedHosted(
         cachedMessageAddressed(row, reader, clock, database) &&
         (all || !delivered(database, row.message.id, reader)),
     )
-    .map(({ message, tags }) => ({
-      id: message.id,
-      text: renderCached(message, tags, messages, reader.startsWith('run:')),
-      oneLine: renderBoardNoticeOneLine({
+    .map(({ message, tags }) => {
+      const notice = {
         id: message.id,
-        title:
-          message.kind === 'reply'
-            ? (messages.find((candidate) => candidate.id === message.threadRootId)?.title ?? '')
-            : (message.title ?? ''),
-        sender: originText(message.origin),
+        text: renderCached(message, tags, messages, reader.startsWith('run:')),
+        oneLine: renderBoardNoticeOneLine({
+          id: message.id,
+          title:
+            message.kind === 'reply'
+              ? (messages.find((candidate) => candidate.id === message.threadRootId)?.title ?? '')
+              : (message.title ?? ''),
+          sender: originText(message.origin),
+          ackRequired: message.ackRequired,
+        }),
         ackRequired: message.ackRequired,
-      }),
-      ackRequired: message.ackRequired,
-      ackDeadline: message.ackDeadline,
-      createdAt: message.createdAt,
-      expiresAt: message.expiresAt,
-      purpose: message.purpose ?? 'information',
-    }))
+        ackDeadline: message.ackDeadline,
+        createdAt: message.createdAt,
+        expiresAt: message.expiresAt,
+        purpose: message.purpose ?? 'information',
+      }
+      return message.kind === 'reply' && hostedReplySuccessorPush(message, reader, clock, database)
+        ? { ...notice, reportReplySuccessor: true }
+        : notice
+    })
 }
 
 export function claimCachedHostedForPush(

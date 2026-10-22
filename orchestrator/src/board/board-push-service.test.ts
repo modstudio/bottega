@@ -67,7 +67,7 @@ function createHookFixture(
       ? `#!/bin/sh\nprintf x >> '${invocationLog}'\nsleep 2\n`
       : behavior === 'failure'
         ? `#!/bin/sh\nprintf x >> '${invocationLog}'\nexit 1\n`
-        : `#!/bin/sh\nif [ "$2" = "pending" ]; then printf x >> '${invocationLog}'; printf '%s\\n' '${commandOutput}'; fi\n`,
+        : `#!/bin/sh\nif [ "$2" = "presence" ]; then printf p >> '${root}/presence-calls'; exit 0; fi\nif [ "$2" = "pending" ]; then printf x >> '${invocationLog}'; printf '%s\\n' '${commandOutput}'; fi\n`,
   )
   chmodSync(command, 0o700)
   return { root, database, databasePath, command, invocationLog }
@@ -84,9 +84,17 @@ function invocationCount(fixture: ReturnType<typeof createHookFixture>) {
 function setCommandOutput(fixture: ReturnType<typeof createHookFixture>, output: string) {
   writeFileSync(
     fixture.command,
-    `#!/bin/sh\nif [ "$2" = "pending" ]; then printf x >> '${fixture.invocationLog}'; printf '%s\\n' '${output}'; fi\n`,
+    `#!/bin/sh\nif [ "$2" = "presence" ]; then printf p >> '${fixture.root}/presence-calls'; exit 0; fi\nif [ "$2" = "pending" ]; then printf x >> '${fixture.invocationLog}'; printf '%s\\n' '${output}'; fi\n`,
   )
   chmodSync(fixture.command, 0o700)
+}
+
+function presenceCallCount(fixture: ReturnType<typeof createHookFixture>) {
+  try {
+    return readFileSync(join(fixture.root, 'presence-calls'), 'utf8').length
+  } catch {
+    return 0
+  }
 }
 
 function addCandidate(fixture: ReturnType<typeof createHookFixture>, id: number) {
@@ -714,6 +722,7 @@ test('PostToolUse is silent for workers, malformed input, missing stores, and th
 
 test('PostToolUse injects pending text', () => {
   const item = createHookFixture(hookOutput)
+  item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
   addCandidate(item, 1)
   const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
   expect(result.exitCode).toBe(0)
@@ -721,6 +730,7 @@ test('PostToolUse injects pending text', () => {
     hookEventName: 'PostToolUse',
     additionalContext: JSON.parse(hookOutput).delivery[0].text,
   })
+  expect(presenceCallCount(item)).toBe(1)
 })
 
 test('PostToolUse fails open on command timeout', () => {
@@ -743,14 +753,17 @@ test('PostToolUse fails open on malformed command output', () => {
 
 test('PostToolUse checks an unaddressed candidate only once until a new id arrives', () => {
   const item = createHookFixture('{"delivery":[],"overflow":null,"pendingAcknowledgements":[]}')
+  item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
   addCandidate(item, 1)
   const payload = JSON.stringify({ session_id: 'reader' })
   runHookRepeated(interruptHook, payload, item, 2)
   expect(invocationCount(item)).toBe(1)
+  expect(presenceCallCount(item)).toBe(1)
 
   addCandidate(item, 2)
   runHook(interruptHook, payload, item)
   expect(invocationCount(item)).toBe(2)
+  expect(presenceCallCount(item)).toBe(1)
 })
 
 test('PostToolUse injects once and again only after the reminder interval', () => {

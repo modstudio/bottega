@@ -6,6 +6,7 @@ import calendar
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 
@@ -18,6 +19,55 @@ from board_hook_common import (
     store_path,
     write_marker,
 )
+
+BOARD_PRESENCE_REFRESH_SECONDS = 15
+BOARD_PRESENCE_CALL_TIMEOUT_SECONDS = 1
+
+
+def presence_missing(session: str) -> bool:
+    path = store_path()
+    if not os.path.exists(path):
+        return False
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=0.05)
+        try:
+            row = connection.execute(
+                "SELECT 1 FROM presence WHERE session_id=? LIMIT 1",
+                (session,),
+            ).fetchone()
+            return row is None
+        finally:
+            connection.close()
+    except Exception:
+        return False
+
+
+def refresh_presence(session: str, now: float, interval: float) -> None:
+    if not presence_missing(session):
+        return
+    path = marker_path("presence", session)
+    marker = read_marker(path)
+    last = 0.0
+    if isinstance(marker, dict):
+        ran_at = marker.get("ran_at", 0)
+        if isinstance(ran_at, (int, float)):
+            last = float(ran_at)
+    if now - last < interval:
+        return
+    write_marker(path, {"ran_at": now})
+    binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
+    )
+    try:
+        subprocess.run(
+            [binary, "board", "presence"],
+            capture_output=True,
+            timeout=BOARD_PRESENCE_CALL_TIMEOUT_SECONDS,
+            check=False,
+            env={**os.environ, "CLAUDE_CODE_SESSION_ID": session},
+        )
+    except Exception:
+        pass
 
 
 def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
@@ -129,10 +179,16 @@ def main() -> int:
         retry = int(os.environ["BOARD_PUSH_RETRY_SECONDS"])
         if not isinstance(session, str) or not session:
             return 0
+        now = time.time()
+        interval = int(
+            os.environ.get(
+                "BOARD_PRESENCE_REFRESH_SECONDS", BOARD_PRESENCE_REFRESH_SECONDS
+            )
+        )
+        refresh_presence(session, now, interval)
         candidates, hosted_stale = cheap_state(session, refresh)
         path = marker_path("interrupt", session)
         marker = parse_marker(read_marker(path))
-        now = time.time()
         if not should_run_slow_path(
             candidates,
             hosted_stale,

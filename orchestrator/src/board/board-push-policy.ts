@@ -6,6 +6,36 @@ import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
 export type BoardReaderStart = string | null | 'unbounded'
 
+export function lateDeliveryDecision(input: {
+  purpose: BoardPurpose
+  inAudience: boolean
+  expired: boolean
+  hasReceipt: boolean
+  sessionBeganBeforePost: boolean
+}): 'deliver' | 'skip' {
+  if (!input.inAudience || input.expired || input.hasReceipt || !input.sessionBeganBeforePost)
+    return 'skip'
+  return input.purpose === 'request' || input.purpose === 'standing' ? 'deliver' : 'skip'
+}
+
+export function reportReplySuccessorDecision(input: {
+  rootAuthorLive: boolean
+  readerIsArchitect: boolean
+  readerProject: string
+  rootProject: string | null
+  readerIsParticipant: boolean
+  successorAlreadyReceived: boolean
+}): boolean {
+  return (
+    !input.rootAuthorLive &&
+    !input.readerIsParticipant &&
+    !input.successorAlreadyReceived &&
+    input.readerIsArchitect &&
+    input.rootProject !== null &&
+    input.readerProject === input.rootProject
+  )
+}
+
 export function boardPushDecision(input: {
   acknowledgementRequired: boolean
   postedAt: string
@@ -14,8 +44,13 @@ export function boardPushDecision(input: {
   purpose?: BoardPurpose
   readerBeganAt: BoardReaderStart
   clock: number
+  inAudience?: boolean
+  hasReceipt?: boolean
+  reportReplySuccessor?: boolean
 }): BoardPushDecision {
+  if (input.hasReceipt || input.inAudience === false) return 'withheld'
   if (input.expiresAt !== null && Date.parse(input.expiresAt) <= input.clock) return 'withheld'
+  if (input.reportReplySuccessor) return 'ordinary'
   if (input.acknowledgementRequired) {
     if (
       input.acknowledgementDeadline !== null &&
@@ -27,6 +62,20 @@ export function boardPushDecision(input: {
       return 'withheld'
     return 'acknowledgement'
   }
+  const sessionBeganBeforePost =
+    input.readerBeganAt !== null &&
+    input.readerBeganAt !== 'unbounded' &&
+    input.readerBeganAt <= input.postedAt
+  if (
+    lateDeliveryDecision({
+      purpose: input.purpose ?? 'information',
+      inAudience: true,
+      expired: false,
+      hasReceipt: false,
+      sessionBeganBeforePost,
+    }) === 'deliver'
+  )
+    return 'ordinary'
   if (
     input.readerBeganAt !== null &&
     input.readerBeganAt !== 'unbounded' &&
@@ -44,6 +93,7 @@ export function selectPushNotices<
     createdAt: string
     expiresAt: string | null
     purpose?: BoardPurpose
+    reportReplySuccessor?: boolean
   },
 >(
   readerBeganAt: BoardReaderStart,
@@ -59,6 +109,7 @@ export function selectPushNotices<
       readerBeganAt,
       purpose: notice.purpose,
       clock,
+      reportReplySuccessor: notice.reportReplySuccessor,
     })
     if (decision === 'withheld') return []
     return [notice]

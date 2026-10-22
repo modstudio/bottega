@@ -34,6 +34,7 @@ const row = ({
   postingTiming: 'after-session',
   concern: 'concerned',
   recordedAt: '2026-10-13T12:01:00.000Z',
+  late: false,
   ...input,
 })
 
@@ -80,6 +81,7 @@ test('counts project concern, unqualified and older pushes, and stop acknowledge
     pushesNotConcerned: 1,
     pushesUnqualified: 1,
     pushesOlderThanSession: 1,
+    lateDeliveries: 0,
     stopsBlockedWithoutAcknowledgement: 1,
     worstMessages: [
       {
@@ -139,6 +141,7 @@ test('an empty reach window has no pushes or worst messages', () => {
     pushesNotConcerned: 0,
     pushesUnqualified: 0,
     pushesOlderThanSession: 0,
+    lateDeliveries: 0,
     stopsBlockedWithoutAcknowledgement: 0,
     worstMessages: [],
   })
@@ -382,6 +385,38 @@ test('an emission retry records once while a later reminder records twice', asyn
   })
   await stamp('later-reminder', clock + 3)
   expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 2 })
+})
+
+test('reach reports late deliveries separately', async () => {
+  const clock = Date.parse('2026-10-13T16:00:00.000Z')
+  const session = 'late-join-reader'
+  const posted = postNotice(
+    {
+      audience: 'architects:all',
+      title: 'Missed',
+      body: 'Catch up.',
+      purpose: 'request',
+    },
+    {},
+    clock,
+  )
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','alpha',(SELECT record_id FROM project WHERE name='alpha'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 60_000).toISOString(), new Date(clock + 1).toISOString())
+  await markBoardDeliveryDelivered({
+    session,
+    ids: [String(posted.number)],
+    emissionId: 'late-join-emission',
+    deliveryPoint: 'after-tool-call',
+    clock: clock + 1,
+  })
+  const report = boardReachReport(1, clock + 2, db())
+  expect(report.totals.lateDeliveries).toBe(1)
+  expect(report.rows.find((row) => row.messageId === String(posted.recordId))?.late).toBe(true)
+  expect(renderBoardReach(report)).toContain('Late deliveries: 1')
 })
 
 test('reach retention leaves recent rows and failures in place', () => {

@@ -32,6 +32,7 @@ import {
   type PostNoticeInput,
   type PostNoticeResult,
   recipients,
+  replySuccessorPush,
   rowIsLive,
 } from './board-store.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
@@ -141,7 +142,8 @@ export function deliverableTo(
   database = db(),
 ): boolean {
   return message.kind === 'reply'
-    ? hasReceipt(message.record_id, reader, database)
+    ? hasReceipt(message.record_id, reader, database) ||
+        replySuccessorPush(message, reader, clock, database)
     : addressed(message, reader, clock, database)
 }
 
@@ -322,6 +324,7 @@ export function claimNotices(
   createdAt: string
   expiresAt: string | null
   purpose: BoardPurpose
+  reportReplySuccessor?: boolean
 }[] {
   const reader = boardReader(env)
   const rows = messageRows(database).filter(
@@ -331,13 +334,18 @@ export function claimNotices(
       deliverableTo(row, reader, clock, database) &&
       (all || !wasDelivered(row.record_id, reader, database)),
   )
-  return rows.map((row) => ({
-    ...render(row, false, database),
-    ackRequired: row.ack_required === 1,
-    ackDeadline: row.ack_deadline,
-    createdAt: row.created_at,
-    expiresAt: row.expires_at,
-  }))
+  return rows.map((row) => {
+    const notice = {
+      ...render(row, false, database),
+      ackRequired: row.ack_required === 1,
+      ackDeadline: row.ack_deadline,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+    }
+    return row.kind === 'reply' && replySuccessorPush(row, reader, clock, database)
+      ? { ...notice, reportReplySuccessor: true }
+      : notice
+  })
 }
 
 export function claimPushNotices(
