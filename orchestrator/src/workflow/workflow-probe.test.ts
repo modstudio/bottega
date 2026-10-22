@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
+import { decidePullRequestEvidence } from './workflow-floor.ts'
 import { appendWorkflowOutput, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
 
 const probeRepository = mkdtempSync(join(tmpdir(), 'workflow-probe-project-'))
@@ -75,24 +76,28 @@ test('records the selected cwd and its head commit', async () => {
   expect(d.query('SELECT cwd,head_commit FROM probe').get()).toEqual({ cwd, head_commit: head })
 })
 
-test('probe output with a 40-hex sha and a refusal line is kept verbatim', async () => {
+test('probe output withholds a 40-hex sha line and keeps a refusal line', async () => {
   initializeProbeRepository()
   const d = database()
-  const output = `--base=${'a'.repeat(40)}\napplicable lens safety has no recorded result on this branch`
+  const refusal = 'applicable lens safety has no recorded result on this branch'
   const result = await recordWorkflowProbe([PLATFORM_SLUG, 'pr', 'create'], {
     cwd: probeRepository,
     d,
     commit: 'abc',
-    runner: () => ({ exitCode: 1, output }),
+    runner: () => ({
+      exitCode: 1,
+      output: `--base=${'a'.repeat(40)}\n${refusal}`,
+    }),
   })
+  const tail = `[withheld line: hex-run]\n${refusal}`
   expect(result.withheld).toBe(false)
-  expect(result.outputTail).toBe(output)
+  expect(result.outputTail).toBe(tail)
   expect(
     d.query('SELECT output_tail,withheld FROM probe').get() as {
       output_tail: string
       withheld: number
     },
-  ).toEqual({ output_tail: output, withheld: 0 })
+  ).toEqual({ output_tail: tail, withheld: 0 })
 })
 
 test('probe output withholds only the secret-shaped line and names the rule', async () => {
@@ -116,14 +121,14 @@ test('probe output withholds only the secret-shaped line and names the rule', as
     '[withheld line: provider-prefix]',
     'ok',
   ].join('\n')
-  expect(result.withheld).toBe(true)
+  expect(result.withheld).toBe(false)
   expect(result.outputTail).toBe(tail)
   expect(
     d.query('SELECT output_tail,withheld FROM probe').get() as {
       output_tail: string
       withheld: number
     },
-  ).toEqual({ output_tail: tail, withheld: 1 })
+  ).toEqual({ output_tail: tail, withheld: 0 })
 })
 
 test('withholds secret-shaped output', async () => {
@@ -135,7 +140,7 @@ test('withholds secret-shaped output', async () => {
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'token=ghp_exampletokenvalue' }),
   })
-  expect(result.withheld).toBe(true)
+  expect(result.withheld).toBe(false)
   expect(result.outputTail).toBe('[withheld line: assignment]')
   expect(
     (d.query('SELECT output_tail,withheld FROM probe').get() as { output_tail: string })
@@ -244,13 +249,71 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
     expect(Buffer.byteLength(streamed.output)).toBeLessThanOrEqual(GATE_OUTPUT_TAIL_BYTES)
     expect(streamed.output).not.toContain('ghp_exampletokenvalue')
     expect(result).toMatchObject({
-      withheld: true,
+      withheld: false,
       outputTail: streamed.output,
     })
     expect(d.query('SELECT output_tail,withheld FROM probe').get()).toEqual({
       output_tail: streamed.output,
-      withheld: 1,
+      withheld: 0,
     })
+  } finally {
+    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+    else process.env.ORCH_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('a sha line is withheld while a pull-request URL and refusal remain usable evidence', async () => {
+  const priorDepth = process.env.ORCH_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.ORCH_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const url = 'https://github.com/acme/app/pull/7'
+    const refusal = 'applicable lens safety has no recorded result on this branch'
+    const streamed = [
+      `--base=${'a'.repeat(40)}\n`,
+      `opened ${url}\n`,
+      `${refusal}\n`,
+    ].reduce(appendWorkflowOutput, { output: '', secretFound: false })
+    expect(streamed.output).toBe(`[withheld line: hex-run]\nopened ${url}\n${refusal}\n`)
+    expect(streamed.output).toContain(url)
+    expect(streamed.output).toContain(refusal)
+    const d = database()
+    const result = await recordWorkflowExec([PLATFORM_SLUG, 'pr', 'create'], {
+      cwd: probeRepository,
+      d,
+      commit: 'abc',
+      runner: () => ({ exitCode: 0, ...streamed }),
+      write: () => {},
+    })
+    expect(result.withheld).toBe(false)
+    expect(result.outputTail).toBe(streamed.output)
+    expect(
+      decidePullRequestEvidence({
+        kind: 'exec',
+        argv: [PLATFORM_SLUG, 'pr', 'create'],
+        exitCode: 0,
+        sessionBound: true,
+        createdAfterStepActivation: true,
+        checkoutBranch: 'DEV-977-work',
+        headCommit: 'abc',
+        cursorBranch: 'DEV-977-work',
+        output: result.outputTail,
+        withheld: result.withheld,
+        link: {
+          kind: 'link',
+          repository: 'acme/app',
+          projectRepository: 'acme/app',
+          state: 'OPEN',
+          head: 'DEV-977-work',
+          base: 'main',
+          cursorBranch: 'DEV-977-work',
+          trunk: 'main',
+        },
+      }),
+    ).toEqual({ met: true })
   } finally {
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH
     else process.env.ORCH_DEPTH = priorDepth

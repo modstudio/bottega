@@ -43,17 +43,6 @@ export function containsSecretShaped(text: string): boolean {
   return secretShapedRule(text) !== null
 }
 
-/** Replace each evidence-secret-shaped line; keep the rest so a failure summary survives. */
-export function withholdSecretShapedGateLines(output: string): string {
-  return output
-    .split('\n')
-    .map((line) => {
-      const rule = evidenceSecretShapedRules(line)[0]
-      return rule === undefined ? line : `[withheld line: ${rule}]`
-    })
-    .join('\n')
-}
-
 function containsJwt(text: string): boolean {
   for (const match of text.matchAll(SECRET_JWT)) {
     if (jwtHeaderIsObject(match[0])) return true

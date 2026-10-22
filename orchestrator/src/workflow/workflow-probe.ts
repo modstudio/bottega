@@ -7,10 +7,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  containsSecretShaped,
-  withholdSecretShapedGateLines,
-} from '../../../shared/secret-shaped.ts'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -23,6 +20,7 @@ import {
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+import { withholdSecretShapedGateLines } from '../secret-shaped-output.ts'
 
 const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 
@@ -35,7 +33,7 @@ type ProbeRunResult = {
 
 export type WorkflowOutput = Pick<ProbeRunResult, 'output' | 'secretFound'>
 
-/** Retains a bounded tail while remembering secrets that have already rolled out of it. */
+/** Retains a bounded tail after redacting secret-shaped lines. */
 export function appendWorkflowOutput(current: WorkflowOutput, chunk: string): WorkflowOutput {
   const candidate = current.output + chunk
   const redacted = withholdSecretShapedGateLines(candidate)
@@ -180,9 +178,8 @@ async function recordWorkflowCommand(
 ): Promise<RecordedArtifact> {
   const commandJson = JSON.stringify(command)
   const redactedOutput = withholdSecretShapedGateLines(ran.output)
-  const outputContainsSecret = ran.secretFound === true || redactedOutput !== ran.output
   const commandSecret = containsSecretShaped(commandJson)
-  const withheld = commandSecret || outputContainsSecret
+  const withheld = commandSecret
   const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
   const d = input.d ?? writableDb()

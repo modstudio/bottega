@@ -120,14 +120,11 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
   })
   expect(decidePullRequestEvidence({ ...exec, output: withheldLine, link })).toEqual({
     met: false,
-    condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
+    condition: 'the recorded command output does not contain a GitHub pull-request URL',
   })
   expect(
     decidePullRequestEvidence({ ...exec, output: `opened ${url}\n${withheldLine}`, link }),
-  ).toEqual({
-    met: false,
-    condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
-  })
+  ).toEqual({ met: true })
   expect(
     decidePullRequestEvidence({ ...exec, output: `opened ${url}`, withheld: true, link }),
   ).toEqual({
