@@ -202,6 +202,11 @@ function assertConfiguredGitGuard(
   if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
 }
 
+function completeStartup(): true {
+  bindSignals()
+  return true
+}
+
 export async function run(opts: {
   job: string
   prompt: string
@@ -681,13 +686,10 @@ export async function run(opts: {
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
-  mcpConnection = claimedMcpConnection
-  usingMcp = claimedUsingMcp
+  ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   const runProject = projectAt(callerCwd)
   const writableRoots = acpWriter.writableRoots(worktree, writesJob, writingAcp, scratchDir)
-  const checkpointContainment = acpWriter.prepareCheckpointContainment(
-    acpWriter.checkpointContainment(worktree, writingAcp, sandboxRunDir),
-  )
+  const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, sandboxRunDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
@@ -710,8 +712,8 @@ export async function run(opts: {
   let sandboxEnvironment: Record<string, string>
   let mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
-  let hasRunScopedHome: boolean
-  let startupComplete = false
+  let hasRunScopedHome: boolean,
+    startupComplete = false
   try {
     try {
       const writingAcpAsk = acpWriter.prepareWritingAcpAsk(writingAcp, claim.id, runToken)
@@ -890,23 +892,16 @@ export async function run(opts: {
         }
       }
     }
-
     if (requiresCanonSource) {
       prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
       persistBoundPrompt(promptPath, prompt, claim.id)
     }
-
-    bindSignals()
-    startupComplete = true
+    startupComplete = completeStartup()
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
-  // Declared out here because the `finally` has to be able to write a terminal
-  // row whatever happened inside: the row is already claiming to be running, and
-  // the one thing worse than a failed run is one that never says it stopped.
-  // Only the handle the signal path and the finally need. Typing it as the full
-  // Subprocess would widen stdout/stderr back to "pipe or fd or nothing", which
-  // is what the narrowed `p` inside the try exists to avoid.
+  // Keep this handle visible to signals/finally so a running row can terminate.
+  // A full Subprocess would widen the narrowed `p` streams.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
@@ -963,7 +958,6 @@ export async function run(opts: {
     path,
     expectedHead: expectedHead ?? undefined,
   }))
-
   try {
     runLease = requiredRunLease(claim.id, (cause) => {
       error = String((cause as Error).message ?? cause)

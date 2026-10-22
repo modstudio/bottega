@@ -8,7 +8,6 @@ import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import {
   type BrokerConfinement,
-  type BrokerLaunchDecision,
   brokerGateEnvironment,
   decideBrokerLaunch,
   GATE_COMMAND_TIMEOUT_MS,
@@ -138,23 +137,15 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
   return parseFocusedTestRequest(JSON.parse(contents))
 }
 
-export async function focusedTestBrokerLaunchArgv(
+async function focusedTestBrokerLaunchArgv(
   confinement: BrokerConfinement<SandboxRuntimeConfig>,
   command: string,
   argv: string[],
 ): Promise<string[]> {
-  const decision = focusedTestBrokerLaunchDecision(confinement, command, argv)
+  const decision = decideBrokerLaunch(confinement, command, argv)
   return decision.kind === 'srt'
     ? sandboxLaunchArgv(decision.profile, decision.bin, decision.argv)
     : decision.argv
-}
-
-export function focusedTestBrokerLaunchDecision(
-  confinement: BrokerConfinement<SandboxRuntimeConfig>,
-  command: string,
-  argv: string[],
-): BrokerLaunchDecision<SandboxRuntimeConfig> {
-  return decideBrokerLaunch(confinement, command, argv)
 }
 
 async function spawnFocusedTestChild(input: {

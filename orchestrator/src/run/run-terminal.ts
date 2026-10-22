@@ -36,7 +36,7 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { checkpointRun, type CheckpointContainment, latestCheckpoint } from './checkpoint.ts'
+import { type CheckpointContainment, checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import {
   closeRunChainQuestions,
   QUESTION_CLOSE_CHAIN_TERMINAL,

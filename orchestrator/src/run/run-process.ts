@@ -17,7 +17,7 @@ import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
-import { checkpointRun, type CheckpointContainment, latestCheckpoint } from './checkpoint.ts'
+import { type CheckpointContainment, checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 export function childEnv(

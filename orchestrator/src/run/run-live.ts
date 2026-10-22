@@ -62,8 +62,8 @@ import {
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
-  checkpointRun,
   type CheckpointContainment,
+  checkpointRun,
   DEFAULT_CHECKPOINT_MINUTES,
   latestCheckpoint,
   recordFailedIdlePreservation,
@@ -84,8 +84,8 @@ import {
   type RunWallDeadlineFacts,
 } from './run-wall-deadline.ts'
 import {
-  closeWorkerExecutionBrokers,
   type BrokerConfinement,
+  closeWorkerExecutionBrokers,
   startWorkerExecutionBrokers,
   type WorkerExecutionBrokers,
 } from './run-worker-brokers.ts'
@@ -155,14 +155,27 @@ function recordConfiguredAsk(input: {
 }
 
 function brokerConfinement(
-  writingAcp: boolean,
+  input: Pick<LiveInput, 'writingAcp' | 'brokerNeedsNetwork'>,
   profile: SandboxSelection['profile'],
-  needsProjectNetwork: boolean,
 ): BrokerConfinement {
-  if (!writingAcp) return { kind: 'host' }
+  if (!input.writingAcp) return { kind: 'host' }
   if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
-  const brokerProfile = writerBrokerProfile(profile, needsProjectNetwork)
+  const brokerProfile = writerBrokerProfile(profile, input.brokerNeedsNetwork)
   return { kind: 'srt', profile: brokerProfile }
+}
+
+function endpointAsk(loopback: AskLoopback | null) {
+  return loopback?.kind === 'endpoint'
+    ? { kind: 'endpoint' as const, url: loopback.url }
+    : undefined
+}
+
+async function closeLiveBrokers(
+  execution: WorkerExecutionBrokers | null,
+  note: WorkerNoteBroker | null,
+): Promise<void> {
+  await closeWorkerExecutionBrokers(execution)
+  await closeWorkerNoteBroker(note)
 }
 
 function replyFileMatches(
@@ -527,11 +540,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
-      confinement: brokerConfinement(
-        input.writingAcp,
-        sandboxSelection.profile,
-        input.brokerNeedsNetwork,
-      ),
+      confinement: brokerConfinement(input, sandboxSelection.profile),
       onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
@@ -570,8 +579,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       startedAt: started,
       write: writes,
       writingAcp: input.writingAcp,
-      ask:
-        askLoopback?.kind === 'endpoint' ? { kind: 'endpoint', url: askLoopback.url } : undefined,
+      ask: endpointAsk(askLoopback),
       sandbox: codexSandbox.sandbox,
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
@@ -1014,9 +1022,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   rearmWallDeadline = () => {}
   clearTimeout(timer ?? undefined)
   timer = null
-  await closeWorkerExecutionBrokers(executionBrokers)
-  await closeWorkerNoteBroker(noteBroker)
-
+  await closeLiveBrokers(executionBrokers, noteBroker)
   return {
     proc,
     timer,

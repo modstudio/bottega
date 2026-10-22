@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
-import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
-import { focusedTestBrokerLaunchDecision } from './focused-test-broker.ts'
+import { decideBrokerLaunch } from '../gate/gate-decision.ts'
+import { type SandboxRuntimeConfig, writerBrokerProfile } from '../sandbox/sandbox.ts'
 
-test('a writing ACP focused-test launch is wrapped in its writer profile', () => {
-  const profile: SandboxRuntimeConfig = {
+test('a writing ACP focused-test launch retains its writer profile', () => {
+  const writer: SandboxRuntimeConfig = {
     network: {
-      allowedDomains: [],
+      allowedDomains: ['127.0.0.1:43127'],
       deniedDomains: [],
       allowUnixSockets: [],
       allowLocalBinding: false,
@@ -17,9 +17,8 @@ test('a writing ACP focused-test launch is wrapped in its writer profile', () =>
       denyWrite: ['/tree/.git'],
     },
   }
-  expect(
-    focusedTestBrokerLaunchDecision({ kind: 'srt', profile }, 'bun', ['test', 'one.test.ts']),
-  ).toEqual({
+  const profile = writerBrokerProfile(writer)
+  expect(decideBrokerLaunch({ kind: 'srt', profile }, 'bun', ['test', 'one.test.ts'])).toEqual({
     kind: 'srt',
     profile,
     bin: 'bun',

@@ -41,9 +41,17 @@ export function checkpointContainment(
 }
 
 /** Create the empty orchestrator-owned hook directory before any host git operation. */
-export function prepareCheckpointContainment(facts: CheckpointContainment): CheckpointContainment {
+function prepareCheckpointContainment(facts: CheckpointContainment): CheckpointContainment {
   if (facts.disableHooks) mkdirSync(facts.hooksDir!, { recursive: true })
   return facts
+}
+
+export function prepareCheckpoint(
+  worktree: Worktree | null,
+  writingAcp: boolean,
+  runDir: string,
+): CheckpointContainment {
+  return prepareCheckpointContainment(checkpointContainment(worktree, writingAcp, runDir))
 }
 
 export function lifecycleFacts(

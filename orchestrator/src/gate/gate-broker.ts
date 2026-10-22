@@ -27,7 +27,6 @@ import {
 } from './gate-check-executions.ts'
 import {
   type BrokerConfinement,
-  type BrokerLaunchDecision,
   boundedGateOutputTail,
   brokerGateEnvironment,
   changedGateToolingPaths,
@@ -334,21 +333,14 @@ function recordFinishedGate(input: {
   }, database)
 }
 
-export async function gateBrokerLaunchArgv(
+async function gateBrokerLaunchArgv(
   confinement: BrokerConfinement<SandboxRuntimeConfig>,
   command: string,
 ): Promise<string[]> {
-  const decision = gateBrokerLaunchDecision(confinement, command)
+  const decision = decideBrokerLaunch(confinement, 'sh', ['-c', command])
   return decision.kind === 'srt'
     ? sandboxLaunchArgv(decision.profile, decision.bin, decision.argv)
     : decision.argv
-}
-
-export function gateBrokerLaunchDecision(
-  confinement: BrokerConfinement<SandboxRuntimeConfig>,
-  command: string,
-): BrokerLaunchDecision<SandboxRuntimeConfig> {
-  return decideBrokerLaunch(confinement, 'sh', ['-c', command])
 }
 
 async function spawnGateChild(input: {

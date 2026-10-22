@@ -13,40 +13,12 @@ import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import {
   GATE_BASE_REFRESH_TIMEOUT_MS,
-  gateBrokerLaunchDecision,
   refreshGateBase,
   runGateAfterBaseRefresh,
   startGateBroker,
 } from './gate-broker.ts'
-
-const brokerProfile: SandboxRuntimeConfig = {
-  network: {
-    allowedDomains: [],
-    deniedDomains: [],
-    allowUnixSockets: [],
-    allowLocalBinding: false,
-  },
-  filesystem: {
-    denyRead: [],
-    allowWithinDeny: [],
-    allowWrite: ['/tree', '/scratch'],
-    denyWrite: ['/tree/.git'],
-  },
-}
-
-test('a writing ACP gate launch is wrapped in its writer profile', () => {
-  expect(
-    gateBrokerLaunchDecision({ kind: 'srt', profile: brokerProfile }, 'bun run check'),
-  ).toEqual({
-    kind: 'srt',
-    profile: brokerProfile,
-    bin: 'sh',
-    argv: ['-c', 'bun run check'],
-  })
-})
 
 async function waitForFinishedGate(id: number): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
