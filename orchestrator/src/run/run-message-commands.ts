@@ -240,6 +240,17 @@ export async function continueCommand(
         `working form: ${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`,
     )
   }
+  const misplacedFile = sources.positionals.find(
+    (value) => value === '--file' || value.startsWith('--file='),
+  )
+  if (misplacedFile) {
+    const first = sources.positionals[0]
+    throw new Error(
+      `${misplacedFile} appeared after continuation message parsing began at ${JSON.stringify(first)}; ` +
+        'the file was not read and no turn was launched\n' +
+        `working form: ${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`,
+    )
+  }
   const message = await readMessageText({
     missing: 'no message: pass it as an argument, via --file, or on stdin',
     exclusive: 'pass the message either positionally or with --file, not both',

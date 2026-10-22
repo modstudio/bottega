@@ -83,7 +83,10 @@ export async function main(argv: string[]): Promise<number> {
     const { run } = await import('./run.ts')
     const { detachedRunOptions } = await import('../route/failover.ts')
     const spec = JSON.parse(specJson ?? '{}') as import('../route/failover.ts').DetachSpec
-    await run(detachedRunOptions(jobName, readFileSync(promptPath, 'utf8'), id, spec))
+    const prompt = readFileSync(promptPath, 'utf8')
+    const { assertContinuationPromptCarriesMessage } = await import('./continuation-message.ts')
+    assertContinuationPromptCarriesMessage(prompt, spec.resume?.continuationMessage)
+    await run(detachedRunOptions(jobName, prompt, id, spec))
     return 0
   } catch (e) {
     const message = String((e as Error)?.message ?? e)

@@ -11,6 +11,7 @@ import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
+import { continuationMessageBinding } from './continuation-message.ts'
 import {
   type ChainTurn,
   continuationTurn,
@@ -246,13 +247,17 @@ describe('run continuation', () => {
 
     const resumed = await continueRun(root, 'vendor-session message', limit)
     const artifact = db()
-      .query('SELECT prompt_path FROM run WHERE record_id=?')
+      .query('SELECT prompt_path,continuation_message_sha FROM run WHERE record_id=?')
       .get(resumed.childId) as {
       prompt_path: string
+      continuation_message_sha: string
     }
 
     trackResidue(artifact.prompt_path)
     expect(readFileSync(artifact.prompt_path, 'utf8')).toBe('vendor-session message')
+    expect(artifact.continuation_message_sha).toBe(
+      continuationMessageBinding('vendor-session message').sha256,
+    )
   })
 
   test('a released reader with an unavailable base refuses before creating a turn', async () => {

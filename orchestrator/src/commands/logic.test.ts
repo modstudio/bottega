@@ -71,6 +71,40 @@ test('continue without --findings hands the architect message through unchanged'
   expect(received).toBe('Continue exactly as before.')
 })
 
+test('continue refuses an unknown option before --file instead of sending the option text', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number }
+  ).number
+  const program = new Command().exitOverride()
+  let launched = false
+  register(program, {
+    continueCommandDependencies: {
+      continueRun: async () => {
+        launched = true
+        return { childId: '99', job: 'implement' }
+      },
+      reportContinuedRun: async () => {},
+    },
+  })
+  const argv = [
+    'node',
+    'orch',
+    'continue',
+    String(number),
+    '--agent',
+    'codex',
+    '--file',
+    'fixes.md',
+  ]
+  setRawArgv(argv.slice(2))
+
+  await expect(program.parseAsync(argv)).rejects.toThrow(
+    '--file appeared after continuation message parsing began at "--agent"; the file was not read',
+  )
+  expect(launched).toBe(false)
+})
+
 test('continue refuses --findings after the message and names the working order', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
   const number = (
