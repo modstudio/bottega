@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { reviewYield } from './review-yield.ts'
+import { renderYieldTable, reviewYield } from './review-yield.ts'
 
 function addReview(
   recordedAt: string,
@@ -550,5 +550,25 @@ describe('review yield', () => {
       none: 0,
       alone: 1,
     })
+  })
+})
+
+describe('review yield text table', () => {
+  test('row renderer keeps a space when a value is wider than its header', () => {
+    const lines = renderYieldTable(
+      [
+        { header: 'KEY', align: 'left' },
+        { header: 'C', align: 'right' },
+        { header: 'REC', align: 'right' },
+      ],
+      [
+        ['craft', '683', '1102'],
+        ['correctness', '1', '2'],
+      ],
+    )
+    expect(lines).toEqual(['KEY           C  REC', 'craft       683 1102', 'correctness   1    2'])
+    expect(lines[1]).toContain('683 1102')
+    expect(lines[1]!.startsWith('craft')).toBe(true)
+    expect(lines[2]!.startsWith('correctness')).toBe(true)
   })
 })

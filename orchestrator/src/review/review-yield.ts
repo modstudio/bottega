@@ -471,39 +471,92 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
 
 const number = (value: number | null) => (value === null ? '—' : value.toFixed(2))
 
+type YieldColumn = { header: string; align: 'left' | 'right' }
+
+/** Size each column to the widest of its header and values, with a space between columns. */
+export function renderYieldTable(
+  columns: readonly YieldColumn[],
+  rows: readonly (readonly string[])[],
+): string[] {
+  const widths = columns.map((column, index) =>
+    Math.max(column.header.length, ...rows.map((row) => row[index]?.length ?? 0)),
+  )
+  const format = (cells: readonly string[]) =>
+    cells
+      .map((cell, index) =>
+        columns[index]!.align === 'left'
+          ? cell.padEnd(widths[index]!)
+          : cell.padStart(widths[index]!),
+      )
+      .join(' ')
+  return [format(columns.map((column) => column.header)), ...rows.map(format)]
+}
+
+const YIELD_ROW_COLUMNS: YieldColumn[] = [
+  { header: 'KEY', align: 'left' },
+  { header: 'RUNS', align: 'right' },
+  { header: 'REV', align: 'right' },
+  { header: 'C', align: 'right' },
+  { header: 'REC', align: 'right' },
+  { header: 'FIND', align: 'right' },
+  { header: 'LINK', align: 'right' },
+  { header: 'TRI', align: 'right' },
+  { header: 'UNTR', align: 'right' },
+  { header: 'ACCEPT', align: 'right' },
+  { header: 'REJECT', align: 'right' },
+  { header: 'MODIFY', align: 'right' },
+  { header: 'SKIP', align: 'right' },
+  { header: 'F/R', align: 'right' },
+  { header: 'H+C/R', align: 'right' },
+  { header: 'MED MIN', align: 'right' },
+  { header: 'MED+', align: 'right' },
+  { header: 'UNIQUE', align: 'right' },
+  { header: 'SHARED', align: 'right' },
+  { header: 'NONE', align: 'right' },
+  { header: 'ALONE', align: 'right' },
+]
+
+const YIELD_PAIR_COLUMNS: YieldColumn[] = [
+  { header: 'LENSES', align: 'left' },
+  { header: 'LINKED', align: 'right' },
+  { header: 'SHARE LEFT', align: 'right' },
+  { header: 'SHARE RIGHT', align: 'right' },
+]
+
+function yieldRowCells(row: ReviewYieldRow): string[] {
+  return [
+    row.key,
+    String(row.runs),
+    String(row.reviews.recorded),
+    String(row.reviews.completed),
+    String(row.recordedFindings),
+    String(row.findings),
+    String(row.linkedFindings),
+    String(row.triaged),
+    String(row.untriaged),
+    String(row.accepted),
+    String(row.rejected),
+    String(row.modified),
+    String(row.skipped),
+    number(row.findingsPerRun),
+    number(row.highOrCriticalPerRun),
+    row.medianLensMinutes === null ? '—' : number(row.medianLensMinutes),
+    number(row.mediumPlusAcceptedYield),
+    String(row.overlap.unique),
+    String(row.overlap.shared),
+    String(row.overlap.none),
+    String(row.overlap.alone),
+  ]
+}
+
 export function renderReviewYieldHuman(report: ReviewYieldReport): string {
   const lines: string[] = []
   const section = (title: string, rows: ReviewYieldRow[]) => {
     lines.push(title)
-    lines.push(
-      'KEY'.padEnd(40) +
-        'RUNS REV C REC FIND LINK TRI UNTR ACCEPT REJECT MODIFY SKIP  F/R H+C/R MED MIN MED+  UNIQUE SHARED NONE ALONE',
-    )
+    const table = renderYieldTable(YIELD_ROW_COLUMNS, rows.map(yieldRowCells))
+    lines.push(table[0]!)
     if (!rows.length) lines.push('(none)')
-    for (const row of rows)
-      lines.push(
-        row.key.slice(0, 39).padEnd(40) +
-          String(row.runs).padStart(4) +
-          String(row.reviews.recorded).padStart(4) +
-          String(row.reviews.completed).padStart(2) +
-          String(row.recordedFindings).padStart(4) +
-          String(row.findings).padStart(5) +
-          String(row.linkedFindings).padStart(5) +
-          String(row.triaged).padStart(4) +
-          String(row.untriaged).padStart(5) +
-          String(row.accepted).padStart(8) +
-          String(row.rejected).padStart(7) +
-          String(row.modified).padStart(7) +
-          String(row.skipped).padStart(5) +
-          number(row.findingsPerRun).padStart(5) +
-          number(row.highOrCriticalPerRun).padStart(6) +
-          (row.medianLensMinutes === null ? '—' : number(row.medianLensMinutes)).padStart(8) +
-          number(row.mediumPlusAcceptedYield).padStart(5) +
-          String(row.overlap.unique).padStart(8) +
-          String(row.overlap.shared).padStart(7) +
-          String(row.overlap.none).padStart(5) +
-          String(row.overlap.alone).padStart(6),
-      )
+    else lines.push(...table.slice(1))
   }
   section('BY LENS', report.lenses)
   lines.push('')
@@ -514,13 +567,18 @@ export function renderReviewYieldHuman(report: ReviewYieldReport): string {
   section('BY AREA', report.byArea)
   lines.push('')
   lines.push('BY LENS PAIR')
-  lines.push(`${'LENSES'.padEnd(45)}LINKED  SHARE LEFT  SHARE RIGHT`)
+  const pairs = renderYieldTable(
+    YIELD_PAIR_COLUMNS,
+    report.lensPairs.map((pair) => [
+      pair.lenses.join(' / '),
+      String(pair.linkedFindings),
+      number(pair.shares[0]),
+      number(pair.shares[1]),
+    ]),
+  )
+  lines.push(pairs[0]!)
   if (!report.lensPairs.length) lines.push('(none)')
-  for (const pair of report.lensPairs) {
-    lines.push(
-      `${pair.lenses.join(' / ').slice(0, 44).padEnd(45)}${String(pair.linkedFindings).padStart(6)}${number(pair.shares[0]).padStart(12)}${number(pair.shares[1]).padStart(13)}`,
-    )
-  }
+  else lines.push(...pairs.slice(1))
   lines.push('')
   section('BY ROUND ORDINAL', report.rounds)
   lines.push('')
