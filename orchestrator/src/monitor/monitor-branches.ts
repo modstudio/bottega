@@ -6,6 +6,33 @@ export type BranchCandidate = {
   started_at: string
 }
 
+export function branchReclaimAction(
+  scopeProject: string | null,
+  project: string,
+  branch: string,
+  actions: ReadonlyMap<string, string>,
+): string {
+  return scopeProject === project
+    ? actions.get(branch)!
+    : `reported; reclaim refused by monitor scope: ${project} is outside invoked project ${scopeProject ?? 'unknown'}`
+}
+
+export function branchMonitorConditions(
+  scopeProject: string | null,
+  project: string,
+  candidates: readonly BranchCandidate[],
+  actions: ReadonlyMap<string, string>,
+) {
+  return candidates.map((candidate) => ({
+    kind: 'branch-without-worktree' as const,
+    subject: `${project}:${candidate.branch}`,
+    since: candidate.started_at,
+    detail: `${project} branch ${candidate.branch} has no worktree`,
+    action: branchReclaimAction(scopeProject, project, candidate.branch, actions),
+    affectedProject: project,
+  }))
+}
+
 export function branchInventoryDecision(
   project: string,
   candidates: readonly BranchCandidate[],

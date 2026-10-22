@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { branchInventoryDecision, existingBranchesWithoutWorktrees } from './monitor-branches.ts'
+import {
+  branchInventoryDecision,
+  branchReclaimAction,
+  existingBranchesWithoutWorktrees,
+} from './monitor-branches.ts'
 
 test('selects only existing local branches without worktrees, including slash-bearing names', () => {
   const candidates = [
@@ -33,4 +37,14 @@ test('a failed local branch inventory selects nothing and reports the project er
     branches: [],
     errors: ['sample branch inventory: git for-each-ref failed'],
   })
+})
+
+test('formats reclaim actions inside and outside the monitor project scope', () => {
+  const actions = new Map([['candidate', 'would reclaim sample:candidate']])
+  expect(branchReclaimAction('sample', 'sample', 'candidate', actions)).toBe(
+    'would reclaim sample:candidate',
+  )
+  expect(branchReclaimAction('other', 'sample', 'candidate', actions)).toBe(
+    'reported; reclaim refused by monitor scope: sample is outside invoked project other',
+  )
 })

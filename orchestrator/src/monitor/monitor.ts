@@ -41,7 +41,7 @@ import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { missingPrunableWorktrees } from '../worktree/worktree-porcelain.ts'
 import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
 import { hostPressureObservation, persistedHostPressureDetail } from './host-pressure-conditions.ts'
-import { branchInventoryDecision } from './monitor-branches.ts'
+import { branchInventoryDecision, branchMonitorConditions } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import {
@@ -103,27 +103,11 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
 
 function monitorBranchReclaimActions(
-  reclaimProject: Project | null,
-  project: Project,
-  candidates: readonly { branch: string }[],
+  scopeProject: string | null,
+  project: string,
+  branches: readonly string[],
 ): Map<string, string> {
-  return reclaimProject?.name === project.name
-    ? reclaimBranchesDryRun(
-        project.name,
-        candidates.map((candidate) => candidate.branch),
-      )
-    : new Map()
-}
-
-function monitorBranchAction(
-  reclaimProject: Project | null,
-  project: Project,
-  branch: string,
-  actions: ReadonlyMap<string, string>,
-): string {
-  return reclaimProject?.name === project.name
-    ? actions.get(branch)!
-    : `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
+  return scopeProject === project ? reclaimBranchesDryRun(project, branches) : new Map()
 }
 
 async function initialMonitorObservations(
@@ -877,21 +861,17 @@ export async function monitor(
     )
     errors.push(...branchInventory.errors)
     const reclaimActions = monitorBranchReclaimActions(
-      reclaimProject,
-      project,
-      branchInventory.branches,
+      reclaimProject?.name ?? null,
+      project.name,
+      branchInventory.branches.map((branch) => branch.branch),
     )
-    for (const branch of branchInventory.branches) {
-      const subject = `${project.name}:${branch.branch}`
-      add({
-        kind: 'branch-without-worktree',
-        subject,
-        since: branch.started_at,
-        detail: `${project.name} branch ${branch.branch} has no worktree`,
-        action: monitorBranchAction(reclaimProject, project, branch.branch, reclaimActions),
-        affectedProject: project.name,
-      })
-    }
+    for (const condition of branchMonitorConditions(
+      reclaimProject?.name ?? null,
+      project.name,
+      branchInventory.branches,
+      reclaimActions,
+    ))
+      add(condition)
   }
 
   const hub = reconcileHub(clock)
