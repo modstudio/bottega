@@ -69,15 +69,17 @@ test('an open unexpired request is delivered to a session that began before the 
   ).toBe('ordinary')
 })
 
-test('a session that began after a post is pushed standing and acknowledgement only', () => {
+test('a session that began after a post is not pushed an older request', () => {
   const later = '2026-10-16T11:00:00.001Z'
-  expect(lateDeliveryDecision({
-    purpose: 'request',
-    inAudience: true,
-    expired: false,
-    hasReceipt: false,
-    sessionBeganBeforePost: false,
-  })).toBe('skip')
+  expect(
+    lateDeliveryDecision({
+      purpose: 'request',
+      inAudience: true,
+      expired: false,
+      hasReceipt: false,
+      sessionBeganBeforePost: false,
+    }),
+  ).toBe('skip')
   expect(
     decision({
       acknowledgementRequired: false,
