@@ -100,9 +100,10 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-applicability-boundary',
     file: 'orchestrator/src/review/review-applicability.ts',
-    allowed: [],
+    allowed: ['./review-tier.ts'],
     typeOnlyAllowed: ['../project/project-injection.ts'],
-    reason: 'Keep project lens selection independent of stores, processes, and clocks.',
+    reason:
+      'Keep change classification and project lens selection independent of stores, processes, and clocks.',
   },
   {
     name: 'review-finding-amend-command-boundary',

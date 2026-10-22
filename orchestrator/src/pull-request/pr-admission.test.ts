@@ -49,6 +49,7 @@ test('records the exact triage snapshot and outboxes it', () => {
       pathSet: ['a.ts'],
     },
     tier: 2,
+    applicability: { lenses: ['correctness', 'craft'] },
   }
   const id = recordTriageIntent(
     change,
@@ -144,6 +145,7 @@ test('merge admission leaves an existing snapshot unchanged', () => {
       pathSet: ['a.ts'],
     },
     tier: 1,
+    applicability: { lenses: ['correctness'] },
   }
   const triage = {
     complete: true as const,

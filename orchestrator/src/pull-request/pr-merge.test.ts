@@ -408,6 +408,7 @@ test('an admitted head records a snapshot with the pull request number before me
               pathSet: ['orchestrator/src/pull-request/pr-merge.ts'],
             },
             tier: 2 as const,
+            applicability: { lenses: ['correctness', 'craft'] },
           },
           decision,
         }
