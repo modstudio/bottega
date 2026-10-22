@@ -54,6 +54,7 @@ import {
   shapeGateResult,
 } from '../gate/gate-decision.ts'
 import { formatRecordedGateResult, recordedGateResult } from '../gate/gate-result.ts'
+import { requestGateExecution } from '../gate/gate-run.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
@@ -255,12 +256,8 @@ function selectGateExecutionOnce(
         introduction: formatGateRequestDecision(decision),
       }
     }
-    const requestedAt = nowIso()
-    const inserted = db()
-      .query(
-        'INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?) RETURNING id',
-      )
-      .get(newRecordId(), runId, requestedAt) as { id: number }
+    const inserted = requestGateExecution(runId)
+    const requestedAt = inserted.requestedAt
     return { id: inserted.id, requestedAt, introduction: null }
   })
 }

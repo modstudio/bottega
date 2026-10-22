@@ -18,7 +18,7 @@ describe('lintSettings', () => {
     expect(findings.some((finding) => finding.rule === 'settings/duplicate-across')).toBe(true)
   })
 
-  test('normalizes installed and PATH forms for the front door and both legacy commands', () => {
+  test('normalizes installed and PATH forms for the front door', () => {
     const findings = lintSettings([
       {
         id: 'alpha',
@@ -29,10 +29,6 @@ describe('lintSettings', () => {
               `Bash(${PLATFORM_SLUG} run result *)`,
               `Bash(./bin/${PLATFORM_SLUG} task *)`,
               `Bash(${PLATFORM_SLUG} task *)`,
-              'Bash(./bin/orch runs *)',
-              'Bash(orch runs *)',
-              'Bash(./bin/hub task *)',
-              'Bash(hub task *)',
             ],
           },
           hooks: {},
@@ -40,7 +36,7 @@ describe('lintSettings', () => {
       },
     ])
     const bin = findings.filter((finding) => finding.rule === 'settings/bin-prefix')
-    expect(bin.length).toBe(4)
+    expect(bin.length).toBe(2)
   })
 
   test('flags a rule in both allow and deny', () => {

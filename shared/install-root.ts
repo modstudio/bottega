@@ -20,8 +20,7 @@ export type DistributionManifest = {
 
 export type InstallationPaths = {
   root: string
-  orch: string
-  hub: string
+  executable: string
   ops: string
   hubAssets: string
 }
@@ -47,6 +46,11 @@ function isCheckoutRoot(directory: string): boolean {
   }
 }
 
+/** Answer exactly: is this directory a checkout or a distribution root? */
+export function isInstallationRoot(directory: string): boolean {
+  return isDistributionRoot(directory) || isCheckoutRoot(directory)
+}
+
 /** Resolve the running distribution or checkout using only the supplied start and environment. */
 export function resolveInstallRoot(fromDirectory: string, env: InstallEnvironment): string {
   if (embeddedDistributionManifest()) return dirname(process.execPath)
@@ -54,7 +58,7 @@ export function resolveInstallRoot(fromDirectory: string, env: InstallEnvironmen
   if (override && isAbsolute(override)) return override
   let directory = fromDirectory
   for (;;) {
-    if (isDistributionRoot(directory) || isCheckoutRoot(directory)) return directory
+    if (isInstallationRoot(directory)) return directory
     const parent = dirname(directory)
     if (parent === directory) {
       throw new InstallRootNotFoundError(
@@ -73,8 +77,7 @@ export function resolveInstallationPaths(
   const root = resolveInstallRoot(fromDirectory, env)
   return {
     root,
-    orch: join(root, 'bin', 'orch'),
-    hub: join(root, 'bin', 'hub'),
+    executable: join(root, 'bin', PLATFORM_SLUG),
     ops: join(root, 'ops'),
     hubAssets: join(root, 'hub'),
   }

@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
+import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
@@ -108,10 +109,10 @@ const cleanupReport = (
   gone: [],
   kept: overrides.kept ?? [],
   errors: overrides.errors ?? [],
-  verdict:
-    (overrides.errors?.length ?? 0) > 0 || (overrides.kept?.length ?? 0) > 0
-      ? { clean: false, reason: 'unexpected-kept-item' }
-      : { clean: true },
+  verdict: decideShipCleanupVerdict({
+    kept: overrides.kept ?? [],
+    errors: overrides.errors ?? [],
+  }),
 })
 
 function recordPassingGate(): void {
@@ -176,12 +177,81 @@ test('a merge reports residue when cleanup keeps anything beyond its command tre
       checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
       shipCleanup: () =>
         cleanupReport({
-          kept: [{ item: 'branch DEV-1-a', reason: 'live', reasonKind: 'safety-hold' }],
+          kept: [
+            {
+              item: 'branch DEV-1-a',
+              reason: 'live',
+              reasonKind: 'safety-hold',
+              owner: 'other',
+            },
+          ],
         }),
     }),
   )
   expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
   expect(outcome.output.startsWith('merge-commit\n')).toBe(true)
+})
+
+test('a merge succeeds when cleanup keeps only the caller landing tree and branch', () => {
+  registerProject(['test'])
+  const kept = [
+    {
+      item: 'run 7 worktree',
+      reason: 'the command runs from this tree',
+      reasonKind: 'command-tree' as const,
+      owner: 'caller-landing-tree' as const,
+    },
+    {
+      item: `branch ${pullRequest.headBranch}`,
+      reason: 'checked-out',
+      reasonKind: 'safety-hold' as const,
+      owner: 'caller-landing-tree' as const,
+    },
+  ]
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      shipCleanup: () => cleanupReport({ kept }),
+    }),
+  )
+  expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).toContain('information: kept run 7 worktree')
+  expect(outcome.output).toContain(`information: kept branch ${pullRequest.headBranch}`)
+  expect(outcome.output).toContain('kept: none')
+})
+
+test('a merge with mixed cleanup holds names only foreign items as residue', () => {
+  registerProject(['test'])
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      shipCleanup: () =>
+        cleanupReport({
+          kept: [
+            {
+              item: 'run 7 worktree',
+              reason: 'the command runs from this tree',
+              reasonKind: 'command-tree',
+              owner: 'caller-landing-tree',
+            },
+            {
+              item: 'run 8 worktree',
+              reason: 'held by another session',
+              reasonKind: 'safety-hold',
+              owner: 'other',
+            },
+          ],
+        }),
+    }),
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain('information: kept run 7 worktree')
+  expect(outcome.output).toContain('kept: run 8 worktree: held by another session')
+  expect(outcome.output).not.toContain('kept: run 7 worktree')
 })
 
 test('a successful merge records contained branches before cleanup can delete them', () => {
@@ -292,6 +362,7 @@ test('an incomplete admission refuses with its review remedy without merging', (
               architectReadRequired: false,
               earlierReviewNumber: null,
               earlierReviewTier: null,
+              noCompleteReviewRound: true,
             },
           },
         }),

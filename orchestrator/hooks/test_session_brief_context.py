@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).parent))
 spec = importlib.util.spec_from_file_location(
     "session_brief", Path(__file__).with_name("session-brief.py")
 )
@@ -327,7 +328,7 @@ class InboxQuestions(unittest.TestCase):
             json.dumps({"cwd_registered": True, "project": "bottega", "rows": rows})
         )
 
-    def test_answerable_workflow_question_counts_as_waiting_on_your_ruling(self):
+    def test_own_parked_workflow_question_is_not_waiting_on_your_ruling(self):
         self.assertEqual(
             self.counts([
                 {
@@ -339,7 +340,7 @@ class InboxQuestions(unittest.TestCase):
                     "ownership_notice": None,
                 }
             ]),
-            (1, 0, 0, 0),
+            (0, 0, 0, 0),
         )
 
     def test_foreign_workflow_questions_are_counted_by_distinct_question_id(self):
@@ -369,11 +370,13 @@ class InboxQuestions(unittest.TestCase):
         self.assertEqual(
             self.counts([
                 {
+                    "question_id": 21,
                     "answer_id": 21,
                     "session_liveness": "live",
                     "can_answer": True,
                 },
                 {
+                    "question_id": 22,
                     "answer_id": 22,
                     "session_liveness": "unknown",
                     "can_answer": False,
@@ -395,13 +398,13 @@ class InboxQuestions(unittest.TestCase):
                     "ownership_notice": "owned by session session-2",
                 },
             ]),
-            (2, 1, 1, 1),
+            (1, 1, 1, 1),
         )
 
     def test_malformed_run_question_invalidates_the_inbox(self):
         with self.assertRaisesRegex(ValueError, "invalid inbox JSON"):
             self.counts([
-                {"answer_id": 31, "session_liveness": "gone", "can_answer": True}
+                {"question_id": 31, "answer_id": 31, "session_liveness": "gone", "can_answer": True}
             ])
 
     def test_malformed_workflow_question_invalidates_the_inbox(self):

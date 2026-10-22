@@ -5,6 +5,7 @@
  */
 import type { ReaderReply, ReviewReply, WorkerReply } from '../contract/contract.ts'
 import {
+  applyPrematureFinalFailure as applyPrematureFinalPolicy,
   decidePrematureFinal,
   type PrematureFinalRefusal,
   type PrematureFinalReplyShape,
@@ -19,33 +20,23 @@ export function terminalPrematureFinalRefusal(input: {
   workerEvents: ReadonlyArray<{ kind: string }>
   acceptedQuestionCount: number
   exitCode: number
-  latencyMs: number
 }): PrematureFinalRefusal | null {
   const readerReply = input.readerReply
   let replyShape: PrematureFinalReplyShape = 'other'
-  if (
-    readerReply?.deliverables.length &&
-    readerReply.deliverables.every((item) => item.status === 'blocked')
-  ) {
-    replyShape = 'all-blocked-reader'
-  } else if (input.parsedReview && input.parsedReview.findings.length === 0) {
-    replyShape = 'empty-review'
-  } else if (
-    input.contract?.status === 'done' &&
-    Array.isArray(input.measuredFiles) &&
-    input.measuredFiles.length === 0
-  ) {
-    replyShape = 'done-writer-no-files'
+  if (readerReply) {
+    replyShape = 'reader'
+  } else if (input.parsedReview) {
+    replyShape = 'review'
+  } else if (input.contract) {
+    replyShape = 'done-writer'
   }
 
   return decidePrematureFinal({
     exitCode: input.exitCode,
-    latencyMs: input.latencyMs,
     toolEventRecorded: input.workerEvents.some((event) => event.kind === 'tool'),
     evidence: {
       filesWritten: readerReply?.files_written,
       filesChanged: input.contract?.files_changed,
-      findings: input.parsedReview?.findings,
       filesCovered: input.parsedReview?.provenance.files_covered,
       commandsRun:
         input.parsedReview?.provenance.commands_run ??
@@ -55,28 +46,28 @@ export function terminalPrematureFinalRefusal(input: {
       mcpTools: input.parsedReview?.provenance.mcp_tools,
       docsRead: input.parsedReview?.provenance.docs_read,
     },
+    reportsRun: Boolean(input.contract?.tests?.ran),
     questionsAsked: input.acceptedQuestionCount > 0,
     replyShape,
+    readerDelivered: Boolean(readerReply?.deliverables.some((item) => item.status === 'delivered')),
+    measuredFiles: input.measuredFiles,
     textFields: [
       ...(readerReply?.deliverables.map((item) => item.content) ?? []),
       ...(readerReply?.narrative ? [readerReply.narrative] : []),
+      ...(input.parsedReview?.findings.map((finding) => finding.evidence) ?? []),
       ...(input.parsedReview?.provenance.could_not_verify ?? []),
       ...(input.contract?.summary ? [input.contract.summary] : []),
+      ...(input.contract?.tests?.detail ? [input.contract.tests.detail] : []),
+      ...(input.contract?.deviations?.flatMap((item) => [item.what, item.why]) ?? []),
+      ...(input.contract?.blockers?.flatMap((item) => [item.what, item.why, item.impact]) ?? []),
     ],
   })
 }
 
-/** Apply the refusal without adding another branch to terminal orchestration. */
+/** Apply the pure precedence policy to the terminal adapter's provisional outcome. */
 export function applyPrematureFinalFailure<FailureKind extends string>(
   outcome: { status: OutcomeStatus; error: string | null; failureKind: FailureKind | null },
   refusal: PrematureFinalRefusal | null,
-): {
-  status: OutcomeStatus
-  error: string | null
-  failureKind: FailureKind | 'unevidenced' | null
-} {
-  if (!refusal) return outcome
-  if (outcome.status === 'ok') return { status: 'failed', ...refusal }
-  if (outcome.failureKind === 'unevidenced') return { ...outcome, error: refusal.error }
-  return outcome
+) {
+  return applyPrematureFinalPolicy(outcome, refusal)
 }

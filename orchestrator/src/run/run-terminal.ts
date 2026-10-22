@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
@@ -638,7 +639,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       workerEvents,
       acceptedQuestionCount: acceptedQuestions.length,
       exitCode,
-      latencyMs: Date.now() - started,
     }),
   ))
 
@@ -732,7 +732,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     latencyMs: Date.now() - started,
     vendorTokens,
     vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage),
+    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -775,7 +775,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           promptPath,
           vendorTokens,
           costUsd,
-          ...runUsageColumnValues(runUsageColumns(vendorUsage)),
+          ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
           status,
           error,
