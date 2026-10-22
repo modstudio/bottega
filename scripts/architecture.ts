@@ -660,6 +660,17 @@ export const modules: ArchitectureModule[] = [
     './step-catalogue-definition.ts',
     './workflow-definition.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-shared-promotion.ts', []),
+  module('orchestrator/src/workflow/workflow-shared-promotion-store.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../record/record-api-client.ts',
+    '../record/record-cache-workflow.ts',
+    '../record/record-space.ts',
+    '../record/record-workflow-contract.ts',
+    './workflow-definition.ts',
+    './workflow-shared-promotion.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
   module('orchestrator/src/workflow/workflow-tree.ts', [
     './step-catalogue.ts',

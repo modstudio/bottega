@@ -73,6 +73,7 @@ export function rowAgent(row: AgentRow): Agent {
     operatedBy: row.operated_by,
     caps: stored,
     defaultTransport: row.transport,
+    acpSessionLoad: row.transport === 'acp',
     contextTokens: Object.hasOwn(stored, 'contextTokens')
       ? stored.contextTokens === null
         ? Number.POSITIVE_INFINITY
@@ -471,6 +472,7 @@ export type RegistrationProbeResult = {
   file?: { ok: boolean | null; output: string }
   mcp?: { verifiable: boolean | null; output: string }
   writing?: { ok: boolean | null; output: string }
+  resuming?: { ok: boolean | null; output: string }
   jobs?: Record<
     string,
     {
@@ -479,6 +481,7 @@ export type RegistrationProbeResult = {
       schema?: boolean | null
       mcp?: boolean | null
       writing?: boolean | null
+      resuming?: boolean | null
     }
   >
   contextTokens: number | null
