@@ -750,21 +750,67 @@ test('PostToolUse injects pending text', () => {
   })
 })
 
-test('PostToolUse injects the shared reply delivery rendering unchanged', () => {
-  const text = renderBoardReplyDelivery({
-    origin: 'architect alephbeis',
-    rootId: 'thread-record-id',
-    rootTitle: 'Thread title',
-    body: 'reply body',
+test('PostToolUse injects a pending reply with its escaped body and root context', async () => {
+  ensurePostingProject()
+  const clock = Date.parse('2026-10-07T18:00:00.000Z')
+  for (const session of ['hook-reply-reader', 'hook-thread-author'])
+    db()
+      .query(
+        `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+         VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
+      )
+      .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const question = askQuestion(
+    {
+      audience: 'session:hook-reply-reader',
+      title: 'Hook thread title',
+      body: 'root body must not be pushed',
+    },
+    { CLAUDE_CODE_SESSION_ID: 'hook-thread-author' },
+    clock,
+    postingCwd,
+  )
+  const first = await pendingBoardDelivery({
+    session: 'hook-reply-reader',
+    budgetMs: 0,
+    clock: clock + 1,
   })
-  const output = JSON.stringify({
-    delivery: [{ id: 'reply-record-id', text, requiresAcknowledgement: false }],
-    overflow: null,
-    pendingAcknowledgements: [],
+  await markBoardDeliveryDelivered({
+    session: 'hook-reply-reader',
+    ids: first.delivery.map((message) => message.id),
+    clock: clock + 1,
   })
+  replyToThread(
+    question.recordId,
+    'reader participated',
+    { CLAUDE_CODE_SESSION_ID: 'hook-reply-reader' },
+    clock + 2,
+    postingCwd,
+  )
+  const reply = replyToThread(
+    question.recordId,
+    'reply first line\nreply second line\tcontrolled\u0000',
+    { CLAUDE_CODE_SESSION_ID: 'hook-thread-author' },
+    clock + 3,
+    postingCwd,
+  )
+  const pending = await pendingBoardDelivery({
+    session: 'hook-reply-reader',
+    budgetMs: 0,
+    clock: clock + 4,
+  })
+  expect(pending.delivery.map((message) => message.id)).toEqual([String(reply.number)])
+  const text = pending.delivery[0]!.text
+  expect(text).toContain('Reply on "Hook thread title"')
+  expect(text).toContain(`(thread ${question.recordId})`)
+  expect(text).toContain('"reply first line reply second line\\tcontrolled\\u0000"')
+  expect(text).not.toContain('\n')
+  expect(text).not.toContain('root body must not be pushed')
+
+  const output = JSON.stringify(pending)
   const item = createHookFixture(output)
   addCandidate(item, 1)
-  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'hook-reply-reader' }), item)
   expect(result.exitCode).toBe(0)
   expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext).toBe(text)
 })

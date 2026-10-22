@@ -48,5 +48,5 @@ export function renderBoardReplyDelivery(message: {
   rootTitle: string
   body: string
 }): string {
-  return `Reply on "${boardHeaderValue(message.rootTitle.slice(0, BOARD_TITLE_MAX_CHARS))}" (thread ${boardHeaderValue(message.rootId)}) from ${boardHeaderValue(message.origin)}: ${message.body}`
+  return `Reply on "${boardHeaderValue(message.rootTitle.slice(0, BOARD_TITLE_MAX_CHARS))}" (thread ${boardHeaderValue(message.rootId)}) from ${boardHeaderValue(message.origin)}: ${JSON.stringify(boardHeaderValue(message.body))}`
 }
