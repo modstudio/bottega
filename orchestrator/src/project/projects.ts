@@ -42,6 +42,7 @@ import {
   DEFAULT_LOCAL_PROJECT_NAME,
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
+import { GATE_INPUTS } from '../gate/gate-decision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { autonomySettingsForStorage, validateAutonomySettings } from '../workflow/autonomy.ts'
@@ -667,6 +668,11 @@ function visibilityProblems(visibility: ProjectSettings['visibility']): string[]
     : ['visibility must be public or private']
 }
 
+function gateInputProblems(gateInput: ProjectSettings['gateInput']): string[] {
+  if (gateInput === undefined || GATE_INPUTS.includes(gateInput)) return []
+  return ['gateInput must be staged, worktree, or committed']
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   projectPath?: string,
@@ -695,6 +701,7 @@ export function validateProjectSettings(
     ...mcpSettingsProblems(settings.mcp),
     ...visibilityProblems(settings.visibility),
     ...focusedTestsProblems(settings.focusedTests),
+    ...gateInputProblems(settings.gateInput),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
