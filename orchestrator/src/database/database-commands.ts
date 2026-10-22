@@ -18,6 +18,7 @@ import {
 export type DatabaseCommandPresentation = { log(value: string): void }
 type MigrateCommandActions = {
   assertAuthority?(): void
+  inFlightRuns(): Promise<MigrationInFlightRun[]>
   migrate(input?: { beforeMigration?: string }): { path: string; versions: string[] }
   migrateCutover?(): {
     path: string
@@ -33,6 +34,34 @@ const PROJECT_IDENTITY_CONTRACT_MIGRATION = '0115_project_identity_contract'
 const RUN_FILESYSTEM_IDENTITY_CUTOVER = '0121_run_filesystem_identity_cutover'
 
 type MigrateCommandOptions = { authorityRefusal?: () => string | null }
+
+export type MigrationInFlightRun = {
+  name: string
+  status: 'running' | 'asking'
+  waiting: boolean
+}
+
+/** Reads the union of live and host-waiting runs without requiring the latest run columns. */
+export function migrationInFlightRuns(database: Database): MigrationInFlightRun[] {
+  type CompatibleRunRow = {
+    id?: number
+    number?: number
+    record_id?: string
+    status: 'running' | 'asking'
+    host_wait_since?: string | null
+  }
+  return (
+    database
+      .query("SELECT * FROM run WHERE status IN ('running','asking')")
+      .all() as CompatibleRunRow[]
+  )
+    .map((row) => ({
+      name: row.number ? `#${row.number}` : (row.record_id ?? `#${row.id}`),
+      status: row.status,
+      waiting: Boolean(row.host_wait_since),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
 
 /** Runs only from the migration runner while its BEGIN IMMEDIATE lock is held. */
 export function applyRunFilesystemIdentityCutover(
@@ -50,6 +79,10 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
       const refusal = (options.authorityRefusal ?? existingDatabaseMigrationRefusal)()
       if (refusal) throw new Error(refusal)
     },
+    inFlightRuns: () =>
+      existsSync(DB_PATH)
+        ? withDatabaseForMigrationStep(async (database) => migrationInFlightRuns(database))
+        : Promise.resolve([]),
     migrate: migrateDatabase,
     contracted: () =>
       existsSync(DB_PATH)
@@ -81,6 +114,11 @@ export async function migrateCommand(
 ): Promise<void> {
   actions ??= defaultMigrateCommandActions(options)
   actions.assertAuthority?.()
+  const inFlight = await actions.inFlightRuns()
+  presentation.log(`runs in flight before migration: ${inFlight.length}`)
+  for (const run of inFlight) {
+    presentation.log(`  ${run.name}: ${run.waiting ? 'waiting for host capacity' : run.status}`)
+  }
   const alreadyContracted = await actions.contracted()
   const before = alreadyContracted
     ? { path: '', versions: [] }

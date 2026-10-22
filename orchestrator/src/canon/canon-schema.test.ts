@@ -15,7 +15,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/fixtures/store.ts'
-import { db, enableSchemaReload, writeTransaction } from '../database/db.ts'
+import {
+  closeDatabaseForFixture,
+  db,
+  enableSchemaReload,
+  writeTransaction,
+} from '../database/db.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -350,27 +355,33 @@ describe('schema coexistence', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('reload mode re-prepares instead of refusing a write after user_version changes', () => {
+  test('reload mode keeps the handle after a declared-additive user_version change', () => {
     const seen: Array<[number | null, number]> = []
+    const prior = journalLength() - 1
+    const next = journalLength()
+    closeDatabaseForFixture()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${prior}`)
     db()
     enableSchemaReload((from, to) => {
       seen.push([from, to])
     })
-    const other = new Database(process.env.ORCH_DB!)
-    const next = journalLength() + 1
     other.exec(`PRAGMA user_version = ${next}`)
     other.close()
     writeTransaction(() => {
       db().query('UPDATE project SET name = name WHERE 0').run()
     })
-    expect(seen).toEqual([[journalLength(), next]])
+    expect(seen).toEqual([[prior, next]])
   })
 
-  test('writeTransaction after reload writes on the new handle, not the closed one', () => {
+  test('writeTransaction after an additive migration writes on the still-open handle', () => {
+    const prior = journalLength() - 1
+    closeDatabaseForFixture()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${prior}`)
     enableSchemaReload(() => {})
     const held = db()
-    const other = new Database(process.env.ORCH_DB!)
-    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
+    other.exec(`PRAGMA user_version = ${journalLength()}`)
     other.close()
     writeTransaction(() => {
       db()
@@ -379,7 +390,8 @@ describe('schema coexistence', () => {
         )
         .run()
     }, held)
-    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+    expect(held.query('SELECT 1').get()).toEqual({ '1': 1 })
+    expect(db()).toBe(held)
     expect(db().query("SELECT name FROM project WHERE name='held-reload'").get()).toEqual({
       name: 'held-reload',
     })
@@ -387,10 +399,13 @@ describe('schema coexistence', () => {
 
   test('schema reload waits until an open write transaction completes', () => {
     const seen: Array<[number | null, number]> = []
+    const prior = journalLength() - 1
+    const next = journalLength()
+    closeDatabaseForFixture()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${prior}`)
     const held = db()
     enableSchemaReload((from, to) => seen.push([from, to]))
-    const other = new Database(process.env.ORCH_DB!)
-    const next = journalLength() + 1
     other.exec(`PRAGMA user_version = ${next}`)
     other.close()
 
@@ -413,9 +428,23 @@ describe('schema coexistence', () => {
     expect(
       held.query("SELECT name FROM project WHERE name LIKE '%-reload' ORDER BY name").all(),
     ).toEqual([{ name: 'after-reload' }, { name: 'before-reload' }])
-    expect(db()).not.toBe(held)
-    expect(seen).toEqual([[journalLength(), next]])
-    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+    expect(db()).toBe(held)
+    expect(seen).toEqual([[prior, next]])
+    expect(held.query('SELECT 1').get()).toEqual({ '1': 1 })
+  })
+
+  test('reload mode names an unmarked migration instead of closing the handle', () => {
+    const held = db()
+    enableSchemaReload(() => {})
+    const other = new Database(process.env.ORCH_DB!)
+    const next = journalLength() + 1
+    other.exec(`PRAGMA user_version = ${next}`)
+    other.close()
+
+    expect(() => db()).toThrow(
+      `store migrated to version ${next} while this run was in flight; re-dispatch it`,
+    )
+    expect(held.query('SELECT 1').get()).toEqual({ '1': 1 })
   })
 })
 

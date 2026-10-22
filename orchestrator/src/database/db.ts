@@ -26,9 +26,14 @@ import {
 } from './database-location.ts'
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
+  decideInFlightMigration,
+  inFlightMigrationCompatibility,
+} from './migration-compatibility.ts'
+import {
   applyMigrations,
   applyMigrationsBefore,
   type BeforeMigrationApply,
+  migrationJournal,
   migrationRefusal,
   readUserVersion,
   staleWriteRefusal,
@@ -204,12 +209,15 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   if (schemaReload) {
     if (d.inTransaction) return d
     const from = opened
-    handle?.close()
-    handle = null
-    connectionWritable = null
-    openedUserVersion = null
+    const decision = decideInFlightMigration({
+      processJournalVersion: from,
+      storeVersion: actual,
+      migrationCompatibility: inFlightMigrationCompatibility(migrationJournal(), from, actual),
+    })
+    if (decision.action === 'fail') throw new Error(decision.reason)
+    openedUserVersion = actual
     schemaReload(from, actual)
-    return db(forWrite)
+    return d
   }
   if (!forWrite) return d
   throw new Error(
