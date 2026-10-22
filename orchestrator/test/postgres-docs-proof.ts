@@ -98,6 +98,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
       return response.json() as Promise<{ orderedIds: string[] }>
     },
     applySettingsPermission: unused,
+    applySettingsAutoMode: unused,
     importDoc: unused,
     importCanon: unused,
     deleteDoc: unused,

@@ -4,6 +4,8 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
 import type {
+  RecordSettingsAutoModeInput,
+  RecordSettingsAutoModeResult,
   RecordSettingsPermissionInput,
   RecordSettingsPermissionResult,
 } from './record-settings.ts'
@@ -11,12 +13,14 @@ import type {
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 
+const targetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('user') }).strict(),
+  z.object({ kind: z.literal('project'), project: z.string().trim().min(1) }).strict(),
+])
+
 const bodySchema = z
   .object({
-    target: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('user') }).strict(),
-      z.object({ kind: z.literal('project'), project: z.string().trim().min(1) }).strict(),
-    ]),
+    target: targetSchema,
     list: z.enum(['allow', 'ask', 'deny']),
     rule: z.string().trim().min(1),
     operation: z.enum(['add', 'remove']),
@@ -25,13 +29,20 @@ const bodySchema = z
   })
   .strict()
 
+const autoModeBodySchema = bodySchema.extend({
+  list: z.enum(['allow', 'soft_deny', 'hard_deny', 'environment']),
+})
+
+export type RecordSettingsRouteDeps = {
+  applySettingsPermission(
+    input: RecordSettingsPermissionInput,
+  ): Promise<RecordSettingsPermissionResult>
+  applySettingsAutoMode(input: RecordSettingsAutoModeInput): Promise<RecordSettingsAutoModeResult>
+}
+
 export function registerRecordSettingsRoutes(
   app: Hono<ApiEnvironment>,
-  deps: {
-    applySettingsPermission(
-      input: RecordSettingsPermissionInput,
-    ): Promise<RecordSettingsPermissionResult>
-  },
+  deps: RecordSettingsRouteDeps,
   ports: {
     scope(context: Context<ApiEnvironment>): Tenant | null
     noSpace(context: Context<ApiEnvironment>): Response
@@ -45,6 +56,17 @@ export function registerRecordSettingsRoutes(
     if (!body.success) return context.json({ error: 'invalid settings permission edit' }, 400)
     try {
       return context.json(await deps.applySettingsPermission({ ...tenant, ...body.data }))
+    } catch (error) {
+      return ports.writeError(context, error)
+    }
+  })
+  app.post('/v1/settings/auto-mode', async (context) => {
+    const tenant = ports.scope(context)
+    if (!tenant) return ports.noSpace(context)
+    const body = autoModeBodySchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid settings auto-mode edit' }, 400)
+    try {
+      return context.json(await deps.applySettingsAutoMode({ ...tenant, ...body.data }))
     } catch (error) {
       return ports.writeError(context, error)
     }

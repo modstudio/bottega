@@ -1,5 +1,9 @@
 // concern: caller-classification
-import { type CallerClassification, classifyCaller } from '../../shared/caller-classification.ts'
+import {
+  type CallerClassification,
+  classifyCaller,
+  OPERATOR_SESSION_PREFIX,
+} from '../../shared/caller-classification.ts'
 
 export { type CallerClassification, classifyCaller }
 
@@ -21,7 +25,7 @@ export function resolveCallerIdentity(
     return { kind: 'no-identity', reason: 'reserved-operator-prefix' }
   if (caller.kind === 'harness') return { kind: 'identity', session: caller.session }
   return operatorMachineId
-    ? { kind: 'identity', session: `operator:${operatorMachineId}` }
+    ? { kind: 'identity', session: `${OPERATOR_SESSION_PREFIX}${operatorMachineId}` }
     : { kind: 'no-identity', reason: 'operator-machine-id-missing' }
 }
 

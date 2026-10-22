@@ -88,6 +88,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../../../shared/record-id.ts',
       '../caller-classification.ts',
       '../database/db.ts',
+      '../issue/issue-queue.ts',
       './run-mutation-owner.ts',
       'bun:sqlite',
     ],

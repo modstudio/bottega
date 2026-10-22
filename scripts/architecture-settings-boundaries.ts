@@ -84,6 +84,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/project/projects.ts',
       `${source}settings.ts`,
+      `${source}settings-auto-mode.ts`,
       `${source}settings-env.ts`,
       `${source}settings-files.ts`,
       `${source}settings-lint.ts`,
@@ -95,6 +96,13 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep settings commands independent of runs, routing, transports, the CLI, and worktrees.',
+  },
+  {
+    name: 'settings-auto-mode-boundary',
+    file: `${source}settings-auto-mode.ts`,
+    allowed: [`${source}settings.ts`],
+    typeOnlyAllowed: [],
+    reason: 'Keep auto-mode edits pure and independent of stores, commands, and transports.',
   },
   {
     name: 'settings-permission-boundary',

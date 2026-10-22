@@ -19,6 +19,7 @@ export const recordSettingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'orchestrator/src/doc/doc-write-allowed.ts',
       'orchestrator/src/settings/settings.ts',
+      'orchestrator/src/settings/settings-auto-mode.ts',
       'orchestrator/src/settings/settings-permission.ts',
       'orchestrator/src/record/record-docs.ts',
     ],

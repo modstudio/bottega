@@ -13,10 +13,22 @@ export const SETTINGS_SLUG = 'settings'
 export const SETTINGS_SCOPE = 'settings'
 export const PERMISSION_LISTS = SETTINGS_PERMISSION_LISTS
 export type PermissionList = SettingsPermissionList
+export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'] as const
+export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
+export type OwnedAutoMode = Partial<Record<AutoModeList, string[]>>
+
+const ownedAutoModeSchema = z
+  .object(
+    Object.fromEntries(AUTO_MODE_LISTS.map((name) => [name, z.array(z.string()).optional()])) as {
+      [Name in AutoModeList]: z.ZodOptional<z.ZodArray<z.ZodString>>
+    },
+  )
+  .strict()
 
 export type OwnedSettings = {
   permissions: unknown
   hooks: unknown
+  autoMode?: OwnedAutoMode
   envKeys?: string[]
 }
 
@@ -26,6 +38,7 @@ const ownedSettingsSchema = z
   .object({
     permissions: z.unknown(),
     hooks: z.unknown(),
+    autoMode: ownedAutoModeSchema.optional(),
     envKeys: z
       .array(z.string().regex(ENV_NAME))
       .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name)),
@@ -43,16 +56,23 @@ export function extractOwnedSettings(value: unknown): OwnedSettings {
   if (!isPlainObject(value)) {
     throw new Error(SETTINGS_PARSE_REFUSAL)
   }
+  const autoMode = Object.hasOwn(value, 'autoMode') ? parseAutoMode(value.autoMode) : undefined
   return {
     permissions: Object.hasOwn(value, 'permissions') ? value.permissions : {},
     hooks: Object.hasOwn(value, 'hooks') ? value.hooks : {},
+    ...(autoMode === undefined ? {} : { autoMode }),
     envKeys: [],
   }
 }
 
 export function serializeOwnedSettings(owned: OwnedSettings): string {
   return `${JSON.stringify(
-    { permissions: owned.permissions, hooks: owned.hooks, envKeys: owned.envKeys ?? [] },
+    {
+      permissions: owned.permissions,
+      hooks: owned.hooks,
+      ...(owned.autoMode === undefined ? {} : { autoMode: owned.autoMode }),
+      envKeys: owned.envKeys ?? [],
+    },
     null,
     2,
   )}\n`
@@ -64,14 +84,14 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
     parsed = JSON.parse(body) as unknown
   } catch {
     throw new Error(
-      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, and envKeys',
+      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, and envKeys',
     )
   }
   const result = ownedSettingsSchema.safeParse(parsed)
   if (!result.success) {
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with exactly permissions, hooks, and sorted envKeys names',
+        'cleared by: write a JSON object with permissions, hooks, optional autoMode, and sorted envKeys names',
     )
   }
   return result.data
@@ -117,10 +137,20 @@ export function allPermissionRules(permissions: unknown): string[] {
   return PERMISSION_LISTS.flatMap((name) => lists[name])
 }
 
+export function autoModeLists(autoMode?: OwnedAutoMode): Record<AutoModeList, string[]> {
+  return Object.fromEntries(
+    AUTO_MODE_LISTS.map((name) => [name, autoMode?.[name] ?? []]),
+  ) as Record<AutoModeList, string[]>
+}
+
 export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): boolean {
   return (
     deepEqual(left.permissions, right.permissions) &&
     deepEqual(left.hooks, right.hooks) &&
+    ((left.autoMode === undefined && right.autoMode === undefined) ||
+      (left.autoMode !== undefined &&
+        right.autoMode !== undefined &&
+        deepEqual(left.autoMode, right.autoMode))) &&
     deepEqual(left.envKeys ?? [], right.envKeys ?? [])
   )
 }
@@ -135,7 +165,31 @@ function secretShapedSettingsRefusal(owned: OwnedSettings): string | null {
 }
 
 export function secretShapedPaths(owned: OwnedSettings): string[] {
-  return [...permissionSecretPaths(owned.permissions), ...hookSecretPaths(owned.hooks)]
+  return [
+    ...permissionSecretPaths(owned.permissions),
+    ...autoModeSecretPaths(owned.autoMode ?? {}),
+    ...hookSecretPaths(owned.hooks),
+  ]
+}
+
+function parseAutoMode(value: unknown): OwnedAutoMode {
+  const result = ownedAutoModeSchema.safeParse(value)
+  if (!result.success) {
+    throw new Error(
+      'refusing settings file: invalid autoMode\ncleared by: use only allow, soft_deny, hard_deny, and environment arrays of strings',
+    )
+  }
+  return result.data
+}
+
+function autoModeSecretPaths(autoMode: OwnedAutoMode): string[] {
+  const paths: string[] = []
+  for (const name of AUTO_MODE_LISTS) {
+    for (const [index, entry] of (autoMode[name] ?? []).entries()) {
+      if (containsSecretShaped(entry)) paths.push(`autoMode.${name}[${index}]`)
+    }
+  }
+  return paths
 }
 
 function permissionSecretPaths(permissions: unknown): string[] {

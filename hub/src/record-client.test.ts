@@ -434,6 +434,12 @@ describe('record client', () => {
           permissions: { allow: [], ask: [], deny: [] },
         })
       }
+      if (url.endsWith('/v1/settings/auto-mode')) {
+        return jsonResponse({
+          revision: revisionId,
+          autoMode: { allow: [], soft_deny: [], hard_deny: [], environment: [] },
+        })
+      }
       if (url.includes('/v1/config/entries/')) {
         if (init?.method === 'DELETE') return jsonResponse({ deleted: true })
         return jsonResponse({
@@ -482,6 +488,14 @@ describe('record client', () => {
       reason: 'needed',
       expectedRevision: revisionId,
     })
+    await client.settingsAutoMode({
+      target: { kind: 'project', project: 'starship' },
+      list: 'allow',
+      rule: 'Bash(docker compose *)',
+      operation: 'add',
+      reason: 'needed',
+      expectedRevision: revisionId,
+    })
 
     expect(requests.map(({ url, method }) => [url, method])).toEqual([
       ['https://api.example.test/v1/docs', 'PUT'],
@@ -489,6 +503,7 @@ describe('record client', () => {
       ['https://api.example.test/v1/config/entries/autonomy.preset', 'PUT'],
       ['https://api.example.test/v1/config/entries/autonomy.stage.review', 'DELETE'],
       ['https://api.example.test/v1/settings/permission', 'POST'],
+      ['https://api.example.test/v1/settings/auto-mode', 'POST'],
     ])
     expect(requests[0]?.body).toEqual({
       scope: 'canon',
