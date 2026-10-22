@@ -16,7 +16,7 @@
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
 # hook should keep watching and HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR.
 #
-# EMITS ONLY ON STATE CHANGE.
+# EMITS ONLY ON STATE CHANGE, plus a keepalive every KEEPALIVE_TICKS.
 #
 # This matters more than it looks. Under the Monitor tool every emitted line
 # wakes the model for a turn, so a line repeating "still waiting, nothing needed"
@@ -71,14 +71,19 @@ export ORCH_DB="$DB_PATH"
 SID="${1:?session id required (Claude session_id; bottega records it on every run)}"
 INTERVAL="${2:-60}"
 MAX="${3:-60}"
+KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
 NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS=0
 HEARTBEAT_CLEAR_EXIT_STATUS=10
 
 prev_key=""
+since_emit=0
 prev_monitor_failure_key=""
+monitor_failure_ticks=0
 prev_cap_failure_state=""
+cap_failure_ticks=0
 prev_ack_failure_state=""
+ack_failure_ticks=0
 reported_ids=""
 ACTIVE_GUARDED_PID=""
 ACTIVE_WATCHDOG_PID=""
@@ -312,7 +317,10 @@ for line in sys.stdin:
             raise SystemExit(2)
         stalled.append(stall.replace("\t", " ").replace("\r", " ").replace("\n", " "))
         stalled_subjects.append("run:" + str(member_id))
-    ids.append(member_id + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
+    # A host waiter has no worker activity to become idle. The listing idle
+    # label still crosses its display threshold while queued, but that hidden
+    # transition must not turn an unchanged host wait into a new heartbeat state.
+    ids.append(member_id + ("s" if stall_state == "stalled" else ("i" if idle_note and not waiting_for_host_capacity else "")))
     display = ("waiting for host capacity since " + host_wait_since) if waiting_for_host_capacity else (str(d.get("status")) + " " + age + idle_note)
     out.append("%s/%s %s %s" % (member_number, d.get("job"), d.get("agent"), display))
 if not saw:
@@ -368,8 +376,9 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
      [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ] || \
      [ "$landings_parse_rc" -ne 0 ]; then
     key="degraded"
-    if [ "$key" != "$prev_key" ]; then
-      prev_key="$key"
+    since_emit=$((since_emit + 1))
+    if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
+      prev_key="$key"; since_emit=0
       echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
@@ -409,6 +418,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   done <<< "$observed"
 
   key="$asking|$n|$ids|$landing_n|$landing_ids"
+  since_emit=$((since_emit + 1))
   direct_stalled_subjects=""
   combined_detail="$detail"
   if [ -n "$landing_detail" ]; then
@@ -429,8 +439,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     should_exit=0
     echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc; continuing to watch."
   fi
-  if [ "$key" != "$prev_key" ]; then
-    prev_key="$key"
+  if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
+    prev_key="$key"; since_emit=0
     [ -z "$decision_output" ] || printf '%s\n' "$decision_output"
     if [ "$stalled_n" -gt 0 ]; then
       direct_stalled_subjects="$stalled_subjects"
@@ -500,14 +510,18 @@ for row in rows:
 
   if [ "$monitor_rc" -ne 0 ] || [ "$monitor_parse_rc" -ne 0 ]; then
     monitor_failure_key="$monitor_rc|$monitor_parse_rc|$monitor_reason"
-    if [ "$monitor_failure_key" != "$prev_monitor_failure_key" ]; then
+    monitor_failure_ticks=$((monitor_failure_ticks + 1))
+    if [ "$monitor_failure_key" != "$prev_monitor_failure_key" ] || \
+       [ "$monitor_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
       prev_monitor_failure_key="$monitor_failure_key"
+      monitor_failure_ticks=0
       printf '[%s] DEGRADED - monitor notices unavailable (rc=%s parse=%s reason=%s). Health state still follows inbox and runs; inspect monitor diagnostics directly.\n' \
         "$(date +%H:%M:%S)" "$monitor_rc" "$monitor_parse_rc" "$monitor_reason"
     fi
     report_store_write_lock
   else
     prev_monitor_failure_key=""
+    monitor_failure_ticks=0
   fi
   if [ "$monitor_rc" -eq 0 ] && [ "$monitor_parse_rc" -eq 0 ] && [ -n "$monitor_observed" ]; then
     monitor_ids=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "warning" {print $1}' | paste -sd, -)
@@ -530,12 +544,16 @@ print(token)
       if [ "$cap_mint_rc" -ne 0 ]; then
         [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
         cap_failure_state="$cap_mint_rc"
-        if [ "$cap_failure_state" != "$prev_cap_failure_state" ]; then
+        cap_failure_ticks=$((cap_failure_ticks + 1))
+        if [ "$cap_failure_state" != "$prev_cap_failure_state" ] || \
+           [ "$cap_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
           prev_cap_failure_state="$cap_failure_state"
+          cap_failure_ticks=0
           echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
         fi
       else
         prev_cap_failure_state=""
+        cap_failure_ticks=0
         if printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
           export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
           export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
@@ -554,12 +572,16 @@ print(token)
           unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
           if [ "$ack_rc" -ne 0 ]; then
             ack_failure_state="$ack_rc"
-            if [ "$ack_failure_state" != "$prev_ack_failure_state" ]; then
+            ack_failure_ticks=$((ack_failure_ticks + 1))
+            if [ "$ack_failure_state" != "$prev_ack_failure_state" ] || \
+               [ "$ack_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
               prev_ack_failure_state="$ack_failure_state"
+              ack_failure_ticks=0
               echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
             fi
           else
             prev_ack_failure_state=""
+            ack_failure_ticks=0
           fi
         fi
       fi

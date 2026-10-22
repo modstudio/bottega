@@ -18,7 +18,7 @@ SPEC.loader.exec_module(heartbeat_decision)
 
 
 class HeartbeatDecisionTest(unittest.TestCase):
-    def test_live_continuation_uses_turn_number_and_age_and_unchanged_state_emits_once(self):
+    def test_live_continuation_uses_turn_number_and_age(self):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)
             hooks = checkout / "orchestrator" / "hooks"
@@ -67,7 +67,7 @@ esac
             fake.chmod(0o755)
 
             completed = subprocess.run(
-                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "2"],
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
                 env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
                 capture_output=True,
@@ -80,6 +80,80 @@ esac
             self.assertEqual(len(waiting), 1)
             self.assertIn("501/fixture codex running 0m", waiting[0])
             self.assertNotIn(": 1/fixture", waiting[0])
+
+    def test_host_wait_idle_threshold_is_not_a_state_change_and_keepalive_remains(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            shutil.copy2(PATH, hooks / PATH.name)
+            shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            started = (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat()
+            base = {
+                "record_id": "01990000-0000-7000-8000-000000000001",
+                "number": 1,
+                "job": "fixture",
+                "agent": "codex",
+                "status": "running",
+                "session_id": "fixture-session",
+                "started_at": started,
+                "latency_ms": None,
+                "live_member_id": "01990000-0000-7000-8000-000000000002",
+                "live_member_number": 501,
+                "waiting_for_host_capacity": True,
+                "host_wait_since": started,
+                "stall_state": "healthy",
+                "stall": None,
+                "turns": [{"started_at": started, "latency_ms": None}],
+            }
+            first_row = json.dumps({**base, "idle": None})
+            later_row = json.dumps({**base, "idle": "idle 6m"})
+            fake = binary / "bottega"
+            fake.write_text(
+                f'''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --json") printf '[]\\n' ;;
+  "run list --live --json")
+    if [ -f "$FAKE_SECOND_TICK" ]; then
+      printf '%s\\n' '{later_row}'
+    else
+      : >"$FAKE_SECOND_TICK"
+      printf '%s\\n' '{first_row}'
+    fi ;;
+  "machine monitor --notices --json") printf '[]\\n' ;;
+  *) exit 0 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            marker = checkout / "second-tick"
+            command = ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "2"]
+            env = {
+                **os.environ,
+                "ORCH_DB": str(checkout / "absent.db"),
+                "FAKE_SECOND_TICK": str(marker),
+            }
+
+            unchanged = subprocess.run(
+                command, cwd=checkout, env=env, capture_output=True, text=True, timeout=2, check=True
+            )
+            self.assertEqual(unchanged.stdout.count("WAITING"), 1)
+
+            marker.unlink()
+            keepalive = subprocess.run(
+                [*command[:-1], "3"],
+                cwd=checkout,
+                env={**env, "KEEPALIVE_TICKS": "2"},
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+            self.assertEqual(keepalive.stdout.count("WAITING"), 2)
 
     def test_heartbeat_formats_a_monitor_notice_with_its_label_once(self):
         with tempfile.TemporaryDirectory() as root:
