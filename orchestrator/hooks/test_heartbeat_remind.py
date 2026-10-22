@@ -10,24 +10,15 @@ SPEC.loader.exec_module(heartbeat_remind)
 
 
 class DetachedDispatchTest(unittest.TestCase):
-    def test_recognizes_front_door_and_legacy_dispatch_spellings(self):
+    def test_recognizes_front_door_dispatch_spellings(self):
         self.assertIsNotNone(
             heartbeat_remind.detached_dispatch("bottega run start implement task")
-        )
-        self.assertIsNotNone(
-            heartbeat_remind.detached_dispatch("/opt/bin/orch do implement task")
         )
 
     def test_following_dispatch_does_not_need_a_heartbeat(self):
         self.assertIsNone(
-            heartbeat_remind.detached_dispatch("orch do implement task --follow")
-        )
-        self.assertIsNone(
             heartbeat_remind.detached_dispatch("bottega run start implement task --follow")
         )
-
-    def test_ignores_removed_legacy_land_command(self):
-        self.assertIsNone(heartbeat_remind.detached_dispatch("orch land DEV-1311"))
 
 
 if __name__ == "__main__":

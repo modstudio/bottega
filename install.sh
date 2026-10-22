@@ -128,25 +128,6 @@ chmod 755 "$STAGED_BINARY"
 mv -f "$STAGED_BINARY" "$INSTALL_DIR/bottega"
 echo "installed: $INSTALL_DIR/bottega ($VERSION)"
 
-for command in orch hub; do
-  link=$INSTALL_DIR/$command
-  if [ -L "$link" ]; then
-    case "$(readlink "$link")" in
-      "$INSTALL_DIR/bottega"|bottega) ;;
-      *)
-        echo "notice: skipped $link because it is not a symlink to $INSTALL_DIR/bottega" >&2
-        continue
-        ;;
-    esac
-  elif [ -e "$link" ]; then
-    echo "notice: skipped $link because it is not a symlink to $INSTALL_DIR/bottega" >&2
-    continue
-  fi
-  rm -f "$link"
-  ln -s "$INSTALL_DIR/bottega" "$link"
-  echo "linked: $link -> $INSTALL_DIR/bottega"
-done
-
 (unset ORCH_DB HUB_DB ORCH_DB_WRITE; "$INSTALL_DIR/bottega" machine migrate)
 
 case ":${PATH:-}:" in

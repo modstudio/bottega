@@ -51,7 +51,7 @@ test('wrapper help prints public orchestrator, hub, and translated usage paths',
     ['run', 'start', '--help'],
   ]) {
     lines.length = 0
-    expect(await dispatchBinary(argv, PLATFORM_SLUG, entries, () => '')).toBe(0)
+    expect(await dispatchBinary(argv, entries, () => '')).toBe(0)
     expect(lines.join('')).toContain(`Usage: ${PLATFORM_SLUG} ${argv.slice(0, -1).join(' ')}`)
   }
 })

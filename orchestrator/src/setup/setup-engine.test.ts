@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -13,6 +14,8 @@ import type { SetupFacts } from './setup-facts.ts'
 import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
+
+const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
 
 function proposeSetup(
   facts: SetupFacts,
@@ -70,7 +73,7 @@ test('mentions record use when no hosted record address is configured', () => {
 
 const orchServer: McpServer = {
   name: MCP_SERVER_NAME,
-  command: '/bin/orch',
+  command: FRONT_DOOR,
   args: ['mcp'],
 }
 function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
@@ -482,7 +485,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     machineWithMcp('codex', {
       support: 'automatic',
       registrations: {
-        [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
+        [MCP_SERVER_NAME]: { status: 'registered', command: FRONT_DOOR, args: ['mcp'] },
       },
     }),
     [],

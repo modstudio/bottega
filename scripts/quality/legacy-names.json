@@ -1,61 +1,34 @@
 {
   "orch-command": {
-    "total": 56,
+    "total": 12,
     "files": {
-      ".claude/settings.json": 31,
       "cli/legacy-calls.test.ts": 1,
-      "install.sh": 1,
-      "orchestrator/hooks/test_heartbeat_remind.py": 3,
       "orchestrator/src/canon/user-canon-home.test.ts": 1,
       "orchestrator/src/canon/user-canon-home.ts": 1,
       "orchestrator/src/doc/doc-command-check.test.ts": 2,
       "orchestrator/src/doc/doc-command-mentions.test.ts": 2,
       "orchestrator/src/resources/ref-guard.ts": 1,
       "orchestrator/src/resources/worker-hooks.test.ts": 3,
-      "orchestrator/src/resources/worker-hooks.ts": 1,
-      "orchestrator/src/settings/settings-lint.test.ts": 2,
-      "orchestrator/src/settings/settings-machine-hooks.test.ts": 5,
-      "orchestrator/src/settings/settings-machine-hooks.ts": 2
+      "orchestrator/src/resources/worker-hooks.ts": 1
     }
   },
   "hub-command": {
-    "total": 13,
+    "total": 3,
     "files": {
-      ".claude/settings.json": 8,
       "cli/legacy-calls.test.ts": 1,
-      "orchestrator/src/doc/doc-command-mentions.test.ts": 2,
-      "orchestrator/src/settings/settings-lint.test.ts": 2
+      "orchestrator/src/doc/doc-command-mentions.test.ts": 2
     }
   },
   "legacy-binary": {
-    "total": 64,
-    "files": {
-      "hub/src/orch.test.ts": 1,
-      "orchestrator/hooks/test_heartbeat_remind.py": 1,
-      "orchestrator/src/dashboard-capability.ts": 1,
-      "orchestrator/src/run/run-worker-home.test.ts": 1,
-      "orchestrator/src/sandbox/grok-reader-mcp-home.test.ts": 4,
-      "orchestrator/src/sandbox/grok-reader-mcp-inspect.test.ts": 16,
-      "orchestrator/src/settings/settings-lint.test.ts": 2,
-      "orchestrator/src/settings/settings-lint.ts": 2,
-      "orchestrator/src/settings/settings-machine-hooks.test.ts": 3,
-      "orchestrator/src/settings/settings-machine-hooks.ts": 1,
-      "orchestrator/src/setup/setup-apply.test.ts": 12,
-      "orchestrator/src/setup/setup-engine.test.ts": 2,
-      "orchestrator/src/setup/setup-mcp.test.ts": 8,
-      "scripts/check-brand.ts": 2,
-      "scripts/smoke-release.ts": 6,
-      "shared/install-root.test.ts": 2
-    }
+    "total": 0,
+    "files": {}
   },
   "mcp-name": {
-    "total": 1,
-    "files": {
-      "orchestrator/src/sandbox/grok-reader-mcp-inspect.test.ts": 1
-    }
+    "total": 0,
+    "files": {}
   },
   "env": {
-    "total": 1608,
+    "total": 1614,
     "files": {
       ".agents/contexts/local-stack.md": 1,
       ".agents/contexts/orchestrator-record.md": 2,
@@ -326,7 +299,7 @@
       "orchestrator/src/sandbox/record-connection-env.test.ts": 18,
       "orchestrator/src/sandbox/record-connection-env.ts": 3,
       "orchestrator/src/sandbox/sandbox.test.ts": 2,
-      "orchestrator/src/sandbox/sandbox.ts": 3,
+      "orchestrator/src/sandbox/sandbox.ts": 4,
       "orchestrator/src/score/recalibration.ts": 1,
       "orchestrator/src/settings/settings-apply-commands.test.ts": 12,
       "orchestrator/src/settings/settings-commands.test.ts": 12,
@@ -336,8 +309,8 @@
       "orchestrator/src/stalled-run.test.ts": 1,
       "orchestrator/src/stalled-run.ts": 1,
       "orchestrator/src/transport/transport-acp.test.ts": 4,
-      "orchestrator/src/transport/transport-acp.ts": 12,
-      "orchestrator/src/transport/transport-ask.test.ts": 4,
+      "orchestrator/src/transport/transport-acp.ts": 14,
+      "orchestrator/src/transport/transport-ask.test.ts": 7,
       "orchestrator/src/transport/transport.ts": 6,
       "orchestrator/src/worker-store-write.test.ts": 15,
       "orchestrator/src/worker-store-write.ts": 4,

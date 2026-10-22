@@ -18,6 +18,7 @@ import {
 } from './setup-apply.ts'
 import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts'
 import { gatherSetupFacts } from './setup-facts.ts'
+import { captureLegacyPathSymlinks, pathDirectories } from './setup-legacy-path.ts'
 import { stableMcpServers } from './setup-mcp.ts'
 import { captureMcpConfigMigrations } from './setup-mcp-config-migration.ts'
 import {
@@ -68,7 +69,12 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     homedir(),
     state.projects.map((project) => project.path),
   )
+  addLegacyPathSymlinkRemovals(plan, pathDirectories(process.env.PATH))
   return plan
+}
+
+function addLegacyPathSymlinkRemovals(plan: SetupPlan, directories: readonly string[]): void {
+  plan.legacyPathSymlinks = captureLegacyPathSymlinks(directories)
 }
 
 export function addMcpConfigMigrations(

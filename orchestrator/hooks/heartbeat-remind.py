@@ -18,7 +18,6 @@ PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 
 DETACHED_DISPATCHES = {
     ("bottega", "run", "start"): ("run start", 3),
-    ("orch", "do"): ("do", 2),
 }
 
 

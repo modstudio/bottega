@@ -8,9 +8,9 @@
 # whether it needs a wake or is genuinely waiting. That ambiguity is the whole
 # reason this exists: it collapses to four states, two of which are actionable.
 #
-#   BLOCKED  a worker asked a question; the session must rule and resume it
+#   BLOCKED  question_is_answerable_now accepts a question; the session must act
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
-#   WAITING  runs or landings still going, elapsed shown so a hung one is visible
+#   WAITING  runs or landings still going, or a workflow ruling was parked here
 #   CLEAR    no runs, no landings, nothing asked, and nothing stalled -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
@@ -26,10 +26,9 @@
 # and a lower interval is what actually gets a blocked worker noticed sooner -
 # the poll can be frequent precisely because only transitions are expensive.
 #
-# The state key is (asking-count, run-count, sorted run ids with each run's
-# liveness class, landing-count, sorted landing ids). A run changing liveness
-# class is a state change even when the ids are unchanged. Elapsed time never
-# enters the key.
+# The state key is the inbox identity set, plus sorted run ids with each run's
+# liveness class and sorted landing ids. A run changing liveness class is a
+# state change even when the ids are unchanged. Elapsed time never enters the key.
 #
 # CLEAR is silent so this stays cheap to run often: the answer to "should this
 # session still be waiting" is only worth a notification when it is yes, or when
@@ -99,7 +98,8 @@ ACTIVE_WATCHDOG_PID=""
 
 heartbeat_source_fingerprint() {
   cksum "$SCRIPT_PATH" "$ROOT/hooks/heartbeat-decision.py" \
-    "$ROOT/hooks/heartbeat-run-observation.py" 2>/dev/null
+    "$ROOT/hooks/heartbeat-run-observation.py" \
+    "$ROOT/hooks/inbox_question_decision.py" 2>/dev/null
 }
 
 heartbeat_start_fingerprint=$(heartbeat_source_fingerprint) || {
@@ -218,7 +218,7 @@ for ((i = 1; i <= MAX; i++)); do
   # "bottega said nothing" from "bottega did not answer".
   inbox_err=$(mktemp)
   runs_err=$(mktemp)
-  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --json 2>"$inbox_err"); inbox_rc=$?
+  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --active --json 2>"$inbox_err"); inbox_rc=$?
   runs_raw=$("$BOTTEGA" run list --live --json 2>"$runs_err"); runs_rc=$?
   rm -f "$inbox_err" "$runs_err"
   if [ ! -d "$ROOT" ]; then
@@ -226,18 +226,7 @@ for ((i = 1; i <= MAX; i++)); do
     exit 2
   fi
 
-  asking=$(printf '%s' "$inbox_raw" | python3 -c '
-import sys, json
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(2)
-if not isinstance(d, list):
-    raise SystemExit(2)
-if not all(isinstance(item, dict) and isinstance(item.get("can_answer"), bool) for item in d):
-    raise SystemExit(2)
-print(sum(item["can_answer"] for item in d))
-' 2>/dev/null); inbox_parse_rc=$?
+  inbox_ids=$(printf '%s' "$inbox_raw" | python3 "$ROOT/hooks/heartbeat-decision.py" inbox 2>/dev/null); inbox_parse_rc=$?
 
   observed=$(printf '%s' "$runs_raw" | \
     python3 "$ROOT/hooks/heartbeat-run-observation.py" live "$SID" 2>/dev/null); runs_parse_rc=$?
@@ -331,7 +320,6 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     sleep "$INTERVAL"; continue
   fi
 
-  asking=${asking:-0}
   state=${observed%%$'\n'*}
   state=${state#*$'\t'}
   n=${state%%$'\t'*}; rest=${state#*$'\t'}
@@ -366,7 +354,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   done <<< "$completion_observed"
   previous_live_roots="$live_roots"
 
-  key="$asking|$n|$ids|$landing_n|$landing_ids"
+  key="$inbox_ids|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
   direct_stalled_subjects=""
   combined_detail="$detail"
@@ -375,8 +363,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     combined_detail="$combined_detail$landing_detail"
   fi
   decision_err=$(mktemp)
-  decision_output=$(HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
-    HEARTBEAT_ASKING="$asking" HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
+  decision_output=$(printf '%s' "$inbox_raw" | HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
+    HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
       python3 "$ROOT/hooks/heartbeat-decision.py" tick 2>"$decision_err")

@@ -1,8 +1,7 @@
-import { basename } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
-import { INTERNAL_CALL_ENV, recordLegacyCall, reportLegacyCalls } from './legacy-calls.ts'
+import { reportLegacyCalls } from './legacy-calls.ts'
 import { GROUPS, ROUTES, resolveRoute } from './routes.ts'
 
 export type BinaryEntries = {
@@ -79,25 +78,6 @@ function invocationFor(
   return { ownerPath, publicPath }
 }
 
-function legacyInvocation(
-  owner: 'orch' | 'hub',
-  argv: readonly string[],
-): PublicCommandInvocation | undefined {
-  const matches: PublicCommandInvocation[] = []
-  for (const route of ROUTES) {
-    const targets =
-      route.composite ?? (route.owner === owner ? [{ owner, argv: route.argv ?? [] }] : [])
-    for (const target of targets) {
-      if (target.owner !== owner || target.argv.length === 0) continue
-      if (target.argv.every((part, index) => argv[index] === part)) {
-        matches.push({ ownerPath: target.argv, publicPath: route.command })
-      }
-    }
-  }
-  const best = matches.sort((left, right) => right.ownerPath.length - left.ownerPath.length)[0]
-  return best ? invocationFor(best.ownerPath, best.publicPath) : undefined
-}
-
 function topHelp(): void {
   console.log(`usage: ${PLATFORM_SLUG} <group> [command] [arguments]\n`)
   console.log('Groups:')
@@ -127,17 +107,6 @@ async function groupHelp(group: string, entries: BinaryEntries): Promise<number>
     )
   }
   return 0
-}
-
-async function legacy(
-  oldName: 'orch' | 'hub',
-  argv: string[],
-  entries: BinaryEntries,
-): Promise<number> {
-  const internal = process.env[INTERNAL_CALL_ENV] === '1'
-  recordLegacyCall(oldName, argv, internal ? 'internal' : 'external')
-  process.env[INTERNAL_CALL_ENV] = '1'
-  return entries[oldName](argv, legacyInvocation(oldName, argv))
 }
 
 async function composite(
@@ -181,17 +150,10 @@ async function composite(
 /** Route public and hidden executable commands without publishing hidden commands in usage. */
 export async function dispatchBinary(
   argv: string[],
-  invokedAs: string,
   entries: BinaryEntries,
   version: () => string,
 ): Promise<number> {
-  const executable = basename(invokedAs)
-  if (executable === 'orch' || executable === 'hub') return legacy(executable, argv, entries)
   const input = argv
-  if (input[0] === 'orch' || input[0] === 'hub') {
-    return legacy(input[0], input.slice(1), entries)
-  }
-  process.env[INTERNAL_CALL_ENV] = '1'
   if (input.length === 1 && input[0] === '--version') {
     console.log(version())
     return 0

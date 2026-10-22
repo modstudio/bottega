@@ -24,8 +24,8 @@ live in a local store.
     curl -fsSL https://raw.githubusercontent.com/modstudio/bottega/main/install.sh | sh
 
 The installer downloads one verified binary for your platform into
-`~/.local/bin` and links `orch` and `hub` to it. It prints the line to add when
-that directory is not on your `PATH`.
+`~/.local/bin`. It prints the line to add when that directory is not on your
+`PATH`.
 
 To work from a checkout instead, build the binary for your platform:
 
