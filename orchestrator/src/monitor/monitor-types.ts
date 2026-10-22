@@ -5,12 +5,33 @@ import type { HostLoadSample } from '../host-load-sample.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 
 export type MonitorHostLoad = HostLoadSample
+export type MonitorHostPressure = {
+  available: boolean
+  error: string | null
+  memoryPressure: string | null
+  attributions: { owner: string; project: string | null; cpu: number; share: number }[]
+  averageObservationElapsedMs: number | null
+  averageObservationCpuMs: number | null
+}
+
+export type HostPressureConditionDetail = {
+  processes: { pid: number; cpu: number; command: string }[]
+  ownerName: string
+  project: string | null
+  share: number
+  cpu: number
+  loadavg: number
+  ncpu: number
+  waiting: string[]
+  ownerSession: string | null
+}
 
 export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'abandoned-bootstrap': 'revalidated',
   'asking-run': 'revalidated',
   'dead-running-process': 'revalidated',
   'ghost-open-interval': 'append-only',
+  'host-pressure': 'append-only',
   idle: 'revalidated',
   'observation-error': 'append-only',
   'outbox-quarantined': 'revalidated',
@@ -37,6 +58,7 @@ type MonitorConditionFields = {
   issueKey?: string | null
   affectedProject?: string
   severity?: MonitorSeverity | null
+  hostPressureDetail?: HostPressureConditionDetail
 }
 
 export type AddressedMonitorCondition = MonitorConditionFields & {
@@ -71,10 +93,12 @@ export type MonitorResult = {
   errors: string[]
   canon: { findings: number; docs: number }
   hostLoad: MonitorHostLoad
+  hostPressure: MonitorHostPressure
 }
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
   noticeId: `condition:${number}` | `landing:${string}` | `board:${string}`
+  label: string
   detail: string
 }
 

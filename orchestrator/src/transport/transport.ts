@@ -26,6 +26,7 @@ const ACP_PILOT_JOBS = [
 ] as const
 
 const NAMED_ACP_JOBS = ['review-lens', 'review-lens-inline'] as const
+const EXPLICIT_ACP_WRITING_JOBS = ['fix', 'implement'] as const
 
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
@@ -72,7 +73,7 @@ export type ArgvOpts = {
   projectServers?: Record<string, { command?: string; args?: string[]; cwd?: string; url?: string }>
   /** HOME inherited by the vendor process. */
   home?: string
-  /** Grok-only scoped trust for the disposable cwd orch created. */
+  /** Grok-only scoped trust for the disposable cwd orchestrator created. */
   trustCwd?: string
   model?: string
   /** Open the sandbox for editing. True for every job that reads a repository. */
@@ -209,6 +210,8 @@ export type TransportStartOpts = {
   home?: string
   startedAt: number
   write?: boolean
+  writingAcp?: boolean
+  ask?: import('../events.ts').ConfiguredAsk
   sandbox?: SandboxLevel
   sandboxWorkspaceWriteNetworkAccess?: boolean
   mcp?: boolean
@@ -248,7 +251,7 @@ export type AgentTransport = {
   /** Whether prompt() can add context while a turn is already running. */
   readonly canInjectMidTurn: boolean
   /** Read-only prelaunch view of the bottega-ask registration this transport will use. */
-  configuredAsk(opts: TransportStartOpts): string[] | null
+  configuredAsk(opts: TransportStartOpts): import('../events.ts').ConfiguredAsk | null
   start(opts: TransportStartOpts): Promise<TransportHandle>
   prompt(handle: TransportHandle, text: string): Promise<void>
   events(handle: TransportHandle): AsyncIterable<NormalizedEvent>
@@ -326,7 +329,8 @@ function acpJobAllowed(
   return (
     isAcpPilotJob(jobName) ||
     ((agentExplicit || mayAutoRouteNamedJob) &&
-      (NAMED_ACP_JOBS as readonly string[]).includes(jobName))
+      (NAMED_ACP_JOBS as readonly string[]).includes(jobName)) ||
+    (agentExplicit && (EXPLICIT_ACP_WRITING_JOBS as readonly string[]).includes(jobName))
   )
 }
 
@@ -374,12 +378,17 @@ export function assertAcpAllowed(
   }
   if (acpJobAllowed(jobName, agentExplicit, mayAutoRouteNamedJob)) return
   if (job(jobName).needs.writesRepo) {
+    if (!(EXPLICIT_ACP_WRITING_JOBS as readonly string[]).includes(jobName)) {
+      throw new Error(
+        `ACP transport is a ${ACP_PILOT_TASK} pilot; only fix and implement may run as writing jobs over ACP`,
+      )
+    }
     throw new Error(
-      `ACP transport is a ${ACP_PILOT_TASK} pilot and is not available for writing jobs`,
+      `ACP transport is a ${ACP_PILOT_TASK} pilot; writing jobs require an agent named with --agent <name>`,
     )
   }
   throw new Error(
-    `ACP transport is a ${ACP_PILOT_TASK} pilot; routed jobs: ${ACP_PILOT_JOBS.join(', ')}; ${NAMED_ACP_JOBS.join(' and ')} require an agent named with --agent`,
+    `ACP transport is a ${ACP_PILOT_TASK} pilot; routed jobs: ${ACP_PILOT_JOBS.join(', ')}; ${[...NAMED_ACP_JOBS, ...EXPLICIT_ACP_WRITING_JOBS].join(', ')} require an agent named with --agent`,
   )
 }
 
@@ -539,7 +548,7 @@ export function stopErrorMessage(stopReason: string): string {
 }
 
 /**
- * Fold a finished turn into orch's three terminal states.
+ * Fold a finished turn into orchestrator's three terminal states.
  *
  * A non-end_turn stop is a failure even when the agent already streamed
  * some text — except elicitation, which is asking.
@@ -639,7 +648,7 @@ export function resolveFsPath(path: string, relativeRoot?: string): string {
 }
 
 /**
- * The orch process, not the sandboxed child, serves fs/read_text_file.
+ * The orchestrator process, not the sandboxed child, serves fs/read_text_file.
  * Reads are confined to the run worktree by realpath prefix.
  */
 export function confineFsPath(path: string, root: string, method = 'readTextFile'): string {

@@ -62,6 +62,7 @@ import {
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
+  type CheckpointContainment,
   checkpointRun,
   DEFAULT_CHECKPOINT_MINUTES,
   latestCheckpoint,
@@ -83,6 +84,7 @@ import {
   type RunWallDeadlineFacts,
 } from './run-wall-deadline.ts'
 import {
+  type BrokerConfinement,
   closeWorkerExecutionBrokers,
   startWorkerExecutionBrokers,
   type WorkerExecutionBrokers,
@@ -143,13 +145,36 @@ function recordConfiguredAsk(input: {
   startOpts: TransportStartOpts
 }): void {
   try {
-    const command = input.transport.configuredAsk(input.startOpts)
-    if (command) {
-      recordAskExpected(input.runId, input.sandbox === 'srt' ? 'srt' : 'host', command)
+    const configured = input.transport.configuredAsk(input.startOpts)
+    if (configured) {
+      recordAskExpected(input.runId, input.sandbox === 'srt' ? 'srt' : 'host', configured)
     }
   } catch {
     // Configuration evidence is best effort and must never prevent launch.
   }
+}
+
+function brokerConfinement(
+  input: Pick<LiveInput, 'writingAcp'>,
+  profile: SandboxSelection['profile'],
+): BrokerConfinement {
+  if (!input.writingAcp) return { kind: 'host' }
+  if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
+  return { kind: 'srt', profile }
+}
+
+function endpointAsk(loopback: AskLoopback | null) {
+  return loopback?.kind === 'endpoint'
+    ? { kind: 'endpoint' as const, url: loopback.url }
+    : undefined
+}
+
+async function closeLiveBrokers(
+  execution: WorkerExecutionBrokers | null,
+  note: WorkerNoteBroker | null,
+): Promise<void> {
+  await closeWorkerExecutionBrokers(execution)
+  await closeWorkerNoteBroker(note)
 }
 
 function replyFileMatches(
@@ -246,6 +271,16 @@ async function startAfterHostCapacity(input: {
 
 const warnForRun = (runId: string) => (message: string) => recordRunWarning(runId, message)
 
+async function runAskLoopback(
+  existing: AskLoopback | null,
+  sandbox: SandboxSelection['sandbox'],
+  runId: string,
+  token: string,
+): Promise<AskLoopback | null> {
+  if (existing || sandbox !== 'srt') return existing
+  return startAskLoopback(runId, token)
+}
+
 export type LiveInput = {
   repoJob: boolean
   name: string
@@ -289,6 +324,9 @@ export type LiveInput = {
   resolvedDialect: ReplyDialect
   mcpSetupHeader: string | null
   initialBoardNoticeIds: Array<number | string>
+  askLoopback: AskLoopback | null
+  writingAcp: boolean
+  checkpointContainment: CheckpointContainment
 }
 
 export type LiveResult = {
@@ -326,6 +364,10 @@ export type LiveResult = {
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
   workerEvents: StreamEvent[]
+}
+
+function vendorProcessSample(pid: number | null): ProcessSample | undefined {
+  return pid && pid > 1 ? sampleProcesses().find((row) => row.pid === pid) : undefined
 }
 
 type ConfiguredAsk = Parameters<typeof recordConfiguredAsk>[0]
@@ -464,7 +506,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   const confinementFailures: FreezeFailure[] = []
   const confinementEvent: ConfinementEvent | null = null
   const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  let askLoopback: AskLoopback | null = null
+  let askLoopback: AskLoopback | null = input.askLoopback
   let executionBrokers: WorkerExecutionBrokers | null = null
   let noteBroker: WorkerNoteBroker | null = null
   let workerEvents: StreamEvent[] = []
@@ -488,9 +530,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         .run(inputTree, headCommit, changedPaths ? JSON.stringify(changedPaths) : null, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
-    if (sandboxSelection.sandbox === 'srt') {
-      askLoopback = await startAskLoopback(claim.id, runToken)
-    }
+    askLoopback = await runAskLoopback(askLoopback, sandboxSelection.sandbox, claim.id, runToken)
     executionBrokers = startWorkerExecutionBrokers({
       repoJob,
       writesRepo: writesJob,
@@ -498,6 +538,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
+      confinement: brokerConfinement(input, sandboxSelection.profile),
       onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
@@ -524,8 +565,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       cwd,
       prompt,
       outPath,
-      // ACP uses session/new; treating Grok's fresh CLI id as resumable makes ACP
-      // issue session/load against a session that cannot exist yet.
+      // A fresh Grok CLI id is not resumable; ACP would issue session/load for a nonexistent session.
       session:
         transportName === 'acp' && opts.resume?.kind === 'continue'
           ? opts.resume?.session
@@ -536,6 +576,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       home: sandboxEnvironment.HOME,
       startedAt: started,
       write: writes,
+      writingAcp: input.writingAcp,
+      ask: endpointAsk(askLoopback),
       sandbox: codexSandbox.sandbox,
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
@@ -577,22 +619,17 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     effectiveModel = handle.effectiveModel ?? null
     if (effectiveModel)
       db().query('UPDATE run SET model=? WHERE record_id=?').run(effectiveModel, claim.id)
-    // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
-    // agent exits the worker is still parsing output and writing questions, and
-    // a reaper that tested this pid would mark the run stale under a process
-    // about to write its real outcome.
+    // The vendor pid stays the worker's while output and questions are finalized;
+    // testing it then would mark a still-finalizing run stale.
     //
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
-    // Idle is silence of the VENDOR, not of orch's own setup. last_event_at
+    // Idle is silence of the VENDOR, not of orchestrator's own setup. last_event_at
     // and the reclaimed-wall clock both start here so a slow worktree cut
     // cannot burn either budget.
     const vendorStartedAt = Date.now()
     const vendorPid = handle.pid ?? null
-    const vendorSample =
-      vendorPid && vendorPid > 1
-        ? sampleProcesses().find((row) => row.pid === vendorPid)
-        : undefined
+    const vendorSample = vendorProcessSample(vendorPid)
     const vendorPgid = vendorSample && vendorSample.pgid > 1 ? vendorSample.pgid : null
     const vendorStartTime = vendorPid && vendorPid > 1 ? processStartTime(vendorPid) : null
     db()
@@ -611,6 +648,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         taskKey: launchKey,
         scratchDir,
         guardEnvironment: gitConfigEnvironment ?? {},
+        containment: input.checkpointContainment,
         final,
       })
       if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
@@ -632,6 +670,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           taskKey: launchKey,
           scratchDir,
           guardEnvironment: gitConfigEnvironment ?? {},
+          containment: input.checkpointContainment,
         })
       }
     }
@@ -981,9 +1020,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   rearmWallDeadline = () => {}
   clearTimeout(timer ?? undefined)
   timer = null
-  await closeWorkerExecutionBrokers(executionBrokers)
-  await closeWorkerNoteBroker(noteBroker)
-
+  await closeLiveBrokers(executionBrokers, noteBroker)
   return {
     proc,
     timer,

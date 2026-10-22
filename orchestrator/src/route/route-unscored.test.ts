@@ -43,7 +43,7 @@ describe('what counts as unscored', () => {
   })
 })
 
-describe('the Stop hook and orch agree on what is unscored', () => {
+describe('the Stop hook and orchestrator agree on what is unscored', () => {
   const stripSqlComments = (sql: string) => sql.replace(/--[^\n]*/g, ' ')
   const normalizeSql = (sql: string) =>
     stripSqlComments(sql).replace(/\s+/g, ' ').trim().toLowerCase()

@@ -245,11 +245,11 @@ function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
     const project = registeredProjectContaining(wanted)
     if (!project) {
       throw new Error(
-        `no orch run records the worktree at ${requestedPath}; no registered project contains it, so its main checkout cannot be established and orch will not remove it`,
+        `no orchestrator run records the worktree at ${requestedPath}; no registered project contains it, so its main checkout cannot be established and the orchestrator will not remove it`,
       )
     }
     throw new Error(
-      `no orch run records the worktree at ${requestedPath}; if orch did not make this tree, confirm it is clean and its commits are pushed, then run git -C ${project.path} worktree remove ${requestedPath}`,
+      `no orchestrator run records the worktree at ${requestedPath}; if the orchestrator did not make this tree, confirm it is clean and its commits are pushed, then run git -C ${project.path} worktree remove ${requestedPath}`,
     )
   }
   if (owners.every((row) => !isSyntheticLifecycleJob(row.job))) {

@@ -3,72 +3,28 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  answerRunFromArgv as answerRun,
+  answerRunFlags as flags,
+  answerRunHelpers as helpers,
+  insertRun as insert,
+  newQuestionSql,
+  retryRunFromFixture as retry,
+  returningQuestionSql,
+} from '../../test/fixtures/run-answer.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
-import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
-import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.ts'
+import { readMessageText } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
-import { answerRun as answerRunService, retryRun } from './run-answer.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
-import { answerInputFromArgv } from './run-message-commands.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 
 const trackResidue = trackedTestResidue()
-
-const presentation = {
-  dur: (ms: number | null | undefined) => String(ms ?? 0),
-  scoreHint: () => '',
-  argvResumeLimit: () => ARGV_PROMPT_BYTES,
-  printRunId: () => {},
-}
-const helpers = {
-  argvResumeLimit: () => ARGV_PROMPT_BYTES,
-  assertWorkerText,
-  readWorkerFile,
-  readMessageText,
-  presentation,
-}
-const flags = { detach: true, follow: false, quiet: true }
-const answerRun = async (
-  id: string,
-  options: { argv: string[]; recordOnly: boolean; json?: boolean; flags: typeof flags },
-  runHelpers: Parameters<typeof answerRunService>[2] & typeof helpers,
-) =>
-  answerRunService(
-    id,
-    await answerInputFromArgv(
-      options.argv,
-      options.recordOnly,
-      options.json ?? false,
-      options.flags,
-      runHelpers,
-    ),
-    runHelpers,
-  )
-const retry = (id: string, options: { agent?: string; model?: string } = {}) =>
-  retryRun(id, { ...options, flags }, helpers)
-
-function insert(status: string, job = 'file-question', recordId = newRecordId()): string {
-  return (
-    db()
-      .query(
-        `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?) RETURNING record_id AS id`,
-      )
-      .get(recordId, new Date().toISOString(), job, status, dir) as { id: string }
-  ).id
-}
-
-function newQuestionSql(): string {
-  return `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?)`
-}
-
-function returningQuestionSql(): string {
-  return `${newQuestionSql()} RETURNING number`
-}
 
 const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
@@ -336,7 +292,7 @@ describe('run answers', () => {
       { status: 'failed', excluded: null },
       { status: 'stopped', excluded: null },
       { status: 'stale', excluded: null },
-      { status: 'asking', excluded: `voided with orch score --void` },
+      { status: 'asking', excluded: VOID_EXCLUSION_REASON },
     ]) {
       const id = addRun({
         agent: 'missing-test-agent',
@@ -505,6 +461,47 @@ test('multi-question answer mixes positional --q text with per-question --file',
   expect(
     db().query('SELECT answer FROM question WHERE run_record_id=? ORDER BY number').all(id),
   ).toEqual([{ answer: 'first ruling' }, { answer: 'second ruling' }])
+})
+
+test('multi-question answer attributes only the per-question operator ruling', async () => {
+  const id = insert('asking')
+  db()
+    .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
+    .run('orch-test-session', 'vendor', id)
+  const add = db().query(
+    `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?) RETURNING number`,
+  )
+  const agent = add.get(newRecordId(), id, new Date().toISOString(), 'agent?') as {
+    number: number
+  }
+  const operator = add.get(newRecordId(), id, new Date().toISOString(), 'operator?') as {
+    number: number
+  }
+
+  await answerRun(
+    id,
+    {
+      argv: [
+        `--q${agent.number}`,
+        'Agent ruling.',
+        `--from-operator-q${operator.number}`,
+        `--q${operator.number}`,
+        'Operator ruling.',
+      ],
+      recordOnly: true,
+      flags,
+    },
+    helpers,
+  )
+
+  expect(
+    db()
+      .query('SELECT answer,answerer_kind FROM question WHERE run_record_id=? ORDER BY number')
+      .all(id),
+  ).toEqual([
+    { answer: 'Agent ruling.', answerer_kind: 'agent' },
+    { answer: 'Operator ruling.', answerer_kind: 'operator' },
+  ])
 })
 
 test('a UUID selector answers only the named question', async () => {
@@ -766,7 +763,7 @@ test('a plain operator answers a run whose owner is gone', async () => {
   })
 })
 
-test('UI operator answers require the hub dashboard capability', async () => {
+test('UI operator answers require the dashboard capability', async () => {
   const id = insert('asking', 'implement')
   const question = db()
     .query(returningQuestionSql())
@@ -783,7 +780,7 @@ test('UI operator answers require the hub dashboard capability', async () => {
       },
       { ...helpers, dashboardAuthorized: () => false },
     ),
-  ).rejects.toThrow('--channel ui requires the hub dashboard capability')
+  ).rejects.toThrow('--channel ui requires the dashboard capability')
   expect(db().query('SELECT answer FROM question WHERE number=?').get(question.number)).toEqual({
     answer: null,
   })

@@ -446,7 +446,7 @@ describe('run ingest', () => {
     expect(human(1_032_690)).toBe('17m 13s')
   })
 
-  test('copies started_by_user_id onto the orch interval and leaves a missing starter null', async () => {
+  test('copies started_by_user_id onto the orchestrator interval and leaves a missing starter null', async () => {
     const starter = '01990000-0000-7000-8000-000000000123'
     await ingestRunFixtures(runFixture({ id: 9210, started_by_user_id: starter }))
     await ingestRunFixtures(runFixture({ id: 9211 }))

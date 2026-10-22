@@ -310,9 +310,9 @@ function gitBytes(args: string[], cwd: string): Buffer {
  *
  * `--show-toplevel` from a worktree answers that worktree. Creating the next
  * one relative to it nests `orch-N` under the caller's tree, which is how an
- * one session lost a day: it ran orch from
+ * one session lost a day: it ran orchestrator from
  * `.../application/.claude/worktrees/AB-2581`, the project's script put the
- * new tree at the checkout root, and orch looked for it at
+ * new tree at the checkout root, and orchestrator looked for it at
  * `AB-2581/.claude/worktrees/orch-657`. `--git-common-dir` is the main
  * `.git`; the working tree sits next to it.
  */

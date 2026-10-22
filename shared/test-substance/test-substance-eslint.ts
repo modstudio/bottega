@@ -344,7 +344,7 @@ function waivers(file: string, content: string, locations: TestLocation[]): Test
 
 async function lintMessages(file: string, content: string, runner: Runner) {
   // ESLint ignores an absolute file outside its process cwd. The content and
-  // extension are all this config needs, so keep installed orch able to judge
+  // extension are all this config needs, so keep installed orchestrator able to judge
   // a test in any registered project by linting under its basename.
   const lintFile = file.split(/[\\/]/).at(-1) ?? file
   if (runner !== 'bun') {

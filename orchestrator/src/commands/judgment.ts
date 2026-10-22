@@ -181,7 +181,6 @@ export function register(program: Command): void {
   addJudgmentOptions(
     program
       .command('score <run-id> [words...]')
-      .alias('judge')
       .description('record a verdict and comparisons for a run'),
   ).action(async (id, words, options) => {
     const flags = resolveDuplicateRunIds(resolveComparisonRunIds(optionFlags(options)))

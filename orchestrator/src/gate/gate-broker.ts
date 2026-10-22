@@ -18,16 +18,19 @@ import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
-import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
+import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,
   readGateCheckExecutions,
 } from './gate-check-executions.ts'
 import {
+  type BrokerConfinement,
   boundedGateOutputTail,
   brokerGateEnvironment,
   changedGateToolingPaths,
+  decideBrokerLaunch,
   decideGateExecutionFinalization,
   decideGateHeadCommit,
   decideGateToolingDiffBase,
@@ -330,14 +333,27 @@ function recordFinishedGate(input: {
   }, database)
 }
 
-function spawnGateChild(input: {
+export async function gateBrokerLaunchArgv(
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
+  command: string,
+  launchSandbox: typeof sandboxLaunchArgv = sandboxLaunchArgv,
+): Promise<string[]> {
+  const decision = decideBrokerLaunch(confinement, 'sh', ['-c', command])
+  return decision.kind === 'srt'
+    ? launchSandbox(decision.profile, decision.bin, decision.argv)
+    : decision.argv
+}
+
+async function spawnGateChild(input: {
   command: string
   worktree: string
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   record: (chunk: Buffer | string) => void
 }) {
-  return lowerRunChildPriority(
-    spawn('sh', ['-c', input.command], {
+  const launch = await gateBrokerLaunchArgv(input.confinement, input.command)
+  return setChildPriority(
+    spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
       env: {
         ...brokerGateEnvironment(
@@ -350,6 +366,7 @@ function spawnGateChild(input: {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
+    HOST_TOOL_NICENESS,
     (message) => input.record(`warning: ${message}\n`),
   )
 }
@@ -358,12 +375,13 @@ async function runGateProcess(input: {
   command: string
   worktree: string
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
 }): Promise<void> {
   const { state } = input
-  state.child = spawnGateChild(input)
+  state.child = await spawnGateChild(input)
   state.child.stdout?.on('data', input.record)
   state.child.stderr?.on('data', input.record)
   state.child.once('error', (error) => input.record(`gate could not start: ${String(error)}\n`))
@@ -433,6 +451,7 @@ async function runPreparedGate(input: {
   prepared: ReturnType<typeof prepareGateExecution>
   refreshBase: GateBaseRefresh
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -453,6 +472,7 @@ async function runPreparedGate(input: {
         command: input.prepared.command,
         worktree: input.prepared.worktree,
         environment: input.environment,
+        confinement: input.confinement,
         state: input.state,
         record: input.record,
         stop: input.stop,
@@ -506,6 +526,7 @@ function startGateExecution(
   request: PendingGate,
   scratchDir: string,
   environment: Record<string, string>,
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
   registerActive: (terminate: () => Promise<void>) => () => void,
   onFinish: ((moment: GateExecutionMoment) => void) | undefined,
   hostSlot: HostSlotRunner,
@@ -544,7 +565,7 @@ function startGateExecution(
     let tail = ''
     let command: string | null = null
     let checkExecutions: CheckExecutionRecord[] = []
-    const checkExecutionPath = gateCheckExecutionPath()
+    const checkExecutionPath = gateCheckExecutionPath(scratchDir)
     const record = (chunk: Buffer | string) => {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       if (fd === null) throw new Error('gate log is not open')
@@ -562,6 +583,7 @@ function startGateExecution(
             prepared,
             refreshBase,
             environment: gateExecutionEnvironment(environment, checkExecutionPath),
+            confinement,
             state,
             record,
             stop,
@@ -609,6 +631,7 @@ export function startGateBroker(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   registerActive?: (terminate: () => Promise<void>) => () => void
   onExecutionStart?: (moment: GateExecutionMoment) => void
   onExecutionFinish?: (moment: GateExecutionMoment) => void
@@ -630,6 +653,7 @@ export function startGateBroker(input: {
       request,
       input.scratchDir,
       input.environment,
+      input.confinement,
       registerActive,
       input.onExecutionFinish,
       input.withHostSlot ?? withGateSlot,

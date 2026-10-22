@@ -242,7 +242,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
   ),
   codeQuestion(
     'real-retrieval-command',
-    'Where does orch spawn the retrieval search command and parse its output?',
+    'Where does orchestrator spawn the retrieval search command and parse its output?',
     'orchestrator/src/doc/doc-search.ts',
     'const child = Bun.spawn([',
   ),
@@ -302,7 +302,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
   ),
   codeQuestion(
     'real-model-host-reachability',
-    'How does orch decide the local model host is reachable?',
+    'How does orchestrator decide the local model host is reachable?',
     'orchestrator/src/agent/model-host.ts',
     "const res = await fetch(new URL('models', baseUrl.replace(/\\/?$/, '/')), {",
   ),

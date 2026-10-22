@@ -17,7 +17,7 @@ const predictable = [
   [
     'Job',
     'Who does the work',
-    'A step either names an orch job — review-lens, implement — and routes by scored evidence, or it is a plain command the step runs itself.',
+    'A step either names an orchestrator job — review-lens, implement — and routes by scored evidence, or it is a plain command the step runs itself.',
   ],
   [
     'Autonomy',

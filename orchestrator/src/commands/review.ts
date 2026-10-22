@@ -48,6 +48,7 @@ function confinementReportCommand(flags: CliFlags): void {
       readsRepo: agent.caps.readsRepo,
       writesRepo: agent.caps.writesRepo,
       mcp: agent.caps.mcp,
+      transport: agent.defaultTransport,
     })),
     parentEnvNames: Object.keys(process.env),
     sandboxOverride: process.env.ORCH_SANDBOX,

@@ -44,10 +44,12 @@ function addRun(
     job?: string
     status?: string
     branch?: string | null
+    mintedBranch?: string | null
     key?: string | null
     parent?: string | null
     worktree?: string | null
     judged?: boolean
+    failureKind?: string | null
     startedAt?: string
   } = {},
 ): string {
@@ -55,8 +57,8 @@ function addRun(
     .query(
       `INSERT INTO run
         (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,
-         branch,launch_key,parent_run_record_id,worktree)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'prompt',?,?,?,?,?) RETURNING record_id AS id`,
+         branch,minted_branch,launch_key,parent_run_record_id,worktree,failure_kind)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'prompt',?,?,?,?,?,?,?) RETURNING record_id AS id`,
     )
     .get(
       newRecordId(),
@@ -67,9 +69,11 @@ function addRun(
       'sha',
       input.status ?? 'ok',
       input.branch === undefined ? 'DEV-1392-c3' : input.branch,
+      input.mintedBranch ?? null,
       input.key === undefined ? 'DEV-1392' : input.key,
       input.parent ?? null,
       input.worktree ?? null,
+      input.failureKind ?? null,
     ) as { id: string }
   if (input.judged) {
     db()
@@ -92,7 +96,10 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   })
   const turn = addRun(project, { parent: root })
   const lens = addRun(project, { job: 'review-lens', judged: true, worktree: '/trees/lens' })
-  const unscored = addRun(project, { worktree: '/trees/unscored' })
+  const unscored = addRun(project, {
+    worktree: '/trees/unscored',
+    failureKind: 'unevidenced',
+  })
   const live = addRun(project, { status: 'running', worktree: '/trees/live' })
   const sibling = addRun(project, {
     branch: 'DEV-1392-c2',
@@ -120,6 +127,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   const closed: string[] = []
   const pruned: string[][] = []
   const dependencies: ShipCleanupDependencies = {
+    observeBranchRef: () => ({ outcome: 'present' }),
     landingState: () => ({
       state: 'landed',
       landedBy: { type: 'patch-equivalent', form: 'squash' },
@@ -191,7 +199,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     item: `run ${numberOf(unscored)} artifacts and scratch`,
     reason: 'run has no recorded verdict',
     reasonKind: 'unjudged-run',
-    remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)}`,
+    remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)} none --void --note "<why>"`,
   })
   expect(report.kept).toContainEqual({
     item: `run ${numberOf(live)} artifacts and scratch and worktree`,
@@ -225,6 +233,7 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     throw new Error('cleanup should not start')
   }
   const dependencies: ShipCleanupDependencies = {
+    observeBranchRef: () => ({ outcome: 'present' }),
     landingState: () => ({
       state: 'landed',
       landedBy: { type: 'patch-equivalent', form: 'squash' },
@@ -251,6 +260,46 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
   )
 })
 
+test('ship cleanup reports an unproved recorded branch with no ref as already gone', () => {
+  const project = addProject()
+  addLanding(project)
+  const gone = 'DEV-1392-old'
+  addRun(project, { mintedBranch: 'DEV-1392-c3', judged: true })
+  addRun(project, { branch: gone, mintedBranch: gone, judged: true })
+  const pruned: string[] = []
+  const dependencies: ShipCleanupDependencies = {
+    observeBranchRef: (_path, branch) => ({
+      outcome: branch === gone ? 'absent' : 'present',
+    }),
+    landingState: () => ({ state: 'unlanded' }),
+    closeOut: () => ({ outcome: 'released', detail: 'released' }),
+    prune: (_project, branch) => {
+      pruned.push(branch)
+      return { deleted: [branch], kept: [], errors: [] }
+    },
+    measure: () => ({ bytes: 0, errors: [], stoppedAtLimit: false }),
+    readerCloneArchive: () => null,
+    runsFromTree: () => false,
+    removeLandingTree: () => ({ outcome: 'released' }),
+    remove: () => {},
+    reclaimProcesses: () => ({ reclaimed: [], kept: [], errors: [] }),
+    reclaimCompose: () => ({ removed: [], kept: [], errors: [] }),
+  }
+
+  const report = shipCleanup('DEV-1392-c3', {
+    project: 'ship-fixture',
+    confirmedLanded: true,
+    database: db(),
+    dependencies,
+  })
+
+  expect(report.gone).toEqual([gone])
+  expect(report.kept).toEqual([])
+  expect(pruned).toEqual(['DEV-1392-c3'])
+  expect(formatShipCleanup(report)).toContain(`already gone: ${gone}`)
+  expect(formatShipCleanup(report)).toContain('kept: none')
+})
+
 function landingTreeCleanup(input: {
   removal?: HookTreeRemovalResult
   runsFromTree?: boolean
@@ -272,6 +321,7 @@ function landingTreeCleanup(input: {
   const removedTrees: string[] = []
   const closed: string[] = []
   const dependencies: ShipCleanupDependencies = {
+    observeBranchRef: () => ({ outcome: 'present' }),
     landingState: () => ({
       state: 'landed',
       landedBy: { type: 'patch-equivalent', form: 'squash' },

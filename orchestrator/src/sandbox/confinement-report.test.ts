@@ -20,6 +20,7 @@ const grok: ConfinementReportAgent = {
   readsRepo: true,
   writesRepo: true,
   mcp: true,
+  transport: 'acp',
 }
 
 const codex: ConfinementReportAgent = {
@@ -75,7 +76,7 @@ test('a Grok reading job without MCP is reported as srt with env file and keycha
     reason: 'srt denyRead includes the login keychain',
   })
   expect(reported.loopback.access).toBe('open')
-  expect(reported.loopback.reason).toContain('orch has no denial')
+  expect(reported.loopback.reason).toContain('orchestrator has no denial')
 })
 
 test('a Grok reading job with MCP is reported as host with env file, keychain, and loopback open', () => {
@@ -89,18 +90,17 @@ test('a Grok reading job with MCP is reported as host with env file, keychain, a
   expect(reported.envFile.access).toBe('open')
   expect(reported.keychain.access).toBe('open')
   expect(reported.loopback.access).toBe('open')
-  expect(reported.keychain.reason).toBe('orch has no denial')
+  expect(reported.keychain.reason).toBe('orchestrator has no denial')
 })
 
-test('a Grok writing job is reported as host with loopback open', () => {
+test('a Grok writing job agrees with launch and is reported as srt', () => {
   const reported = row(grok, 'writing', false)
   expect(reported.status).toBe('ok')
   if (reported.status !== 'ok') return
-  expect(reported.confinement.sandbox).toBe('host')
-  expect(reported.confinement.reason).toBe('writing jobs are not readonly-sandbox candidates')
-  expect(reported.envFile.access).toBe('open')
-  expect(reported.keychain.access).toBe('open')
-  expect(reported.loopback.reason).toBe('orch has no denial')
+  expect(reported.confinement.sandbox).toBe('srt')
+  expect(reported.envFile.access).toBe('denied')
+  expect(reported.keychain.access).toBe('denied')
+  expect(reported.loopback.access).toBe('open')
 })
 
 test('an srt deny list that covers the operator env file reports the env file as denied', () => {
@@ -119,14 +119,14 @@ test('an srt deny list that does not cover the operator env file reports it as o
   expect(reported.status).toBe('ok')
   if (reported.status !== 'ok') return
   expect(reported.confinement.sandbox).toBe('srt')
-  expect(reported.envFile).toEqual({ access: 'open', reason: 'orch has no denial' })
+  expect(reported.envFile).toEqual({ access: 'open', reason: 'orchestrator has no denial' })
 })
 
 test('an srt deny list that does not cover the login keychain reports it as open', () => {
   const reported = row(reader, 'reading', false, { srtDenyRead: [OPERATOR_ENV_FILE] })
   expect(reported.status).toBe('ok')
   if (reported.status !== 'ok') return
-  expect(reported.keychain).toEqual({ access: 'open', reason: 'orch has no denial' })
+  expect(reported.keychain).toEqual({ access: 'open', reason: 'orchestrator has no denial' })
 })
 
 test('record connection names in the parent environment are not listed as forwarded withheld-class names', () => {
@@ -249,7 +249,7 @@ test('srt denies the env file even when the worker home links it; host reports t
   if (host.status !== 'ok') return
   expect(host.envFile).toEqual({
     access: 'open',
-    reason: 'orch has no denial; worker HOME links the operator env file',
+    reason: 'orchestrator has no denial; worker HOME links the operator env file',
   })
 })
 
@@ -269,11 +269,11 @@ test('codex rows name the native workspace-write sandbox and deny loopback when 
       })
       expect(reported.envFile).toEqual({
         access: 'open',
-        reason: 'orch passes codex no read denial',
+        reason: 'orchestrator passes codex no read denial',
       })
       expect(reported.keychain).toEqual({
         access: 'open',
-        reason: 'orch passes codex no read denial',
+        reason: 'orchestrator passes codex no read denial',
       })
     }
   }
@@ -284,7 +284,10 @@ test('the named-secret data form denies each record connection name and leaves o
   expect(reported.status).toBe('ok')
   if (reported.status !== 'ok') return
   expect(reported.namedSecret.recordConnection.access).toBe('denied')
-  expect(reported.namedSecret.other).toEqual({ access: 'open', reason: 'orch has no denial' })
+  expect(reported.namedSecret.other).toEqual({
+    access: 'open',
+    reason: 'orchestrator has no denial',
+  })
   const names = [...RECORD_CONNECTION_ENV_NAMES].sort()
   expect(reported.namedSecret.recordConnection.reason).toBe(
     `${names.join(', ')}: ${RECORD_CONNECTION_WORKER_REFUSAL}`,

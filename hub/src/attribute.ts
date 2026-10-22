@@ -208,7 +208,7 @@ function attributeForProject(
 }
 
 /**
- * The task a delegated run's FULL prompt names, read from the file orch kept.
+ * The task a delegated run's FULL prompt names, read from the file orchestrator kept.
  *
  * `prompt_head` is the first 200 characters, and for the runs that matter it is
  * 200 characters of preamble. A review lens opens "You are a code reviewer in
@@ -275,7 +275,7 @@ function keyFromPromptFile(
 }
 
 /**
- * Decide the task for one delegated run, with orch's explicit launch key first.
+ * Decide the task for one delegated run, with orchestrator's explicit launch key first.
  * Historical rows without one follow the existing direct-evidence cascade.
  * taskRecord reads this decision downstream through interval.task_key.
  */

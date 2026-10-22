@@ -17,7 +17,7 @@ import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
-import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { type CheckpointContainment, checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 export function childEnv(
@@ -88,6 +88,7 @@ export type LiveCheckpoint = {
   taskKey: string
   scratchDir: string
   guardEnvironment: NodeJS.ProcessEnv
+  containment: CheckpointContainment
 }
 export const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
 const liveGateTerminators = new Set<() => Promise<void>>()
@@ -182,7 +183,7 @@ function commandIsRunExecutor(command: string): boolean {
 }
 
 /**
- * Whether this process is running inside an orch worker executor.
+ * Whether this process is running inside an orchestrator worker executor.
  *
  * This guards operator-only actions against confused workers. It is not a
  * security boundary against a same-uid process that detaches itself: that
@@ -454,6 +455,7 @@ export function bindSignals() {
           taskKey: checkpoint.taskKey,
           scratchDir: checkpoint.scratchDir,
           guardEnvironment: checkpoint.guardEnvironment,
+          containment: checkpoint.containment,
           final: true,
         })
         if (result.created || latestCheckpoint(db(), checkpoint.rootId)) {

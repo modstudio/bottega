@@ -328,7 +328,7 @@ set a sealed value from standard input
 
 **Synopsis:** `bottega machine config set <key> <value> [--space] [--machine] [--expect <rowVersion>] [--json]`
 
-set one configuration value
+set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD
 
 ### Options
 
@@ -374,7 +374,7 @@ report harness failures, costs, and false verdicts
 
 **Synopsis:** `bottega machine legacy-calls [--since <timestamp>] [--json]`
 
-report legacy orch and hub invocations
+report legacy orchestrator and hub invocations
 
 ### Options
 
@@ -484,7 +484,7 @@ classify stored quota and authentication failures from vendor errors
 
 **Synopsis:** `bottega machine reconcile [--dry-run]`
 
-close open intervals whose orch runs are terminal using exact run ids
+close open intervals whose orchestrator runs are terminal using exact run ids
 
 ### Options
 

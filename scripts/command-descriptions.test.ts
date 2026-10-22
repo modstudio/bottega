@@ -74,7 +74,7 @@ test('an unresolved visible route fails closed with its owner and argv', () => {
     { command: ['run', 'missing'], owner: 'orch', argv: ['renamed'] },
   ] satisfies CommandRoute[]
   expect(() => documentationInventory(groups, routes, commandPrograms)).toThrow(
-    `${PLATFORM_SLUG} run missing: cannot resolve visible route owner orch argv ["renamed"]`,
+    `${PLATFORM_SLUG} run missing: cannot resolve visible route owner orchestrator argv ["renamed"]`,
   )
 })
 

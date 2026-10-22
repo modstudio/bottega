@@ -543,21 +543,33 @@ export const sessionId = (database?: Database): string | null => {
 
 /**
  * A session seen inside this window is known live. A session outside it is
- * UNKNOWN, not dead: this row records orch activity, not the owning process.
+ * UNKNOWN, not dead: this row records orchestrator activity, not the owning process.
  * Silence therefore never transfers its authority to another session.
  */
 export const SESSION_LIVE_MS = 60 * 60 * 1000
 
 /** Stamp once at the CLI boundary; heartbeat failure must never break a read. */
-export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso()): void {
+export function recordSessionSeen(
+  sid: string | null = sessionId(),
+  at = nowIso(),
+  ancestry?: { chain: unknown; confirmedAt: string },
+  database?: Database,
+): void {
   if (!sid) return
-  const d = db()
-  if (!connectionWritable) return
+  const d = database ?? db()
+  if (!database && !connectionWritable) return
   try {
     d.query(
-      `INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)
-       ON CONFLICT(session_id) DO UPDATE SET last_seen = excluded.last_seen`,
-    ).run(sid, at)
+      `INSERT INTO session_seen
+       (session_id,last_seen,ancestor_chain,ancestor_confirmed_at) VALUES (?,?,?,?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         last_seen=excluded.last_seen,
+         ancestor_chain=COALESCE(excluded.ancestor_chain,session_seen.ancestor_chain),
+         ancestor_confirmed_at=COALESCE(
+           excluded.ancestor_confirmed_at,
+           session_seen.ancestor_confirmed_at
+         )`,
+    ).run(sid, at, ancestry ? JSON.stringify(ancestry.chain) : null, ancestry?.confirmedAt ?? null)
   } catch {
     // Liveness is a convenience signal. A failed stamp cannot break a command.
   }

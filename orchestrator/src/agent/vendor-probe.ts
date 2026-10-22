@@ -28,7 +28,32 @@ type VendorProbeResult = {
   message: string
 }
 
+type VendorProbeOutcome = { ok: true } | { ok: false; kind: FailureKind; text: string }
+
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
+
+function vendorProbeSettlement(
+  name: string,
+  outcome: VendorProbeOutcome,
+  enabled: boolean,
+  disabledReason: string | null,
+): VendorProbeResult {
+  if (!outcome.ok) {
+    if (outcome.kind === 'quota')
+      return { ok: false, kind: 'quota', message: `vendor quota: ${outcome.text}` }
+    return { ok: false, kind: 'failed', message: outcome.text }
+  }
+  if (!enabled) {
+    return {
+      ok: true,
+      kind: 'ok',
+      message:
+        `probe passed; agent "${name}" is still disabled (${disabledReason}); ` +
+        `re-enable with ${PLATFORM_SLUG} agent show set ${name} --enabled true`,
+    }
+  }
+  return { ok: true, kind: 'ok', message: `agent "${name}" is eligible again` }
+}
 
 function processEnv(): Record<string, string> {
   return Object.fromEntries(
@@ -65,11 +90,6 @@ function finishProbeRun(
 
 function vendorText(result: TransportResult, fallback: string): string {
   return result.error?.trim() || result.output.trim() || fallback
-}
-
-function failedResult(kind: FailureKind, text: string): VendorProbeResult {
-  if (kind === 'quota') return { ok: false, kind: 'quota', message: `vendor quota: ${text}` }
-  return { ok: false, kind: 'failed', message: text }
 }
 
 async function collectProbe(name: string, agent: ReturnType<typeof rowAgent>, scratch: string) {
@@ -119,24 +139,33 @@ function settleCollected(
   id: string,
   started: number,
   collected: TransportResult,
+  enabled: boolean,
+  disabledReason: string | null,
 ): VendorProbeResult {
   const outcome = outcomeFromTransport(collected)
   if (outcome.status === 'ok') {
     finishProbeRun(id, started, 'ok', null, null, Buffer.byteLength(collected.output))
-    return { ok: true, kind: 'ok', message: `agent "${name}" is eligible again` }
+    return vendorProbeSettlement(name, { ok: true }, enabled, disabledReason)
   }
   const text = vendorText(collected, 'vendor returned no message')
   const kind = classify(text, collected.exitCode)
   finishProbeRun(id, started, 'failed', text, kind, Buffer.byteLength(collected.output))
-  return failedResult(kind, text)
+  return vendorProbeSettlement(name, { ok: false, kind, text }, enabled, disabledReason)
 }
 
-function settleThrown(id: string, started: number, error: unknown): VendorProbeResult {
+function settleThrown(
+  name: string,
+  id: string,
+  started: number,
+  error: unknown,
+  enabled: boolean,
+  disabledReason: string | null,
+): VendorProbeResult {
   const timedOut = error instanceof TransportOperationTimeout
   const detail = String((error as Error).message ?? error)
   const kind = classify(detail, 1, timedOut)
   finishProbeRun(id, started, 'failed', detail, kind, Buffer.byteLength(detail))
-  return failedResult(kind, detail)
+  return vendorProbeSettlement(name, { ok: false, kind, text: detail }, enabled, disabledReason)
 }
 
 export async function probeVendor(name: string): Promise<VendorProbeResult> {
@@ -179,9 +208,18 @@ export async function probeVendor(name: string): Promise<VendorProbeResult> {
       inserted.record_id,
       started,
       await collectProbe(name, agent, scratch),
+      agent.enabled !== false,
+      agent.disabledReason ?? null,
     )
   } catch (error) {
-    return settleThrown(inserted.record_id, started, error)
+    return settleThrown(
+      name,
+      inserted.record_id,
+      started,
+      error,
+      agent.enabled !== false,
+      agent.disabledReason ?? null,
+    )
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }

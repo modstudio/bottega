@@ -66,7 +66,7 @@ export type Agent = {
    * is a harness; the model is what is actually being judged, and evidence
    * gathered under one is not evidence about the other.
    *
-   * So orch pins it and records what it pinned. Both subscriptions carry more
+   * So orchestrator pins it and records what it pinned. Both subscriptions carry more
    * than one model (grok-4.6 and grok-4.5; the gpt-5.6 line), so this is a real
    * fork rather than a hypothetical one.
    *
@@ -645,7 +645,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
 }
 
 /**
- * `resumable` must mean orch can actually resume it, not that the CLI has a flag.
+ * `resumable` must mean orchestrator can actually resume it, not that the CLI has a flag.
  *
  * The two come apart, and quietly: qwen has `--resume <id>` and announces its
  * session id nowhere, so it looks resumable in every help text and cannot be

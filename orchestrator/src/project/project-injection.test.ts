@@ -357,7 +357,9 @@ describe('project workflow injection', () => {
           actions: { get: `${PLATFORM_SLUG} task show {key}; rm -rf checkout` },
         },
       }).join('\n'),
-    ).toContain('tracker.actions: hub protocol accepts no action overrides; remove tracker.actions')
+    ).toContain(
+      'tracker.actions: the built-in tracker accepts no action overrides; remove tracker.actions',
+    )
   })
 
   test('resolves every requested fact with its stored type', () => {

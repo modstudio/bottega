@@ -124,7 +124,7 @@ export function assertUserCanonHydrateAllowed(
   if (flags.has('check') && !flags.has('adopt')) return
   const command = `${PLATFORM_SLUG} doc canon hydrate --user${flags.has('adopt') ? ' --adopt' : ''}`
   throw new Error(
-    `refusing user canon hydrate from an orch worker run; an operator must run ${command}`,
+    `refusing user canon hydrate from an orchestrator worker run; an operator must run ${command}`,
   )
 }
 

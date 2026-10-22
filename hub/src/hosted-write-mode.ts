@@ -56,7 +56,7 @@ export function reportedWriteMode(
   return binding.bound ? 'hosted-unavailable' : 'local-authoritative'
 }
 
-/** A remote tracker is any configured tracker that is not the built-in hub protocol. */
+/** A remote tracker is any configured tracker that is not the built-in tracker protocol. */
 export function projectHasRemoteTracker(
   tracker: { protocol?: string } | null | undefined,
 ): boolean {

@@ -34,10 +34,27 @@ describe('ask server summary', () => {
       listed: 'not_recorded',
       transport: null,
       command: null,
+      endpoint: null,
       registered_tools: null,
       listed_tools: null,
       failure: 'database setup failed',
     })
+  })
+
+  test('reports an HTTP endpoint separately from an argv command', () => {
+    expect(
+      summarizeAskServer(
+        [
+          {
+            ts: 't1',
+            type: 'ask_expected',
+            transport: 'srt',
+            endpoint: 'http://127.0.0.1:43127/mcp',
+          },
+        ],
+        null,
+      ),
+    ).toMatchObject({ command: null, endpoint: 'http://127.0.0.1:43127/mcp' })
   })
 })
 

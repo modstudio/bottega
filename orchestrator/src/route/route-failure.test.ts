@@ -48,6 +48,21 @@ describe('failure classification', () => {
     })
   })
 
+  test('premature finals fail over and count against the agent', () => {
+    expect(FAILS_OVER).toContain('premature-final')
+    expect(NEEDS_HUMAN).not.toContain('premature-final')
+    expect(COOLS_DOWN).not.toContain('premature-final')
+    expect(NOT_EVIDENCE).not.toContain('premature-final')
+
+    addRun({ agent: 'grok', job: 'understand', status: 'failed', kind: 'premature-final' })
+    expect(candidates('understand').find((item) => item.agent === 'grok')).toMatchObject({
+      failures: 1,
+      evidence: 1,
+      score: WEIGHT.none,
+      cooling: null,
+    })
+  })
+
   test("OpenAI's invalid response schema is a harness failure", () => {
     expect(
       classify(
@@ -178,7 +193,7 @@ describe('failure classification', () => {
 
   test('what the room did is not evidence about the agent', () => {
     // Vendor account failures, a box switched off, an operator killing the
-    // process tree, and orch itself being wrong are not capability evidence.
+    // process tree, and orchestrator itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
       'capacity',

@@ -13,8 +13,10 @@ import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import {
   GATE_BASE_REFRESH_TIMEOUT_MS,
+  gateBrokerLaunchArgv,
   refreshGateBase,
   runGateAfterBaseRefresh,
   startGateBroker,
@@ -48,6 +50,36 @@ test('gate request cancellation changes only an unfinished execution', () => {
   expect(
     db().query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE id=?').get(finished.id),
   ).toEqual({ exit_code: 0, cancelled_reason: null })
+})
+
+test('a writing ACP gate broker launches with the run writer profile unchanged', async () => {
+  const writer: SandboxRuntimeConfig = {
+    network: {
+      allowedDomains: ['openrouter.ai', '127.0.0.1:43127', '127.0.0.1:5432'],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      denyRead: [],
+      allowWithinDeny: [],
+      allowWrite: ['/tree', '/scratch'],
+      denyWrite: ['/tree/.git'],
+    },
+  }
+  const profiles: SandboxRuntimeConfig[] = []
+  expect(
+    await gateBrokerLaunchArgv(
+      { kind: 'srt', profile: writer },
+      'bun run check',
+      async (profile, bin, argv) => {
+        profiles.push(profile)
+        return ['srt', bin, ...argv]
+      },
+    ),
+  ).toEqual(['srt', 'sh', '-c', 'bun run check'])
+  expect(profiles).toEqual([writer])
+  expect(profiles[0]!.network).toBe(writer.network)
 })
 
 async function waitForFinishedGate(id: number): Promise<void> {
@@ -120,6 +152,7 @@ test('records machine-readable checks emitted by a worker gate against its execu
     runId,
     scratchDir: scratch,
     environment: { ORCH_MAIN_CHECKOUT: root },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
   try {
@@ -351,6 +384,7 @@ test('an occupied gate log path fails the execution without following the path',
     runId,
     scratchDir: scratch,
     environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
   try {

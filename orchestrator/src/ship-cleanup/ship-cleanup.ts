@@ -12,13 +12,19 @@ import {
   type BranchStateDecision,
   findRecordedBranchLanding,
 } from '../branch/branch-state.ts'
-import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
+import {
+  classifyMintedBranch,
+  type GitRefObservation,
+  observeGitRef,
+  pruneBranch,
+} from '../branch/branches.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
 import {
   type RemovedRunTree,
   type RemovedTreeDockerCleanup,
   reclaimRemovedTreeDockerResources,
 } from '../cleanup/cleanup-sweep-docker.ts'
+import { renderUnjudgedRunRemedy } from '../cleanup/unjudged-run-remedy.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
 import { type HookTreeRemovalResult, removeHookTreeResult } from '../hook-tree/tree.ts'
@@ -42,6 +48,7 @@ import {
 type RunRow = {
   record_id: string
   number: number
+  root_number: number
   parent_run_record_id: string | null
   started_at: string
   job: string
@@ -50,6 +57,7 @@ type RunRow = {
   minted_branch: string | null
   launch_key: string | null
   evidence_excluded: string | null
+  root_failure_kind: string | null
   worktree: string | null
 }
 
@@ -59,6 +67,7 @@ export type ShipCleanupReport = {
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
   reclaimed: { processes: string[]; compose: string[] }
+  gone: string[]
   kept: { item: string; reason: string; reasonKind: ShipCleanupKeptReasonKind; remedy?: string }[]
   errors: { item: string; detail: string; retry: string }[]
   verdict: import('./ship-cleanup-decision.ts').ShipCleanupVerdict
@@ -66,6 +75,7 @@ export type ShipCleanupReport = {
 
 export type ShipCleanupDependencies = {
   landingState(project: string, branch: string): BranchStateDecision
+  observeBranchRef(projectPath: string, branch: string): GitRefObservation
   closeOut(runId: string): { outcome: string; detail: string }
   prune(
     project: string,
@@ -86,6 +96,7 @@ export type ShipCleanupDependencies = {
 
 const dependencies: ShipCleanupDependencies = {
   landingState: (project, branch) => classifyMintedBranch(project, branch),
+  observeBranchRef: (projectPath, branch) => observeGitRef(projectPath, `refs/heads/${branch}`),
   closeOut: (runId) => closeOutRun(runId, { intent: 'explicit' }),
   prune: (project, branch) => pruneBranch({ project, branch }),
   measure: (paths) => {
@@ -117,8 +128,12 @@ const dependencies: ShipCleanupDependencies = {
 function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFact[] {
   const rows = database
     .query(
-      `SELECT record_id,number,parent_run_record_id,started_at,job,status,branch,minted_branch,launch_key,evidence_excluded,worktree
-         FROM run WHERE project_record_id=? ORDER BY number`,
+      `SELECT r.record_id,r.number,r.parent_run_record_id,r.started_at,r.job,r.status,r.branch,
+              r.minted_branch,r.launch_key,r.evidence_excluded,r.worktree,
+              root.number AS root_number,root.failure_kind AS root_failure_kind
+         FROM run r
+         JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
+        WHERE r.project_record_id=? ORDER BY r.number`,
     )
     .all(projectRecordId) as RunRow[]
   const scored = new Set(
@@ -142,6 +157,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       record_id: row.record_id,
       number: row.number,
       root_record_id: rootId,
+      rootNumber: row.root_number,
       startedAt: row.started_at,
       job: row.job,
       status: row.status,
@@ -149,6 +165,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       mintedBranch: row.minted_branch,
       launchKey: row.launch_key,
       judged: scored.has(rootId) || excludedRoots.has(rootId),
+      rootFailureKind: row.root_failure_kind,
       worktree: row.worktree,
     }
   })
@@ -169,6 +186,7 @@ function emptyReport(project: string, branch: string): ShipCleanupReport {
     freed: { artifacts: 0, scratch: 0, worktrees: 0 },
     removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
     reclaimed: { processes: [], compose: [] },
+    gone: [],
     kept: [],
     errors: [],
     verdict: { clean: true },
@@ -209,8 +227,10 @@ function reportKeptRuns(
         (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
       reason: decision.reason,
       reasonKind: decision.worktreeAction === 'keep' ? 'live-run' : 'unjudged-run',
-      ...(!decision.judged && decision.worktreeAction === 'close'
-        ? { remedy: `${PLATFORM_SLUG} score ${decision.number}` }
+      ...(decision.remedy
+        ? {
+            remedy: renderUnjudgedRunRemedy(decision.remedy, decision.rootNumber),
+          }
         : {}),
     })
   }
@@ -466,6 +486,7 @@ function pruneMergedBranches(
 
 function taskCleanupPlan(input: {
   project: string
+  projectPath: string
   keyPrefixes: readonly string[]
   branch: string
   facts: readonly ShipCleanupRunFact[]
@@ -482,10 +503,19 @@ function taskCleanupPlan(input: {
       run.launchKey === taskKey && run.mintedBranch ? [run.mintedBranch] : [],
     ),
   )
+  const localBranches = new Set<string>()
+  if (taskKey) {
+    for (const branch of candidateBranches) {
+      const observation = input.adapter.observeBranchRef(input.projectPath, branch)
+      if (observation.outcome === 'failed') throw new Error(observation.detail)
+      if (observation.outcome === 'present') localBranches.add(branch)
+    }
+  }
   const branches = taskKey
     ? decideTaskBranchesToPrune(
         taskKey,
         input.facts,
+        localBranches,
         new Map(
           [...candidateBranches].map((branch) => {
             const recorded = findRecordedBranchLanding(input.landingRecords, input.project, branch)
@@ -501,8 +531,15 @@ function taskCleanupPlan(input: {
           }),
         ),
       )
-    : { prune: [], keep: [] }
-  return { taskKey, branches, landedBranches: new Set([input.branch, ...branches.prune]) }
+    : { delete: [], landingProof: [], keep: [], gone: [] }
+  const deleteBranches = candidateBranches.has(input.branch)
+    ? branches.delete
+    : [...new Set([input.branch, ...branches.delete])]
+  return {
+    taskKey,
+    branches: { ...branches, delete: deleteBranches },
+    landedBranches: new Set([input.branch, ...branches.landingProof]),
+  }
 }
 
 type ShipCleanupOptions = {
@@ -558,6 +595,7 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
     landedBranches,
   } = taskCleanupPlan({
     project: project.name,
+    projectPath: project.path,
     keyPrefixes: project.settings.keyPrefixes ?? [],
     branch,
     facts,
@@ -599,12 +637,8 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
       reasonKind: 'landing-not-proved' as const,
     })),
   )
-  pruneMergedBranches(
-    [...new Set([branch, ...taskBranches.prune])],
-    report,
-    adapter,
-    keptLandingTrees,
-  )
+  report.gone.push(...taskBranches.gone)
+  pruneMergedBranches(taskBranches.delete, report, adapter, keptLandingTrees)
   report.verdict = decideShipCleanupVerdict(report, true)
   return report
 }
@@ -617,6 +651,7 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   ]
   for (const item of report.reclaimed.processes) lines.push(`reclaimed process: ${item}`)
   for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
+  for (const branch of report.gone) lines.push(`already gone: ${branch}`)
   for (const item of report.kept) {
     lines.push(
       `kept: ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,

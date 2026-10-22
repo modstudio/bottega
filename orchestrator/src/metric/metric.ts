@@ -2,11 +2,119 @@ import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import type { Readable } from 'node:stream'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, nowIso, writableDb } from '../database/db.ts'
-import { projectAt, projects } from '../project/projects.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { isProjectRepository, type Project, projects } from '../project/projects.ts'
+
+// A one-day collection over 34 current transcripts took 33m 7s on the
+// production state. Two hours leaves substantial room for the normal 30-day
+// pass while still turning an overnight stall into a loud, bounded failure.
+const METRIC_COLLECTION_DEADLINE_MS = 2 * 60 * 60 * 1000
+
+export type MetricTranscriptSource = {
+  file: string
+  modifiedAt: Date
+  open(): Readable
+}
+
+type MetricCollectionOptions = {
+  deadlineMs?: number
+  transcripts?: MetricTranscriptSource[]
+  activity?: Map<string, DayActivity>
+  gitRunner?: typeof Bun.spawnSync
+  projectResolver?: (cwd: string) => Pick<Project, 'canon' | 'name'> | null
+}
+
+class MetricCollectionDeadline {
+  readonly signal: AbortSignal
+  readonly milliseconds: number
+  private readonly controller = new AbortController()
+  private readonly expiresAt: number
+  private readonly timer: ReturnType<typeof setTimeout>
+  private currentUnit: string | null = null
+  private lastUnit: string | null = null
+
+  constructor(milliseconds: number) {
+    this.milliseconds = milliseconds
+    this.signal = this.controller.signal
+    this.expiresAt = Date.now() + milliseconds
+    this.timer = setTimeout(() => this.abort(), milliseconds)
+  }
+
+  beginUnit(unit: string): void {
+    this.currentUnit = unit
+    this.lastUnit = unit
+    this.checkpoint()
+  }
+
+  endUnit(): void {
+    this.currentUnit = null
+  }
+
+  checkpoint(): void {
+    if (!this.signal.aborted && Date.now() >= this.expiresAt) this.abort()
+    if (this.signal.aborted) throw this.signal.reason
+  }
+
+  remainingMilliseconds(): number {
+    this.checkpoint()
+    return Math.max(1, this.expiresAt - Date.now())
+  }
+
+  finish(): void {
+    clearTimeout(this.timer)
+  }
+
+  private abort(): void {
+    const context = this.currentUnit
+      ? `while reading ${this.currentUnit}`
+      : this.lastUnit
+        ? `after reading ${this.lastUnit}`
+        : 'before a transcript was opened'
+    this.controller.abort(
+      new Error(`metric collection deadline of ${this.milliseconds}ms exceeded ${context}`),
+    )
+  }
+}
+
+async function releaseStream(stream: Readable): Promise<void> {
+  if (stream.closed) return
+  await new Promise<void>((resolve) => {
+    stream.once('close', resolve)
+    stream.destroy()
+  })
+}
+
+async function readTranscriptLines(
+  source: MetricTranscriptSource,
+  deadline: MetricCollectionDeadline,
+  consume: (line: string) => void,
+): Promise<void> {
+  deadline.beginUnit(`transcript ${source.file}`)
+  const stream = source.open()
+  const lines = createInterface({ input: stream, crlfDelay: Infinity })
+  const abort = () => {
+    lines.close()
+    stream.destroy()
+  }
+  deadline.signal.addEventListener('abort', abort, { once: true })
+  try {
+    for await (const line of lines) {
+      deadline.checkpoint()
+      consume(line)
+      deadline.checkpoint()
+    }
+    deadline.checkpoint()
+  } finally {
+    deadline.signal.removeEventListener('abort', abort)
+    lines.close()
+    await releaseStream(stream)
+    deadline.endUnit()
+  }
+}
 
 const targetGitEnvironment = (repo: string) =>
   (
@@ -32,15 +140,10 @@ const targetGitEnvironment = (repo: string) =>
  * somebody else's projects are theirs to declare rather than something to fork
  * this file over.
  *
- * Read per call rather than cached at module load: `bottega project add` can
- * change the answer inside a long-lived process, and a cached list would keep
- * reporting a newly-registered project's spend as untracked.
+ * Read once per collection rather than cached at module load: `bottega project
+ * add` can change the answer inside a long-lived process, while every usage
+ * record in one pass must see the same project snapshot.
  */
-const canonRepos = (): string[] =>
-  projects()
-    .filter((p) => p.canon)
-    .map((p) => p.name)
-
 function keyPattern(prefixes: string[] | undefined): RegExp | null {
   if (!prefixes?.length) return null
   const alternatives = prefixes.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
@@ -99,11 +202,16 @@ function configuredTranscripts(root: string): string[] {
  * about what it touched, and one session moved between two projects inside a
  * single file.
  */
-function repoOfCwd(cwd: string | undefined, cloneRoot: string): string | null {
+function repoOfCwd(
+  cwd: string | undefined,
+  cloneRoot: string,
+  projectResolver: (cwd: string) => Pick<Project, 'canon' | 'name'> | null,
+  canonRepos: Set<string>,
+): string | null {
   if (!cwd) return null
   // The register first: it knows where each project actually is, including
   // ones that live nowhere near a common root.
-  const p = projectAt(cwd)
+  const p = projectResolver(cwd)
   if (p) return p.canon ? p.name : null
 
   // Then the numbered-clone fallback, which is the case the register cannot
@@ -116,12 +224,41 @@ function repoOfCwd(cwd: string | undefined, cloneRoot: string): string | null {
     .slice(cloneRoot.length + 1)
     .split('/')[0]!
     .replace(/-\d+$/, '')
-  return canonRepos().includes(seg) ? seg : null
+  return canonRepos.has(seg) ? seg : null
 }
 
-async function claudeTokensByDay(since: string) {
+function projectResolverForCollection(registered: Project[]) {
+  const repositories = registered.filter(isProjectRepository)
+  return (cwd: string): Project | null => {
+    let best: Project | null = null
+    for (const project of repositories) {
+      if (cwd === project.path || cwd.startsWith(`${project.path}/`)) {
+        if (!best || project.path.length > best.path.length) best = project
+      }
+    }
+    return best
+  }
+}
+
+async function claudeTokensByDay(
+  since: string,
+  sources: MetricTranscriptSource[],
+  deadline: MetricCollectionDeadline,
+  injectedProjectResolver?: (cwd: string) => Pick<Project, 'canon' | 'name'> | null,
+) {
   const cloneRoot = readMachineValue('projects.clone_root')
-  const transcriptRoot = readMachineValue('hub.transcript_root')
+  const registered = projects()
+  const projectResolver = injectedProjectResolver ?? projectResolverForCollection(registered)
+  const canonRepos = new Set(
+    registered.filter((project) => project.canon).map((project) => project.name),
+  )
+  const cwdRepos = new Map<string, string | null>()
+  const resolveCwd = (cwd: string | undefined): string | null => {
+    if (!cwd) return null
+    if (!cwdRepos.has(cwd))
+      cwdRepos.set(cwd, repoOfCwd(cwd, cloneRoot, projectResolver, canonRepos))
+    return cwdRepos.get(cwd) ?? null
+  }
   const days = new Map<
     string,
     {
@@ -132,16 +269,11 @@ async function claudeTokensByDay(since: string) {
       other: number
     }
   >()
-  for (const file of configuredTranscripts(transcriptRoot)) {
+  for (const source of sources) {
     // Skip files untouched since the window opened — the cheap 90% of the work.
-    try {
-      if (metricCalendarDay(statSync(file).mtime) < since) continue
-    } catch {
-      continue
-    }
-    const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
-    for await (const line of rl) {
-      if (!line.includes('"cache_read_input_tokens"')) continue
+    if (metricCalendarDay(source.modifiedAt) < since) continue
+    await readTranscriptLines(source, deadline, (line) => {
+      if (!line.includes('"cache_read_input_tokens"')) return
       let d: {
         timestamp?: string | number | Date
         cwd?: string
@@ -157,12 +289,12 @@ async function claudeTokensByDay(since: string) {
       try {
         d = JSON.parse(line)
       } catch {
-        continue
+        return
       }
       const day = d.timestamp ? metricCalendarDay(d.timestamp) : ''
-      if (!day || day < since) continue
+      if (!day || day < since) return
       const u = d.message?.usage
-      if (!u) continue
+      if (!u) return
       const row = days.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
       const cr = u.cache_read_input_tokens ?? 0
       row.cacheRead += cr
@@ -173,13 +305,24 @@ async function claudeTokensByDay(since: string) {
       // numerator inflates the ratio against a denominator it never touched.
       // This project is the case in point: a day building the orchestrator
       // spends heavily and commits nothing the denominator can see.
-      if (repoOfCwd(d.cwd, cloneRoot)) row.canon += spend
+      if (resolveCwd(d.cwd)) row.canon += spend
       else row.other += spend
       row.messages += 1
       days.set(day, row)
-    }
+    })
   }
   return days
+}
+
+function transcriptSources(): MetricTranscriptSource[] {
+  const transcriptRoot = readMachineValue('hub.transcript_root')
+  const sources: MetricTranscriptSource[] = []
+  for (const file of configuredTranscripts(transcriptRoot)) {
+    try {
+      sources.push({ file, modifiedAt: statSync(file).mtime, open: () => createReadStream(file) })
+    } catch {}
+  }
+  return sources
 }
 
 type DayActivity = {
@@ -200,7 +343,11 @@ type DayActivity = {
  * depth. Generated output is excluded outright and tests are counted apart,
  * because both swamp a line count without reflecting effort in proportion.
  */
-function activityByDay(since: string) {
+function activityByDay(
+  since: string,
+  deadline: MetricCollectionDeadline,
+  gitRunner: typeof Bun.spawnSync,
+) {
   const days = new Map<string, DayActivity>()
   const get = (d: string) => {
     if (!days.has(d))
@@ -214,54 +361,75 @@ function activityByDay(since: string) {
   }
   for (const { name: repo, path, settings } of projects().filter((p) => p.canon)) {
     const key = keyPattern(settings.keyPrefixes)
-    const proc = Bun.spawnSync(
-      [
-        'git',
-        '-C',
-        path,
-        'log',
-        '--all',
-        `--since=${since}`,
-        '--numstat',
-        '--pretty=format:%x00%cI%x09%H%x09%s',
-      ],
-      { env: targetGitEnvironment(path), stdout: 'pipe', stderr: 'ignore' },
-    )
-    let day: string | null = null
-    for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
-      if (line.startsWith('\u0000')) {
-        const [d, , subject] = line.slice(1).split('\t')
-        if (!d) {
-          day = null
+    deadline.beginUnit(`git history for repository ${repo} at ${path}`)
+    try {
+      const proc = gitRunner(
+        [
+          'git',
+          '-C',
+          path,
+          'log',
+          '--all',
+          `--since=${since}`,
+          '--numstat',
+          '--pretty=format:%x00%cI%x09%H%x09%s',
+        ],
+        {
+          env: targetGitEnvironment(path),
+          stdout: 'pipe',
+          stderr: 'ignore',
+          timeout: deadline.remainingMilliseconds(),
+        },
+      )
+      deadline.checkpoint()
+      let day: string | null = null
+      for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
+        if (line.startsWith('\u0000')) {
+          const [d, , subject] = line.slice(1).split('\t')
+          if (!d) {
+            day = null
+            continue
+          }
+          day = metricCalendarDay(d)
+          const row = get(day)
+          row.commits++
+          for (const k of key ? ((subject ?? '').match(key) ?? []) : [])
+            row.tasks.add(`${repo}:${k}`)
           continue
         }
-        day = metricCalendarDay(d)
+        if (!day) continue
+        const [add, del, file] = line.split('\t')
+        // "-" is git's marker for a binary file: no line count exists.
+        if (add === undefined || add === '-' || !file) continue
         const row = get(day)
-        row.commits++
-        for (const k of key ? ((subject ?? '').match(key) ?? []) : []) row.tasks.add(`${repo}:${k}`)
-        continue
+        const kind = categorizeFile(file)
+        row.lines[kind] += Number(add) + Number(del ?? 0)
+        if (kind === 'product') row.files.add(`${repo}:${file}`)
       }
-      if (!day) continue
-      const [add, del, file] = line.split('\t')
-      // "-" is git's marker for a binary file: no line count exists.
-      if (add === undefined || add === '-' || !file) continue
-      const row = get(day)
-      const kind = categorizeFile(file)
-      row.lines[kind] += Number(add) + Number(del ?? 0)
-      if (kind === 'product') row.files.add(`${repo}:${file}`)
+      deadline.checkpoint()
+    } finally {
+      deadline.endUnit()
     }
   }
   return days
 }
 
-export async function collect(windowDays = 30) {
+export async function collect(windowDays = 30, options: MetricCollectionOptions = {}) {
   writableDb()
-  const start = metricDayStart(windowDays, Date.now())
-  const since = metricCalendarDay(start)
-  const [tok, act] = [await claudeTokensByDay(since), activityByDay(start.toISOString())]
-  const d = db()
-  const stmt = d.query(
-    `INSERT INTO metric (record_id, day, claude_tokens, cache_read, messages, tasks,
+  const deadline = new MetricCollectionDeadline(options.deadlineMs ?? METRIC_COLLECTION_DEADLINE_MS)
+  try {
+    const start = metricDayStart(windowDays, Date.now())
+    const since = metricCalendarDay(start)
+    const sources = options.transcripts ?? transcriptSources()
+    const tok = await claudeTokensByDay(since, sources, deadline, options.projectResolver)
+    deadline.checkpoint()
+    const act =
+      options.activity ??
+      activityByDay(start.toISOString(), deadline, options.gitRunner ?? Bun.spawnSync)
+    deadline.checkpoint()
+    const d = db()
+    const stmt = d.query(
+      `INSERT INTO metric (record_id, day, claude_tokens, cache_read, messages, tasks,
                          canon_tokens, other_tokens, commits, files,
                          lines_product, lines_test, lines_docs, lines_config, lines_generated,
                          collected_at)
@@ -293,31 +461,40 @@ export async function collect(windowDays = 30) {
        lines_product=excluded.lines_product, lines_test=excluded.lines_test,
        lines_docs=excluded.lines_docs, lines_config=excluded.lines_config,
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
-  )
-  const allDays = new Set([...tok.keys(), ...act.keys()])
-  for (const day of allDays) {
-    const t = tok.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
-    const a = act.get(day)
-    stmt.run(
-      newRecordId(),
-      day,
-      t.tokens,
-      t.cacheRead,
-      t.messages,
-      a?.tasks.size ?? 0,
-      t.canon,
-      t.other,
-      a?.commits ?? 0,
-      a?.files.size ?? 0,
-      a?.lines.product ?? 0,
-      a?.lines.test ?? 0,
-      a?.lines.docs ?? 0,
-      a?.lines.config ?? 0,
-      a?.lines.generated ?? 0,
-      nowIso(),
     )
+    const allDays = new Set([...tok.keys(), ...act.keys()])
+    writeTransaction(() => {
+      for (const day of allDays) {
+        deadline.checkpoint()
+        const t = tok.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
+        const a = act.get(day)
+        stmt.run(
+          newRecordId(),
+          day,
+          t.tokens,
+          t.cacheRead,
+          t.messages,
+          a?.tasks.size ?? 0,
+          t.canon,
+          t.other,
+          a?.commits ?? 0,
+          a?.files.size ?? 0,
+          a?.lines.product ?? 0,
+          a?.lines.test ?? 0,
+          a?.lines.docs ?? 0,
+          a?.lines.config ?? 0,
+          a?.lines.generated ?? 0,
+          nowIso(),
+        )
+      }
+      // Keep the final deadline check inside the transaction: if synchronous
+      // insertion consumes the remaining budget, throwing here rolls it back.
+      deadline.checkpoint()
+    }, d)
+    return allDays.size
+  } finally {
+    deadline.finish()
   }
-  return allDays.size
 }
 
 type Row = {

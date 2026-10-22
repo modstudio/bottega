@@ -48,7 +48,7 @@ export function editMachineSettingsPermission(
   if (!rule) throw new Error('refusing settings permission: --rule is required')
   if (isOrchWorkerProcess(env, pid, inventory))
     throw new Error(
-      'refusing machine permission write from an orch worker run; an operator must edit machine permissions',
+      'refusing machine permission write from an orchestrator worker run; an operator must edit machine permissions',
     )
   const result = editMachinePermission(
     input.operation,

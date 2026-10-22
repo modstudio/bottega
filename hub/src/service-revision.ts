@@ -1,5 +1,5 @@
 // concern: service-revision
-/** Identity and revision policy for long-running hub processes. */
+/** Identity and revision policy for long-running processes in the hub concern. */
 
 import { installRoot } from '../../shared/install-root.ts'
 import {

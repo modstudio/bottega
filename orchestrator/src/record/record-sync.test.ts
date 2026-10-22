@@ -18,6 +18,7 @@ import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { enqueueContention } from './landing-outbox.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
@@ -305,7 +306,7 @@ test('sync clears a hosted run-row void when no exclusion row exists', async () 
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, {
     rowReason: null,
     supersededAt: null,
-    runReason: `voided with orch score --void`,
+    runReason: VOID_EXCLUSION_REASON,
   })
   expect(await syncRecord(options(local, remote))).toMatchObject({
     pushed: 1,

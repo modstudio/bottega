@@ -91,4 +91,41 @@ describe('ACP wire trace', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  test('a traced session/new never records the run token carried by MCP authorization', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-acp-trace-secret-'))
+    const token = 'per-run-secret-token'
+    try {
+      const trace = createAcpTrace(root, '733', 4323, '/bin/agent', [], '/worktree', true, [token])!
+      trace.bytes(
+        'stdin',
+        JSON.stringify({
+          method: 'session/new',
+          params: {
+            mcpServers: [
+              {
+                type: 'http',
+                headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
+                runToken: token,
+              },
+            ],
+          },
+        }),
+      )
+
+      const contents = readFileSync(join(root, '733-4323.acp-trace.jsonl'), 'utf8')
+      expect(contents).not.toContain(token)
+      const bytesEntry = contents
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find(({ event }) => event === 'bytes')!
+      expect(Buffer.from(bytesEntry.bytesHex as string, 'hex').toString()).not.toContain(token)
+      expect(Buffer.from(bytesEntry.bytesHex as string, 'hex').toString()).toContain(
+        `Bearer ${'*'.repeat(token.length)}`,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

@@ -4,6 +4,9 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+
+export { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
+
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import type { Project } from '../project/projects.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
@@ -442,7 +445,7 @@ function observeOtherBranchProof(input: OtherBranchReportInput): OtherBranchProo
         trunkTip: input.trunkTip,
         branchTip: detail.tip,
         mergeBase,
-        commitMessage: `orch branch report ${branch}`,
+        commitMessage: `orchestrator branch report ${branch}`,
       })
       const key = taskKeyToken(branch, project.settings.keyPrefixes ?? [])
       if (!patchEquivalent && key) {

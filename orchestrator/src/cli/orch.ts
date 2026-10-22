@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
 import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
 
@@ -30,7 +31,11 @@ async function initDatabaseCommand(argv: string[]): Promise<number> {
   }
 }
 
-async function fullCli(argv: string[], storeFree: boolean): Promise<number> {
+async function fullCli(
+  argv: string[],
+  storeFree: boolean,
+  invocation?: PublicCommandInvocation,
+): Promise<number> {
   const { recoverMissingWorkingDirectory } = await import('../database/database-location.ts')
   recoverMissingWorkingDirectory()
   const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
@@ -41,7 +46,7 @@ async function fullCli(argv: string[], storeFree: boolean): Promise<number> {
   }
   const { recordInvocationSession, run } = await import('./program.ts')
   if (!storeFree) recordInvocationSession(argv)
-  return run(argv)
+  return run(argv, invocation)
 }
 
 /** The one outer-boundary decision that keeps informational invocations store-free. */
@@ -88,8 +93,8 @@ async function degradedCollection(argv: string[], error: unknown): Promise<numbe
   }
 }
 
-export async function main(argv: string[]): Promise<number> {
-  return cliEntry(argv, fullCli)
+export async function main(argv: string[], invocation?: PublicCommandInvocation): Promise<number> {
+  return cliEntry(argv, (args, storeFree) => fullCli(args, storeFree, invocation))
 }
 
 type FullCliEntry = (argv: string[], storeFree: boolean) => Promise<number>

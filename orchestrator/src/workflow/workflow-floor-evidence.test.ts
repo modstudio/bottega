@@ -608,10 +608,57 @@ test('exec evidence is branch-bound and carries its exit code', () => {
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'','2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(gather(d, { artifact: 'exec:3' }).exec).toMatchObject({
-    id: 3,
-    argv: [PLATFORM_SLUG, 'pr', 'create'],
+  expect(gather(d, { artifact: 'exec:3' })).toMatchObject({
+    exec: { id: 3, argv: [PLATFORM_SLUG, 'pr', 'create'], output: '' },
   })
+  expect(gather(d, { artifact: 'exec:3' }).pullRequest).toBeUndefined()
+
+  const url = 'https://github.com/acme/app/pull/15'
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
+  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${url}`)
+  expect(gather(d, { artifact: 'exec:4' })).toMatchObject({
+    exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
+    pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
+  })
+})
+
+test('a withheld pr-create exec carries the withheld flag and no pull request', () => {
+  const d = database()
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,withheld)
+     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'[withheld: secret-shaped content]','2026-09-01','exec',1)`,
+  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
+  expect(gather(d, { artifact: 'exec:1' })).toMatchObject({
+    exec: { withheld: true, output: '[withheld: secret-shaped content]' },
+  })
+  expect(gather(d, { artifact: 'exec:1' }).pullRequest).toBeUndefined()
+})
+
+test('a pr-create exec whose output URL cannot be judged is gathered as a condition', () => {
+  const d = database()
+  const other = 'https://github.com/acme/app/pull/16'
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
+  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${other}`)
+  const mismatched = gather(d, { artifact: 'exec:1' })
+  expect(mismatched.pullRequest).toBeUndefined()
+  expect(mismatched.exec?.pullRequestCondition).toContain('--artifact exec:1')
+  expect(mismatched.exec?.pullRequestCondition).toContain('resolved as')
+  const failed = gather(
+    d,
+    { artifact: 'exec:1' },
+    {
+      viewPullRequest: () => {
+        throw new Error('gh pr view failed: no pull request found')
+      },
+    },
+  )
+  expect(failed.pullRequest).toBeUndefined()
+  expect(failed.exec?.pullRequestCondition).toContain('--artifact exec:1')
+  expect(failed.exec?.pullRequestCondition).toContain('gh pr view failed')
 })
 
 test('pull-request artifacts resolve and match the cursor branch and project trunk', () => {

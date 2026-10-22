@@ -19,7 +19,7 @@ describe('hosted note promotion task ownership', () => {
     expect(minted).toBeFalse()
   })
 
-  test('requires an existing hub task when linking a hosted hub-owned note', async () => {
+  test('requires an existing local task when linking a hosted hub-owned note', async () => {
     await expect(
       selectPromotionTask(
         'DEV-42',

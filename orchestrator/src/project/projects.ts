@@ -1121,7 +1121,7 @@ export function worktreeWarnings(p: Project): string[] {
   )
   const out: string[] = []
   if (w.create && !w.remove) {
-    out.push('has a create command but no remove: orch cannot tear down what it makes')
+    out.push('has a create command but no remove: orchestrator cannot tear down what it makes')
   }
   if (w.create && w.recipe) {
     out.push('declares both create and recipe; create wins and the recipe is ignored')
@@ -1134,9 +1134,9 @@ export function worktreeWarnings(p: Project): string[] {
   /*
    * Only for a project running its OWN script.
    *
-   * That script may enforce a branch format, and orch's default `orch/<id>` is
+   * That script may enforce a branch format, and orchestrator's default `orch/<id>` is
    * what it then refuses — which is how this was found, twice. A recipe project
-   * has no such script: orch names the branch itself, so the default is correct
+   * has no such script: orchestrator names the branch itself, so the default is correct
    * and warning about it would be noise on the one project that cannot have the
    * problem.
    */
@@ -1148,7 +1148,7 @@ export function worktreeWarnings(p: Project): string[] {
   }
   if (createHasPlaceholder(w.create, 'seed') && !w.seeds?.length) {
     out.push(
-      'has a create command with a {seed} placeholder but no seeds list, so orch cannot ' +
+      'has a create command with a {seed} placeholder but no seeds list, so orchestrator cannot ' +
         'say which values are valid',
     )
   }

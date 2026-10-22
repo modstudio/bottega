@@ -143,7 +143,7 @@ export function mcpRequestFromStored(
   return undefined
 }
 
-/** The provenance value orch can establish from this run's dispatch facts. */
+/** The provenance value orchestrator can establish from this run's dispatch facts. */
 export function canonSourceFor(
   mcpRequested: boolean,
   connection: McpConnection | null,
@@ -288,7 +288,7 @@ export function assertGrokTrustEligible(
     isolatePath === cwd
   if (orchCut || orchIsolate) return
   throw new Error(
-    `refusing Grok trust for ${cwd}: trust is granted only to trees orch cut; ` +
+    `refusing Grok trust for ${cwd}: trust is granted only to trees orchestrator cut; ` +
       'removed tree paths never recur',
   )
 }

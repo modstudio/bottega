@@ -1,6 +1,6 @@
 ---
 name: orch-status
-description: Answer "status?" for the current session working the bottega board. Correlates board tasks, session-owned orch runs, open rulings, scoring debt, landing commits, and close-out work without reading either database directly.
+description: Answer "status?" for the current session working the bottega board. Correlates board tasks, session-owned orchestrator runs, open rulings, scoring debt, landing commits, and close-out work without reading either database directly.
 ---
 
 # Report This Session's Status

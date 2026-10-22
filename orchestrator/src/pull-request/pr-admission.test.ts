@@ -168,7 +168,7 @@ test('merge admission leaves an existing snapshot unchanged', () => {
   ).toEqual({ pr_number: 40 })
 })
 
-test('a missing applicable lens refusal names the lens and dispatch command', () => {
+test('a never-reviewed branch names its missing lens without the generic no-round refusal', () => {
   const change = {
     project: { name: 'fixture' },
     branch: 'DEV-1221-review-lenses',
@@ -179,15 +179,15 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
   const message = triageRefusal(change, {
     complete: false,
     snapshot: {
-      reviewRecordIds: ['review-4'],
+      reviewRecordIds: [],
       patchId: 'patch',
       tier: 2,
-      lensRounds: 1,
+      lensRounds: 0,
       findingCount: 0,
       admissionPath: 'exact_review',
       readRecordId: null,
     },
-    missingReview: false,
+    missingReview: true,
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
     missingLenses: ['craft'],
@@ -196,11 +196,47 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
     earlierReviewNumber: null,
     earlierReviewTier: null,
     finalTierRaised: false,
+    noCompleteReviewRound: false,
   })
-  expect(message).toContain('applicable lens craft has not run and been judged')
+  expect(message).toContain('applicable lens craft has no recorded result on this branch')
   expect(message).toContain(
     `${PLATFORM_SLUG} run start review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft`,
   )
+  expect(message).not.toContain('no earlier complete review round')
+})
+
+test('a no-round refusal prints the generic remedy only from its decision field', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1535-no-round',
+    tip: 'tip',
+    group: { patchId: 'patch' },
+    tier: 2,
+  } as PullRequestChange
+  const message = triageRefusal(change, {
+    complete: false,
+    snapshot: {
+      reviewRecordIds: [],
+      patchId: 'patch',
+      tier: 2,
+      lensRounds: 0,
+      findingCount: 0,
+      admissionPath: 'exact_review',
+      readRecordId: null,
+    },
+    missingReview: false,
+    unfinishedReviewNumbers: [],
+    undisposedFindings: [],
+    missingLenses: [],
+    missingSecondOpinion: null,
+    architectReadRequired: false,
+    earlierReviewNumber: null,
+    earlierReviewTier: null,
+    finalTierRaised: false,
+    noCompleteReviewRound: true,
+  })
+
+  expect(message).toContain('no earlier complete review round exists on DEV-1535-no-round')
 })
 
 test('a creditable composed round refusal names only the architect read', () => {
@@ -280,6 +316,7 @@ test('a missing second opinion refusal names the lens and distinct first run', (
     earlierReviewNumber: null,
     earlierReviewTier: null,
     finalTierRaised: false,
+    noCompleteReviewRound: false,
   })
   expect(message).toContain('missing second opinion for correctness on a different model')
   expect(message).toContain('--lens correctness --distinct-from 47')
@@ -314,6 +351,7 @@ test('unfinished-review refusals print display numbers, never review UUIDs', () 
     earlierReviewNumber: null,
     earlierReviewTier: null,
     finalTierRaised: false,
+    noCompleteReviewRound: false,
   })
   expect(message).toContain('unfinished review 104')
   expect(message).toContain(`${PLATFORM_SLUG} review complete 104`)
@@ -362,6 +400,7 @@ test.each([
       earlierReviewNumber: 93,
       earlierReviewTier: 1,
       finalTierRaised: state.finalTierRaised,
+      noCompleteReviewRound: false,
     })
     expect(message).toContain(expected)
     expect(message).not.toContain(reviewRecordId)
