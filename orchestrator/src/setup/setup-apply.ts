@@ -1,10 +1,11 @@
 // concern: setup-apply
 /** Applies planned project actions in order through the project register service boundary. */
 
-import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { checkoutRootContaining } from './setup-legacy-path.ts'
 import {
   commandFailureReason,
   mcpAddArgv,
@@ -22,6 +23,7 @@ import type { SetupAction } from './setup-planner.ts'
 type AddAction = Extract<SetupAction, { kind: 'add' }>
 type SetAction = Extract<SetupAction, { kind: 'set' }>
 type RegistrationAction = Extract<SetupAction, { kind: 'register-mcp' }>
+type LegacySymlinkAction = Extract<SetupAction, { kind: 'remove-legacy-symlink' }>
 
 export type SetupActionResult = SetupAction & {
   status: 'applied' | 'unchanged' | 'refused' | 'not-attempted'
@@ -246,6 +248,7 @@ async function applySetupAction(
     await writeFile(action.path, migrated, 'utf8')
     return 'applied'
   }
+  if (action.kind === 'remove-legacy-symlink') return applyLegacyPathSymlinkRemoval(action)
   if (action.kind === 'register-mcp') return applyMcpRegistration(action, runner)
   if (action.kind === 'add') {
     await applyAddAction(action, service)
@@ -256,6 +259,30 @@ async function applySetupAction(
     return 'applied'
   }
   return 'unchanged'
+}
+
+async function applyLegacyPathSymlinkRemoval(
+  action: LegacySymlinkAction,
+): Promise<'applied' | 'unchanged'> {
+  let state: Awaited<ReturnType<typeof lstat>>
+  try {
+    state = await lstat(action.path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'unchanged'
+    throw error
+  }
+  if (!state.isSymbolicLink()) {
+    throw new Error(`refusing to remove ${action.path}: it is not a symbolic link`)
+  }
+  const target = await readlink(action.path)
+  const resolved = isAbsolute(target) ? target : resolve(dirname(action.path), target)
+  if (!checkoutRootContaining(resolved)) {
+    throw new Error(
+      `refusing to remove ${action.path}: it does not point into a ${PLATFORM_NAME} checkout`,
+    )
+  }
+  await rm(action.path)
+  return 'applied'
 }
 
 async function applyAddAction(action: AddAction, service: SetupProjectService): Promise<void> {

@@ -67,8 +67,7 @@ describe('install root resolution', () => {
     writeFileSync(join(root, DIST_MANIFEST), '{}')
     expect(resolveInstallationPaths(join(root, 'ops'), {})).toEqual({
       root,
-      orch: join(root, 'bin', 'orch'),
-      hub: join(root, 'bin', 'hub'),
+      executable: join(root, 'bin', PLATFORM_SLUG),
       ops: join(root, 'ops'),
       hubAssets: join(root, 'hub'),
     })
@@ -77,8 +76,7 @@ describe('install root resolution', () => {
       resolveInstallationPaths('/ignored', { [INSTALL_HOME_ENV]: '/installed/current' }),
     ).toEqual({
       root: '/installed/current',
-      orch: '/installed/current/bin/orch',
-      hub: '/installed/current/bin/hub',
+      executable: join('/installed/current', 'bin', PLATFORM_SLUG),
       ops: '/installed/current/ops',
       hubAssets: '/installed/current/hub',
     })
@@ -93,7 +91,7 @@ describe('install root resolution', () => {
 })
 
 test('assetPath joins segments against the running install root', () => {
-  expect(assetPath('bin', 'orch')).toBe(join(installRoot(), 'bin', 'orch'))
+  expect(assetPath('bin', PLATFORM_SLUG)).toBe(join(installRoot(), 'bin', PLATFORM_SLUG))
 })
 
 describe('installation identity', () => {

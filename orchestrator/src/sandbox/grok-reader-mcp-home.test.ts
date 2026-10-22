@@ -22,11 +22,11 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
     )
     const proxies = {
       project: {
-        command: '/bin/orch',
+        command: '/bin/bottega',
         args: ['mcp-reader-proxy', 'fixture', 'project', '/run/tree'],
       },
       secondary: {
-        command: '/bin/orch',
+        command: '/bin/bottega',
         args: ['mcp-reader-proxy', 'fixture', 'secondary', '/run/tree'],
       },
     }
@@ -46,8 +46,8 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
     expect(written.match(/^disabled_mcp_servers\s*=/gm)).toEqual(['disabled_mcp_servers ='])
     expect(written).not.toContain('credential')
     expect(written).not.toContain('same-project-under-another-name')
-    expect(written).toContain('project = { command = "/bin/orch"')
-    expect(written).toContain('secondary = { command = "/bin/orch"')
+    expect(written).toContain('project = { command = "/bin/bottega"')
+    expect(written).toContain('secondary = { command = "/bin/bottega"')
     expect(written).toContain('args = [ "mcp-reader-proxy", "fixture", "project", "/run/tree" ]')
     expect(written).toContain(`${MCP_SERVER_NAME} = { command = "orch" }`)
     expect(grokAskCommandFromConfig(written)).toEqual(grokAskServerCommand('host'))

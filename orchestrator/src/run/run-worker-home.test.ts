@@ -77,7 +77,7 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
   )
   const proxies = {
     project: {
-      command: '/bin/orch',
+      command: '/bin/bottega',
       args: ['mcp-reader-proxy', 'fixture', 'project', reader],
     },
   }

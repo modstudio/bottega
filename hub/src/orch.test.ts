@@ -494,7 +494,7 @@ test('an unknown envelope kind reports its physical line number', () => {
   expect(() => decodeRunsJson(`${runLine(runFixture, 2)}\n\n${other}`)).toThrow('line 3')
 })
 
-test('only the orchestrator client invokes bin/orch', () => {
+test('only the orchestrator client names the deleted orchestrator binary', () => {
   const root = fileURLToPath(new URL('./', import.meta.url))
   const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
     (entry) =>
@@ -504,10 +504,11 @@ test('only the orchestrator client invokes bin/orch', () => {
       !entry.name.endsWith('.test.ts') &&
       !entry.name.endsWith('.fixture.ts'),
   )
+  const deletedBinary = ['bin', 'orch'].join('/')
   const violations = files.flatMap((entry) => {
     const path = join(entry.parentPath, entry.name)
     const source = readFileSync(path, 'utf8')
-    return /bin\/orch/.test(source) || /\b(?:const|let|var)\s+ORCH\b/.test(source)
+    return source.includes(deletedBinary) || /\b(?:const|let|var)\s+ORCH\b/.test(source)
       ? [path.slice(root.length)]
       : []
   })

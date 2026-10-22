@@ -74,6 +74,7 @@ export type SetupPlan = {
   questions: SetupQuestion[]
   notices: SetupNotice[]
   mcpConfigMigrations?: McpConfigMigration[]
+  legacyPathSymlinks?: { path: string; target: string }[]
 }
 
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`

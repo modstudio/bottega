@@ -70,7 +70,7 @@ test('mentions record use when no hosted record address is configured', () => {
 
 const orchServer: McpServer = {
   name: MCP_SERVER_NAME,
-  command: '/bin/orch',
+  command: '/bin/bottega',
   args: ['mcp'],
 }
 function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
@@ -482,7 +482,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     machineWithMcp('codex', {
       support: 'automatic',
       registrations: {
-        [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
+        [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/bottega', args: ['mcp'] },
       },
     }),
     [],

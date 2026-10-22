@@ -5,7 +5,7 @@ import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-export const LEGACY_PATH_COMMANDS = ['orch', 'hub'] as const
+const LEGACY_PATH_COMMANDS = ['orch', 'hub'] as const
 export type LegacyPathCommand = (typeof LEGACY_PATH_COMMANDS)[number]
 
 export type LegacyPathSymlink = {
@@ -18,7 +18,7 @@ export function pathDirectories(pathValue: string | undefined): string[] {
   return (pathValue ?? '').split(':').filter(Boolean)
 }
 
-function isBottegaCheckout(directory: string): boolean {
+function isPlatformCheckout(directory: string): boolean {
   try {
     const parsed = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {
       name?: unknown
@@ -33,18 +33,24 @@ function isBottegaCheckout(directory: string): boolean {
 export function checkoutRootContaining(path: string): string | null {
   let directory = path
   for (;;) {
-    if (isBottegaCheckout(directory)) return directory
+    if (isPlatformCheckout(directory)) return directory
     const parent = dirname(directory)
     if (parent === directory) return null
     directory = parent
   }
 }
 
-export function shouldRemoveLegacyPathEntry(entry: {
-  isSymbolicLink: boolean
-  resolvedTarget: string
-}): boolean {
-  return entry.isSymbolicLink && checkoutRootContaining(entry.resolvedTarget) !== null
+function inspectLegacyPathLink(path: string): string | null {
+  try {
+    if (!lstatSync(path).isSymbolicLink()) return null
+    return readlinkSync(path)
+  } catch {
+    return null
+  }
+}
+
+function resolveLegacyPathTarget(directory: string, target: string): string {
+  return isAbsolute(target) ? target : resolve(directory, target)
 }
 
 export function captureLegacyPathSymlinks(
@@ -58,17 +64,10 @@ export function captureLegacyPathSymlinks(
       const path = join(directory, name)
       if (seen.has(path)) continue
       seen.add(path)
-      let isSymbolicLink = false
-      let target = ''
-      try {
-        isSymbolicLink = lstatSync(path).isSymbolicLink()
-        if (!isSymbolicLink) continue
-        target = readlinkSync(path)
-      } catch {
-        continue
-      }
-      const resolvedTarget = isAbsolute(target) ? target : resolve(directory, target)
-      if (!shouldRemoveLegacyPathEntry({ isSymbolicLink, resolvedTarget })) continue
+      const target = inspectLegacyPathLink(path)
+      if (target === null) continue
+      const resolvedTarget = resolveLegacyPathTarget(directory, target)
+      if (checkoutRootContaining(resolvedTarget) === null) continue
       found.push({ path, name, target: resolvedTarget })
     }
   }

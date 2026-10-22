@@ -20,8 +20,7 @@ export type DistributionManifest = {
 
 export type InstallationPaths = {
   root: string
-  orch: string
-  hub: string
+  executable: string
   ops: string
   hubAssets: string
 }
@@ -73,8 +72,7 @@ export function resolveInstallationPaths(
   const root = resolveInstallRoot(fromDirectory, env)
   return {
     root,
-    orch: join(root, 'bin', 'orch'),
-    hub: join(root, 'bin', 'hub'),
+    executable: join(root, 'bin', PLATFORM_SLUG),
     ops: join(root, 'ops'),
     hubAssets: join(root, 'hub'),
   }

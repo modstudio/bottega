@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { legacyCallCounts } from './legacy-calls.ts'
@@ -7,13 +7,12 @@ import { legacyCallCounts } from './legacy-calls.ts'
 let root = ''
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'legacy-calls-'))
-  mkdirSync(join(root, 'orchestrator'), { recursive: true })
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 function writeCalls(rows: Record<string, unknown>[]): void {
   writeFileSync(
-    join(root, 'orchestrator', 'legacy-calls.jsonl'),
+    join(root, 'legacy-calls.jsonl'),
     rows.map((row) => JSON.stringify(row)).join('\n') + (rows.length ? '\n' : ''),
   )
 }

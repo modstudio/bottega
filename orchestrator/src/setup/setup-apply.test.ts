@@ -229,7 +229,7 @@ test('adds an MCP registration and verifies the read-back', async () => {
     kind: 'register-mcp',
     harness: 'codex',
     bin: '/bin/codex',
-    server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+    server: { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] },
     replace: false,
   }
   const results = await applySetupActions(
@@ -242,7 +242,7 @@ test('adds an MCP registration and verifies the read-back', async () => {
           ? ++reads === 1
             ? ''
             : JSON.stringify({
-                transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] },
+                transport: { type: 'stdio', command: '/bin/bottega', args: ['mcp'] },
               })
           : 'added',
         stderr:
@@ -268,7 +268,7 @@ test('refuses a registration that became different before add and does not add',
     kind: 'register-mcp',
     harness: 'codex',
     bin: '/bin/codex',
-    server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+    server: { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] },
     replace: false,
   }
   const results = await applySetupActions(
@@ -299,7 +299,7 @@ test('replaces a Claude MCP registration by removing, adding, then reading back'
         bin: '/bin/claude',
         server: {
           name: MCP_SERVER_NAME,
-          command: '/bin/orch',
+          command: '/bin/bottega',
           args: ['mcp'],
         },
         replace: true,
@@ -310,7 +310,7 @@ test('replaces a Claude MCP registration by removing, adding, then reading back'
       calls.push(argv)
       return {
         exitCode: 0,
-        stdout: argv.includes('get') ? 'Command: /bin/orch\nArgs: mcp\n' : 'ok',
+        stdout: argv.includes('get') ? 'Command: /bin/bottega\nArgs: mcp\n' : 'ok',
         stderr: '',
         timedOut: false,
         error: null,
@@ -376,7 +376,7 @@ test('refuses a Claude replacement after a failed remove without attempting add'
         kind: 'register-mcp',
         harness: 'claude',
         bin: '/bin/claude',
-        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+        server: { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] },
         replace: true,
       },
     ],
@@ -408,7 +408,7 @@ test.each(['codex', 'grok'] as const)(
           kind: 'register-mcp',
           harness,
           bin: `/bin/${harness}`,
-          server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+          server: { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] },
           replace: true,
         },
       ],
@@ -416,9 +416,9 @@ test.each(['codex', 'grok'] as const)(
       (argv) => {
         calls.push(argv)
         const stdout = argv.includes('get')
-          ? JSON.stringify({ transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] } })
+          ? JSON.stringify({ transport: { type: 'stdio', command: '/bin/bottega', args: ['mcp'] } })
           : argv.includes('list')
-            ? JSON.stringify([{ name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }])
+            ? JSON.stringify([{ name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] }])
             : 'ok'
         return { exitCode: 0, stdout, stderr: '', timedOut: false, error: null }
       },
@@ -437,7 +437,7 @@ test('reports unchanged when a registration appears with the desired value befor
         kind: 'register-mcp',
         harness: 'codex',
         bin: '/bin/codex',
-        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+        server: { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] },
         replace: false,
       },
     ],
@@ -447,7 +447,7 @@ test('reports unchanged when a registration appears with the desired value befor
       return {
         exitCode: 0,
         stdout: JSON.stringify({
-          transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] },
+          transport: { type: 'stdio', command: '/bin/bottega', args: ['mcp'] },
         }),
         stderr: '',
         timedOut: false,
@@ -469,7 +469,7 @@ test('screens secret-shaped read-back and command output from refusal and apply 
         kind: 'register-mcp',
         harness: 'codex',
         bin: '/bin/codex',
-        server: { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] },
+        server: { name: MCP_SERVER_NAME, command: '/bin/bottega', args: ['mcp'] },
         replace: false,
       },
     ],
