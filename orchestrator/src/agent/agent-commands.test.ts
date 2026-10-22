@@ -85,19 +85,22 @@ test('a successful registration probe clears a quota cooldown', async () => {
     probe_result: string
   }
   const calls: string[] = []
+  let probeInputs: unknown
 
   await agentCommand(
     ['agent', 'probe', 'codex'],
     { log: () => {}, setExitCode: () => {} },
     {
-      probeAgent: async (name) => {
+      probeAgent: async (name, inputs) => {
         calls.push(name)
+        probeInputs = inputs
         return JSON.parse(prior.probe_result)
       },
     },
   )
 
   expect(calls).toEqual(['codex'])
+  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env })
   expect(
     candidates('implement').find((candidate) => candidate.agent === 'codex')?.cooling,
   ).toBeNull()

@@ -45,13 +45,16 @@ export function requireContinuationTree(input: {
   )
 }
 
+export function continuationReusesIntactTree(decision: ContinuationTreeDecision): boolean {
+  return decision.action === 'inherit-present-tree' || decision.action === 'no-tree-required'
+}
+
 export function continuationTreeCwd(
   decision: ContinuationTreeDecision,
   recordedCwd: string,
   projectPath: string | null,
 ): string {
-  if (decision.action === 'inherit-present-tree' || decision.action === 'no-tree-required')
-    return recordedCwd
+  if (continuationReusesIntactTree(decision)) return recordedCwd
   return projectPath!
 }
 

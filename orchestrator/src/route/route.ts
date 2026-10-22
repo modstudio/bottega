@@ -14,6 +14,10 @@ import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
+import {
+  type McpTransportPinFacts,
+  requiredMcpIneligibility,
+} from '../mcp/mcp-native-attachment.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
@@ -67,6 +71,17 @@ export type Candidate = {
   runningRunIds: string[]
 }
 
+type RouteConstraints = {
+  agents?: string[]
+  models?: string[]
+  model?: string
+  noWaitCapacity?: boolean
+  requiredMcp?: RequiredMcpServer
+  pinnedTransport?: 'cli' | 'acp'
+  transportPinSource?: McpTransportPinFacts['transportPinSource']
+  project?: string | null
+}
+
 const RUNNING_RUNS_SQL =
   "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
 
@@ -95,16 +110,22 @@ export const EVIDENCE_WINDOW = 40
 export const PROMPT_SIZE_BOUNDARY = 16 * 1024
 
 function mcpCandidateIneligibility(
-  pattern: string | undefined,
+  agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
+  pinnedTransport?: 'cli' | 'acp',
+  transportPinSource?: McpTransportPinFacts['transportPinSource'],
 ): string | null {
-  if (!requiredMcp || !pattern) return null
+  const requiredWhy = requiredMcpIneligibility(agent, requiredMcp, {
+    pinnedTransport,
+    transportPinSource,
+  })
+  if (requiredWhy || !requiredMcp || !agent.mcpToolNamePattern) return requiredWhy
   const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
   return decideMcpGrammarRuling({
     mode: requiredMcp.mode,
     server: requiredMcp.server,
     listedTools: listing?.listedTools,
-    pattern,
+    pattern: agent.mcpToolNamePattern,
   }).routingIneligibility
 }
 
@@ -425,6 +446,8 @@ export function candidates(
   coolingProbeAgent?: string,
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
+  pinnedTransport?: 'cli' | 'acp',
+  transportPinSource?: McpTransportPinFacts['transportPinSource'],
   explicitlyNamedAgent?: string,
   projectName?: string | null,
   repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
@@ -580,11 +603,12 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
+    const mcpWhy = mcpCandidateIneligibility(a, requiredMcp, pinnedTransport, transportPinSource)
     const policy = routePolicyEligibility(
       jobName,
       a,
       explicitlyNamedAgent,
+      pinnedTransport,
       projectName,
       readCurrentRepository,
     )
@@ -753,6 +777,8 @@ export function evidenceFor(
     modelOverride?: string
     lens?: string | null
     requiredMcp?: RequiredMcpServer
+    pinnedTransport?: 'cli' | 'acp'
+    transportPinSource?: McpTransportPinFacts['transportPinSource']
     project: string | null | undefined
   },
 ): {
@@ -763,7 +789,14 @@ export function evidenceFor(
   scoped: Candidate[] | null
   job: Candidate[]
 } {
-  const { lens, modelOverride, project: projectName, requiredMcp } = options
+  const {
+    lens,
+    modelOverride,
+    pinnedTransport,
+    project: projectName,
+    requiredMcp,
+    transportPinSource,
+  } = options
   const requested =
     lens?.trim() && job(jobName).findings
       ? { level: 'lens' as const, value: lens.trim() }
@@ -778,6 +811,8 @@ export function evidenceFor(
     undefined,
     undefined,
     requiredMcp,
+    pinnedTransport,
+    transportPinSource,
     undefined,
     projectName,
   )
@@ -792,6 +827,8 @@ export function evidenceFor(
             undefined,
             requested.value,
             requiredMcp,
+            pinnedTransport,
+            transportPinSource,
             undefined,
             projectName,
           )
@@ -803,6 +840,8 @@ export function evidenceFor(
             undefined,
             undefined,
             requiredMcp,
+            pinnedTransport,
+            transportPinSource,
             undefined,
             projectName,
           )
@@ -856,34 +895,27 @@ export function evidenceFor(
   }
 }
 
-type CurrentPolicyCandidate = Pick<
-  Candidate,
-  'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
-> & { precision?: number | null }
-
-type PickAvoid = {
-  agents?: string[]
-  models?: string[]
-  model?: string
-  noWaitCapacity?: boolean
-  requiredMcp?: RequiredMcpServer
-  project?: string | null
-}
-
 function evidenceForPick(
   jobName: string,
   promptBytes: number,
   stack: string | null | undefined,
-  avoid: PickAvoid,
-  lens: string | undefined,
+  constraints: RouteConstraints,
+  lens?: string,
 ) {
   return evidenceFor(jobName, promptBytes, stack, {
-    modelOverride: avoid.model,
+    modelOverride: constraints.model,
     lens,
-    requiredMcp: avoid.requiredMcp,
-    project: avoid.project,
+    requiredMcp: constraints.requiredMcp,
+    pinnedTransport: constraints.pinnedTransport,
+    transportPinSource: constraints.transportPinSource,
+    project: constraints.project,
   })
 }
+
+type CurrentPolicyCandidate = Pick<
+  Candidate,
+  'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
+> & { precision?: number | null }
 
 function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
   if (ev.level === 'lens') return `lens ${ev.lens} cell`
@@ -916,19 +948,21 @@ function namedCandidate(
   name: string,
   promptBytes: number,
   ev: ReturnType<typeof evidenceFor>,
-  avoid: PickAvoid,
+  constraints: RouteConstraints,
   probe: boolean,
 ): Candidate {
   const rows = candidates(
     jobName,
     promptBytes,
     ev.level === 'stack' ? ev.stack : undefined,
-    avoid.model,
+    constraints.model,
     probe ? name : undefined,
     ev.level === 'lens' ? ev.lens : undefined,
-    avoid.requiredMcp,
+    constraints.requiredMcp,
+    constraints.pinnedTransport,
+    constraints.transportPinSource,
     name,
-    avoid.project,
+    constraints.project,
   )
   const candidate = rows.find((row) => row.agent === name)
   if (!candidate) throw new Error(`unknown agent "${name}"`)
@@ -1006,7 +1040,7 @@ export function pick(
   explore = true,
   stack?: string | null,
   /** Agents and effective models a fan-out has already used. */
-  avoid: PickAvoid = {},
+  avoid: RouteConstraints = {},
   /** An explicit calibration probe may test whether its named agent recovered. */
   probe = false,
   /** Stable findings viewpoint used for reviewer-precision calibration. */
@@ -1015,7 +1049,6 @@ export function pick(
 ): { agent: string; reason: string } {
   const j = job(jobName)
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
-  const cands = ev.cands
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
   const evidenceCell = evidenceCellName(ev)
@@ -1025,7 +1058,7 @@ export function pick(
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    // Keep candidates()' view unchanged. Naming bypasses metering; only a probe bypasses cooling.
+    // Keep candidates()' view unchanged. Naming bypasses opt-in; only a probe bypasses cooling.
     const c = namedCandidate(jobName, override, promptBytes, ev, avoid, probe)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
       throw new Error(capacityRefusal(c))
@@ -1033,7 +1066,7 @@ export function pick(
     if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
-  const blockedPreferred = cands.find(
+  const blockedPreferred = ev.cands.find(
     (candidate) =>
       candidate.preferred &&
       candidate.why.startsWith('at capacity') &&
@@ -1047,8 +1080,8 @@ export function pick(
         'cleared by: wait for the named runs or pass --no-wait-capacity',
     )
   }
-  let eligible = cands.filter((c) => c.eligible)
-  const excluded = cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`)
+  let eligible = ev.cands.filter((c) => c.eligible)
+  const excluded = ev.cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`)
   if (eligible.length === 0) {
     throw new RefusalError(
       `no eligible agent for job "${jobName}"` +
@@ -1259,6 +1292,7 @@ function routePolicyEligibility(
   jobName: string,
   agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport' | 'trainsOnInputs'>,
   explicitlyNamedAgent: string | undefined,
+  pinnedTransport?: 'cli' | 'acp',
   projectName?: string | null,
   repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ) {
@@ -1284,17 +1318,27 @@ function routePolicyEligibility(
   if (!training.eligible) return { ...training, mayAutoRouteNamedJob: false }
   const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)
   if (!metered.eligible) return metered
+  const transport = pinnedTransport ?? agent.defaultTransport
   const transportWhy =
-    agent.defaultTransport === 'acp'
+    transport === 'acp'
       ? transportPinIneligibility(
           jobName,
           agent.name,
           AGENTS[agent.name]!,
-          agent.defaultTransport,
+          transport,
           explicitlyNamedAgent === agent.name,
           metered.mayAutoRouteNamedJob,
         )
-      : null
+      : pinnedTransport
+        ? transportPinIneligibility(
+            jobName,
+            agent.name,
+            AGENTS[agent.name]!,
+            transport,
+            explicitlyNamedAgent === agent.name,
+            metered.mayAutoRouteNamedJob,
+          )
+        : null
   return transportWhy ? { ...metered, eligible: false, why: transportWhy } : metered
 }
 

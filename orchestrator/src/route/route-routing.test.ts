@@ -172,6 +172,8 @@ test('candidates wires verified project visibility and the current local origin'
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
         'training-public',
       ).find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({ eligible: false })
@@ -179,6 +181,8 @@ test('candidates wires verified project visibility and the current local origin'
       candidates(
         'summarize',
         0,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -200,6 +204,8 @@ test('candidates wires verified project visibility and the current local origin'
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
         'training-public',
       ).find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({ eligible: true })
@@ -207,6 +213,8 @@ test('candidates wires verified project visibility and the current local origin'
       candidates(
         'summarize',
         0,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -229,6 +237,8 @@ test('candidates wires verified project visibility and the current local origin'
       candidates(
         'summarize',
         0,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -264,6 +274,8 @@ test('non-training candidates do not read the project origin', () => {
     undefined,
     undefined,
     undefined,
+    undefined,
+    undefined,
     'non-training-public',
     () => {
       reads += 1
@@ -291,6 +303,8 @@ test('a routing call reads a public project origin at most once for training can
     candidates(
       'summarize',
       0,
+      undefined,
+      undefined,
       undefined,
       undefined,
       undefined,

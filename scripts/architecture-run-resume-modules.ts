@@ -32,6 +32,21 @@ export const runResumeModuleSpecs = [
     allowed: ['../project/projects.ts', './continuation-checkout.ts'],
   },
   {
+    file: 'orchestrator/src/run/continuation-provision-decision.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/run/continuation-provision-service.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../project/projects.ts',
+      '../worktree/worktree-seed.ts',
+      './continuation-provision-decision.ts',
+      './continuation-tree-decision.ts',
+      './continuation-tree-service.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/run/continuation-tree-decision.ts',
     allowed: [],
   },

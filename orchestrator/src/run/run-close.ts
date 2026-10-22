@@ -185,6 +185,7 @@ function selectFailoverSuccessor(input: {
           input.launchCwd ?? input.callerCwd,
           input.repo ?? undefined,
         ),
+        pinnedTransport: input.pinnedTransport ?? undefined,
         project: input.repo,
       },
       false,

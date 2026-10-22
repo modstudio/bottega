@@ -4,7 +4,16 @@ import {
   dispatchLaunchCwdDecision,
   resolveCallerCheckoutDecision,
   taskBranchLandingBypassWarning,
+  transportSelection,
 } from './dispatch-cli-service.ts'
+
+test('dispatch transport selection gives an explicit flag precedence over the environment', () => {
+  expect(transportSelection('cli', undefined, 'acp')).toEqual({
+    transport: 'cli',
+    transportExplicit: true,
+    transportPinSource: 'explicit',
+  })
+})
 
 describe('dispatch launch cwd selection', () => {
   test('repo-path mutation: --repo without --cwd launches from the named project', () => {

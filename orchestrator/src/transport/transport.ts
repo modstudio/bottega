@@ -32,6 +32,11 @@ export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
 export type TransportName = 'cli' | 'acp'
 
+export type TransportPin = {
+  pinnedTransport?: TransportName
+  transportPinSource?: 'explicit' | 'environment'
+}
+
 /**
  * How much of the machine an agent may use.
  *
@@ -343,6 +348,26 @@ export function resolveTransportName(
   if (!raw || raw === 'cli') return 'cli'
   if (raw === 'acp') return 'acp'
   throw new Error(`unknown transport "${raw}"; expected cli or acp`)
+}
+
+/** Classify the effective transport pin with the same precedence as transport resolution. */
+export function classifyTransportPin(
+  explicit?: string | null,
+  env = process.env.ORCH_TRANSPORT,
+): TransportPin {
+  if (explicit !== undefined && explicit !== null) {
+    return {
+      pinnedTransport: resolveTransportName(explicit, undefined),
+      transportPinSource: 'explicit',
+    }
+  }
+  if (env) {
+    return {
+      pinnedTransport: resolveTransportName(undefined, env),
+      transportPinSource: 'environment',
+    }
+  }
+  return {}
 }
 
 /** ACP pins to codex when the caller did not name an agent. */

@@ -13,6 +13,7 @@ import {
   mainCheckoutOf,
   scrubbedGitEnv,
   borrowedCheckoutOf as sharedBorrowedCheckoutOf,
+  gitToplevel as sharedGitToplevel,
 } from '../../../shared/git.ts'
 
 /**
@@ -354,6 +355,11 @@ function gitBytes(args: string[], cwd: string): Buffer {
  */
 export function repoRootOf(cwd: string): string | null {
   return mainCheckoutOf(cwd, targetGitEnvironment(cwd))
+}
+
+/** Absolute, untruncated toplevel of this checkout, or null when git cannot answer. */
+export function gitToplevel(cwd: string): string | null {
+  return sharedGitToplevel(cwd)
 }
 
 /** Whether git interprets this revision expression relative to a worktree's own HEAD. */
