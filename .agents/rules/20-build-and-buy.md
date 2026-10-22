@@ -36,21 +36,23 @@ the halves usually have different build-or-buy answers. Record negative
 results in the specification so later work does not pay to repeat the same
 search.
 
-## Review within the tier's budget
+## Review rounds are a funnel
 
 `review-tier.ts:classifyReviewTier` sets a change's tier from the higher of
-risk and cognitive size. The project's review declaration selects the lenses
-that apply to the change at that tier. The tier fixes a hard ceiling on lens
-rounds, counted on the branch; tier `0` runs none.
-Check the tier before the first lens and before every
-later round. At the ceiling, stop and ask the operator; never dispatch another
-round, whatever the new findings' severity.
+risk and cognitive size; the project's declaration selects its lenses, and
+tier `0` runs none. Check the tier before every round.
 
-The initial review is the only full review. After a fix round the architect
-reads the fix and lands it. Re-lens only at tier `3`, only when the fix touched
-a tier-`3` path, and only with the lenses whose dimension the fix touched,
-carrying the prior findings forward. Fix real findings in the round that
-raised them and drop speculation in triage. A clean round ends the ladder.
+The initial review is the only full review. A later round runs only when a
+tier `3` fix touched a tier `3` path, as a regression check: only the lenses
+with accepted findings, plus any whose paths it newly touched. A clean lens
+drops out for good; a round with no accepted findings ends the ladder.
+Dispatch only what the funnel admits, not all `bottega review tier` lists.
+Otherwise the architect reads the fix and lands it. Fix real findings in
+their round; drop speculation in triage.
+
+A well-sized change leaves by its third round; the round ceiling only
+backstops an oversized change or fixes not converging. At it, stop and ask
+the operator.
 
 Respect the review concurrency ceiling defined by the orchestration policy.
 When a gate cannot run, record why and land on the evidence available; do not
