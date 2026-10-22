@@ -28,6 +28,9 @@ export function observedTestsLine(input: {
   claimDisagrees: number | null
 }): string | null {
   if (input.claimDisagrees === null) return null
+  if (input.ran === null) {
+    return 'tests observed: not observed; tests_claim_disagrees: false'
+  }
   return (
     `tests observed: {"ran":${Boolean(input.ran)},"passed":` +
     `${input.passed === null ? 'null' : Boolean(input.passed)}}; ` +
