@@ -37,7 +37,8 @@ const ownedSettingsSchema = z
         hard_deny: z.array(z.string()).optional(),
         environment: z.array(z.string()).optional(),
       })
-      .strict(),
+      .strict()
+      .optional(),
     envKeys: z
       .array(z.string().regex(ENV_NAME))
       .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name)),
@@ -55,11 +56,11 @@ export function extractOwnedSettings(value: unknown): OwnedSettings {
   if (!isPlainObject(value)) {
     throw new Error(SETTINGS_PARSE_REFUSAL)
   }
-  const autoMode = parseAutoMode(Object.hasOwn(value, 'autoMode') ? value.autoMode : {})
+  const autoMode = Object.hasOwn(value, 'autoMode') ? parseAutoMode(value.autoMode) : undefined
   return {
     permissions: Object.hasOwn(value, 'permissions') ? value.permissions : {},
     hooks: Object.hasOwn(value, 'hooks') ? value.hooks : {},
-    autoMode,
+    ...(autoMode === undefined ? {} : { autoMode }),
     envKeys: [],
   }
 }
@@ -69,7 +70,7 @@ export function serializeOwnedSettings(owned: OwnedSettings): string {
     {
       permissions: owned.permissions,
       hooks: owned.hooks,
-      autoMode: owned.autoMode ?? {},
+      ...(owned.autoMode === undefined ? {} : { autoMode: owned.autoMode }),
       envKeys: owned.envKeys ?? [],
     },
     null,
@@ -90,7 +91,7 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
   if (!result.success) {
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with exactly permissions, hooks, autoMode, and sorted envKeys names',
+        'cleared by: write a JSON object with permissions, hooks, optional autoMode, and sorted envKeys names',
     )
   }
   return result.data
@@ -104,7 +105,6 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
     throw new Error('refusing stored settings row: cannot parse JSON')
   }
   if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'envKeys')) parsed.envKeys = []
-  if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'autoMode')) parsed.autoMode = {}
   const result = ownedSettingsSchema.safeParse(parsed)
   if (!result.success) throw new Error('refusing stored settings row: invalid owned settings shape')
   return result.data
@@ -150,7 +150,7 @@ export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): b
   return (
     deepEqual(left.permissions, right.permissions) &&
     deepEqual(left.hooks, right.hooks) &&
-    deepEqual(left.autoMode ?? {}, right.autoMode ?? {}) &&
+    (right.autoMode === undefined || deepEqual(left.autoMode, right.autoMode)) &&
     deepEqual(left.envKeys ?? [], right.envKeys ?? [])
   )
 }
@@ -173,7 +173,7 @@ export function secretShapedPaths(owned: OwnedSettings): string[] {
 }
 
 function parseAutoMode(value: unknown): OwnedAutoMode {
-  const result = ownedSettingsSchema.shape.autoMode.safeParse(value)
+  const result = ownedSettingsSchema.shape.autoMode.unwrap().safeParse(value)
   if (!result.success) {
     throw new Error(
       'refusing settings file: invalid autoMode\ncleared by: use only allow, soft_deny, hard_deny, and environment arrays of strings',

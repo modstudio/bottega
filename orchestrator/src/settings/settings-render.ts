@@ -77,6 +77,7 @@ export function renderOwnedSettingsFile(
   let next = text
   for (const member of [...parsed.members].reverse()) {
     if (member.ownedKey === null) continue
+    if (member.ownedKey === 'autoMode' && owned.autoMode === undefined) continue
     const formatted = indentJson(
       ownedValue(owned, member.ownedKey),
       indentOf(text, member.nameStart),
@@ -86,7 +87,9 @@ export function renderOwnedSettingsFile(
   const present = new Set(
     parsed.members.flatMap((member) => (member.ownedKey === null ? [] : [member.ownedKey])),
   )
-  const missing = OWNED_KEYS.filter((name) => !present.has(name))
+  const missing = OWNED_KEYS.filter(
+    (name) => !present.has(name) && (name !== 'autoMode' || owned.autoMode !== undefined),
+  )
   if (missing.length > 0) {
     const updated = locateObject(next)
     next = insertOwnedKeys(
@@ -137,10 +140,12 @@ export function diffOwnedSettings(file: OwnedSettings, store: OwnedSettings): Se
     autoMode: Object.fromEntries(
       AUTO_MODE_LISTS.map((name) => [
         name,
-        {
-          added: subtract(fileAutoMode[name], storeAutoMode[name]),
-          removed: subtract(storeAutoMode[name], fileAutoMode[name]),
-        },
+        store.autoMode === undefined
+          ? { added: [], removed: [] }
+          : {
+              added: subtract(fileAutoMode[name], storeAutoMode[name]),
+              removed: subtract(storeAutoMode[name], fileAutoMode[name]),
+            },
       ]),
     ) as SettingsDrift['autoMode'],
     hooks: {
@@ -280,7 +285,7 @@ function insertOwnedKeys(
 }
 
 function ownedValue(owned: OwnedSettings, name: (typeof OWNED_KEYS)[number]): unknown {
-  return name === 'autoMode' ? (owned.autoMode ?? {}) : owned[name]
+  return owned[name]
 }
 
 function locateObject(text: string): {

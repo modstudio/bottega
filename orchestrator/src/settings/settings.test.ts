@@ -4,6 +4,7 @@ import {
   containsSecretShaped,
   extractOwnedSettings,
   ownedSettingsEqual,
+  parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
   SETTINGS_PARSE_REFUSAL,
@@ -30,11 +31,10 @@ describe('extractOwnedSettings', () => {
     })
   })
 
-  test('fills missing owned keys with empty objects', () => {
+  test('leaves missing auto-mode unowned', () => {
     expect(extractOwnedSettings({ env: { A: '1' } })).toEqual({
       permissions: {},
       hooks: {},
-      autoMode: {},
       envKeys: [],
     })
   })
@@ -53,6 +53,11 @@ describe('validateOwnedSettingsBody', () => {
   test('accepts exactly permissions and hooks', () => {
     const owned = extractOwnedSettings(extra)
     expect(validateOwnedSettingsBody(serializeOwnedSettings(owned))).toEqual(owned)
+  })
+
+  test('accepts auto-mode as an optional member', () => {
+    const withoutAutoMode = { permissions: {}, hooks: {}, envKeys: [] }
+    expect(validateOwnedSettingsBody(JSON.stringify(withoutAutoMode))).toEqual(withoutAutoMode)
   })
 
   test('refuses unknown auto-mode members and non-string lists', () => {
@@ -121,6 +126,13 @@ test('auto-mode round trips with order and duplicates intact', () => {
   const parsed = validateOwnedSettingsBody(serializeOwnedSettings(owned))
   expect(parsed.autoMode).toEqual(owned.autoMode)
   expect(ownedSettingsEqual(parsed, owned)).toBe(true)
+})
+
+test('a stored row without auto-mode round trips without gaining ownership', () => {
+  const body = JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] })
+  const parsed = parseStoredOwnedSettings(body)
+  expect(parsed).not.toHaveProperty('autoMode')
+  expect(JSON.parse(serializeOwnedSettings(parsed))).not.toHaveProperty('autoMode')
 })
 
 function jwtSentinel() {
