@@ -256,7 +256,11 @@ test('hosted promote failure leaves draft state and success adopts promoted stat
       }
     },
   })
-  expect((await promoteWorkflow('hosted-promote', 1, 'promote')).status).toBe('production')
+  expect(await promoteWorkflow('hosted-promote', 1, 'promote')).toEqual({
+    version: 1,
+    changedSpaces: [SPACE],
+    overrideSpaces: [],
+  })
   expect(
     local.query('SELECT status FROM workflow_version WHERE record_id=?').get(versionId),
   ).toEqual({ status: 'production' })

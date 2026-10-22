@@ -22,6 +22,7 @@ import {
   selectedStepCatalogue,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
   resolveWorkflowProjectFacts,
@@ -29,6 +30,8 @@ import {
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { workflowPromotionReport } from './workflow-shared-promotion.ts'
+import * as sharedPromotionStore from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowModeSteps,
@@ -529,31 +532,49 @@ export function promoteWorkflow(
 ) {
   assertWorkflowWriteAllowed('promote workflow')
   return applyRecordWriteAuthority({
-    local: () => promoteWorkflowLocal(slug, n, reasonValue, authorValue, d),
+    local: () => {
+      promoteWorkflowLocal(slug, n, reasonValue, authorValue, d)
+      return { version: n, changedSpaces: ['local'], overrideSpaces: [] }
+    },
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
       const spaceId = await hostedSpace(d)
       const target = selectedWorkflow(slug, n, d, spaceId)
-      workflowPromotionPreflight(slug, target.definition, d, spaceId)
-      const current = d
-        .query<{ n: number }, [string, string]>(
-          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
-        )
-        .get(slug, spaceId)
-      const result = await recordApiClient().promoteWorkflow!(
+      if (target.author !== BUILT_IN_WORKFLOW_AUTHOR) {
+        await sharedPromotionStore.promoteHostedWorkflowSpace(slug, n, reasonValue, spaceId, d, {
+          preflight: (definition, targetSpace) =>
+            workflowPromotionPreflight(slug, definition as WorkflowDefinition, d, targetSpace),
+          author: () => writeAuthor(authorValue),
+        })
+        return { version: n, changedSpaces: [spaceId], overrideSpaces: [] }
+      }
+
+      const decision = await sharedPromotionStore.promoteSharedWorkflow(
+        slug,
+        n,
+        reasonValue,
+        spaceId,
+        BUILT_IN_WORKFLOW_AUTHOR,
+        d,
         {
-          kind: 'workflow',
-          slug,
-          n,
-          expectedProductionVersion: current?.n ?? null,
-          author: writeAuthor(authorValue),
-          reason: reasonValue.trim(),
-          sessionId: sessionId(),
+          draftLocal: (version) =>
+            writeDraftLocal(
+              slug,
+              JSON.parse(version.definition),
+              version.reason,
+              BUILT_IN_WORKFLOW_AUTHOR,
+              'import',
+              d,
+            ).n,
+          promoteLocal: () => {
+            promoteWorkflowLocal(slug, n, reasonValue, authorValue, d)
+          },
+          preflight: (definition, targetSpace) =>
+            workflowPromotionPreflight(slug, definition as WorkflowDefinition, d, targetSpace),
+          author: () => writeAuthor(authorValue),
         },
-        { destinationSpaceId: spaceId },
       )
-      await applyWorkflowWriteResponse(d, 'workflow', result)
-      return hostedWorkflowRow(slug, n, d, spaceId)
+      return workflowPromotionReport(n, decision)
     },
   })
 }
