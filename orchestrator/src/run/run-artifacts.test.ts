@@ -233,6 +233,7 @@ test('terminal artifact loading names focused-test and gate logs from their stru
       ts: '2026-10-21T12:00:00.000Z',
       type: 'focused_test',
       paths: ['test.ts'],
+      started: true,
       exitCode: 0,
       timedOut: false,
       elapsedMs: 1,

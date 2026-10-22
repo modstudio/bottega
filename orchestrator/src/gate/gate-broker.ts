@@ -263,6 +263,10 @@ async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
   })
 }
 
+function gateScratchLogPath(scratchDir: string, executionId: number): string {
+  return join(scratchDir, `gate-${executionId}.log`)
+}
+
 function createGateLog(path: string): number {
   try {
     return createNoFollowFile(path)
@@ -456,6 +460,48 @@ async function runPreparedGate(input: {
   })
 }
 
+/** Decide how a finished gate execution is recorded, record it, and name its retained log. */
+function completeGateExecution(input: {
+  request: PendingGate
+  scratchDir: string
+  finishedAt: string
+  state: GateProcessState
+  cancelledReason: string | null
+  logCreated: boolean
+  artifactPath: string
+  elapsedMs: number
+  tail: string
+  command: string | null
+  checkExecutions: readonly CheckExecutionRecord[]
+}): void {
+  const finalization = decideGateExecutionFinalization({
+    exitCode: input.state.exitCode,
+    timedOut: input.state.timedOut,
+    cancelledReason: input.cancelledReason,
+    logCreated: input.logCreated,
+    artifactPath: input.artifactPath,
+  })
+  recordFinishedGate({
+    requestId: input.request.id,
+    finishedAt: input.finishedAt,
+    exitCode: finalization.exitCode,
+    timedOut: finalization.timedOut,
+    elapsedMs: input.elapsedMs,
+    tail: input.tail,
+    artifactPath: finalization.artifactPath,
+    cancelledReason: finalization.cancelledReason,
+    command: input.command,
+    checkExecutions: input.checkExecutions,
+  })
+  if (finalization.artifactPath) {
+    recordGateLogEvent(
+      input.request.run_record_id,
+      input.finishedAt,
+      gateScratchLogPath(input.scratchDir, input.request.id),
+    )
+  }
+}
+
 function startGateExecution(
   request: PendingGate,
   scratchDir: string,
@@ -506,7 +552,7 @@ function startGateExecution(
       tail = boundedGateOutputTail(tail + bytes.toString())
     }
     try {
-      fd = createGateLog(join(scratchDir, `gate-${request.id}.log`))
+      fd = createGateLog(gateScratchLogPath(scratchDir, request.id))
       const prepared = prepareGateExecution({ request, environment, record })
       command = prepared.command
       await hostSlot(
@@ -537,28 +583,19 @@ function startGateExecution(
       checkExecutions = finishGateLog(fd, checkExecutionPath, record)
     }
     finishedAt = nowIso()
-    const finalization = decideGateExecutionFinalization({
-      exitCode: state.exitCode,
-      timedOut: state.timedOut,
+    completeGateExecution({
+      request,
+      scratchDir,
+      finishedAt,
+      state,
       cancelledReason,
       logCreated: fd !== null,
       artifactPath,
-    })
-    recordFinishedGate({
-      requestId: request.id,
-      finishedAt,
-      exitCode: finalization.exitCode,
-      timedOut: finalization.timedOut,
       elapsedMs: Date.now() - started,
       tail,
-      artifactPath: finalization.artifactPath,
-      cancelledReason: finalization.cancelledReason,
       command,
       checkExecutions,
     })
-    if (finalization.artifactPath) {
-      recordGateLogEvent(request.run_record_id, finishedAt, scratchPath)
-    }
   })()
     .finally(() => onFinish?.({ executionId: request.id, at: finishedAt ?? nowIso() }))
     .finally(unregister)

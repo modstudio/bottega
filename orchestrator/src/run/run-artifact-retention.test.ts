@@ -120,6 +120,7 @@ test('named artifact paths use only structured path fields and deduplicate', () 
           ts: '2026-10-21T12:00:00.000Z',
           type: 'focused_test',
           paths: ['test.ts'],
+          started: true,
           exitCode: 0,
           timedOut: false,
           elapsedMs: 1,
