@@ -1009,6 +1009,13 @@
       "when": 1793577600006,
       "tag": "0143_host_pressure_attribution",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "6",
+      "when": 1793577600007,
+      "tag": "0144_board_receipt_successor",
+      "breakpoints": true
     }
   ]
 }

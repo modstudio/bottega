@@ -2,6 +2,7 @@
 /** Decides whether a board message belongs in a reader's pushed delivery. */
 
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
+import { type PresenceFact, resolveAudience } from './board-policy.ts'
 
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
 export type BoardReaderStart = string | null | 'unbounded'
@@ -27,6 +28,38 @@ export function reportReplySuccessorDecision(input: {
     input.authorLastActivityAt !== null &&
     Date.parse(input.readerBeganAt) > input.authorLastActivityAt
   )
+}
+
+export function replySuccessorAddressing(input: {
+  presence: PresenceFact[]
+  reader: string
+  rootAuthorSession: string
+  rootProject: string | null
+  readerIsParticipant: boolean
+  successorAlreadyReceived: boolean
+  readerBeganAt: string | null
+  now: number
+  liveWindowMs: number
+}): boolean {
+  const readerFact = input.presence.find((row) => row.reader === input.reader && !row.taskAudienceOnly)
+  const authorFact = input.presence.find(
+    (row) => row.reader === input.rootAuthorSession && !row.taskAudienceOnly,
+  )
+  return reportReplySuccessorDecision({
+    rootAuthorLive: resolveAudience(
+      { kind: 'session', value: input.rootAuthorSession },
+      input.presence,
+      input.now,
+      input.liveWindowMs,
+    ).includes(input.rootAuthorSession),
+    readerIsArchitect: readerFact?.role === 'architect',
+    readerProject: readerFact?.project ?? '',
+    rootProject: input.rootProject,
+    readerIsParticipant: input.readerIsParticipant,
+    successorAlreadyReceived: input.successorAlreadyReceived,
+    readerBeganAt: input.readerBeganAt,
+    authorLastActivityAt: authorFact?.lastSeen ?? null,
+  })
 }
 
 function acknowledgementPushDecision(input: {

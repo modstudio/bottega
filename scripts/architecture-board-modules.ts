@@ -76,7 +76,10 @@ export const boardModules: BoardModule[] = [
     './board-render.ts',
     './board-service.ts',
   ]),
-  module('orchestrator/src/board/board-push-policy.ts', ['../../../shared/board-purpose.ts']),
+  module('orchestrator/src/board/board-push-policy.ts', [
+    '../../../shared/board-purpose.ts',
+    './board-policy.ts',
+  ]),
   module('orchestrator/src/board/board-push-service.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',

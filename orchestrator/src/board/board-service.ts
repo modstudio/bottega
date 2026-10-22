@@ -12,14 +12,12 @@ import {
   messageCanBeReaped,
   needsAckEscalation,
   OPERATOR_READER,
-  type PresenceFact,
   parseAudience,
   requireRealSession,
-  resolveAudience,
 } from './board-policy.ts'
 import {
   missingReaderStartWarning,
-  reportReplySuccessorDecision,
+  replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
 import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
@@ -57,6 +55,7 @@ export function recordPresence(
   cwd = process.cwd(),
   env: Environment = process.env,
   at = nowIso(),
+  beganAt?: string,
 ): boolean {
   if (classifyCaller(env).kind === 'worker') return false
   if (
@@ -100,7 +99,7 @@ export function recordPresence(
       project.recordId,
       cwd,
       current?.launch_key ?? null,
-      at,
+      beganAt ?? at,
       at,
     )
   return true
@@ -152,34 +151,23 @@ function replySuccessorPush(
     (candidate) => candidate.record_id === reply.thread_root_record_id,
   )
   if (!root?.author_session || !root.author_project) return false
-  const facts = presenceFacts(database, clock)
-  const readerFact: PresenceFact | undefined = facts.find(
-    (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
-  )
-  const authorFact: PresenceFact | undefined = facts.find(
-    (row: PresenceFact) => row.reader === root.author_session && !row.taskAudienceOnly,
-  )
-  return reportReplySuccessorDecision({
-    rootAuthorLive: resolveAudience(
-      { kind: 'session', value: root.author_session },
-      facts,
-      clock,
-      SESSION_LIVE_MS,
-    ).includes(root.author_session),
-    readerIsArchitect: readerFact?.role === 'architect',
-    readerProject: readerFact?.project ?? '',
+  return replySuccessorAddressing({
+    presence: presenceFacts(database, clock),
+    reader,
+    rootAuthorSession: root.author_session,
     rootProject: root.author_project,
     readerIsParticipant: hasReceipt(reply.record_id, reader, database),
     successorAlreadyReceived: Boolean(
       database
         .query(
           `SELECT 1 AS ok FROM board_receipt
-           WHERE message_record_id=? AND audience_at_posting=0 AND delivered_at IS NOT NULL`,
+           WHERE message_record_id=? AND successor=1 AND delivered_at IS NOT NULL`,
         )
         .get(reply.record_id),
     ),
     readerBeganAt: boardReaderBeganAt(reader, database),
-    authorLastActivityAt: authorFact?.lastSeen ?? null,
+    now: clock,
+    liveWindowMs: SESSION_LIVE_MS,
   })
 }
 
@@ -194,9 +182,10 @@ function takeReportReplySuccessor(
     database
       .query(
         `INSERT INTO board_receipt
-         (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-         VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
-         delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
+         (message_record_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,record_id)
+         VALUES (?,?,0,1,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
+         delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at),
+         successor=1`,
       )
       .run(reply.record_id, reader, new Date(clock).toISOString(), newRecordId())
     return true
@@ -437,7 +426,7 @@ export function claimPushNotices(
   })
   return {
     notices,
-    withheldOlderCount: selected.withheldOlderCount + (selected.notices.length - notices.length),
+    withheldOlderCount: selected.withheldOlderCount,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }
