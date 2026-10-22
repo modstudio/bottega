@@ -466,7 +466,7 @@ function insertBlockerRows(runId: string, rows: BlockerRow[], at: string): void 
   for (const r of rows) q.run(newRecordId(), runId, at, r.what, r.why, r.impact, r.source, r.kind)
 }
 
-function terminalConfinement(input: TerminalInput) {
+function terminalConfinementSnapshots(input: TerminalInput) {
   const after = terminalAfterCheckouts(
     input.watchedCheckouts,
     input.frozenBefore,
@@ -539,7 +539,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const startedAt = db()
     .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
     .get(claim.id) as { started_at: string; head_commit: string | null } | null
-  const confinement = terminalConfinement(input)
+  const confinement = terminalConfinementSnapshots(input)
   // Remove the input-free directory after readSession can derive any transcript location from cwd.
   removeIsolatedCwd?.()
   /**
