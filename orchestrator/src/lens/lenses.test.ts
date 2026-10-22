@@ -131,6 +131,30 @@ describe('lens catalogue', () => {
     })
   })
 
+  test('a generic default fills the lens declared custom slots without inventing built-in slots', async () => {
+    await setLens({
+      id: 'custom-fallback',
+      title: 'Custom fallback',
+      question: 'What does the custom lens find?',
+      excludes: 'Everything else.',
+      slots: JSON.stringify({
+        type: 'object',
+        properties: { review_focus: { type: 'string' } },
+        required: ['review_focus'],
+        additionalProperties: false,
+      }),
+      enabled: true,
+      requiresExecution: false,
+      reason: 'custom fallback fixture',
+    })
+
+    expect(resolveLens('custom-fallback', null)).toMatchObject({
+      slots: ['review_focus'],
+      profiles: [{ axis: 'framework', name: 'default', version: 1, source: 'generic' }],
+      body: 'REVIEW FOCUS\nNone.',
+    })
+  })
+
   test('an enabled stack profile wins while a disabled one falls through to generic', async () => {
     upsertProject({
       recordId: newRecordId(),

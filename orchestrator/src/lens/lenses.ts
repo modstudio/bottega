@@ -206,6 +206,18 @@ function profileValues(body: string, slots: string): Record<string, string> {
   return values as Record<string, string>
 }
 
+function defaultProfileBody(slots: string): string {
+  const builtInValues = objectJson(BUILT_IN_LENS_DEFAULT_PROFILE, 'built-in default profile')
+  return JSON.stringify(
+    Object.fromEntries(
+      slotNames(slots).names.map((slot) => [
+        slot,
+        typeof builtInValues[slot] === 'string' ? builtInValues[slot] : 'None.',
+      ]),
+    ),
+  )
+}
+
 const coreSnapshot = (row: CoreRow) =>
   JSON.stringify({
     title: row.title,
@@ -671,7 +683,7 @@ function resolvedProfile(
     axis,
     name: 'default',
     version: 1,
-    body: BUILT_IN_LENS_DEFAULT_PROFILE,
+    body: defaultProfileBody(core.slots),
     enabled: 1,
     space_id: core.space_id,
   }
@@ -693,7 +705,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
       WHERE s.project_record_id=? AND (l.id=? OR s.lens_record_id IS NULL) AND s.space_id IS ?
   ) ORDER BY axis`)
     .all(id, spaceId, project?.recordId ?? -1, id, spaceId) as { axis: LensAxis }[]
-  const axes = declaredAxes.length ? declaredAxes : [{ axis: 'framework' as const }]
+  const axes = declaredAxes.length ? declaredAxes : [{ axis: LENS_AXES[0] }]
   const profiles: (ProfileRow & { source: LensProfileSource })[] = []
   for (const { axis } of axes) {
     const selections = project
