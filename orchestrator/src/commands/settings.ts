@@ -9,6 +9,7 @@ import {
   settingsRestoreCommand,
 } from '../settings/settings-apply-commands.ts'
 import {
+  settingsAutoModeCommand,
   settingsImportCommand,
   settingsPermissionCommand,
   settingsRenderCheckCommand,
@@ -67,6 +68,28 @@ function registerSettingsSources(settings: Command): void {
         },
       })
     })
+  registerAutoMode(settings)
+}
+
+function registerAutoMode(settings: Command): void {
+  const autoMode = settings.command('auto-mode').description('manage canonical auto-mode rules')
+  for (const operation of ['add', 'remove'] as const) {
+    autoMode
+      .command(operation)
+      .description(`${operation} a canonical auto-mode rule`)
+      .option('--user', 'target the signed-in user settings')
+      .option('--project <name>', 'registered project whose rule is edited')
+      .requiredOption('--list <name>', 'auto-mode list containing the rule')
+      .requiredOption('--rule <rule>', 'auto-mode rule to edit')
+      .option('--expect <revision>', 'document revision required before editing')
+      .option('--reason <text>', 'reason recorded for the settings revision')
+      .option('--json', 'write the auto-mode result as JSON')
+      .action(async (options) => {
+        const result = await settingsAutoModeCommand(optionFlags(options), operation)
+        if (options.json) log(JSON.stringify(result))
+        else log(result.message ?? `updated autoMode.${options.list} at ${result.revision}`)
+      })
+  }
 }
 
 export function register(program: Command): void {

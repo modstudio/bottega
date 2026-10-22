@@ -35,6 +35,10 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
       revision: newRecordId(),
       permissions: { allow: [], ask: [], deny: [] },
     }),
+    applySettingsAutoMode: async () => ({
+      revision: newRecordId(),
+      autoMode: { allow: [], soft_deny: [], hard_deny: [], environment: [] },
+    }),
     importDoc: async () => ({ id: newRecordId(), revisionIds: [] }),
     importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),

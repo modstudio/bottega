@@ -63,6 +63,7 @@ function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}
     containingBranch: null,
     laterTurnBranches: [],
     superseded: false,
+    targetedPullRequests: null,
     ...overrides,
   })
 }
@@ -397,6 +398,86 @@ describe('run branch state decision', () => {
     expect(
       decide({ mergedPullRequests: [pullRequest], mergedPullRequestsTruncated: true }),
     ).toMatchObject({ state: 'landed', landedBy: { type: 'pr' } })
+  })
+
+  test('targeted completeness mutation: complete unmatched listings settle truncation as unlanded', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: { state: 'unmatched' },
+      }),
+    ).toEqual({ state: 'unlanded' })
+  })
+
+  test('targeted head mutation: a matching merged head settles truncation as landed', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          state: 'landed',
+          landedBy: 'name',
+          number: 42,
+          pullRequest,
+        },
+      }),
+    ).toEqual({
+      state: 'landed',
+      landedBy: {
+        type: 'pr',
+        number: 42,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
+    })
+  })
+
+  test('targeted commit mutation: a merged PR carrying the tip settles truncation as landed', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          state: 'landed',
+          landedBy: 'pr-commits',
+          number: 43,
+        },
+      }),
+    ).toEqual({ state: 'landed', landedBy: { type: 'pr-commits', number: 43 } })
+  })
+
+  test('targeted query failure mutation: an errored targeted lookup keeps truncation unknown', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          state: 'unknown',
+          reason: 'targeted GitHub lookup failed',
+        },
+      }),
+    ).toEqual({ state: 'unknown', error: 'targeted GitHub lookup failed' })
+  })
+
+  test('targeted key-list truncation mutation: a capped targeted lookup stays unknown', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          state: 'unknown',
+          reason: 'targeted merged pull-request listing reached 100 entries and may be truncated',
+        },
+      }),
+    ).toEqual({
+      state: 'unknown',
+      error: 'targeted merged pull-request listing reached 100 entries and may be truncated',
+    })
+  })
+
+  test('targeted commit-check failure mutation: a failed targeted check stays unknown', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: { state: 'unknown', reason: 'PR #43 fetch failed' },
+      }),
+    ).toEqual({ state: 'unknown', error: 'PR #43 fetch failed' })
   })
 })
 

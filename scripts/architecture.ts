@@ -30,6 +30,7 @@ import {
   hubSiteArchitectureRules,
   hubUtilArchitectureRules,
 } from './architecture-hub-packages.ts'
+import { landingTreeModules } from './architecture-landing-tree.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -235,6 +236,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/evidence/unjudged-expiry.ts', [
     '../../../shared/record/schema.ts',
     '../database/db.ts',
+    '../issue/issue-queue.ts',
     '../record/machine-identity.ts',
     '../run/run-outbox.ts',
     './evidence-query.ts',
@@ -246,24 +248,6 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../evidence/evidence-query.ts',
     '../resources/resource-claims.ts',
-  ]),
-  module('orchestrator/src/branch/branches.ts', [
-    '../../../shared/brand.ts',
-    './branch-base-claim.ts',
-    './branch-ref-guard.ts',
-    './branch-key-report.ts',
-    './branch-landing-records.ts',
-    './branch-landing-match.ts',
-    './branch-landing-service.ts',
-    './branch-state.ts',
-    './branch-settlement.ts',
-    '../database/db.ts',
-    '../git/git-environment.ts',
-    './merged-pull-request.ts',
-    './other-branch-state.ts',
-    '../project/project-lock.ts',
-    '../project/projects.ts',
-    './task-branch.ts',
   ]),
   module('orchestrator/src/agent/agent-registry.ts', [
     '../../../shared/brand.ts',
@@ -294,18 +278,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
-  module('orchestrator/src/landing-tree/landing-tree.ts', [
-    '../../../shared/brand.ts',
-    '../run/synthetic-lifecycle-job.ts',
-    '../worktree/worktree-template.ts',
-  ]),
-  module('orchestrator/src/landing-tree/release-observation.ts', [
-    '../branch/task-branch.ts',
-    '../git/git-environment.ts',
-    '../project/projects.ts',
-    '../run/synthetic-lifecycle-job.ts',
-    './landing-tree.ts',
-  ]),
+  ...landingTreeModules.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/worktree/keep-tree-hold.ts', []),
   module('orchestrator/src/agent/model-host.ts', [
     '../../../shared/brand.ts',
@@ -663,28 +636,6 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-lifecycle.ts',
     '../worktree/worktree-seed.ts',
     '../worktree/worktree-types.ts',
-  ]),
-  module('orchestrator/src/landing-tree/tree.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    'node:crypto',
-    '../close/close-out.ts',
-    '../database/db.ts',
-    '../git/git-environment.ts',
-    '../project/project-lock.ts',
-    '../project/projects.ts',
-    '../resources/resource-claims.ts',
-    '../run/branch-owner-guard.ts',
-    '../run/run-resume-claim.ts',
-    '../run/run-number.ts',
-    '../run/resume-tree.ts',
-    '../worktree/worktree.ts',
-    '../worktree/worktree-attribution.ts',
-    '../worktree/worktree-create.ts',
-    '../worktree/worktree-lifecycle.ts',
-    '../worktree/worktree-seed.ts',
-    '../worktree/worktree-types.ts',
-    './landing-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-step-sequences.ts', [
     './step-catalogue-definition.ts',
