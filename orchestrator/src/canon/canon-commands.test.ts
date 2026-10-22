@@ -13,6 +13,31 @@ import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { dispatchCanonCommand } from './canon-commands.ts'
 
+test('user canon hydrate refuses real harness homes outside the registered main checkout', async () => {
+  const priorHome = process.env.HOME
+  const priorCodexHome = process.env.CODEX_HOME
+  const priorGrokHome = process.env.GROK_HOME
+  try {
+    process.env.HOME = '/operator'
+    process.env.CODEX_HOME = '/operator/.codex'
+    process.env.GROK_HOME = '/operator/.grok'
+    await expect(
+      dispatchCanonCommand(
+        ['canon', 'hydrate'],
+        { has: (name) => name === 'user', flag: () => undefined },
+        { log: () => {}, exitCode: () => {}, cwd: () => '/operator' },
+      ),
+    ).rejects.toThrow('refusing doc canon hydrate --user from installation')
+  } finally {
+    if (priorHome === undefined) delete process.env.HOME
+    else process.env.HOME = priorHome
+    if (priorCodexHome === undefined) delete process.env.CODEX_HOME
+    else process.env.CODEX_HOME = priorCodexHome
+    if (priorGrokHome === undefined) delete process.env.GROK_HOME
+    else process.env.GROK_HOME = priorGrokHome
+  }
+})
+
 test('worker load measurement resolves a registered agent name to its harness', async () => {
   const root = mkdtempSync(join(tmpdir(), 'canon-load-command-'))
   const home = join(root, 'home')
