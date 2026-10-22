@@ -97,7 +97,7 @@ export function checkpointRun(input: {
   runId: string
   worktree: string
   branch: string
-  taskKey: string
+  taskKey: string | null
   scratchDir: string
   guardEnvironment: NodeJS.ProcessEnv
   containment: CheckpointContainment
@@ -140,7 +140,9 @@ export function checkpointRun(input: {
       `checkpoint refused: expected branch ${input.branch}, found ${currentBranch.out || currentBranch.error}`,
     )
   }
-  const subject = `${input.taskKey} checkpoint run ${input.runId} #${checkpointNo}`
+  const subject = input.taskKey
+    ? `${input.taskKey} checkpoint run ${input.runId} #${checkpointNo}`
+    : `checkpoint run ${input.runId} #${checkpointNo}`
   const committed = git(
     input.worktree,
     ['commit', ...(input.containment.disableHooks ? ['--no-verify'] : []), '-m', subject],

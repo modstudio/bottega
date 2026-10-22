@@ -11,6 +11,7 @@ import {
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
+  terminalCheckpointHeader,
 } from './run-terminal.ts'
 
 test('an ok child refreshes the failed root run record with the chain outcome', () => {
@@ -174,12 +175,11 @@ describe('terminal question deduplication decision', () => {
 })
 
 describe('terminal checkpoint decision', () => {
-  test('rejects omitting an ok writing turn from terminal checkpointing', () => {
+  test('checkpoints an ok writing turn even when it has no task key', () => {
     expect(
       shouldCheckpointAtTerminal({
         writesJob: true,
         hasWorktree: true,
-        launchKey: 'DEV-623',
       }),
     ).toBe(true)
   })
@@ -189,9 +189,14 @@ describe('terminal checkpoint decision', () => {
       shouldCheckpointAtTerminal({
         writesJob: false,
         hasWorktree: true,
-        launchKey: 'DEV-623',
       }),
     ).toBe(false)
+  })
+
+  test('names the harness commit in the result header', () => {
+    expect(terminalCheckpointHeader('abc123')).toBe(
+      'Harness checkpoint: committed uncommitted work as abc123.',
+    )
   })
 })
 
