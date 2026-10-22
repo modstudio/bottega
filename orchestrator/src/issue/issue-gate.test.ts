@@ -13,6 +13,54 @@ function git(root: string, ...args: string[]): string {
   return result.stdout.toString().trim()
 }
 
+function issueGateRun(
+  name: string,
+  gate: string,
+): {
+  main: string
+  root: string
+  scratch: string
+  run: RunResult
+} {
+  const main = mkdtempSync(join(dir, `${name}-main-`))
+  const root = join(main, '.claude', 'worktrees', name)
+  const scratch = mkdtempSync(join(dir, `${name}-scratch-`))
+  git(main, 'init', '-q')
+  git(main, 'config', 'user.email', 'fixture@example.com')
+  git(main, 'config', 'user.name', 'Fixture')
+  git(main, 'commit', '--allow-empty', '-qm', 'fixture')
+  git(main, 'worktree', 'add', '-qb', `DEV-1-${name}`, root)
+  const head = git(root, 'rev-parse', 'HEAD')
+  const projectId = (
+    db()
+      .query(
+        'INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING record_id AS id',
+      )
+      .get(newRecordId(), name, main, 'bun', JSON.stringify({ gate })) as { id: string }
+  ).id
+  const inserted = db()
+    .query<
+      { id: string; number: number },
+      [string, string, string, string, string, string, string]
+    >(
+      `INSERT INTO run
+        (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,'issue-worker',?,'sha',1,'fixture','ok',?,?,?,'git')
+       RETURNING record_id AS id,number`,
+    )
+    .get(newRecordId(), new Date().toISOString(), 'codex', projectId, root, head, head)!
+  return {
+    main,
+    root,
+    scratch,
+    run: {
+      record_id: inserted.id,
+      number: inserted.number,
+      worktree: { path: root, repoRoot: main, branch: `DEV-1-${name}`, base: head },
+    } as RunResult,
+  }
+}
+
 test('issue verification records one passing gate through the worker broker', async () => {
   const main = mkdtempSync(join(dir, 'issue-gate-main-'))
   const root = join(main, '.claude', 'worktrees', 'issue-gate')
@@ -66,6 +114,70 @@ test('issue verification records one passing gate through the worker broker', as
   } finally {
     rmSync(main, { recursive: true, force: true })
     rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+test('issue verification rejects a nonzero gate completed by the worker broker', async () => {
+  const fixture = issueGateRun('issue-gate-nonzero', 'false')
+  try {
+    const result = await runIssueGate(fixture.run, fixture.scratch)
+
+    expect(result.ok).toBe(false)
+    expect(result.fixTreeSafeToRelease).toBe(true)
+    expect(db().query('SELECT exit_code FROM gate_execution WHERE id=?').get(result.id)).toEqual({
+      exit_code: 1,
+    })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
+test.each([
+  { name: 'timed out', timedOut: 1, cancelledReason: null },
+  { name: 'cancelled', timedOut: 0, cancelledReason: 'operator cancelled gate' },
+])('issue verification rejects a $name completed gate row', async (gateResult) => {
+  const fixture = issueGateRun(`issue-gate-${gateResult.name.replaceAll(' ', '-')}`, 'true')
+  try {
+    const result = await runIssueGate(fixture.run, fixture.scratch, {
+      startBroker: (input) => {
+        const execution = db()
+          .query<{ id: number }, [string]>(
+            'SELECT id FROM gate_execution WHERE run_record_id=? AND finished_at IS NULL',
+          )
+          .get(fixture.run.record_id)!
+        db()
+          .query(
+            `UPDATE gate_execution
+             SET started_at=?,finished_at=?,exit_code=0,timed_out=?,cancelled_reason=?
+             WHERE id=?`,
+          )
+          .run(
+            new Date().toISOString(),
+            new Date().toISOString(),
+            gateResult.timedOut,
+            gateResult.cancelledReason,
+            execution.id,
+          )
+        input.onExecutionFinish?.({ executionId: execution.id, at: new Date().toISOString() })
+        return { close: async () => {} }
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.fixTreeSafeToRelease).toBe(true)
+    expect(
+      db()
+        .query('SELECT exit_code,timed_out,cancelled_reason FROM gate_execution WHERE id=?')
+        .get(result.id),
+    ).toEqual({
+      exit_code: 0,
+      timed_out: gateResult.timedOut,
+      cancelled_reason: gateResult.cancelledReason,
+    })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
   }
 })
 

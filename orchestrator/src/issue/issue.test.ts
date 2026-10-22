@@ -139,6 +139,7 @@ describe('filed issue coordinator inputs', () => {
 
   test('cross-project before measurement releases its owned checkout when measurement throws', async () => {
     const released: string[] = []
+    const created: { target: Project; base: string }[] = []
     const reporting = { name: 'reporting' } as Project
     const target = { name: 'target' } as Project
     await expect(
@@ -155,10 +156,13 @@ describe('filed issue coordinator inputs', () => {
           sandboxHome: '/sandbox',
         },
         {
-          createTree: () => ({
-            runId: 'before-run',
-            worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
-          }),
+          createTree: (createdTarget, base) => {
+            created.push({ target: createdTarget, base })
+            return {
+              runId: 'before-run',
+              worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
+            }
+          },
           measure: async () => {
             throw new Error('measurement exploded')
           },
@@ -169,10 +173,12 @@ describe('filed issue coordinator inputs', () => {
         },
       ),
     ).rejects.toThrow('measurement exploded')
+    expect(created).toEqual([{ target, base: 'base' }])
     expect(released).toEqual(['before-run'])
   })
 
   test('cross-project before measurement refuses proof when checkout release fails', async () => {
+    const created: { target: Project; base: string }[] = []
     const reporting = { name: 'reporting' } as Project
     const target = { name: 'target' } as Project
     await expect(
@@ -189,10 +195,13 @@ describe('filed issue coordinator inputs', () => {
           sandboxHome: '/sandbox',
         },
         {
-          createTree: () => ({
-            runId: 'before-run',
-            worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
-          }),
+          createTree: (createdTarget, base) => {
+            created.push({ target: createdTarget, base })
+            return {
+              runId: 'before-run',
+              worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
+            }
+          },
           measure: async () => ({ ok: false, text: 'failed as expected', exitCode: 1 }),
           releaseTree: async () => 'run before-run: removal refused',
         },
@@ -200,6 +209,39 @@ describe('filed issue coordinator inputs', () => {
     ).rejects.toThrow(
       'could not release before-measurement checkout: run before-run: removal refused',
     )
+    expect(created).toEqual([{ target, base: 'base' }])
+  })
+
+  test('same-project before measurement uses the diagnosis tree without creating a checkout', async () => {
+    const project = { name: 'reporting' } as Project
+    const measured: string[] = []
+    let createCalled = false
+    const result = await measureIssueBefore(
+      {
+        command: 'bun test',
+        diagnosisRun: { worktree: { path: '/diagnosis' } } as never,
+        fixRun: {
+          worktree: { path: '/fix', repoRoot: '/reporting', branch: 'DEV-1', base: 'base' },
+        } as never,
+        reporting: project,
+        target: project,
+        sandboxHome: '/sandbox',
+      },
+      {
+        createTree: () => {
+          createCalled = true
+          throw new Error('must not create a same-project before checkout')
+        },
+        measure: async (_command, cwd) => {
+          measured.push(cwd)
+          return { ok: false, text: 'defect reproduced', exitCode: 1 }
+        },
+      },
+    )
+
+    expect(createCalled).toBe(false)
+    expect(measured).toEqual(['/diagnosis'])
+    expect(result.exitCode).toBe(1)
   })
 
   test('verification resume selection preserves the fix branch only on handback', () => {

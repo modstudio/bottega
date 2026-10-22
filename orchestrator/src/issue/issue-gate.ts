@@ -5,10 +5,10 @@ import { db } from '../database/db.ts'
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import { cancelPendingGateExecution, requestGateExecution } from '../gate/gate-run.ts'
-import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { workerGitConfigEnvironment } from '../run/run-git-guard.ts'
 import { runTestWorkerEnvironment } from '../run/run-test-workers.ts'
 import type { RunResult } from '../run/run-types.ts'
+import { trackedWorkerEnvironment } from '../run/run-worker-home.ts'
 
 export type IssueGateResult = {
   id: number
@@ -66,8 +66,7 @@ export async function runIssueGate(
       scratchDir,
       environment: runTestWorkerEnvironment({
         ...workerGitConfigEnvironment(fixRun.worktree, true, 'issue-worker'),
-        ...trackedRecipeEnvironment(fixRun.record_id),
-        ORCH_MAIN_CHECKOUT: fixRun.worktree.repoRoot,
+        ...trackedWorkerEnvironment(true, true, fixRun.worktree, fixRun.record_id),
       }),
       onExecutionFinish: ({ executionId }) => {
         if (executionId === inserted.id) finish()

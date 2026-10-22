@@ -13,7 +13,15 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 
 export type IssueBeforeTree = { runId: string; worktree: Worktree }
 
-export function createIssueBeforeTree(target: Project, base: string): IssueBeforeTree {
+type IssueBeforeTreeDependencies = {
+  createWorktree?: typeof createReadOnlyWorktreeForTool
+}
+
+export function createIssueBeforeTree(
+  target: Project,
+  base: string,
+  dependencies: IssueBeforeTreeDependencies = {},
+): IssueBeforeTree {
   writableDb()
   const prompt = `issue before measurement for ${target.name}`
   const inserted = db()
@@ -69,7 +77,7 @@ export function createIssueBeforeTree(target: Project, base: string): IssueBefor
   try {
     return {
       runId: inserted.record_id,
-      worktree: createReadOnlyWorktreeForTool({
+      worktree: (dependencies.createWorktree ?? createReadOnlyWorktreeForTool)({
         tool,
         cwd: target.path,
         runId: inserted.record_id,
