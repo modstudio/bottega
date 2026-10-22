@@ -45,7 +45,10 @@ export function blockersPayload(days = 14) {
   }
 }
 
-export const healthPayload = (days?: number) => harnessHealth(days)
+export const healthPayload = (days?: number) => {
+  const report = harnessHealth(days)
+  return { ...report, throttles: throttleBuckets({ database: db(), from: report.from }) }
+}
 
 /**
  * What is stopping agents doing their work, counted.
@@ -102,9 +105,9 @@ export function healthCommand(flags: CommandFlags, presentation: CommandPresenta
   const { has, flag } = flags
   const { log } = presentation
   const report = healthPayload(flag('days') ? Number(flag('days')) : undefined)
-  const throttles = throttleBuckets({ database: db(), from: report.from })
+  const throttles = report.throttles
   if (has('json')) {
-    log(JSON.stringify({ ...report, throttles }))
+    log(JSON.stringify(report))
     return
   }
   const duration = (ms: number) =>

@@ -118,6 +118,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   let collected: Promise<TransportResult> | null = null
   const liveEvents: NormalizedEvent[] = []
   let throttleSeen = false
+  const codexHarness = (opts.agent.harness ?? opts.agent.name) === 'codex'
   const eventWaiters: Array<() => void> = []
   let closed = false
 
@@ -127,7 +128,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   }
 
   const stdoutTask = readStdoutLines(p.stdout!, (line) => {
-    if (opts.agent.name === 'codex') {
+    if (codexHarness) {
       const throttle = classifyCodexThrottle(line)
       if (throttle && !throttleSeen) {
         throttleSeen = true
@@ -147,7 +148,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     for (const event of eventsFromVendorLine(line)) pushEvent(event)
   })
   const stderrTask = readStdoutLines(p.stderr!, (line) => {
-    if (opts.agent.name !== 'codex') return
+    if (!codexHarness) return
     const throttle = classifyCodexThrottle(line)
     if (!throttle || throttleSeen) return
     throttleSeen = true

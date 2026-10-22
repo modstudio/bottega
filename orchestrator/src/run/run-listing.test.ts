@@ -189,6 +189,20 @@ describe('run listing', () => {
         concurrency: 6,
       },
     })
+    expect(runDetail(waiting)).toMatchObject({
+      live_status_detail: 'waiting for capacity since 2026-10-21T12:00:00.000Z',
+    })
+    expect(runDetail(throttled)).toMatchObject({
+      live_status_detail: 'throttled (429), retry 1/5 at 2026-10-21T12:04:45.000Z',
+      throttled: {
+        attempt: 1,
+        max: 5,
+        retry_delay_ms: 225_000,
+        retry_at: '2026-10-21T12:04:45.000Z',
+        status: 429,
+        concurrency: 6,
+      },
+    })
   })
 
   test('runs JSON and run detail publish all run resource fields', async () => {

@@ -7,6 +7,9 @@ describe('coordinatorErrorTail', () => {
       'no eligible agent for job "implement"\ngrok: disabled — Not signed in token=abc'
     expect(isRoutingRefusal(refusal)).toBe(true)
     expect(coordinatorErrorTail(refusal)).toBe(refusal)
+    expect(coordinatorErrorTail('agent codex is at capacity: token=abc')).toBe(
+      'agent codex is at capacity: token=abc',
+    )
   })
   test('keeps the bounded end of coordinator output', () => {
     const tail = coordinatorErrorTail(`first line\n${'x'.repeat(100)}\nlast line`, 64)

@@ -17,7 +17,13 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
-import { AgentCapacityError } from './agent-capacity.ts'
+
+export class AgentCapacityError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AgentCapacityError'
+  }
+}
 
 export type Candidate = {
   agent: string
@@ -593,8 +599,6 @@ export function candidates(
         .all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[]
     ).map((r) => [r.agent, r]),
   )
-  if (process.env.ORCH_DEBUG_COOLING) console.error('cooling', [...coolingByAgent])
-
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
@@ -1023,7 +1027,7 @@ export function pick(
       (candidate) =>
         candidate.why.startsWith('at capacity') &&
         !requested.has(candidate.agent) &&
-        !models.has(avoid.model ?? AGENTS[candidate.agent]!.model),
+        !models.has(AGENTS[candidate.agent]!.model),
     )
     if (capacityBlocked.length) {
       throw new AgentCapacityError(

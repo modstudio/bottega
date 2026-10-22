@@ -1,14 +1,10 @@
 // concern: agent capacity admission
 /** Pure wait-or-refuse decision plus the bounded polling adapter. */
 
-import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
-
-export class AgentCapacityError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'AgentCapacityError'
-  }
-}
+import { AgentCapacityError } from '../route/route.ts'
+import { appendRunEvent } from '../events.ts'
+import { nowIso } from '../database/db.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 
 export type CapacityWaitDecision = 'select' | 'wait' | 'refuse'
 
@@ -44,7 +40,7 @@ export async function waitForAgentSelection<T>(input: {
         noWait: Boolean(input.noWait),
         waitedMs: now() - started,
       })
-      if (decision === 'refuse') throw error
+      if (decision === 'refuse') throw capacityRefusal(error, Boolean(input.noWait))
       if (!announced) {
         announced = true
         input.onWait?.(new Date(now()).toISOString())
@@ -52,4 +48,32 @@ export async function waitForAgentSelection<T>(input: {
       await sleep(RUN_HOST_WAIT_POLL_MS)
     }
   }
+}
+
+function capacityRefusal(error: AgentCapacityError, noWait: boolean): AgentCapacityError {
+  return noWait
+    ? error
+    : new AgentCapacityError(
+        `${error.message}; capacity wait bound reached after ${RUN_HOST_WAIT_MAX_MS}ms`,
+      )
+}
+
+export async function selectAgentWithCapacityEvents<T>(input: {
+  runId: string | undefined
+  select: () => T
+  noWait?: boolean
+}): Promise<T> {
+  let waiting = false
+  const selected = await waitForAgentSelection({
+    select: input.select,
+    noWait: input.noWait,
+    onWait: (at) => {
+      waiting = true
+      if (input.runId)
+        appendRunEvent(input.runId, { ts: at, type: 'capacity_wait', waiting: true })
+    },
+  })
+  if (waiting && input.runId)
+    appendRunEvent(input.runId, { ts: nowIso(), type: 'capacity_wait', waiting: false })
+  return selected
 }

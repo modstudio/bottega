@@ -21,11 +21,16 @@ export function throttleBuckets(input: {
   runsDir?: string
 }): ThrottleBucket[] {
   const runs = input.database
-    .query("SELECT record_id FROM run WHERE agent='codex' AND datetime(started_at) >= datetime(?)")
-    .all(input.from) as { record_id: string }[]
+    .query(
+      `SELECT r.record_id FROM run r LEFT JOIN agent a ON a.name=r.agent
+        WHERE COALESCE(a.harness,r.agent)='codex'`,
+    )
+    .all() as { record_id: string }[]
   const events = runs.flatMap((run) =>
     readEventLog(runEventsPath(run.record_id, input.runsDir)).flatMap((event) =>
-      event.type === 'throttled' ? [{ concurrency: event.concurrency }] : [],
+      event.type === 'throttled' && event.ts >= input.from
+        ? [{ concurrency: event.concurrency }]
+        : [],
     ),
   )
   return bucketThrottles(events)

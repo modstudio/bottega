@@ -12,7 +12,7 @@ const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
 
 /** Routing owns these bounded refusal shapes; preserve their remedy verbatim. */
 export function isRoutingRefusal(value: string): boolean {
-  return /(?:^|\n)(?:no eligible agent for job|agent "[^"]+" (?:is at capacity|not eligible for)|routing constraints leave no eligible agent|waiting for capacity:)/m.test(
+  return /(?:^|\n)(?:no eligible agent for job|agent (?:"[^"]+"|[a-zA-Z0-9._-]+) (?:is at capacity|not eligible for)|routing constraints leave no eligible agent|waiting for capacity:)/m.test(
     value.trim(),
   )
 }

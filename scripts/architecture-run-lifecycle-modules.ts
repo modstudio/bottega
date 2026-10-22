@@ -48,6 +48,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',
     '../route/route.ts',
+    './run-agent-capacity.ts',
     '../transport/transport.ts',
     './run-resume-kind.ts',
   ]),

@@ -292,7 +292,9 @@ export async function teeTransportEvents(
   const log = createEventLog(runId, undefined, () => {
     const row = db()
       .query(
-        "SELECT COUNT(*) n FROM run WHERE agent='codex' AND status='running' AND agent_pid IS NOT NULL",
+        `SELECT COUNT(*) n FROM run r LEFT JOIN agent a ON a.name=r.agent
+          WHERE COALESCE(a.harness,r.agent)='codex'
+            AND r.status='running' AND r.agent_pid IS NOT NULL`,
       )
       .get() as { n: number }
     return row.n

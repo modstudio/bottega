@@ -32,7 +32,6 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
-import { waitForAgentSelection } from '../route/agent-capacity.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
@@ -41,6 +40,7 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import {
   assertAcpReady,
   resolveTransportName,

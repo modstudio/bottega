@@ -8,7 +8,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
-import { appendRunEvent } from '../events.ts'
 import {
   type classify,
   FAILS_OVER,
@@ -20,7 +19,6 @@ import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
-import { AgentCapacityError, waitForAgentSelection } from '../route/agent-capacity.ts'
 import {
   decideFailover,
   failoverAttempts,
@@ -28,12 +26,13 @@ import {
   failoverSuccessorAgent,
   MAX_FAILOVER_ATTEMPTS,
 } from '../route/failover.ts'
-import { agentsIneligibleForTransport, pick } from '../route/route.ts'
+import { AgentCapacityError, agentsIneligibleForTransport, pick } from '../route/route.ts'
 import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
+import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
 import { terminateRunProcesses } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
 
@@ -168,7 +167,6 @@ async function selectFailoverSuccessor(input: {
   pinnedTransport: TransportName | null
   avoidedAgents: string[]
 }) {
-  let waiting = false
   const select = () => {
     try {
       return pick(
@@ -195,20 +193,10 @@ async function selectFailoverSuccessor(input: {
       )
     }
   }
-  const selected = await waitForAgentSelection({
+  return selectAgentWithCapacityEvents({
+    runId: input.runId,
     select,
-    onWait: (at) => {
-      waiting = true
-      appendRunEvent(input.runId, { ts: at, type: 'capacity_wait', waiting: true })
-    },
   })
-  if (waiting)
-    appendRunEvent(input.runId, {
-      ts: new Date().toISOString(),
-      type: 'capacity_wait',
-      waiting: false,
-    })
-  return selected
 }
 
 function notifyFailureRequiringHuman(input: {
@@ -319,8 +307,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
         const transportConstraints = storedFailoverSelectionConstraints(first, opts, tried)
         const selected = await selectFailoverSuccessor({
-          runId: claim.id,
-          job: opts.job,
+          runId: claim.id, job: opts.job,
           prompt: originalPrompt,
           findings: requestedJob.findings,
           lens: first.lens,

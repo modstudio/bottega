@@ -14,9 +14,7 @@ test('repository workers receive test caps while inline workers do not', () => {
 })
 
 test('codex workers enable the retry warning log without trace volume', () => {
-  expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false).RUST_LOG).toBe(
-    'codex_core=warn',
-  )
+  expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false).RUST_LOG).toBe('codex_core=warn')
 })
 
 test('worker context controls override inherited values only for grok', () => {
