@@ -42,6 +42,7 @@ export function authorizeWorkflowQuestionMutation(input: {
       actor: input.actor,
       ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
       chainLastActivityAt: input.chainLastActivityAt,
+      coordinatorRun: false,
       now: input.now ?? Date.now(),
       windowMs: RUN_MUTATION_WINDOW_MS,
     }

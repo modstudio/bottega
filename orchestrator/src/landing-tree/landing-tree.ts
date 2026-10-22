@@ -2,6 +2,7 @@
 /** Pure identity, capability, base, and release decisions for architect landing trees. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isOperatorSession } from '../../../shared/caller-classification.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
@@ -9,6 +10,49 @@ import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 export { LANDING_TREE_JOB }
 export const LANDING_TREE_AGENT = '(architect)'
 export const LANDING_TREE_EVIDENCE_EXCLUSION = 'landing tree lifecycle row; not agent execution'
+
+export type LandingTreeRunRow = {
+  record_id: string
+  parent_run_record_id: string | null
+  repo: string | null
+  project_record_id: string | null
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  branch_kept: string | null
+  branch_kept_tip: string | null
+  launch_cwd: string | null
+  launch_key: string | null
+  launch_seed: string | null
+  session_id: string | null
+  job: string
+  label: string | null
+}
+
+export type LandingTreeRunAdoptionFacts = {
+  openedOwner: string | null
+  openedCoordinator: boolean
+  openedLaunchKey: string | null
+  openedIssueKey: string | null
+  candidateOwner: string | null
+  candidateCoordinator: boolean
+  candidateLaunchKey: string | null
+  candidateIssueKey: string | null
+}
+
+/** Adopt only coordinator roots tied to the opened run by recorded identity. */
+export function landingTreeRunAdoptionDecision(input: LandingTreeRunAdoptionFacts): boolean {
+  if (
+    !input.openedCoordinator ||
+    !input.candidateCoordinator ||
+    !isOperatorSession(input.openedOwner) ||
+    input.candidateOwner !== input.openedOwner
+  )
+    return false
+  if (input.openedLaunchKey !== null && input.candidateLaunchKey === input.openedLaunchKey)
+    return true
+  return input.openedIssueKey !== null && input.candidateIssueKey === input.openedIssueKey
+}
 
 export function landingTreeOpeningRefusal(input: {
   branch: string | null

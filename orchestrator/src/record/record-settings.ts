@@ -2,12 +2,17 @@
 /** Applies tenant-bound settings edits through the hosted document service. Must not know HTTP or local stores. */
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import {
+  type AutoModeList,
   type PermissionList,
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from '../settings/settings.ts'
+import {
+  editSettingsAutoMode,
+  type SettingsAutoModeOperation,
+} from '../settings/settings-auto-mode.ts'
 import {
   editSettingsPermission,
   type SettingsPermissionOperation,
@@ -34,13 +39,27 @@ export type RecordSettingsPermissionResult = {
   permissions: Record<PermissionList, string[]>
 }
 
-export type RecordSettingsPermissionDependencies = {
+export type RecordSettingsAutoModeInput = Tenant & {
+  target: { kind: 'user' } | { kind: 'project'; project: string }
+  list: AutoModeList
+  rule: string
+  operation: SettingsAutoModeOperation
+  reason: string
+  expectedRevision: string
+}
+
+export type RecordSettingsAutoModeResult = {
+  revision: string
+  autoMode: Record<AutoModeList, string[]>
+}
+
+export type RecordSettingsDependencies = {
   listDocs: typeof listRecordDocs
   listRevisions: typeof listRecordDocRevisions
   upsertDoc: typeof upsertRecordDoc
 }
 
-const recordSettingsDependencies: RecordSettingsPermissionDependencies = {
+const recordSettingsDependencies: RecordSettingsDependencies = {
   listDocs: listRecordDocs,
   listRevisions: listRecordDocRevisions,
   upsertDoc: upsertRecordDoc,
@@ -48,8 +67,40 @@ const recordSettingsDependencies: RecordSettingsPermissionDependencies = {
 
 export async function applyRecordSettingsPermission(
   input: RecordSettingsPermissionInput,
-  dependencies: RecordSettingsPermissionDependencies = recordSettingsDependencies,
+  dependencies: RecordSettingsDependencies = recordSettingsDependencies,
 ): Promise<RecordSettingsPermissionResult> {
+  return applyRecordSettingsEdit(
+    input,
+    dependencies,
+    (settings) => editSettingsPermission(settings, input),
+    (revision, edit) => ({ revision, permissions: edit.permissions }),
+  )
+}
+
+export async function applyRecordSettingsAutoMode(
+  input: RecordSettingsAutoModeInput,
+  dependencies: RecordSettingsDependencies = recordSettingsDependencies,
+): Promise<RecordSettingsAutoModeResult> {
+  return applyRecordSettingsEdit(
+    input,
+    dependencies,
+    (settings) => editSettingsAutoMode(settings, input),
+    (revision, edit) => ({ revision, autoMode: edit.autoMode }),
+  )
+}
+
+type SettingsEdit = { settings: ReturnType<typeof parseStoredOwnedSettings>; changed: boolean }
+
+async function applyRecordSettingsEdit<
+  Input extends RecordSettingsPermissionInput | RecordSettingsAutoModeInput,
+  Edit extends SettingsEdit,
+  Result,
+>(
+  input: Input,
+  dependencies: RecordSettingsDependencies,
+  editSettings: (settings: ReturnType<typeof parseStoredOwnedSettings>) => Edit,
+  result: (revision: string, edit: Edit) => Result,
+): Promise<Result> {
   const subject = input.target.kind === 'project' ? input.target.project : null
   const owner = input.target.kind === 'user' ? input.userId : null
   const rows = await dependencies.listDocs({
@@ -77,8 +128,8 @@ export async function applyRecordSettingsPermission(
     scope: SETTINGS_SCOPE,
   })
   if (!decision.allow) throw new RecordDocError(decision.reason, 409)
-  const edit = editSettingsPermission(parseStoredOwnedSettings(row.body), input)
-  if (!edit.changed) return { revision: current!, permissions: edit.permissions }
+  const edit = editSettings(parseStoredOwnedSettings(row.body))
+  if (!edit.changed) return result(current!, edit)
   const written = await dependencies.upsertDoc({
     ...input,
     scope: SETTINGS_SCOPE,
@@ -92,5 +143,5 @@ export async function applyRecordSettingsPermission(
     author: input.userId,
     expectedRevision: input.expectedRevision,
   })
-  return { revision: written.revisionId, permissions: edit.permissions }
+  return result(written.revisionId, edit)
 }

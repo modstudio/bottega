@@ -129,6 +129,7 @@ function decideFiling(
     actor: authority.actor,
     ownerLastSeenAt: authority.ownerLastSeenAt,
     chainLastActivityAt: authority.chainLastActivityAt,
+    coordinatorRun: authority.coordinatorRun,
     now: authority.now,
     windowMs: authority.windowMs,
     fromOperator: input.fromOperator,
@@ -369,6 +370,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     actor,
     ownerLastSeenAt: null,
     chainLastActivityAt: workflowActivity,
+    coordinatorRun: false,
     now: Date.now(),
     windowMs: RUN_MUTATION_WINDOW_MS,
   }

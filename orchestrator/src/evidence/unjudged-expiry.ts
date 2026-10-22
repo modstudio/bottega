@@ -2,6 +2,7 @@
 /** Reads the owed-judgment ledger and records an expired row locally and for hosted sync. */
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writeTransaction } from '../database/db.ts'
+import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { UNSCORED_WHERE } from './evidence-query.ts'
@@ -11,6 +12,8 @@ export type UnjudgedRun = {
   session_id: string | null
   session_last_seen: string | null
   run_last_activity: string
+  job: string
+  label: string | null
 }
 
 export const UNJUDGED_EXCLUSION_REASON = 'unjudged: owner gone'
@@ -27,6 +30,7 @@ type UnjudgedExpiryDecision = (facts: {
   ownerSessionId: string | null
   ownerLastSeenAt: number | null
   runLastActivityAt: number
+  coordinatorRun: boolean
   now: number
   windowMs: number
 }) => boolean
@@ -34,7 +38,7 @@ type UnjudgedExpiryDecision = (facts: {
 export function unjudgedRuns(projectName: string | null): UnjudgedRun[] {
   return db()
     .query(
-      `SELECT r.record_id, r.session_id, seen.last_seen AS session_last_seen,
+      `SELECT r.record_id, r.session_id, r.job, r.label, seen.last_seen AS session_last_seen,
               (SELECT COALESCE(turn.last_event_at, turn.started_at)
                  FROM run turn
                 WHERE turn.record_id=r.record_id OR turn.parent_run_record_id=r.record_id
@@ -60,7 +64,7 @@ export function expireUnjudgedRun(
   writeTransaction(() => {
     const fresh = db()
       .query(
-        `SELECT r.record_id, r.session_id, seen.last_seen AS session_last_seen,
+        `SELECT r.record_id, r.session_id, r.job, r.label, seen.last_seen AS session_last_seen,
                 (SELECT COALESCE(turn.last_event_at, turn.started_at)
                    FROM run turn
                   WHERE turn.record_id=r.record_id OR turn.parent_run_record_id=r.record_id
@@ -78,6 +82,8 @@ export function expireUnjudgedRun(
         ownerLastSeenAt:
           fresh.session_last_seen === null ? null : Date.parse(fresh.session_last_seen),
         runLastActivityAt: Date.parse(fresh.run_last_activity),
+        coordinatorRun:
+          filedIssueLoopRun({ id: fresh.record_id, job: fresh.job, label: fresh.label }) !== null,
         now: Date.now(),
         windowMs,
       })
