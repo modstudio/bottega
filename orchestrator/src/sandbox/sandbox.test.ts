@@ -789,10 +789,10 @@ describe('readonly-lens sandbox profile', () => {
     expect(selected.profile?.network.allowUnixSockets).toEqual([])
   })
 
-  test('a writer grants only its tree and scratch, and denies its git pointer', () => {
+  test('a writer grants only its tree, scratch, and runtime state, and denies its git pointer', () => {
     const profile = writerProfile({
       worktree: '/projects/main/.claude/worktrees/run-42',
-      runsDir: '/state/runs/run-42',
+      runsDir: '/state/runs/sandbox-root',
       scratchDir: '/state/runs/run-42/scratch',
       askAddress: '127.0.0.1:43127',
       project: fixtureProject(),
@@ -804,7 +804,10 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWrite).toEqual([
       '/projects/main/.claude/worktrees/run-42',
       '/state/runs/run-42/scratch',
+      '/state/runs/sandbox-root',
     ])
+    expect(profile.filesystem.allowWrite).not.toContain('/state/runs')
+    expect(profile.filesystem.allowWrite).not.toContain('/state/runs/run-41')
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main')
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main/.git/objects')
     expect(profile.filesystem.denyWrite).toContain('/projects/main/.claude/worktrees/run-42/.git')

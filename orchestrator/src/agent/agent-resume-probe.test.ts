@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test'
-import { probeAgentResumes, resumeCapabilityPolicy } from './agent-resume-probe.ts'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  probeAgentResumes,
+  probeAgentResumesInSandbox,
+  resumeCapabilityPolicy,
+} from './agent-resume-probe.ts'
+import type { Agent } from './agents.ts'
 
 test('resume capability policy observes ACP and preserves CLI declarations', () => {
   expect(resumeCapabilityPolicy('acp', true)).toEqual({ resumable: true, jobSuccess: true })
@@ -61,4 +69,53 @@ test('a CLI agent does not run the resume check', async () => {
   })
   expect(result.ok).toBeNull()
   expect(called).toBe(false)
+})
+
+test('the ACP resume probe uses one real-run-shaped runtime directory across both turns', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agent-resume-probe-test-'))
+  try {
+    const runtimeDirs: string[] = []
+    const result = await probeAgentResumesInSandbox(
+      {
+        transport: 'acp',
+        scratch: root,
+        agent: { name: 'fixture', baseUrl: null } as Agent,
+        environment: { ...process.env },
+      },
+      {
+        createWorktree(path) {
+          mkdirSync(path)
+        },
+        removeWorktree() {},
+        openAskListener: () => ({ address: '127.0.0.1:43123', close() {} }),
+        async resetSandbox() {},
+      },
+      'resume-token',
+      async (turn, confinement) => {
+        runtimeDirs.push(confinement.runtimeDir)
+        expect(confinement.scratchDir).toBe(join(root, 'writing-run', 'scratch'))
+        return turn.session
+          ? {
+              status: 'ok',
+              output: 'resume-token',
+              sessionId: turn.session,
+              loadSessionAdvertised: true,
+            }
+          : {
+              status: 'ok',
+              output: 'remembered',
+              sessionId: 'session-1',
+              loadSessionAdvertised: true,
+            }
+      },
+    )
+
+    expect(result.ok).toBe(true)
+    expect(runtimeDirs).toEqual([
+      join(root, 'sandbox-registration-probe'),
+      join(root, 'sandbox-registration-probe'),
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

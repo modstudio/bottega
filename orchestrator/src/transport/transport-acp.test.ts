@@ -90,6 +90,32 @@ test.each([
   })
 })
 
+test('goose points every XDG state directory at the confined runtime directory', () => {
+  const environment = acpEnvironment({
+    agent: { ...AGENTS.codex!, harness: 'goose' },
+    cwd: '/tmp/worktree',
+    env: {},
+    prompt: 'test',
+    outPath: '/tmp/run/output',
+    startedAt: 0,
+    recipeEnvironment: {},
+    srt: {
+      profile: {} as never,
+      runtimeDir: '/tmp/runs/sandbox-root',
+    },
+  })
+
+  expect({
+    XDG_STATE_HOME: environment.XDG_STATE_HOME,
+    XDG_DATA_HOME: environment.XDG_DATA_HOME,
+    XDG_CONFIG_HOME: environment.XDG_CONFIG_HOME,
+  }).toEqual({
+    XDG_STATE_HOME: '/tmp/runs/sandbox-root',
+    XDG_DATA_HOME: '/tmp/runs/sandbox-root',
+    XDG_CONFIG_HOME: '/tmp/runs/sandbox-root',
+  })
+})
+
 const ORCHESTRATOR_PACKAGE_NAME = `@${PLATFORM_SLUG}/orchestrator`
 
 describe('ACP startup and partial-output bounds', () => {

@@ -36,6 +36,13 @@ test('a confined ACP writing check passes only after the requested content is wr
       },
       removeWorktree() {},
       async callAgent(input) {
+        expect(input.scratchDir).toBe(join(root, 'writing-run', 'scratch'))
+        expect(input.runtimeDir).toBe(join(root, 'sandbox-registration-probe'))
+        expect(input.profile.filesystem.allowWrite).toEqual([
+          join(root, 'writing-worktree'),
+          input.scratchDir,
+          input.runtimeDir,
+        ])
         writeFileSync(
           join(input.cwd, 'registration-probe-write.txt'),
           'REGISTRATION_PROBE_WRITE_OK\n',

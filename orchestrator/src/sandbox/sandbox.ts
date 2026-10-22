@@ -334,8 +334,12 @@ export function isWritingAcpRun(transport: 'cli' | 'acp', writesRepo: boolean): 
 }
 
 /** The complete filesystem write grant for one untrusted ACP writer. */
-export function writingAcpWritableRoots(worktree: string, scratchDir: string): string[] {
-  return [resolve(worktree), resolve(scratchDir)]
+export function writingAcpWritableRoots(
+  worktree: string,
+  scratchDir: string,
+  runtimeDir: string,
+): string[] {
+  return [resolve(worktree), resolve(scratchDir), resolve(runtimeDir)]
 }
 
 /** Read-only visibility with writes limited to one writing run's owned paths. */
@@ -353,7 +357,7 @@ export function writerProfile(input: {
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)
-  const allowWrite = writingAcpWritableRoots(worktree, scratchDir)
+  const allowWrite = writingAcpWritableRoots(worktree, scratchDir, input.runsDir)
   const gateAddresses = mainStackGateAddresses(input.project)
   const profile = readonlyLensProfile({
     ...input,

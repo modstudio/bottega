@@ -12,7 +12,12 @@ import {
 } from '../sandbox/sandbox.ts'
 import type { Agent } from './agents.ts'
 
-export type CapabilityProbeConfinement = { cwd: string; profile: SandboxRuntimeConfig }
+export type CapabilityProbeConfinement = {
+  cwd: string
+  scratchDir: string
+  runtimeDir: string
+  profile: SandboxRuntimeConfig
+}
 type CapabilityProbeAskListener = { address: string; close(): void | Promise<void> }
 
 export type CapabilityProbeSandboxPorts = {
@@ -74,17 +79,21 @@ export async function withCapabilityProbeSandbox<T>(
   operation: (confinement: CapabilityProbeConfinement) => Promise<T>,
 ): Promise<T> {
   const worktree = join(input.scratch, 'writing-worktree')
+  const scratchDir = join(input.scratch, 'writing-run', 'scratch')
+  const runtimeDir = join(input.scratch, 'sandbox-registration-probe')
   let askListener: CapabilityProbeAskListener | null = null
   try {
     ports.createWorktree(worktree)
+    mkdirSync(scratchDir, { recursive: true })
+    mkdirSync(runtimeDir, { recursive: true })
     askListener = ports.openAskListener()
     const selection = selectReadonlySandbox({
       agent: input.agent.name,
       readsRepo: true,
       writesRepo: true,
       worktree,
-      runsDir: input.scratch,
-      scratchDir: input.scratch,
+      runsDir: runtimeDir,
+      scratchDir,
       project: probeProject(worktree),
       path: input.path,
       baseUrl: input.agent.baseUrl,
@@ -93,7 +102,12 @@ export async function withCapabilityProbeSandbox<T>(
       askAddress: askListener.address,
     })
     if (!selection.profile) throw new Error('registration capability probe did not select srt')
-    return await operation({ cwd: worktree, profile: selection.profile })
+    return await operation({
+      cwd: worktree,
+      scratchDir,
+      runtimeDir,
+      profile: selection.profile,
+    })
   } finally {
     try {
       await ports.resetSandbox()

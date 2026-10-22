@@ -120,19 +120,19 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
       startedAt: started,
       write: true,
       sandbox: 'workspace-write',
-      writableRoots: [input.scratch],
+      writableRoots: [input.writing?.scratchDir ?? input.scratch],
       writingAcp: Boolean(input.writing),
       session: input.session,
       ...(input.writing
         ? {
             srt: {
               profile: input.writing.profile,
-              runtimeDir: input.scratch,
+              runtimeDir: input.writing.runtimeDir,
             },
           }
         : {}),
       mcp: input.mcp ?? false,
-      env: await probeEnvironment(input.agent, input.scratch),
+      env: await probeEnvironment(input.agent, input.writing?.scratchDir ?? input.scratch),
     })
     const draining = drainTransportEvents(handle.events())
     try {

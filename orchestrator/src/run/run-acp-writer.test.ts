@@ -6,7 +6,7 @@ import {
   bindContract,
   checkpointContainment,
   disposeAskAfterStartup,
-  writableRoots,
+  runRoots,
 } from './run-acp-writer.ts'
 
 const tree: Worktree = {
@@ -17,7 +17,11 @@ const tree: Worktree = {
 }
 
 test('writing ACP pure decisions expose only worker-owned writes and host checkpoint facts', () => {
-  expect(writableRoots(tree, true, true, '/run/scratch')).toEqual([tree.path, '/run/scratch'])
+  expect(runRoots(tree, true, true, '/run/scratch', '/runs/sandbox-root')).toEqual([
+    tree.path,
+    '/run/scratch',
+    '/runs/sandbox-root',
+  ])
   expect(checkpointContainment('/repo/.git/worktrees/run', true, '/run/private')).toEqual({
     gitDir: '/repo/.git/worktrees/run',
     hooksDir: '/run/private/checkpoint-hooks',

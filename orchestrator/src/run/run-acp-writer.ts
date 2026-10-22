@@ -16,15 +16,16 @@ export function bindContract(prompt: string, writingAcp: boolean): string {
   return writingAcp ? `${prompt}\n\n${WRITING_ACP_GIT_INSTRUCTION}` : prompt
 }
 
-export function writableRoots(
+export function runRoots(
   worktree: Worktree | null,
   writesRepo: boolean,
   writingAcp: boolean,
   scratchDir: string,
+  runtimeDir: string,
 ): string[] {
   if (writingAcp) {
     if (!worktree) throw new Error('writing ACP confinement requires a run worktree')
-    return writingAcpWritableRoots(worktree.path, scratchDir)
+    return writingAcpWritableRoots(worktree.path, scratchDir, runtimeDir)
   }
   return [scratchDir, ...provisionWriterSharedGitRoots(worktree, writesRepo && !writingAcp)]
 }
