@@ -13,6 +13,7 @@ export type McpAttachmentFacts = {
   mcpRequest: McpRequest | undefined
   writesJob: boolean
   agentHasMcp: boolean
+  nativeMcpAttachment: boolean
 }
 
 export type McpAttachmentRuling = {
@@ -29,8 +30,7 @@ export function decideMcpAttachment(facts: McpAttachmentFacts): McpAttachmentRul
     mcpMode,
     refusalReason: mcpMode === 'require' ? refusal : null,
     usingMcp:
-      (Boolean(mcpMode) || facts.writesJob) &&
-      facts.agentHasMcp &&
+      (mcpMode ? facts.nativeMcpAttachment : facts.writesJob && facts.agentHasMcp) &&
       facts.connection?.connected !== false,
   }
 }

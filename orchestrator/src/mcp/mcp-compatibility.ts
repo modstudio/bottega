@@ -54,17 +54,44 @@ export type McpGrammarRuling = {
   failedConnection: string | null
 }
 
+export type NativeMcpAttachmentPrediction = {
+  confirmable: boolean
+  reason: string | null
+}
+
+/** Predict the native project-server launch path, independently of a capability probe. */
+export function predictNativeMcpAttachment(input: {
+  name: string
+  harness?: string
+  transport: 'cli' | 'acp'
+}): NativeMcpAttachmentPrediction {
+  if (input.transport === 'acp') {
+    return {
+      confirmable: false,
+      reason:
+        'native project MCP attachment is unconfirmable: ACP session launch does not attach project servers',
+    }
+  }
+  const harness = input.harness ?? input.name
+  if (input.name === 'codex' || harness === 'grok') {
+    return { confirmable: true, reason: null }
+  }
+  return {
+    confirmable: false,
+    reason: `native project MCP attachment is unconfirmable for ${harness} CLI`,
+  }
+}
+
 export function requiredMcpIneligibility(
-  agent: { mcp: boolean; defaultTransport: 'cli' | 'acp' },
+  agent: { name: string; harness?: string; defaultTransport: 'cli' | 'acp' },
   required: RequiredMcpServer | undefined,
 ): string | null {
   if (required?.mode !== 'require') return null
-  if (!agent.mcp) return 'probed capabilities report mcp=false'
-  const transport = required.transport ?? agent.defaultTransport
-  if (transport !== 'acp') return null
-  return agent.defaultTransport === 'acp'
-    ? 'read-only ACP sandbox selection uses srt, which blocks MCP transports'
-    : 'pinned read-only ACP transport cannot attach the required project MCP server'
+  return predictNativeMcpAttachment({
+    name: agent.name,
+    harness: agent.harness,
+    transport: required.transport ?? agent.defaultTransport,
+  }).reason
 }
 
 /** Apply request mode to one observed tool-name compatibility result. */

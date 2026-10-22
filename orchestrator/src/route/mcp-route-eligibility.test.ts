@@ -13,13 +13,15 @@ const required: RequiredMcpServer = {
 
 type AgentRow = { name: string; caps: string; transport: string }
 
-function setMcpMatrix(rows: AgentRow[], codexMcp: boolean): void {
+function setMcpMatrix(rows: AgentRow[], codexTransport: 'cli' | 'acp'): void {
   for (const row of rows) {
     const caps = JSON.parse(row.caps) as Record<string, unknown>
-    caps.mcp = row.name === 'codex' ? codexMcp : row.name === 'grok'
+    caps.mcp = row.name === 'grok'
+    const transport =
+      row.name === 'codex' ? codexTransport : row.name === 'grok' ? 'acp' : row.transport
     db()
       .query('UPDATE agent SET caps=?, transport=? WHERE name=?')
-      .run(JSON.stringify(caps), row.name === 'grok' ? 'acp' : row.transport, row.name)
+      .run(JSON.stringify(caps), transport, row.name)
   }
   refreshAgents()
 }
@@ -33,19 +35,19 @@ function restoreAgents(rows: AgentRow[]): void {
   refreshAgents()
 }
 
-test('required MCP excludes incapable and srt-blocked agents and selects an attachable one', () => {
+test('required MCP ignores the probe flag, excludes an unconfirmable native attachment, and selects an attachable one', () => {
   const rows = db().query('SELECT name,caps,transport FROM agent').all() as AgentRow[]
   try {
-    setMcpMatrix(rows, true)
+    setMcpMatrix(rows, 'cli')
     const routed = candidates('understand', 0, null, undefined, undefined, null, required)
 
     expect(routed.find((candidate) => candidate.agent === 'grok')).toMatchObject({
       eligible: false,
-      why: 'read-only ACP sandbox selection uses srt, which blocks MCP transports',
+      why: 'native project MCP attachment is unconfirmable: ACP session launch does not attach project servers',
     })
-    expect(requiredMcpIneligibility({ mcp: false, defaultTransport: 'cli' }, required)).toBe(
-      'probed capabilities report mcp=false',
-    )
+    expect(
+      requiredMcpIneligibility({ name: 'codex', defaultTransport: 'cli' }, required),
+    ).toBeNull()
     expect(pick('understand', undefined, 0, false, null, { requiredMcp: required }).agent).toBe(
       'codex',
     )
@@ -57,10 +59,10 @@ test('required MCP excludes incapable and srt-blocked agents and selects an atta
 test('required MCP refuses when no agent can attach the project server', () => {
   const rows = db().query('SELECT name,caps,transport FROM agent').all() as AgentRow[]
   try {
-    setMcpMatrix(rows, false)
+    setMcpMatrix(rows, 'acp')
 
     expect(() => pick('understand', undefined, 0, false, null, { requiredMcp: required })).toThrow(
-      /no eligible agent for job "understand"[\s\S]*codex: probed capabilities report mcp=false[\s\S]*grok: read-only ACP sandbox selection uses srt, which blocks MCP transports/,
+      /no eligible agent for job "understand"[\s\S]*codex: native project MCP attachment is unconfirmable: ACP session launch does not attach project servers[\s\S]*grok: native project MCP attachment is unconfirmable: ACP session launch does not attach project servers/,
     )
   } finally {
     restoreAgents(rows)
@@ -70,7 +72,7 @@ test('required MCP refuses when no agent can attach the project server', () => {
 test('MCP preference does not turn attachment into a routing requirement', () => {
   expect(
     requiredMcpIneligibility(
-      { mcp: false, defaultTransport: 'cli' },
+      { name: 'goose-agent', harness: 'goose', defaultTransport: 'acp' },
       {
         ...required,
         mode: 'prefer',

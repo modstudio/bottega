@@ -29,6 +29,7 @@ describe('MCP attachment ruling', () => {
         mcpRequest: 'require',
         writesJob: false,
         agentHasMcp: true,
+        nativeMcpAttachment: true,
       }),
     ).toEqual({
       mcpMode: 'require',
@@ -44,21 +45,31 @@ describe('MCP attachment ruling', () => {
         mcpRequest: 'prefer',
         writesJob: false,
         agentHasMcp: true,
+        nativeMcpAttachment: true,
       }),
     ).toEqual({ mcpMode: 'prefer', refusalReason: null, usingMcp: false })
   })
 
-  test.each([
-    { name: 'no-request', mcpRequest: undefined },
-    { name: 'require', mcpRequest: 'require' as const },
-    { name: 'prefer', mcpRequest: 'prefer' as const },
-  ])('an agent without MCP cannot use it in $name mode', ({ mcpRequest }) => {
+  test('a probed mcp=false flag does not disable a confirmed required native attachment', () => {
     expect(
       decideMcpAttachment({
         connection: connected,
-        mcpRequest,
+        mcpRequest: 'require',
         writesJob: true,
         agentHasMcp: false,
+        nativeMcpAttachment: true,
+      }).usingMcp,
+    ).toBe(true)
+  })
+
+  test('a preferred request without a native attachment continues without MCP', () => {
+    expect(
+      decideMcpAttachment({
+        connection: connected,
+        mcpRequest: 'prefer',
+        writesJob: true,
+        agentHasMcp: true,
+        nativeMcpAttachment: false,
       }).usingMcp,
     ).toBe(false)
   })
@@ -70,6 +81,7 @@ describe('MCP attachment ruling', () => {
         mcpRequest: undefined,
         writesJob: true,
         agentHasMcp: true,
+        nativeMcpAttachment: false,
       }),
     ).toEqual({ mcpMode: null, refusalReason: null, usingMcp: true })
   })
@@ -81,6 +93,7 @@ describe('MCP attachment ruling', () => {
         mcpRequest: undefined,
         writesJob: false,
         agentHasMcp: true,
+        nativeMcpAttachment: false,
       }),
     ).toEqual({ mcpMode: null, refusalReason: null, usingMcp: false })
   })

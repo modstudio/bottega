@@ -39,11 +39,13 @@ import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
+import { predictNativeMcpAttachment } from '../mcp/mcp-compatibility.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
   effectiveMcpRequest,
   type McpRequest,
+  requestedMcpMode,
   requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
@@ -572,6 +574,16 @@ export async function run(opts: {
       throw new Error(versionRefusal)
     }
   }
+  const nativeMcpAttachment = predictNativeMcpAttachment({
+    name: a.name,
+    harness: a.harness,
+    transport: transportName,
+  })
+  if (requestedMcpMode(mcpRequest) === 'require' && !nativeMcpAttachment.confirmable) {
+    const why = nativeMcpAttachment.reason!
+    recordRunStartupFailure(opts.reserveId, why)
+    throw new Error(why)
+  }
   // Append after routing but before prompt files, hashes, or metadata are written.
   if (requestedJob.findings && resume.isFirstTurn) {
     const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
@@ -594,6 +606,7 @@ export async function run(opts: {
     mcpRequest,
     writesJob,
     agentHasMcp: a.caps.mcp,
+    nativeMcpAttachment: nativeMcpAttachment.confirmable,
   })
   if (attachmentRuling.refusalReason) {
     recordRunStartupFailure(opts.reserveId, attachmentRuling.refusalReason)

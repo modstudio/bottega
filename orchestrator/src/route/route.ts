@@ -96,13 +96,10 @@ export const EVIDENCE_WINDOW = 40
 export const PROMPT_SIZE_BOUNDARY = 16 * 1024
 
 function mcpCandidateIneligibility(
-  agent: Pick<Agent, 'caps' | 'defaultTransport' | 'mcpToolNamePattern'>,
+  agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
 ): string | null {
-  const requiredWhy = requiredMcpIneligibility(
-    { mcp: agent.caps.mcp, defaultTransport: agent.defaultTransport },
-    requiredMcp,
-  )
+  const requiredWhy = requiredMcpIneligibility(agent, requiredMcp)
   if (requiredWhy || !requiredMcp || !agent.mcpToolNamePattern) return requiredWhy
   const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
   return decideMcpGrammarRuling({
