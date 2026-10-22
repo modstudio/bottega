@@ -6,6 +6,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
+import { githubRepository } from '../../../shared/github-repository.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchDir } from '../artifact-paths.ts'
@@ -712,7 +713,7 @@ function pullRequestEvidence(
   )
   return {
     url: view.url,
-    repository: githubRepository(view.url),
+    repository: githubRepository(view.url.replace(/\/pull\/\d+\/?$/i, '')),
     projectRepository: githubRepository(originUrl),
     state: view.state,
     head: view.headRefName,
@@ -720,16 +721,6 @@ function pullRequestEvidence(
     cursorBranch: identity.branch,
     trunk,
   }
-}
-
-/** Canonical owner/name for HTTPS, SSH URL, and SCP-like GitHub repository addresses. */
-function githubRepository(value: string | null): string | null {
-  if (!value) return null
-  const match =
-    /^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s:]+)\/([^/\s]+?)(?:\.git)?(?:\/pull\/\d+)?\/?$/i.exec(
-      value.trim(),
-    )
-  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null
 }
 
 function gatherTask(

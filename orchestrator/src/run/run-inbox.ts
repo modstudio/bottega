@@ -112,6 +112,13 @@ type RecoverableInboxRow = {
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
+function inboxSessionCanAnswer(
+  ownerSessionId: string | null,
+  callerSessionId: string | null,
+): boolean {
+  return ownerSessionId === null || (callerSessionId !== null && ownerSessionId === callerSessionId)
+}
+
 function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   if (input.scope === 'session') return []
   const sid = sessionId()
@@ -152,7 +159,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     const flags = Object.entries(JSON.parse(row.args) as Record<string, string>)
       .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
       .join('')
-    const canAnswer = row.session_id === null || (sid !== null && row.session_id === sid)
+    const canAnswer = inboxSessionCanAnswer(row.session_id, sid)
     return {
       kind: 'workflow',
       question_id: row.number,
@@ -234,9 +241,7 @@ export async function queryInbox(
   const visible =
     input.scope === 'session'
       ? selected.filter(
-          (question) =>
-            isLive(question) &&
-            (question.session_id === null || (sid !== null && question.session_id === sid)),
+          (question) => isLive(question) && inboxSessionCanAnswer(question.session_id, sid),
         )
       : rowsForInboxView(selected, scopedFilter, defaultProject, mine, sid)
   return {
@@ -255,8 +260,7 @@ export async function queryInbox(
           asked_at: q.asked_at,
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',
-          can_answer:
-            isLive(q) && (q.session_id === null || (sid !== null && q.session_id === sid)),
+          can_answer: isLive(q) && inboxSessionCanAnswer(q.session_id, sid),
           question: q.question,
           options: q.options ? (JSON.parse(q.options) as string[]) : [],
           recommendation: q.recommendation,
@@ -488,7 +492,7 @@ export async function runInboxCommand(
     activeOnly,
     requestedCwd,
   })
-  const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
+  const canAnswer = (owner: string | null) => inboxSessionCanAnswer(owner, sid)
   const active = rows.filter(isLive)
   const terminal = rows.filter((q) => !active.includes(q))
   const answerable = active.filter((q) => canAnswer(q.session_id))

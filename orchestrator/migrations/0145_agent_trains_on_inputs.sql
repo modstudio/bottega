@@ -1,0 +1,1 @@
+ALTER TABLE agent ADD COLUMN trains_on_inputs INTEGER NOT NULL DEFAULT 0;

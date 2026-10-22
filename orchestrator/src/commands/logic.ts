@@ -312,6 +312,10 @@ function registerAgentCommands(program: Command): void {
       '--route-metered <value>',
       "allow automatic read-only routing to this metered agent; spend limits live in the provider key's own settings",
     )
+    .option(
+      '--trains-on-inputs <value>',
+      'declare whether the agent provider may train on submitted inputs',
+    )
     .option('--jobs <value>', 'allow these comma-separated jobs or any')
     .option('--prefer <value>', 'prefer these comma-separated jobs')
     .option('--max-concurrent <value>', 'limit concurrent runs for this agent')

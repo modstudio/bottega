@@ -35,6 +35,7 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
+import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
@@ -56,6 +57,13 @@ type Dependencies = {
   runsDirectory: string
   applySettings: typeof applySettingsWrite
   applyCanon: typeof applyUserCanonHomePlans
+}
+
+type ApplyOverrides = Partial<Dependencies> & {
+  runningFromRegisteredMainCheckout?: boolean
+  registeredMainCheckout?: string | null
+  runningInstallationRoot?: string
+  binaryRepositoryRoot?: string | null
 }
 
 function dependencies(overrides: Partial<Dependencies>): Dependencies {
@@ -160,6 +168,25 @@ function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | 
   return `unmatched drop(s): ${drops.map(({ list, rule }) => `${list} ${rule}`).join(', ')}`
 }
 
+function assertMachineSettingsWriteAuthority(
+  environment: NodeJS.ProcessEnv,
+  database: Database,
+  overrides: Pick<
+    ApplyOverrides,
+    | 'runningFromRegisteredMainCheckout'
+    | 'registeredMainCheckout'
+    | 'runningInstallationRoot'
+    | 'binaryRepositoryRoot'
+  >,
+): void {
+  const runsDirectory = resolveRunsDirectory(environment)
+  const targetHomes = [
+    claudeHomeFromEnvironment(environment),
+    ...userCanonHomesFromEnvironment(environment, runsDirectory).map((home) => home.path),
+  ]
+  assertCurrentMachineHomeWriteAuthority('machine settings apply', targetHomes, database, overrides)
+}
+
 function applyUserCanon(
   owner: string,
   check: boolean,
@@ -242,7 +269,7 @@ function applyUserCanon(
 
 export async function applyMachineSettings(
   input: { check: boolean },
-  overrides: Partial<Dependencies> = {},
+  overrides: ApplyOverrides = {},
 ): Promise<MachineSettingsApplyResult[]> {
   const workerProcess =
     overrides.workerProcess ?? (() => isOrchWorkerProcess(process.env, process.pid))
@@ -251,7 +278,12 @@ export async function applyMachineSettings(
       `refusing settings apply from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings apply`,
     )
   }
-  const deps = dependencies({ ...overrides, workerProcess })
+  const environment = overrides.environment ?? process.env
+  const local = overrides.local ?? db()
+  if (!input.check) {
+    assertMachineSettingsWriteAuthority(environment, local, overrides)
+  }
+  const deps = dependencies({ ...overrides, environment, local, workerProcess })
   const stateDirectory = resolveStatePaths(deps.environment).orchestratorDirectory
   mkdirSync(stateDirectory, { recursive: true, mode: 0o700 })
   const lease = tryKernelLease(join(stateDirectory, 'settings-apply.lock'), true)

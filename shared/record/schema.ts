@@ -202,6 +202,7 @@ export const project = pgTable.withRLS(
     stack: text(),
     canon: boolean().notNull().default(true),
     managedContext: boolean('managed_context').notNull().default(false),
+    visibility: text(),
     landingBranch: text('landing_branch'),
     productionBranch: text('production_branch'),
     gate: text(),
