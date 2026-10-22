@@ -85,6 +85,7 @@ export function fileRulingDecision(
           actor: input.actor,
           ownerLastSeenAt: input.ownerLastSeenAt,
           chainLastActivityAt: input.chainLastActivityAt,
+          coordinatorRun: input.coordinatorRun,
           now: input.now,
           windowMs: input.windowMs,
         })

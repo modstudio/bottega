@@ -117,6 +117,7 @@ export const cleanupBoundarySpecs = [
       '../branch/branch-disposal.ts',
       '../database/db.ts',
       '../evidence/unjudged-expiry.ts',
+      '../issue/issue-queue.ts',
       '../resources/docker-resources.ts',
       '../hook-tree/hook-tree.ts',
       '../landing-tree/release-observation.ts',
@@ -173,7 +174,7 @@ export const cleanupBoundarySpecs = [
   {
     name: 'cleanup-sweep-decisions-boundary',
     file: 'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
-    allowed: ['../../../shared/brand.ts'],
+    allowed: ['../../../shared/brand.ts', '../../../shared/caller-classification.ts'],
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup sweep decisions pure and independent of filesystems, stores, commands, and processes.',

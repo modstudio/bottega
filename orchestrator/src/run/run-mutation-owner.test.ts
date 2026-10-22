@@ -7,6 +7,7 @@ describe('run mutation owner decision', () => {
     actor: 'owner-session',
     ownerLastSeenAt: 900,
     chainLastActivityAt: 800,
+    coordinatorRun: false,
     now: 1_000,
     windowMs: 200,
   }
@@ -29,6 +30,23 @@ describe('run mutation owner decision', () => {
 
   test('refuses when the owner was seen within the window', () => {
     expect(runMutationOwnerDecision({ ...facts, actor: 'other-session' })).toBe('refuse')
+  })
+
+  test('only an idle coordinator chain ignores recent operator activity', () => {
+    const operatorFacts = {
+      ...facts,
+      owner: 'operator:machine-id',
+      actor: 'architect-session',
+      ownerLastSeenAt: 999,
+      chainLastActivityAt: 700,
+    }
+    expect(runMutationOwnerDecision(operatorFacts)).toBe('refuse')
+    expect(
+      runMutationOwnerDecision({
+        ...operatorFacts,
+        coordinatorRun: true,
+      }),
+    ).toBe('adopt')
   })
 
   test('refuses anonymous adoption even when the owner is gone', () => {
