@@ -19,17 +19,13 @@ export function terminalPrematureFinalRefusal(input: {
   workerEvents: ReadonlyArray<{ kind: string }>
   acceptedQuestionCount: number
   exitCode: number
-  latencyMs: number
 }): PrematureFinalRefusal | null {
   const readerReply = input.readerReply
   let replyShape: PrematureFinalReplyShape = 'other'
-  if (
-    readerReply?.deliverables.length &&
-    readerReply.deliverables.every((item) => item.status === 'blocked')
-  ) {
-    replyShape = 'all-blocked-reader'
-  } else if (input.parsedReview && input.parsedReview.findings.length === 0) {
-    replyShape = 'empty-review'
+  if (readerReply && readerReply.deliverables.length === 0 && !readerReply.files_written?.length) {
+    replyShape = 'reader-no-deliverables'
+  } else if (input.parsedReview) {
+    replyShape = 'review-no-evidence'
   } else if (
     input.contract?.status === 'done' &&
     Array.isArray(input.measuredFiles) &&
@@ -40,12 +36,10 @@ export function terminalPrematureFinalRefusal(input: {
 
   return decidePrematureFinal({
     exitCode: input.exitCode,
-    latencyMs: input.latencyMs,
     toolEventRecorded: input.workerEvents.some((event) => event.kind === 'tool'),
     evidence: {
       filesWritten: readerReply?.files_written,
       filesChanged: input.contract?.files_changed,
-      findings: input.parsedReview?.findings,
       filesCovered: input.parsedReview?.provenance.files_covered,
       commandsRun:
         input.parsedReview?.provenance.commands_run ??
@@ -55,11 +49,13 @@ export function terminalPrematureFinalRefusal(input: {
       mcpTools: input.parsedReview?.provenance.mcp_tools,
       docsRead: input.parsedReview?.provenance.docs_read,
     },
+    reportsRun: Boolean(input.contract?.tests?.ran),
     questionsAsked: input.acceptedQuestionCount > 0,
     replyShape,
     textFields: [
       ...(readerReply?.deliverables.map((item) => item.content) ?? []),
       ...(readerReply?.narrative ? [readerReply.narrative] : []),
+      ...(input.parsedReview?.findings.map((finding) => finding.evidence) ?? []),
       ...(input.parsedReview?.provenance.could_not_verify ?? []),
       ...(input.contract?.summary ? [input.contract.summary] : []),
     ],
@@ -73,10 +69,12 @@ export function applyPrematureFinalFailure<FailureKind extends string>(
 ): {
   status: OutcomeStatus
   error: string | null
-  failureKind: FailureKind | 'unevidenced' | null
+  failureKind: FailureKind | 'premature-final' | null
 } {
   if (!refusal) return outcome
   if (outcome.status === 'ok') return { status: 'failed', ...refusal }
-  if (outcome.failureKind === 'unevidenced') return { ...outcome, error: refusal.error }
+  if (outcome.failureKind === 'unevidenced' || outcome.failureKind === 'other') {
+    return { status: 'failed', ...refusal }
+  }
   return outcome
 }

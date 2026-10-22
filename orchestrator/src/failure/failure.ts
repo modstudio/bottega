@@ -67,6 +67,8 @@ export const FAILURE_KINDS = [
   'contract',
   /** A clean review reply that does not establish it reviewed the dispatched change. */
   'unevidenced',
+  /** The agent ended its turn with only an opening plan and no work. */
+  'premature-final',
   'abandoned',
   'other',
 ] as const
@@ -355,6 +357,7 @@ export const FAILS_OVER: FailureKind[] = [
   'content_refusal',
   'contract',
   'unevidenced',
+  'premature-final',
 ]
 
 /**

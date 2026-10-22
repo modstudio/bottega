@@ -1,40 +1,39 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  decidePrematureFinal,
-  PREMATURE_FINAL_MAX_MS,
-  type PrematureFinalFacts,
-} from './premature-final.ts'
+import { decidePrematureFinal, type PrematureFinalFacts } from './premature-final.ts'
 
-const diagnosisOpening =
-  'Starting DEV-1016 diagnosis: reading the full prompt, task, and outbox contract sources.'
-const reviewOpening = 'Review not started; reading the full prompt and checkout first.'
+const readerOpening =
+  "I'll start by reading the full prompt, the review schema, and the MCP tool definitions."
+const reviewOpening =
+  'Reading the full review prompt and gathering the artifact, task, and gate sources.'
 
 function facts(overrides: Partial<PrematureFinalFacts> = {}): PrematureFinalFacts {
   return {
     exitCode: 0,
-    latencyMs: PREMATURE_FINAL_MAX_MS,
     toolEventRecorded: false,
     evidence: {},
+    reportsRun: false,
     questionsAsked: false,
-    replyShape: 'all-blocked-reader',
-    textFields: [diagnosisOpening],
+    replyShape: 'reader-no-deliverables',
+    textFields: [readerOpening],
     ...overrides,
   }
 }
 
 describe('premature final decision', () => {
-  test('refuses the opening narration from blocked diagnosis run 7175', () => {
+  test('classifies understand run 16728 with no deliverables or files written', () => {
     expect(decidePrematureFinal(facts())).toEqual({
-      failureKind: 'unevidenced',
+      failureKind: 'premature-final',
       error:
         'premature final: the agent ended its turn with opening narration and no work ' +
-        `(Starting DEV-1016 diagnosis: reading the full prompt, task, and outbox contract …)`,
+        `(I'll start by reading the full prompt, the review schema, and the MCP tool definitions.…)`,
     })
   })
 
-  test('refuses the opening narration from empty review run 7194', () => {
+  test('classifies review-lens run 16613 with a placeholder finding and no provenance', () => {
     expect(
-      decidePrematureFinal(facts({ replyShape: 'empty-review', textFields: [reviewOpening] })),
+      decidePrematureFinal(
+        facts({ replyShape: 'review-no-evidence', textFields: [reviewOpening] }),
+      ),
     ).not.toBeNull()
   })
 
@@ -42,13 +41,13 @@ describe('premature final decision', () => {
     ['one tool event', { toolEventRecorded: true }],
     ['one file covered', { evidence: { filesCovered: ['orchestrator/src/run/run.ts'] } }],
     ['a question asked', { questionsAsked: true }],
-    ['latency above the maximum', { latencyMs: PREMATURE_FINAL_MAX_MS + 1 }],
+    ['a reported test run', { reportsRun: true }],
     ['a substantive blocked reason', { textFields: ['the named branch does not exist'] }],
   ] satisfies [string, Partial<PrematureFinalFacts>][])('allows %s', (_name, overrides) => {
     expect(decidePrematureFinal(facts(overrides))).toBeNull()
   })
 
-  test('refuses a done writer with no changed files', () => {
+  test('classifies implement run 16752 with no changed files or tests run', () => {
     expect(
       decidePrematureFinal(
         facts({
@@ -58,5 +57,29 @@ describe('premature final decision', () => {
         }),
       ),
     ).not.toBeNull()
+  })
+
+  test('a real reply that changed a file does not classify', () => {
+    expect(
+      decidePrematureFinal(
+        facts({
+          replyShape: 'done-writer-no-files',
+          evidence: { filesChanged: ['orchestrator/src/run/run.ts'] },
+          textFields: ['Before writing the change, I will read the implementation.'],
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  test('a lens with evidence does not classify', () => {
+    expect(
+      decidePrematureFinal(
+        facts({
+          replyShape: 'review-no-evidence',
+          evidence: { filesCovered: ['orchestrator/src/run/run.ts'] },
+          textFields: [reviewOpening],
+        }),
+      ),
+    ).toBeNull()
   })
 })

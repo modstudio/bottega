@@ -144,6 +144,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
   module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
   module('orchestrator/src/run/run-close.ts', [
+    '../../../shared/brand.ts',
     '../close/close-out.ts',
     '../contract/contract.ts',
     '../database/db.ts',

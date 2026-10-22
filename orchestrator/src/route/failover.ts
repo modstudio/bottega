@@ -207,7 +207,15 @@ export function detachedRunOptions(
   }
 }
 
-export const MAX_FAILOVER_ATTEMPTS = 3
+const MAX_FAILOVER_ATTEMPTS = 3
+const PREMATURE_FINAL_MAX_FAILOVER_ATTEMPTS = 2
+
+/** A premature final gets one successor; other eligible failures keep the chain budget. */
+export function failoverAttemptLimit(failureKind: string): number {
+  return failureKind === 'premature-final'
+    ? PREMATURE_FINAL_MAX_FAILOVER_ATTEMPTS
+    : MAX_FAILOVER_ATTEMPTS
+}
 
 export function resolveSupersededTurn(database: Database, rootId: string, turn: number): number {
   return database

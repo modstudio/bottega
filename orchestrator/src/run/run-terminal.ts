@@ -634,7 +634,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       workerEvents,
       acceptedQuestionCount: acceptedQuestions.length,
       exitCode,
-      latencyMs: Date.now() - started,
     }),
   ))
 

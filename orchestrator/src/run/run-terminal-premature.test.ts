@@ -8,7 +8,7 @@ import {
 } from './run-terminal-premature.ts'
 
 const refusal: PrematureFinalRefusal = {
-  failureKind: 'unevidenced',
+  failureKind: 'premature-final',
   error: 'premature final: the agent ended its turn with opening narration and no work (Starting…)',
 }
 
@@ -23,7 +23,7 @@ describe('premature final terminal integration', () => {
     expect(applyPrematureFinalFailure(truncated, refusal)).toEqual(truncated)
   })
 
-  test('replaces only the error of an already-unevidenced empty review', () => {
+  test('takes precedence over an already-unevidenced empty review', () => {
     expect(
       applyPrematureFinalFailure(
         {
@@ -33,7 +33,16 @@ describe('premature final terminal integration', () => {
         },
         refusal,
       ),
-    ).toEqual({ status: 'failed', failureKind: 'unevidenced', error: refusal.error })
+    ).toEqual({ status: 'failed', failureKind: 'premature-final', error: refusal.error })
+  })
+
+  test('takes precedence over the empty done writer fallback', () => {
+    expect(
+      applyPrematureFinalFailure(
+        { status: 'failed', failureKind: 'other', error: 'reported done with no change' },
+        refusal,
+      ),
+    ).toEqual({ status: 'failed', failureKind: 'premature-final', error: refusal.error })
   })
 
   test('does not classify a done writer when its diff was not measured', () => {
@@ -55,7 +64,6 @@ describe('premature final terminal integration', () => {
         workerEvents: [],
         acceptedQuestionCount: 0,
         exitCode: 0,
-        latencyMs: 1,
       }),
     ).toBeNull()
   })
