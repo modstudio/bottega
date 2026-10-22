@@ -136,6 +136,28 @@ test('unknown groups fail without entering a concern', async () => {
   expect(calls).toEqual([])
 })
 
+test.each(['orch', 'hub'] as const)(
+  'does not route a %s executable basename or leading token',
+  async (legacy) => {
+    const byBasename: string[] = []
+    const byToken: string[] = []
+    const errors: string[] = []
+    const originalError = console.error
+    console.error = (value) => errors.push(String(value))
+    try {
+      expect(await dispatchBinary(['jobs'], legacy, entries(byBasename), () => '')).toBe(2)
+      expect(
+        await dispatchBinary([legacy, 'jobs'], PLATFORM_SLUG, entries(byToken), () => ''),
+      ).toBe(2)
+    } finally {
+      console.error = originalError
+    }
+    expect(byBasename).toEqual([])
+    expect(byToken).toEqual([])
+    expect(errors.some((line) => line.includes('unknown command'))).toBe(true)
+  },
+)
+
 test.each([
   [7, 0, 7],
   [0, 9, 9],
