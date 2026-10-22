@@ -11,7 +11,7 @@ import {
   type TransportHandle,
   type TransportResult,
 } from '../transport/transport.ts'
-import { probeVendor } from './vendor-probe.ts'
+import { probeVendor, vendorProbeSettlement } from './vendor-probe.ts'
 
 function excludeCodex() {
   addRun({
@@ -82,6 +82,38 @@ function installVendor(collected: TransportResult) {
   registerTransport('cli', () => transport)
   registerTransport('acp', () => transport)
 }
+
+describe('vendor probe settlement', () => {
+  test('a passing probe of an enabled agent reports eligibility', () => {
+    expect(vendorProbeSettlement('grok', { ok: true }, true, null)).toEqual({
+      ok: true,
+      kind: 'ok',
+      message: 'agent "grok" is eligible again',
+    })
+  })
+
+  test('a passing probe of a disabled agent names the disable and the re-enable verb', () => {
+    const reason = 'Not signed in on this machine (failover run 15922 failed auth, 2026-10-20)'
+    expect(vendorProbeSettlement('grok', { ok: true }, false, reason)).toEqual({
+      ok: true,
+      kind: 'ok',
+      message:
+        `probe passed; agent "grok" is still disabled (${reason}); ` +
+        `re-enable with ${PLATFORM_SLUG} agent show set grok --enabled true`,
+    })
+  })
+
+  test('a failed probe surfaces the vendor message', () => {
+    expect(
+      vendorProbeSettlement(
+        'grok',
+        { ok: false, kind: 'other', text: 'connection reset' },
+        true,
+        null,
+      ),
+    ).toEqual({ ok: false, kind: 'failed', message: 'connection reset' })
+  })
+})
 
 describe(`${PLATFORM_SLUG} agent probe`, () => {
   test('a successful probe clears the quota exclusion', async () => {
