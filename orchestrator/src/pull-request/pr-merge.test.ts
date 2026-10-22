@@ -357,6 +357,7 @@ test('an incomplete admission refuses with its review remedy without merging', (
               unfinishedReviewNumbers: [],
               undisposedFindings: [],
               missingLenses: [],
+              missingLensesRecordedOnBranch: [],
               missingSecondOpinion: null,
               finalTierRaised: false,
               architectReadRequired: false,

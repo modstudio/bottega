@@ -341,7 +341,7 @@ test('review tier re-lenses only the tier-three path touched by the fix after a 
   }
 })
 
-test('review tier reports an unidentified reviewed tip and falls back to full output', async () => {
+test('review tier reports an unidentified reviewed tip and applies the funnel', async () => {
   const { repo, branch, runId } = postFixFixture('src/fix.ts')
   try {
     git(repo, 'update-ref', '-d', pinRef(runId))
@@ -349,8 +349,9 @@ test('review tier reports an unidentified reviewed tip and falls back to full ou
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
 
     expect(output.some((line) => line.includes('tip could not be identified'))).toBeTrue()
-    expect(output.some((line) => line.includes('falling back'))).toBeTrue()
-    expect(output.some((line) => line.startsWith('lens correctness'))).toBeTrue()
+    expect(output.some((line) => line.includes('applying the review funnel'))).toBeTrue()
+    expect(output.some((line) => line.includes('falling back'))).toBeFalse()
+    expect(output.some((line) => line.startsWith('lens correctness'))).toBeFalse()
     expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
   } finally {
     rmSync(repo, { recursive: true, force: true })

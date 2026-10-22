@@ -145,6 +145,57 @@ describe('round lens plan', () => {
     ).toEqual({ lenses: [] })
   })
 
+  const sixLenses = [
+    'correctness',
+    'frontend-bug-hunting',
+    'decision-conformance',
+    'architecture',
+    'craft',
+    'test-quality',
+  ] as const
+
+  test('a test-only commit after a clean six-lens round needs no round when the tip is unidentified', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: [...sixLenses] },
+        facts: {
+          completedLenses: [...sixLenses],
+          latestAcceptedOrModifiedLenses: [],
+        },
+        postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
+        pathScopedLenses: ['test-quality'],
+      }),
+    ).toEqual({ lenses: [] })
+  })
+
+  test('a test-only commit after findings re-runs only those lenses when the tip is unidentified', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: [...sixLenses] },
+        facts: {
+          completedLenses: [...sixLenses],
+          latestAcceptedOrModifiedLenses: ['test-quality'],
+        },
+        postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
+        pathScopedLenses: ['test-quality'],
+      }),
+    ).toEqual({ lenses: ['test-quality'] })
+  })
+
+  test('an unidentified tip with completed lenses applies the funnel, not the full set', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: [...sixLenses] },
+        facts: {
+          completedLenses: [...sixLenses],
+          latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
+        },
+        postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
+        pathScopedLenses: ['test-quality'],
+      }),
+    ).toEqual({ lenses: ['correctness', 'craft'] })
+  })
+
   test('facts use the latest prior round and attribute accepted and modified findings by lens', () => {
     const database = migratedTestDatabase()
     const projectRecordId = newRecordId()
