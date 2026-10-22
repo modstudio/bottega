@@ -319,7 +319,7 @@ describe('review discipline', () => {
       expect(measurement(implicitReview)).toEqual({
         patch_id: 'same-patch',
         path_set: '["src/change.ts"]',
-        tier: 2,
+        tier: 1,
       })
     } finally {
       spawn.mockRestore()
