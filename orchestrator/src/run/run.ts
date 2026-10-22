@@ -71,7 +71,7 @@ import {
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick } from '../route/route.ts'
+import { pick, runningRunCountForAgent } from '../route/route.ts'
 import {
   type CodexMcpCatalogue,
   codexMcpSetupHeader,
@@ -214,6 +214,8 @@ export async function run(opts: {
   agent?: string
   /** True only when the caller selected the agent rather than routing it. */
   agentExplicit?: boolean
+  /** Pre-detach routing result; retained without turning it into a caller pin. */
+  routedAgent?: { agent: string; reason: string }
   schemaPath?: string
   mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
@@ -521,6 +523,7 @@ export async function run(opts: {
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
         requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
+        routed: opts.routedAgent,
       },
       opts.probe,
       opts.lens,
@@ -1060,6 +1063,7 @@ export async function run(opts: {
       resolvedDialect,
       mcpSetupHeader,
       initialBoardNoticeIds: initialBoard.noticeIds,
+      throttleConcurrency: () => runningRunCountForAgent('codex'),
     }))
   } finally {
     const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)

@@ -572,6 +572,14 @@ export const HarnessHealthSchema = z.object({
   header: z.string(),
   days: z.number().int().positive(),
   from: z.iso.datetime(),
+  throttles: z
+    .array(
+      z.object({
+        concurrency: z.number().int().nonnegative(),
+        throttles: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
   classes: z.array(
     z.object({
       kind: z.string(),

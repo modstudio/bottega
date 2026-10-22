@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { COOLS_DOWN, FAILS_OVER, NOT_EVIDENCE } from './failure/failure.ts'
 import {
   composeCompletedReplyEndedError,
   deriveLiveOutcome,
@@ -41,6 +42,24 @@ const outcome = (facts: Partial<LiveOutcomeFacts>) => {
 }
 
 describe('live outcome derivation', () => {
+  test('a first-throttle cancellation remains quota rather than interruption', () => {
+    expect(
+      outcome({
+        replyError: 'Codex throttled: 429 Too Many Requests (retry 1/5)',
+        output: '',
+        exitCode: 143,
+        signal: 'SIGTERM',
+      }),
+    ).toEqual({
+      status: 'failed',
+      failureKind: 'quota',
+      error: 'Codex throttled: 429 Too Many Requests (retry 1/5)',
+    })
+    expect(FAILS_OVER).toContain('quota')
+    expect(COOLS_DOWN).toContain('quota')
+    expect(NOT_EVIDENCE).toContain('quota')
+  })
+
   test('a completed reply outranks an idle kill', () => {
     expect(
       outcome({

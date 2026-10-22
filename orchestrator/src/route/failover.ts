@@ -39,6 +39,8 @@ export type ResolvedTaskBranch = {
 export type DetachSpec = {
   agent?: string
   agentExplicit?: boolean
+  /** Surface routing result; unlike agent, this is not a caller pin. */
+  routedAgent?: { agent: string; reason: string }
   schema?: string
   mcp?: McpRequest
   model?: string
@@ -113,6 +115,7 @@ export function detachedRunOptions(
 ) {
   const {
     agent,
+    routedAgent,
     mcp,
     model,
     probe,
@@ -143,6 +146,7 @@ export function detachedRunOptions(
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent,
     agentExplicit: spec.agentExplicit,
+    routedAgent,
     schema: spec.schema,
     mcp,
     model,
@@ -177,6 +181,7 @@ export function detachedRunOptions(
     reserveId,
     agent,
     agentExplicit: consumed.agentExplicit as boolean | undefined,
+    routedAgent,
     schemaPath: spec.schema,
     mcp,
     model,

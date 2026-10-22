@@ -210,6 +210,55 @@ function isWorkerActivity(event: RunLogEvent): boolean {
   )
 }
 
+export type LiveOperationalStatus = {
+  waiting_for_capacity: boolean
+  capacity_wait_since: string | null
+  live_status_detail: string | null
+  throttled: {
+    attempt: number
+    max: number
+    retry_delay_ms: number | null
+    retry_at: string | null
+    status: number
+    concurrency: number
+  } | null
+}
+
+export function formatLiveOperationalStatus(
+  status: Omit<LiveOperationalStatus, 'live_status_detail'>,
+): string | null {
+  if (status.waiting_for_capacity)
+    return `waiting for capacity since ${status.capacity_wait_since ?? 'unknown'}`
+  const throttle = status.throttled
+  return throttle
+    ? `throttled (${throttle.status}), retry ${throttle.attempt}/${throttle.max} at ${throttle.retry_at ?? 'unknown'}`
+    : null
+}
+
+export function liveOperationalStatusFromEvents(
+  events: readonly RunLogEvent[],
+): LiveOperationalStatus {
+  const capacityWait = events.findLast((event) => event.type === 'capacity_wait')
+  const throttle = events.findLast((event) => event.type === 'throttled')
+  const status = {
+    waiting_for_capacity: capacityWait?.type === 'capacity_wait' ? capacityWait.waiting : false,
+    capacity_wait_since:
+      capacityWait?.type === 'capacity_wait' && capacityWait.waiting ? capacityWait.ts : null,
+    throttled:
+      throttle?.type === 'throttled'
+        ? {
+            attempt: throttle.attempt,
+            max: throttle.max,
+            retry_delay_ms: throttle.retryDelayMs,
+            retry_at: throttle.retryAt,
+            status: throttle.status,
+            concurrency: throttle.concurrency,
+          }
+        : null,
+  }
+  return { ...status, live_status_detail: formatLiveOperationalStatus(status) }
+}
+
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
 
 function simpleObservedEvent(
@@ -233,8 +282,8 @@ function simpleObservedEvent(
 
 export function createEventLog(
   runId: string,
+  throttleConcurrency: () => number,
   path?: string,
-  throttleConcurrency: () => number = () => 0,
 ): {
   observe(event: StreamEvent, ts?: string): void
   flush(ts?: string): void
@@ -293,18 +342,10 @@ export function createEventLog(
 export async function teeTransportEvents(
   events: AsyncIterable<{ kind: string }>,
   runId: string,
+  throttleConcurrency: () => number,
   observe?: (event: StreamEvent) => void,
 ): Promise<void> {
-  const log = createEventLog(runId, undefined, () => {
-    const row = db()
-      .query(
-        `SELECT COUNT(*) n FROM run r LEFT JOIN agent a ON a.name=r.agent
-          WHERE COALESCE(a.harness,r.agent)='codex'
-            AND r.status='running' AND r.agent_pid IS NOT NULL`,
-      )
-      .get() as { n: number }
-    return row.n
-  })
+  const log = createEventLog(runId, throttleConcurrency)
   try {
     for await (const event of events) {
       try {
@@ -732,7 +773,19 @@ type OperationalPeekEvent = Extract<
 function formatOperationalPeekEvent(event: OperationalPeekEvent): string {
   if (event.type === 'usage') return `  usage ${event.tokens}`
   if (event.type === 'capacity_wait') return '  waiting for capacity'
-  return `  throttled (${event.status}), retry ${event.attempt}/${event.max} at ${event.retryAt ?? 'unknown'} (codex concurrency ${event.concurrency})`
+  const detail = formatLiveOperationalStatus({
+    waiting_for_capacity: false,
+    capacity_wait_since: null,
+    throttled: {
+      attempt: event.attempt,
+      max: event.max,
+      retry_delay_ms: null,
+      retry_at: event.retryAt,
+      status: event.status,
+      concurrency: event.concurrency,
+    },
+  })
+  return `  ${detail} (codex concurrency ${event.concurrency})`
 }
 
 function formatPeekEvent(event: PeekEventSummary): string {

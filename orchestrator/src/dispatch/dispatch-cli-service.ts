@@ -347,7 +347,7 @@ async function selectBeforeDetach(
   text: string,
   spec: DetachSpec,
   presentation: Pick<Presentation, 'cwd' | 'error'>,
-): Promise<string | undefined> {
+): Promise<{ agent: string; reason: string } | undefined> {
   if (spec.resume) return undefined
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
   return waitForAgentSelection({
@@ -367,10 +367,17 @@ async function selectBeforeDetach(
         },
         spec.probe,
         spec.lens,
-      ).agent,
+      ),
     noWait: spec.noWaitCapacity,
     onWait: () => presentation.error('waiting for capacity'),
   })
+}
+
+export function detachSpecWithRoutedSelection(
+  spec: DetachSpec,
+  selected: { agent: string; reason: string } | undefined,
+): DetachSpec {
+  return selected && !spec.agent ? { ...spec, routedAgent: selected } : spec
 }
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
@@ -409,8 +416,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
     return dispatchDetached(
       jobName,
       text,
-      selected && !spec.agent ? { ...spec, agent: selected } : spec,
-      selected,
+      detachSpecWithRoutedSelection(spec, selected),
+      selected?.agent,
     )
   }
   await dispatchCommand(

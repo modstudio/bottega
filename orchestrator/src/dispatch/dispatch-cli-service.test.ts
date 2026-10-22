@@ -1,10 +1,20 @@
 import { describe, expect, test } from 'bun:test'
 import {
   callerCheckoutDecision,
+  detachSpecWithRoutedSelection,
   dispatchLaunchCwdDecision,
   resolveCallerCheckoutDecision,
   taskBranchLandingBypassWarning,
 } from './dispatch-cli-service.ts'
+
+test('a routed selection is handed off separately from the caller pin', () => {
+  expect(detachSpecWithRoutedSelection({}, { agent: 'codex', reason: 'surface route' })).toEqual({
+    routedAgent: { agent: 'codex', reason: 'surface route' },
+  })
+  expect(
+    detachSpecWithRoutedSelection({ agent: 'grok' }, { agent: 'codex', reason: 'route' }),
+  ).toEqual({ agent: 'grok' })
+})
 
 describe('dispatch launch cwd selection', () => {
   test('repo-path mutation: --repo without --cwd launches from the named project', () => {

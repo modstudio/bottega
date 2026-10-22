@@ -294,6 +294,7 @@ export function harnessHealth(
       'Harness health only — never routing or scoring evidence. Review measurement gaps are harness failures from bb28501 on 2026-09-07; that step is reclassification, not regression. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
     days,
     from,
+    throttles: throttleBuckets({ database, from }),
     classes: classesWithAttribution,
     falseVerdicts,
     landingRefusals,

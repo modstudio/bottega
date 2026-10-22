@@ -1,15 +1,19 @@
 import { describe, expect, test } from 'bun:test'
+import { ROUTING_REFUSAL_MARKER } from '../route/routing-refusal.ts'
 import { coordinatorErrorTail, isRoutingRefusal } from './run-coordinator-log.ts'
 
 describe('coordinatorErrorTail', () => {
   test('preserves a routing refusal even when its reason looks secret-shaped', () => {
-    const refusal =
-      'no eligible agent for job "implement"\ngrok: disabled — Not signed in token=abc'
+    const reason = 'no eligible agent for job "implement"\ngrok: disabled — Not signed in token=abc'
+    const refusal = `${ROUTING_REFUSAL_MARKER}: ${reason}`
+    expect(isRoutingRefusal(reason)).toBe(false)
     expect(isRoutingRefusal(refusal)).toBe(true)
-    expect(coordinatorErrorTail(refusal)).toBe(refusal)
-    expect(coordinatorErrorTail('agent codex is at capacity: token=abc')).toBe(
-      'agent codex is at capacity: token=abc',
-    )
+    expect(coordinatorErrorTail(refusal)).toBe(reason)
+    expect(
+      coordinatorErrorTail(
+        `${ROUTING_REFUSAL_MARKER}.AgentCapacityError: agent codex is at capacity: token=abc`,
+      ),
+    ).toBe('agent codex is at capacity: token=abc')
   })
   test('keeps the bounded end of coordinator output', () => {
     const tail = coordinatorErrorTail(`first line\n${'x'.repeat(100)}\nlast line`, 64)

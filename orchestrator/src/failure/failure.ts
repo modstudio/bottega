@@ -284,6 +284,10 @@ export function classify(
 ): FailureKind {
   if (idleKilled) return 'idle'
   if (error && /idle-killed after /.test(error)) return 'idle'
+  // A live Codex throttle is deliberately cancelled by us; the structured
+  // throttle notice, not the resulting SIGTERM, owns that outcome.
+  if (error && /^Codex throttled: 429 Too Many Requests \(retry \d+\/\d+\)$/.test(error))
+    return 'quota'
   if (exitCode != null && SIGNAL_EXITS.has(exitCode)) {
     // OUR timer kills with the same signal as a harness does, so the exit code
     // alone cannot tell them apart — only the caller knows which fired. Ours is

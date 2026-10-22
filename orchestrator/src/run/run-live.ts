@@ -106,7 +106,7 @@ function outputCeilingReached(
   )
 }
 
-function firstThrottleObserver(cancel: () => void) {
+export function firstThrottleObserver(cancel: () => void) {
   const state: { first: Extract<StreamEvent, { kind: 'throttled' }> | null } = { first: null }
   return {
     state,
@@ -320,6 +320,7 @@ export type LiveInput = {
   resolvedDialect: ReplyDialect
   mcpSetupHeader: string | null
   initialBoardNoticeIds: Array<number | string>
+  throttleConcurrency: () => number
 }
 
 export type LiveResult = {
@@ -805,7 +806,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
     const throttle = firstThrottleObserver(() => void t.cancel(handle))
-    const teeing = teeTransportEvents(handle.events(), claim.id, throttle.observe)
+    const teeing = teeTransportEvents(
+      handle.events(),
+      claim.id,
+      input.throttleConcurrency,
+      throttle.observe,
+    )
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,

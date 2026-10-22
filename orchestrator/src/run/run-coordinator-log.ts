@@ -5,16 +5,21 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'no
 import { dirname, join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
+import { ROUTING_REFUSAL_MARKER } from '../route/routing-refusal.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 
 const COORDINATOR_ERROR_TAIL_LIMIT = 2000
 const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
 
-/** Routing owns these bounded refusal shapes; preserve their remedy verbatim. */
+/** Routing marks refusals at their source so prose changes cannot re-arm withholding. */
 export function isRoutingRefusal(value: string): boolean {
-  return /(?:^|\n)(?:no eligible agent for job|agent (?:"[^"]+"|[a-zA-Z0-9._-]+) (?:is at capacity|not eligible for)|routing constraints leave no eligible agent|waiting for capacity:)/m.test(
-    value.trim(),
-  )
+  return value.includes(ROUTING_REFUSAL_MARKER)
+}
+
+function withoutRoutingRefusalMarker(value: string): string {
+  return value
+    .replaceAll(`${ROUTING_REFUSAL_MARKER}.AgentCapacityError: `, '')
+    .replaceAll(`${ROUTING_REFUSAL_MARKER}: `, '')
 }
 
 function legacyCoordinatorLogNumber(name: string): string | null {
@@ -84,9 +89,10 @@ export const runCoordinatorLogPath = (runRecordId: string, runsDir = RUNS_DIR): 
 
 /** Bound coordinator diagnostics only after checking the whole candidate tail for secrets. */
 export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
-  const trimmed = output.trim()
+  const routingRefusal = isRoutingRefusal(output)
+  const trimmed = (routingRefusal ? withoutRoutingRefusalMarker(output) : output).trim()
   if (!trimmed) return '(no output)'
-  if (containsSecretShaped(trimmed) && !isRoutingRefusal(trimmed)) return SECRET_SHAPED_OUTPUT
+  if (containsSecretShaped(trimmed) && !routingRefusal) return SECRET_SHAPED_OUTPUT
   if (trimmed.length <= limit) return trimmed
   const marker = '… [earlier output omitted] …\n'
   if (limit <= marker.length) return trimmed.slice(-limit)

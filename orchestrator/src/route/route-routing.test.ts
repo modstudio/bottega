@@ -62,6 +62,14 @@ test('automatic routing excludes metered billing without opt-in while a named ag
   }
 })
 
+test('a routed pick keeps its reason without becoming an explicit pin', () => {
+  expect(
+    pick('summarize', undefined, 0, false, undefined, {
+      routed: { agent: 'codex', reason: 'surface route' },
+    }),
+  ).toEqual({ agent: 'codex', reason: 'surface route' })
+})
+
 test('metered routing opt-in admits read-only work and still excludes writer jobs', () => {
   const original = db()
     .query("SELECT billing,route_metered FROM agent WHERE name='codex'")

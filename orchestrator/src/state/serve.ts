@@ -17,7 +17,7 @@ import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { readAskServerFailure } from '../ask/ask-failure.ts'
 import { summarizeAskServer } from '../ask/ask-lifecycle.ts'
 import { db } from '../database/db.ts'
-import { readEventLog, runEventsPath } from '../events.ts'
+import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from '../mailbox/mailbox.ts'
@@ -37,30 +37,6 @@ registerStandardRuntime()
 
 const jsonArray = (value: unknown) =>
   typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
-
-function liveEventStatus(events: ReturnType<typeof readEventLog> | null) {
-  const throttle = events?.findLast((event) => event.type === 'throttled')
-  const capacityWait = events?.findLast((event) => event.type === 'capacity_wait')
-  return {
-    live_status_detail:
-      capacityWait?.type === 'capacity_wait' && capacityWait.waiting
-        ? `waiting for capacity since ${capacityWait.ts}`
-        : throttle?.type === 'throttled'
-          ? `throttled (${throttle.status}), retry ${throttle.attempt}/${throttle.max} at ${throttle.retryAt ?? 'unknown'}`
-          : null,
-    throttled:
-      throttle?.type === 'throttled'
-        ? {
-            attempt: throttle.attempt,
-            max: throttle.max,
-            retry_delay_ms: throttle.retryDelayMs,
-            retry_at: throttle.retryAt,
-            status: throttle.status,
-            concurrency: throttle.concurrency,
-          }
-        : null,
-  }
-}
 
 function reviewsForRun(runId: string): RunDetailReviewLens[] {
   const lenses = db()
@@ -224,7 +200,7 @@ export function runDetail(id: string, receipt = false) {
       : ['delivery', 'quality'],
     prompt: read(row.prompt_path),
     output: read(row.output_path),
-    ...liveEventStatus(events),
+    ...liveOperationalStatusFromEvents(events ?? []),
     ask_server: summarizeAskServer(
       events,
       readAskServerFailure(runScratchDir(id)) ?? readAskServerFailure(runArtifactsDir(id)),

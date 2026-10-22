@@ -2,7 +2,7 @@
 /** Knows harness health, contention and blocker reporting. Must not know runs, routing, transports, the CLI, or worktrees. */
 import { AttributionKindSchema } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { harnessHealth, landingsWithPostStepError, throttleBuckets } from './health.ts'
+import { harnessHealth, landingsWithPostStepError } from './health.ts'
 
 type CommandFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CommandPresentation = { log(...values: unknown[]): void }
@@ -44,13 +44,10 @@ export function blockersPayload(days = 14) {
   }
 }
 
-export const healthPayload = (days?: number) => {
-  const report = harnessHealth(days)
-  return { ...report, throttles: throttleBuckets({ database: db(), from: report.from }) }
-}
+export const healthPayload = (days?: number) => harnessHealth(days)
 
 function printThrottleBuckets(
-  throttles: ReturnType<typeof throttleBuckets>,
+  throttles: NonNullable<ReturnType<typeof harnessHealth>['throttles']>,
   log: CommandPresentation['log'],
 ): void {
   log('\nCODEX THROTTLES BY LIVE CONCURRENCY')
@@ -67,7 +64,7 @@ function printHealthHeader(
 ) {
   log(report.header)
   log(`window: ${report.days} days from ${report.from}`)
-  printThrottleBuckets(report.throttles, log)
+  printThrottleBuckets(report.throttles ?? [], log)
 }
 
 /**

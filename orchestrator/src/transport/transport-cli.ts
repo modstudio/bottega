@@ -76,7 +76,7 @@ function codexThrottleEvent(line: string): NormalizedEvent | null {
   }
 }
 
-function startCliStreamReaders(input: {
+export function startCliStreamReaders(input: {
   stdout: AsyncIterable<string | Uint8Array>
   stderr: AsyncIterable<string | Uint8Array>
   codex: boolean

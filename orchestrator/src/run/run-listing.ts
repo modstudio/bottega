@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RunIdentity } from '../../../shared/orch-contract.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
-import { readEventLog, runEventsPath } from '../events.ts'
+import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
@@ -116,20 +116,9 @@ function lifecyclePresentation(
   if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
   const status = outcome.line.split(' - ', 1)[0]!
   const hostWaitSince = row.host_wait_since as string | null
-  const capacityWaitSince = row.capacity_wait_since as string | null
-  if (capacityWaitSince)
-    return { status: 'waiting', detail: `waiting for capacity since ${capacityWaitSince}` }
-  const throttle = row.throttled as {
-    attempt: number
-    max: number
-    retry_at: string | null
-    status: number
-  } | null
-  if (throttle)
-    return {
-      status: 'throttled',
-      detail: `throttled (${throttle.status}), retry ${throttle.attempt}/${throttle.max} at ${throttle.retry_at ?? 'unknown'}`,
-    }
+  if (row.waiting_for_capacity === true)
+    return { status: 'waiting', detail: row.live_status_detail as string }
+  if (row.throttled) return { status: 'throttled', detail: row.live_status_detail as string }
   if (isFreshRunHostWait(String(row.status), hostWaitSince))
     return { status: 'waiting', detail: `waiting for host capacity since ${hostWaitSince}` }
   return {
@@ -140,23 +129,7 @@ function lifecyclePresentation(
 
 function liveOperationalStatus(liveMemberId: string, live: boolean) {
   const eventLog = live ? readEventLog(runEventsPath(liveMemberId)) : []
-  const capacityWait = eventLog.findLast((event) => event.type === 'capacity_wait')
-  const throttle = eventLog.findLast((event) => event.type === 'throttled')
-  return {
-    waiting_for_capacity: capacityWait?.type === 'capacity_wait' ? capacityWait.waiting : false,
-    capacity_wait_since:
-      capacityWait?.type === 'capacity_wait' && capacityWait.waiting ? capacityWait.ts : null,
-    throttled:
-      throttle?.type === 'throttled'
-        ? {
-            attempt: throttle.attempt,
-            max: throttle.max,
-            retry_at: throttle.retryAt,
-            status: throttle.status,
-            concurrency: throttle.concurrency,
-          }
-        : null,
-  }
+  return liveOperationalStatusFromEvents(eventLog)
 }
 
 function addExactFilter(

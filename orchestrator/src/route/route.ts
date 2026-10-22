@@ -17,11 +17,21 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import { ROUTING_REFUSAL_MARKER } from './routing-refusal.ts'
 
-export class AgentCapacityError extends Error {
+export { ROUTING_REFUSAL_MARKER } from './routing-refusal.ts'
+
+export class RoutingRefusalError extends RefusalError {
   constructor(message: string) {
     super(message)
-    this.name = 'AgentCapacityError'
+    this.name = ROUTING_REFUSAL_MARKER
+  }
+}
+
+export class AgentCapacityError extends RoutingRefusalError {
+  constructor(message: string) {
+    super(message)
+    this.name = `${ROUTING_REFUSAL_MARKER}.AgentCapacityError`
   }
 }
 
@@ -73,6 +83,16 @@ export type Candidate = {
 
 const RUNNING_RUNS_SQL =
   "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
+
+export function runningRunIdsForAgent(agent: string): string[] {
+  return (db().query(RUNNING_RUNS_SQL).all(agent) as { record_id: string }[]).map(
+    (row) => row.record_id,
+  )
+}
+
+export function runningRunCountForAgent(agent: string): number {
+  return runningRunIdsForAgent(agent).length
+}
 
 /**
  * How long to leave an agent alone after it runs out of quota or loses its
@@ -616,9 +636,7 @@ export function candidates(
     let eligible = true,
       why = policy.why
     const unavailable = unavailableReason(name)
-    const runningRunIds = (db().query(RUNNING_RUNS_SQL).all(name) as { record_id: string }[]).map(
-      (row) => row.record_id,
-    )
+    const runningRunIds = runningRunIdsForAgent(name)
     const declared = a.jobs ?? null
     if (declared && !declared.includes(jobName)) {
       eligible = false
@@ -973,6 +991,7 @@ export function pick(
     model?: string
     noWaitCapacity?: boolean
     requiredMcp?: RequiredMcpServer
+    routed?: { agent: string; reason: string }
   } = {},
   /** An explicit calibration probe may test whether its named agent recovered. */
   probe = false,
@@ -1011,11 +1030,12 @@ export function pick(
       override,
     )
     const c = namedCandidates.find((x) => x.agent === override)
-    if (!c) throw new Error(`unknown agent "${override}"`)
+    if (!c) throw new RoutingRefusalError(`unknown agent "${override}"`)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
       throw new AgentCapacityError(capacityRefusal(c))
     }
-    if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
+    if (!c.eligible)
+      throw new RoutingRefusalError(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
   const requested = new Set(avoid.agents ?? [])
@@ -1034,7 +1054,7 @@ export function pick(
         `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
       )
     }
-    throw new RefusalError(
+    throw new RoutingRefusalError(
       `no eligible agent for job "${jobName}"` +
         (excluded.length ? `\n${excluded.join('\n')}` : ''),
     )
@@ -1052,7 +1072,7 @@ export function pick(
       }
       return `${c.agent}: ${reasons.join(' and ')}`
     })
-    throw new RefusalError(
+    throw new RoutingRefusalError(
       `routing constraints leave no eligible agent for job "${jobName}"; ` +
         `excluded by constraint: ${avoided.join('; ')}` +
         (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
@@ -1060,6 +1080,11 @@ export function pick(
     )
   }
   eligible = constrained
+  const routedCandidate = avoid.routed
+    ? eligible.find((candidate) => candidate.agent === avoid.routed?.agent)
+    : undefined
+  if (routedCandidate && avoid.routed)
+    return { agent: routedCandidate.agent, reason: avoid.routed.reason }
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,
