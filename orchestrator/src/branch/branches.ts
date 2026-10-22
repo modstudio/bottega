@@ -123,6 +123,17 @@ function git(cwd: string, ...args: string[]): string {
   return command(cwd, ['git', ...args], `git ${args.join(' ')}`)
 }
 
+/** Observe whether one exact local branch ref exists. */
+export function localBranchRefExists(cwd: string, branch: string): boolean {
+  const process = Bun.spawnSync(
+    ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`],
+    { cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe' },
+  )
+  if (process.exitCode === 0) return true
+  if (process.exitCode === 1) return false
+  throw new Error(process.stderr?.toString().trim() || `git show-ref exited ${process.exitCode}`)
+}
+
 function recordedBranchLandings(): BranchLandingRecord[] {
   return readBranchLandingRecords()
 }

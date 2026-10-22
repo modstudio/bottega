@@ -120,6 +120,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   const closed: string[] = []
   const pruned: string[][] = []
   const dependencies: ShipCleanupDependencies = {
+    localBranchExists: () => true,
     landingState: () => ({
       state: 'landed',
       landedBy: { type: 'patch-equivalent', form: 'squash' },
@@ -213,6 +214,8 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   ])
   expect(formatShipCleanup(report)).toContain('reclaimed process: stopped /trees/root')
   expect(formatShipCleanup(report)).toContain('reclaimed Compose resource: stack:/trees/landing')
+  report.gone.push('DEV-1392-old')
+  expect(formatShipCleanup(report)).toContain('already gone: DEV-1392-old')
   expect(existsSync(runArtifactsDir(lens))).toBe(false)
   expect(existsSync(runScratchDir(lens))).toBe(false)
   expect(existsSync(lensArchive)).toBe(false)
@@ -225,6 +228,7 @@ test('ship cleanup refuses a landed classification without a recorded landing ti
     throw new Error('cleanup should not start')
   }
   const dependencies: ShipCleanupDependencies = {
+    localBranchExists: () => true,
     landingState: () => ({
       state: 'landed',
       landedBy: { type: 'patch-equivalent', form: 'squash' },
@@ -272,6 +276,7 @@ function landingTreeCleanup(input: {
   const removedTrees: string[] = []
   const closed: string[] = []
   const dependencies: ShipCleanupDependencies = {
+    localBranchExists: () => true,
     landingState: () => ({
       state: 'landed',
       landedBy: { type: 'patch-equivalent', form: 'squash' },

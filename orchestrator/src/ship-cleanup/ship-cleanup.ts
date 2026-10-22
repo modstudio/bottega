@@ -12,7 +12,7 @@ import {
   type BranchStateDecision,
   findRecordedBranchLanding,
 } from '../branch/branch-state.ts'
-import { classifyMintedBranch, pruneBranch } from '../branch/branches.ts'
+import { classifyMintedBranch, localBranchRefExists, pruneBranch } from '../branch/branches.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
 import {
   type RemovedRunTree,
@@ -59,6 +59,7 @@ export type ShipCleanupReport = {
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
   reclaimed: { processes: string[]; compose: string[] }
+  gone: string[]
   kept: { item: string; reason: string; reasonKind: ShipCleanupKeptReasonKind; remedy?: string }[]
   errors: { item: string; detail: string; retry: string }[]
   verdict: import('./ship-cleanup-decision.ts').ShipCleanupVerdict
@@ -66,6 +67,7 @@ export type ShipCleanupReport = {
 
 export type ShipCleanupDependencies = {
   landingState(project: string, branch: string): BranchStateDecision
+  localBranchExists(projectPath: string, branch: string): boolean
   closeOut(runId: string): { outcome: string; detail: string }
   prune(
     project: string,
@@ -86,6 +88,7 @@ export type ShipCleanupDependencies = {
 
 const dependencies: ShipCleanupDependencies = {
   landingState: (project, branch) => classifyMintedBranch(project, branch),
+  localBranchExists: localBranchRefExists,
   closeOut: (runId) => closeOutRun(runId, { intent: 'explicit' }),
   prune: (project, branch) => pruneBranch({ project, branch }),
   measure: (paths) => {
@@ -169,6 +172,7 @@ function emptyReport(project: string, branch: string): ShipCleanupReport {
     freed: { artifacts: 0, scratch: 0, worktrees: 0 },
     removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
     reclaimed: { processes: [], compose: [] },
+    gone: [],
     kept: [],
     errors: [],
     verdict: { clean: true },
@@ -466,6 +470,7 @@ function pruneMergedBranches(
 
 function taskCleanupPlan(input: {
   project: string
+  projectPath: string
   keyPrefixes: readonly string[]
   branch: string
   facts: readonly ShipCleanupRunFact[]
@@ -482,12 +487,20 @@ function taskCleanupPlan(input: {
       run.launchKey === taskKey && run.mintedBranch ? [run.mintedBranch] : [],
     ),
   )
+  const localBranches = taskKey
+    ? new Set(
+        [...candidateBranches].filter((branch) =>
+          input.adapter.localBranchExists(input.projectPath, branch),
+        ),
+      )
+    : new Set<string>()
   const branches = taskKey
     ? decideTaskBranchesToPrune(
         taskKey,
         input.facts,
+        localBranches,
         new Map(
-          [...candidateBranches].map((branch) => {
+          [...localBranches].map((branch) => {
             const recorded = findRecordedBranchLanding(input.landingRecords, input.project, branch)
             return [
               branch,
@@ -501,7 +514,7 @@ function taskCleanupPlan(input: {
           }),
         ),
       )
-    : { prune: [], keep: [] }
+    : { prune: [], keep: [], gone: [] }
   return { taskKey, branches, landedBranches: new Set([input.branch, ...branches.prune]) }
 }
 
@@ -558,6 +571,7 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
     landedBranches,
   } = taskCleanupPlan({
     project: project.name,
+    projectPath: project.path,
     keyPrefixes: project.settings.keyPrefixes ?? [],
     branch,
     facts,
@@ -599,8 +613,11 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
       reasonKind: 'landing-not-proved' as const,
     })),
   )
+  report.gone.push(...taskBranches.gone)
   pruneMergedBranches(
-    [...new Set([branch, ...taskBranches.prune])],
+    taskBranches.gone.includes(branch)
+      ? taskBranches.prune
+      : [...new Set([branch, ...taskBranches.prune])],
     report,
     adapter,
     keptLandingTrees,
@@ -617,6 +634,7 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   ]
   for (const item of report.reclaimed.processes) lines.push(`reclaimed process: ${item}`)
   for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
+  for (const branch of report.gone) lines.push(`already gone: ${branch}`)
   for (const item of report.kept) {
     lines.push(
       `kept: ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,

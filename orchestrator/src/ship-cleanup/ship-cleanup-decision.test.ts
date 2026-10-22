@@ -139,21 +139,25 @@ test('task branch pruning accepts squash, recorded PR head, and containment proo
       },
     ],
   ] as const)
-  expect(decideTaskBranchesToPrune('DEV-1392', runs, evidence)).toEqual({
+  const localBranches = new Set(['DEV-1392-a', 'DEV-1392-b'])
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, localBranches, evidence)).toEqual({
     prune: ['DEV-1392-a', 'DEV-1392-b'],
     keep: [],
+    gone: [],
   })
-  expect(decideTaskBranchesToPrune('DEV-1392', runs, new Map())).toEqual({
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, localBranches, new Map())).toEqual({
     prune: [],
     keep: [
       { branch: 'DEV-1392-a', reason: 'landing not proved' },
       { branch: 'DEV-1392-b', reason: 'landing not proved' },
     ],
+    gone: [],
   })
   expect(
     decideTaskBranchesToPrune(
       'DEV-1392',
       runs,
+      localBranches,
       new Map([
         ['DEV-1392-a', { state: 'landed', landedBy: { type: 'contained', branch: 'DEV-1392-b' } }],
       ]),
@@ -161,5 +165,11 @@ test('task branch pruning accepts squash, recorded PR head, and containment proo
   ).toEqual({
     prune: ['DEV-1392-a'],
     keep: [{ branch: 'DEV-1392-b', reason: 'landing not proved' }],
+    gone: [],
+  })
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, new Set(['DEV-1392-a']), evidence)).toEqual({
+    prune: ['DEV-1392-a'],
+    keep: [],
+    gone: ['DEV-1392-b'],
   })
 })

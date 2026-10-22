@@ -18,7 +18,7 @@ import {
 } from './branch-disposal-decision.ts'
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
-import { branchesReport } from './branches.ts'
+import { branchesReport, localBranchRefExists } from './branches.ts'
 import { observeTaskStatus } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
@@ -127,6 +127,7 @@ function refusalRemedy(
   project: string,
   branch: string,
 ): string {
+  if (reason === 'missing-ref') return 'no action is required'
   if (reason === 'not-run-minted')
     return `use git's own branch lifecycle; ${PLATFORM_SLUG} records disposal only for run-minted branches`
   if (reason === 'live-owner')
@@ -163,9 +164,14 @@ function planBranchDisposal(input: {
     group.branches.some((row) => row.branch === branch),
   )
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
+  const runMinted =
+    db()
+      .query('SELECT 1 present FROM run WHERE project_record_id=? AND minted_branch=? LIMIT 1')
+      .get(project.recordId, branch) !== null
   const taskStatus = observeTaskStatus(keyGroup?.key ?? null, projectName)
   const decision = decideBranchDisposal({
-    runMinted: row !== undefined,
+    runMinted,
+    refExists: localBranchRefExists(project.path, branch),
     liveRun: row?.liveRun ?? false,
     checkedOut: row?.checkedOut ?? false,
     taskStatus: disposalTaskState(taskStatus),
@@ -174,6 +180,8 @@ function planBranchDisposal(input: {
     supersededTargetNamed:
       input.reason !== 'superseded' || /^superseded by\s+\S+/i.test(input.note.trim()),
   })
+  if (!decision.eligible && decision.reason === 'missing-ref')
+    throw new Error(`branch ${branch} has no ref; nothing to dispose`)
   if (!decision.eligible)
     throw new Error(
       `refusing branch disposal: ${decision.reason}; cleared by: ${refusalRemedy(decision.reason, projectName, branch)}`,
