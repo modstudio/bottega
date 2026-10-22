@@ -149,6 +149,8 @@ describe('round lens plan', () => {
     const database = migratedTestDatabase()
     const projectRecordId = newRecordId()
     const reviewRecordId = newRecordId()
+    const currentReviewRecordId = newRecordId()
+    const olderReviewRecordId = newRecordId()
     database
       .query(
         "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
@@ -160,7 +162,19 @@ describe('round lens plan', () => {
          VALUES (?,4,'2026-10-20T00:00:00Z','2026-10-20T01:00:00Z',3,'latest','["a.ts"]')`,
       )
       .run(reviewRecordId)
-    const addLensFinding = (lens: string, disposition: string, ordinal: number) => {
+    database
+      .query(
+        `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+         VALUES (?,5,'2026-10-21T00:00:00Z','2026-10-21T01:00:00Z',3,'current','["a.ts"]'),
+                (?,3,'2026-10-19T00:00:00Z','2026-10-19T01:00:00Z',3,'older','["a.ts"]')`,
+      )
+      .run(currentReviewRecordId, olderReviewRecordId)
+    const addLensFinding = (
+      targetReviewRecordId: string,
+      lens: string,
+      disposition: string,
+      ordinal: number,
+    ) => {
       const runRecordId = newRecordId()
       const lensRecordId = newRecordId()
       database
@@ -177,18 +191,20 @@ describe('round lens plan', () => {
               reproduced,coverage,limits,overlap)
            VALUES (?,?,?,?,'codex','model','[]','["a.ts"]','[]','[]','all','adequate','absent','none')`,
         )
-        .run(lensRecordId, reviewRecordId, runRecordId, lens)
+        .run(lensRecordId, targetReviewRecordId, runRecordId, lens)
       database
         .query(
           `INSERT INTO review_finding
              (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition)
            VALUES (?,?,?,?,'medium','a.ts:1','evidence','correction',?)`,
         )
-        .run(newRecordId(), reviewRecordId, lensRecordId, ordinal, disposition)
+        .run(newRecordId(), targetReviewRecordId, lensRecordId, ordinal, disposition)
     }
-    addLensFinding('correctness', 'accepted', 1)
-    addLensFinding('craft', 'modified', 2)
-    addLensFinding('architecture', 'rejected', 3)
+    addLensFinding(reviewRecordId, 'correctness', 'accepted', 1)
+    addLensFinding(reviewRecordId, 'craft', 'modified', 2)
+    addLensFinding(reviewRecordId, 'architecture', 'rejected', 3)
+    addLensFinding(currentReviewRecordId, 'migration-safety', 'accepted', 1)
+    addLensFinding(olderReviewRecordId, 'safety', 'accepted', 1)
 
     const branchReviews = reviewsForTriage(database, {
       project: 'fixture',
@@ -197,7 +213,7 @@ describe('round lens plan', () => {
       pathSet: ['a.ts'],
     }).branchReviews
     expect(roundLensFacts(branchReviews, { patchId: 'current', pathSet: '["a.ts"]' })).toEqual({
-      completedLenses: ['correctness', 'craft', 'architecture'],
+      completedLenses: ['correctness', 'craft', 'architecture', 'safety'],
       latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
     })
     database.close()

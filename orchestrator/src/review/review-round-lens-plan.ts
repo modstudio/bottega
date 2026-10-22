@@ -1,7 +1,7 @@
 // concern: review-round-lens-plan
 /** Decides which relevant lenses belong in one review round. */
 
-import type { ApplicableReview } from './review-applicability.ts'
+import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
 
@@ -59,25 +59,6 @@ export function roundLensFacts(
   return { completedLenses, latestAcceptedOrModifiedLenses }
 }
 
-function selectApplicability(relevant: ApplicableReview, lenses: string[]): ApplicableReview {
-  const selected = new Set(lenses)
-  const lensBases = Object.fromEntries(
-    Object.entries(relevant.lensBases ?? {}).filter(([lens]) => selected.has(lens)),
-  )
-  return {
-    lenses,
-    ...(relevant.secondOpinion && selected.has(relevant.secondOpinion)
-      ? { secondOpinion: relevant.secondOpinion }
-      : {}),
-    ...(Object.keys(lensBases).length ? { lensBases } : {}),
-    ...(relevant.secondOpinion &&
-    selected.has(relevant.secondOpinion) &&
-    relevant.secondOpinionBasis
-      ? { secondOpinionBasis: relevant.secondOpinionBasis }
-      : {}),
-  }
-}
-
 /** Apply the funnel to the repository decision about whether a later round is needed. */
 export function applicableRoundLensPlan(input: {
   relevant: ApplicableReview
@@ -89,7 +70,7 @@ export function applicableRoundLensPlan(input: {
   if (input.postFix.kind === 'reviewed-tip-unidentified') return input.relevant
   if (input.postFix.kind === 'no-round-needed') {
     const completed = new Set(input.facts.completedLenses)
-    return selectApplicability(
+    return selectReviewApplicability(
       input.relevant,
       input.relevant.lenses.filter((lens) => !completed.has(lens)),
     )
@@ -99,7 +80,7 @@ export function applicableRoundLensPlan(input: {
     input.postFix.kind === 're-lens'
       ? input.postFix.applicability.lenses.filter((lens) => pathScoped.has(lens))
       : []
-  return selectApplicability(
+  return selectReviewApplicability(
     input.relevant,
     roundLensPlan({
       relevantLenses: input.relevant.lenses,

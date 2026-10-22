@@ -24,6 +24,29 @@ export type ReviewPlan = {
   applicability: ApplicableReview
 }
 
+/** Keep only selected lenses and their attached applicability metadata. */
+export function selectReviewApplicability(
+  applicable: ApplicableReview,
+  lenses: string[],
+): ApplicableReview {
+  const selected = new Set(lenses)
+  const lensBases = Object.fromEntries(
+    Object.entries(applicable.lensBases ?? {}).filter(([lens]) => selected.has(lens)),
+  )
+  return {
+    lenses,
+    ...(applicable.secondOpinion && selected.has(applicable.secondOpinion)
+      ? { secondOpinion: applicable.secondOpinion }
+      : {}),
+    ...(Object.keys(lensBases).length ? { lensBases } : {}),
+    ...(applicable.secondOpinion &&
+    selected.has(applicable.secondOpinion) &&
+    applicable.secondOpinionBasis
+      ? { secondOpinionBasis: applicable.secondOpinionBasis }
+      : {}),
+  }
+}
+
 /** Classify one change and select its review lenses from those same file facts. */
 export function applicableReviewForChange(
   files: ReviewTierFile[],

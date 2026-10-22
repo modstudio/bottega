@@ -17,8 +17,8 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: [],
-    typeOnlyAllowed: ['./review-applicability.ts', './review-group.ts', './review-post-fix.ts'],
+    allowed: ['./review-applicability.ts'],
+    typeOnlyAllowed: ['./review-group.ts', './review-post-fix.ts'],
   },
   {
     file: 'orchestrator/src/review/review-round-lens-service.ts',
@@ -212,8 +212,8 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-round-lens-plan-boundary',
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: [],
-    typeOnlyAllowed: ['./review-applicability.ts', './review-group.ts', './review-post-fix.ts'],
+    allowed: ['./review-applicability.ts'],
+    typeOnlyAllowed: ['./review-group.ts', './review-post-fix.ts'],
     reason: 'Keep round lens selection independent of stores, repositories, processes, and clocks.',
   },
   {

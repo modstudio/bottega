@@ -12,7 +12,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import type { ApplicableReview } from './review-applicability.ts'
+import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
@@ -23,7 +23,11 @@ import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
-import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
+import {
+  resolveReviewMergeBase,
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+} from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
 import {
@@ -41,15 +45,6 @@ type ReviewPresentation = { log(...values: unknown[]): void }
 const TIER_RUN_SQL =
   'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
 
-function declaredApplicability(output: ReturnType<typeof reviewTierForRange>): ApplicableReview {
-  return {
-    lenses: output.lenses,
-    ...(output.secondOpinion ? { secondOpinion: output.secondOpinion } : {}),
-    ...(output.lensBases ? { lensBases: output.lensBases } : {}),
-    ...(output.secondOpinionBasis ? { secondOpinionBasis: output.secondOpinionBasis } : {}),
-  }
-}
-
 function roundApplicabilityForTierOutput(input: {
   output: ReturnType<typeof reviewTierForRange>
   identity: ReturnType<typeof measureChangeIdentity>
@@ -58,7 +53,7 @@ function roundApplicabilityForTierOutput(input: {
   postFix: ReturnType<typeof postFixReviewDecision>
   review: Parameters<typeof reviewTierForRange>[3]
 }): ApplicableReview {
-  const relevant = declaredApplicability(input.output)
+  const relevant = selectReviewApplicability(input.output, input.output.lenses)
   if (!input.identity) return relevant
   return roundApplicabilityForChange({
     database: db(),
@@ -133,6 +128,16 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   })
   if ('refusal' in resolution) throw new Error(resolution.refusal)
   return resolution
+}
+
+function spawnGitProbe(repo: string): (args: string[]) => boolean {
+  return (args) =>
+    Bun.spawnSync(['git', ...args], {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }).exitCode === 0
 }
 
 function resolveTierTarget(
@@ -235,13 +240,7 @@ function resolveTierTarget(
   }
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists =
-    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).exitCode === 0
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
   return {
     repo,
     ...resolveTierRangeInRepo(repo, reviewTrunkRef(remoteTrackingRefExists, trunk), value, trunk),
@@ -254,13 +253,7 @@ function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists =
-    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).exitCode === 0
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
   const output = reviewTierForRange(repo, from, to, project.settings.review)
   const identity = measureChangeIdentity(repo, from, to)
   const currentRoundIdentity = identity
