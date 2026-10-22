@@ -94,7 +94,7 @@ export async function main(argv: string[]): Promise<number> {
      * `run()` records its own outcome for anything that happens once it is
      * running, so reaching here means the run never really started — a broken
      * import, an unreadable prompt file, a malformed spec. `harness` is the kind
-     * this codebase already reserves for "orch was wrong", and like `unreachable`
+     * this codebase already reserves for "orchestrator was wrong", and like `unreachable`
      * and `interrupted` it is never counted as evidence about an agent.
      */
     await recordStartupFailure(id, message)

@@ -175,7 +175,7 @@ function refusal(
   }
   if (decision.code === 'operator-attribution') return '--channel ui requires --from-operator'
   if (decision.code === 'dashboard-capability') {
-    return '--channel ui requires the hub dashboard capability'
+    return '--channel ui requires the dashboard capability'
   }
   if (decision.code === 'session-marker') {
     return `--channel ui is refused when ${decision.actor} is set`

@@ -67,7 +67,7 @@ export function observeBranchLandingProof(input: {
       trunkTip: input.trunkTip,
       branchTip: input.tip,
       mergeBase: git(input.project.path, ['merge-base', input.trunkTip, input.tip]),
-      commitMessage: `orch branch report ${input.branch}`,
+      commitMessage: `orchestrator branch report ${input.branch}`,
     })
   }
   return {

@@ -21,7 +21,7 @@ const item: OperatorWaitingItem = {
   answer_command: `${PLATFORM_SLUG} question answer 42 --q7 --from-operator "<ruling>"`,
 }
 
-test('waiting query and answer mutation use the orch seam', async () => {
+test('waiting query and answer mutation use the orchestrator seam', async () => {
   const calls: unknown[] = []
   const router = createOperatorRouter({
     waiting: async () => [item],
@@ -82,7 +82,7 @@ test('waiting query and answer mutation use the orch seam', async () => {
   expect(calls.at(-1)).toEqual(['delay', 0])
 })
 
-test('answer mutation surfaces orch refusals and validates input at the edge', async () => {
+test('answer mutation surfaces orchestrator refusals and validates input at the edge', async () => {
   const router = createOperatorRouter({
     waiting: async () => [],
     answer: async () => {

@@ -62,7 +62,7 @@ test('local search short-circuits an empty query without calling orch', async ()
   expect(list).not.toHaveBeenCalled()
 })
 
-test('local search makes one orch call and excludes a subject-only store match', async () => {
+test('local search makes one orchestrator call and excludes a subject-only store match', async () => {
   const base = {
     record_id: '01990000-0000-7000-8000-000000000001',
     scope: 'global' as const,

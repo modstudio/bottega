@@ -490,6 +490,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../filesystem-identity-plan.ts',
     '../../../shared/process-identity.ts',
+    '../../../shared/brand.ts',
     '../worktree/worktree-attribution.ts',
     '../git/git-environment.ts',
     './ref-guard-runtime.ts',

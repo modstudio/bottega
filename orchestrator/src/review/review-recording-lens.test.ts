@@ -7,7 +7,7 @@ import { recordReviews } from './review.ts'
 import { completeReview, gradeReviewLens, recordReview, triageFinding } from './review-triage.ts'
 
 describe('review discipline', () => {
-  test('records each lens before triage and derives runner and model from the orch run', () => {
+  test('records each lens before triage and derives runner and model from the orchestrator run', () => {
     const first = addRun({
       agent: 'codex',
       job: 'review-lens',

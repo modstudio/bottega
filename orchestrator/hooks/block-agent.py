@@ -119,7 +119,7 @@ def log(decision, why, inp, event, payload=None):
     error) and lands in a sidecar log, so a locked database cannot leave the
     gate denying while its record silently stays empty.
 
-    The 5s connect timeout is raised to match orch's own busy_timeout: a spawn
+    The 5s connect timeout is raised to match orchestrator's own busy_timeout: a spawn
     that arrives during a fan-out was being given a third of the patience the
     writers it is competing with have.
     """
@@ -141,7 +141,7 @@ def log(decision, why, inp, event, payload=None):
         # Mint inside the same fail-open boundary as the write so a minter failure is recorded like any
         # other failed spawn write, without inventing a substitute identity.
         row = (str(mint_uuid7()), *row[1:])
-        # No CREATE TABLE here: orch owns the schema and creates it on open.
+        # No CREATE TABLE here: orchestrator owns the schema and creates it on open.
         # Taking a schema lock on every spawn only contended with the writers
         # this then had to wait for.
         db = sqlite3.connect(f"file:{DB}?mode=rw", uri=True, timeout=15)

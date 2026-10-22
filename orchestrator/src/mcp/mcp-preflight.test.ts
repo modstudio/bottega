@@ -112,7 +112,7 @@ test('grants only an orch-cut tree and names the invariant for a caller checkout
       { worktree: '/tmp/orch-tree', worktree_source: 'git' },
       '/tmp/orch-runs/isolates/42',
     ),
-  ).toThrow('trust is granted only to trees orch cut')
+  ).toThrow('trust is granted only to trees orchestrator cut')
 })
 test('grants trust to an orch-created no-repo isolate but not its caller checkout', () => {
   const isolate = '/tmp/orch-runs/isolates/42'

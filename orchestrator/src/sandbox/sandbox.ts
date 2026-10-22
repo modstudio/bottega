@@ -487,7 +487,7 @@ export function selectReadonlySandbox(input: {
   }
 }
 
-/** Translate orch's policy vocabulary to the maintained runtime's configuration. */
+/** Translate orchestrator's policy vocabulary to the maintained runtime's configuration. */
 export function sandboxRuntimeConfig(profile: SandboxRuntimeConfig): LibrarySandboxRuntimeConfig {
   const { allowWithinDeny, ...filesystem } = profile.filesystem
   return {

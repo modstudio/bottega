@@ -43,7 +43,7 @@ function resolvedFromOf(answer: RunAnswer): string | null {
   return typeof value === 'string' ? value : null
 }
 
-/** Index a run by its id, and also by requested_id when orch resolved a turn. */
+/** Index a run by its id, and also by requested_id when orchestrator resolved a turn. */
 export function indexRunAnswers(answers: RunAnswer[]): Map<string, RunAnswer> {
   const byId = new Map<string, RunAnswer>()
   for (const answer of answers) {
@@ -96,7 +96,7 @@ export async function reconcileOpenIntervals(
         runId: null,
         status: null,
         removesMs: 0,
-        reason: 'ref is not a recognized orch run ref; needs a decision',
+        reason: 'ref is not a recognized orchestrator run ref; needs a decision',
       })
       return
     }

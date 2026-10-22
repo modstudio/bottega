@@ -941,7 +941,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))
     try {
-      // Setting a worktree up is orch's job, so this shared harness failure
+      // Setting a worktree up is orchestrator's job, so this shared harness failure
       // must publish the child and roll its outcome up to a continuation root.
       recordRunStartupFailure(claim.id, why, started)
     } finally {

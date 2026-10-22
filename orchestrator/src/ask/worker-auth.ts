@@ -1,6 +1,6 @@
 import { db } from '../database/db.ts'
 
-/** The single authentication check for tools acting as an orch worker. */
+/** The single authentication check for tools acting as an orchestrator worker. */
 export function authenticatedWorkerRun(runId: string, token: string): boolean {
   if (!runId) return false
   const row = db().query('SELECT run_token FROM run WHERE record_id = ?').get(runId) as {

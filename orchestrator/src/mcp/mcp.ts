@@ -92,7 +92,7 @@ const reporterFields = {
     .enum(['session', 'monitor'])
     .optional()
     .describe(
-      'Omit to derive the calling session or authenticated orch worker from the environment.',
+      'Omit to derive the calling session or authenticated orchestrator worker from the environment.',
     ),
   monitor_invocation_id: z.number().int().positive().optional(),
   affected_project: z.string().trim().min(1).optional(),
@@ -346,7 +346,7 @@ export async function fileIssue(
   const filedFields = [
     ...(worker
       ? [
-          `Filed by orch run ${worker.record_id} (${worker.job}, ${worker.agent}) while working ${
+          `Filed by orchestrator run ${worker.record_id} (${worker.job}, ${worker.agent}) while working ${
             worker.launch_key ?? 'with no task key'
           }`,
         ]

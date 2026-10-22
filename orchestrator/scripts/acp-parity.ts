@@ -225,7 +225,9 @@ async function runAskCase(): Promise<Row> {
         stderr: 'pipe',
       })
       if (answer.exitCode !== 0) {
-        throw new Error(`orch answer failed: ${answer.stderr.toString().trim()}`)
+        throw new Error(
+          `${PLATFORM_SLUG} question answer failed: ${answer.stderr.toString().trim()}`,
+        )
       }
       break
     }
@@ -252,7 +254,7 @@ async function runAskCase(): Promise<Row> {
   return {
     case: 'ask-answer',
     transport: 'acp',
-    // A normal final answer without an orch question is not a successful
+    // A normal final answer without an orchestrator question is not a successful
     // round trip, even when the vendor itself ended the turn successfully.
     outcome: continued ? 'ok' : 'failed',
     failureKind: continued ? '—' : questionSeen ? 'continuation' : 'capability',

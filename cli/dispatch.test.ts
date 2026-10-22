@@ -8,8 +8,8 @@ function entries(calls: string[]): BinaryEntries {
     return 0
   }
   return {
-    orch: call('orch'),
-    hub: call('hub'),
+    orch: call('orchestrator:'),
+    hub: call('hub:'),
     orchOutbox: async () => [],
     hubOutbox: async () => [],
     hubOutboxSummaryLines: async () => [],
@@ -60,7 +60,27 @@ test('record outbox combines owner-qualified rows and routes qualified actions',
       () => '',
     ),
   ).toBe(0)
-  expect(calls).toEqual(['hub outbox retry change-1'])
+  expect(calls).toEqual(['hub: outbox retry change-1'])
+})
+
+test('record outbox trace reaches the hub owner with its public route', async () => {
+  const calls: string[] = []
+  const dispatch = entries(calls)
+  dispatch.hub = async (argv, invocation) => {
+    calls.push(
+      `${argv.join(' ')} | ${invocation?.ownerPath.join(' ')} -> ${invocation?.publicPath.join(' ')}`,
+    )
+    return 0
+  }
+  expect(
+    await dispatchBinary(
+      ['record', 'outbox', 'trace', '--row', 'entry-1'],
+      PLATFORM_SLUG,
+      dispatch,
+      () => '',
+    ),
+  ).toBe(0)
+  expect(calls).toEqual(['outbox trace --row entry-1 | outbox trace -> record outbox trace'])
 })
 
 test('record outbox refuses bare ids and hands every verb to the owning command', async () => {
@@ -97,7 +117,7 @@ test('record outbox refuses bare ids and hands every verb to the owning command'
   }
   expect(errors[0]).toContain(`${PLATFORM_SLUG} record outbox`)
   expect(errors[1]).toContain('decimal row numbers')
-  expect(calls).toEqual(['orch record outbox discard 17'])
+  expect(calls).toEqual(['orchestrator: record outbox discard 17'])
 })
 
 test('routes public and composite commands with unchanged remaining arguments', async () => {
@@ -107,7 +127,7 @@ test('routes public and composite commands with unchanged remaining arguments', 
     await dispatchBinary(['run', 'result', '42', '--json'], PLATFORM_SLUG, dispatch, () => ''),
   ).toBe(0)
   expect(await dispatchBinary(['machine', 'doctor'], PLATFORM_SLUG, dispatch, () => '')).toBe(0)
-  expect(calls).toEqual(['orch result 42 --json', 'orch doctor', 'hub doctor'])
+  expect(calls).toEqual(['orchestrator: result 42 --json', 'orchestrator: doctor', 'hub: doctor'])
 })
 
 test('unknown groups fail without entering a concern', async () => {
@@ -125,17 +145,17 @@ test.each([
     const calls: string[] = []
     const dispatch = entries(calls)
     dispatch.orch = async (argv) => {
-      calls.push(`orch ${argv.join(' ')}`)
+      calls.push(`orchestrator: ${argv.join(' ')}`)
       return orch
     }
     dispatch.hub = async (argv) => {
-      calls.push(`hub ${argv.join(' ')}`)
+      calls.push(`hub: ${argv.join(' ')}`)
       return hub
     }
     expect(await dispatchBinary(['machine', 'doctor'], PLATFORM_SLUG, dispatch, () => '')).toBe(
       result,
     )
-    expect(calls).toEqual(['orch doctor', 'hub doctor'])
+    expect(calls).toEqual(['orchestrator: doctor', 'hub: doctor'])
   },
 )
 
@@ -149,18 +169,21 @@ test('composite options reach only the owner that declares them', async () => {
       () => '',
     ),
   ).toBe(0)
-  expect(calls).toEqual(['orch sync --backfill', 'hub collect --since 2026-01-01T00:00:00Z'])
+  expect(calls).toEqual([
+    'orchestrator: sync --backfill',
+    'hub: collect --since 2026-01-01T00:00:00Z',
+  ])
 })
 
 test('composites fail fast except for doctor and never start collect watch', async () => {
   const calls: string[] = []
   const dispatch = entries(calls)
   dispatch.orch = async (argv) => {
-    calls.push(`orch ${argv.join(' ')}`)
+    calls.push(`orchestrator: ${argv.join(' ')}`)
     return 7
   }
   expect(await dispatchBinary(['record', 'sync'], PLATFORM_SLUG, dispatch, () => '')).toBe(7)
-  expect(calls).toEqual(['orch sync'])
+  expect(calls).toEqual(['orchestrator: sync'])
   expect(
     await dispatchBinary(['record', 'sync', '--watch'], PLATFORM_SLUG, entries([]), () => ''),
   ).toBe(2)
