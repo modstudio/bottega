@@ -30,7 +30,7 @@ import {
   dockerRunResources,
   orchRunLabelForRun,
 } from '../resources/docker-resources.ts'
-import { gitLocks, worktreeIndexLockForPath } from '../resources/git-locks.ts'
+import { gitLocks, shellQuote, worktreeIndexLockForPath } from '../resources/git-locks.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
@@ -201,14 +201,17 @@ function gitLockConditions(
           : 'no owning pid is alive'
     const resolved = lock.contentRefs.length ? `; resolves to ${lock.contentRefs.join(', ')}` : ''
     conditions.push({
-      kind: lock.ownerPids === null || lock.ownerPids.length ? 'git-lock' : 'dead-lock',
+      kind: lock.ownerPids === null || lock.ownerPids.length ? 'git-lock' : 'reclaimable-git-lock',
       subject: lock.path,
       since: lock.since,
       ageMs: age(lock.since, clock),
       detail:
         `${project.name} git lock targets ${lock.target ?? 'an unknown primitive'}; ` +
         `contents ${lock.contents || '(empty)'}${resolved}; ${owner}`,
-      action: 'reported; lock and its recoverable contents were not removed',
+      action:
+        lock.ownerPids !== null && lock.ownerPids.length === 0
+          ? `run ${PLATFORM_SLUG} machine reclaim git-lock ${shellQuote(lock.path)}`
+          : 'reported; lock and its recoverable contents were not removed',
       affectedProject: project.name,
     })
   }
