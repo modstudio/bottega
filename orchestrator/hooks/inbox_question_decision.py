@@ -1,5 +1,7 @@
 """Pure classification of question-inbox rows for session notifications."""
 
+from __future__ import annotations
+
 from typing import NamedTuple
 
 

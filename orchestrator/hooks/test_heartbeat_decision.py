@@ -19,6 +19,18 @@ SPEC.loader.exec_module(heartbeat_decision)
 
 
 class HeartbeatDecisionTest(unittest.TestCase):
+    def test_shared_inbox_decision_imports_with_minimal_path_python(self):
+        minimal_path = "/usr/bin:/bin"
+        python = shutil.which("python3", path=minimal_path)
+        self.assertIsNotNone(python, "minimal PATH has no system python3")
+        subprocess.run(
+            [python, str(PATH.with_name("inbox_question_decision.py"))],
+            env={"PATH": minimal_path},
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
     def test_heartbeat_formats_a_monitor_notice_with_its_label_once(self):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)
