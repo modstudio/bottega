@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
@@ -10,7 +10,7 @@ import {
   type SetupNotice,
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
-import type { McpServer } from './setup-mcp.ts'
+import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
 
@@ -517,6 +517,62 @@ test('plans absent, same, and different MCP registration read-backs', () => {
   expect(planSetupActions(different, { [different.questions[0]!.id]: 'replace' })[0]).toMatchObject(
     { kind: 'register-mcp', replace: true },
   )
+})
+
+test('recommends renaming legacy Claude and Codex registrations to stable registrations', () => {
+  const workerServer: McpServer = {
+    name: WORKER_MCP_SERVER_NAME,
+    command: `/bin/${PLATFORM_SLUG}`,
+    args: ['mcp', 'ask-server'],
+  }
+  const cases = [
+    {
+      harness: 'claude' as const,
+      server: orchServer,
+      legacy: {
+        status: 'registered' as const,
+        command: '/legacy/orch',
+        args: ['mcp'],
+      },
+    },
+    {
+      harness: 'codex' as const,
+      server: workerServer,
+      legacy: {
+        status: 'registered' as const,
+        command: `/bin/${PLATFORM_SLUG}`,
+        args: ['mcp', 'ask-server'],
+      },
+    },
+  ]
+
+  for (const { harness, server, legacy } of cases) {
+    const legacyName = legacyMcpServerName(server.name)
+    const plan = proposeSetup(
+      machineWithMcp(harness, {
+        support: 'automatic',
+        registrations: { [server.name]: { status: 'absent' } },
+        legacyRegistrations: { [legacyName]: legacy },
+      }),
+      [],
+      [],
+      [],
+      [],
+      [server],
+    )
+
+    expect(plan.questions).toHaveLength(1)
+    expect(plan.questions[0]).toMatchObject({
+      question: expect.stringContaining(`Rename the legacy ${legacyName}`),
+      recommendation: 'replace',
+    })
+    expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+      kind: 'register-mcp',
+      server,
+      legacyName,
+      replace: true,
+    })
+  }
 })
 
 test('recommends skipping an absent registration when the harness is signed out', () => {

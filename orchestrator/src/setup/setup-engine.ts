@@ -104,6 +104,60 @@ function registrationToMigrate(
   }
 }
 
+function replacementQuestion(
+  harness: keyof SetupFacts['harnesses'],
+  server: McpServer,
+  current: McpReadback,
+  legacyName: LegacyMcpServerName | null,
+): SetupQuestion {
+  const id = registrationQuestionId(harness, server.name)
+  if (legacyName) {
+    return {
+      id,
+      question: `Rename the legacy ${legacyName} MCP registration to ${server.name} in ${harness}?`,
+      options: [
+        {
+          id: 'keep',
+          label: 'Keep legacy',
+          why: `Preserves ${harness}'s legacy ${legacyName} registration.`,
+        },
+        {
+          id: 'replace',
+          label: 'Rename',
+          why: `Removes ${legacyName} and registers ${server.name} with ${PLATFORM_NAME}'s current command and arguments.`,
+        },
+      ],
+      recommendation: 'replace',
+      why: `${legacyName} is the legacy name for ${server.name}.`,
+    }
+  }
+  return {
+    id,
+    question: `Replace the existing ${server.name} MCP registration in ${harness}?`,
+    options: [
+      {
+        id: 'keep',
+        label: 'Keep existing',
+        why: `Preserves ${harness}'s current ${server.name} registration.`,
+      },
+      {
+        id: 'replace',
+        label: 'Replace',
+        why: `Updates ${server.name} to ${PLATFORM_NAME}'s current command and arguments.`,
+      },
+    ],
+    recommendation: current.status === 'stale' ? 'replace' : 'keep',
+    why:
+      current.status === 'stale'
+        ? `The existing registration is stale: ${current.detail}.`
+        : current.status === 'different' || current.status === 'registered'
+          ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
+          : current.status === 'unreadable'
+            ? `The existing registration could not be read exactly: ${current.detail}`
+            : 'The existing registration was not found.',
+  }
+}
+
 function proposeHarnessRegistrations(
   harness: keyof SetupFacts['harnesses'],
   facts: HarnessFacts,
@@ -120,9 +174,11 @@ function proposeHarnessRegistrations(
     return []
   }
   const desired = servers.filter((server) => harnessMcpServers(harness).includes(server.name))
-  const absent = desired.filter(
-    (server) => facts.mcp?.registrations[server.name]?.status === 'absent',
-  )
+  const absent = desired.filter((server) => {
+    if (facts.mcp?.registrations[server.name]?.status !== 'absent') return false
+    const legacy = facts.mcp.legacyRegistrations?.[legacyMcpServerName(server.name)]
+    return !legacy || legacy.status === 'absent'
+  })
   const absentQuestionId = absent.length ? registrationQuestionId(harness) : null
   if (absentQuestionId) {
     const recommendation = facts.auth === 'signed-out' ? 'skip' : 'register'
@@ -165,29 +221,7 @@ function proposeHarnessRegistrations(
       }
     }
     const replaceQuestionId = registrationQuestionId(harness, server.name)
-    questions.push({
-      id: replaceQuestionId,
-      question: `Replace the existing ${server.name} MCP registration in ${harness}?`,
-      options: [
-        {
-          id: 'keep',
-          label: 'Keep existing',
-          why: `Preserves ${harness}'s current ${server.name} registration.`,
-        },
-        {
-          id: 'replace',
-          label: 'Replace',
-          why: `Updates ${server.name} to ${PLATFORM_NAME}'s current command and arguments.`,
-        },
-      ],
-      recommendation: current.status === 'stale' ? 'replace' : 'keep',
-      why:
-        current.status === 'stale'
-          ? `The existing registration is stale: ${current.detail}.`
-          : current.status === 'different' || current.status === 'registered'
-            ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
-            : `The existing registration could not be read exactly: ${current.detail}`,
-    })
+    questions.push(replacementQuestion(harness, server, current, legacyName))
     if (current.status === 'unreadable')
       notices.push({
         message: `${harness} ${server.name} registration could not be read exactly: ${current.detail}`,

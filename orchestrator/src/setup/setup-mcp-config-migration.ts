@@ -48,7 +48,7 @@ export function captureMcpConfigMigrations(
     }
     try {
       const before = readFileSync(candidate.path, 'utf8')
-      const result = migrateMcpConfig(before)
+      const result = migrateMcpConfig(before, { renameServerKeys: candidate.projectPath !== null })
       if (result.text !== before) migrations.push({ path: candidate.path, summary: result.summary })
     } catch (error) {
       notices.push({

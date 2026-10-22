@@ -197,10 +197,10 @@ test('stops at the first refusal and marks remaining actions not attempted', asy
 
 test('applies an MCP configuration migration once and then reports unchanged', async () => {
   const root = mkdtempSync(join(tmpdir(), 'setup-mcp-config-'))
-  const path = join(root, 'settings.json')
+  const path = join(root, '.claude.json')
   const sentinel = 'credential-must-not-leak'
   const planned = `{"permissions":{"allow":["${LEGACY_MCP_TOOL_PREFIX}get_doc"]}}\n`
-  const current = `{"credential":"${sentinel}","permissions":{"allow":["${LEGACY_MCP_TOOL_PREFIX}list_projects"]}}\n`
+  const current = `{"credential":"${sentinel}","mcpServers":{"orch":{"command":"/legacy/orch","args":["mcp"]}},"permissions":{"allow":["${LEGACY_MCP_TOOL_PREFIX}list_projects"]}}\n`
   writeFileSync(path, current)
   const migration: SetupAction = {
     kind: 'migrate-mcp-config',
@@ -216,6 +216,7 @@ test('applies an MCP configuration migration once and then reports unchanged', a
   expect(JSON.stringify(migration)).not.toContain(sentinel)
   expect((await applySetupActions([migration], service))[0]?.status).toBe('applied')
   expect(readFileSync(path, 'utf8')).toContain('mcp__bottega__list_projects')
+  expect(readFileSync(path, 'utf8')).toContain('"orch"')
   const repeated = await applySetupActions([migration], service)
   expect(repeated[0]?.status).toBe('unchanged')
   expect(JSON.stringify(repeated)).not.toContain(sentinel)

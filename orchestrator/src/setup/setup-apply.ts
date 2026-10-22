@@ -2,7 +2,7 @@
 /** Applies planned project actions in order through the project register service boundary. */
 
 import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -239,7 +239,9 @@ async function applySetupAction(
   }
   if (action.kind === 'migrate-mcp-config') {
     const current = await readFile(action.path, 'utf8')
-    const migrated = migrateMcpConfigText(current)
+    const migrated = migrateMcpConfigText(current, {
+      renameServerKeys: basename(action.path) !== '.claude.json',
+    })
     if (current === migrated) return 'unchanged'
     await writeFile(action.path, migrated, 'utf8')
     return 'applied'

@@ -34,6 +34,32 @@ test('migrates server and tool permission names once without leaving aliases', (
   expect(migrateMcpConfigText(migrated)).toBe(migrated)
 })
 
+test('leaves the home registration for the harness migration while rewriting permissions', () => {
+  const home = mkdtempSync(join(tmpdir(), 'setup-mcp-home-'))
+  const project = mkdtempSync(join(tmpdir(), 'setup-mcp-project-'))
+  temporary.push(home, project)
+  const homeConfig = join(home, '.claude.json')
+  const projectConfig = join(project, '.mcp.json')
+  const original = JSON.stringify({
+    mcpServers: { orch: { command: '/legacy/orch', args: ['mcp'] } },
+    permissions: { allow: ['mcp__orch__get_doc'] },
+  })
+  writeFileSync(homeConfig, original)
+  writeFileSync(projectConfig, original)
+
+  const result = captureMcpConfigMigrations(home, [project])
+
+  expect(result.migrations).toHaveLength(2)
+  expect(result.migrations.find(({ path }) => path === homeConfig)?.summary).toEqual({
+    serverKeysRenamed: [],
+    toolPrefixKeysRewritten: 0,
+    toolPrefixValuesRewritten: 1,
+  })
+  expect(
+    result.migrations.find(({ path }) => path === projectConfig)?.summary.serverKeysRenamed,
+  ).toEqual([{ from: 'orch', to: MCP_SERVER_NAME }])
+})
+
 test('reports malformed candidates while still capturing valid sibling migrations without contents', () => {
   const home = mkdtempSync(join(tmpdir(), 'setup-mcp-home-'))
   const project = mkdtempSync(join(tmpdir(), 'setup-mcp-project-'))
