@@ -17,6 +17,7 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import { AgentCapacityError } from './agent-capacity.ts'
 
 export type Candidate = {
   agent: string
@@ -592,6 +593,7 @@ export function candidates(
         .all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[]
     ).map((r) => [r.agent, r]),
   )
+  if (process.env.ORCH_DEBUG_COOLING) console.error('cooling', [...coolingByAgent])
 
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
@@ -1007,36 +1009,33 @@ export function pick(
     const c = namedCandidates.find((x) => x.agent === override)
     if (!c) throw new Error(`unknown agent "${override}"`)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
-      throw new Error(capacityRefusal(c))
+      throw new AgentCapacityError(capacityRefusal(c))
     }
     if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
-  const blockedPreferred = cands.find(
-    (candidate) =>
-      candidate.preferred &&
-      candidate.why.startsWith('at capacity') &&
-      candidate.maxConcurrent !== null &&
-      candidate.runningRunIds.length >= candidate.maxConcurrent,
-  )
-  if (blockedPreferred && !avoid.noWaitCapacity) {
-    throw new Error(
-      `${capacityRefusal(blockedPreferred)}\n` +
-        'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
-        'cleared by: wait for the named runs or pass --no-wait-capacity',
-    )
-  }
+  const requested = new Set(avoid.agents ?? [])
+  const models = new Set(avoid.models ?? [])
   let eligible = cands.filter((c) => c.eligible)
   const excluded = cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`)
   if (eligible.length === 0) {
+    const capacityBlocked = cands.filter(
+      (candidate) =>
+        candidate.why.startsWith('at capacity') &&
+        !requested.has(candidate.agent) &&
+        !models.has(avoid.model ?? AGENTS[candidate.agent]!.model),
+    )
+    if (capacityBlocked.length) {
+      throw new AgentCapacityError(
+        `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
+      )
+    }
     throw new RefusalError(
       `no eligible agent for job "${jobName}"` +
         (excluded.length ? `\n${excluded.join('\n')}` : ''),
     )
   }
   /** Exclusions are instructions, not preferences. The caller must widen them. */
-  const requested = new Set(avoid.agents ?? [])
-  const models = new Set(avoid.models ?? [])
   const constrained = eligible.filter(
     (c) => !requested.has(c.agent) && !models.has(avoid.model ?? AGENTS[c.agent]!.model),
   )

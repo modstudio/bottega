@@ -6,6 +6,7 @@ export function workerHarnessName(agent: { name: string; harness?: string }): st
 }
 
 export function workerLaunchEnv(harness: string): Record<string, string> {
+  if (harness === 'codex') return { RUST_LOG: 'codex_core=warn' }
   return harness === 'grok'
     ? {
         GROK_CLAUDE_AGENTS_ENABLED: '0',

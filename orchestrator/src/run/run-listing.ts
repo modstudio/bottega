@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RunIdentity } from '../../../shared/orch-contract.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
+import { readEventLog, runEventsPath } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
@@ -115,6 +116,20 @@ function lifecyclePresentation(
   if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
   const status = outcome.line.split(' - ', 1)[0]!
   const hostWaitSince = row.host_wait_since as string | null
+  const capacityWaitSince = row.capacity_wait_since as string | null
+  if (capacityWaitSince)
+    return { status: 'waiting', detail: `waiting for capacity since ${capacityWaitSince}` }
+  const throttle = row.throttled as {
+    attempt: number
+    max: number
+    retry_at: string | null
+    status: number
+  } | null
+  if (throttle)
+    return {
+      status: 'throttled',
+      detail: `throttled (${throttle.status}), retry ${throttle.attempt}/${throttle.max} at ${throttle.retry_at ?? 'unknown'}`,
+    }
   if (isFreshRunHostWait(String(row.status), hostWaitSince))
     return { status: 'waiting', detail: `waiting for host capacity since ${hostWaitSince}` }
   return {
@@ -452,6 +467,9 @@ export async function runListingCommand(
         ? 'idle-killed'
         : null
     const since = live ? idleMsSince(lastEventAt, startedAt, observedAt) : null
+    const eventLog = live ? readEventLog(runEventsPath(String(r.live_member_record_id))) : []
+    const capacityWait = eventLog.findLast((event) => event.type === 'capacity_wait')
+    const throttle = eventLog.findLast((event) => event.type === 'throttled')
     const stallObservation = live
       ? liveMemberStall(
           {
@@ -486,6 +504,19 @@ export async function runListingCommand(
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
+      waiting_for_capacity: capacityWait?.type === 'capacity_wait' ? capacityWait.waiting : false,
+      capacity_wait_since:
+        capacityWait?.type === 'capacity_wait' && capacityWait.waiting ? capacityWait.ts : null,
+      throttled:
+        throttle?.type === 'throttled'
+          ? {
+              attempt: throttle.attempt,
+              max: throttle.max,
+              retry_at: throttle.retryAt,
+              status: throttle.status,
+              concurrency: throttle.concurrency,
+            }
+          : null,
       stall_state: stallObservation?.state ?? null,
       stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,

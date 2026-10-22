@@ -5,6 +5,7 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { classifyCodexThrottle } from './codex-throttle.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
@@ -116,6 +117,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   let cancelled = false
   let collected: Promise<TransportResult> | null = null
   const liveEvents: NormalizedEvent[] = []
+  let throttleSeen = false
   const eventWaiters: Array<() => void> = []
   let closed = false
 
@@ -125,7 +127,41 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   }
 
   const stdoutTask = readStdoutLines(p.stdout!, (line) => {
+    if (opts.agent.name === 'codex') {
+      const throttle = classifyCodexThrottle(line)
+      if (throttle && !throttleSeen) {
+        throttleSeen = true
+        pushEvent({
+          kind: 'throttled',
+          attempt: throttle.attempt,
+          max: throttle.max,
+          retryDelayMs: throttle.retryDelayMs,
+          httpStatus: throttle.status,
+          retryAt:
+            throttle.retryDelayMs === null
+              ? null
+              : new Date(Date.now() + throttle.retryDelayMs).toISOString(),
+        })
+      }
+    }
     for (const event of eventsFromVendorLine(line)) pushEvent(event)
+  })
+  const stderrTask = readStdoutLines(p.stderr!, (line) => {
+    if (opts.agent.name !== 'codex') return
+    const throttle = classifyCodexThrottle(line)
+    if (!throttle || throttleSeen) return
+    throttleSeen = true
+    pushEvent({
+      kind: 'throttled',
+      attempt: throttle.attempt,
+      max: throttle.max,
+      retryDelayMs: throttle.retryDelayMs,
+      httpStatus: throttle.status,
+      retryAt:
+        throttle.retryDelayMs === null
+          ? null
+          : new Date(Date.now() + throttle.retryDelayMs).toISOString(),
+    })
   })
 
   const finishEvents = () => {
@@ -138,8 +174,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     if (collected) return collected
     collected = (async () => {
       try {
-        const [stdout, processResult] = await Promise.all([stdoutTask, p])
-        const stderr = processResult.stderr
+        const [stdout, stderr, processResult] = await Promise.all([stdoutTask, stderrTask, p])
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)

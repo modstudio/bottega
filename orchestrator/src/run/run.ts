@@ -34,7 +34,7 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
-import type { StreamEvent } from '../events.ts'
+import { appendRunEvent, readEventLog, runEventsPath, type StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
@@ -70,6 +70,7 @@ import {
   implicitReviewClaim,
   resolveReviewTarget,
 } from '../review/review-target.ts'
+import { waitForAgentSelection } from '../route/agent-capacity.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import {
@@ -514,8 +515,25 @@ export async function run(opts: {
       opts.lens,
     )
   const source = resume.isFirstTurn
-    ? { source: 'pick' as const, ...pickSource() }
+    ? {
+        source: 'pick' as const,
+        ...(await waitForAgentSelection({
+          select: pickSource,
+          noWait: opts.noWaitCapacity,
+          onWait: (at) => {
+            if (opts.reserveId)
+              appendRunEvent(opts.reserveId, { ts: at, type: 'capacity_wait', waiting: true })
+          },
+        })),
+      }
     : { source: 'resume' as const, ...opts.resume! }
+  if (opts.reserveId) {
+    const lastCapacity = readEventLog(runEventsPath(opts.reserveId)).findLast(
+      (event) => event.type === 'capacity_wait',
+    )
+    if (lastCapacity?.type === 'capacity_wait' && lastCapacity.waiting)
+      appendRunEvent(opts.reserveId, { ts: nowIso(), type: 'capacity_wait', waiting: false })
+  }
   const launch = decideRunLaunch({
     ...source,
     explicitTransport: opts.transport !== undefined,

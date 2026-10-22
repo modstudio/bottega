@@ -773,7 +773,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
       idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
-    const teeing = teeTransportEvents(handle.events(), claim.id)
+    const throttleState: { first: Extract<StreamEvent, { kind: 'throttled' }> | null } = {
+      first: null,
+    }
+    const teeing = teeTransportEvents(handle.events(), claim.id, (event) => {
+      if (event.kind !== 'throttled' || throttleState.first) return
+      throttleState.first = event
+      void t.cancel(handle)
+    })
     await t.prompt(handle, prompt)
     receiptWorkerMessages(
       claim.id,
@@ -797,7 +804,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     vendorTerminatedStream = [stdout, stderr].find(hasVendorTerminationMarker) ?? null
     exitCode = collected.exitCode
     const reply = collected.parsed
-    const replyError = reply?.error ?? collected.error
+    const firstThrottle = throttleState.first
+    const replyError =
+      firstThrottle === null
+        ? (reply?.error ?? collected.error)
+        : `Codex throttled: 429 Too Many Requests (retry ${firstThrottle.attempt}/${firstThrottle.max})`
     const reachedOutputCeiling = outputCeilingReached(reply, a.outputCeilingStopReason)
     vendorTokens = collected.tokens
     costUsd = collected.costUsd

@@ -10,6 +10,13 @@ import { RUNS_DIR } from './run-artifacts.ts'
 const COORDINATOR_ERROR_TAIL_LIMIT = 2000
 const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
 
+/** Routing owns these bounded refusal shapes; preserve their remedy verbatim. */
+export function isRoutingRefusal(value: string): boolean {
+  return /(?:^|\n)(?:no eligible agent for job|agent "[^"]+" (?:is at capacity|not eligible for)|routing constraints leave no eligible agent|waiting for capacity:)/m.test(
+    value.trim(),
+  )
+}
+
 function legacyCoordinatorLogNumber(name: string): string | null {
   return /^([1-9]\d*)\.coordinator\.log$/.exec(name)?.[1] ?? null
 }
@@ -79,7 +86,7 @@ export const runCoordinatorLogPath = (runRecordId: string, runsDir = RUNS_DIR): 
 export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
   const trimmed = output.trim()
   if (!trimmed) return '(no output)'
-  if (containsSecretShaped(trimmed)) return SECRET_SHAPED_OUTPUT
+  if (containsSecretShaped(trimmed) && !isRoutingRefusal(trimmed)) return SECRET_SHAPED_OUTPUT
   if (trimmed.length <= limit) return trimmed
   const marker = '… [earlier output omitted] …\n'
   if (limit <= marker.length) return trimmed.slice(-limit)

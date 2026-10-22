@@ -32,6 +32,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { waitForAgentSelection } from '../route/agent-capacity.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
@@ -375,23 +376,35 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   const detach = async (jobName: string, text: string, spec: DetachSpec) => {
     let selected: string | undefined
     const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
-    if (!spec.resume && mcpRequest)
-      selected = pick(
-        jobName,
-        spec.agent,
-        text.length,
-        true,
-        stackAt(spec.cwd ?? presentation.cwd()),
-        {
-          agents: spec.avoid,
-          models: spec.distinctModels,
-          model: spec.model,
-          requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
-        },
-        spec.probe,
-        spec.lens,
-      ).agent
-    return dispatchDetached(jobName, text, spec, selected)
+    if (!spec.resume) {
+      selected = await waitForAgentSelection({
+        select: () =>
+          pick(
+            jobName,
+            spec.agent,
+            text.length,
+            true,
+            stackAt(spec.cwd ?? presentation.cwd()),
+            {
+              agents: spec.avoid,
+              models: spec.distinctModels,
+              model: spec.model,
+              noWaitCapacity: spec.noWaitCapacity,
+              requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
+            },
+            spec.probe,
+            spec.lens,
+          ).agent,
+        noWait: spec.noWaitCapacity,
+        onWait: () => presentation.error('waiting for capacity'),
+      })
+    }
+    return dispatchDetached(
+      jobName,
+      text,
+      selected && !spec.agent ? { ...spec, agent: selected } : spec,
+      selected,
+    )
   }
   await dispatchCommand(
     argv,

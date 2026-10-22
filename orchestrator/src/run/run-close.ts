@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
 import {
   type classify,
   FAILS_OVER,
@@ -19,6 +20,7 @@ import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
+import { AgentCapacityError, waitForAgentSelection } from '../route/agent-capacity.ts'
 import {
   decideFailover,
   failoverAttempts,
@@ -152,7 +154,8 @@ function storedFailoverSelectionConstraints(
   })
 }
 
-function selectFailoverSuccessor(input: {
+async function selectFailoverSuccessor(input: {
+  runId: string
   job: string
   prompt: string
   findings: boolean | undefined
@@ -165,30 +168,47 @@ function selectFailoverSuccessor(input: {
   pinnedTransport: TransportName | null
   avoidedAgents: string[]
 }) {
-  try {
-    return pick(
-      input.job,
-      undefined,
-      Buffer.byteLength(input.prompt) + (input.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
-      true,
-      stackAt(input.launchCwd ?? input.callerCwd),
-      {
-        agents: input.avoidedAgents,
-        requiredMcp: requiredMcpServer(
-          mcpRequestFromStored(input.mcp, input.mcpError),
-          input.launchCwd ?? input.callerCwd,
-          input.repo ?? undefined,
-        ),
-      },
-      false,
-      input.lens ?? undefined,
-    )
-  } catch (error) {
-    if (!input.pinnedTransport) throw error
-    throw new Error(
-      `pinned ${input.pinnedTransport} transport left no eligible agent: ${String((error as Error).message ?? error)}`,
-    )
+  let waiting = false
+  const select = () => {
+    try {
+      return pick(
+        input.job,
+        undefined,
+        Buffer.byteLength(input.prompt) + (input.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
+        true,
+        stackAt(input.launchCwd ?? input.callerCwd),
+        {
+          agents: input.avoidedAgents,
+          requiredMcp: requiredMcpServer(
+            mcpRequestFromStored(input.mcp, input.mcpError),
+            input.launchCwd ?? input.callerCwd,
+            input.repo ?? undefined,
+          ),
+        },
+        false,
+        input.lens ?? undefined,
+      )
+    } catch (error) {
+      if (!input.pinnedTransport || error instanceof AgentCapacityError) throw error
+      throw new Error(
+        `pinned ${input.pinnedTransport} transport left no eligible agent: ${String((error as Error).message ?? error)}`,
+      )
+    }
   }
+  const selected = await waitForAgentSelection({
+    select,
+    onWait: (at) => {
+      waiting = true
+      appendRunEvent(input.runId, { ts: at, type: 'capacity_wait', waiting: true })
+    },
+  })
+  if (waiting)
+    appendRunEvent(input.runId, {
+      ts: new Date().toISOString(),
+      type: 'capacity_wait',
+      waiting: false,
+    })
+  return selected
 }
 
 function notifyFailureRequiringHuman(input: {
@@ -298,7 +318,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
         const transportConstraints = storedFailoverSelectionConstraints(first, opts, tried)
-        const selected = selectFailoverSuccessor({
+        const selected = await selectFailoverSuccessor({
+          runId: claim.id,
           job: opts.job,
           prompt: originalPrompt,
           findings: requestedJob.findings,

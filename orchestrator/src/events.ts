@@ -20,6 +20,14 @@ export type StreamEvent =
       error?: string
       locations?: Array<{ path: string }>
     }
+  | {
+      kind: 'throttled'
+      attempt: number
+      max: number
+      retryDelayMs: number | null
+      retryAt: string | null
+      httpStatus: 429
+    }
 
 const DEFAULT_IDLE_WARN_MS = 5 * 60_000
 const DEFAULT_PEEK_EVENTS = 5
@@ -64,6 +72,17 @@ export type RunLogEvent =
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
   | {
       ts: string
+      type: 'throttled'
+      attempt: number
+      max: number
+      retryDelayMs: number | null
+      retryAt: string | null
+      status: 429
+      concurrency: number
+    }
+  | { ts: string; type: 'capacity_wait'; waiting: boolean }
+  | {
+      ts: string
       type: 'ask_expected'
       transport: 'host' | 'srt'
       command: string[]
@@ -79,6 +98,15 @@ type PeekEventSummary =
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
   | { type: 'usage'; tokens: number }
+  | {
+      type: 'throttled'
+      attempt: number
+      max: number
+      retryAt: string | null
+      status: 429
+      concurrency: number
+    }
+  | { type: 'capacity_wait'; waiting: boolean; ts: string }
   | { type: 'ask_expected'; transport: 'host' | 'srt'; command: string[] }
   | { type: 'ask_started'; tools: string[] }
   | { type: 'ask_initialized' }
@@ -187,6 +215,7 @@ const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelle
 export function createEventLog(
   runId: string,
   path?: string,
+  throttleConcurrency: () => number = () => 0,
 ): {
   observe(event: StreamEvent, ts?: string): void
   flush(ts?: string): void
@@ -236,6 +265,19 @@ export function createEventLog(
       }
       if (event.kind === 'usage') {
         write({ ts, type: 'usage', tokens: event.tokens, costUsd: event.costUsd })
+        return
+      }
+      if (event.kind === 'throttled') {
+        write({
+          ts,
+          type: 'throttled',
+          attempt: event.attempt,
+          max: event.max,
+          retryDelayMs: event.retryDelayMs,
+          retryAt: event.retryAt,
+          status: event.httpStatus,
+          concurrency: throttleConcurrency(),
+        })
       }
     },
     flush,
@@ -245,12 +287,22 @@ export function createEventLog(
 export async function teeTransportEvents(
   events: AsyncIterable<{ kind: string }>,
   runId: string,
+  observe?: (event: StreamEvent) => void,
 ): Promise<void> {
-  const log = createEventLog(runId)
+  const log = createEventLog(runId, undefined, () => {
+    const row = db()
+      .query(
+        "SELECT COUNT(*) n FROM run WHERE agent='codex' AND status='running' AND agent_pid IS NOT NULL",
+      )
+      .get() as { n: number }
+    return row.n
+  })
   try {
     for await (const event of events) {
       try {
-        log.observe(event as StreamEvent)
+        const normalized = event as StreamEvent
+        log.observe(normalized)
+        observe?.(normalized)
       } catch {
         /* observation never rejects the tee */
       }
@@ -535,6 +587,17 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'tool_result')
     return { type: 'tool_result', status: event.status, bytes: event.bytes }
   if (event.type === 'usage') return { type: 'usage', tokens: event.tokens }
+  if (event.type === 'throttled') {
+    return {
+      type: 'throttled',
+      attempt: event.attempt,
+      max: event.max,
+      retryAt: event.retryAt,
+      status: event.status,
+      concurrency: event.concurrency,
+    }
+  }
+  if (event.type === 'capacity_wait') return { ...event }
   if (event.type === 'ask_expected') {
     return {
       type: 'ask_expected',
@@ -665,6 +728,10 @@ function formatPeekEvent(event: PeekEventSummary): string {
     return `  result ${event.status ?? ''}${event.bytes != null ? ` ${event.bytes}b` : ''}`.trimEnd()
   }
   if (event.type === 'usage') return `  usage ${event.tokens}`
+  if (event.type === 'throttled') {
+    return `  throttled (${event.status}), retry ${event.attempt}/${event.max} at ${event.retryAt ?? 'unknown'} (codex concurrency ${event.concurrency})`
+  }
+  if (event.type === 'capacity_wait') return '  waiting for capacity'
   if (event.type === 'ask_expected') {
     return `  ask expected ${event.transport} ${event.command.join(' ')}`
   }

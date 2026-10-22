@@ -155,6 +155,14 @@ export type NormalizedEvent =
     }
   | { kind: 'elicitation'; message: string }
   | { kind: 'error'; error: string }
+  | {
+      kind: 'throttled'
+      attempt: number
+      max: number
+      retryDelayMs: number | null
+      retryAt: string | null
+      httpStatus: 429
+    }
   | { kind: 'stop'; reason: string }
 
 type ParsedReply = {

@@ -3,6 +3,7 @@
 import { AttributionKindSchema } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
 import { harnessHealth, landingsWithPostStepError } from './health.ts'
+import { throttleBuckets } from './throttle-health.ts'
 
 type CommandFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type CommandPresentation = { log(...values: unknown[]): void }
@@ -101,8 +102,9 @@ export function healthCommand(flags: CommandFlags, presentation: CommandPresenta
   const { has, flag } = flags
   const { log } = presentation
   const report = healthPayload(flag('days') ? Number(flag('days')) : undefined)
+  const throttles = throttleBuckets({ database: db(), from: report.from })
   if (has('json')) {
-    log(JSON.stringify(report))
+    log(JSON.stringify({ ...report, throttles }))
     return
   }
   const duration = (ms: number) =>
@@ -113,6 +115,12 @@ export function healthCommand(flags: CommandFlags, presentation: CommandPresenta
         : `${(ms / 3_600_000).toFixed(1)}h`
   log(report.header)
   log(`window: ${report.days} days from ${report.from}`)
+  log('\nCODEX THROTTLES BY LIVE CONCURRENCY')
+  if (!throttles.length) log('(none)')
+  for (const row of throttles)
+    log(
+      `${String(row.concurrency).padStart(4)} live  ${row.throttles} throttle${row.throttles === 1 ? '' : 's'}`,
+    )
   log(
     '\nFAILURE CLASS'.padEnd(25) +
       'COUNT'.padStart(7) +

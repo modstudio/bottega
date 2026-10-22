@@ -298,6 +298,11 @@ for line in sys.stdin:
         raise SystemExit(2)
     if waiting_for_host_capacity and host_wait_since is None:
         raise SystemExit(2)
+    waiting_for_capacity = d.get("waiting_for_capacity")
+    capacity_wait_since = d.get("capacity_wait_since")
+    if not isinstance(waiting_for_capacity, bool):
+        raise SystemExit(2)
+    throttle = d.get("throttled")
     if status == "running" and stall_state not in ("healthy", "stalled", "unknown"):
         raise SystemExit(2)
     stall = d.get("stall")
@@ -310,7 +315,14 @@ for line in sys.stdin:
             raise SystemExit(2)
         stalled_subjects.append("run:" + str(member_id))
     ids.append(str(d.get("record_id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
-    display = ("waiting for host capacity since " + host_wait_since) if waiting_for_host_capacity else (str(d.get("status")) + " " + age + idle_note)
+    if waiting_for_host_capacity:
+        display = "waiting for host capacity since " + host_wait_since
+    elif waiting_for_capacity:
+        display = "waiting for capacity since " + str(capacity_wait_since)
+    elif isinstance(throttle, dict):
+        display = "throttled (%s), retry %s/%s at %s" % (throttle.get("status"), throttle.get("attempt"), throttle.get("max"), throttle.get("retry_at") or "unknown")
+    else:
+        display = str(d.get("status")) + " " + age + idle_note
     out.append("%s/%s %s %s" % (d.get("number"), d.get("job"), d.get("agent"), display))
 if not saw:
     raise SystemExit(2)
