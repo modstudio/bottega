@@ -33,6 +33,7 @@ import { createConnection, createServer, type Socket } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/server'
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
@@ -565,7 +566,7 @@ export function createAskMcpServer(
    */
   const authorized = (): boolean => authenticatedWorkerRun(runId, token)
   const [pendingGateResults, lifecycle, toolNames] = askServerState(runId, dependencies)
-  const server = new McpServer({ name: 'orch-ask', version: '1' })
+  const server = new McpServer({ name: WORKER_MCP_SERVER_NAME, version: '1' })
   const registerTool = ((...args: unknown[]) => {
     if (typeof args[0] === 'string') toolNames.push(args[0])
     return Reflect.apply(server.registerTool, server, args)
@@ -797,7 +798,7 @@ export function createAskMcpServer(
 export type AskLoopback = { url: string; close(): Promise<void> }
 
 /**
- * Start the database-owning side of orch-ask outside a worker's process sandbox.
+ * Start the database-owning side of bottega-ask outside a worker's process sandbox.
  * The OS chooses the port, and the listener is bound only to loopback.
  */
 export async function startAskLoopback(runId: string, token: string): Promise<AskLoopback> {
@@ -823,7 +824,7 @@ export async function startAskLoopback(runId: string, token: string): Promise<As
   const address = server.address()
   if (!address || typeof address === 'string') {
     server.close()
-    throw new Error('orch-ask loopback did not receive a TCP port')
+    throw new Error(`${WORKER_MCP_SERVER_NAME} loopback did not receive a TCP port`)
   }
   return {
     url: `tcp://127.0.0.1:${address.port}`,

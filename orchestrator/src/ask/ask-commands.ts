@@ -1,9 +1,9 @@
 // concern: run-inbox
-/** Owns the orch-ask-only alias over setup MCP registration. */
+/** Owns the bottega-ask-only alias over setup MCP registration. */
 
 import { existsSync } from 'node:fs'
 import { which } from 'bun'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { applyMcpRegistration } from '../setup/setup-apply.ts'
 import {
   captureHarnessMcpFacts,
@@ -33,12 +33,12 @@ export async function setupAskCommand(
   }
   const runner = dependencies.runner ?? runSetupCommand
   const find = dependencies.find ?? ((name: string) => which(name, { PATH: process.env.PATH }))
-  const server = stableMcpServers().find((candidate) => candidate.name === 'orch-ask')!
+  const server = stableMcpServers().find((candidate) => candidate.name === WORKER_MCP_SERVER_NAME)!
   let failed = false
   const targets = (Object.keys(HARNESS_MCP_CATALOGUE) as HarnessName[]).filter(
     (harness) =>
       HARNESS_MCP_CATALOGUE[harness].support === 'automatic' &&
-      harnessMcpServers(harness).includes('orch-ask'),
+      harnessMcpServers(harness).includes(WORKER_MCP_SERVER_NAME),
   )
   for (const harness of targets) {
     const bin = find(harness) ?? harness
@@ -50,10 +50,10 @@ export async function setupAskCommand(
         runner,
         dependencies.commandExists ?? existsSync,
         find,
-      ).registrations['orch-ask']
+      ).registrations[WORKER_MCP_SERVER_NAME]
       if (current?.status === 'different') {
         throw new Error(
-          `orch-ask has a different working registration; run ${PLATFORM_SLUG} machine setup apply to review and replace it`,
+          `${WORKER_MCP_SERVER_NAME} has a different working registration; run ${PLATFORM_SLUG} machine setup apply to review and replace it`,
         )
       }
       const status = applyMcpRegistration(
@@ -68,8 +68,8 @@ export async function setupAskCommand(
       )
       presentation.log(
         status === 'unchanged'
-          ? `ok   ${harness}: orch-ask already registered`
-          : `ok   ${harness}: orch-ask registered and verified`,
+          ? `ok   ${harness}: ${WORKER_MCP_SERVER_NAME} already registered`
+          : `ok   ${harness}: ${WORKER_MCP_SERVER_NAME} registered and verified`,
       )
     } catch (error) {
       failed = true

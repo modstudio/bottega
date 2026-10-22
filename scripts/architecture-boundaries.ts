@@ -232,7 +232,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'contract-boundary',
     'orchestrator/src/contract/contract.ts',
-    ['../jobs/jobs.ts', '../outcome.ts', '../review/review-vocabulary.ts', '../run/checkpoint.ts'],
+    [
+      '../../../shared/brand.ts',
+      '../jobs/jobs.ts',
+      '../outcome.ts',
+      '../review/review-vocabulary.ts',
+      '../run/checkpoint.ts',
+    ],
     'Keep reply dialect resolution independent of lifecycle and impure transport concerns.',
   ),
   ...databaseBoundarySpecs,
