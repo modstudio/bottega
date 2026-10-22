@@ -28,8 +28,13 @@ export const reviewModuleSpecs = [
       './review-second-opinion.ts',
       './review-triage.ts',
       './review-vocabulary.ts',
+      './review-yield-slice.ts',
     ],
     typeOnlyAllowed: ['../project/project-injection.ts'],
+  },
+  {
+    file: 'orchestrator/src/review/review-yield-slice.ts',
+    allowed: ['./review-vocabulary.ts'],
   },
   {
     file: 'orchestrator/src/review/review-command-cwd.ts',
@@ -81,9 +86,17 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-second-opinion.ts',
       './review-triage.ts',
       './review-vocabulary.ts',
+      './review-yield-slice.ts',
     ],
     typeOnlyAllowed: ['../project/project-injection.ts'],
     reason: 'Keep review yield independent of pull-request admission and other downstream policy.',
+  },
+  {
+    name: 'review-yield-slice-boundary',
+    file: 'orchestrator/src/review/review-yield-slice.ts',
+    allowed: ['./review-vocabulary.ts'],
+    reason:
+      'Keep yield slice keys and path-area matching as a pure decision over path_set and declared globs.',
   },
   {
     name: 'review-identifier-boundary',

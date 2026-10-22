@@ -410,4 +410,145 @@ describe('review yield', () => {
     ])
     expect(report.notRecorded[0]?.needed).toContain('only reviews with explicit')
   })
+
+  test('groups each lens by size, risk and declared path area with medium-plus yield', () => {
+    const projectId = newRecordId()
+    db()
+      .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+      .run(
+        projectId,
+        'slice-project',
+        '/slice-project',
+        JSON.stringify({
+          review: {
+            lenses: [
+              { lens: 'correctness' },
+              { lens: 'craft', minTier: 2 },
+              { lens: 'test-quality', paths: ['**/*.test.ts'] },
+              { lens: 'safety', paths: ['orchestrator/hooks/**'] },
+            ],
+          },
+        }),
+      )
+    const attach = (
+      reviewId: string,
+      lensId: string,
+      risk: number,
+      size: number,
+      pathSet: string,
+    ) => {
+      db()
+        .query(
+          'UPDATE review SET project_record_id=?,tier_risk=?,tier_size=?,path_set=? WHERE record_id=?',
+        )
+        .run(projectId, risk, size, pathSet, reviewId)
+      db()
+        .query(
+          `UPDATE run SET project_record_id=?,repo='slice-project'
+            WHERE record_id=(SELECT run_record_id FROM review_lens WHERE record_id=?)`,
+        )
+        .run(projectId, lensId)
+    }
+    const craftSize0Hit = addReview('2026-09-08T18:00:00Z', 'slice-a', true, '["src/a.ts"]')
+    const craftSize0HitLens = addLens(craftSize0Hit, {
+      lens: 'craft',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 10,
+      overlap: 'unique',
+    })
+    addFinding(craftSize0Hit, craftSize0HitLens, 1, 'medium', 'accepted', 'medium')
+    attach(craftSize0Hit, craftSize0HitLens, 2, 0, '["src/a.ts"]')
+
+    const craftSize0Miss = addReview('2026-09-08T18:01:00Z', 'slice-b', true, '["src/b.ts"]')
+    const craftSize0MissLens = addLens(craftSize0Miss, {
+      lens: 'craft',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 11,
+      overlap: 'none',
+    })
+    addFinding(craftSize0Miss, craftSize0MissLens, 1, 'low', 'accepted', 'low')
+    attach(craftSize0Miss, craftSize0MissLens, 2, 0, '["src/b.ts"]')
+
+    const craftTests = addReview('2026-09-08T18:02:00Z', 'slice-c', true, '["foo.test.ts"]')
+    const craftTestsLens = addLens(craftTests, {
+      lens: 'craft',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 12,
+      overlap: 'unique',
+    })
+    addFinding(craftTests, craftTestsLens, 1, 'high', 'accepted', 'high')
+    attach(craftTests, craftTestsLens, 2, 2, '["foo.test.ts"]')
+
+    const craftBoth = addReview(
+      '2026-09-08T18:03:00Z',
+      'slice-d',
+      true,
+      '["foo.test.ts","orchestrator/hooks/x.ts"]',
+    )
+    const craftBothLens = addLens(craftBoth, {
+      lens: 'craft',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 13,
+      overlap: 'shared',
+    })
+    addFinding(craftBoth, craftBothLens, 1, 'medium', 'modified', 'medium')
+    attach(craftBoth, craftBothLens, 3, 2, '["foo.test.ts","orchestrator/hooks/x.ts"]')
+
+    const correctness = addReview('2026-09-08T18:04:00Z', 'slice-e', true, '["src/c.ts"]')
+    const correctnessLens = addLens(correctness, {
+      lens: 'correctness',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 14,
+      overlap: 'alone',
+    })
+    attach(correctness, correctnessLens, 1, 0, '["src/c.ts"]')
+
+    const report = reviewYield({ project: 'slice-project' }, db())
+    expect(report.lenses.find((row) => row.key === 'craft')).toMatchObject({
+      runs: 4,
+      accepted: 3,
+      mediumPlusAccepted: 3,
+      mediumPlusAcceptedYield: 0.75,
+      overlap: { unique: 2, shared: 1, none: 1, alone: 0 },
+    })
+    expect(report.bySize.find((row) => row.key === 'craft / size 0')).toMatchObject({
+      runs: 2,
+      mediumPlusAcceptedYield: 0.5,
+    })
+    expect(report.bySize.find((row) => row.key === 'craft / size 2')).toMatchObject({
+      runs: 2,
+      mediumPlusAcceptedYield: 1,
+    })
+    expect(report.byRisk.find((row) => row.key === 'craft / risk 2')).toMatchObject({
+      runs: 3,
+      mediumPlusAcceptedYield: 2 / 3,
+    })
+    expect(report.byRisk.find((row) => row.key === 'craft / risk 3')).toMatchObject({
+      runs: 1,
+      mediumPlusAcceptedYield: 1,
+    })
+    expect(report.byArea.find((row) => row.key === 'craft / (no declared glob)')).toMatchObject({
+      runs: 2,
+      mediumPlusAcceptedYield: 0.5,
+    })
+    expect(report.byArea.find((row) => row.key === 'craft / test-quality')).toMatchObject({
+      runs: 2,
+      mediumPlusAcceptedYield: 1,
+    })
+    expect(report.byArea.find((row) => row.key === 'craft / safety')).toMatchObject({
+      runs: 1,
+      mediumPlusAcceptedYield: 1,
+    })
+    expect(report.lenses.find((row) => row.key === 'correctness')?.overlap).toMatchObject({
+      unique: 0,
+      shared: 0,
+      none: 0,
+      alone: 1,
+    })
+  })
 })

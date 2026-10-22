@@ -14,6 +14,15 @@ import {
   type ReviewOverlap,
   type ReviewSeverity,
 } from './review-vocabulary.ts'
+import {
+  mediumPlusAcceptedCount,
+  mediumPlusAcceptedYield,
+  yieldAreaKey,
+  yieldLensDeclarations,
+  yieldPathAreas,
+  yieldRiskKey,
+  yieldSizeKey,
+} from './review-yield-slice.ts'
 
 export type ReviewYieldFilters = {
   project?: string
@@ -49,6 +58,8 @@ type ReviewYieldRow = {
   highOrCriticalPerRun: number | null
   medianLensMinutes: number | null
   linkedFindings: number
+  mediumPlusAccepted: number
+  mediumPlusAcceptedYield: number | null
   overlap: ReviewYieldOverlap
 }
 
@@ -68,6 +79,9 @@ export type ReviewYieldReport = {
     agent: string | null
   }
   lenses: ReviewYieldRow[]
+  bySize: ReviewYieldRow[]
+  byRisk: ReviewYieldRow[]
+  byArea: ReviewYieldRow[]
   lensPairs: ReviewYieldLensPair[]
   rounds: ReviewYieldRow[]
   agents: ReviewYieldRow[]
@@ -82,6 +96,8 @@ export type ReviewRoundEvidenceRow = {
   recorded_at: string
   completed_at: string | null
   tier: 0 | 1 | 2 | 3 | null
+  tier_risk: number | null
+  tier_size: number | null
   patch_id: string | null
   path_set: string | null
   project: string | null
@@ -174,7 +190,7 @@ export function reviewYield(
 ): ReviewYieldReport {
   const lensRows = database
     .query(
-      `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.patch_id, r.path_set, p.name AS project,
+      `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.tier_risk, r.tier_size, r.patch_id, r.path_set, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
             rl.model, run.latency_ms, run.input_tree, run.head_commit, rl.overlap,rl.reproduced,
             rl.coverage,rl.limits,p.settings AS project_settings
@@ -242,6 +258,7 @@ export function reviewYield(
       agent: filters.agent ?? null,
     },
     lenses: grouped(rows, displayLens),
+    ...changeSlices(rows),
     lensPairs: pairs,
     rounds: grouped(
       rows.filter((row) => row.round !== null),
@@ -371,13 +388,32 @@ function lensPairs(rows: ComputedLens[]): ReviewYieldLensPair[] {
     })
 }
 
-function grouped(
+function changeSlices(
   rows: ComputedLens[],
-  keyOf: (row: ComputedLens) => string,
-  sort: (a: string, b: string, aRows: ComputedLens[], bRows: ComputedLens[]) => number = (a, b) =>
-    a.localeCompare(b),
+): Pick<ReviewYieldReport, 'bySize' | 'byRisk' | 'byArea'> {
+  const sliceSort = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true })
+  return {
+    bySize: grouped(rows, (row) => yieldSizeKey(displayLens(row), row.tier_size), sliceSort),
+    byRisk: grouped(rows, (row) => yieldRiskKey(displayLens(row), row.tier_risk), sliceSort),
+    byArea: grouped(
+      rows.flatMap((row) =>
+        yieldPathAreas(row.path_set, yieldLensDeclarations(row.project_settings)).map((area) => ({
+          ...row,
+          area,
+        })),
+      ),
+      (row) => yieldAreaKey(displayLens(row), row.area),
+      sliceSort,
+    ),
+  }
+}
+
+function grouped<T extends ComputedLens>(
+  rows: T[],
+  keyOf: (row: T) => string,
+  sort: (a: string, b: string, aRows: T[], bRows: T[]) => number = (a, b) => a.localeCompare(b),
 ): ReviewYieldRow[] {
-  const groups = new Map<string, ComputedLens[]>()
+  const groups = new Map<string, T[]>()
   for (const row of rows) groups.set(keyOf(row), [...(groups.get(keyOf(row)) ?? []), row])
   return [...groups.entries()]
     .sort(([a, aRows], [b, bRows]) => sort(a, b, aRows, bRows))
@@ -421,6 +457,8 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
     highOrCriticalPerRun: evidenceRows.length ? high / evidenceRows.length : null,
     medianLensMinutes: medianMs === null ? null : medianMs / 60_000,
     linkedFindings: linkedFindingIds(rows, allRows).size,
+    mediumPlusAccepted: mediumPlusAcceptedCount(evidenceFindings),
+    mediumPlusAcceptedYield: mediumPlusAcceptedYield(evidenceRows),
     overlap: {
       ...overlapCounts,
       unrecorded: rows.filter((row) => row.overlap === null).length,
@@ -438,13 +476,13 @@ export function renderReviewYieldHuman(report: ReviewYieldReport): string {
   const section = (title: string, rows: ReviewYieldRow[]) => {
     lines.push(title)
     lines.push(
-      'KEY'.padEnd(22) +
-        'RUNS REV C REC FIND LINK TRI UNTR ACCEPT REJECT MODIFY SKIP  F/R H+C/R MED MIN  UNIQUE SHARED',
+      'KEY'.padEnd(40) +
+        'RUNS REV C REC FIND LINK TRI UNTR ACCEPT REJECT MODIFY SKIP  F/R H+C/R MED MIN MED+  UNIQUE SHARED NONE ALONE',
     )
     if (!rows.length) lines.push('(none)')
     for (const row of rows)
       lines.push(
-        row.key.slice(0, 21).padEnd(22) +
+        row.key.slice(0, 39).padEnd(40) +
           String(row.runs).padStart(4) +
           String(row.reviews.recorded).padStart(4) +
           String(row.reviews.completed).padStart(2) +
@@ -460,11 +498,20 @@ export function renderReviewYieldHuman(report: ReviewYieldReport): string {
           number(row.findingsPerRun).padStart(5) +
           number(row.highOrCriticalPerRun).padStart(6) +
           (row.medianLensMinutes === null ? '—' : number(row.medianLensMinutes)).padStart(8) +
+          number(row.mediumPlusAcceptedYield).padStart(5) +
           String(row.overlap.unique).padStart(8) +
-          String(row.overlap.shared).padStart(7),
+          String(row.overlap.shared).padStart(7) +
+          String(row.overlap.none).padStart(5) +
+          String(row.overlap.alone).padStart(6),
       )
   }
   section('BY LENS', report.lenses)
+  lines.push('')
+  section('BY SIZE', report.bySize)
+  lines.push('')
+  section('BY RISK', report.byRisk)
+  lines.push('')
+  section('BY AREA', report.byArea)
   lines.push('')
   lines.push('BY LENS PAIR')
   lines.push(`${'LENSES'.padEnd(45)}LINKED  SHARE LEFT  SHARE RIGHT`)
