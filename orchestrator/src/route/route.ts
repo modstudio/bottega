@@ -570,6 +570,7 @@ export function candidates(
                 julianday(started_at) + latency_ms / 86400000.0 AS finished_at
            FROM run
           WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
+            AND job NOT LIKE 'agent-probe-%'
        ), cooling_failures AS (
          SELECT record_id, agent, failure_kind, finished_at,
                 ROW_NUMBER() OVER (
@@ -628,7 +629,7 @@ export function candidates(
       why = policy.why
     } else if (!a.probedAt) {
       eligible = false
-      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe ${name}`
+      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe ${name}`
     } else if (predatesFileContract(a)) {
       eligible = false
       why = fileContractProbeReason(name)

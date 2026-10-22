@@ -59,13 +59,6 @@
       "spawns": 0
     },
     {
-      "path": "orchestrator/src/agent/vendor-probe.test.ts",
-      "wallMs": 83,
-      "tests": 3,
-      "cliShaped": false,
-      "spawns": 0
-    },
-    {
       "path": "orchestrator/src/artifact-paths.test.ts",
       "wallMs": 78,
       "tests": 7,

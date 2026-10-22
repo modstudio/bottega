@@ -132,7 +132,7 @@ su -s /bin/sh smoke -c '
   export ORCH_RERANK_URL=http://127.0.0.1:1/v1/rerank
   export SMOKE_MCP_STATE=/tmp/mcp-state
   export PATH=/tmp/fake-bin:/tmp/bin:/usr/bin:/bin
-  agent_output=$(${installedBinary} agent show list)
+  agent_output=$(${installedBinary} agent list)
   printf "%s\\n" "$agent_output"
   printf "%s\\n" "$agent_output" | grep "^codex "
   printf "%s\\n" "$agent_output" | grep "^grok "
