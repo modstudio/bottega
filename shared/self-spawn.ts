@@ -4,8 +4,6 @@ import { assetPath } from './install-root.ts'
 
 export const BOTTEGA_ENTRY_PROTOCOL = {
   [PLATFORM_SLUG]: { compiledArguments: [], usage: 'public' },
-  orch: { compiledArguments: ['orch'], usage: 'public' },
-  hub: { compiledArguments: ['hub'], usage: 'public' },
   'run-exec': { compiledArguments: ['__run-exec'], usage: 'hidden' },
   'ask-server': { compiledArguments: ['mcp', 'ask-server'], usage: 'nested' },
   'ask-proxy': { compiledArguments: ['__ask-proxy'], usage: 'hidden' },
@@ -24,10 +22,6 @@ function sourceArguments(entry: BottegaEntry): string[] {
   switch (entry) {
     case PLATFORM_SLUG:
       return [assetPath('bin', PLATFORM_SLUG)]
-    case 'orch':
-      return [assetPath('bin', 'orch')]
-    case 'hub':
-      return [assetPath('bin', 'hub')]
     case 'run-exec':
       return [
         process.env.ORCH_EXEC_PATH ?? process.execPath,

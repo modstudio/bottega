@@ -44,6 +44,11 @@ export type SetupAction =
       server: McpServer
     }
   | ({ kind: 'migrate-mcp-config' } & McpConfigMigration)
+  | {
+      kind: 'remove-legacy-symlink'
+      path: string
+      target: string
+    }
 
 export function setupActionChangesMachine(action: SetupAction): boolean {
   switch (action.kind) {
@@ -51,6 +56,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'set':
     case 'register-mcp':
     case 'migrate-mcp-config':
+    case 'remove-legacy-symlink':
       return true
     case 'unchanged':
     case 'mcp-unchanged':
@@ -65,6 +71,8 @@ export function setupActionLine(action: SetupAction): string {
       return `${action.replace ? 'Replace' : 'Register'} ${action.server.name} in ${action.harness}`
     case 'migrate-mcp-config':
       return `Migrate MCP names in ${action.path}`
+    case 'remove-legacy-symlink':
+      return `Remove leftover ${action.path} symlink`
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -205,7 +213,12 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     kind: 'migrate-mcp-config',
     ...migration,
   }))
-  return [...registrations, ...migrations, ...projects]
+  const legacySymlinks: SetupAction[] = (plan.legacyPathSymlinks ?? []).map((link) => ({
+    kind: 'remove-legacy-symlink',
+    path: link.path,
+    target: link.target,
+  }))
+  return [...registrations, ...migrations, ...legacySymlinks, ...projects]
 }
 
 export function recommendedAnswers(plan: SetupPlan): SetupAnswers {

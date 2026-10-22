@@ -275,6 +275,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-terminal.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../agent/agent-registry.ts',
     '../ask/ask.ts',
     './checkpoint.ts',
     '../confinement/confinement.ts',
