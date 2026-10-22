@@ -1,16 +1,15 @@
 // concern: ACP registration writing probe
 /** Owns the disposable writing check. Must not know registry persistence or CLI grammar. */
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { scrubbedGitEnv } from '../../../shared/git.ts'
-import type { Project } from '../project/projects.ts'
+import { observedCapabilityPolicy } from './agent-capability-probe-policy.ts'
 import {
-  resetSandbox,
-  type SandboxRuntimeConfig,
-  selectReadonlySandbox,
-} from '../sandbox/sandbox.ts'
-import type { Agent } from './agents.ts'
+  type CapabilityProbeConfinement,
+  type CapabilityProbeSandboxInput,
+  type CapabilityProbeSandboxPorts,
+  capabilityProbeSandboxPorts,
+  withCapabilityProbeSandbox,
+} from './agent-capability-probe-sandbox.ts'
 
 const WRITING_PROBE_FILE = 'registration-probe-write.txt'
 const WRITING_PROBE_CONTENT = 'REGISTRATION_PROBE_WRITE_OK\n'
@@ -20,41 +19,16 @@ export type WritingProbeResult = { ok: boolean | null; output: string }
 type WritingProbeLaunch = {
   cwd: string
   prompt: string
-  profile: SandboxRuntimeConfig
+  profile: CapabilityProbeConfinement['profile']
 }
-export type WritingProbeConfinement = Omit<WritingProbeLaunch, 'prompt'>
+export type WritingProbeConfinement = CapabilityProbeConfinement
 
 type WritingProbeAgentCall = (
   input: WritingProbeLaunch,
 ) => Promise<{ status: 'ok' | 'failed' | 'asking'; output: string }>
 
-type WritingProbePorts = {
-  createWorktree(path: string): void
-  removeWorktree(path: string): void
+export type WritingProbePorts = CapabilityProbeSandboxPorts & {
   callAgent: WritingProbeAgentCall
-  openAskListener(): WritingProbeAskListener
-  resetSandbox(): Promise<void>
-}
-
-type WritingProbeAskListener = { address: string; close(): void | Promise<void> }
-
-function createScratchGitWorktree(path: string): void {
-  mkdirSync(path, { recursive: true })
-  const initialized = Bun.spawnSync(['git', 'init', '--quiet', path], {
-    env: scrubbedGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (initialized.exitCode !== 0) {
-    throw new Error(
-      `registration writing probe could not create its git worktree: ${initialized.stderr.toString().trim() || `git init exited ${initialized.exitCode ?? 'unknown'}`}`,
-    )
-  }
-}
-
-const defaultWorktreePorts = {
-  createWorktree: createScratchGitWorktree,
-  removeWorktree: (path: string) => rmSync(path, { recursive: true, force: true }),
 }
 
 /** One owner for whether and how a transport establishes repository-writing capability. */
@@ -62,95 +36,37 @@ export function writingCapabilityPolicy(
   transport: 'cli' | 'acp',
   observation: boolean | null | undefined,
 ): { requiresObservation: boolean; writesRepo: boolean | null; jobSuccess: boolean } {
-  const requiresObservation = transport === 'acp'
+  const policy = observedCapabilityPolicy(transport, observation)
   return {
-    requiresObservation,
-    writesRepo: requiresObservation && observation != null ? observation : null,
-    jobSuccess: !requiresObservation || observation === true,
+    requiresObservation: policy.requiresObservation,
+    writesRepo: policy.value,
+    jobSuccess: policy.jobSuccess,
   }
 }
-
-function probeProject(worktree: string): Project {
-  return {
-    recordId: 'registration-probe',
-    name: 'registration-probe',
-    path: worktree,
-    stack: null,
-    canon: false,
-    retiredAt: null,
-    settings: {},
-  }
-}
-
-function openProbeAskListener(): WritingProbeAskListener {
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    fetch: () => new Response(null, { status: 404 }),
-  })
-  return {
-    address: `127.0.0.1:${server.port}`,
-    close: () => server.stop(true),
-  }
-}
+export type WritingProbeInput = CapabilityProbeSandboxInput
 
 /** Run one ACP writer inside the same profile and transport launch used by a writing run. */
 export async function probeAgentWrites(
-  input: {
-    transport: 'cli' | 'acp'
-    scratch: string
-    agent: Agent
-    path?: string
-    environment: ConfigEnvironment
-  },
+  input: WritingProbeInput,
   ports: WritingProbePorts,
 ): Promise<WritingProbeResult> {
   if (!writingCapabilityPolicy(input.transport, null).requiresObservation) {
     return { ok: null, output: 'skipped: CLI transport never receives the writing check' }
   }
-  const worktree = join(input.scratch, 'writing-worktree')
-  const target = join(worktree, WRITING_PROBE_FILE)
-  let askListener: WritingProbeAskListener | null = null
   try {
-    try {
-      ports.createWorktree(worktree)
-      askListener = ports.openAskListener()
-      const selection = selectReadonlySandbox({
-        agent: input.agent.name,
-        readsRepo: true,
-        writesRepo: true,
-        worktree,
-        runsDir: input.scratch,
-        scratchDir: input.scratch,
-        project: probeProject(worktree),
-        path: input.path,
-        baseUrl: input.agent.baseUrl,
-        environment: input.environment,
-        writingAcp: true,
-        askAddress: askListener.address,
-      })
-      if (!selection.profile) throw new Error('registration writing probe did not select srt')
+    return await withCapabilityProbeSandbox(input, ports, async ({ cwd, profile }) => {
+      const target = join(cwd, WRITING_PROBE_FILE)
       const outcome = await ports.callAgent({
-        cwd: worktree,
+        cwd,
         prompt: `Create ${WRITING_PROBE_FILE} with exactly this content, including the final newline:\n${WRITING_PROBE_CONTENT}`,
-        profile: selection.profile,
+        profile,
       })
       const content = existsSync(target) ? readFileSync(target, 'utf8') : ''
       return {
         ok: outcome.status === 'ok' && content === WRITING_PROBE_CONTENT,
         output: outcome.output,
       }
-    } finally {
-      try {
-        await ports.resetSandbox()
-      } finally {
-        try {
-          await askListener?.close()
-        } finally {
-          ports.removeWorktree(worktree)
-        }
-      }
-    }
+    })
   } catch (error) {
     return { ok: false, output: String((error as Error).message ?? error) }
   }
@@ -158,9 +74,7 @@ export async function probeAgentWrites(
 
 export function writingProbePorts(callAgent: WritingProbeAgentCall): WritingProbePorts {
   return {
-    ...defaultWorktreePorts,
+    ...capabilityProbeSandboxPorts(),
     callAgent,
-    openAskListener: openProbeAskListener,
-    resetSandbox,
   }
 }

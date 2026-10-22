@@ -17,6 +17,9 @@ import {
   serializePathSet,
   type TriageReviewRow,
 } from '../review/review-group.ts'
+import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
+import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
+import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -36,6 +39,7 @@ export type PullRequestChange = {
   group: ChangeGroup
   tier: 0 | 1 | 2 | 3
   applicability: ApplicableReview
+  roundApplicability?: ApplicableReview
 }
 
 const command = (cwd: string, argv: string[], label: string): string => {
@@ -74,6 +78,30 @@ export function resolvePullRequestChange(
   const tree = runGit(cwd, ['rev-parse', '--verify', `${tip}^{tree}`])
   const measured = measureChangeGroup(cwd, project, branch, tip)
   if (!measured) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
+  const trunk = project.settings.trunk!.trim()
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
+    trunk,
+    (args) =>
+      Bun.spawnSync(['git', ...args], {
+        cwd,
+        env: targetGitEnvironment(cwd),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }).exitCode === 0,
+  )
+  const postFix = postFixReviewDecision({
+    facts: gatherPostFixReviewFacts({
+      database,
+      repo: cwd,
+      from: measured.base,
+      to: tip,
+      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
+      project: project.name,
+      branch,
+    }),
+    tier: measured.tier.tier,
+    review: project.settings.review,
+  })
   return {
     project,
     branch,
@@ -82,6 +110,13 @@ export function resolvePullRequestChange(
     group: measured.group,
     tier: measured.tier.tier,
     applicability: measured.applicability,
+    roundApplicability: roundApplicabilityForChange({
+      database,
+      group: measured.group,
+      relevant: measured.applicability,
+      postFix,
+      review: project.settings.review,
+    }),
   }
 }
 
@@ -104,6 +139,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     tip: change.tip,
     tier: change.tier,
     applicableReview: change.applicability,
+    roundReview: change.roundApplicability,
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
     branchReviewGroups,

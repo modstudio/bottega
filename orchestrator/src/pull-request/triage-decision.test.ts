@@ -645,6 +645,52 @@ describe('pull-request triage decision', () => {
     ).toMatchObject({ complete: false, missingLenses: ['craft'] })
   })
 
+  test('a later round admits required exact lenses and credits a clean earlier lens', () => {
+    const earlier = review({
+      reviewId: 3,
+      tier: 3,
+      patchId: 'patch-before-fix',
+      lensIdentities: ['correctness', 'craft', 'test-quality', 'architecture'],
+      lenses: [
+        { recordId: 'lens-correctness-old', lens: 'correctness', graded: true },
+        { recordId: 'lens-craft-old', lens: 'craft', graded: true },
+        { recordId: 'lens-test-old', lens: 'test-quality', graded: true },
+        { recordId: 'lens-architecture-old', lens: 'architecture', graded: true },
+      ],
+    })
+    const current = review({
+      reviewId: 4,
+      tier: 3,
+      patchId: 'patch-a',
+      lensIdentities: ['correctness', 'craft', 'test-quality'],
+      lenses: [
+        { recordId: 'lens-correctness-new', lens: 'correctness', graded: true },
+        { recordId: 'lens-craft-new', lens: 'craft', graded: true },
+        { recordId: 'lens-test-new', lens: 'test-quality', graded: true },
+      ],
+    })
+
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          applicableReview: {
+            lenses: ['correctness', 'craft', 'test-quality', 'architecture'],
+          },
+          roundReview: { lenses: ['correctness', 'craft', 'test-quality'] },
+          reviews: [current],
+          branchReviewGroups: [branchGroup([current]), branchGroup([earlier])],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: {
+        admissionPath: 'exact_review',
+        reviewRecordIds: ['review-3', 'review-4'],
+      },
+    })
+  })
+
   test('a second opinion requires two completed runs on different models', () => {
     const opinion = (id: number, model: string) => ({
       recordId: `lens-${id}`,
