@@ -1199,6 +1199,7 @@ function routePolicyEligibility(
           agent.name,
           AGENTS[agent.name]!,
           agent.defaultTransport,
+          explicitlyNamedAgent === agent.name,
           metered.mayAutoRouteNamedJob,
         )
       : null
@@ -1215,6 +1216,7 @@ export function agentsIneligibleForTransport(jobName: string, transport: 'cli' |
           agent.name,
           agent,
           transport,
+          false,
           policy.mayAutoRouteNamedJob,
         ) !== null
       )

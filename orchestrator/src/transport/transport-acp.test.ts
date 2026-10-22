@@ -281,7 +281,7 @@ describe('ACP transport selection', () => {
       'not pinned cli transport',
     )
     expect(
-      transportPinIneligibility('review-lens', acpAgent.name, acpAgent, 'acp', true),
+      transportPinIneligibility('review-lens', acpAgent.name, acpAgent, 'acp', false, true),
     ).toBeNull()
   })
 
