@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   branchInventoryDecision,
-  branchReclaimAction,
+  branchMonitorConditions,
   existingBranchesWithoutWorktrees,
 } from './monitor-branches.ts'
 
@@ -39,12 +39,19 @@ test('a failed local branch inventory selects nothing and reports the project er
   })
 })
 
-test('formats reclaim actions inside and outside the monitor project scope', () => {
-  const actions = new Map([['candidate', 'would reclaim sample:candidate']])
-  expect(branchReclaimAction('sample', 'sample', 'candidate', actions)).toBe(
-    'would reclaim sample:candidate',
-  )
-  expect(branchReclaimAction('other', 'sample', 'candidate', actions)).toBe(
-    'reported; reclaim refused by monitor scope: sample is outside invoked project other',
-  )
+test('uses the adapter-provided refusal for an out-of-scope candidate', () => {
+  const action =
+    'reported; reclaim refused by monitor scope: sample is outside invoked project other'
+  expect(
+    branchMonitorConditions(
+      'sample',
+      [{ branch: 'candidate', started_at: '2026-09-30T10:00:00.000Z' }],
+      new Map([['candidate', action]]),
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      subject: 'sample:candidate',
+      action,
+    }),
+  ])
 })

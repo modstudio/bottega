@@ -107,7 +107,9 @@ function monitorBranchReclaimActions(
   project: string,
   branches: readonly string[],
 ): Map<string, string> {
-  return scopeProject === project ? reclaimBranchesDryRun(project, branches) : new Map()
+  if (scopeProject === project) return reclaimBranchesDryRun(project, branches)
+  const action = `reported; reclaim refused by monitor scope: ${project} is outside invoked project ${scopeProject ?? 'unknown'}`
+  return new Map(branches.map((branch) => [branch, action]))
 }
 
 async function initialMonitorObservations(
@@ -866,7 +868,6 @@ export async function monitor(
       branchInventory.branches.map((branch) => branch.branch),
     )
     for (const condition of branchMonitorConditions(
-      reclaimProject?.name ?? null,
       project.name,
       branchInventory.branches,
       reclaimActions,

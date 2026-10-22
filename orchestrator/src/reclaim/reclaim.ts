@@ -8,6 +8,7 @@ import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-st
 import {
   type BranchesReport,
   branchesReport,
+  classifyMintedBranch,
   classifyMintedBranchFromReport,
 } from '../branch/branches.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -135,9 +136,11 @@ function reclaimClassification(
   branch: string,
   options: { dryRun?: boolean; branchReport?: BranchesReport },
 ): BranchLanding['state'] {
-  const report =
-    options.dryRun && options.branchReport ? options.branchReport : branchesReport({ project })
-  return classifyMintedBranchFromReport(report, project, branch).state
+  return (
+    options.dryRun && options.branchReport
+      ? classifyMintedBranchFromReport(options.branchReport, project, branch)
+      : classifyMintedBranch(project, branch)
+  ).state
 }
 
 type WorktreeProof = {
@@ -506,28 +509,27 @@ export function reclaimBranch(
   )
 }
 
-type BranchReclaimDependencies = {
-  gatherReport: (project: string) => BranchesReport
-  reclaim: (subject: string, report: BranchesReport) => ReclaimResult
-}
-
-const branchReclaimDependencies: BranchReclaimDependencies = {
-  gatherReport: (project) => branchesReport({ project }),
-  reclaim: (subject, report) => reclaimBranch(subject, { dryRun: true, branchReport: report }),
-}
-
 /** Evaluate dry-run reclaim candidates against one gathered project branch report. */
 export function reclaimBranchesDryRun(
   project: string,
   branches: readonly string[],
-  dependencies: BranchReclaimDependencies = branchReclaimDependencies,
+  gatherReport: (project: string) => BranchesReport = (name) => branchesReport({ project: name }),
 ): Map<string, string> {
   if (branches.length === 0) return new Map()
-  const report = dependencies.gatherReport(project)
+  let report: BranchesReport
+  try {
+    report = gatherReport(project)
+  } catch (cause) {
+    const action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}`
+    return new Map(branches.map((branch) => [branch, action]))
+  }
   return new Map(
     branches.map((branch) => {
       try {
-        return [branch, dependencies.reclaim(`${project}:${branch}`, report).action]
+        return [
+          branch,
+          reclaimBranch(`${project}:${branch}`, { dryRun: true, branchReport: report }).action,
+        ]
       } catch (cause) {
         return [branch, `reported; reclaim errored: ${String((cause as Error).message ?? cause)}`]
       }
