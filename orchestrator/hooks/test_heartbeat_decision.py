@@ -27,13 +27,14 @@ class HeartbeatDecisionTest(unittest.TestCase):
             hooks.mkdir(parents=True)
             binary.mkdir()
             shutil.copy2(PATH, hooks / PATH.name)
+            shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
             fake = binary / "bottega"
             fake.write_text(
                 """#!/bin/sh
 case \"$*\" in
   \"board presence\") exit 0 ;;
-  \"question inbox --all --json\") printf '[]\\n' ;;
+  \"question inbox --all --active --json\") printf '[]\\n' ;;
   \"run list --limit 200 --json\")
     printf '%s\\n' '{\"record_id\":\"01990000-0000-7000-8000-000000000001\",\"number\":1,\"job\":\"fixture\",\"agent\":\"codex\",\"status\":\"ok\",\"session_id\":\"other\",\"started_at\":\"2026-01-01T00:00:00Z\",\"latency_ms\":1}' ;;
   \"machine monitor --notices --json\")

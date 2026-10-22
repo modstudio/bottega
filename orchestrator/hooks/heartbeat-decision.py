@@ -166,6 +166,6 @@ if __name__ == "__main__":
         )
     elif sys.argv[1:] == ["inbox"]:
         decision = decide_inbox_questions(json.load(sys.stdin))
-        print(decision.answerable_now, decision.parked_here, decision.state_key, sep="\t")
+        print(decision.state_key)
     else:
         print(monitor_failure_reason(sys.stdin.buffer.read()))

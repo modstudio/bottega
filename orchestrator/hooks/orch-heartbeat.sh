@@ -8,9 +8,9 @@
 # whether it needs a wake or is genuinely waiting. That ambiguity is the whole
 # reason this exists: it collapses to four states, two of which are actionable.
 #
-#   BLOCKED  a worker asked a question; the session must rule and resume it
+#   BLOCKED  question_is_answerable_now accepts a question; the session must act
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
-#   WAITING  runs or landings still going, elapsed shown so a hung one is visible
+#   WAITING  runs or landings still going, or a workflow ruling was parked here
 #   CLEAR    no runs, no landings, nothing asked, and nothing stalled -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
@@ -26,10 +26,9 @@
 # and a lower interval is what actually gets a blocked worker noticed sooner -
 # the poll can be frequent precisely because only transitions are expensive.
 #
-# The state key is (asking-count, run-count, sorted run ids with each run's
-# liveness class, landing-count, sorted landing ids). A run changing liveness
-# class is a state change even when the ids are unchanged. Elapsed time never
-# enters the key.
+# The state key is the inbox identity set, plus sorted run ids with each run's
+# liveness class and sorted landing ids. A run changing liveness class is a
+# state change even when the ids are unchanged. Elapsed time never enters the key.
 #
 # CLEAR is silent so this stays cheap to run often: the answer to "should this
 # session still be waiting" is only worth a notification when it is yes, or when
@@ -196,7 +195,7 @@ for ((i = 1; i <= MAX; i++)); do
     exit 2
   fi
 
-  inbox_observed=$(printf '%s' "$inbox_raw" | python3 "$ROOT/hooks/heartbeat-decision.py" inbox 2>/dev/null); inbox_parse_rc=$?
+  inbox_ids=$(printf '%s' "$inbox_raw" | python3 "$ROOT/hooks/heartbeat-decision.py" inbox 2>/dev/null); inbox_parse_rc=$?
 
   observed=$(printf '%s' "$runs_raw" | SID="$SID" INTERVAL="$INTERVAL" python3 -c '
 import sys, json, os, datetime
@@ -363,10 +362,6 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     sleep "$INTERVAL"; continue
   fi
 
-  asking=${inbox_observed%%$'\t'*}; inbox_rest=${inbox_observed#*$'\t'}
-  parked=${inbox_rest%%$'\t'*}; inbox_ids=${inbox_rest#*$'\t'}
-  asking=${asking:-0}
-  parked=${parked:-0}
   state=${observed%%$'\n'*}
   state=${state#*$'\t'}
   n=${state%%$'\t'*}; rest=${state#*$'\t'}
