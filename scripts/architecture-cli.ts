@@ -40,6 +40,7 @@ export const cliModules = [
     allowed: [
       'commander',
       'shared/brand.ts',
+      'shared/commander-public-path.ts',
       'hub/src/cli-program.ts',
       'orchestrator/src/agent/agent-commands.ts',
       'orchestrator/src/cli/program.ts',

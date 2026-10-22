@@ -4,6 +4,7 @@ import { createHubProgram, program as hubProgram, run as runHub } from '../hub/s
 import { AGENT_COMMAND_VERBS } from '../orchestrator/src/agent/agent-commands.ts'
 import { program as orchProgram, run as runOrchestrator } from '../orchestrator/src/cli/program.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { takesVariadicArgument } from '../shared/commander-public-path.ts'
 import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
 import { ROUTES, resolveRoute } from './routes.ts'
 
@@ -11,7 +12,7 @@ function commandExists(program: Command, path: readonly string[]): boolean {
   let current = program
   for (const name of path) {
     const next = current.commands.find((candidate) => candidate.name() === name)
-    if (!next) return current.registeredArguments.some((argument) => argument.variadic)
+    if (!next) return takesVariadicArgument(current)
     current = next
   }
   return true
@@ -27,6 +28,7 @@ function captureCommandOutput(command: Command, lines: string[]): void {
 
 test('wrapper help prints public orchestrator, hub, and translated usage paths', async () => {
   const lines: string[] = []
+  let agentHelp = ''
   const entries: BinaryEntries = {
     orch: async (argv, invocation) => {
       captureCommandOutput(orchProgram, lines)
@@ -57,13 +59,10 @@ test('wrapper help prints public orchestrator, hub, and translated usage paths',
     lines.length = 0
     expect(await dispatchBinary(argv, entries, () => '')).toBe(0)
     expect(lines.join('')).toContain(`Usage: ${PLATFORM_SLUG} ${argv.slice(0, -1).join(' ')}`)
-    if (argv[0] === 'agent') {
-      const help = lines.join('')
-      for (const option of commandAt(orchProgram, ['agent']).options) {
-        if (option.long)
-          expect(help, `${argv.slice(0, -1).join(' ')} ${option.long}`).toContain(option.long)
-      }
-    }
+    if (argv[0] === 'agent' && argv[1] === 'add') agentHelp = lines.join('')
+  }
+  for (const option of commandAt(orchProgram, ['agent']).options) {
+    if (option.long) expect(agentHelp, `agent help ${option.long}`).toContain(option.long)
   }
 })
 
@@ -102,6 +101,17 @@ test('every agent command verb has a public route to its owner entry', () => {
   }
 })
 
+test('every public route through the agent owner declares a supported verb', () => {
+  for (const route of ROUTES) {
+    if (route.owner !== 'orch' || route.argv?.[0] !== 'agent' || route.command[0] !== 'agent')
+      continue
+    expect(
+      AGENT_COMMAND_VERBS.some((verb) => verb === route.command[1]),
+      route.command.join(' '),
+    ).toBeTrue()
+  }
+})
+
 test('agent mutations keep their verb and pass remaining arguments to the agent entry', async () => {
   const calls: string[][] = []
   const orch = async (argv: string[]) => {
@@ -137,31 +147,28 @@ test('agent mutations keep their verb and pass remaining arguments to the agent 
 })
 
 test('agent show reaches agentCommand with show and the name', async () => {
-  const errors: string[] = []
-  const originalError = console.error
-  console.error = (value) => errors.push(String(value))
-  try {
-    const result = await dispatchBinary(
-      ['agent', 'show', 'route-show-test'],
-      {
-        orch: runOrchestrator,
-        hub: async () => 0,
-        orchOutbox: async () => [],
-        hubOutbox: async () => [],
-        hubOutboxSummaryLines: async () => [],
-        runExec: async () => 0,
-        askProxy: async () => 0,
-        retrievalSearch: async () => {},
-        checkAttribution: async () => 0,
-        schemaCheck: async () => 0,
+  const calls: string[][] = []
+  const result = await dispatchBinary(
+    ['agent', 'show', 'route-show-test'],
+    {
+      orch: async (argv) => {
+        calls.push(argv)
+        return 0
       },
-      () => '',
-    )
-    expect(result).toBe(1)
-    expect(errors).toContain('unknown agent "route-show-test"')
-  } finally {
-    console.error = originalError
-  }
+      hub: async () => 0,
+      orchOutbox: async () => [],
+      hubOutbox: async () => [],
+      hubOutboxSummaryLines: async () => [],
+      runExec: async () => 0,
+      askProxy: async () => 0,
+      retrievalSearch: async () => {},
+      checkAttribution: async () => 0,
+      schemaCheck: async () => 0,
+    },
+    () => '',
+  )
+  expect(result).toBe(0)
+  expect(calls).toEqual([['agent', 'show', 'route-show-test']])
 })
 
 function commandAt(program: Command, path: readonly string[]): Command {

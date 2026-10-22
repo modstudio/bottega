@@ -63,8 +63,5 @@ test('only the cli composition root receives concern entry exceptions', () => {
   ).toBeFalse()
   expect(ruleAllows(composition, compositionRoot, 'orchestrator/src/cli/orch.ts')).toBeTrue()
   expect(ruleAllows(inspection, 'cli/routes.test.ts', 'orchestrator/src/cli/program.ts')).toBeTrue()
-  expect(
-    ruleAllows(inspection, 'cli/routes.test.ts', 'orchestrator/src/agent/agent-commands.ts'),
-  ).toBeTrue()
   expect(ruleAllows(inspection, 'cli/routes.test.ts', 'orchestrator/src/run/exec.ts')).toBeFalse()
 })

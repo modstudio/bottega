@@ -24,8 +24,28 @@ import {
 } from './model-host.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
-export const AGENT_COMMAND_VERBS = ['add', 'set', 'remove', 'probe', 'show', 'list'] as const
-type AgentCommandVerb = (typeof AGENT_COMMAND_VERBS)[number]
+type AgentCommandVerb = 'add' | 'set' | 'remove' | 'probe' | 'show' | 'list'
+type AgentCommandHandler = (
+  name: string,
+  argv: string[],
+  presentation: Presentation,
+) => void | Promise<void>
+
+const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
+  add: addCommand,
+  set: (name, argv, presentation) => {
+    presentation.log(JSON.stringify(setAgent(name, mutation(argv))))
+  },
+  remove: (name, _argv, presentation) => {
+    removeAgent(name)
+    presentation.log(`removed ${name}`)
+  },
+  probe: (name, _argv, presentation) => probeCommand(name, presentation),
+  show: (name, _argv, presentation) => showCommand(name, presentation),
+  list: (_name, argv, presentation) => listCommand(argv.includes('--json'), presentation),
+}
+
+export const AGENT_COMMAND_VERBS = Object.keys(AGENT_COMMAND_HANDLERS) as AgentCommandVerb[]
 
 function isAgentCommandVerb(value: string | undefined): value is AgentCommandVerb {
   return AGENT_COMMAND_VERBS.some((verb) => verb === value)
@@ -86,19 +106,7 @@ export async function agentCommand(argv: string[], presentation: Presentation): 
       `unknown agent command "${sub ?? ''}"; valid commands: ${AGENT_COMMAND_VERBS.join(', ')}`,
     )
   }
-  if (sub === 'add') return addCommand(name!, argv, presentation)
-  if (sub === 'set') {
-    presentation.log(JSON.stringify(setAgent(name!, mutation(argv))))
-    return
-  }
-  if (sub === 'remove') {
-    removeAgent(name!)
-    presentation.log(`removed ${name}`)
-    return
-  }
-  if (sub === 'probe') return probeCommand(name!, presentation)
-  if (sub === 'show') return showCommand(name!, presentation)
-  if (sub === 'list') listCommand(argv.includes('--json'), presentation)
+  await AGENT_COMMAND_HANDLERS[sub](name!, argv, presentation)
 }
 
 function addCommand(name: string, argv: string[], presentation: Presentation): void {
