@@ -196,6 +196,127 @@ esac
             self.assertNotIn("DEGRADED", completed.stdout)
             self.assertNotIn("HEARTBEAT ENDED", completed.stdout)
 
+    def test_heartbeat_restarts_after_helper_update_without_reannouncing_state(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            helper = hooks / PATH.name
+            shutil.copy2(PATH, helper)
+            shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+            row = json.dumps(
+                {
+                    "record_id": "01990000-0000-7000-8000-000000000001",
+                    "number": 1,
+                    "job": "fixture",
+                    "agent": "codex",
+                    "status": "running",
+                    "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
+                    "session_id": "fixture-session",
+                    "started_at": started,
+                    "latency_ms": None,
+                    "live_member_id": "01990000-0000-7000-8000-000000000002",
+                    "live_member_number": 501,
+                    "live_member_status": "running",
+                    "waiting_for_host_capacity": False,
+                    "host_wait_since": None,
+                    "stall_state": "healthy",
+                    "stall": None,
+                    "turns": [{"started_at": started, "latency_ms": None}],
+                }
+            )
+            fake = binary / "bottega"
+            fake.write_text(
+                f'''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --json") printf '[]\\n' ;;
+  "run list --live --json") printf '%s\\n' '{row}' ;;
+  "machine monitor --notices --json")
+    if [ ! -f "$FAKE_UPDATED" ]; then
+      : >"$FAKE_UPDATED"
+      printf '\\n' >>"$FAKE_HEARTBEAT_HELPER"
+    fi
+    printf '[]\\n' ;;
+  *) exit 0 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            completed = subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "2"],
+                cwd=checkout,
+                env={
+                    **os.environ,
+                    "ORCH_DB": str(checkout / "absent.db"),
+                    "FAKE_UPDATED": str(checkout / "updated"),
+                    "FAKE_HEARTBEAT_HELPER": str(helper),
+                },
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertEqual(completed.stdout.count("heartbeat updated on disk; restarting"), 1)
+            self.assertEqual(completed.stdout.count("WAITING"), 1, completed.stdout)
+
+    def test_decision_failure_includes_screened_first_stderr_line(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            (hooks / PATH.name).write_text(
+                '''#!/usr/bin/env python3
+import sys
+if sys.argv[1:] == ["tick"]:
+    print("decision exploded", file=sys.stderr)
+    print("ignored second line", file=sys.stderr)
+    raise SystemExit(7)
+reason = next((line for line in sys.stdin.read().splitlines() if line.strip()), "stderr empty")
+print(reason)
+''',
+                encoding="utf-8",
+            )
+            fake = binary / "bottega"
+            fake.write_text(
+                '''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --json") printf '[]\\n' ;;
+  "run list --live --json") exit 0 ;;
+  "machine monitor --notices --json") printf '[]\\n' ;;
+  *) exit 0 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            completed = subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                cwd=checkout,
+                env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertIn(
+                "DEGRADED - heartbeat decision step failed with status 7: decision exploded; continuing to watch.",
+                completed.stdout,
+            )
+            self.assertNotIn("ignored second line", completed.stdout)
+
     def test_a_chain_finishing_between_ticks_is_announced_once(self):
         self.assert_completion_announcement("ok", None, "FINISHED 7/fixture codex 2.0s")
 

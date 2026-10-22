@@ -76,7 +76,8 @@ NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS=0
 HEARTBEAT_CLEAR_EXIT_STATUS=10
 
-prev_key=""
+prev_key="${HEARTBEAT_PREVIOUS_STATE_KEY:-}"
+unset HEARTBEAT_PREVIOUS_STATE_KEY
 since_emit=0
 prev_monitor_failure_key=""
 monitor_failure_ticks=0
@@ -88,6 +89,15 @@ reported_ids=""
 previous_live_roots=""
 ACTIVE_GUARDED_PID=""
 ACTIVE_WATCHDOG_PID=""
+
+heartbeat_source_fingerprint() {
+  cksum "$0" "$ROOT/hooks/heartbeat-decision.py" 2>/dev/null
+}
+
+heartbeat_start_fingerprint=$(heartbeat_source_fingerprint) || {
+  echo "DEGRADED: cannot fingerprint heartbeat sources; re-arm from the main checkout"
+  exit 2
+}
 
 start_watchdog() {
   local watchdog_target_pid="$1"
@@ -176,6 +186,12 @@ for ((i = 1; i <= MAX; i++)); do
   if [ ! -d "$ROOT" ]; then
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2
+  fi
+  heartbeat_current_fingerprint=$(heartbeat_source_fingerprint) || heartbeat_current_fingerprint="unreadable"
+  if [ "$heartbeat_current_fingerprint" != "$heartbeat_start_fingerprint" ]; then
+    echo "heartbeat updated on disk; restarting"
+    export HEARTBEAT_PREVIOUS_STATE_KEY="$prev_key"
+    exec "$0" "$@"
   fi
   (cd "$CALLER_DIRECTORY" && CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" board presence) >/dev/null 2>&1 || true
   # The heartbeat is session-scoped, not checkout-scoped. Ask for the complete
@@ -480,11 +496,12 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
     combined_detail="$combined_detail$landing_detail"
   fi
+  decision_err=$(mktemp)
   decision_output=$(HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
     HEARTBEAT_ASKING="$asking" HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
-      python3 "$ROOT/hooks/heartbeat-decision.py" tick)
+      python3 "$ROOT/hooks/heartbeat-decision.py" tick 2>"$decision_err")
   decision_rc=$?
   if [ "$decision_rc" -eq "$HEARTBEAT_CLEAR_EXIT_STATUS" ]; then
     should_exit=1
@@ -492,8 +509,11 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     should_exit=0
   else
     should_exit=0
-    echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc; continuing to watch."
+    decision_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$decision_err" 2>/dev/null)
+    [ -n "$decision_reason" ] || decision_reason="stderr screening failed"
+    echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc: $decision_reason; continuing to watch."
   fi
+  rm -f "$decision_err"
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
     [ -z "$decision_output" ] || printf '%s\n' "$decision_output"
