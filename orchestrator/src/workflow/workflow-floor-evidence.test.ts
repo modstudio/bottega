@@ -120,7 +120,14 @@ const ports: FloorEvidencePorts = {
   runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
   resolveTreeCommit: () => 'abc',
-  viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
+  viewPullRequest: () => ({
+    state: 'MERGED',
+    mergedAt: '2026-09-01',
+    headRefName: 'DEV-977-work',
+    baseRefName: 'main',
+    url: 'https://github.com/acme/app/pull/15',
+  }),
+  readOriginUrl: () => 'git@github.com:acme/app.git',
 }
 
 const database = testDatabaseFixture((d) => {
@@ -591,7 +598,7 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   ).run()
   expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
     artifact: { ref: 'exec:2', exists: true },
-    exec: { id: 2, command: 'true', exitCode: 0, pullRequestCreate: false },
+    exec: { id: 2, command: 'true', argv: ['true'], exitCode: 0 },
   })
   expect(() => gather(d, { artifact: 'probe:2' })).toThrow(
     '--artifact probe:2 is recorded as exec:2',
@@ -603,7 +610,7 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
   expect(gather(d, { artifact: 'exec:3' }).exec).toMatchObject({
     id: 3,
-    pullRequestCreate: true,
+    argv: [PLATFORM_SLUG, 'pr', 'create'],
   })
 })
 
@@ -622,11 +629,19 @@ test('pull-request artifacts resolve and match the cursor branch and project tru
           baseRefName: 'main',
           url,
         }),
+        readOriginUrl: () => 'https://github.com/acme/app.git',
       },
     ),
   ).toMatchObject({
     artifact: { ref: url, exists: true },
-    pullRequest: { url, headMatches: true, baseMatches: true },
+    pullRequest: {
+      url,
+      repository: 'acme/app',
+      projectRepository: 'acme/app',
+      state: 'OPEN',
+      head: 'DEV-977-work',
+      base: 'main',
+    },
   })
 })
 
@@ -820,8 +835,19 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   expect(
-    gather(d, { task: 'DEV-977' }, { viewPullRequest: () => ({ state: 'OPEN', mergedAt: null }) })
-      .task,
+    gather(
+      d,
+      { task: 'DEV-977' },
+      {
+        viewPullRequest: () => ({
+          state: 'OPEN',
+          mergedAt: null,
+          headRefName: 'DEV-977-work',
+          baseRefName: 'main',
+          url: 'https://github.com/acme/app/pull/12',
+        }),
+      },
+    ).task,
   ).toEqual({
     key: 'DEV-977',
     status: 'done',

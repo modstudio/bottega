@@ -20,7 +20,7 @@ export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact':
-    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>`',
+    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id> | GitHub pull-request link>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
@@ -100,17 +100,25 @@ export type ValidatedEvidence = {
   exec?: {
     id: number
     command: string
+    argv: string[] | null
     exitCode: number
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
     createdAfterStepActivation: boolean
-    pullRequestCreate?: boolean
+    checkoutBranch: string | null
+    headCommit: string | null
+    cursorBranch: string | null
   }
   artifact?: { ref: string; exists: boolean }
   pullRequest?: {
     url: string
-    headMatches: boolean
-    baseMatches: boolean
+    repository: string | null
+    projectRepository: string | null
+    state: string
+    head: string
+    base: string
+    cursorBranch: string
+    trunk: string
   }
   task?: {
     key: string
@@ -157,7 +165,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>'
+    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id> | GitHub pull-request link>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -319,6 +327,120 @@ function rulingMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?:
   return question || triaged
 }
 
+export type PullRequestEvidenceFacts =
+  | {
+      kind: 'exec'
+      argv: string[] | null
+      exitCode: number
+      sessionBound: boolean
+      createdAfterStepActivation: boolean
+      checkoutBranch: string | null
+      headCommit: string | null
+      cursorBranch: string | null
+    }
+  | {
+      kind: 'link'
+      repository: string | null
+      projectRepository: string | null
+      state: string
+      head: string
+      base: string
+      cursorBranch: string
+      trunk: string
+    }
+
+export type PullRequestEvidenceDecision = { met: true } | { met: false; condition: string }
+
+function commandBasename(value: string): string {
+  return value.split(/[\\/]/).at(-1) ?? ''
+}
+
+function decidePullRequestExec(
+  facts: Extract<PullRequestEvidenceFacts, { kind: 'exec' }>,
+): PullRequestEvidenceDecision {
+  const argv = facts.argv
+  if (
+    !argv ||
+    commandBasename(argv[0] ?? '') !== PLATFORM_SLUG ||
+    argv[1] !== 'pr' ||
+    argv[2] !== 'create'
+  )
+    return { met: false, condition: `the recorded command is not ${PLATFORM_SLUG} pr create` }
+  if (facts.exitCode !== 0)
+    return { met: false, condition: `the recorded command exited ${facts.exitCode}, not 0` }
+  if (!facts.sessionBound)
+    return { met: false, condition: 'the recorded command is not bound to this cursor session' }
+  if (!facts.createdAfterStepActivation)
+    return { met: false, condition: 'the recorded command predates this step activation' }
+  if (!facts.cursorBranch) return { met: false, condition: 'this cursor has no branch' }
+  if (facts.checkoutBranch !== facts.cursorBranch)
+    return {
+      met: false,
+      condition: `the recorded command checkout branch is ${facts.checkoutBranch ?? 'unset'}, not this cursor's ${facts.cursorBranch}`,
+    }
+  if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
+  return { met: true }
+}
+
+function decidePullRequestLink(
+  facts: Extract<PullRequestEvidenceFacts, { kind: 'link' }>,
+): PullRequestEvidenceDecision {
+  if (!facts.projectRepository)
+    return { met: false, condition: 'the project origin is not a GitHub repository' }
+  if (facts.repository !== facts.projectRepository)
+    return {
+      met: false,
+      condition: `the pull request repository is ${facts.repository ?? 'unset'}, not this project's ${facts.projectRepository}`,
+    }
+  if (facts.state !== 'OPEN' && facts.state !== 'MERGED')
+    return {
+      met: false,
+      condition: `the pull request state is ${facts.state || 'unset'}, not open or merged`,
+    }
+  if (facts.head !== facts.cursorBranch)
+    return {
+      met: false,
+      condition: `the pull request head is ${facts.head}, not this cursor's ${facts.cursorBranch}`,
+    }
+  if (facts.base !== facts.trunk)
+    return {
+      met: false,
+      condition: `the pull request base is ${facts.base}, not this project's ${facts.trunk}`,
+    }
+  return { met: true }
+}
+
+/** Keeps every policy choice about evidence that proves a pull request in one pure decision. */
+export function decidePullRequestEvidence(
+  facts: PullRequestEvidenceFacts | undefined,
+): PullRequestEvidenceDecision {
+  if (!facts) return { met: false, condition: 'no pull-request evidence was supplied' }
+  return facts.kind === 'exec' ? decidePullRequestExec(facts) : decidePullRequestLink(facts)
+}
+
+function execPullRequestFacts(
+  evidence: ValidatedEvidence,
+): Extract<PullRequestEvidenceFacts, { kind: 'exec' }> | undefined {
+  const exec = evidence.exec
+  if (!exec) return undefined
+  return {
+    kind: 'exec',
+    argv: exec.argv,
+    exitCode: exec.exitCode,
+    sessionBound: exec.sessionMatches || exec.sessionAdoptedCursor,
+    createdAfterStepActivation: exec.createdAfterStepActivation,
+    checkoutBranch: exec.checkoutBranch,
+    headCommit: exec.headCommit,
+    cursorBranch: exec.cursorBranch,
+  }
+}
+
+function linkPullRequestFacts(
+  evidence: ValidatedEvidence,
+): Extract<PullRequestEvidenceFacts, { kind: 'link' }> | undefined {
+  return evidence.pullRequest ? { kind: 'link', ...evidence.pullRequest } : undefined
+}
+
 function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const gate = evidence.gate
   const run = evidence.run
@@ -337,10 +459,10 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   const execOk = Boolean(
     evidence.exec?.exitCode === floor.expectedExitCode &&
       (evidence.exec.sessionMatches || evidence.exec.sessionAdoptedCursor) &&
-      evidence.exec.createdAfterStepActivation &&
-      (floor.commandEvidence !== 'pull-request' || evidence.exec.pullRequestCreate),
+      evidence.exec.createdAfterStepActivation,
   )
-  if (floor.commandEvidence === 'pull-request') return execOk
+  if (floor.commandEvidence === 'pull-request')
+    return decidePullRequestEvidence(execPullRequestFacts(evidence)).met
   return gateOk || runOk || probeOk || execOk
 }
 
@@ -388,7 +510,7 @@ function floorIsMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
   if (floor.kind === 'recorded-artifact')
     return floor.commandEvidence === 'pull-request'
-      ? Boolean(evidence.pullRequest?.headMatches && evidence.pullRequest.baseMatches)
+      ? decidePullRequestEvidence(linkPullRequestFacts(evidence)).met
       : evidence.artifact?.exists === true
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
   throw new Error(`unknown floor kind "${String(floor.kind)}"`)
@@ -411,12 +533,18 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
     : ` reading back as ${floor.expectedStatus}${pullRequest}`
 }
 
-function pullRequestUnmetMessage(floor: Floor): string | null {
+function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string | null {
   if (floor.commandEvidence !== 'pull-request') return null
-  if (floor.kind === 'command-exit')
-    return `floor command-exit is unmet: pass --artifact exec:<id> from a successful \`${PLATFORM_SLUG} pr create\` command recorded for this step`
-  if (floor.kind === 'recorded-artifact')
-    return 'floor recorded-artifact is unmet: pass --artifact <pull-request link> whose head and base match this cursor'
+  if (floor.kind === 'command-exit') {
+    const decision = decidePullRequestEvidence(execPullRequestFacts(evidence))
+    if (!decision.met)
+      return `floor command-exit is unmet: ${decision.condition}; pass --artifact exec:<id> from a successful \`${PLATFORM_SLUG} pr create\` command recorded for this step on this cursor's branch`
+  }
+  if (floor.kind === 'recorded-artifact') {
+    const decision = decidePullRequestEvidence(linkPullRequestFacts(evidence))
+    if (!decision.met)
+      return `floor recorded-artifact is unmet: ${decision.condition}; pass --artifact <pull-request link> in this project's repository whose state is open or merged and whose head and base match this cursor`
+  }
   return null
 }
 
@@ -427,7 +555,7 @@ function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
     const commit = evidence.tree?.commit ?? '<current tree commit>'
     return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
   }
-  const pullRequest = pullRequestUnmetMessage(floor)
+  const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest
   const existing =
     `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +

@@ -1,6 +1,8 @@
 // concern: workflows
 /** Replays process and network floor facts without holding the store write lock. */
 
+import type { PullRequestView } from '../branch/pull-request-view.ts'
+
 type CheckoutResolution = {
   project: string | null
   branch: string | null
@@ -8,14 +10,6 @@ type CheckoutResolution = {
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
   headIsTrunkTipOrAncestor?: boolean
-}
-
-type PullRequestView = {
-  state: string
-  mergedAt: string | null
-  headRefName?: string
-  baseRefName?: string
-  url?: string
 }
 
 type HubTaskRead = {
@@ -35,6 +29,7 @@ export type FloorEvidencePorts = {
     expectedBranch: string | null,
   ) => CheckoutResolution
   viewPullRequest?: (project: string, reference: number | string) => PullRequestView
+  readOriginUrl?: (project: string) => string | null
   resolveTreeCommit?: (worktree: string) => string | null
 }
 

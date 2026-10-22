@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -171,6 +171,11 @@ export const productionFloorPorts = (): FloorEvidencePorts => ({
     if (!row)
       throw new Error(`project ${project} is not registered; cannot view pull request ${number}`)
     return viewPullRequest(row, number)
+  },
+  readOriginUrl: (project) => {
+    const row = projectByName(project)
+    if (!row) throw new Error(`project ${project} is not registered; cannot read its origin`)
+    return gitText(row.path, ['remote', 'get-url', 'origin'])
   },
 })
 
@@ -718,15 +723,34 @@ function pullRequestEvidence(
     )
   const fallback = productionFloorPorts().viewPullRequest!
   const view = invokeFloorEvidencePort(ports, 'viewPullRequest', fallback, identity.project, url)
-  if (!view.url || !view.headRefName || !view.baseRefName)
-    throw new Error(`--artifact ${url} did not resolve to a pull request with a head and base`)
   if (view.url.replace(/\/$/, '') !== url.replace(/\/$/, ''))
     throw new Error(`--artifact ${url} resolved as ${view.url}, not the supplied pull-request link`)
+  const originUrl = invokeFloorEvidencePort(
+    ports,
+    'readOriginUrl',
+    () => gitText(project.path, ['remote', 'get-url', 'origin']),
+    identity.project,
+  )
   return {
     url: view.url,
-    headMatches: view.headRefName === identity.branch,
-    baseMatches: view.baseRefName === trunk,
+    repository: githubRepository(view.url),
+    projectRepository: githubRepository(originUrl),
+    state: view.state,
+    head: view.headRefName,
+    base: view.baseRefName,
+    cursorBranch: identity.branch,
+    trunk,
   }
+}
+
+/** Canonical owner/name for HTTPS, SSH URL, and SCP-like GitHub repository addresses. */
+function githubRepository(value: string | null): string | null {
+  if (!value) return null
+  const match =
+    /^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s:]+)\/([^/\s]+?)(?:\.git)?(?:\/pull\/\d+)?\/?$/i.exec(
+      value.trim(),
+    )
+  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null
 }
 
 function gatherTask(
@@ -817,10 +841,18 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
 function gatheredCommandEvidence(
   kind: 'probe' | 'exec',
   id: number,
-  row: { command: string; exit_code: number; session_id: string | null; created_at: string },
+  row: {
+    command: string
+    cwd: string
+    head_commit: string | null
+    exit_code: number
+    session_id: string | null
+    created_at: string
+  },
   identity: CursorIdentity,
   cursorId: number,
   d: Database,
+  checkout: CheckoutResolution,
 ): Pick<ValidatedEvidence, 'probe' | 'exec'> {
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
   const session = sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
@@ -828,38 +860,30 @@ function gatheredCommandEvidence(
     exec: {
       id,
       command: recordedCommand(row.command),
+      argv: recordedArgv(row.command),
       exitCode: row.exit_code,
       sessionMatches: session.sessionMatches,
       sessionAdoptedCursor: session.sessionAdoptedCursor,
       createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
-      pullRequestCreate: isPullRequestCreateCommand(row.command),
+      checkoutBranch: checkout.branch,
+      headCommit: row.head_commit,
+      cursorBranch: identity.branch,
     },
   }
 }
 
-function isPullRequestCreateCommand(raw: string): boolean {
-  let value: unknown
+function recordedArgv(raw: string): string[] | null {
   try {
-    value = JSON.parse(raw)
+    const value: unknown = JSON.parse(raw)
+    if (Array.isArray(value) && value.every((part) => typeof part === 'string')) return value
   } catch {
-    return false
+    // Older and withheld records are not structured argv.
   }
-  if (!Array.isArray(value) || !value.every((part) => typeof part === 'string')) return false
-  const command = value as string[]
-  return (
-    basename(command[0] ?? '') === PLATFORM_SLUG && command[1] === 'pr' && command[2] === 'create'
-  )
+  return null
 }
 
 function recordedCommand(value: string): string {
-  try {
-    const parsed = JSON.parse(value) as unknown
-    if (Array.isArray(parsed) && parsed.every((part) => typeof part === 'string'))
-      return parsed.join(' ')
-  } catch {
-    // Older and withheld records are already printable text.
-  }
-  return value
+  return recordedArgv(value)?.join(' ') ?? value
 }
 
 function offeredArtifactRunEvidence(
@@ -874,6 +898,23 @@ function offeredArtifactRunEvidence(
     if (run) return { artifactRunOffered: run.record_id }
   }
   return {}
+}
+
+function gatherTreeEvidence(
+  identity: CursorIdentity,
+  ports: FloorEvidencePorts,
+): NonNullable<ValidatedEvidence['tree']> {
+  return {
+    project: identity.project,
+    commit: identity.worktree
+      ? invokeFloorEvidencePort(
+          ports,
+          'resolveTreeCommit',
+          (worktree) => gitText(worktree, ['rev-parse', 'HEAD']),
+          identity.worktree,
+        )
+      : null,
+  }
 }
 
 export function gatherValidatedEvidence(input: {
@@ -897,17 +938,7 @@ export function gatherValidatedEvidence(input: {
       branch,
     )
   const gathered: ValidatedEvidence = {}
-  gathered.tree = {
-    project: input.identity.project,
-    commit: input.identity.worktree
-      ? invokeFloorEvidencePort(
-          ports,
-          'resolveTreeCommit',
-          (worktree) => gitText(worktree, ['rev-parse', 'HEAD']),
-          input.identity.worktree,
-        )
-      : null,
-  }
+  gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positive(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
   const gate = positive(input.evidence.gate, '--gate')
@@ -943,13 +974,29 @@ export function gatherValidatedEvidence(input: {
     if (parsed.kind === 'probe' || parsed.kind === 'exec') {
       const row = d
         .query<
-          { command: string; exit_code: number; session_id: string | null; created_at: string },
+          {
+            command: string
+            cwd: string
+            head_commit: string | null
+            exit_code: number
+            session_id: string | null
+            created_at: string
+          },
           [number]
-        >('SELECT command,exit_code,session_id,created_at FROM probe WHERE id=?')
+        >('SELECT command,cwd,head_commit,exit_code,session_id,created_at FROM probe WHERE id=?')
         .get(parsed.id)!
+      const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
       Object.assign(
         gathered,
-        gatheredCommandEvidence(parsed.kind, parsed.id, row, input.identity, input.cursorId, d),
+        gatheredCommandEvidence(
+          parsed.kind,
+          parsed.id,
+          row,
+          input.identity,
+          input.cursorId,
+          d,
+          checkout,
+        ),
       )
     }
   }

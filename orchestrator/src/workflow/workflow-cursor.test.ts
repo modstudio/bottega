@@ -58,7 +58,13 @@ const testPorts = {
     branch: 'DEV-822-work',
     headIsTipOrAncestor: true,
   }),
-  viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-09-01' }),
+  viewPullRequest: () => ({
+    state: 'MERGED',
+    mergedAt: '2026-09-01',
+    headRefName: 'DEV-822-work',
+    baseRefName: 'main',
+    url: 'https://github.com/acme/app/pull/1',
+  }),
   resolveTreeCommit: () => 'abc',
 }
 
@@ -999,7 +1005,13 @@ describe('workflow cursor adapter', () => {
         },
         viewPullRequest: () => {
           calls.push({ port: 'viewPullRequest', inTransaction: d.inTransaction })
-          return { state: 'MERGED', mergedAt: '2026-09-01' }
+          return {
+            state: 'MERGED',
+            mergedAt: '2026-09-01',
+            headRefName: args.branch,
+            baseRefName: 'main',
+            url: 'https://github.com/acme/app/pull/1',
+          }
         },
         resolveCheckout: () => {
           calls.push({ port: 'resolveCheckout', inTransaction: d.inTransaction })

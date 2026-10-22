@@ -1,4 +1,8 @@
 // concern: merged-pull-request
+import type { PullRequestView } from './pull-request-view.ts'
+
+export type { PullRequestView } from './pull-request-view.ts'
+
 /** Lists merged pull requests and checks whether branch content landed through one. */
 
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -169,14 +173,6 @@ export function targetedTaskBranchPullRequests(
     'all',
     PULL_REQUEST_JSON,
   )
-}
-
-export type PullRequestView = {
-  state: string
-  mergedAt: string | null
-  headRefName: string
-  baseRefName: string
-  url: string
 }
 
 /** Confirm a numbered pull request's merge state through gh. */
