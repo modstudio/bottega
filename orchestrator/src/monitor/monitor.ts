@@ -10,6 +10,7 @@ import { boardEscalations } from '../board/board-service.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { sampleHostLoad } from '../host-load-sample.ts'
+import { hostPressureConditions, sampleHostPressure } from '../host-pressure.ts'
 import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
 import {
@@ -341,6 +342,7 @@ function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: stri
 
 function sampleMonitorHostLoad(database: ReturnType<typeof writableDb>, invocation: number) {
   const sample = sampleHostLoad(database)
+  sampleHostPressure(database, sample)
   database
     .query('UPDATE monitor_invocation SET host_load=? WHERE id=?')
     .run(JSON.stringify(sample), invocation)
@@ -596,6 +598,7 @@ export async function monitor(
   const { database, invocation } = startMonitorInvocation(trigger, startedAt)
   const hostLoad = sampleMonitorHostLoad(database, invocation)
   const { conditions, errors } = await initialMonitorObservations(clock)
+  conditions.push(...hostPressureConditions(database, clock))
   const canonRows = allInjectChecks()
   const canon = {
     findings: canonRows.reduce(

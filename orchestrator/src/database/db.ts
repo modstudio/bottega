@@ -549,15 +549,21 @@ export const sessionId = (database?: Database): string | null => {
 export const SESSION_LIVE_MS = 60 * 60 * 1000
 
 /** Stamp once at the CLI boundary; heartbeat failure must never break a read. */
-export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso()): void {
+export function recordSessionSeen(
+  sid: string | null = sessionId(),
+  at = nowIso(),
+  ancestorPids?: readonly number[],
+): void {
   if (!sid) return
   const d = db()
   if (!connectionWritable) return
   try {
     d.query(
-      `INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)
-       ON CONFLICT(session_id) DO UPDATE SET last_seen = excluded.last_seen`,
-    ).run(sid, at)
+      `INSERT INTO session_seen (session_id,last_seen,ancestor_pids) VALUES (?,?,?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         last_seen=excluded.last_seen,
+         ancestor_pids=COALESCE(excluded.ancestor_pids,session_seen.ancestor_pids)`,
+    ).run(sid, at, ancestorPids ? JSON.stringify(ancestorPids) : null)
   } catch {
     // Liveness is a convenience signal. A failed stamp cannot break a command.
   }
