@@ -715,18 +715,19 @@ function pullRequestEvidence(
   identity: CursorIdentity,
   d: Database,
   ports: FloorEvidencePorts,
+  flag = `--artifact ${url}`,
 ): NonNullable<ValidatedEvidence['pullRequest']> {
   const project = projectByName(identity.project, d)
   if (!project) throw new Error(`project ${identity.project} is not registered`)
   const trunk = project.settings.trunk?.trim()
   if (!identity.branch || !trunk)
     throw new Error(
-      `--artifact ${url} cannot be checked because this cursor has no branch or its project has no trunk`,
+      `${flag} cannot be checked because this cursor has no branch or its project has no trunk`,
     )
   const fallback = productionFloorPorts().viewPullRequest!
   const view = invokeFloorEvidencePort(ports, 'viewPullRequest', fallback, identity.project, url)
   if (view.url.replace(/\/$/, '') !== url.replace(/\/$/, ''))
-    throw new Error(`--artifact ${url} resolved as ${view.url}, not the supplied pull-request link`)
+    throw new Error(`${flag} resolved as ${view.url}, not the supplied pull-request link`)
   const originUrl = invokeFloorEvidencePort(
     ports,
     'readOriginUrl',
@@ -851,6 +852,7 @@ function gatheredCommandEvidence(
     session_id: string | null
     created_at: string
     output_tail: string
+    withheld: number
   },
   identity: CursorIdentity,
   cursorId: number,
@@ -860,24 +862,39 @@ function gatheredCommandEvidence(
 ): Pick<ValidatedEvidence, 'probe' | 'exec' | 'pullRequest'> {
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
   const session = sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
-  const url = pullRequestCreateArgv(recordedArgv(row.command))
-    ? githubPullRequestUrlIn(row.output_tail)
-    : undefined
-  return {
-    exec: {
-      id,
-      command: recordedCommand(row.command),
-      argv: recordedArgv(row.command),
-      exitCode: row.exit_code,
-      sessionMatches: session.sessionMatches,
-      sessionAdoptedCursor: session.sessionAdoptedCursor,
-      createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
-      checkoutBranch: checkout.branch,
-      headCommit: row.head_commit,
-      cursorBranch: identity.branch,
-      output: row.output_tail,
-    },
-    ...(url ? { pullRequest: pullRequestEvidence(url, identity, d, ports) } : {}),
+  const argv = recordedArgv(row.command)
+  const url = pullRequestCreateArgv(argv) ? githubPullRequestUrlIn(row.output_tail) : undefined
+  const exec: NonNullable<ValidatedEvidence['exec']> = {
+    id,
+    command: recordedCommand(row.command),
+    argv,
+    exitCode: row.exit_code,
+    sessionMatches: session.sessionMatches,
+    sessionAdoptedCursor: session.sessionAdoptedCursor,
+    createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
+    checkoutBranch: checkout.branch,
+    headCommit: row.head_commit,
+    cursorBranch: identity.branch,
+    output: row.output_tail,
+    withheld: row.withheld === 1,
+  }
+  if (!url) return { exec }
+  try {
+    return {
+      exec,
+      pullRequest: pullRequestEvidence(url, identity, d, ports, `--artifact exec:${id}`),
+    }
+  } catch (error) {
+    rethrowFloorEvidencePortMiss(error)
+    const detail = error instanceof Error ? error.message : String(error)
+    return {
+      exec: {
+        ...exec,
+        pullRequestCondition: detail.startsWith('--artifact ')
+          ? detail
+          : `--artifact exec:${id}: ${detail}`,
+      },
+    }
   }
 }
 
@@ -991,10 +1008,11 @@ export function gatherValidatedEvidence(input: {
             session_id: string | null
             created_at: string
             output_tail: string
+            withheld: number
           },
           [number]
         >(
-          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail FROM probe WHERE id=?',
+          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld FROM probe WHERE id=?',
         )
         .get(parsed.id)!
       const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)

@@ -568,6 +568,7 @@ test('pull-request evidence binds commands to the exact branch and links to the 
     headCommit: 'shared-commit',
     cursorBranch: 'DEV-977-work',
     output: '',
+    withheld: false,
   }
   expect(decidePullRequestEvidence(exec)).toEqual({
     met: false,

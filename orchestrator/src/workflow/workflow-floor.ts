@@ -109,6 +109,8 @@ export type ValidatedEvidence = {
     headCommit: string | null
     cursorBranch: string | null
     output: string
+    withheld?: boolean
+    pullRequestCondition?: string
   }
   artifact?: { ref: string; exists: boolean }
   pullRequest?: {
@@ -187,8 +189,7 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (run) return { kind: 'run', id: run[1]! }
   const attachedText = /^attached-text:(\d+)$/i.exec(trimmed)
   if (attachedText) return { kind: 'attached-text', id: Number(attachedText[1]) }
-  if (/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i.test(trimmed))
-    return { kind: 'pull-request', url: trimmed }
+  if (githubPullRequestUrlIn(trimmed) === trimmed) return { kind: 'pull-request', url: trimmed }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
   return {
     error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number, probe:<id>, exec:<id>, attached-text:<id>, or a GitHub pull-request link`,
@@ -350,11 +351,21 @@ export type PullRequestEvidenceFacts =
       headCommit: string | null
       cursorBranch: string | null
       output: string
+      withheld: boolean
       link?: PullRequestLinkFacts
+      linkCondition?: string
     }
   | PullRequestLinkFacts
 
 export type PullRequestEvidenceDecision = { met: true } | { met: false; condition: string }
+
+const WITHHELD_PULL_REQUEST_OUTPUT = '[withheld: secret-shaped content]'
+const WITHHELD_PULL_REQUEST_CONDITION =
+  'the recorded output was withheld, so the pull-request URL cannot be read'
+
+function execOutputWithheld(facts: { withheld: boolean; output: string }): boolean {
+  return facts.withheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
+}
 
 function commandBasename(value: string): string {
   return value.split(/[\\/]/).at(-1) ?? ''
@@ -393,6 +404,8 @@ function decidePullRequestExec(
       condition: `the recorded command checkout branch is ${facts.checkoutBranch ?? 'unset'}, not this cursor's ${facts.cursorBranch}`,
     }
   if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
+  if (execOutputWithheld(facts))
+    return { met: false, condition: WITHHELD_PULL_REQUEST_CONDITION }
   if (!githubPullRequestUrlIn(facts.output))
     return {
       met: false,
@@ -401,7 +414,8 @@ function decidePullRequestExec(
   if (!facts.link)
     return {
       met: false,
-      condition: 'the recorded command output pull-request URL could not be judged',
+      condition:
+        facts.linkCondition ?? 'the recorded command output pull-request URL could not be judged',
     }
   return decidePullRequestLink(facts.link)
 }
@@ -455,7 +469,9 @@ function execPullRequestFacts(
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
     output: exec.output,
+    withheld: exec.withheld === true,
     link: evidence.pullRequest ? { kind: 'link', ...evidence.pullRequest } : undefined,
+    linkCondition: exec.pullRequestCondition,
   }
 }
 
@@ -463,6 +479,10 @@ function linkPullRequestFacts(
   evidence: ValidatedEvidence,
 ): Extract<PullRequestEvidenceFacts, { kind: 'link' }> | undefined {
   return evidence.pullRequest ? { kind: 'link', ...evidence.pullRequest } : undefined
+}
+
+function pullRequestFacts(evidence: ValidatedEvidence): PullRequestEvidenceFacts | undefined {
+  return execPullRequestFacts(evidence) ?? linkPullRequestFacts(evidence)
 }
 
 function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
@@ -486,7 +506,7 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
       evidence.exec.createdAfterStepActivation,
   )
   if (floor.commandEvidence === 'pull-request')
-    return decidePullRequestEvidence(execPullRequestFacts(evidence)).met
+    return decidePullRequestEvidence(pullRequestFacts(evidence)).met
   return gateOk || runOk || probeOk || execOk
 }
 
@@ -534,7 +554,7 @@ function floorIsMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
   if (floor.kind === 'recorded-artifact')
     return floor.commandEvidence === 'pull-request'
-      ? decidePullRequestEvidence(linkPullRequestFacts(evidence)).met
+      ? decidePullRequestEvidence(pullRequestFacts(evidence)).met
       : evidence.artifact?.exists === true
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
   throw new Error(`unknown floor kind "${String(floor.kind)}"`)
@@ -559,17 +579,16 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
 
 function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string | null {
   if (floor.commandEvidence !== 'pull-request') return null
-  if (floor.kind === 'command-exit') {
-    const decision = decidePullRequestEvidence(execPullRequestFacts(evidence))
-    if (!decision.met)
-      return `floor command-exit is unmet: ${decision.condition}; pass --artifact exec:<id> from a successful \`${PLATFORM_SLUG} pr create\` command recorded for this step on this cursor's branch`
-  }
-  if (floor.kind === 'recorded-artifact') {
-    const decision = decidePullRequestEvidence(linkPullRequestFacts(evidence))
-    if (!decision.met)
-      return `floor recorded-artifact is unmet: ${decision.condition}; pass --artifact <pull-request link> in this project's repository whose state is open or merged and whose head and base match this cursor`
-  }
-  return null
+  if (floor.kind !== 'command-exit' && floor.kind !== 'recorded-artifact') return null
+  const decision = decidePullRequestEvidence(pullRequestFacts(evidence))
+  if (decision.met) return null
+  const remedy =
+    decision.condition === WITHHELD_PULL_REQUEST_CONDITION
+      ? 'pass --artifact <pull-request link>'
+      : floor.kind === 'command-exit'
+        ? `pass --artifact exec:<id> from a successful \`${PLATFORM_SLUG} pr create\` command recorded for this step on this cursor's branch`
+        : `pass --artifact <pull-request link> in this project's repository whose state is open or merged and whose head and base match this cursor`
+  return `floor ${floor.kind} is unmet: ${decision.condition}; ${remedy}`
 }
 
 function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
