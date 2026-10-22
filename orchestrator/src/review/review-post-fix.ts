@@ -24,6 +24,7 @@ const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
 type CompletedReview = {
   number: number
   identity: string | null
+  launchKey: string | null
   runIds: string[]
 }
 
@@ -84,6 +85,7 @@ function latestCompletedReview(
   return {
     number: first.review_number,
     identity: reviewRoundIdentity(first).identity,
+    launchKey: first.launch_key,
     runIds: roundRows.map(({ run_id }) => run_id),
   }
 }
@@ -108,7 +110,7 @@ function matchingReviewedTip(
     const identity = measureChangeIdentity(repo, mergeBase.out, candidate)
     if (!identity) continue
     const candidateRound = reviewRoundIdentity({
-      launch_key: null,
+      launch_key: review.launchKey,
       branch,
       patch_id: identity.patchId,
       path_set: serializePathSet(identity.paths),
