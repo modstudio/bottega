@@ -26,6 +26,10 @@ type SettingsMember = {
   valueEnd: number
 }
 
+function ownedKey(value: string): (typeof OWNED_KEYS)[number] | null {
+  return OWNED_KEYS.find((candidate) => candidate === value) ?? null
+}
+
 export type ParsedSettingsFile = {
   text: string
   owned: OwnedSettings
@@ -306,10 +310,7 @@ function locateObject(text: string): {
     const valueStart = skipWs(text, colon + 1)
     const valueEnd = skipValue(text, valueStart)
     members.push({
-      ownedKey:
-        name.value === 'permissions' || name.value === 'hooks' || name.value === 'autoMode'
-          ? name.value
-          : null,
+      ownedKey: ownedKey(name.value),
       nameStart: i,
       valueStart,
       valueEnd,

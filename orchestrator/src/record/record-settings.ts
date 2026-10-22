@@ -53,13 +53,13 @@ export type RecordSettingsAutoModeResult = {
   autoMode: Record<AutoModeList, string[]>
 }
 
-export type RecordSettingsPermissionDependencies = {
+export type RecordSettingsDependencies = {
   listDocs: typeof listRecordDocs
   listRevisions: typeof listRecordDocRevisions
   upsertDoc: typeof upsertRecordDoc
 }
 
-const recordSettingsDependencies: RecordSettingsPermissionDependencies = {
+const recordSettingsDependencies: RecordSettingsDependencies = {
   listDocs: listRecordDocs,
   listRevisions: listRecordDocRevisions,
   upsertDoc: upsertRecordDoc,
@@ -67,57 +67,40 @@ const recordSettingsDependencies: RecordSettingsPermissionDependencies = {
 
 export async function applyRecordSettingsPermission(
   input: RecordSettingsPermissionInput,
-  dependencies: RecordSettingsPermissionDependencies = recordSettingsDependencies,
+  dependencies: RecordSettingsDependencies = recordSettingsDependencies,
 ): Promise<RecordSettingsPermissionResult> {
-  const subject = input.target.kind === 'project' ? input.target.project : null
-  const owner = input.target.kind === 'user' ? input.userId : null
-  const rows = await dependencies.listDocs({
-    ...input,
-    scope: SETTINGS_SCOPE,
-    subject,
-    limit: 2,
-    cursor: null,
-    includeDeleted: false,
-    acrossReadableSpaces: false,
-  })
-  const row = rows.find(
-    (candidate) =>
-      candidate.slug === SETTINGS_SLUG &&
-      candidate.owner === owner &&
-      candidate.subject === subject,
+  return applyRecordSettingsEdit(
+    input,
+    dependencies,
+    (settings) => editSettingsPermission(settings, input),
+    (revision, edit) => ({ revision, permissions: edit.permissions }),
   )
-  if (!row) throw new RecordDocError('settings doc not found', 404)
-  const revisions = await dependencies.listRevisions({ ...input, id: row.id })
-  const current = revisions?.[0]?.id ?? null
-  const decision = decideDocRevisionWrite({
-    expected: input.expectedRevision,
-    current,
-    isCreate: false,
-    scope: SETTINGS_SCOPE,
-  })
-  if (!decision.allow) throw new RecordDocError(decision.reason, 409)
-  const edit = editSettingsPermission(parseStoredOwnedSettings(row.body), input)
-  if (!edit.changed) return { revision: current!, permissions: edit.permissions }
-  const written = await dependencies.upsertDoc({
-    ...input,
-    scope: SETTINGS_SCOPE,
-    subject,
-    owner,
-    slug: SETTINGS_SLUG,
-    title: SETTINGS_SLUG,
-    body: serializeOwnedSettings(edit.settings),
-    delivery: 'demand',
-    projectName: subject,
-    author: input.userId,
-    expectedRevision: input.expectedRevision,
-  })
-  return { revision: written.revisionId, permissions: edit.permissions }
 }
 
 export async function applyRecordSettingsAutoMode(
   input: RecordSettingsAutoModeInput,
-  dependencies: RecordSettingsPermissionDependencies = recordSettingsDependencies,
+  dependencies: RecordSettingsDependencies = recordSettingsDependencies,
 ): Promise<RecordSettingsAutoModeResult> {
+  return applyRecordSettingsEdit(
+    input,
+    dependencies,
+    (settings) => editSettingsAutoMode(settings, input),
+    (revision, edit) => ({ revision, autoMode: edit.autoMode }),
+  )
+}
+
+type SettingsEdit = { settings: ReturnType<typeof parseStoredOwnedSettings>; changed: boolean }
+
+async function applyRecordSettingsEdit<
+  Input extends RecordSettingsPermissionInput | RecordSettingsAutoModeInput,
+  Edit extends SettingsEdit,
+  Result,
+>(
+  input: Input,
+  dependencies: RecordSettingsDependencies,
+  editSettings: (settings: ReturnType<typeof parseStoredOwnedSettings>) => Edit,
+  result: (revision: string, edit: Edit) => Result,
+): Promise<Result> {
   const subject = input.target.kind === 'project' ? input.target.project : null
   const owner = input.target.kind === 'user' ? input.userId : null
   const rows = await dependencies.listDocs({
@@ -145,8 +128,8 @@ export async function applyRecordSettingsAutoMode(
     scope: SETTINGS_SCOPE,
   })
   if (!decision.allow) throw new RecordDocError(decision.reason, 409)
-  const edit = editSettingsAutoMode(parseStoredOwnedSettings(row.body), input)
-  if (!edit.changed) return { revision: current!, autoMode: edit.autoMode }
+  const edit = editSettings(parseStoredOwnedSettings(row.body))
+  if (!edit.changed) return result(current!, edit)
   const written = await dependencies.upsertDoc({
     ...input,
     scope: SETTINGS_SCOPE,
@@ -160,5 +143,5 @@ export async function applyRecordSettingsAutoMode(
     author: input.userId,
     expectedRevision: input.expectedRevision,
   })
-  return { revision: written.revisionId, autoMode: edit.autoMode }
+  return result(written.revisionId, edit)
 }

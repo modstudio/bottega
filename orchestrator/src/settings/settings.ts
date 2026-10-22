@@ -17,6 +17,14 @@ export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'
 export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
 export type OwnedAutoMode = Partial<Record<AutoModeList, string[]>>
 
+const ownedAutoModeSchema = z
+  .object(
+    Object.fromEntries(AUTO_MODE_LISTS.map((name) => [name, z.array(z.string()).optional()])) as {
+      [Name in AutoModeList]: z.ZodOptional<z.ZodArray<z.ZodString>>
+    },
+  )
+  .strict()
+
 export type OwnedSettings = {
   permissions: unknown
   hooks: unknown
@@ -30,15 +38,7 @@ const ownedSettingsSchema = z
   .object({
     permissions: z.unknown(),
     hooks: z.unknown(),
-    autoMode: z
-      .object({
-        allow: z.array(z.string()).optional(),
-        soft_deny: z.array(z.string()).optional(),
-        hard_deny: z.array(z.string()).optional(),
-        environment: z.array(z.string()).optional(),
-      })
-      .strict()
-      .optional(),
+    autoMode: ownedAutoModeSchema.optional(),
     envKeys: z
       .array(z.string().regex(ENV_NAME))
       .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name)),
@@ -138,19 +138,19 @@ export function allPermissionRules(permissions: unknown): string[] {
 }
 
 export function autoModeLists(autoMode?: OwnedAutoMode): Record<AutoModeList, string[]> {
-  return {
-    allow: autoMode?.allow ?? [],
-    soft_deny: autoMode?.soft_deny ?? [],
-    hard_deny: autoMode?.hard_deny ?? [],
-    environment: autoMode?.environment ?? [],
-  }
+  return Object.fromEntries(
+    AUTO_MODE_LISTS.map((name) => [name, autoMode?.[name] ?? []]),
+  ) as Record<AutoModeList, string[]>
 }
 
 export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): boolean {
   return (
     deepEqual(left.permissions, right.permissions) &&
     deepEqual(left.hooks, right.hooks) &&
-    (right.autoMode === undefined || deepEqual(left.autoMode, right.autoMode)) &&
+    ((left.autoMode === undefined && right.autoMode === undefined) ||
+      (left.autoMode !== undefined &&
+        right.autoMode !== undefined &&
+        deepEqual(left.autoMode, right.autoMode))) &&
     deepEqual(left.envKeys ?? [], right.envKeys ?? [])
   )
 }
@@ -173,7 +173,7 @@ export function secretShapedPaths(owned: OwnedSettings): string[] {
 }
 
 function parseAutoMode(value: unknown): OwnedAutoMode {
-  const result = ownedSettingsSchema.shape.autoMode.unwrap().safeParse(value)
+  const result = ownedAutoModeSchema.safeParse(value)
   if (!result.success) {
     throw new Error(
       'refusing settings file: invalid autoMode\ncleared by: use only allow, soft_deny, hard_deny, and environment arrays of strings',

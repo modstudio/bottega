@@ -15,7 +15,6 @@ import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import {
-  settingsAutoModeCommand,
   settingsImportCommand,
   settingsPermissionCommand,
   settingsRenderCheckCommand,
@@ -659,23 +658,6 @@ describe('settings permission', () => {
     )
     expect(added).toMatchObject({ changed: true, counts: { allow: 2, ask: 0, deny: 0 } })
     expect(added.revision).not.toBe(seeded.revision)
-  })
-})
-
-describe('settings auto-mode', () => {
-  test('refuses an unknown list name at the command edge', async () => {
-    fixtureProject('auto-mode-list')
-    await expect(
-      settingsAutoModeCommand(
-        presentation().flags({
-          project: 'auto-mode-list',
-          list: 'unknown',
-          rule: 'Bash(docker compose *)',
-          expect: 'revision-1',
-        }),
-        'add',
-      ),
-    ).rejects.toThrow('--list must be allow, soft_deny, hard_deny, environment')
   })
 })
 

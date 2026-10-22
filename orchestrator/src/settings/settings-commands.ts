@@ -76,47 +76,15 @@ export async function settingsAutoModeCommand(
   if (target.kind === 'project') projectRoot(target.name, process.cwd())
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const { expectedRevision, list, rule } = settingsAutoModeInput(flags)
-  const row = settingsRow(target, owner)
-  if (!row) {
-    throw new Error(
-      `refusing settings auto-mode ${operation}: no settings row for ${targetLabel(target)}`,
-    )
-  }
-  const revision = decideDocRevisionWrite({
-    expected: expectedRevision,
-    current: row.revision ?? null,
-    isCreate: false,
-    scope: SETTINGS_SCOPE,
-  })
-  if (!revision.allow) throw new Error(revision.reason)
-  const edit = editSettingsAutoMode(parseStoredOwnedSettings(row.body), { list, rule, operation })
-  if (!edit.changed) {
-    return {
-      revision: row.revision!,
-      counts: autoModeCounts(edit.settings),
-      changed: false,
-      message: edit.message,
-    }
-  }
-  const body = serializeOwnedSettings(edit.settings)
-  const refusal = refuseSettingsBody(SETTINGS_SCOPE, body)
-  if (refusal) throw new Error(refusal)
-  const written = await setDoc({
-    scope: SETTINGS_SCOPE,
-    subject: target.kind === 'project' ? target.name : null,
+  return applySettingsListEdit({
+    target,
     owner,
-    slug: SETTINGS_SLUG,
-    title: SETTINGS_SLUG,
-    body,
-    delivery: 'demand',
-    reason: flags.flag('reason')?.trim() || 'updated auto-mode rule',
     expectedRevision,
+    missingRowMessage: `refusing settings auto-mode ${operation}: no settings row for ${targetLabel(target)}`,
+    reason: flags.flag('reason')?.trim() || 'updated auto-mode rule',
+    edit: (settings) => editSettingsAutoMode(settings, { list, rule, operation }),
+    counts: autoModeCounts,
   })
-  return {
-    revision: written.revision!,
-    counts: autoModeCounts(parseStoredOwnedSettings(written.body)),
-    changed: true,
-  }
 }
 
 function settingsAutoModeInput(flags: SettingsFlags): {
@@ -158,27 +126,42 @@ export async function settingsPermissionCommand(
   if (target.kind === 'project') projectRoot(target.name, process.cwd())
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const { expectedRevision, list, rule } = settingsPermissionInput(flags)
-  const row = settingsRow(target, owner)
-  if (!row) {
-    if (operation === 'remove') {
-      throw new Error(
-        `refusing settings permission remove: no settings row for ${targetLabel(target)}`,
-      )
-    }
-    throw new Error(`refusing settings permission add: no settings row for ${targetLabel(target)}`)
-  }
+  return applySettingsListEdit({
+    target,
+    owner,
+    expectedRevision,
+    missingRowMessage: `refusing settings permission ${operation}: no settings row for ${targetLabel(target)}`,
+    reason: flags.flag('reason')?.trim() || 'updated permission rule',
+    edit: (settings) => editSettingsPermission(settings, { list, rule, operation }),
+    counts: permissionCounts,
+  })
+}
+
+type SettingsListEdit = { settings: OwnedSettings; changed: boolean; message?: string }
+
+async function applySettingsListEdit<Counts>(input: {
+  target: SettingsTargetKind
+  owner: string | null
+  expectedRevision: string
+  missingRowMessage: string
+  reason: string
+  edit(settings: OwnedSettings): SettingsListEdit
+  counts(settings: OwnedSettings): Counts
+}): Promise<{ revision: string; counts: Counts; changed: boolean; message?: string }> {
+  const row = settingsRow(input.target, input.owner)
+  if (!row) throw new Error(input.missingRowMessage)
   const revision = decideDocRevisionWrite({
-    expected: expectedRevision,
+    expected: input.expectedRevision,
     current: row.revision ?? null,
     isCreate: false,
     scope: SETTINGS_SCOPE,
   })
   if (!revision.allow) throw new Error(revision.reason)
-  const edit = editSettingsPermission(parseStoredOwnedSettings(row.body), { list, rule, operation })
+  const edit = input.edit(parseStoredOwnedSettings(row.body))
   if (!edit.changed) {
     return {
       revision: row.revision!,
-      counts: permissionCounts(edit.settings),
+      counts: input.counts(edit.settings),
       changed: false,
       message: edit.message,
     }
@@ -188,18 +171,18 @@ export async function settingsPermissionCommand(
   if (refusal) throw new Error(refusal)
   const written = await setDoc({
     scope: SETTINGS_SCOPE,
-    subject: target.kind === 'project' ? target.name : null,
-    owner,
+    subject: input.target.kind === 'project' ? input.target.name : null,
+    owner: input.owner,
     slug: SETTINGS_SLUG,
     title: SETTINGS_SLUG,
     body,
     delivery: 'demand',
-    reason: flags.flag('reason')?.trim() || 'updated permission rule',
-    expectedRevision,
+    reason: input.reason,
+    expectedRevision: input.expectedRevision,
   })
   return {
     revision: written.revision!,
-    counts: permissionCounts(parseStoredOwnedSettings(written.body)),
+    counts: input.counts(parseStoredOwnedSettings(written.body)),
     changed: true,
   }
 }

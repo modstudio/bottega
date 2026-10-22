@@ -146,7 +146,7 @@ describe('diffOwnedSettings', () => {
     expect(rendered).toContain('"autoMode": { "allow":["$defaults",  "local"] }')
     const file = parseSettingsFile(local).owned
     const store = { permissions: file.permissions, hooks: file.hooks }
-    expect(ownedSettingsEqual(file, store)).toBe(true)
+    expect(ownedSettingsEqual(file, store)).toBe(false)
     expect(diffOwnedSettings(file, store).autoMode.allow).toEqual({ added: [], removed: [] })
   })
 

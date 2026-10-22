@@ -128,6 +128,13 @@ test('auto-mode round trips with order and duplicates intact', () => {
   expect(ownedSettingsEqual(parsed, owned)).toBe(true)
 })
 
+test('ownedSettingsEqual requires auto-mode ownership on both sides', () => {
+  const unowned = { permissions: {}, hooks: {} }
+  const owned = { ...unowned, autoMode: {} }
+  expect(ownedSettingsEqual(unowned, owned)).toBe(false)
+  expect(ownedSettingsEqual(owned, unowned)).toBe(false)
+})
+
 test('a stored row without auto-mode round trips without gaining ownership', () => {
   const body = JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] })
   const parsed = parseStoredOwnedSettings(body)
