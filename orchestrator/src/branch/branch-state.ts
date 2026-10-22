@@ -87,6 +87,64 @@ export type BranchStateDecision = BranchLanding & {
   note?: typeof STALE_RECORDED_LANDING
 }
 
+export type TargetedBranchLandingFacts = {
+  matchingPullRequest: MergedPullRequest | null
+  pullRequestCommitCheck: PullRequestCommitCheck
+  branchListingTruncated: boolean
+  commitListingTruncated: boolean
+  error?: string
+}
+
+const TARGETED_PULL_REQUEST_LISTING_TRUNCATED =
+  'targeted pull-request listing is truncated' as const
+
+type TargetedBranchLandingDecision =
+  | Extract<BranchLanding, { landedBy: { type: 'pr' | 'pr-commits' } }>
+  | { state: 'unlanded' }
+  | { state: 'unknown'; error?: string }
+
+/** Settles an otherwise unknown truncated global listing from targeted forge facts. */
+function decideTargetedBranchLanding(
+  facts: TargetedBranchLandingFacts,
+): TargetedBranchLandingDecision {
+  if (facts.error) return { state: 'unknown', error: facts.error }
+  if (facts.pullRequestCommitCheck && 'error' in facts.pullRequestCommitCheck) {
+    return { state: 'unknown', error: facts.pullRequestCommitCheck.error }
+  }
+  if (facts.branchListingTruncated || facts.commitListingTruncated) {
+    return { state: 'unknown', error: TARGETED_PULL_REQUEST_LISTING_TRUNCATED }
+  }
+  if (facts.matchingPullRequest) {
+    return {
+      state: 'landed',
+      landedBy: {
+        type: 'pr',
+        number: facts.matchingPullRequest.number,
+        mergeCommit: facts.matchingPullRequest.mergeCommit?.oid ?? null,
+        mergedAt: facts.matchingPullRequest.mergedAt,
+      },
+    }
+  }
+  if (facts.pullRequestCommitCheck && 'number' in facts.pullRequestCommitCheck) {
+    return {
+      state: 'landed',
+      landedBy: { type: 'pr-commits', number: facts.pullRequestCommitCheck.number },
+    }
+  }
+  return { state: 'unlanded' }
+}
+
+/** Settles the fallback after every non-forge landing proof has been exhausted. */
+export function decideUnmatchedBranchLanding(
+  mergedPullRequestsTruncated: boolean,
+  targetedPullRequests: TargetedBranchLandingFacts | null,
+): TargetedBranchLandingDecision {
+  if (!mergedPullRequestsTruncated) return { state: 'unlanded' }
+  return targetedPullRequests
+    ? decideTargetedBranchLanding(targetedPullRequests)
+    : { state: 'unknown' }
+}
+
 export type ProtectedBranchKind = 'trunk' | 'production'
 
 /** Decides whether a branch is reserved by the project's registered branch settings. */
@@ -114,6 +172,7 @@ export function decideBranchState(input: {
   containingBranch: string | null
   laterTurnBranches: readonly LaterTurnBranch[]
   superseded: boolean
+  targetedPullRequests: TargetedBranchLandingFacts | null
 }): BranchStateDecision {
   const staleRecordedLanding =
     input.recordedLanding !== null && input.recordedLanding.tip !== input.tip
@@ -170,8 +229,9 @@ export function decideBranchState(input: {
   if (input.pullRequestCommitCheck && 'error' in input.pullRequestCommitCheck) {
     return decide({ state: 'unknown', error: input.pullRequestCommitCheck.error })
   }
-  if (input.mergedPullRequestsTruncated) return decide({ state: 'unknown' })
-  return decide({ state: 'unlanded' })
+  return decide(
+    decideUnmatchedBranchLanding(input.mergedPullRequestsTruncated, input.targetedPullRequests),
+  )
 }
 
 export type PruneEligibility =

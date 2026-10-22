@@ -28,6 +28,7 @@ import {
   findRecordedBranchLanding,
   type PatchEquivalentForm,
   pullRequestCarriesKey,
+  type TargetedBranchLandingFacts,
 } from './branch-state.ts'
 import {
   GH_MERGED_PR_LIMIT,
@@ -45,6 +46,7 @@ import {
   type OtherBranchLanding,
   taskKeyToken,
 } from './other-branch-state.ts'
+import { observeTargetedBranchLandingFacts } from './targeted-branch-proof.ts'
 import { taskBranchPatchEquivalent } from './task-branch.ts'
 
 type RunRow = BranchReportRun & {
@@ -390,7 +392,7 @@ function branchReportFor(
   return report
 }
 
-function otherBranchReportRow(input: {
+type OtherBranchReportInput = {
   project: Project
   branch: string
   detail: LocalBranchDetail
@@ -400,7 +402,17 @@ function otherBranchReportRow(input: {
   checkedOut: ReadonlySet<string>
   remotes: ReadonlySet<string>
   fetchedPullRequests: Map<number, string | null>
-}): OtherBranchReportRow {
+}
+
+type OtherBranchProof = {
+  commitsNotOnTrunk: number
+  patchEquivalent: PatchEquivalentForm | null
+  commitCheck: PullRequestCommitCheck
+  nameCheck: PullRequestNameCheck
+  checkError?: string
+}
+
+function observeOtherBranchProof(input: OtherBranchReportInput): OtherBranchProof {
   const { project, branch, detail } = input
   let commitsNotOnTrunk = 0
   let patchEquivalent: PatchEquivalentForm | null = null
@@ -445,6 +457,35 @@ function otherBranchReportRow(input: {
   } catch (error) {
     checkError = error instanceof Error ? error.message : String(error)
   }
+  return { commitsNotOnTrunk, patchEquivalent, commitCheck, nameCheck, checkError }
+}
+
+function otherBranchReportRow(input: OtherBranchReportInput): OtherBranchReportRow {
+  const { project, branch, detail } = input
+  const { commitsNotOnTrunk, patchEquivalent, commitCheck, nameCheck, checkError } =
+    observeOtherBranchProof(input)
+  const preliminary = decideOtherBranchState({
+    branch,
+    mergedPullRequests: input.pullRequests,
+    mergedPullRequestsTruncated: input.truncated,
+    pullRequestNameCheck: nameCheck,
+    commitsNotOnTrunk,
+    patchEquivalent,
+    pullRequestCommitCheck: commitCheck,
+    targetedPullRequests: null,
+    checkError,
+  })
+  let targetedPullRequests: TargetedBranchLandingFacts | null = null
+  if (input.truncated && preliminary.state === 'unknown' && !preliminary.error) {
+    targetedPullRequests = observeTargetedBranchLandingFacts({
+      project,
+      branch,
+      tip: detail.tip,
+      key: taskKeyToken(branch, project.settings.keyPrefixes ?? []) ?? 'unkeyed',
+      fetchedPullRequests: input.fetchedPullRequests,
+      headMatch: 'contains-tip',
+    })
+  }
   return {
     branch,
     tip: detail.tip,
@@ -460,6 +501,7 @@ function otherBranchReportRow(input: {
       commitsNotOnTrunk,
       patchEquivalent,
       pullRequestCommitCheck: commitCheck,
+      targetedPullRequests,
       checkError,
     }),
   }

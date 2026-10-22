@@ -63,6 +63,7 @@ function decide(overrides: Partial<Parameters<typeof decideBranchState>[0]> = {}
     containingBranch: null,
     laterTurnBranches: [],
     superseded: false,
+    targetedPullRequests: null,
     ...overrides,
   })
 }
@@ -397,6 +398,85 @@ describe('run branch state decision', () => {
     expect(
       decide({ mergedPullRequests: [pullRequest], mergedPullRequestsTruncated: true }),
     ).toMatchObject({ state: 'landed', landedBy: { type: 'pr' } })
+  })
+
+  test('targeted completeness mutation: complete unmatched listings settle truncation as unlanded', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          matchingPullRequest: null,
+          pullRequestCommitCheck: null,
+          branchListingTruncated: false,
+          commitListingTruncated: false,
+        },
+      }),
+    ).toEqual({ state: 'unlanded' })
+  })
+
+  test('targeted head mutation: a matching merged head settles truncation as landed', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          matchingPullRequest: pullRequest,
+          pullRequestCommitCheck: null,
+          branchListingTruncated: false,
+          commitListingTruncated: false,
+        },
+      }),
+    ).toEqual({
+      state: 'landed',
+      landedBy: {
+        type: 'pr',
+        number: 42,
+        mergeCommit: 'abc123',
+        mergedAt: '2026-09-16T12:00:00Z',
+      },
+    })
+  })
+
+  test('targeted commit mutation: a merged PR carrying the tip settles truncation as landed', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          matchingPullRequest: null,
+          pullRequestCommitCheck: { number: 43 },
+          branchListingTruncated: false,
+          commitListingTruncated: false,
+        },
+      }),
+    ).toEqual({ state: 'landed', landedBy: { type: 'pr-commits', number: 43 } })
+  })
+
+  test('targeted query failure mutation: an errored targeted lookup keeps truncation unknown', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          matchingPullRequest: null,
+          pullRequestCommitCheck: null,
+          branchListingTruncated: false,
+          commitListingTruncated: false,
+          error: 'targeted GitHub lookup failed',
+        },
+      }),
+    ).toEqual({ state: 'unknown', error: 'targeted GitHub lookup failed' })
+  })
+
+  test('targeted truncation mutation: a capped targeted lookup stays unknown with an error', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: {
+          matchingPullRequest: null,
+          pullRequestCommitCheck: null,
+          branchListingTruncated: true,
+          commitListingTruncated: false,
+        },
+      }),
+    ).toEqual({ state: 'unknown', error: 'targeted pull-request listing is truncated' })
   })
 })
 
