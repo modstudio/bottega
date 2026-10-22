@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -18,7 +18,7 @@ import {
 } from './branch-disposal-decision.ts'
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
-import { branchesReport, localBranchRefExists } from './branches.ts'
+import { branchesReport } from './branches.ts'
 import { observeTaskStatus } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
@@ -127,7 +127,6 @@ function refusalRemedy(
   project: string,
   branch: string,
 ): string {
-  if (reason === 'missing-ref') return 'no action is required'
   if (reason === 'not-run-minted')
     return `use git's own branch lifecycle; ${PLATFORM_SLUG} records disposal only for run-minted branches`
   if (reason === 'live-owner')
@@ -158,6 +157,9 @@ function planBranchDisposal(input: {
     throw new Error('branch disposal requires an attributed architect or operator session')
   const project = projectByName(projectName)
   if (!project) throw new Error(`unknown project ${projectName}`)
+  const ref = observeGitRef(project.path, `refs/heads/${branch}`)
+  if (ref.outcome === 'failed') throw new Error(ref.detail)
+  if (ref.outcome === 'absent') throw new Error(`branch ${branch} has no ref; nothing to dispose`)
   const projectReport = branchesReport({ project: projectName, branch }).projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const keyGroup = projectReport.keys.find((group) =>
@@ -171,7 +173,7 @@ function planBranchDisposal(input: {
   const taskStatus = observeTaskStatus(keyGroup?.key ?? null, projectName)
   const decision = decideBranchDisposal({
     runMinted,
-    refExists: localBranchRefExists(project.path, branch),
+    refExists: true,
     liveRun: row?.liveRun ?? false,
     checkedOut: row?.checkedOut ?? false,
     taskStatus: disposalTaskState(taskStatus),
@@ -180,8 +182,6 @@ function planBranchDisposal(input: {
     supersededTargetNamed:
       input.reason !== 'superseded' || /^superseded by\s+\S+/i.test(input.note.trim()),
   })
-  if (!decision.eligible && decision.reason === 'missing-ref')
-    throw new Error(`branch ${branch} has no ref; nothing to dispose`)
   if (!decision.eligible)
     throw new Error(
       `refusing branch disposal: ${decision.reason}; cleared by: ${refusalRemedy(decision.reason, projectName, branch)}`,

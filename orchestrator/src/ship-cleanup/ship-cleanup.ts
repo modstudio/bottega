@@ -12,7 +12,12 @@ import {
   type BranchStateDecision,
   findRecordedBranchLanding,
 } from '../branch/branch-state.ts'
-import { classifyMintedBranch, localBranchRefExists, pruneBranch } from '../branch/branches.ts'
+import {
+  classifyMintedBranch,
+  type GitRefObservation,
+  observeGitRef,
+  pruneBranch,
+} from '../branch/branches.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
 import {
   type RemovedRunTree,
@@ -67,7 +72,7 @@ export type ShipCleanupReport = {
 
 export type ShipCleanupDependencies = {
   landingState(project: string, branch: string): BranchStateDecision
-  localBranchExists(projectPath: string, branch: string): boolean
+  observeBranchRef(projectPath: string, branch: string): GitRefObservation
   closeOut(runId: string): { outcome: string; detail: string }
   prune(
     project: string,
@@ -88,7 +93,7 @@ export type ShipCleanupDependencies = {
 
 const dependencies: ShipCleanupDependencies = {
   landingState: (project, branch) => classifyMintedBranch(project, branch),
-  localBranchExists: localBranchRefExists,
+  observeBranchRef: (projectPath, branch) => observeGitRef(projectPath, `refs/heads/${branch}`),
   closeOut: (runId) => closeOutRun(runId, { intent: 'explicit' }),
   prune: (project, branch) => pruneBranch({ project, branch }),
   measure: (paths) => {
@@ -487,20 +492,21 @@ function taskCleanupPlan(input: {
       run.launchKey === taskKey && run.mintedBranch ? [run.mintedBranch] : [],
     ),
   )
-  const localBranches = taskKey
-    ? new Set(
-        [...candidateBranches].filter((branch) =>
-          input.adapter.localBranchExists(input.projectPath, branch),
-        ),
-      )
-    : new Set<string>()
+  const localBranches = new Set<string>()
+  if (taskKey) {
+    for (const branch of candidateBranches) {
+      const observation = input.adapter.observeBranchRef(input.projectPath, branch)
+      if (observation.outcome === 'failed') throw new Error(observation.detail)
+      if (observation.outcome === 'present') localBranches.add(branch)
+    }
+  }
   const branches = taskKey
     ? decideTaskBranchesToPrune(
         taskKey,
         input.facts,
         localBranches,
         new Map(
-          [...localBranches].map((branch) => {
+          [...candidateBranches].map((branch) => {
             const recorded = findRecordedBranchLanding(input.landingRecords, input.project, branch)
             return [
               branch,
@@ -514,8 +520,15 @@ function taskCleanupPlan(input: {
           }),
         ),
       )
-    : { prune: [], keep: [], gone: [] }
-  return { taskKey, branches, landedBranches: new Set([input.branch, ...branches.prune]) }
+    : { delete: [], landingProof: [], keep: [], gone: [] }
+  const deleteBranches = candidateBranches.has(input.branch)
+    ? branches.delete
+    : [...new Set([input.branch, ...branches.delete])]
+  return {
+    taskKey,
+    branches: { ...branches, delete: deleteBranches },
+    landedBranches: new Set([input.branch, ...branches.landingProof]),
+  }
 }
 
 type ShipCleanupOptions = {
@@ -614,14 +627,7 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
     })),
   )
   report.gone.push(...taskBranches.gone)
-  pruneMergedBranches(
-    taskBranches.gone.includes(branch)
-      ? taskBranches.prune
-      : [...new Set([branch, ...taskBranches.prune])],
-    report,
-    adapter,
-    keptLandingTrees,
-  )
+  pruneMergedBranches(taskBranches.delete, report, adapter, keptLandingTrees)
   report.verdict = decideShipCleanupVerdict(report, true)
   return report
 }

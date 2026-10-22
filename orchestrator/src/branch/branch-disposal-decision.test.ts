@@ -18,6 +18,10 @@ test('branch disposal refuses every protected condition', () => {
     eligible: false,
     reason: 'missing-ref',
   })
+  expect(decideBranchDisposal(facts({ runMinted: false, refExists: false }))).toEqual({
+    eligible: false,
+    reason: 'missing-ref',
+  })
   expect(decideBranchDisposal(facts({ runMinted: false }))).toEqual({
     eligible: false,
     reason: 'not-run-minted',

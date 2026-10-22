@@ -59,7 +59,8 @@ export function decideTaskBranchesToPrune(
   localBranches: ReadonlySet<string>,
   landingEvidence: ReadonlyMap<string, BranchStateDecision>,
 ): {
-  prune: string[]
+  delete: string[]
+  landingProof: string[]
   keep: { branch: string; reason: 'landing not proved' }[]
   gone: string[]
 } {
@@ -71,12 +72,16 @@ export function decideTaskBranchesToPrune(
     ),
   ].sort()
   const existing = branches.filter((branch) => localBranches.has(branch))
+  const landed = branches.filter((branch) => landingEvidence.get(branch)?.state === 'landed')
   return {
-    prune: existing.filter((branch) => landingEvidence.get(branch)?.state === 'landed'),
+    delete: landed.filter((branch) => localBranches.has(branch)),
+    landingProof: landed,
     keep: existing
       .filter((branch) => landingEvidence.get(branch)?.state !== 'landed')
       .map((branch) => ({ branch, reason: 'landing not proved' })),
-    gone: branches.filter((branch) => !localBranches.has(branch)),
+    gone: branches.filter(
+      (branch) => !localBranches.has(branch) && landingEvidence.get(branch)?.state !== 'landed',
+    ),
   }
 }
 

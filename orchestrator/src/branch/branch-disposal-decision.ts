@@ -40,7 +40,7 @@ export function decideBranchDisposal(input: {
   operator: boolean
   supersededTargetNamed: boolean
 }): BranchDisposalDecision {
-  if (input.runMinted && !input.refExists) return { eligible: false, reason: 'missing-ref' }
+  if (!input.refExists) return { eligible: false, reason: 'missing-ref' }
   if (!input.runMinted) return { eligible: false, reason: 'not-run-minted' }
   if (input.liveRun || input.checkedOut) return { eligible: false, reason: 'live-owner' }
   if (!input.uniqueWork) return { eligible: false, reason: 'proved-safe' }
