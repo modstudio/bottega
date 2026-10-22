@@ -25,6 +25,10 @@ import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeBranch, removeFor, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { branchDeletableBy } from './branch-deletion-provenance.ts'
+import {
+  alreadyReleasedWorktreeLine,
+  discardWorktreeAbsence,
+} from './discard-worktree-absence.ts'
 
 export type CleanupPresentation = {
   log: (...values: unknown[]) => void
@@ -628,7 +632,7 @@ export async function discardRun(id: string, options: CleanupOptions): Promise<v
   const rootRow = db()
     .query(
       `SELECT record_id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit,
-              worktree_source
+              worktree_source, close_out_outcome
          FROM run WHERE record_id = ?`,
     )
     .get(authority.rootId) as {
@@ -641,6 +645,7 @@ export async function discardRun(id: string, options: CleanupOptions): Promise<v
     branch_kept_tip: string | null
     base_commit: string | null
     worktree_source: Worktree['source'] | null
+    close_out_outcome: string | null
   } | null
   if (!rootRow) throw new Error(`no run ${authority.rootId}`)
   const chain = db()
@@ -697,6 +702,10 @@ export async function discardRun(id: string, options: CleanupOptions): Promise<v
   }
   if (!row.worktree) {
     if (!force || !row.branch_kept) {
+      if (discardWorktreeAbsence(row.close_out_outcome) === 'already-released') {
+        options.presentation.log(alreadyReleasedWorktreeLine(id))
+        return
+      }
       throw new Error(`run ${id} has no worktree to discard`)
     }
     const repoRoot = cleanupRepoRoot(row)

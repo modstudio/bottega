@@ -308,7 +308,8 @@ test('stop omits a reviewed branch that the conversation did not mint', async ()
 
   const result = await invoke('stop', id)
 
-  expect(result.out).toContain('kept worktree /tmp/review-tree for continuation')
+  expect(result.out).toContain('released worktree /tmp/review-tree')
+  expect(result.out).not.toContain('for continuation')
   expect(result.out).not.toContain('DEV-930-orch-6210')
 })
 

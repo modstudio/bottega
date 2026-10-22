@@ -12,6 +12,7 @@ import {
   withCleanupLock,
 } from '../cleanup/cleanup.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -41,6 +42,7 @@ import type {
   TerminateRunProcessesResult,
   VerifiedRunProcessTermination,
 } from './run-process.ts'
+import { stoppedWorktreeDisposition, stoppedWorktreeLine } from './stopped-worktree-decision.ts'
 
 export function stoppedRunLine(id: string): string {
   return `stopped run ${id}`
@@ -67,16 +69,6 @@ export function stopTerminationRefusal(
   return null
 }
 
-function stoppedWorktreeLine(
-  worktree: string,
-  branch: string | null,
-  branchOwnedByConversation: boolean,
-  dockerMessage: string,
-): string {
-  const keptBranch = branchOwnedByConversation ? ` and branch ${branch}` : ''
-  return `kept worktree ${worktree}${keptBranch} for continuation; ${dockerMessage}`
-}
-
 function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
   if (!dockerTeardown.complete) {
     return dockerTeardown.removed
@@ -93,6 +85,11 @@ function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
   return 'found no Docker containers to reclaim'
 }
 
+function stopJobIsReadOnly(jobName: string | null | undefined): boolean {
+  const needs = jobName ? JOBS[jobName]?.needs : undefined
+  return Boolean(needs?.readsRepo) && !needs?.writesRepo
+}
+
 function logStoppedRun(
   options: RunStopOptions,
   row: StopRow,
@@ -100,9 +97,14 @@ function logStoppedRun(
   dockerTeardown: TerminalDockerTeardown,
 ): void {
   options.presentation.log(stoppedRunLine(row.record_id))
-  if (cleanupRow.worktree) {
+  const disposition = stoppedWorktreeDisposition({
+    readOnlyJob: stopJobIsReadOnly(cleanupRow.job),
+    worktree: cleanupRow.worktree,
+  })
+  if (disposition !== 'none' && cleanupRow.worktree) {
     options.presentation.log(
       stoppedWorktreeLine(
+        disposition,
         cleanupRow.worktree,
         cleanupRow.branch,
         branchDeletionProvenanceRefusal(cleanupRow.record_id, cleanupRow.branch) === null,
@@ -140,6 +142,7 @@ type StopRow = {
   agent_pid: number | null
   parent_run_record_id: string | null
   turn: number
+  job: string
   repo: string | null
   cwd: string | null
   worktree: string | null
@@ -151,7 +154,7 @@ type StopRow = {
 function readStopChain(rootId: string): StopRow[] {
   return db()
     .query(
-      `SELECT record_id, number, status, pid, agent_pid, parent_run_record_id, turn, repo, cwd, worktree, branch,
+      `SELECT record_id, number, status, pid, agent_pid, parent_run_record_id, turn, job, repo, cwd, worktree, branch,
             base_commit, worktree_source
        FROM run WHERE record_id = ? OR parent_run_record_id = ? ORDER BY turn DESC, number DESC`,
     )
@@ -174,6 +177,7 @@ function stopCleanupRow(chain: StopRow[], root: StopRow, row: StopRow) {
     base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
     worktree_source:
       root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
+    job: row.job ?? root.job ?? artifact?.job,
   }
 }
 

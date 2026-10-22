@@ -172,6 +172,14 @@ export const cleanupBoundarySpecs = [
       'Keep the scheduled leftover adapter limited to the pure ruling, canonical evidence and chain facts, run paths, cleanup, and the shared storage walk.',
   },
   {
+    name: 'discard-worktree-absence-boundary',
+    file: 'orchestrator/src/cleanup/discard-worktree-absence.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep discard absence classification pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
     name: 'cleanup-sweep-decisions-boundary',
     file: 'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
     allowed: ['../../../shared/brand.ts', '../../../shared/caller-classification.ts'],

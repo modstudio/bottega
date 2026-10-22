@@ -14,7 +14,13 @@ test('stop releases a read-only job tree and keeps a writing job tree', () => {
 
 test('stop names the released reader clone and the kept writing tree', () => {
   expect(
-    stoppedWorktreeLine('release', '/tmp/reader-clone', 'DEV-1540-review', false, 'found no Docker containers to reclaim'),
+    stoppedWorktreeLine(
+      'release',
+      '/tmp/reader-clone',
+      'DEV-1540-review',
+      false,
+      'found no Docker containers to reclaim',
+    ),
   ).toBe('released worktree /tmp/reader-clone; found no Docker containers to reclaim')
   expect(
     stoppedWorktreeLine(
