@@ -12,6 +12,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from inbox_question_decision import decide_inbox_questions
+
 
 def _start(bottega, *args, env=None, cwd=None):
     return subprocess.Popen(
@@ -434,7 +436,7 @@ def _inbox_counts(stdout):
         if not valid:
             raise ValueError("invalid inbox JSON")
 
-    answerable_count = sum(item["can_answer"] for item in questions)
+    answerable_count = decide_inbox_questions(questions).answerable_now
     run_questions = [item for item in questions if item.get("kind") != "workflow"]
     workflow_questions = [item for item in questions if item.get("kind") == "workflow"]
     foreign_count = len(

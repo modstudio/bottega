@@ -188,7 +188,7 @@ for ((i = 1; i <= MAX; i++)); do
   # "bottega said nothing" from "bottega did not answer".
   inbox_err=$(mktemp)
   runs_err=$(mktemp)
-  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --json 2>"$inbox_err"); inbox_rc=$?
+  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --active --json 2>"$inbox_err"); inbox_rc=$?
   runs_raw=$("$BOTTEGA" run list --limit 200 --json 2>"$runs_err"); runs_rc=$?
   rm -f "$inbox_err" "$runs_err"
   if [ ! -d "$ROOT" ]; then
@@ -196,18 +196,7 @@ for ((i = 1; i <= MAX; i++)); do
     exit 2
   fi
 
-  asking=$(printf '%s' "$inbox_raw" | python3 -c '
-import sys, json
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(2)
-if not isinstance(d, list):
-    raise SystemExit(2)
-if not all(isinstance(item, dict) and isinstance(item.get("can_answer"), bool) for item in d):
-    raise SystemExit(2)
-print(sum(item["can_answer"] for item in d))
-' 2>/dev/null); inbox_parse_rc=$?
+  inbox_observed=$(printf '%s' "$inbox_raw" | python3 "$ROOT/hooks/heartbeat-decision.py" inbox 2>/dev/null); inbox_parse_rc=$?
 
   observed=$(printf '%s' "$runs_raw" | SID="$SID" INTERVAL="$INTERVAL" python3 -c '
 import sys, json, os, datetime
@@ -374,7 +363,10 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     sleep "$INTERVAL"; continue
   fi
 
+  asking=${inbox_observed%%$'\t'*}; inbox_rest=${inbox_observed#*$'\t'}
+  parked=${inbox_rest%%$'\t'*}; inbox_ids=${inbox_rest#*$'\t'}
   asking=${asking:-0}
+  parked=${parked:-0}
   state=${observed%%$'\n'*}
   state=${state#*$'\t'}
   n=${state%%$'\t'*}; rest=${state#*$'\t'}
@@ -406,7 +398,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     fi
   done <<< "$observed"
 
-  key="$asking|$n|$ids|$landing_n|$landing_ids"
+  key="$inbox_ids|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
   direct_stalled_subjects=""
   combined_detail="$detail"
@@ -414,8 +406,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
     combined_detail="$combined_detail$landing_detail"
   fi
-  decision_output=$(HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
-    HEARTBEAT_ASKING="$asking" HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
+  decision_output=$(printf '%s' "$inbox_raw" | HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
+    HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
       python3 "$ROOT/hooks/heartbeat-decision.py" tick)

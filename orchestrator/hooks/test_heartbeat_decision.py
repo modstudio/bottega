@@ -5,12 +5,14 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 
 
 PATH = Path(__file__).with_name("heartbeat-decision.py")
+sys.path.insert(0, str(PATH.parent))
 SPEC = importlib.util.spec_from_file_location("heartbeat_decision", PATH)
 heartbeat_decision = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(heartbeat_decision)
@@ -62,7 +64,7 @@ esac
 
     def test_one_tick_reports_blocked_and_stalled_once(self):
         decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", 1, 2, 0, 1, "run 7 idle", "ignored"
+            "12:34:56", [self.worker_question()], 2, 0, 1, "run 7 idle", "ignored"
         )
         self.assertEqual(len(decision.lines), 2)
         self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
@@ -70,36 +72,75 @@ esac
 
     def test_live_runs_keep_looping(self):
         decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", 0, 1, 0, 0, "", "run 7 live"
+            "12:34:56", [], 1, 0, 0, "", "run 7 live"
         )
         self.assertFalse(decision.should_exit)
         self.assertIn("WAITING - 1 run(s) and 0 landing(s)", decision.lines[0])
 
     def test_live_landings_only_keep_looping(self):
         decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", 0, 0, 1, 0, "", "landing live"
+            "12:34:56", [], 0, 1, 0, "", "landing live"
         )
         self.assertFalse(decision.should_exit)
         self.assertIn("WAITING - 0 run(s) and 1 landing(s)", decision.lines[0])
 
     def test_asking_keeps_looping(self):
         decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", 1, 0, 0, 0, "", ""
+            "12:34:56", [self.worker_question()], 0, 0, 0, "", ""
         )
         self.assertFalse(decision.should_exit)
         self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
 
     def test_stalled_keeps_looping(self):
         decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56", 0, 0, 0, 1, "run 7 idle", ""
+            "12:34:56", [], 0, 0, 1, "run 7 idle", ""
         )
         self.assertFalse(decision.should_exit)
         self.assertIn("STALLED - 1 run(s)", decision.lines[0])
 
     def test_nothing_live_exits(self):
-        decision = heartbeat_decision.heartbeat_decision("12:34:56", 0, 0, 0, 0, "", "")
+        decision = heartbeat_decision.heartbeat_decision("12:34:56", [], 0, 0, 0, "", "")
         self.assertTrue(decision.should_exit)
         self.assertEqual(decision.lines, [])
+
+    @staticmethod
+    def worker_question(**overrides):
+        question = {"question_id": 7, "can_answer": True}
+        question.update(overrides)
+        return question
+
+    def test_own_worker_question_is_blocked(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", [self.worker_question()], 1, 0, 0, "", "run 7 asking"
+        )
+        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+
+    def test_own_parked_workflow_question_is_waiting(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56",
+            [{"kind": "workflow", "question_id": 8, "session_id": "own", "can_answer": True}],
+            0,
+            0,
+            0,
+            "",
+            "",
+        )
+        self.assertIn("WAITING", decision.lines[0])
+        self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
+
+    def test_foreign_question_is_not_counted(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", [self.worker_question(can_answer=False)], 0, 0, 0, "", ""
+        )
+        self.assertTrue(decision.should_exit)
+        self.assertEqual(decision.lines, [])
+
+    def test_duplicate_question_rows_count_once(self):
+        question = self.worker_question()
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", [question, question], 0, 0, 0, "", ""
+        )
+        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
 
     def test_failure_reason_is_bounded_to_the_first_printable_line(self):
         reason = heartbeat_decision.monitor_failure_reason(
@@ -152,6 +193,7 @@ esac
                 hooks.mkdir(parents=True)
                 binary.mkdir()
                 shutil.copy2(PATH, hooks / PATH.name)
+                shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
                 heartbeat_fixture = hooks / "orch-heartbeat.sh"
                 heartbeat_source = PATH.with_name("orch-heartbeat.sh").read_text(encoding="utf-8")
                 heartbeat_fixture.write_text(
@@ -169,7 +211,7 @@ esac
                     """#!/bin/sh
 case \"$*\" in
   \"board presence\") exit 0 ;;
-  \"question inbox --all --json\") printf '[]\\n' ;;
+  \"question inbox --all --active --json\") printf '[]\\n' ;;
   \"run list --limit 200 --json\")
     printf '%s\\n' '{\"record_id\":\"01990000-0000-7000-8000-000000000001\",\"number\":1,\"job\":\"fixture\",\"agent\":\"codex\",\"status\":\"ok\",\"session_id\":\"other\",\"started_at\":\"2026-01-01T00:00:00Z\",\"latency_ms\":1}' ;;
   \"machine monitor --notices --json\") echo $$ >\"$FAKE_MONITOR_PID_FILE\"; sleep 30 ;;
