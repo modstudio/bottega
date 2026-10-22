@@ -77,7 +77,6 @@ test('every registered top-level command is recognized as canon', () => {
     'agents',
     'workflow',
     'lens',
-    'note',
     'close-out',
     'confinement',
     'reconcile',

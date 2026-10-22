@@ -70,7 +70,7 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   {
     path: 'hub/src/db.ts',
     line: 56,
-    reason: 'embedded hub runtime resolution skips checkout discovery and legacy paths',
+    reason: 'embedded dashboard runtime resolution skips checkout discovery and legacy paths',
   },
   {
     path: 'hub/src/hosted.ts',

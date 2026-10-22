@@ -101,7 +101,7 @@ test('every hosted port writer refuses a worker before calling the record', () =
   ]
   try {
     for (const write of writers) {
-      expect(write).toThrow('refusing port store write from an orch worker run')
+      expect(write).toThrow('refusing port store write from an orchestrator worker run')
     }
     expect(calls).toBe(0)
   } finally {

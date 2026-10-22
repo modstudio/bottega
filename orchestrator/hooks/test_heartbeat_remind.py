@@ -20,10 +20,10 @@ class DetachedDispatchTest(unittest.TestCase):
 
     def test_following_dispatch_does_not_need_a_heartbeat(self):
         self.assertIsNone(
-            heartbeat_remind.detached_dispatch("bottega run start implement task --follow")
+            heartbeat_remind.detached_dispatch("orch do implement task --follow")
         )
         self.assertIsNone(
-            heartbeat_remind.detached_dispatch("orch do implement task --follow")
+            heartbeat_remind.detached_dispatch("bottega run start implement task --follow")
         )
 
     def test_ignores_removed_legacy_land_command(self):

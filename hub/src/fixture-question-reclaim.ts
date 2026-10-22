@@ -118,7 +118,7 @@ export async function reclaimFixtureQuestions(
   const missingRunIds = runIds.filter((id) => !answersById.has(id))
   if (missingRunIds.length) {
     throw new Error(
-      `orch's answer was incomplete; missing run ids: ${missingRunIds.join(', ')}; nothing was removed`,
+      `orchestrator's answer was incomplete; missing run ids: ${missingRunIds.join(', ')}; nothing was removed`,
     )
   }
   const selectedIntervals = fixtureIntervalsWithoutRuns(listed, answersById)

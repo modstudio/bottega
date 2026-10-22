@@ -170,7 +170,7 @@ export function ReviewPage() {
             },
             {
               title: 'Routed like any job',
-              text: 'A lens is an orch job, so it goes to whichever agent scores best on that dimension in this repository.',
+              text: 'A lens is an orchestrator job, so it goes to whichever agent scores best on that dimension in this repository.',
             },
             {
               title: 'Anchored to the work',

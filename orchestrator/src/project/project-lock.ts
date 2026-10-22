@@ -680,7 +680,7 @@ function lockTimeout(
  * Runtime paths are keyed by the common git directory, so callers from the main
  * checkout and any linked worktree contend while unrelated projects do not.
  * It deliberately surrounds project tools
- * and recipes as well as orch's own git calls; a fetch inside a project recipe was
+ * and recipes as well as orchestrator's own git calls; a fetch inside a project recipe was
  * the operation that exposed the original race.
  */
 export function withWorktreeCreateLock<T>(

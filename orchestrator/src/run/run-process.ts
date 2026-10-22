@@ -183,7 +183,7 @@ function commandIsRunExecutor(command: string): boolean {
 }
 
 /**
- * Whether this process is running inside an orch worker executor.
+ * Whether this process is running inside an orchestrator worker executor.
  *
  * This guards operator-only actions against confused workers. It is not a
  * security boundary against a same-uid process that detaches itself: that

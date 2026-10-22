@@ -50,7 +50,7 @@ describe('worker shared-text store writes', () => {
     const refusal = workerStoreWriteRefusal('workflow', `${PLATFORM_SLUG} workflow import`, {
       [marker]: '42',
     })
-    expect(refusal).toContain('refusing workflow store write from an orch worker run')
+    expect(refusal).toContain('refusing workflow store write from an orchestrator worker run')
     expect(refusal).toContain('ORCH_RUN_ID or ORCH_DEPTH marks this process as a worker run')
     expect(refusal).toContain('write the intended hydrated file in your tree')
     expect(refusal).toContain('state the exact store change in your reply')
@@ -74,7 +74,7 @@ describe('worker shared-text store writes', () => {
     expect(created.slug).toBe('worker-service-guard')
 
     process.env.ORCH_RUN_ID = 'doc-service-worker'
-    const refusal = 'refusing document store write from an orch worker run'
+    const refusal = 'refusing document store write from an orchestrator worker run'
     await expect(
       setDoc({
         scope: 'global',
@@ -143,7 +143,7 @@ describe('worker shared-text store writes', () => {
     expect(architectWorkflow.status).toBe('draft')
 
     process.env.ORCH_RUN_ID = 'workflow-service-worker'
-    const refusal = 'refusing workflow store write from an orch worker run'
+    const refusal = 'refusing workflow store write from an orchestrator worker run'
     const workflowWrites = [
       () => setWorkflow('worker-set', workflow.definition, 'worker fixture', 'worker', d),
       () => importWorkflow('worker-import', workflow.definition, 'worker fixture', 'worker', d),

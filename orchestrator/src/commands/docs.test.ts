@@ -10,7 +10,7 @@ import { drainStdout } from './support.ts'
 
 const flags = (...names: string[]) => ({ has: (name: string) => names.includes(name) })
 
-test('an orch worker cannot hydrate user canon but can check it', () => {
+test('an orchestrator worker cannot hydrate user canon but can check it', () => {
   const inventory = {
     ascertainable: true as const,
     rows: [
@@ -21,7 +21,7 @@ test('an orch worker cannot hydrate user canon but can check it', () => {
   }
 
   expect(() => assertUserCanonHydrateAllowed(flags(), {}, 300, inventory)).toThrow(
-    `refusing user canon hydrate from an orch worker run; an operator must run ${PLATFORM_SLUG} doc canon hydrate --user`,
+    `refusing user canon hydrate from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} doc canon hydrate --user`,
   )
   expect(() => assertUserCanonHydrateAllowed(flags('check'), {}, 300, inventory)).not.toThrow()
 })

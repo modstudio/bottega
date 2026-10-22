@@ -73,7 +73,7 @@ EXPECTED INSTEAD
 the legacy expectation
 
 HOW TO REPRODUCE
-Command: orch legacy reproduction
+Command: orchestrator legacy reproduction
 Environment: legacy shell
 
 EVIDENCE
@@ -98,7 +98,7 @@ the legacy uncertainty`
     expect(parseFiledIssue(legacy)).toMatchObject({
       whatHappened: 'the legacy observation',
       expected: 'the legacy expectation',
-      reproduceCommand: 'orch legacy reproduction',
+      reproduceCommand: 'orchestrator legacy reproduction',
       environment: 'legacy shell',
       evidence: 'the legacy evidence',
       notEstablished: 'the legacy uncertainty',

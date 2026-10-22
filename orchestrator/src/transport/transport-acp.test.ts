@@ -337,7 +337,7 @@ describe('ACP transport selection', () => {
   })
 })
 
-describe('ACP event fixtures normalize to orch outcomes', () => {
+describe('ACP event fixtures normalize to orchestrator outcomes', () => {
   test('context occupancy never becomes vendor tokens', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_STRUCTURED_OK)
     expect(result.status).toBe('ok')
@@ -542,7 +542,7 @@ describe('ACP event fixtures normalize to orch outcomes', () => {
     expect(result.questions[0]?.question).toContain('two designs')
   })
 
-  test('max_tokens and refusal map to orch failure kinds', () => {
+  test('max_tokens and refusal map to orchestrator failure kinds', () => {
     const truncated = normalizeAcpTurn(ACP_FIXTURE_TRUNCATED)
     expect(truncated.status).toBe('failed')
     expect(failureKindFromStop(truncated.stopReason, truncated.error)).toBe('truncated')

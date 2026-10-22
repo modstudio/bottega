@@ -37,7 +37,7 @@ export function toolFor(cwd: string): WorktreeTool | null {
  * exists; an older tool with no resolver gets no invented verdict from orch.
  *
  * The argv after `resolve` is seedArgv of the create declaration: the same words
- * the create command will pass. That is not orch parsing the seed
+ * the create command will pass. That is not orchestrator parsing the seed
  * grammar — it is delivering the spec the way the project declared it wants
  * the spec delivered.
  */
@@ -88,6 +88,6 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
  *
  * The seed is REQUIRED where the project lists seeds, because the project
  * requires it — one application removed its default after discovering the default was
- * silent and left every business table empty. orch will not reinstate by
+ * silent and left every business table empty. orchestrator will not reinstate by
  * omission a default that was deliberately removed.
  */

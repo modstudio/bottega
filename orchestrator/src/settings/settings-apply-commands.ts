@@ -166,7 +166,7 @@ export async function settingsRenderWriteCommand(
 ): Promise<void> {
   if (workerProcess()) {
     throw new Error(
-      `refusing settings render --write from an orch worker run; an operator must run ${PLATFORM_SLUG} machine settings render --write`,
+      `refusing settings render --write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings render --write`,
     )
   }
   const target = resolveTarget(flags)

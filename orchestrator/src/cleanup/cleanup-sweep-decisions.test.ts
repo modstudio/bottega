@@ -526,7 +526,7 @@ describe('filesystem orphan eligibility ruling', () => {
     expected: ReturnType<typeof decideFilesystemOrphanEligibility>
   }> = [
     {
-      name: 'a tree not created by orch is kept',
+      name: 'a tree not created by orchestrator is kept',
       facts: { orchOwned: false, alive: false, safe, dry: false },
       expected: {
         action: 'keep',

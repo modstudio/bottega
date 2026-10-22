@@ -82,10 +82,10 @@ export type ConfinementReportInput = {
   mcp?: boolean
 }
 
-const OPEN = 'orch has no denial'
+const OPEN = 'orchestrator has no denial'
 const JOB_KINDS: readonly ConfinementJobKind[] = CONFINEMENT_JOB_KINDS
 const MCP_VALUES = [false, true] as const
-const CODEX_NO_READ_DENIAL = 'orch passes codex no read denial'
+const CODEX_NO_READ_DENIAL = 'orchestrator passes codex no read denial'
 
 export function confinementJobKindFromNeeds(needs: {
   readsRepo?: boolean
