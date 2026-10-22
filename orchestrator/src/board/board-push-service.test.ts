@@ -19,8 +19,9 @@ import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
-import { BOARD_DELIVERY_MAX_MESSAGES } from './board-render.ts'
+import { BOARD_DELIVERY_MAX_MESSAGES, renderBoardNoticeOneLine } from './board-render.ts'
 import { postNotice } from './board-service.ts'
+import { renderBoardReplyDelivery } from './board-thread-render.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const interruptHook = resolve(import.meta.dir, '../../hooks/board-interrupt.py')
@@ -338,7 +339,14 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     String(question.number),
   ])
   const text = (id: string) => first.delivery.find((message) => message.id === id)!.text
-  expect(text(String(ordinary.number))).not.toContain('notice body')
+  expect(text(String(ordinary.number))).toBe(
+    renderBoardNoticeOneLine({
+      id: ordinary.number,
+      title: 'Ordinary',
+      sender: 'operator',
+      ackRequired: false,
+    }),
+  )
   expect(text(String(request.number))).toContain('request body')
   expect(text(String(standing.number))).toContain('standing body')
   await markBoardDeliveryDelivered({
@@ -366,6 +374,15 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     clock: clock + 5,
   })
   expect(second.delivery.map((message) => message.id)).toEqual([String(reply.number)])
+  expect(second.delivery[0]!.text).toBe(
+    renderBoardReplyDelivery({
+      origin: 'architect thread-author (claude-code, push-project)',
+      rootId: question.recordId,
+      rootTitle: 'Question',
+      body: 'author followed up',
+    }),
+  )
+  expect(second.delivery[0]!.text).not.toContain('question body')
   await markBoardDeliveryDelivered({
     session: 'delivery-reader',
     ids: second.delivery.map((message) => message.id),
@@ -458,6 +475,7 @@ test('mid-session hosted delivery includes an ordinary notice, question, and par
       threadRootId: rootId,
       audience: null,
       title: null,
+      body: 'hosted reply body',
       createdAt: new Date(clock + 3).toISOString(),
     },
   ]
@@ -482,6 +500,15 @@ test('mid-session hosted delivery includes an ordinary notice, question, and par
     messages[1]!.id,
     messages[3]!.id,
   ])
+  expect(first.delivery[2]!.text).toBe(
+    renderBoardReplyDelivery({
+      origin: 'architect other (claude-code, unknown project)',
+      rootId,
+      rootTitle: 'Hosted',
+      body: 'hosted reply body',
+    }),
+  )
+  expect(first.delivery[2]!.text).not.toContain(': hosted body')
   await markBoardDeliveryDelivered({
     session: reader,
     ids: first.delivery.map((message) => message.id),
@@ -721,6 +748,25 @@ test('PostToolUse injects pending text', () => {
     hookEventName: 'PostToolUse',
     additionalContext: JSON.parse(hookOutput).delivery[0].text,
   })
+})
+
+test('PostToolUse injects the shared reply delivery rendering unchanged', () => {
+  const text = renderBoardReplyDelivery({
+    origin: 'architect alephbeis',
+    rootId: 'thread-record-id',
+    rootTitle: 'Thread title',
+    body: 'reply body',
+  })
+  const output = JSON.stringify({
+    delivery: [{ id: 'reply-record-id', text, requiresAcknowledgement: false }],
+    overflow: null,
+    pendingAcknowledgements: [],
+  })
+  const item = createHookFixture(output)
+  addCandidate(item, 1)
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
+  expect(result.exitCode).toBe(0)
+  expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext).toBe(text)
 })
 
 test('PostToolUse fails open on command timeout', () => {

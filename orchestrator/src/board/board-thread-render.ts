@@ -41,3 +41,12 @@ export function renderBoardReply(message: {
     quoteBoardBody(message.body),
   ].join('\n')
 }
+
+export function renderBoardReplyDelivery(message: {
+  origin: string
+  rootId: number | string
+  rootTitle: string
+  body: string
+}): string {
+  return `Reply on "${boardHeaderValue(message.rootTitle.slice(0, BOARD_TITLE_MAX_CHARS))}" (thread ${boardHeaderValue(message.rootId)}) from ${boardHeaderValue(message.origin)}: ${message.body}`
+}
