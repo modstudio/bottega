@@ -20,6 +20,7 @@ import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
 import { optionalContinuationMessageBinding } from './continuation-message.ts'
+import { requireContinuationProvision } from './continuation-provision-service.ts'
 import type { ContinuationTreeDecision } from './continuation-tree-decision.ts'
 import {
   continuationReadOnlyBase,
@@ -432,6 +433,56 @@ function effectiveCheckpointContext(
   return `CHECKPOINT RESUME\nResume from retained work at ${plan.tip}.`
 }
 
+function continuationLaunch(
+  inherited: ResumeLaunchOptions,
+  id: string,
+  treeDecision: ContinuationTreeDecision,
+  writesRepo: boolean,
+  project: Project | null,
+): ResumeLaunchOptions {
+  return {
+    ...inherited,
+    seed: requireContinuationProvision({
+      rootId: id,
+      treeDecision,
+      recordedSeed: inherited.seed,
+      writesRepo,
+      project,
+    }).seed,
+  }
+}
+
+function continuationPrompt(
+  id: string,
+  jobName: string,
+  checkpointContext: string | null,
+  continuationMessage: string | undefined,
+): string {
+  if (!checkpointContext) {
+    return (
+      continuationMessage ??
+      'Continue from where you stopped and finish the spec. If you reached a ' +
+        'decision that is not yours, stop and ask as before.'
+    )
+  }
+  const rootPrompt = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(id) as {
+    prompt_path: string | null
+  }
+  if (!rootPrompt.prompt_path || !existsSync(rootPrompt.prompt_path)) {
+    throw new Error(`run ${id} checkpoint cannot continue: its original prompt file is unavailable`)
+  }
+  return renderCheckpointContinuationPrompt({
+    checkpointContext,
+    originalSpec: readFileSync(rootPrompt.prompt_path, 'utf8'),
+    continuationInstructions: continuationInstructionsForFreshRetry(
+      Boolean(job(jobName).needs.writesRepo),
+      id,
+      id,
+    ),
+    message: continuationMessage,
+  })
+}
+
 function inheritedResumeWorktree(
   decision: ContinuationTreeDecision,
   plan: ResumeTreePlan | null,
@@ -662,7 +713,6 @@ export async function continueRun(
         `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
     )
   }
-  const readerBase = latest.base_commit ?? row.base_commit
   const treeDecision = requireContinuationTree({
     rootId: id,
     projectName: row.repo,
@@ -672,35 +722,16 @@ export async function continueRun(
     recordedTreeMatches,
     recordedWorktree: latest.worktree,
     writerTreeRecoverable: Boolean(treePlan),
-    baseCommit: readerBase,
+    baseCommit: latest.base_commit ?? row.base_commit,
   })
-  let prompt: string
-  if (checkpointContext) {
-    const rootPrompt = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(id) as {
-      prompt_path: string | null
-    }
-    if (!rootPrompt.prompt_path || !existsSync(rootPrompt.prompt_path)) {
-      throw new Error(
-        `run ${id} checkpoint cannot continue: its original prompt file is unavailable`,
-      )
-    }
-    const continuationInstructions = continuationInstructionsForFreshRetry(
-      Boolean(job(row.job).needs.writesRepo),
-      id,
-      id,
-    )
-    prompt = renderCheckpointContinuationPrompt({
-      checkpointContext,
-      originalSpec: readFileSync(rootPrompt.prompt_path, 'utf8'),
-      continuationInstructions,
-      message: continuationMessage,
-    })
-  } else {
-    prompt =
-      continuationMessage ??
-      'Continue from where you stopped and finish the spec. If you reached a ' +
-        'decision that is not yours, stop and ask as before.'
-  }
+  const launch = continuationLaunch(
+    inheritedLaunch,
+    id,
+    treeDecision,
+    Boolean(jobNeeds.writesRepo),
+    project,
+  )
+  const prompt = continuationPrompt(id, row.job, checkpointContext, continuationMessage)
   refuseOversizedResumePrompt({
     checkpointContext,
     agent: sessionFrom?.agent ?? latest.agent,
@@ -719,7 +750,7 @@ export async function continueRun(
   const childId = await detach(row.job, prompt, {
     cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
-    ...inheritedLaunch,
+    ...launch,
     transport: chainTransport(id) ?? undefined,
     resume: {
       kind: continuationResumeKind(Boolean(checkpointContext)),
