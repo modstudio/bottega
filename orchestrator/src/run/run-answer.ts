@@ -215,6 +215,7 @@ function requireAnswerAuthority(
     actor: authority.actor,
     ownerLastSeenAt: authority.ownerLastSeenAt,
     chainLastActivityAt: authority.chainLastActivityAt,
+    coordinatorRun: authority.coordinatorRun,
     now: authority.now,
     windowMs: authority.windowMs,
   })

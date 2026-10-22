@@ -13,6 +13,7 @@ const decide = (overrides: Partial<Parameters<typeof fileRulingDecision>[0]> = {
     actor: 'owner-session',
     ownerLastSeenAt: 900,
     chainLastActivityAt: 800,
+    coordinatorRun: false,
     now: 1_000,
     windowMs: 200,
     fromOperator: false,

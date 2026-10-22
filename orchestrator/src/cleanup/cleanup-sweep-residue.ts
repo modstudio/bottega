@@ -284,6 +284,7 @@ export function sweepUnattendedResidue(
     const ruling = decideUnattendedReclaim({
       kind: candidate.kind,
       ...ownerFacts(candidate.runId, now),
+      coordinatorRun: false,
       now,
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
       liveness: liveness(candidate),
