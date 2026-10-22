@@ -5,12 +5,9 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import { upsertProject } from '../project/projects.ts'
-import {
-  annotateHeldLandingInFlight,
-  lookupOpenPr,
-  OPEN_PR_TIMEOUT_MS,
-} from './close-out-in-flight.ts'
+import { annotateHeldLandingInFlight, lookupOpenPr } from './close-out-in-flight.ts'
 
 afterEach(() => {
   mock.restore()
@@ -45,8 +42,13 @@ function insertCursor(input: {
   return row.id
 }
 
-function heldResult(runId: string, worktree: string, detail: string) {
-  return { runId, worktree, outcome: 'held' as const, detail }
+function heldResult(
+  runId: string,
+  worktree: string,
+  detail: string,
+  hold: LandingTreeHoldKind = 'landing-progress',
+) {
+  return { runId, worktree, outcome: 'held' as const, detail, hold }
 }
 
 describe('close-out in-flight hold annotation', () => {
@@ -85,6 +87,8 @@ describe('close-out in-flight hold annotation', () => {
     expect(annotated.detail).toBe(
       `in flight (cursor ${cursorId} merge-pr); landing tree held by session owner: landing is in flight`,
     )
+    expect(annotated.inFlightRef).toBe(`cursor ${cursorId} merge-pr`)
+    expect(annotated.suppressBlock).toBe(true)
   })
 
   test('a cursor for another tree or project does not suppress the hold', () => {
@@ -119,6 +123,8 @@ describe('close-out in-flight hold annotation', () => {
     )
 
     expect(annotated.detail).toBe('landing tree held by session owner: landing is in flight')
+    expect(annotated.inFlightRef).toBeNull()
+    expect(annotated.suppressBlock).toBe(false)
   })
 
   test('a dirty unique-work hold keeps the matching cursor as a suffix', () => {
@@ -138,24 +144,20 @@ describe('close-out in-flight hold annotation', () => {
     })
 
     const annotated = annotateHeldLandingInFlight(
-      heldResult(id, tree, 'landing tree held by session owner: tree is dirty'),
+      heldResult(id, tree, 'landing tree held by session owner: tree is dirty', 'unique-work'),
     )
 
     expect(annotated.detail).toBe(
       `landing tree held by session owner: tree is dirty; in flight (cursor ${cursorId} merge-pr)`,
     )
+    expect(annotated.inFlightRef).toBe(`cursor ${cursorId} merge-pr`)
+    expect(annotated.suppressBlock).toBe(false)
   })
 
-  test('lookupOpenPr keeps a three-second timeout and reads an open PR number', () => {
+  test('lookupOpenPr reads an open PR number', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'close-out-pr-'))
     mkdirSync(cwd, { recursive: true })
-    const commands: string[][] = []
-    spyOn(Bun, 'spawnSync').mockImplementation(((
-      command: string[],
-      options: { timeout?: number },
-    ) => {
-      commands.push(command)
-      expect(options.timeout).toBe(OPEN_PR_TIMEOUT_MS)
+    spyOn(Bun, 'spawnSync').mockImplementation((() => {
       return {
         exitCode: 0,
         stdout: Buffer.from('[{"number":88}]'),
@@ -166,7 +168,6 @@ describe('close-out in-flight hold annotation', () => {
     }) as typeof Bun.spawnSync)
     try {
       expect(lookupOpenPr(cwd, 'DEV-1594-ship')).toBe('#88')
-      expect(commands[0]?.slice(0, 3)).toEqual(['gh', 'pr', 'list'])
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }

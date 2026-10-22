@@ -508,6 +508,21 @@ function throwUnlessReleased(result: ReturnType<typeof closeOutRun>): void {
   throw error
 }
 
+function recordMechanicalFailure(
+  report: SessionCloseOutReport,
+  label: string,
+  session: string,
+  cause: unknown,
+): void {
+  const held = heldTreeFromError(cause)
+  if (held) report.heldTrees.push(held)
+  report.errors.push({
+    item: label,
+    detail: cause instanceof Error ? cause.message : String(cause),
+    retry: `${PLATFORM_SLUG} session close-out --session ${session}`,
+  })
+}
+
 function applyMechanicalAction(action: SessionMechanicalAction, database: Database): void {
   if (action.kind === 'close-run') {
     throwUnlessReleased(closeOutRun(action.runId, { intent: 'explicit' }))
@@ -706,13 +721,7 @@ export function closeOutSession(
       applyMechanicalAction(action, database)
       report.mechanical.push(label)
     } catch (cause) {
-      const held = heldTreeFromError(cause)
-      if (held) report.heldTrees.push(held)
-      report.errors.push({
-        item: label,
-        detail: cause instanceof Error ? cause.message : String(cause),
-        retry: `${PLATFORM_SLUG} session close-out --session ${session}`,
-      })
+      recordMechanicalFailure(report, label, session, cause)
     }
   }
   const final =

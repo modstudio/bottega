@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import type { HeldTreeJson } from './close-out-report.ts'
 import { heldTreeJson } from './close-out-report.ts'
-import fixture from './held-tree-json.fixture.json'
 
-const rows = fixture as HeldTreeJson[]
+const rows = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./held-tree-json.fixture.json', import.meta.url)), 'utf8'),
+) as HeldTreeJson[]
 
 describe('close-out held-tree JSON shape', () => {
   test('heldTreeJson writes the Stop-hook fixture shape', () => {
-    const [inFlight, uniqueWork, other] = rows
+    const inFlight = rows[0]!
+    const uniqueWork = rows[1]!
+    const other = rows[2]!
     expect(
       heldTreeJson({
         runId: inFlight.runId,

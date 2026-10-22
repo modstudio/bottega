@@ -74,13 +74,14 @@ stop a run and abandon its worktree
 
 ## bottega run close-out
 
-**Synopsis:** `bottega run close-out <id> [--non-blocking]`
+**Synopsis:** `bottega run close-out <id> [--non-blocking] [--json]`
 
 release a terminal run worktree and its claims
 
 ### Options
 
 - `--non-blocking`: refuse instead of waiting for the cleanup lock
+- `--json`: write the close-out result as JSON
 
 ### Related
 

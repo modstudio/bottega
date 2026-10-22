@@ -36,7 +36,13 @@ export function heldConversationCloseOutResult(
   runId: string,
   worktree: string,
   hold: Extract<ConversationKeepTreeHold, { held: true }>,
-): CloseOutReportResult {
+): {
+  runId: string
+  worktree: string
+  outcome: 'held'
+  detail: string
+  hold?: LandingTreeHoldKind
+} {
   return {
     runId,
     worktree,

@@ -91,6 +91,7 @@ test("a turn's guard or retained ref makes its terminal root planned", () => {
     `would reconcile claims ${claimId}`,
   ])
   expect(report.errors).toEqual([])
+  expect(report.heldTrees).toEqual([])
   expect(report.verdict).toEqual({ clean: true, residue: 0 })
   expect(formatSessionCloseOut(report)).toContain(
     'owned items would be released by the 3 planned action(s); session would then be clean',

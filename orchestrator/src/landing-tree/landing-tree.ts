@@ -146,7 +146,10 @@ export function landingTreeHoldDecision<T>(
   row: { job: string; treeExists: boolean; branch: string | null; runId: string },
   clean: boolean,
   ordinary: T,
-): T | { held: true; until: null; reason: string } | { held: false; kept: true; reason: string } {
+):
+  | T
+  | { held: true; until: null; reason: string; hold: 'unique-work' }
+  | { held: false; kept: true; reason: string } {
   if (row.job !== LANDING_TREE_JOB || !row.treeExists) return ordinary
   if (!clean) {
     return {

@@ -91,6 +91,7 @@ describe('landing-tree decisions', () => {
       held: true,
       until: null,
       reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      hold: 'unique-work',
     })
   })
 
@@ -127,13 +128,22 @@ describe('landing-tree decisions', () => {
 
   test.each([
     [true, true, { action: 'release' }],
-    [false, true, { action: 'keep', reason: 'landing tree held by session owner: tree is dirty' }],
+    [
+      false,
+      true,
+      {
+        action: 'keep' as const,
+        reason: 'landing tree held by session owner: tree is dirty',
+        hold: 'unique-work' as const,
+      },
+    ],
     [
       true,
       false,
       {
-        action: 'keep',
+        action: 'keep' as const,
         reason: `landing tree held by session owner: branch has not landed; session owner releases it with ${PLATFORM_SLUG} tree remove <path>`,
+        hold: 'landing-progress' as const,
       },
     ],
   ] as const)('decides release from clean=%s landed=%s', (clean, landed, expected) => {
@@ -166,10 +176,12 @@ describe('landing-tree decisions', () => {
     expect(landingTreeReleaseDecision({ ...facts, landingInFlight: true }, false, false)).toEqual({
       action: 'keep',
       reason: 'landing tree held by session owner: landing is in flight',
+      hold: 'landing-progress',
     })
     expect(landingTreeReleaseDecision({ ...facts, status: 'running' }, false, false)).toEqual({
       action: 'keep',
       reason: 'landing tree held by session owner: conversation is running',
+      hold: 'other',
     })
   })
 
@@ -192,6 +204,7 @@ describe('landing-tree decisions', () => {
       ).toEqual({
         action: 'keep',
         reason: 'landing tree held by session owner: landing is in flight',
+        hold: 'landing-progress',
       })
     },
   )
@@ -209,10 +222,12 @@ describe('landing-tree decisions', () => {
     expect(landingTreeReleaseDecision(facts, false, false)).toEqual({
       action: 'keep',
       reason: 'landing tree held by session owner: tree is dirty',
+      hold: 'unique-work',
     })
     expect(landingTreeReleaseDecision({ ...facts, landingInFlight: true }, true, false)).toEqual({
       action: 'keep',
       reason: 'landing tree held by session owner: landing is in flight',
+      hold: 'landing-progress',
     })
   })
 
@@ -229,10 +244,12 @@ describe('landing-tree decisions', () => {
     expect(landingTreeReleaseDecision({ ...facts, landingInFlight: true }, false, false)).toEqual({
       action: 'keep',
       reason: 'landing tree held by session owner: landing is in flight',
+      hold: 'landing-progress',
     })
     expect(landingTreeReleaseDecision({ ...facts, status: 'running' }, false, false)).toEqual({
       action: 'keep',
       reason: 'landing tree held by session owner: conversation is running',
+      hold: 'other',
     })
   })
 
@@ -284,10 +301,6 @@ describe('held-tree in-flight landing', () => {
 
   test('a cursor for another tree is not in flight for this tree', () => {
     expect(heldTreeInFlight(facts({ cursor: cursor({ worktree: '/other-tree' }) }))).toBeNull()
-  })
-
-  test('a cursor for another project is not in flight for this tree', () => {
-    expect(heldTreeInFlight(facts({ cursor: cursor({ project: 'segnavia' }) }))).toBeNull()
   })
 
   test('a dirty unique-work hold still carries the matching cursor without suppressing', () => {

@@ -6,7 +6,7 @@ import { db } from '../database/db.ts'
 import { heldTreeInFlight } from '../landing-tree/landing-tree.ts'
 import { annotateHeldTreeDetail, type CloseOutReportResult } from './close-out-report.ts'
 
-export const OPEN_PR_TIMEOUT_MS = 3000
+const OPEN_PR_TIMEOUT_MS = 3000
 
 type RunLandingFacts = {
   repo: string | null
@@ -127,15 +127,11 @@ function inFlightForHold(worktree: string, run: RunLandingFacts, uniqueWork: boo
   })
 }
 
-export function annotateHeldLandingInFlight<T extends CloseOutReportResult>(result: T): T {
+export function annotateHeldLandingInFlight(result: CloseOutReportResult): CloseOutReportResult {
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
   const run = lookupRun(result.runId)
   if (!run) return result
-  const inFlight = inFlightForHold(
-    result.worktree,
-    run,
-    result.hold !== 'landing-progress',
-  )
+  const inFlight = inFlightForHold(result.worktree, run, result.hold !== 'landing-progress')
   return {
     ...result,
     detail: annotateHeldTreeDetail(result.detail, inFlight),

@@ -214,6 +214,11 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
+  module('orchestrator/src/close/close-out-report.ts', [
+    '../../../shared/brand.ts',
+    '../landing-tree/landing-tree.ts',
+    '../worktree/keep-tree-hold.ts',
+  ]),
   module('orchestrator/src/close/close-out-in-flight.ts', [
     'node:fs',
     '../database/db.ts',
