@@ -292,6 +292,7 @@ test('an incomplete admission refuses with its review remedy without merging', (
               architectReadRequired: false,
               earlierReviewNumber: null,
               earlierReviewTier: null,
+              noCompleteReviewRound: true,
             },
           },
         }),

@@ -201,7 +201,7 @@ export function triageRefusal(
   }
   for (const lens of decision.missingLenses) {
     lines.push(
-      `applicable lens ${lens} has not run and been judged; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+      `applicable lens ${lens} has no recorded result on this branch; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
     )
   }
   if (decision.missingSecondOpinion) {
@@ -218,7 +218,7 @@ export function triageRefusal(
     lines.push(
       `architect-read path failed: review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
     )
-  } else if (decision.earlierReviewNumber === null) {
+  } else if (decision.noCompleteReviewRound) {
     lines.push(
       `architect-read path failed: no earlier complete review round exists on ${change.branch}; cleared by: run and record the tier ${change.tier} review for ${change.branch}`,
     )
