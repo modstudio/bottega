@@ -63,6 +63,43 @@ function checkpoint(database: Database, repository: string, runId: string) {
   })
 }
 
+test('checkpoint leaves a clean tree without a commit', () => {
+  const { database, repository, runId } = fixture('clean')
+  try {
+    const head = git(['rev-parse', 'HEAD'], repository)
+
+    expect(checkpoint(database, repository, runId).created).toBe(false)
+    expect(git(['rev-parse', 'HEAD'], repository)).toBe(head)
+  } finally {
+    database.close()
+  }
+})
+
+test('checkpoint commits tracked work without a task key under the run id', () => {
+  const { database, repository, runId } = fixture('keyless-tracked')
+  try {
+    writeFileSync(join(repository, 'tracked.ts'), 'export const tracked = false\n')
+
+    const result = checkpointRun({
+      database,
+      runId,
+      worktree: repository,
+      branch,
+      taskKey: null,
+      scratchDir: temporary,
+      guardEnvironment: identity,
+      containment: hostContainment,
+    })
+
+    expect(result.created).toBe(true)
+    expect(git(['show', '-s', '--format=%s', 'HEAD'], repository)).toBe(
+      `checkpoint run ${runId} #1`,
+    )
+  } finally {
+    database.close()
+  }
+})
+
 test('checkpoint commits a fresh untracked file', () => {
   const { database, repository, runId } = fixture('untracked')
   try {

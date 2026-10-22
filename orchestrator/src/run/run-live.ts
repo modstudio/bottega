@@ -638,7 +638,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
     const createCheckpoint = (final = false) => {
-      if (!writesJob || !worktree || !launchKey) return null
+      if (!writesJob || !worktree) return null
       const result = checkpointRun({
         database: db(),
         runId: claim.id,
@@ -660,7 +660,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         },
         (requestedJob.checkpointMinutes ?? DEFAULT_CHECKPOINT_MINUTES) * 60_000,
       )
-      if (worktree && launchKey) {
+      if (worktree) {
         liveCheckpoints.set(handle, {
           runId: claim.id,
           rootId: checkpointRoot(opts.resume, claim.id),
