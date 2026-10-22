@@ -4,6 +4,7 @@ import {
   reportedRunCost,
   SUBSCRIPTION_AMORTIZED_SOURCE,
   SUBSCRIPTION_NO_TOKENS_SOURCE,
+  SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE,
   SUBSCRIPTION_UNPRICED_SOURCE,
   subscriptionMonthlyUsdKey,
   withReportedCost,
@@ -98,6 +99,29 @@ test('the shared row adapter returns cost fields and keeps the stored columns', 
     vendor_cost_source: 'estimated',
     cost_usd: 25,
     cost_source: SUBSCRIPTION_AMORTIZED_SOURCE,
+  })
+})
+
+test('an unread price is not reported as unpriced', () => {
+  expect(
+    withReportedCost(
+      {
+        agent: 'grok',
+        started_at: '2026-10-22T13:00:00.000Z',
+        vendor_tokens: 1,
+        vendor_cost_usd: null,
+        vendor_estimated_cost_usd: 23.5,
+        vendor_cost_source: 'estimated',
+      },
+      {
+        ...grokContext,
+        prices: {},
+        unavailable: { grok: 'hosted config is not configured' },
+      },
+    ),
+  ).toMatchObject({
+    cost_usd: null,
+    cost_source: SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE,
   })
 })
 

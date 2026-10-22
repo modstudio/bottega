@@ -170,7 +170,7 @@ function listingQuestions(recordId: string, json: boolean) {
 function listingConversation(
   r: Record<string, unknown>,
   json: boolean,
-  subscriptionCost: SubscriptionCostContext,
+  subscriptionCost: SubscriptionCostContext | undefined,
   chainIsStranded: (id: string) => boolean,
   strandedRecovery: (id: string) => string,
 ): Record<string, unknown>[] {
@@ -192,6 +192,7 @@ function listingConversation(
         }
       : {}),
   }
+  if (!subscriptionCost) return [listed]
   return [listedRunWithCost(listed, listingTurns(recordId, json), subscriptionCost)]
 }
 
@@ -345,11 +346,14 @@ export async function runListingCommand(
     thinOutputWarning,
     processObservation,
     clock,
-    subscriptionCost = { facts: subscriptionCostFacts(), prices: {} },
+    subscriptionCost,
   } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const json = has('json') || options.jsonV1
+  const costContext = json
+    ? (subscriptionCost ?? { facts: subscriptionCostFacts(), prices: {} })
+    : undefined
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
@@ -423,7 +427,7 @@ export async function runListingCommand(
   rows = rows
     .map(withRetryRecordId)
     .flatMap((r) =>
-      listingConversation(r, json, subscriptionCost, chainIsStranded, strandedRecovery),
+      listingConversation(r, json, costContext, chainIsStranded, strandedRecovery),
     )
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes

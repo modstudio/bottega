@@ -5,6 +5,7 @@ import type { Agent } from '../agent/agents.ts'
 export const SUBSCRIPTION_AMORTIZED_SOURCE = 'subscription, amortized'
 export const SUBSCRIPTION_UNPRICED_SOURCE = 'subscription, unpriced'
 export const SUBSCRIPTION_NO_TOKENS_SOURCE = 'subscription, no tokens'
+export const SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE = 'subscription, price unavailable'
 
 export type AgentBilling = Agent['billing']
 
@@ -44,6 +45,7 @@ export type SubscriptionCostFacts = {
 export type SubscriptionCostContext = {
   facts: SubscriptionCostFacts
   prices: Readonly<Record<string, number | null>>
+  unavailable?: Readonly<Record<string, string>>
 }
 
 export function subscriptionMonthlyUsdKey(harness: string): string {
@@ -99,8 +101,12 @@ export function reportedRunCost(input: {
   monthlyPriceUsd: number | null
   runTokens: number | null
   monthTokens: number | null
+  priceUnavailable?: boolean
 }): ReportedRunCost {
   if (input.billing === 'subscription') {
+    if (input.priceUnavailable) {
+      return { usd: null, source: SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE }
+    }
     return amortizedSubscriptionShare({
       monthlyPriceUsd: input.monthlyPriceUsd,
       runTokens: input.runTokens,
@@ -141,6 +147,7 @@ function reportedCostForRun(
       harness == null
         ? null
         : (context.facts.monthTokens[subscriptionMonthTokenKey(harness, run.started_at)] ?? null),
+    priceUnavailable: Boolean(harness && context.unavailable && harness in context.unavailable),
   })
 }
 

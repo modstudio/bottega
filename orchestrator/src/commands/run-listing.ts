@@ -85,6 +85,7 @@ export function register(program: Command): void {
                 : flags.values(name),
           }
         : flags
+      const json = resolvedFlags.has('json') || options.json === 'v1'
       await runListingCommand({ jsonV1: options.json === 'v1' }, resolvedFlags, {
         log,
         dur: duration,
@@ -101,7 +102,7 @@ export function register(program: Command): void {
         },
         processObservation: { sampleProcesses, processStartTime },
         clock: Date.now,
-        subscriptionCost: await loadSubscriptionCostContext(),
+        subscriptionCost: json ? await loadSubscriptionCostContext() : undefined,
       })
     })
 }
