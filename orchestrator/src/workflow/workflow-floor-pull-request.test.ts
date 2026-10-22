@@ -9,6 +9,7 @@ import {
 
 const url = 'https://github.com/acme/app/pull/7'
 const withheldOutput = '[withheld: secret-shaped content]'
+const withheldLine = '[withheld line: provider-prefix]'
 const link = {
   kind: 'link' as const,
   repository: 'acme/app',
@@ -114,6 +115,16 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
     condition: "the pull request head is other-branch, not this cursor's DEV-977-work",
   })
   expect(decidePullRequestEvidence({ ...exec, output: withheldOutput, link })).toEqual({
+    met: false,
+    condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
+  })
+  expect(decidePullRequestEvidence({ ...exec, output: withheldLine, link })).toEqual({
+    met: false,
+    condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
+  })
+  expect(
+    decidePullRequestEvidence({ ...exec, output: `opened ${url}\n${withheldLine}`, link }),
+  ).toEqual({
     met: false,
     condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
   })

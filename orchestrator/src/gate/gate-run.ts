@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { withholdSecretShapedGateLines } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -27,7 +28,6 @@ import {
   decideGateHeadCommit,
   GATE_OUTPUT_TAIL_BYTES,
   resolveGateCommand,
-  withholdSecretShapedGateLines,
 } from './gate-decision.ts'
 
 type ArchitectGateResult = {

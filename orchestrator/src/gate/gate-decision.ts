@@ -2,7 +2,6 @@
 /** Pure eligibility, concurrency, and result presentation for a registered worker gate. */
 
 import { isAbsolute, resolve } from 'node:path'
-import { evidenceSecretShapedRules } from '../../../shared/secret-shaped.ts'
 
 export type BrokerConfinement<Profile = unknown> =
   | { kind: 'host' }
@@ -219,17 +218,6 @@ export function changedGateToolingPaths(input: {
   return [...new Set([...input.diffPaths, ...input.untrackedPaths])]
     .filter((path) => isGateToolingPath(path, input.gateCommand))
     .sort()
-}
-
-/** Replace each evidence-secret-shaped line; keep the rest so a failure summary survives. */
-export function withholdSecretShapedGateLines(output: string): string {
-  return output
-    .split('\n')
-    .map((line) => {
-      const rule = evidenceSecretShapedRules(line)[0]
-      return rule === undefined ? line : `[withheld line: ${rule}]`
-    })
-    .join('\n')
 }
 
 /** Keep the last complete UTF-8 text that fits in the worker-context bound. */

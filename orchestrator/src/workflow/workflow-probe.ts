@@ -7,7 +7,10 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import {
+  containsSecretShaped,
+  withholdSecretShapedGateLines,
+} from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -35,9 +38,10 @@ export type WorkflowOutput = Pick<ProbeRunResult, 'output' | 'secretFound'>
 /** Retains a bounded tail while remembering secrets that have already rolled out of it. */
 export function appendWorkflowOutput(current: WorkflowOutput, chunk: string): WorkflowOutput {
   const candidate = current.output + chunk
+  const redacted = withholdSecretShapedGateLines(candidate)
   return {
-    output: boundedGateOutputTail(candidate, GATE_OUTPUT_TAIL_BYTES),
-    secretFound: current.secretFound === true || containsSecretShaped(candidate),
+    output: boundedGateOutputTail(redacted, GATE_OUTPUT_TAIL_BYTES),
+    secretFound: current.secretFound === true || redacted !== candidate,
   }
 }
 export type ProbeRunner = (input: {
@@ -175,13 +179,12 @@ async function recordWorkflowCommand(
   input: { d?: Database; commit?: string | null },
 ): Promise<RecordedArtifact> {
   const commandJson = JSON.stringify(command)
-  const outputContainsSecret = ran.secretFound === true || containsSecretShaped(ran.output)
-  const withheld = containsSecretShaped(commandJson) || outputContainsSecret
-  const storedCommand = containsSecretShaped(commandJson) ? PROBE_WITHHELD : commandJson
-  const tail = boundedGateOutputTail(
-    outputContainsSecret || containsSecretShaped(commandJson) ? PROBE_WITHHELD : ran.output,
-    GATE_OUTPUT_TAIL_BYTES,
-  )
+  const redactedOutput = withholdSecretShapedGateLines(ran.output)
+  const outputContainsSecret = ran.secretFound === true || redactedOutput !== ran.output
+  const commandSecret = containsSecretShaped(commandJson)
+  const withheld = commandSecret || outputContainsSecret
+  const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
+  const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
     const row = d

@@ -360,11 +360,16 @@ export type PullRequestEvidenceFacts =
 export type PullRequestEvidenceDecision = { met: true } | { met: false; condition: string }
 
 const WITHHELD_PULL_REQUEST_OUTPUT = '[withheld: secret-shaped content]'
+const WITHHELD_PULL_REQUEST_LINE = /^\[withheld line: .+\]$/
 const WITHHELD_PULL_REQUEST_CONDITION =
   'the recorded output was withheld, so the pull-request URL cannot be read'
 
 function execOutputWithheld(facts: { withheld: boolean; output: string }): boolean {
-  return facts.withheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
+  return (
+    facts.withheld ||
+    facts.output === WITHHELD_PULL_REQUEST_OUTPUT ||
+    facts.output.split('\n').some((line) => WITHHELD_PULL_REQUEST_LINE.test(line))
+  )
 }
 
 function commandBasename(value: string): string {

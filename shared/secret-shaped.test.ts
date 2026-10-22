@@ -3,6 +3,7 @@ import {
   containsSecretShaped,
   evidenceSecretShapedRules,
   secretShapedRule,
+  withholdSecretShapedGateLines,
 } from './secret-shaped.ts'
 import fixtures from './secret-shaped-fixtures.json'
 
@@ -61,4 +62,21 @@ test('canonical secret fixtures stay aligned with non-TypeScript adapters', () =
   for (const fixture of fixtures) {
     expect(containsSecretShaped(fixture.parts.join('')), fixture.name).toBe(fixture.secret)
   }
+})
+
+test('output with a 40-hex base and a failure list is kept verbatim', () => {
+  const output = `--base=${hex40}\ngate failures: scripts/check-architecture.ts`
+  expect(withholdSecretShapedGateLines(output)).toBe(output)
+})
+
+test('output withholds only the secret-shaped line and names the rule', () => {
+  expect(
+    withholdSecretShapedGateLines(
+      ['gate failures: scripts/check-architecture.ts', githubPat, 'ok'].join('\n'),
+    ),
+  ).toBe(
+    ['gate failures: scripts/check-architecture.ts', '[withheld line: provider-prefix]', 'ok'].join(
+      '\n',
+    ),
+  )
 })
