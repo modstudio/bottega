@@ -7,7 +7,7 @@ import { type PresenceFact, resolveAudience } from './board-policy.ts'
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
 export type BoardReaderStart = string | null | 'unbounded'
 
-export function reportReplySuccessorDecision(input: {
+function reportReplySuccessorDecision(input: {
   rootAuthorLive: boolean
   readerIsArchitect: boolean
   readerProject: string
