@@ -39,7 +39,8 @@ function lockFiles(root: string): string[] {
   return found
 }
 
-function owningPids(path: string): number[] | null {
+/** Inventory live processes holding a Git lock; null means lsof could not establish the answer. */
+export function gitLockOwnerPids(path: string): number[] | null {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
     ;({ process: p } = observeBoundedSubprocess(
@@ -150,7 +151,7 @@ export function gitLocks(repoRoot: string, clock = Date.now()): GitLock[] {
         target: targetFor(path, commonDir),
         contents,
         contentRefs: refsForContents(repoRoot, contents),
-        ownerPids: owningPids(path),
+        ownerPids: gitLockOwnerPids(path),
       })
     } catch (cause) {
       // A live Git operation may remove its lock between inventory and read.

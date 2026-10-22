@@ -540,6 +540,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/reclaim/reclaim-residue.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/state-directory.ts',
     'node:fs',
     'node:path',
     '../agent/agent-registry.ts',
@@ -551,6 +552,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
+    '../resources/git-locks.ts',
     './reclaim-residue-policy.ts',
     '../run/run-artifacts.ts',
     '../run/run-process.ts',

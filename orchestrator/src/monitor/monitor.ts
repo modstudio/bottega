@@ -208,7 +208,10 @@ function gitLockConditions(
       detail:
         `${project.name} git lock targets ${lock.target ?? 'an unknown primitive'}; ` +
         `contents ${lock.contents || '(empty)'}${resolved}; ${owner}`,
-      action: 'reported; lock and its recoverable contents were not removed',
+      action:
+        lock.ownerPids !== null && lock.ownerPids.length === 0
+          ? `run ${PLATFORM_SLUG} machine reclaim git-lock ${lock.path}`
+          : 'reported; lock and its recoverable contents were not removed',
       affectedProject: project.name,
     })
   }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  GIT_LOCK_RECLAIM_AGE_MS,
+  gitLockReleaseDecision,
   processReleaseDecision,
   refGuardReleaseDecision,
   retainedRefReleaseDecision,
@@ -10,6 +12,54 @@ import {
 } from './reclaim-residue-policy.ts'
 
 describe('residue release decisions', () => {
+  test('git-lock requires a registered lock path, known empty owners, and the age floor', () => {
+    const safe = {
+      path: '/projects/example/.git/worktrees/orch-1/index.lock',
+      projects: [{ name: 'example', gitCommonDir: '/projects/example/.git' }],
+      ownerPids: [] as number[] | null,
+      ageMs: GIT_LOCK_RECLAIM_AGE_MS,
+    }
+    expect(gitLockReleaseDecision(safe)).toMatchObject({
+      allowed: true,
+      projectName: 'example',
+      relativePath: 'worktrees/orch-1/index.lock',
+    })
+
+    const refusals = [
+      {
+        facts: { ...safe, ownerPids: [42] },
+        invariant: 'the lock has no live owner',
+        fix: 'wait for owner pid 42 to release it',
+      },
+      {
+        facts: { ...safe, ownerPids: null },
+        invariant: 'the lock owner inventory is known',
+        fix: 'restore lsof access and retry',
+      },
+      {
+        facts: { ...safe, ageMs: GIT_LOCK_RECLAIM_AGE_MS - 1 },
+        invariant: 'the lock mtime is at least 10 minutes old',
+        fix: 'wait until the lock reaches the age floor, then retry',
+      },
+      {
+        facts: { ...safe, path: '/outside/index.lock' },
+        invariant: "the lock is inside a registered project's Git common directory",
+        fix: 'register the project or pass a lock beneath its Git common directory',
+      },
+      {
+        facts: { ...safe, path: '/projects/example/.git/index' },
+        invariant: 'the subject is an absolute path whose file name ends .lock',
+        fix: 'pass the absolute path of a Git lock file',
+      },
+    ]
+    for (const refusal of refusals) {
+      expect(gitLockReleaseDecision(refusal.facts)).toEqual({
+        allowed: false,
+        refusal: `refused; invariant: ${refusal.invariant}; fix: ${refusal.fix}`,
+      })
+    }
+  })
+
   test('ref-guard requires an existing guard, no tree, and no live conversation', () => {
     expect(
       refGuardReleaseDecision({ exists: true, worktreeExists: false, conversationLive: false })

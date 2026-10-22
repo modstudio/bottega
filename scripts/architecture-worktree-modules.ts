@@ -13,7 +13,10 @@ const module = (file: string, allowed: string[]): WorktreeModule => ({
 
 export const worktreeModules: WorktreeModule[] = [
   module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
-  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', [
+    '../../../shared/brand.ts',
+    'node:path',
+  ]),
   module('orchestrator/src/worktree/worktree-porcelain.ts', []),
   module('orchestrator/src/worktree/worktree-caller.ts', [
     '../project/projects.ts',
