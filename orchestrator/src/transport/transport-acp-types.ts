@@ -1,6 +1,6 @@
 // concern: ACP usage protocol values
 
-type AcpMessageUsage = {
+export type AcpMessageUsage = {
   inputTokens?: number | null
   outputTokens?: number | null
   totalTokens?: number | null

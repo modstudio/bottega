@@ -4,6 +4,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectByName, projects } from '../project/projects.ts'
@@ -62,11 +63,27 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     repositories.notices,
     stableMcpServers(),
   )
-  plan.mcpConfigMigrations = captureMcpConfigMigrations(
+  addMcpConfigMigrations(
+    plan,
     homedir(),
     state.projects.map((project) => project.path),
   )
   return plan
+}
+
+export function addMcpConfigMigrations(
+  plan: SetupPlan,
+  home: string,
+  projectPaths: readonly string[],
+): void {
+  const configMigrations = captureMcpConfigMigrations(home, projectPaths)
+  plan.mcpConfigMigrations = configMigrations.migrations
+  plan.notices.push(
+    ...configMigrations.notices.map(({ path, error }) => ({
+      message: `MCP configuration ${path} could not be migrated: ${error}`,
+      fix: `fix or remove ${path}, then re-run ${PLATFORM_SLUG} machine setup plan`,
+    })),
+  )
 }
 
 function readSetupState(): {

@@ -4,12 +4,12 @@
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { LEGACY_MCP_SERVER_NAMES, type LegacyMcpServerName } from './setup-mcp-config.ts'
+export type { LegacyMcpServerName } from './setup-mcp-config.ts'
 export const SETUP_COMMAND_TIMEOUT_MS = 5_000
 const MCP_SERVER_NAMES = [MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME] as const
-const LEGACY_MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
-export type LegacyMcpServerName = (typeof LEGACY_MCP_SERVER_NAMES)[number]
 export function legacyMcpServerName(name: McpServerName): LegacyMcpServerName {
-  return name === MCP_SERVER_NAME ? LEGACY_MCP_SERVER_NAMES[0] : LEGACY_MCP_SERVER_NAMES[1]
+  return LEGACY_MCP_SERVER_NAMES[name]
 }
 export type McpServerName = (typeof MCP_SERVER_NAMES)[number]
 type HarnessMcpDescriptor = {
@@ -304,7 +304,7 @@ export function captureHarnessMcpFacts(
       }),
     ),
     legacyRegistrations: Object.fromEntries(
-      LEGACY_MCP_SERVER_NAMES.map((name) => [
+      Object.values(LEGACY_MCP_SERVER_NAMES).map((name) => [
         name,
         readMcpRegistration(harness, bin, name, runner),
       ]),

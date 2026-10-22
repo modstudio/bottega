@@ -14,7 +14,7 @@ import {
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
@@ -255,17 +255,31 @@ try {
   await smoke(binary, ['orch', 'setup', 'apply', '--in', setupRepository, '--yes'], stateHome)
   const mcpInvocations = readFileSync(mcpRecord, 'utf8').split('\n')
   const addInvocations = mcpInvocations.filter((line) => line.includes('\tmcp\tadd\t'))
-  if (!addInvocations.some((line) => line.startsWith('claude\t') && line.includes('\torch\t'))) {
-    throw new Error(`${PLATFORM_SLUG} machine setup apply did not register orch with Claude`)
-  }
-  if (!addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\torch\t'))) {
-    throw new Error(`${PLATFORM_SLUG} machine setup apply did not register orch with Codex`)
-  }
   if (
-    !addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\tbottega-ask\t'))
+    !addInvocations.some(
+      (line) => line.startsWith('claude\t') && line.includes(`\t${MCP_SERVER_NAME}\t`),
+    )
   ) {
     throw new Error(
-      `${PLATFORM_SLUG} machine setup apply did not register ${WORKER_MCP_SERVER_NAME} with Codex`,
+      `${PLATFORM_SLUG} machine setup apply did not register ${MCP_SERVER_NAME} with Claude`,
+    )
+  }
+  if (
+    !addInvocations.some(
+      (line) => line.startsWith('codex\t') && line.includes(`\t${MCP_SERVER_NAME}\t`),
+    )
+  ) {
+    throw new Error(
+      `${PLATFORM_SLUG} machine setup apply did not register ${MCP_SERVER_NAME} with Codex`,
+    )
+  }
+  if (
+    !addInvocations.some(
+      (line) => line.startsWith('codex\t') && line.includes(`\t${WORKER_MCP_SERVER_NAME}\t`),
+    )
+  ) {
+    throw new Error(
+      `${PLATFORM_SLUG} machine setup apply did not register bottega-ask (${WORKER_MCP_SERVER_NAME}) with Codex`,
     )
   }
   if (!addInvocations.every((line) => line.includes(`\t${realpathSync(binary)}\t`))) {

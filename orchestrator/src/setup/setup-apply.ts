@@ -16,6 +16,7 @@ import {
   sameMcpRegistration,
   screenedMcpField,
 } from './setup-mcp.ts'
+import { migrateMcpConfigText } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 
 type AddAction = Extract<SetupAction, { kind: 'add' }>
@@ -238,12 +239,9 @@ async function applySetupAction(
   }
   if (action.kind === 'migrate-mcp-config') {
     const current = await readFile(action.path, 'utf8')
-    if (current === action.after) return 'unchanged'
-    if (current !== action.before)
-      throw new Error(
-        `MCP configuration ${action.path} changed since planning; re-run ${PLATFORM_SLUG} machine setup plan`,
-      )
-    await writeFile(action.path, action.after, 'utf8')
+    const migrated = migrateMcpConfigText(current)
+    if (current === migrated) return 'unchanged'
+    await writeFile(action.path, migrated, 'utf8')
     return 'applied'
   }
   if (action.kind === 'register-mcp') return applyMcpRegistration(action, runner)

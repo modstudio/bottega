@@ -1,6 +1,6 @@
 {
   "orch-command": {
-    "total": 346,
+    "total": 344,
     "files": {
       ".agents/contexts/orchestrator-docs.md": 1,
       ".agents/contexts/orchestrator-review.md": 2,
@@ -134,7 +134,6 @@
       "README.md": 9,
       "retrieval/src/benchmark/queries.ts": 2,
       "scripts/command-descriptions.test.ts": 1,
-      "scripts/smoke-binary.ts": 2,
       "scripts/smoke-release.ts": 1,
       "shared/git.test.ts": 1,
       "shared/git.ts": 1,
@@ -186,11 +185,9 @@
     }
   },
   "mcp-name": {
-    "total": 3,
+    "total": 1,
     "files": {
-      "orchestrator/src/sandbox/grok-reader-mcp-inspect.test.ts": 1,
-      "orchestrator/src/setup/setup-apply.test.ts": 1,
-      "orchestrator/src/setup/setup-mcp.ts": 1
+      "orchestrator/src/sandbox/grok-reader-mcp-inspect.test.ts": 1
     }
   },
   "env": {

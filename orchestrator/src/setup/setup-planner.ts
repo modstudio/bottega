@@ -3,6 +3,7 @@
 import type { ProjectSettings } from '../project/projects.ts'
 import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
 import type { HarnessName, LegacyMcpServerName, McpServer } from './setup-mcp.ts'
+import type { McpConfigMigration } from './setup-mcp-config.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 export type SetupAnswers = Record<string, string>
@@ -42,7 +43,7 @@ export type SetupAction =
       bin: string
       server: McpServer
     }
-  | { kind: 'migrate-mcp-config'; path: string; before: string; after: string }
+  | ({ kind: 'migrate-mcp-config' } & McpConfigMigration)
 
 export function setupActionChangesMachine(action: SetupAction): boolean {
   switch (action.kind) {

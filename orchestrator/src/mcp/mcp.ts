@@ -1018,7 +1018,7 @@ export function createDocsMcpServer(): McpServer {
     async (input) => {
       if (process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH) {
         throw new Error(
-          `Worker note filing is available only through the ${WORKER_MCP_SERVER_NAME} note tool; do not retry this orch MCP tool.`,
+          `Worker note filing is available only through the ${WORKER_MCP_SERVER_NAME} note tool; do not retry this ${MCP_SERVER_NAME} MCP tool.`,
         )
       }
       try {

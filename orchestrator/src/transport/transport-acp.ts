@@ -34,7 +34,11 @@ import {
   type TransportStartOpts,
   withTransportDeadline,
 } from './transport.ts'
-import type { AcpMessageUsageUpdate, AcpPromptUsage } from './transport-acp-types.ts'
+import type {
+  AcpMessageUsage,
+  AcpMessageUsageUpdate,
+  AcpPromptUsage,
+} from './transport-acp-types.ts'
 import { acpRunUsage } from './transport-acp-usage.ts'
 
 type AcpUpdate = {
@@ -49,7 +53,7 @@ type AcpUpdate = {
   accumulatedInputTokens?: number
   accumulatedOutputTokens?: number
   messageId?: string | null
-  usage?: AcpMessageUsageUpdate['usage']
+  usage?: AcpMessageUsage
   locations?: Array<{ path?: string }>
   rawInput?: unknown
   rawOutput?: unknown

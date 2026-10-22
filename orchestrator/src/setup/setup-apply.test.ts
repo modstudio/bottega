@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { applySetupActions } from './setup-apply.ts'
+import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
@@ -197,14 +198,27 @@ test('stops at the first refusal and marks remaining actions not attempted', asy
 test('applies an MCP configuration migration once and then reports unchanged', async () => {
   const root = mkdtempSync(join(tmpdir(), 'setup-mcp-config-'))
   const path = join(root, 'settings.json')
-  const before = '{"permissions":{"allow":["mcp__orch__get_doc"]}}\n'
-  const after = '{"permissions":{"allow":["mcp__bottega__get_doc"]}}\n'
-  writeFileSync(path, before)
-  const migration: SetupAction = { kind: 'migrate-mcp-config', path, before, after }
+  const sentinel = 'credential-must-not-leak'
+  const planned = `{"permissions":{"allow":["${LEGACY_MCP_TOOL_PREFIX}get_doc"]}}\n`
+  const current = `{"credential":"${sentinel}","permissions":{"allow":["${LEGACY_MCP_TOOL_PREFIX}list_projects"]}}\n`
+  writeFileSync(path, current)
+  const migration: SetupAction = {
+    kind: 'migrate-mcp-config',
+    path,
+    summary: {
+      serverKeysRenamed: [],
+      toolPrefixKeysRewritten: 0,
+      toolPrefixValuesRewritten: 1,
+    },
+  }
   const service = { add: async () => {}, fillAbsent: async () => {} }
+  expect(current).not.toBe(planned)
+  expect(JSON.stringify(migration)).not.toContain(sentinel)
   expect((await applySetupActions([migration], service))[0]?.status).toBe('applied')
-  expect(readFileSync(path, 'utf8')).toBe(after)
-  expect((await applySetupActions([migration], service))[0]?.status).toBe('unchanged')
+  expect(readFileSync(path, 'utf8')).toContain('mcp__bottega__list_projects')
+  const repeated = await applySetupActions([migration], service)
+  expect(repeated[0]?.status).toBe('unchanged')
+  expect(JSON.stringify(repeated)).not.toContain(sentinel)
 })
 
 test('adds an MCP registration and verifies the read-back', async () => {

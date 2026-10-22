@@ -14,6 +14,8 @@ import {
   sameMcpRegistration,
 } from './setup-mcp.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
+import type { McpConfigMigration } from './setup-mcp-config.ts'
+import type { LegacyMcpServerName } from './setup-mcp.ts'
 
 export type SetupQuestion = {
   id: string
@@ -63,7 +65,7 @@ type SetupRegistrationProposal = {
   current: McpReadback
   questionId: string | null
   state: 'absent' | 'same' | 'stale' | 'different' | 'unreadable'
-  legacyName?: import('./setup-mcp.ts').LegacyMcpServerName
+  legacyName?: LegacyMcpServerName
 }
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
@@ -71,7 +73,7 @@ export type SetupPlan = {
   registrations: SetupRegistrationProposal[]
   questions: SetupQuestion[]
   notices: SetupNotice[]
-  mcpConfigMigrations?: { path: string; before: string; after: string }[]
+  mcpConfigMigrations?: McpConfigMigration[]
 }
 
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`
@@ -89,7 +91,7 @@ function registrationState(current: McpReadback): SetupRegistrationProposal['sta
 function registrationToMigrate(
   facts: NonNullable<HarnessFacts['mcp']>,
   server: McpServer,
-): { current: McpReadback; legacyName: import('./setup-mcp.ts').LegacyMcpServerName | null } {
+): { current: McpReadback; legacyName: LegacyMcpServerName | null } {
   const legacyName = legacyMcpServerName(server.name)
   const legacy = facts.legacyRegistrations?.[legacyName]
   if (legacy && legacy.status !== 'absent') return { current: legacy, legacyName }
