@@ -2,6 +2,8 @@
 /** Pure eligibility, concurrency, and result presentation for a registered worker gate. */
 
 import { isAbsolute, resolve } from 'node:path'
+
+type GateInput = 'staged' | 'worktree' | 'committed'
 export type BrokerConfinement<Profile = unknown> =
   | { kind: 'host' }
   | { kind: 'srt'; profile: Profile }
@@ -25,6 +27,7 @@ export const GATE_COMMAND_TIMEOUT_MS = 20 * 60_000
 /** Stay below the shortest harness tool-call ceiling observed. */
 export const RUN_GATE_WAIT_MS = 4 * 60_000
 export const GATE_CLOSE_REASON = 'Gate run cancelled because the supervising run closed.'
+export const WORKER_GATE_BASE_ENV = 'ORCH_GATE_BASE_COMMIT'
 const GATE_TOOLING_PATH_NAMES = [
   'package.json',
   'bun.lock',
@@ -75,6 +78,12 @@ export function decideGateHeadCommit(input: {
   porcelainPaths: readonly string[]
 }): string | null {
   return input.headCommit && input.porcelainPaths.length === 0 ? input.headCommit : null
+}
+
+export function workerGateInputRefusal(input: GateInput | undefined): string | null {
+  return input === 'committed'
+    ? 'worker gate refused: this project declares gateInput committed, which cannot judge uncommitted worker changes without moving HEAD; commit the change yourself, then run the project gate outside run_gate'
+    : null
 }
 
 /** Prefer the live trunk merge-base so a rebased worker excludes trunk-only changes. */

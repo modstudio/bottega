@@ -655,6 +655,11 @@ function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
   return problems
 }
 
+function gateInputProblems(gateInput: ProjectSettings['gateInput']): string[] {
+  if (gateInput === undefined || ['staged', 'worktree', 'committed'].includes(gateInput)) return []
+  return ['gateInput must be staged, worktree, or committed']
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   projectPath?: string,
@@ -682,6 +687,7 @@ export function validateProjectSettings(
     ...reviewLensProblems(settings.review, context.enabledLensIds, context.enabledLensSpaceId),
     ...mcpSettingsProblems(settings.mcp),
     ...focusedTestsProblems(settings.focusedTests),
+    ...gateInputProblems(settings.gateInput),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

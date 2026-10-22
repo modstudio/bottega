@@ -18,6 +18,7 @@ import type {
 } from './project-injection.ts'
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
+export type GateInput = 'staged' | 'worktree' | 'committed'
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
@@ -159,6 +160,8 @@ export type ProjectSettings = {
   productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
+  /** Git state consumed by the gate. Absent keeps existing registrations compatible. */
+  gateInput?: GateInput
   /** Fixed executable and argv prefix for writer-requested project-relative test paths. */
   focusedTests?: FocusedTestRunner
   /** Ordered promotion and remote-admission facts after the landing branch merges. */

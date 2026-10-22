@@ -32,7 +32,13 @@ export const gateModules: GateModule[] = [
     '../sandbox/sandbox.ts',
     './gate-check-executions.ts',
     './gate-decision.ts',
+    './gate-index.ts',
     './host-slot-wait.ts',
+  ]),
+  module('orchestrator/src/gate/gate-index.ts', [
+    '../../../shared/git.ts',
+    'node:fs',
+    './gate-decision.ts',
   ]),
   module('orchestrator/src/gate/host-slot-wait.ts', [
     '../database/db.ts',

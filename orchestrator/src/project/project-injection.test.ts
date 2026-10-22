@@ -100,7 +100,14 @@ describe('project workflow injection', () => {
   })
 
   test('valid release and docs settings pass while unknown keys are refused', () => {
-    expect(validateProjectSettings({ release, docs, gate: 'bun run check' })).toEqual([])
+    expect(
+      validateProjectSettings({ release, docs, gate: 'bun run check', gateInput: 'worktree' }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({ gateInput: 'unknown' } as unknown as Parameters<
+        typeof validateProjectSettings
+      >[0]),
+    ).toContain('gateInput must be staged, worktree, or committed')
 
     expect(
       validateProjectSettings({

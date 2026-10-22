@@ -37,7 +37,9 @@ import {
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
   resolveGateCommand,
+  workerGateInputRefusal,
 } from './gate-decision.ts'
+import { prepareSyntheticGateIndex, removeSyntheticGateIndex } from './gate-index.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
@@ -94,6 +96,7 @@ function gatePlan(runId: string): {
   mainStackRequiredServices: string[] | undefined
   projectId: string
   projectName: string
+  gateInput: 'staged' | 'worktree' | 'committed' | undefined
 } {
   const row = db()
     .query(
@@ -111,6 +114,7 @@ function gatePlan(runId: string): {
   if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
   const settings = JSON.parse(row.settings ?? '{}') as {
     gate?: unknown
+    gateInput?: unknown
     trunk?: unknown
     mainStack?: {
       consumers?: MainStackConsumer[]
@@ -130,6 +134,12 @@ function gatePlan(runId: string): {
     mainStackRequiredServices: settings.mainStack?.requiredServices,
     projectId: row.project_record_id,
     projectName: row.project_name,
+    gateInput:
+      settings.gateInput === 'staged' ||
+      settings.gateInput === 'worktree' ||
+      settings.gateInput === 'committed'
+        ? settings.gateInput
+        : undefined,
   }
 }
 
@@ -425,6 +435,8 @@ function prepareGateExecution(input: {
     consumer: 'gate',
   })
   const command = resolveGateCommand(plan.command, plan.worktree)
+  const refusal = workerGateInputRefusal(plan.gateInput)
+  if (refusal) throw new Error(refusal)
   const toolingPaths = changedGateTooling(plan, input.record)
   const headCommit = decideGateHeadCommit({
     headCommit:
@@ -442,6 +454,7 @@ function prepareGateExecution(input: {
   return {
     command,
     worktree: plan.worktree,
+    baseCommit: plan.baseCommit,
     refreshInput: { mainCheckout, landingBranch: plan.trunk },
   }
 }
@@ -455,6 +468,7 @@ async function runPreparedGate(input: {
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
+  indexPath: string
 }): Promise<void> {
   await runGateAfterBaseRefresh({
     refreshInput: input.prepared.refreshInput,
@@ -467,16 +481,26 @@ async function runPreparedGate(input: {
         )
         .run(refresh.elapsedMs, refresh.message, input.requestId)
     },
-    runGate: () =>
-      runGateProcess({
-        command: input.prepared.command,
+    runGate: async () => {
+      const gateGitEnvironment = prepareSyntheticGateIndex({
         worktree: input.prepared.worktree,
-        environment: input.environment,
-        confinement: input.confinement,
-        state: input.state,
-        record: input.record,
-        stop: input.stop,
-      }),
+        baseCommit: input.prepared.baseCommit,
+        indexPath: input.indexPath,
+      })
+      try {
+        await runGateProcess({
+          command: input.prepared.command,
+          worktree: input.prepared.worktree,
+          environment: { ...input.environment, ...gateGitEnvironment },
+          confinement: input.confinement,
+          state: input.state,
+          record: input.record,
+          stop: input.stop,
+        })
+      } finally {
+        removeSyntheticGateIndex(input.indexPath)
+      }
+    },
   })
 }
 
@@ -587,6 +611,7 @@ function startGateExecution(
             state,
             record,
             stop,
+            indexPath: join(scratchDir, `gate-${request.id}.index`),
           }),
         {
           signal: slotWait.signal,

@@ -20,7 +20,15 @@ import {
   RUN_GATE_WAIT_MS,
   resolveGateCommand,
   shapeGateResult,
+  workerGateInputRefusal,
 } from './gate-decision.ts'
+
+test('committed worker gates refuse while compatible and undeclared gates use the synthetic view', () => {
+  expect(workerGateInputRefusal('committed')).toContain('cannot judge uncommitted worker changes')
+  expect(workerGateInputRefusal('staged')).toBeNull()
+  expect(workerGateInputRefusal('worktree')).toBeNull()
+  expect(workerGateInputRefusal(undefined)).toBeNull()
+})
 
 test('both writing ACP broker command shapes retain the real writer profile', () => {
   const writer: SandboxRuntimeConfig = {
