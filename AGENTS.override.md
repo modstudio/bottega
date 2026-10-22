@@ -377,9 +377,7 @@ search.
 
 ## Review rounds are a funnel
 
-`review-tier-classifier.ts:classifyReviewTier` sets a change's combined tier from path
-risk and cognitive size. A size-`0` change lowers its path's risk by one, except on a
-risk-map path marked `firm`. The project's declaration selects its lenses, and
+`review-tier-classifier.ts:classifyReviewTier` sets combined tier; size-`0` lowers path risk by one except `firm`; the project's declaration selects its lenses, and
 tier `0` runs none. Check the tier before every round.
 
 The initial review is the only full review. A later round runs only when a

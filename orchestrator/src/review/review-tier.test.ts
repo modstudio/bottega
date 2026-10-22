@@ -490,12 +490,30 @@ describe('review tier classification', () => {
 
 describe('combined review tier', () => {
   test.each([
-    [{ risk: 3, size: 0, firm: false }, { tier: 2, lowered: true }],
-    [{ risk: 3, size: 0, firm: true }, { tier: 3, lowered: false }],
-    [{ risk: 3, size: 1, firm: false }, { tier: 3, lowered: false }],
-    [{ risk: 1, size: 0, firm: false }, { tier: 0, lowered: true }],
-    [{ risk: 0, size: 0, firm: false }, { tier: 0, lowered: false }],
-    [{ risk: 1, size: 2, firm: false }, { tier: 2, lowered: false }],
+    [
+      { risk: 3, size: 0, firm: false },
+      { tier: 2, lowered: true },
+    ],
+    [
+      { risk: 3, size: 0, firm: true },
+      { tier: 3, lowered: false },
+    ],
+    [
+      { risk: 3, size: 1, firm: false },
+      { tier: 3, lowered: false },
+    ],
+    [
+      { risk: 1, size: 0, firm: false },
+      { tier: 0, lowered: true },
+    ],
+    [
+      { risk: 0, size: 0, firm: false },
+      { tier: 0, lowered: false },
+    ],
+    [
+      { risk: 1, size: 2, firm: false },
+      { tier: 2, lowered: false },
+    ],
   ] as const)('combineReviewTier(%j)', (input, expected) => {
     expect(combineReviewTier(input)).toEqual(expected)
   })
