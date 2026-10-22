@@ -274,7 +274,7 @@ export function taskBranchAlreadyLanded(input: {
     trunkTip: input.trunkTip,
     branchTip: input.tip,
     mergeBase: input.mergeBase,
-    commitMessage: `orch task branch ${input.launchKey}`,
+    commitMessage: `orchestrator task branch ${input.launchKey}`,
   })
   if (localCheck) return true
   const landing = decideTaskBranchLanding({

@@ -296,7 +296,7 @@ function unattributableDockerConditions(inventory: ReturnType<typeof dockerRunRe
             since: null,
             severity: 'informational' as const,
             detail: `${resource.kind} ownership cannot be established: ${resource.reason}`,
-            action: 'report only; add an orch run label or attributable compose identity',
+            action: 'report only; add an orchestrator run label or attributable compose identity',
           },
         ],
   )

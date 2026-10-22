@@ -892,7 +892,7 @@ describe('record cache pull', () => {
         3,
         'ask',
         'ok',
-        `voided with orch score --void`,
+        `voided with bottega score --void`,
       )
     if (scored) {
       db()

@@ -15,7 +15,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { installWorkerHook, recognizeWorkerHook } from './worker-hooks.ts'
 
 const CURRENT_COMMIT_MSG =
-  '#!/bin/sh\n# orch worker commit-msg hook\nexec \'/current/check-attribution\' "$1"\n'
+  '#!/bin/sh\n# bottega worker commit-msg hook\nexec \'/current/check-attribution\' "$1"\n'
 const LEGACY_PRE_PUSH =
   '#!/bin/sh\necho "workers never push; the architect pushes after review" >&2\nexit 1\n'
 
@@ -53,7 +53,7 @@ test('worker hook recognition accepts current, marked, and legacy generated hook
     recognizeWorkerHook(
       'pre-push',
       `#!/bin/sh\n# orch worker pre-push hook\n${LEGACY_PRE_PUSH.slice('#!/bin/sh\n'.length)}`,
-      '#!/bin/sh\n# orch worker pre-push hook\nnew hook\n',
+      '#!/bin/sh\n# bottega worker pre-push hook\nnew hook\n',
     ),
   ).toBe('orch-generated')
 })
@@ -96,7 +96,7 @@ test('worker hook installer atomically replaces a legacy hook with executable cu
 test('worker hook installer replaces the previous pre-push hook', () => {
   const hookDir = mkdtempSync(join(tmpdir(), 'orch-worker-hook-'))
   const installed = join(hookDir, 'pre-push')
-  const current = '#!/bin/sh\n# orch worker pre-push hook\nnew hook\n'
+  const current = '#!/bin/sh\n# bottega worker pre-push hook\nnew hook\n'
   try {
     writeFileSync(installed, LEGACY_PRE_PUSH)
 

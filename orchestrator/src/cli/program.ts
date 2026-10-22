@@ -1,6 +1,8 @@
 // concern: cli
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { Command, CommanderError } from 'commander'
+import type { OwnerInvocation } from '../../../cli/dispatch.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
@@ -32,7 +34,7 @@ import { register as registerTestSubstance } from '../commands/test-substance.ts
 import { recordSessionSeen } from '../database/db.ts'
 
 export const program = new Command()
-  .name('orch')
+  .name(PLATFORM_SLUG)
   .option('--version', 'identify this release or development checkout')
   .enablePositionalOptions()
   .exitOverride()
@@ -43,6 +45,39 @@ export const program = new Command()
   .allowUnknownOption(false)
   .allowExcessArguments(false)
   .showSuggestionAfterError()
+  .configureHelp({
+    commandUsage: (command) => {
+      const publicPath = publicCommandPaths.get(command)
+      if (!publicPath) return defaultCommandUsage(command)
+      return `${PLATFORM_SLUG} ${publicPath.join(' ')} ${command.usage()}`
+    },
+  })
+
+const publicCommandPaths = new WeakMap<Command, readonly string[]>()
+
+function defaultCommandUsage(command: Command): string {
+  const names: string[] = []
+  for (let current: Command | null = command; current; current = current.parent) {
+    names.unshift(current.name())
+  }
+  return `${names.join(' ')} ${command.usage()}`
+}
+
+function applyPublicCommandPath(argv: readonly string[], invocation?: OwnerInvocation): void {
+  if (!invocation) return
+  let command = program
+  let consumed = 0
+  while (consumed < argv.length) {
+    const child = command.commands.find((candidate) =>
+      [candidate.name(), ...candidate.aliases()].includes(argv[consumed]!),
+    )
+    if (!child) break
+    command = child
+    consumed += 1
+  }
+  const suffix = argv.slice(invocation.ownerPath.length, consumed)
+  publicCommandPaths.set(command, [...invocation.publicPath, ...suffix])
+}
 
 registerReview(program)
 registerPullRequest(program)
@@ -112,10 +147,11 @@ export function recordInvocationSession(argv: string[]): void {
   if (!isReadOnlyInvocation(argv)) recordSessionSeen()
 }
 
-export async function run(argv: string[]): Promise<number> {
+export async function run(argv: string[], invocation?: OwnerInvocation): Promise<number> {
   setRawArgv(argv)
+  applyPublicCommandPath(argv, invocation)
   try {
-    await program.parseAsync(['bun', 'orch', ...(argv.length ? argv : ['--help'])])
+    await program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
     await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {

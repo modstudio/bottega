@@ -139,7 +139,7 @@ export const ROUTES = (
     {
       command: ['record', 'sync'],
       owner: 'composite',
-      description: 'synchronize the orchestrator and hub records',
+      description: 'synchronize both concern records',
       composite: [
         {
           owner: 'orch',
@@ -150,7 +150,7 @@ export const ROUTES = (
         {
           owner: 'hub',
           argv: ['collect'],
-          label: 'hub collect',
+          label: 'hub collection',
           options: { '--since': true, '--only': true },
         },
       ],
@@ -197,7 +197,7 @@ export const ROUTES = (
           label: 'orchestrator doctor',
           options: { '--wake': false },
         },
-        { owner: 'hub', argv: ['doctor'], label: 'hub doctor' },
+        { owner: 'hub', argv: ['doctor'], label: 'hub health' },
       ],
       continueOnFailure: true,
     },
@@ -212,7 +212,7 @@ export const ROUTES = (
           label: 'orchestrator migrate',
           options: { '--backfill-spec-sha': false },
         },
-        { owner: 'hub', argv: ['migrate'], label: 'hub migrate' },
+        { owner: 'hub', argv: ['migrate'], label: 'hub migration' },
       ],
     },
     route('machine reconcile', 'hub', 'reconcile'),
@@ -235,7 +235,7 @@ export const ROUTES = (
     {
       command: ['machine', 'legacy-calls'],
       owner: 'local',
-      description: 'report legacy orch and hub invocations',
+      description: 'report legacy orchestrator and hub invocations',
       options: [
         {
           flags: '--since <timestamp>',

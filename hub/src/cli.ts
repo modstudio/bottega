@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
+import type { OwnerInvocation } from '../../cli/dispatch.ts'
 import { program, run } from './cli-program.ts'
 import { requireDatabase } from './db.ts'
 import { hostedOutboxSummaryLines, listHostedOutbox, type OutboxEntry } from './outbox.ts'
 
-export async function main(argv: string[]): Promise<number> {
-  return run(program, argv)
+export async function main(argv: string[], invocation?: OwnerInvocation): Promise<number> {
+  return run(program, argv, invocation)
 }
 
 /** Structured owner output for the product front door's composite outbox listing. */

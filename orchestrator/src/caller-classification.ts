@@ -35,5 +35,5 @@ export function callerIdentityRefusal(
     return `this caller is an unsupported harness (${resolution.markers.join(', ')}); run the command from a terminal outside that harness`
   if (resolution.reason === 'reserved-operator-prefix')
     return 'this harness session uses the reserved operator: prefix; run the command from a terminal outside that harness'
-  return 'this operator has no machine identity yet; run any orch command that opens the store for writing, then retry'
+  return 'this operator has no machine identity yet; run any orchestrator command that opens the store for writing, then retry'
 }

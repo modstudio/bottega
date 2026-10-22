@@ -42,9 +42,9 @@ export function fakePostgres(
   principal: string = RECORD_ACTOR_ROLE,
   score?: FakeRecordScore,
   hostedExclusion: HostedExclusion = {
-    rowReason: 'voided with orch score --void',
+    rowReason: 'voided with bottega score --void',
     supersededAt: null,
-    runReason: 'voided with orch score --void',
+    runReason: 'voided with bottega score --void',
   },
   onRunWrite?: (ordinal: number) => void | Promise<void>,
   project: { id: string; name: string; spaceId?: string; retiredAt?: string | null } = {

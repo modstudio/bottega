@@ -19,6 +19,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
 import type {
@@ -41,9 +42,15 @@ export type SharedRefGuardEnvironment = {
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-const REF_GUARD_WRAPPER_MARKER = '# orch shared-ref guard wrapper\n'
+const REF_GUARD_WRAPPER_MARKER = `# ${PLATFORM_SLUG} shared-ref guard wrapper\n`
+const LEGACY_REF_GUARD_WRAPPER_MARKER = '# orch shared-ref guard wrapper\n'
 
-function sharedRefGuardWrapper(hookDir: string, guard: string, original: string): string {
+function sharedRefGuardWrapper(
+  hookDir: string,
+  guard: string,
+  original: string,
+  marker = REF_GUARD_WRAPPER_MARKER,
+): string {
   const guardMarker = Buffer.from(guard).toString('base64')
   const originalMarker = Buffer.from(original).toString('base64')
   return `#!/bin/sh\n${REF_GUARD_WRAPPER_MARKER}# guard-hook-base64: ${guardMarker}\n# original-hook-base64: ${originalMarker}\nset -eu\nprotected_common=\${ORCH_GUARDED_GIT_COMMON_DIR:-}\n[ -n "$protected_common" ] || exit 0\ncurrent_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0\ncurrent_common=$(cd "$current_common" 2>/dev/null && pwd -P) || exit 0\n[ "$current_common" = "$protected_common" ] || exit 0\ninput=${shellQuote(join(hookDir, '.reference-transaction-input'))}.$$\ntrap 'rm -f "$input"' EXIT HUP INT TERM\ncat > "$input"\n${shellQuote(guard)} "$@" < "$input"\n${shellQuote(original)} "$@" < "$input"\n`
@@ -96,18 +103,21 @@ function installedRefGuard(installed: string, guard: string): InstalledRefGuard 
   }
   const text = content.toString()
   const marker = text.match(
-    /^#!\/bin\/sh\n# orch shared-ref guard wrapper\n# guard-hook-base64: ([A-Za-z0-9+/=]+)\n# original-hook-base64: ([A-Za-z0-9+/=]+)\n/,
+    /^#!\/bin\/sh\n(# (?:bottega|orch) shared-ref guard wrapper\n)# guard-hook-base64: ([A-Za-z0-9+/=]+)\n# original-hook-base64: ([A-Za-z0-9+/=]+)\n/,
   )
   if (!marker) return null
-  const wrappedGuard = Buffer.from(marker[1]!, 'base64').toString()
-  const original = Buffer.from(marker[2]!, 'base64').toString()
+  const wrapperMarker = marker[1]!
+  if (![REF_GUARD_WRAPPER_MARKER, LEGACY_REF_GUARD_WRAPPER_MARKER].includes(wrapperMarker))
+    return null
+  const wrappedGuard = Buffer.from(marker[2]!, 'base64').toString()
+  const original = Buffer.from(marker[3]!, 'base64').toString()
   if (!sameFileBytes(wrappedGuard, guard)) return null
   try {
     accessSync(wrappedGuard, constants.X_OK)
   } catch {
     return null
   }
-  return text === sharedRefGuardWrapper(dirname(installed), wrappedGuard, original)
+  return text === sharedRefGuardWrapper(dirname(installed), wrappedGuard, original, wrapperMarker)
     ? { kind: 'wrapper', content, executable, wrappedGuard, original }
     : null
 }
@@ -209,9 +219,9 @@ export function applyRefGuardMigration(plan: FilesystemIdentityPlan): number {
 }
 
 /**
- * The guard directory's name. A tree orch cut carries its run id in the
+ * The guard directory's name. A tree orchestrator cut carries its run id in the
  * marker; a tree built by hand (the lifecycle harness, an operator landing a
- * branch from a tree orch did not cut) has none and gets a key derived from
+ * branch from a tree orchestrator did not cut) has none and gets a key derived from
  * its real path, so concurrent preparations on one tree still converge on one
  * directory. Refusing here would leave a hand-made tree UNGUARDED at
  * the point the guard matters most. Unmarked guards are not reclaimed as

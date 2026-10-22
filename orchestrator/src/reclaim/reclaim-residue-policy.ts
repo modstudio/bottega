@@ -141,13 +141,13 @@ export function trustReleaseDecision(facts: {
   headingExists: boolean
 }): ReleaseDecision {
   if (!facts.recorded)
-    return refuse('orch recorded the trust heading for this run', 'do not remove an unowned entry')
+    return refuse('orchestrator recorded the trust heading for this run', 'do not remove an unowned entry')
   if (!facts.pathKnown)
     return refuse('the trust heading names a path', 'repair the malformed vendor trust entry')
   if (!facts.orchWorktreePath)
     return refuse(
       'the path is an orch-* directory beneath .claude/worktrees',
-      'remove non-orch trust manually',
+      'remove non-orchestrator trust manually',
     )
   if (facts.mainCheckout)
     return refuse(

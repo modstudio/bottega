@@ -111,7 +111,7 @@ test('Grok reader inspection rejects missing proxies and platform servers', () =
   ).toBe(`Grok reader MCP inspection did not find expected server '${WORKER_MCP_SERVER_NAME}'`)
 })
 
-test('Grok reader inspection does not require orch when the run home omits it', () => {
+test('Grok reader inspection does not require orchestrator when the run home omits it', () => {
   expect(
     grokReaderMcpInspectionError(
       {

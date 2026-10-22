@@ -222,7 +222,7 @@ function requireAnswerAuthority(
   if (decision.code === 'operator-attribution')
     throw new Error('--channel ui requires --from-operator')
   if (decision.code === 'dashboard-capability')
-    throw new Error('--channel ui requires the hub dashboard capability')
+    throw new Error('--channel ui requires the dashboard capability')
   if (decision.code === 'session-marker')
     throw new Error(`--channel ui is refused when ${decision.actor} is set`)
   throw new Error(

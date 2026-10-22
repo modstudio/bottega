@@ -3,7 +3,6 @@
 
 import { db } from '../database/db.ts'
 import { dispatchFiledIssues, filedIssueQueueState } from '../issue/issue-dispatch.ts'
-import { fileNote } from '../mcp/hub-notes.ts'
 import { projectAt } from '../project/projects.ts'
 import { searchRecords } from '../search.ts'
 import { state } from '../state/serve.ts'
@@ -46,20 +45,6 @@ export async function fixDefectCommand(
   if (options.json) throw new Error('--json requires --waiting')
   if (options.cwd !== undefined) throw new Error('--cwd requires --waiting')
   if (await dispatchFiledIssues(key)) presentation.setExitCode(1)
-}
-
-export async function noteCommand(
-  text: string,
-  options: { project?: string; sameAs?: string; new: boolean },
-  presentation: Presentation,
-): Promise<void> {
-  const result = await fileNote({
-    text,
-    ...(options.project ? { project: options.project } : {}),
-    ...(options.sameAs ? { same_as: options.sameAs } : {}),
-    new: options.new,
-  })
-  presentation.log(result.output)
 }
 
 export function stateCommand(days: number | null, presentation: Presentation): void {

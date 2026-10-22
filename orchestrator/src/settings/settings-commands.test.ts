@@ -687,7 +687,7 @@ describe('worker settings command refusals', () => {
         presentation().flags({ project: 'import-worker' }),
         presentation().port(refusedRoot),
       ),
-    ).rejects.toThrow('refusing document store write from an orch worker run')
+    ).rejects.toThrow('refusing document store write from an orchestrator worker run')
     expect(getDoc('settings', 'import-worker', 'settings')).toBeNull()
   })
 
@@ -745,7 +745,7 @@ describe('worker settings command refusals', () => {
           }),
           operation,
         ),
-      ).rejects.toThrow('refusing document store write from an orch worker run')
+      ).rejects.toThrow('refusing document store write from an orchestrator worker run')
     },
   )
 })

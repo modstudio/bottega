@@ -60,7 +60,7 @@ describe('runs collection search', () => {
     ).toBe(true)
     expect(
       matchesRunSearch(
-        { ...completed, evidence_excluded: `voided with orch score --void` },
+        { ...completed, evidence_excluded: `voided with bottega score --void` },
         'Not routing evidence',
       ),
     ).toBe(true)
@@ -71,7 +71,7 @@ describe('runs collection search', () => {
       ...completed,
       delivery: null,
       quality: null,
-      evidence_excluded: `voided with orch score --void`,
+      evidence_excluded: `voided with bottega score --void`,
     }
     expect(matchesRunSearch(voidedUnscored, 'Unscored')).toBe(false)
     expect(matchesRunSearch(voidedUnscored, 'Not routing evidence')).toBe(true)
@@ -82,7 +82,7 @@ describe('runs collection search', () => {
       ...completed,
       delivery: 'full',
       quality: 'right',
-      evidence_excluded: `voided with orch score --void`,
+      evidence_excluded: `voided with bottega score --void`,
     }
     expect(matchesRunSearch(voidedFull, 'full')).toBe(true)
     expect(matchesRunSearch(voidedFull, 'right')).toBe(true)

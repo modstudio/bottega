@@ -156,7 +156,7 @@ chmod 755 /tmp/bin/hub
 sh /install.sh
 test "$(readlink /tmp/bin/orch)" = ${installedBinary}
 test "$(/tmp/bin/hub)" = preserved-hub
-echo 'second install preserved the protected hub path and ${PLATFORM_SLUG} orch symlink'
+echo 'second install preserved the protected hub path and legacy executable symlink'
 `
   console.log(`Docker release smoke (${target}) ran:`)
   console.log(containerScript.trim())

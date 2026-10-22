@@ -13,7 +13,7 @@ export const Settings: StoryObj<typeof meta> = {
         label="Model"
         control={<input aria-label="Model" defaultValue="worker" />}
         hint="Used for implementation."
-        cli="orch agent set"
+        cli="bottega agent show set"
       />
       <DisplayRow label="Branch" value="main" />
       <Copyable value="DEV-1378" />

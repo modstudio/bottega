@@ -305,7 +305,7 @@ test('sync clears a hosted run-row void when no exclusion row exists', async () 
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, {
     rowReason: null,
     supersededAt: null,
-    runReason: `voided with orch score --void`,
+    runReason: `voided with bottega score --void`,
   })
   expect(await syncRecord(options(local, remote))).toMatchObject({
     pushed: 1,

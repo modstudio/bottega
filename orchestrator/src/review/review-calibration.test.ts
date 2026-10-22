@@ -216,7 +216,7 @@ describe('review discipline', () => {
       if (voided) {
         db()
           .query(
-            `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`,
+            `UPDATE run SET evidence_excluded='voided with bottega score --void' WHERE record_id=?`,
           )
           .run(runId)
       }

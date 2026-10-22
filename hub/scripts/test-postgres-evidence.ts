@@ -346,7 +346,7 @@ try {
       why: 'This proves the hosted retry ledger.',
       waiting_since: '2026-09-25T08:00:00.000Z',
       link: 'http://127.0.0.1:7778/inbox/question/943001',
-      answer_command: 'orch answer 943 --q943001 --from-operator "Proceed"',
+      answer_command: 'bottega question answer 943 --q943001 --from-operator "Proceed"',
     }
     const waitingNow = new Date()
     const sent: string[] = []
@@ -1452,10 +1452,10 @@ try {
       throw new Error('hosted measures differed from the pure function on the same rows')
     if (hosted.hoursRunning.unionMs !== 90 * 60_000)
       throw new Error(
-        `hosted hours running merged overlapping orch as ${hosted.hoursRunning.unionMs}`,
+        `hosted hours running merged overlapping orchestrator as ${hosted.hoursRunning.unionMs}`,
       )
     if (hosted.agentHours.sumMs <= hosted.hoursRunning.unionMs)
-      throw new Error('hosted agent-hours did not keep overlapping orch spans')
+      throw new Error('hosted agent-hours did not keep overlapping orchestrator spans')
     if (!('shipped' in hosted) || hosted.shipped.count !== 1)
       throw new Error('shipped counted a task more than once after two done entries')
     const otherMeasures = await hostedMeasures(actorUrl, otherIdentity, measureWindow, {

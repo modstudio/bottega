@@ -69,7 +69,7 @@ The register seeds itself once from the run history. That is **data, not code**.
 
 # Project facts are declared, not inferred
 
-orch is project-agnostic. Every fact that differs by project belongs in that project's register row, declared in a shape the dispatcher can read and act on — not in orch's code, not in checked-in markdown, and not buried inside a string that something later greps.
+The orchestrator is project-agnostic. Every fact that differs by project belongs in that project's register row, declared in a shape the dispatcher can read and act on — not in orchestrator code, not in checked-in markdown, and not buried inside a string that something later greps.
 
 **An inferred capability fails at the moment of use; a declared one fails at registration.** Registration checks the declared landing branch against `HEAD` and any canon integration-branch rule; pull requests target the landing branch, never a configured production branch.
 

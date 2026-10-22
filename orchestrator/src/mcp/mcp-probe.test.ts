@@ -18,7 +18,7 @@ test('computes the complement only for declared worker MCP scope', () => {
   expect(disabledProjectMcpServers(names, ['starship'])).toEqual(['orch', 'stopal'])
 })
 
-test('a successful orch tool probe leaves worker attachment unverified', () => {
+test('a successful orchestrator tool probe leaves worker attachment unverified', () => {
   expect(
     mcpCallEvidence({
       server: 'starship',

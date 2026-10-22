@@ -67,7 +67,7 @@ test('listed fixture interval with known run is kept (mutation: select every lis
   ).toEqual([])
 })
 
-test('unlisted interval with unknown run is kept (mutation: select any unknown orch interval)', () => {
+test('unlisted interval with unknown run is kept (mutation: select any unknown orchestrator interval)', () => {
   expect(
     fixtureIntervalsWithoutRuns(
       [{ record_id: 'interval-1', source: 'orch', ref: `orch:${fixtureRecordId(2072)}` }],

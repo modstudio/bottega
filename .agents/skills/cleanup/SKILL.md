@@ -64,7 +64,7 @@ poll, start a background process, or leave a process behind.
    is only which git worktrees this repository currently registers. It does
    not establish run ownership or machine-wide absence. For worktrees in other
    registered projects, rely on the project-qualified paths and findings that
-   orch publishes; do not discover repositories by scanning the filesystem.
+   the orchestrator publishes; do not discover repositories by scanning the filesystem.
 
 Do not open `orch.db` or `hub.db`, import orchestrator query code, inspect the
 Docker socket, or reconstruct a missing fact from a directory name. Correlate

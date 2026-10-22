@@ -50,29 +50,29 @@ configuration is left alone.
 Setup also lists what it could not do for you, each with the command that fixes
 it. On a new machine expect one for each agent:
 
-    orch agent probe codex
+    bottega agent probe codex
 
 The probe runs the agent once to prove it can read a repository and return a
 structured reply. An agent takes repository work only after it passes.
-`orch agents` shows where each one stands.
+`bottega agent list` shows where each one stands.
 
 ## Delegate a first change
 
 Create a task. The key it prints goes on the branch and the commit.
 
-    hub task new --project demo --title "Add a health endpoint"
+    bottega task new --project demo --title "Add a health endpoint"
 
 Hand the task to an agent with a specification of what to build:
 
-    orch do implement --key DEMO-1 --cwd ~/code/demo "Add GET /health returning 200 and the text ok, with a test."
+    bottega run start implement --key DEMO-1 --cwd ~/code/demo "Add GET /health returning 200 and the text ok, with a test."
 
 The run happens in a disposable worktree of that repository; your checkout is
-not touched. `orch do` prints a run id and returns.
+not touched. `bottega run start` prints a run id and returns.
 
-    orch wait 1        # until it finishes or asks
-    orch result 1      # what the agent says it did
-    orch diff 1                  # what it actually changed
-    orch diff 1 --since-read     # only changes after the latest recorded architect read
+    bottega run wait 1        # until it finishes or asks
+    bottega run result 1      # what the agent says it did
+    bottega run diff 1                  # what it actually changed
+    bottega run diff 1 --since-read     # only changes after the latest recorded architect read
 
 The worker's change is on the run's own branch and may include uncommitted work.
 Nothing is pushed. Close-out preserves uncommitted changes in the run artifacts.
@@ -82,10 +82,10 @@ Nothing is pushed. Close-out preserves uncommitted changes in the run artifacts.
 Say what you got. The verdict is what teaches Bottega which agent to send the
 next job of this kind to, so give it only for output you have read.
 
-    orch score 1 full right faithful --note "Endpoint and test as specified."
+    bottega score 1 full right faithful --note "Endpoint and test as specified."
 
 The three words answer three questions: did anything usable arrive, was it
-right, and did it build what the specification asked for. `orch pending` lists
+right, and did it build what the specification asked for. `bottega score pending` lists
 the runs still waiting for your verdict.
 
 ## When the agent asks
@@ -93,14 +93,14 @@ the runs still waiting for your verdict.
 A worker that reaches a decision the specification did not settle stops instead
 of guessing.
 
-    orch inbox                              # the open questions
-    orch answer 1 "Return JSON, not text."  # your ruling resumes the same worker
+    bottega question inbox                              # the open questions
+    bottega question answer 1 "Return JSON, not text."  # your ruling resumes the same worker
 
 ## From your harness
 
 Setup registered Bottega's MCP server in the harnesses you chose. Through it the
 harness can run setup for another project and bring you each question a worker
-raises, then record your ruling. Dispatching is the same `orch do` command, run
+raises, then record your ruling. Dispatching is the same `bottega run start` command, run
 by the harness in its own shell.
 
 Bottega records who dispatched each run and lets only that caller judge it. Runs
@@ -109,6 +109,6 @@ Claude Code session starts belong to that session.
 
 ## Where to look when something is off
 
-    orch doctor        # the machine, the store, the agents
-    orch agents        # which agents are ready and what each needs
+    bottega machine doctor        # the machine, the store, the agents
+    bottega agent list        # which agents are ready and what each needs
     bottega setup      # re-run; it reports what is still missing

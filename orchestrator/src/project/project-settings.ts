@@ -72,7 +72,7 @@ export type WorktreeTool = {
    * something does: one project's tool answered "branch 'orch/646' does not match the
    * dev-processes format {type}/{KEY}-{slug}" and refused to make the worktree
    * at all. That is the project being right — its branch names carry a ticket
-   * key that its own tooling reads — and orch imposing a name of its own is
+   * key that its own tooling reads — and orchestrator imposing a name of its own is
    * exactly the mistake that delegating the lifecycle was meant to stop.
    *
    * Placeholders: `{id}` the run id and `{key}` a ticket key when the architect
@@ -88,10 +88,10 @@ export type WorktreeTool = {
    *
    * one application requires the choice with no default, having learned that the
    * default it used to take was silent and left every business table empty.
-   * orch therefore refuses to guess: a project listing seeds must be given one.
+   * orchestrator therefore refuses to guess: a project listing seeds must be given one.
    * The list is not an allowlist. `--seed` may carry any project-specific spec;
    * where the project exposes `scripts/worktree resolve`, that tool decides
-   * whether the spec is valid before orch creates anything.
+   * whether the spec is valid before orchestrator creates anything.
    */
   seeds?: string[]
   /**
@@ -199,7 +199,7 @@ export type ProjectSettings = {
    * add` leaves no .env and no vendor, so compose interpolates to nothing and
    * not one quality gate can run in the result".
    *
-   * Which is exactly what orch was doing. Cutting a worktree with plain git in
+   * Which is exactly what orchestrator was doing. Cutting a worktree with plain git in
    * one of those repositories produces a directory that LOOKS right, and in
    * which every test a worker runs is meaningless. That failure is silent and
    * arrives as a confident green.

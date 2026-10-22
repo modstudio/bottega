@@ -111,7 +111,7 @@ let dashboardCapability: { dir: string; path: string; token: string } | null = n
 const RUNS_DEADLINE_MS = 60_000
 const RUN_IDENTITY_MAP_DEADLINE_MS = 20_000
 
-/** Resolve the executable for every call made by a long-lived hub process. */
+/** Resolve the executable for every call made by a long-lived process in the hub concern. */
 export function resolveOrchExecutable(): string {
   const override = process.env.HUB_ORCH?.trim() || null
   const checkout = assetPath('bin', PLATFORM_SLUG)

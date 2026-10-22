@@ -548,18 +548,17 @@ export function checkDoc(
           kind: 'orch-command',
           token,
           line,
-          message: `line ${line}: \`${token}\` names no orch subcommand`,
+          message: `line ${line}: \`${token}\` names no orchestrator subcommand`,
         })
-      // Canon cites dispatch both ways until it is rewritten to the bottega spelling.
       const doJob = token.match(
-        new RegExp(`^(?:orch do|${PLATFORM_SLUG} run start)\\s+([a-z][\\w-]*)$`),
+        new RegExp(`^${PLATFORM_SLUG} run start\\s+([a-z][\\w-]*)$`),
       )
       if (doJob && !JOBS[doJob[1]!])
         findings.push({
           kind: 'job',
           token,
           line,
-          message: `line ${line}: \`${token}\` names no orch job`,
+          message: `line ${line}: \`${token}\` names no orchestrator job`,
         })
       if (JOBS[token]) {
         /* Exact job-name tokens are valid by definition. */

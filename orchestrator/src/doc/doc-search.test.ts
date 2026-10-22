@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { checkRetrieval, searchDocs } from './doc-search.ts'
 import { searchDocs as searchDocService } from './doc-search-service.ts'
 
-test('orch adapter parses the retrieval JSON contract', async () => {
+test('orchestrator adapter parses the retrieval JSON contract', async () => {
   const output = {
     query: 'meaning',
     k: 1,
@@ -61,7 +61,7 @@ test('orch adapter parses the retrieval JSON contract', async () => {
   })
 })
 
-test('orch adapter forwards optional document address filters', async () => {
+test('orchestrator adapter forwards optional document address filters', async () => {
   const seen: string[][] = []
   const output = {
     query: 'meaning',
@@ -90,7 +90,7 @@ test('orch adapter forwards optional document address filters', async () => {
   ])
 })
 
-test('orch adapter refuses malformed or failed retrieval output', async () => {
+test('orchestrator adapter refuses malformed or failed retrieval output', async () => {
   await expect(
     searchDocs('meaning', 1, {}, async () => ({ stdout: '{}', stderr: '', exitCode: 0 })),
   ).rejects.toThrow('invalid JSON contract')
@@ -103,7 +103,7 @@ test('orch adapter refuses malformed or failed retrieval output', async () => {
   ).rejects.toThrow('endpoint absent')
 })
 
-test('orch adapter checks retrieval through the same executable boundary', async () => {
+test('orchestrator adapter checks retrieval through the same executable boundary', async () => {
   const seen: string[][] = []
   const output = await checkRetrieval(async (argv) => {
     seen.push(argv)

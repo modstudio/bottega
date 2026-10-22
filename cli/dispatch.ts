@@ -5,8 +5,8 @@ import { INTERNAL_CALL_ENV, recordLegacyCall, reportLegacyCalls } from './legacy
 import { GROUPS, ROUTES, resolveRoute } from './routes.ts'
 
 export type BinaryEntries = {
-  orch(argv: string[]): Promise<number>
-  hub(argv: string[]): Promise<number>
+  orch(argv: string[], invocation?: OwnerInvocation): Promise<number>
+  hub(argv: string[], invocation?: OwnerInvocation): Promise<number>
   orchOutbox(): Promise<Record<string, unknown>[]>
   hubOutbox(): Promise<Record<string, unknown>[]>
   hubOutboxSummaryLines(rows: readonly Record<string, unknown>[]): Promise<string[]>
@@ -15,6 +15,11 @@ export type BinaryEntries = {
   retrievalSearch(argv: string[]): Promise<void>
   checkAttribution(argv: string[]): Promise<number>
   schemaCheck(argv: string[]): Promise<number>
+}
+
+export type OwnerInvocation = {
+  publicPath: readonly string[]
+  ownerPath: readonly string[]
 }
 
 type OutboxOwner = 'orch' | 'hub'
@@ -26,7 +31,12 @@ function qualifiedOutboxRows(
   return rows.map((row) => ({ ...row, id: `${owner}:${String(row.id)}`, owner }))
 }
 
-async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<number> {
+async function dispatchOutbox(
+  rest: string[],
+  entries: BinaryEntries,
+  invocation: OwnerInvocation,
+): Promise<number> {
+  if (rest[0] === 'trace') return entries.hub(['outbox', ...rest], invocation)
   if (rest.length === 0 || (rest.length === 1 && rest[0] === '--json')) {
     const hubRows = await entries.hubOutbox()
     const rows = [
@@ -54,12 +64,41 @@ async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<n
   const id = match[2]!
   // The orchestrator reads its id with Number(), which turns `1e2` or `0x10` into another row.
   if (owner === 'orch' && !/^\d+$/.test(id)) {
-    console.error(`orch outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\``)
+    console.error(`orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\``)
     return 2
   }
   // Each owner's own command validates the verb, so its verb list has one definition.
   const prefix = owner === 'orch' ? ['record', 'outbox'] : ['outbox']
-  return entries[owner]([...prefix, verb!, id, ...extraArguments])
+  return entries[owner](
+    [...prefix, verb!, id, ...extraArguments],
+    invocationFor(prefix, invocation.publicPath),
+  )
+}
+
+function invocationFor(
+  ownerPath: readonly string[],
+  publicPath: readonly string[],
+): OwnerInvocation {
+  return { ownerPath, publicPath }
+}
+
+function legacyInvocation(
+  owner: 'orch' | 'hub',
+  argv: readonly string[],
+): OwnerInvocation | undefined {
+  const matches: { ownerPath: readonly string[]; publicPath: readonly string[] }[] = []
+  for (const route of ROUTES) {
+    const targets =
+      route.composite ?? (route.owner === owner ? [{ owner, argv: route.argv ?? [] }] : [])
+    for (const target of targets) {
+      if (target.owner !== owner || target.argv.length === 0) continue
+      if (target.argv.every((part, index) => argv[index] === part)) {
+        matches.push({ ownerPath: target.argv, publicPath: route.command })
+      }
+    }
+  }
+  const best = matches.sort((left, right) => right.ownerPath.length - left.ownerPath.length)[0]
+  return best ? invocationFor(best.ownerPath, best.publicPath) : undefined
 }
 
 function topHelp(): void {
@@ -84,7 +123,11 @@ async function groupHelp(group: string, entries: BinaryEntries): Promise<number>
   )
   if (passThrough?.owner === 'orch' || passThrough?.owner === 'hub') {
     console.log('\nOwner commands:')
-    return entries[passThrough.owner]([...(passThrough.argv ?? []), '--help'])
+    const ownerPath = passThrough.argv ?? []
+    return entries[passThrough.owner](
+      [...ownerPath, '--help'],
+      invocationFor(ownerPath, passThrough.command),
+    )
   }
   return 0
 }
@@ -97,7 +140,7 @@ async function legacy(
   const internal = process.env[INTERNAL_CALL_ENV] === '1'
   recordLegacyCall(oldName, argv, internal ? 'internal' : 'external')
   process.env[INTERNAL_CALL_ENV] = '1'
-  return entries[oldName](argv)
+  return entries[oldName](argv, legacyInvocation(oldName, argv))
 }
 
 async function composite(
@@ -128,7 +171,10 @@ async function composite(
   let result = 0
   for (const [index, part] of parts.entries()) {
     console.error(`== ${part.label} ==`)
-    const code = await entries[part.owner]([...part.argv, ...partArguments[index]!])
+    const code = await entries[part.owner](
+      [...part.argv, ...partArguments[index]!],
+      invocationFor(part.argv, route.command),
+    )
     if (code !== 0 && result === 0) result = code
     if (code !== 0 && !route.continueOnFailure) break
   }
@@ -180,8 +226,18 @@ export async function dispatchBinary(
     return 2
   }
   if (resolved.route.owner === 'local') return reportLegacyCalls(resolved.rest)
-  if (resolved.route.owner === 'outbox') return dispatchOutbox(resolved.rest, entries)
+  if (resolved.route.owner === 'outbox') {
+    const ownerPath = resolved.route.argv ?? []
+    return dispatchOutbox(
+      [...ownerPath, ...resolved.rest],
+      entries,
+      invocationFor(['outbox', ...ownerPath], resolved.route.command),
+    )
+  }
   if (resolved.route.owner === 'composite') return composite(resolved.route, resolved.rest, entries)
   const ownerArgv = [...(resolved.route.argv ?? []), ...resolved.rest]
-  return entries[resolved.route.owner](ownerArgv)
+  return entries[resolved.route.owner](
+    ownerArgv,
+    invocationFor(resolved.route.argv ?? [], resolved.route.command),
+  )
 }

@@ -336,7 +336,7 @@ describe('run answers', () => {
       { status: 'failed', excluded: null },
       { status: 'stopped', excluded: null },
       { status: 'stale', excluded: null },
-      { status: 'asking', excluded: `voided with orch score --void` },
+      { status: 'asking', excluded: `voided with bottega score --void` },
     ]) {
       const id = addRun({
         agent: 'missing-test-agent',
@@ -766,7 +766,7 @@ test('a plain operator answers a run whose owner is gone', async () => {
   })
 })
 
-test('UI operator answers require the hub dashboard capability', async () => {
+test('UI operator answers require the dashboard capability', async () => {
   const id = insert('asking', 'implement')
   const question = db()
     .query(returningQuestionSql())
@@ -783,7 +783,7 @@ test('UI operator answers require the hub dashboard capability', async () => {
       },
       { ...helpers, dashboardAuthorized: () => false },
     ),
-  ).rejects.toThrow('--channel ui requires the hub dashboard capability')
+  ).rejects.toThrow('--channel ui requires the dashboard capability')
   expect(db().query('SELECT answer FROM question WHERE number=?').get(question.number)).toEqual({
     answer: null,
   })
