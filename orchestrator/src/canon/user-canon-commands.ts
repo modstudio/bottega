@@ -9,6 +9,7 @@ import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.t
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
+import { assertCurrentMachineHomeWriteAuthority } from '../settings/settings-machine-write-authority.ts'
 import { planCanonImport } from './canon-import-policy.ts'
 import { stripUserCanonManagedMarker } from './user-canon-home.ts'
 import {
@@ -54,6 +55,23 @@ function printFindings(findings: Finding[], log: (...values: unknown[]) => void)
   for (const [rule, rows] of [...grouped].sort(([a], [b]) => a.localeCompare(b))) {
     log(`  ${rule} (${rows.length})`)
     for (const finding of rows) log(`    ${finding.file}:${finding.line}  ${finding.message}`)
+  }
+}
+
+function assertUserCanonHydrateWriteAuthority(
+  flags: UserCanonFlags,
+  homes: ReturnType<typeof userCanonHomesFromEnvironment>,
+): void {
+  if (flags.has('check') || flags.has('dry-run')) return
+  assertCurrentMachineHomeWriteAuthority(
+    `doc canon hydrate --user${flags.has('adopt') ? ' --adopt' : ''}`,
+    homes.map((home) => home.path),
+  )
+}
+
+function assertUserCanonHydrateFlags(flags: UserCanonFlags): void {
+  if (flags.has('force')) {
+    throw new Error(`unknown flag for ${PLATFORM_SLUG} doc canon hydrate --user: --force`)
   }
 }
 
@@ -152,11 +170,10 @@ export async function userCanonHydrateCommand(
   flags: UserCanonFlags,
   presentation: UserCanonPresentation,
 ): Promise<void> {
-  if (flags.has('force')) {
-    throw new Error(`unknown flag for ${PLATFORM_SLUG} doc canon hydrate --user: --force`)
-  }
-  const owner = await signedInDocOwner()
+  assertUserCanonHydrateFlags(flags)
   const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
+  assertUserCanonHydrateWriteAuthority(flags, homes)
+  const owner = await signedInDocOwner()
   const overrideStatus = userCanonHomeOverridesStatus(homes)
   if (overrideStatus) presentation.log(overrideStatus)
   const rows = listDocs({ scope: 'canon', subject: null, owner, status: 'current' })
