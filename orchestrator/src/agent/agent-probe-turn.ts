@@ -124,7 +124,6 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
             srt: {
               profile: input.writing.profile,
               runtimeDir: input.scratch,
-              launch: input.writing.launch,
             },
           }
         : {}),

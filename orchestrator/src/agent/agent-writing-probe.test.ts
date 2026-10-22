@@ -2,9 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Project } from '../project/projects.ts'
-import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
-import { probeAgentWrites } from './agent-writing-probe.ts'
+import { probeAgentWrites, writingCapabilityPolicy } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
 
 const scratchDirectories: string[] = []
@@ -20,23 +18,24 @@ function scratch(): string {
 }
 
 const agent = { name: 'fixture', baseUrl: null } as Agent
-const project = { settings: {} } as Project
-const launch = async (_profile: SandboxRuntimeConfig, bin: string, argv: string[]) => [bin, ...argv]
+const environment = { ...process.env }
+
+const lifecyclePorts = {
+  openAskListener: () => ({ address: '127.0.0.1:43123', close() {} }),
+  async resetSandbox() {},
+}
 
 test('a confined ACP writing check passes only after the requested content is written', async () => {
   const root = scratch()
   const result = await probeAgentWrites(
-    { transport: 'acp', scratch: root, project, agent },
+    { transport: 'acp', scratch: root, agent, environment },
     {
+      ...lifecyclePorts,
       createWorktree(path) {
         mkdirSync(path)
       },
       removeWorktree() {},
-      launch,
       async callAgent(input) {
-        expect(input.launch).toBe(launch)
-        expect(input.profile.filesystem.allowWrite).toEqual([input.cwd, root])
-        expect(input.profile.filesystem.denyWrite).toContain(join(input.cwd, '.git'))
         writeFileSync(
           join(input.cwd, 'registration-probe-write.txt'),
           'REGISTRATION_PROBE_WRITE_OK\n',
@@ -51,13 +50,13 @@ test('a confined ACP writing check passes only after the requested content is wr
 test('an ACP writing check fails when the requested content is absent', async () => {
   const root = scratch()
   const result = await probeAgentWrites(
-    { transport: 'acp', scratch: root, project, agent },
+    { transport: 'acp', scratch: root, agent, environment },
     {
+      ...lifecyclePorts,
       createWorktree(path) {
         mkdirSync(path)
       },
       removeWorktree() {},
-      launch,
       async callAgent() {
         return { status: 'ok', output: 'claimed success' }
       },
@@ -69,15 +68,15 @@ test('an ACP writing check fails when the requested content is absent', async ()
 test('a CLI transport is not given the writing check', async () => {
   let calls = 0
   const result = await probeAgentWrites(
-    { transport: 'cli', scratch: scratch(), project: null, agent },
+    { transport: 'cli', scratch: scratch(), agent, environment },
     {
+      ...lifecyclePorts,
       createWorktree() {
         calls++
       },
       removeWorktree() {
         calls++
       },
-      launch,
       async callAgent() {
         calls++
         return { status: 'ok', output: '' }
@@ -86,4 +85,39 @@ test('a CLI transport is not given the writing check', async () => {
   )
   expect(result.ok).toBeNull()
   expect(calls).toBe(0)
+})
+
+test('a writing-check setup failure is observed instead of thrown', async () => {
+  const result = await probeAgentWrites(
+    { transport: 'acp', scratch: scratch(), agent, environment },
+    {
+      ...lifecyclePorts,
+      createWorktree() {
+        throw new Error('git init failed')
+      },
+      removeWorktree() {},
+      async callAgent() {
+        throw new Error('unreachable')
+      },
+    },
+  )
+  expect(result).toEqual({ ok: false, output: 'git init failed' })
+})
+
+test('writing capability policy requires an ACP observation but not a CLI observation', () => {
+  expect(writingCapabilityPolicy('acp', true)).toEqual({
+    requiresObservation: true,
+    writesRepo: true,
+    jobSuccess: true,
+  })
+  expect(writingCapabilityPolicy('acp', null)).toEqual({
+    requiresObservation: true,
+    writesRepo: null,
+    jobSuccess: false,
+  })
+  expect(writingCapabilityPolicy('cli', null)).toEqual({
+    requiresObservation: false,
+    writesRepo: null,
+    jobSuccess: true,
+  })
 })

@@ -2,9 +2,14 @@
 /** Owns the disposable writing check. Must not know registry persistence or CLI grammar. */
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
 import type { Project } from '../project/projects.ts'
-import { type SandboxRuntimeConfig, sandboxLaunchArgv, writerProfile } from '../sandbox/sandbox.ts'
+import {
+  resetSandbox,
+  type SandboxRuntimeConfig,
+  selectReadonlySandbox,
+} from '../sandbox/sandbox.ts'
 import type { Agent } from './agents.ts'
 
 const WRITING_PROBE_FILE = 'registration-probe-write.txt'
@@ -16,7 +21,6 @@ type WritingProbeLaunch = {
   cwd: string
   prompt: string
   profile: SandboxRuntimeConfig
-  launch: typeof sandboxLaunchArgv
 }
 export type WritingProbeConfinement = Omit<WritingProbeLaunch, 'prompt'>
 
@@ -28,8 +32,11 @@ type WritingProbePorts = {
   createWorktree(path: string): void
   removeWorktree(path: string): void
   callAgent: WritingProbeAgentCall
-  launch: typeof sandboxLaunchArgv
+  openAskListener(): WritingProbeAskListener
+  resetSandbox(): Promise<void>
 }
+
+type WritingProbeAskListener = { address: string; close(): void | Promise<void> }
 
 function createScratchGitWorktree(path: string): void {
   mkdirSync(path, { recursive: true })
@@ -50,8 +57,41 @@ const defaultWorktreePorts = {
   removeWorktree: (path: string) => rmSync(path, { recursive: true, force: true }),
 }
 
-function shouldProbeWrites(transport: 'cli' | 'acp'): boolean {
-  return transport === 'acp'
+/** One owner for whether and how a transport establishes repository-writing capability. */
+export function writingCapabilityPolicy(
+  transport: 'cli' | 'acp',
+  observation: boolean | null | undefined,
+): { requiresObservation: boolean; writesRepo: boolean | null; jobSuccess: boolean } {
+  const requiresObservation = transport === 'acp'
+  return {
+    requiresObservation,
+    writesRepo: requiresObservation && observation != null ? observation : null,
+    jobSuccess: !requiresObservation || observation === true,
+  }
+}
+
+function probeProject(worktree: string): Project {
+  return {
+    recordId: 'registration-probe',
+    name: 'registration-probe',
+    path: worktree,
+    stack: null,
+    canon: false,
+    retiredAt: null,
+    settings: {},
+  }
+}
+
+function openProbeAskListener(): WritingProbeAskListener {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: () => new Response(null, { status: 404 }),
+  })
+  return {
+    address: `127.0.0.1:${server.port}`,
+    close: () => server.stop(true),
+  }
 }
 
 /** Run one ACP writer inside the same profile and transport launch used by a writing run. */
@@ -59,48 +99,68 @@ export async function probeAgentWrites(
   input: {
     transport: 'cli' | 'acp'
     scratch: string
-    project: Project | null
     agent: Agent
     path?: string
+    environment: ConfigEnvironment
   },
   ports: WritingProbePorts,
 ): Promise<WritingProbeResult> {
-  if (!shouldProbeWrites(input.transport)) {
+  if (!writingCapabilityPolicy(input.transport, null).requiresObservation) {
     return { ok: null, output: 'skipped: CLI transport never receives the writing check' }
   }
-  if (!input.project) throw new Error('registration writing probe requires a registered project')
   const worktree = join(input.scratch, 'writing-worktree')
   const target = join(worktree, WRITING_PROBE_FILE)
-  ports.createWorktree(worktree)
+  let askListener: WritingProbeAskListener | null = null
   try {
-    const profile = writerProfile({
-      worktree,
-      runsDir: input.scratch,
-      scratchDir: input.scratch,
-      // The check exercises filesystem confinement, not the ask endpoint. The
-      // writer profile still receives one exact loopback address as real runs do.
-      askAddress: '127.0.0.1:1',
-      project: input.project,
-      agent: input.agent.name,
-      path: input.path,
-      baseUrl: input.agent.baseUrl,
-    })
-    const outcome = await ports.callAgent({
-      cwd: worktree,
-      prompt: `Create ${WRITING_PROBE_FILE} with exactly this content, including the final newline:\n${WRITING_PROBE_CONTENT}`,
-      profile,
-      launch: ports.launch,
-    })
-    const content = existsSync(target) ? readFileSync(target, 'utf8') : ''
-    return {
-      ok: outcome.status === 'ok' && content === WRITING_PROBE_CONTENT,
-      output: outcome.output,
+    try {
+      ports.createWorktree(worktree)
+      askListener = ports.openAskListener()
+      const selection = selectReadonlySandbox({
+        agent: input.agent.name,
+        readsRepo: true,
+        writesRepo: true,
+        worktree,
+        runsDir: input.scratch,
+        scratchDir: input.scratch,
+        project: probeProject(worktree),
+        path: input.path,
+        baseUrl: input.agent.baseUrl,
+        environment: input.environment,
+        writingAcp: true,
+        askAddress: askListener.address,
+      })
+      if (!selection.profile) throw new Error('registration writing probe did not select srt')
+      const outcome = await ports.callAgent({
+        cwd: worktree,
+        prompt: `Create ${WRITING_PROBE_FILE} with exactly this content, including the final newline:\n${WRITING_PROBE_CONTENT}`,
+        profile: selection.profile,
+      })
+      const content = existsSync(target) ? readFileSync(target, 'utf8') : ''
+      return {
+        ok: outcome.status === 'ok' && content === WRITING_PROBE_CONTENT,
+        output: outcome.output,
+      }
+    } finally {
+      try {
+        await ports.resetSandbox()
+      } finally {
+        try {
+          await askListener?.close()
+        } finally {
+          ports.removeWorktree(worktree)
+        }
+      }
     }
-  } finally {
-    ports.removeWorktree(worktree)
+  } catch (error) {
+    return { ok: false, output: String((error as Error).message ?? error) }
   }
 }
 
 export function writingProbePorts(callAgent: WritingProbeAgentCall): WritingProbePorts {
-  return { ...defaultWorktreePorts, callAgent, launch: sandboxLaunchArgv }
+  return {
+    ...defaultWorktreePorts,
+    callAgent,
+    openAskListener: openProbeAskListener,
+    resetSandbox,
+  }
 }

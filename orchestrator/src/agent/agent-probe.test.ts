@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
-import { db } from '../database/db.ts'
-import { recordAgentProbe, registrationProbeRequirements } from './agent-probe.ts'
+import { db, writableDb } from '../database/db.ts'
+import {
+  recordAgentProbe,
+  registrationProbeCacheReusable,
+  registrationProbeRequirements,
+} from './agent-probe.ts'
 import {
   type AgentRow,
   addAgent,
@@ -44,7 +48,31 @@ test('a passing writing observation sets writesRepo and a failing one leaves it 
   expect(JSON.parse(registeredCaps('writing-capability-fixture')).writesRepo).toBe(true)
 
   recordAgentProbe('writing-capability-fixture', result(false))
-  expect(JSON.parse(registeredCaps('writing-capability-fixture')).writesRepo).toBe(false)
+  expect(JSON.parse(registeredCaps('writing-capability-fixture'))).toMatchObject({
+    readsRepo: true,
+    schema: true,
+    writesRepo: false,
+  })
+})
+
+test('a CLI probe with no writing observation preserves an existing writing capability', () => {
+  addAgent('cli-writing-capability-fixture', {
+    harness: 'codex',
+    backend: 'vendor',
+    model: 'fixture',
+  })
+  const caps = JSON.parse(registeredCaps('cli-writing-capability-fixture'))
+  writableDb()
+    .query('UPDATE agent SET caps=? WHERE name=?')
+    .run(JSON.stringify({ ...caps, writesRepo: true }), 'cli-writing-capability-fixture')
+  recordAgentProbe('cli-writing-capability-fixture', result(null))
+  expect(JSON.parse(registeredCaps('cli-writing-capability-fixture')).writesRepo).toBe(true)
+})
+
+test('cache reuse requires a writing observation only for ACP transport', () => {
+  const previous = result(null)
+  expect(registrationProbeCacheReusable('acp', previous, true)).toBe(false)
+  expect(registrationProbeCacheReusable('cli', previous, true)).toBe(true)
 })
 
 test('changing an agent identity resets a probed writing capability', () => {

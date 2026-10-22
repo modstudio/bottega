@@ -15,6 +15,7 @@ export const agentProbeModules = [
     '../../../shared/secret-resolution-failure.ts',
   ]),
   module('orchestrator/src/agent/agent-probe.ts', [
+    '../../../shared/config-directory.ts',
     '../../../shared/record-id.ts',
     './agent-registry.ts',
     './agents.ts',
@@ -27,9 +28,9 @@ export const agentProbeModules = [
     '../transport/transport.ts',
     './agent-writing-probe.ts',
     './agent-probe-turn.ts',
-    '../project/projects.ts',
   ]),
   module('orchestrator/src/agent/agent-writing-probe.ts', [
+    '../../../shared/config-directory.ts',
     '../../../shared/git.ts',
     './agents.ts',
     '../project/projects.ts',
