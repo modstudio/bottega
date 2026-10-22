@@ -115,6 +115,80 @@ function listedRunWithCost(
   return facts ? withReportedCost(row, facts, prices) : row
 }
 
+function listingHumanCurrent(finalRecordId: string, json: boolean) {
+  if (json) return {}
+  return db()
+    .query(
+      `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path, branch, minted_branch
+         FROM run WHERE record_id=?`,
+    )
+    .get(finalRecordId) as {
+    status: string
+    latency_ms: number | null
+    vendor_tokens: number | null
+    route_reason: string | null
+    probe: number
+    output_path: string | null
+    branch: string | null
+    minted_branch: string | null
+  }
+}
+
+function listingTurns(recordId: string, json: boolean) {
+  if (!json) return undefined
+  return db()
+    .query(
+      `SELECT record_id, number, started_at, agent, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
+         FROM run WHERE record_id = ? OR parent_run_record_id = ?
+        ORDER BY turn, number`,
+    )
+    .all(recordId, recordId)
+}
+
+function listingQuestions(recordId: string, json: boolean) {
+  if (!json) return undefined
+  return (
+    db()
+      .query(
+        `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
+                      q.asked_at, q.answered_at, q.asked_via,
+                      q.answerer_kind, q.answer_channel, q.overturned_at,
+                      q.closed_at, q.close_reason
+         FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+        WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
+        ORDER BY q.number`,
+      )
+      .all(recordId, recordId) as {
+      number: number
+      record_id: string
+      run_record_id: string
+      run_number: number
+      asked_at: string
+      answered_at: string | null
+      asked_via: AskedVia | null
+      answerer_kind: AnswererKind | null
+      answer_channel: AnswerChannel | null
+      overturned_at: string | null
+      closed_at: string | null
+      close_reason: string | null
+    }[]
+  ).map((q) => ({
+    id: q.number,
+    record_id: q.record_id,
+    run_record_id: q.run_record_id,
+    run_number: q.run_number,
+    asked_at: q.asked_at,
+    answered_at: q.answered_at ?? null,
+    asked_via: q.asked_via ?? null,
+    answerer_kind: q.answerer_kind ?? null,
+    answer_channel: q.answer_channel ?? null,
+    overturned_at: q.overturned_at ?? null,
+    closed_at: q.closed_at ?? null,
+    close_reason: q.close_reason ?? null,
+    deliveries: questionDeliveries(q.record_id),
+  }))
+}
+
 function listingConversation(
   r: Record<string, unknown>,
   json: boolean,
@@ -125,89 +199,23 @@ function listingConversation(
 ): Record<string, unknown>[] {
   const chain = resolveFailover(db(), r.record_id as string)
   const final = chain.attempts.at(-1)!
-  const current = json
-    ? {}
-    : (db()
-        .query(
-          `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path, branch, minted_branch
-         FROM run WHERE record_id=?`,
-        )
-        .get(final.record_id) as {
-        status: string
-        latency_ms: number | null
-        vendor_tokens: number | null
-        route_reason: string | null
-        probe: number
-        output_path: string | null
-        branch: string | null
-        minted_branch: string | null
-      })
-  const turns = json
-    ? db()
-        .query(
-          `SELECT record_id, number, started_at, agent, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
-         FROM run WHERE record_id = ? OR parent_run_record_id = ?
-        ORDER BY turn, number`,
-        )
-        .all(String(r.record_id), String(r.record_id))
-    : undefined
-  const questions = json
-    ? (
-        db()
-          .query(
-            `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
-                      q.asked_at, q.answered_at, q.asked_via,
-                      q.answerer_kind, q.answer_channel, q.overturned_at,
-                      q.closed_at, q.close_reason
-         FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-        WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
-        ORDER BY q.number`,
-          )
-          .all(String(r.record_id), String(r.record_id)) as {
-          number: number
-          record_id: string
-          run_record_id: string
-          run_number: number
-          asked_at: string
-          answered_at: string | null
-          asked_via: AskedVia | null
-          answerer_kind: AnswererKind | null
-          answer_channel: AnswerChannel | null
-          overturned_at: string | null
-          closed_at: string | null
-          close_reason: string | null
-        }[]
-      ).map((q) => ({
-        id: q.number,
-        record_id: q.record_id,
-        run_record_id: q.run_record_id,
-        run_number: q.run_number,
-        asked_at: q.asked_at,
-        answered_at: q.answered_at ?? null,
-        asked_via: q.asked_via ?? null,
-        answerer_kind: q.answerer_kind ?? null,
-        answer_channel: q.answer_channel ?? null,
-        overturned_at: q.overturned_at ?? null,
-        closed_at: q.closed_at ?? null,
-        close_reason: q.close_reason ?? null,
-        deliveries: questionDeliveries(q.record_id),
-      }))
-    : undefined
+  const recordId = String(r.record_id)
+  const questions = listingQuestions(recordId, json)
   const listed = {
     ...r,
-    ...current,
+    ...listingHumanCurrent(final.record_id, json),
     ...(questions ? { questions } : {}),
     answer_agent: final.agent,
     failover_chain: chain.attempts.map((attempt) => attempt.agent),
-    ...(chainIsStranded(r.record_id as string)
+    ...(chainIsStranded(recordId)
       ? {
           status: 'stranded',
           stranded: true,
-          recovery_hint: strandedRecovery(r.record_id as string),
+          recovery_hint: strandedRecovery(recordId),
         }
       : {}),
   }
-  return [listedRunWithCost(listed, turns, costFacts, prices)]
+  return [listedRunWithCost(listed, listingTurns(recordId, json), costFacts, prices)]
 }
 
 function processSamplesForRows(
@@ -365,7 +373,7 @@ export async function runListingCommand(
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const json = has('json') || options.jsonV1
-  const costFacts = json ? subscriptionCostFacts() : null
+  const costFacts = subscriptionCostFacts()
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not

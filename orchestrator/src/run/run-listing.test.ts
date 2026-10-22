@@ -531,18 +531,18 @@ describe('run listing', () => {
       startedAt: '2026-10-22T13:00:00.000Z',
     })
     db().query('UPDATE run SET vendor_tokens=3 WHERE record_id=?').run(other)
-    const row = runJson(
-      (await command({ json: true, id: [id] }, undefined, undefined, undefined, { grok: 100 }))[0]!,
-    ) as {
-      cost_usd: number
-      cost_source: string
-      vendor_cost_usd: number | null
-      vendor_estimated_cost_usd: number
-    }
-    expect(row.cost_usd).toBe(25)
-    expect(row.cost_source).toBe('subscription, amortized')
-    expect(row.vendor_cost_usd).toBeNull()
-    expect(row.vendor_estimated_cost_usd).toBe(23.5)
+    expect(
+      runJson(
+        (
+          await command({ json: true, id: [id] }, undefined, undefined, undefined, { grok: 100 })
+        )[0]!,
+      ),
+    ).toMatchObject({
+      cost_usd: 25,
+      cost_source: 'subscription, amortized',
+      vendor_cost_usd: null,
+      vendor_estimated_cost_usd: 23.5,
+    })
   })
 
   test('runs --json publishes every question on the root, including child turns', async () => {
