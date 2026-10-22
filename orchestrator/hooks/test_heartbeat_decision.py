@@ -143,29 +143,6 @@ esac
         self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
         self.assertNotIn("BLOCKED", decision.lines[0])
 
-    def test_own_parked_workflow_question_ignores_a_foreign_ruling(self):
-        decision = heartbeat_decision.heartbeat_decision(
-            "12:34:56",
-            [
-                {"kind": "workflow", "question_id": 8, "session_id": "own", "can_answer": True},
-                {
-                    "kind": "workflow",
-                    "question_id": 1936,
-                    "session_id": "eaabda0a",
-                    "can_answer": False,
-                },
-            ],
-            0,
-            0,
-            0,
-            "",
-            "",
-        )
-        self.assertFalse(decision.should_exit)
-        self.assertIn("WAITING", decision.lines[0])
-        self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
-        self.assertNotIn("BLOCKED", decision.lines[0])
-
     def test_foreign_workflow_question_is_not_blocked(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56",

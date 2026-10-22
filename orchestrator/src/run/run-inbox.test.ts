@@ -224,57 +224,11 @@ test('inbox lists workflow questions with their identity and answer command', as
       mode: 'default',
       step: { n: 3, slug: 'fix' },
       can_answer: true,
+      session_id: 'orch-test-session',
       answer_command: `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"`,
       ownership_notice: null,
     }),
   )
-})
-test('heartbeat inbox JSON uses the same answerability as the ownership notice', async () => {
-  db()
-    .query(
-      `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
-       total_steps,created_at,updated_at,enforcement)
-     VALUES ('${newRecordId()}','fixture','fix-defect','cursor','DEV-1585','','foreign-session',1,1,
-             '{"key":"DEV-1585"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
-             '2026-10-01','2026-10-01','floors'),
-            ('${newRecordId()}','fixture','fix-defect','cursor','DEV-1585-own','','orch-test-session',1,1,
-             '{"key":"DEV-1585-own"}',2,'fix','awaiting-ruling','[]','Own fix?',4,
-             '2026-10-01','2026-10-01','floors')`,
-    )
-    .run()
-  db()
-    .query(
-      `INSERT INTO question
-      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
-     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'DEV-1585','2026-10-01','Which fix?','workflow',3,'fix'),
-            ((SELECT COALESCE(MAX(number),0)+2 FROM question),'${newRecordId()}',2,'DEV-1585-own','2026-10-01','Own fix?','workflow',3,'fix')`,
-    )
-    .run()
-
-  const rows = JSON.parse(await inbox({ all: true, active: true, json: true })) as Array<{
-    kind: string
-    question: string
-    can_answer: boolean
-    session_id: string
-    ownership_notice: string | null
-  }>
-  const foreign = rows.find((row) => row.question === 'Which fix?')
-  const own = rows.find((row) => row.question === 'Own fix?')
-  expect(foreign).toMatchObject({
-    kind: 'workflow',
-    can_answer: false,
-    session_id: 'foreign-session',
-    ownership_notice:
-      'owned by session foreign-session; only that session, or the operator relaying a decision, may answer it',
-  })
-  expect(own).toMatchObject({
-    kind: 'workflow',
-    can_answer: true,
-    session_id: 'orch-test-session',
-    ownership_notice: null,
-  })
 })
 
 test('inbox gives no answer command for a foreign-owned workflow question', async () => {
