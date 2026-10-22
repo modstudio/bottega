@@ -13,6 +13,7 @@ describe('deriveObservedTestOutcome', () => {
         focused: [],
         gate: [],
         claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
       }),
     ).toEqual({ ran: false, passed: null, claimDisagrees: true })
   })
@@ -23,16 +24,35 @@ describe('deriveObservedTestOutcome', () => {
         focused: [{ executed: true, passed: true }],
         gate: [],
         claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
       }),
     ).toEqual({ ran: true, passed: true, claimDisagrees: false })
   })
 
   test('no tool calls records that no tests ran', () => {
-    expect(deriveObservedTestOutcome({ focused: [], gate: [], claim: null })).toEqual({
+    expect(
+      deriveObservedTestOutcome({
+        focused: [],
+        gate: [],
+        claim: null,
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({
       ran: false,
       passed: null,
       claimDisagrees: false,
     })
+  })
+
+  test('an absent focused runner makes an unobserved worker command non-disagreeing', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [],
+        gate: [],
+        claim: { ran: true, passed: true },
+        focusedRunnerRegistered: false,
+      }),
+    ).toEqual({ ran: null, passed: null, claimDisagrees: false })
   })
 
   test('reads only started focused executions and unit-test checks from the run gate', () => {

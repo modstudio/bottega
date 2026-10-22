@@ -166,6 +166,10 @@ function reviewHidesGap(
   )
 }
 
+function nullableBooleanColumn(value: boolean | null): number | null {
+  return value === null ? null : value ? 1 : 0
+}
+
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
@@ -741,7 +745,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     changedPaths: writesJob && changes ? JSON.stringify(changes.files) : null,
     linesAdded: writesJob ? (changes?.insertions ?? null) : null,
     linesRemoved: writesJob ? (changes?.deletions ?? null) : null,
-    testsRan: testOutcome ? (testOutcome.ran ? 1 : 0) : null,
+    testsRan: testOutcome ? nullableBooleanColumn(testOutcome.ran) : null,
     testsPassed: testOutcome?.passed == null ? null : testOutcome.passed ? 1 : 0,
     testsClaimDisagrees: testOutcome ? (testOutcome.claimDisagrees ? 1 : 0) : null,
     deviations: writesJob ? (contract?.deviations?.length ?? null) : null,
@@ -814,7 +818,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
             changes ? JSON.stringify(changes.files) : null,
             changes?.insertions ?? null,
             changes?.deletions ?? null,
-            testOutcome!.ran ? 1 : 0,
+            nullableBooleanColumn(testOutcome!.ran),
             testOutcome!.passed == null ? null : testOutcome!.passed ? 1 : 0,
             testOutcome!.claimDisagrees ? 1 : 0,
             contract?.deviations?.length ?? null,
