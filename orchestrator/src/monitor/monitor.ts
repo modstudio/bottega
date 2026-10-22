@@ -40,7 +40,7 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { missingPrunableWorktrees } from '../worktree/worktree-porcelain.ts'
 import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
-import { deliveredHostPressureDetail, hostPressureObservation } from './host-pressure-conditions.ts'
+import { hostPressureObservation, persistedHostPressureDetail } from './host-pressure-conditions.ts'
 import { branchInventoryDecision } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
@@ -574,12 +574,11 @@ function persistMonitorConditions(
               delivered_at: string
             } | null)
           : null
-        const detail =
-          condition.kind === 'host-pressure' && owner && prior
-            ? condition.detail.replace(` Notice pending for ${owner}.`, '') +
-              deliveredHostPressureDetail(database, prior.delivered_at, owner)
-            : condition.detail
-        condition.detail = detail
+        condition.detail = persistedHostPressureDetail(
+          database,
+          condition,
+          prior?.delivered_at ?? null,
+        )
         insert.run(
           newRecordId(),
           invocation,
@@ -587,7 +586,7 @@ function persistMonitorConditions(
           condition.subject,
           condition.since,
           condition.ageMs,
-          detail,
+          condition.detail,
           condition.action,
           condition.issueKey ?? null,
           condition.severity ?? null,

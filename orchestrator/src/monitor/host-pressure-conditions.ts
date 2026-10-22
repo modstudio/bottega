@@ -12,8 +12,12 @@ import {
   type SessionAnchor,
 } from '../host-pressure/host-pressure-decision.ts'
 import { loadHostPressureSamples } from '../host-pressure/host-pressure-service.ts'
-import { sessionAnchors } from '../resources/process-inventory.ts'
-import type { MonitorCondition, MonitorHostPressure } from './monitor-types.ts'
+import { parseStoredAncestorChain, sessionAnchors } from '../resources/session-process-anchoring.ts'
+import type {
+  HostPressureConditionDetail,
+  MonitorCondition,
+  MonitorHostPressure,
+} from './monitor-types.ts'
 
 const MONITOR_HOST_PRESSURE_ATTRIBUTION_LIMIT = 5
 
@@ -47,6 +51,7 @@ function pressureOwners(
   sessions: SessionAnchor[]
   runs: LiveRunAnchor[]
   waiting: string[]
+  errors: { sessionId: string; detail: string }[]
 } {
   const liveSince = new Date(clock - SESSION_LIVE_MS).toISOString()
   const chains = (
@@ -56,26 +61,15 @@ function pressureOwners(
          WHERE last_seen >= ? AND ancestor_confirmed_at >= ? AND ancestor_chain IS NOT NULL`,
       )
       .all(liveSince, liveSince) as { session_id: string; ancestor_chain: string }[]
-  ).flatMap((row) => {
-    const chain = JSON.parse(row.ancestor_chain) as unknown
-    return Array.isArray(chain) &&
-      chain.every(
-        (identity) =>
-          typeof identity === 'object' &&
-          identity !== null &&
-          Number.isInteger((identity as { pid?: unknown }).pid) &&
-          typeof (identity as { startTime?: unknown }).startTime === 'string',
-      )
-      ? [
-          {
-            sessionId: row.session_id,
-            chain: chain as { pid: number; startTime: string }[],
-          },
-        ]
-      : []
-  })
+  ).map((row) => ({ row, parsed: parseStoredAncestorChain(row.session_id, row.ancestor_chain) }))
+  const chainErrors = chains.flatMap(({ row, parsed }) =>
+    parsed.error ? [{ sessionId: row.session_id, detail: parsed.error }] : [],
+  )
+  const validChains = chains.flatMap(({ row, parsed }) =>
+    parsed.chain ? [{ sessionId: row.session_id, chain: parsed.chain }] : [],
+  )
   const projects = sessionProjectRows(database)
-  const sessions = [...sessionAnchors(chains)].map(([sessionId, anchor]) => ({
+  const sessions = [...sessionAnchors(validChains)].map(([sessionId, anchor]) => ({
     sessionId,
     pid: anchor.pid,
     startTime: anchor.startTime,
@@ -83,27 +77,68 @@ function pressureOwners(
   }))
   const runRows = database
     .query(
-      `SELECT record_id,number,agent_pid,host_wait_since,repo FROM run
+      `SELECT record_id,number,agent_pid,agent_start_time,host_wait_since,repo FROM run
        WHERE status IN ('running','asking')`,
     )
     .all() as {
     record_id: string
     number: number
     agent_pid: number | null
+    agent_start_time: string | null
     host_wait_since: string | null
     repo: string | null
   }[]
   return {
     sessions,
     runs: runRows.flatMap((run) =>
-      run.agent_pid
-        ? [{ number: run.number, pid: run.agent_pid, project: run.repo ?? 'unknown project' }]
+      run.agent_pid && run.agent_start_time
+        ? [
+            {
+              number: run.number,
+              pid: run.agent_pid,
+              startTime: run.agent_start_time,
+              project: run.repo ?? 'unknown project',
+            },
+          ]
         : [],
     ),
     waiting: runRows
       .filter((run) => run.host_wait_since !== null)
       .map((run) => `run ${run.number} (${run.record_id})`),
+    errors: chainErrors,
   }
+}
+
+function renderHostPressureConditionDetail(
+  database: Database,
+  detail: HostPressureConditionDetail,
+  deliveredAt: string | null = null,
+): string {
+  const project = detail.project ? ` in project ${detail.project}` : ''
+  const pendingOrDelivered = deliveredAt
+    ? (() => {
+        const after = database
+          .query(
+            `SELECT loadavg,ncpu FROM host_pressure_sample
+             WHERE sampled_at > ? ORDER BY sampled_at`,
+          )
+          .all(deliveredAt) as { loadavg: number; ncpu: number }[]
+        return `Notice delivered to ${detail.ownerSession} at ${deliveredAt}; load after delivery: ${after.length ? after.map((sample) => `${sample.loadavg.toFixed(2)}/${sample.ncpu}`).join(', ') : 'no later sample yet'}.`
+      })()
+    : detail.ownerSession
+      ? `Notice pending for ${detail.ownerSession}.`
+      : 'No owning session was found; operator action is required.'
+  return `PIDs and commands: ${compactProcesses(detail.processes)}. ${detail.ownerName}${project} CPU share ${(detail.share * 100).toFixed(1)}% (${detail.cpu.toFixed(1)}% CPU); load ${detail.loadavg.toFixed(2)}/${detail.ncpu} cores; waiting for host capacity: ${detail.waiting.join(', ') || 'none'}. ${pendingOrDelivered}`
+}
+
+export function persistedHostPressureDetail(
+  database: Database,
+  condition: MonitorCondition,
+  deliveredAt: string | null,
+): string {
+  return condition.kind === 'host-pressure' && condition.hostPressureDetail
+    ? renderHostPressureConditionDetail(database, condition.hostPressureDetail, deliveredAt)
+    : condition.detail
 }
 
 export function hostPressureObservation(
@@ -113,6 +148,14 @@ export function hostPressureObservation(
   const samples = loadHostPressureSamples(database, clock)
   const latest = samples.at(-1)
   const owners = pressureOwners(database, clock)
+  const chainErrorConditions: MonitorCondition[] = owners.errors.map((error) => ({
+    kind: 'observation-error',
+    subject: `session-process-chain:${error.sessionId}`,
+    since: null,
+    ageMs: null,
+    detail: error.detail,
+    action: `record a fresh successful process observation for session ${error.sessionId}; no ownership was inferred from the invalid row`,
+  }))
   const averages = samples.length
     ? {
         elapsedMs:
@@ -150,6 +193,7 @@ export function hostPressureObservation(
     return {
       report: { ...report, error: latestStored.process_error },
       conditions: [
+        ...chainErrorConditions,
         {
           kind: 'observation-error',
           subject: `host-process-table:${latestStored.sampled_at}`,
@@ -170,30 +214,27 @@ export function hostPressureObservation(
       ? `session:${ownerSession}`
       : `process:${commandName(attribution.rootCommand)}`
     const ownerName = ownerSession ? `Session ${ownerSession}` : 'Process tree'
-    const project = attribution.owner.project ? ` in project ${attribution.owner.project}` : ''
+    const hostPressureDetail: HostPressureConditionDetail = {
+      processes: attribution.processes,
+      ownerName,
+      project: attribution.owner.project,
+      share: attribution.share,
+      cpu: attribution.cpu,
+      loadavg: attribution.loadavg,
+      ncpu: attribution.ncpu,
+      waiting: owners.waiting,
+      ownerSession,
+    }
     const condition = {
       kind: 'host-pressure' as const,
       subject,
       since: new Date(attribution.episodeStartedAt).toISOString(),
       ageMs: clock - attribution.episodeStartedAt,
-      detail: `PIDs and commands: ${compactProcesses(attribution.processes)}. ${ownerName}${project} CPU share ${(attribution.share * 100).toFixed(1)}% (${attribution.cpu.toFixed(1)}% CPU); load ${attribution.loadavg.toFixed(2)}/${attribution.ncpu} cores; waiting for host capacity: ${owners.waiting.join(', ') || 'none'}. ${ownerSession ? `Notice pending for ${ownerSession}.` : 'No owning session was found; operator action is required.'}`,
+      detail: renderHostPressureConditionDetail(database, hostPressureDetail),
       action: `serialize CPU-heavy work, cap OMP_NUM_THREADS/MKL_NUM_THREADS/OPENBLAS_NUM_THREADS, or use nice; then run ${PLATFORM_SLUG} machine monitor`,
+      hostPressureDetail,
     }
     return ownerSession ? { ...condition, ownerSession } : condition
   })
-  return { conditions, report }
-}
-
-export function deliveredHostPressureDetail(
-  database: Database,
-  deliveredAt: string,
-  ownerSession: string,
-): string {
-  const after = database
-    .query(
-      `SELECT loadavg,ncpu FROM host_pressure_sample
-       WHERE sampled_at > ? ORDER BY sampled_at`,
-    )
-    .all(deliveredAt) as { loadavg: number; ncpu: number }[]
-  return ` Notice delivered to ${ownerSession} at ${deliveredAt}; load after delivery: ${after.length ? after.map((sample) => `${sample.loadavg.toFixed(2)}/${sample.ncpu}`).join(', ') : 'no later sample yet'}.`
+  return { conditions: [...chainErrorConditions, ...conditions], report }
 }

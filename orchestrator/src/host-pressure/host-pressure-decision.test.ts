@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { ProcessSample } from '../resources/process-inventory.ts'
+import type { ProcessTreeSample } from '../resources/session-process-anchoring.ts'
 import {
   attributeProcessTrees,
   decideHostPressure,
@@ -7,12 +7,15 @@ import {
   type PressureSample,
 } from './host-pressure-decision.ts'
 
-const busy: ProcessSample[] = [
+const busy: ProcessTreeSample[] = [
   { pid: 1, ppid: 0, cpu: 0, command: 'launchd', startTime: 'init-birth' },
   { pid: 10, ppid: 1, cpu: 10, command: 'harness', startTime: 'harness-birth' },
   { pid: 11, ppid: 10, cpu: 240, command: 'python tune.py', startTime: 'job-birth' },
 ]
-const sample = (sampledAt: number, processes: ProcessSample[] | null = busy): PressureSample => ({
+const sample = (
+  sampledAt: number,
+  processes: ProcessTreeSample[] | null = busy,
+): PressureSample => ({
   sampledAt,
   loadavg: 17,
   ncpu: 16,
@@ -21,7 +24,7 @@ const sample = (sampledAt: number, processes: ProcessSample[] | null = busy): Pr
   observationElapsedMs: 4,
   observationCpuMs: 2,
 })
-const sustained = (processes: ProcessSample[] | null = busy) => [
+const sustained = (processes: ProcessTreeSample[] | null = busy) => [
   sample(0, processes),
   sample(HOST_PRESSURE_WINDOW_MS, processes),
 ]
@@ -48,7 +51,7 @@ test('a span one sample interval short of the window yields no episode', () => {
 })
 
 test('a run-owned tree is attributed to its run and yields no notice', () => {
-  const runs = [{ number: 42, pid: 11, project: 'alpha' }]
+  const runs = [{ number: 42, pid: 11, startTime: 'job-birth', project: 'alpha' }]
   expect(attributeProcessTrees(sample(0), session, runs)[0]).toMatchObject({
     owner: { kind: 'run', name: 'run 42', project: 'alpha' },
     rootPid: 11,
@@ -72,8 +75,15 @@ test('a reused anchor pid with another start time owns nothing', () => {
   ).toMatchObject([{ owner: { kind: 'outside', name: 'harness' } }])
 })
 
+test('a reused run pid with another start time owns nothing', () => {
+  const runs = [{ number: 42, pid: 11, startTime: 'earlier-job-birth', project: 'alpha' }]
+  expect(attributeProcessTrees(sample(0), session, runs)[0]).toMatchObject({
+    owner: { kind: 'session', sessionId: 'session' },
+  })
+})
+
 test('a process outside a session anchor tree stays outside', () => {
-  const processes: ProcessSample[] = [
+  const processes: ProcessTreeSample[] = [
     ...busy,
     { pid: 20, ppid: 1, cpu: 300, command: 'other-service', startTime: 'other-birth' },
   ]

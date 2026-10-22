@@ -22,8 +22,9 @@ export const monitorModules: MonitorModule[] = [
     'node:path',
     '../../../shared/process-identity.ts',
   ]),
+  module('orchestrator/src/resources/session-process-anchoring.ts', []),
   module('orchestrator/src/host-pressure/host-pressure-decision.ts', [
-    '../resources/process-inventory.ts',
+    '../resources/session-process-anchoring.ts',
   ]),
   module('orchestrator/src/host-pressure/host-pressure-service.ts', [
     'bun:sqlite',
@@ -31,6 +32,7 @@ export const monitorModules: MonitorModule[] = [
     '../database/db.ts',
     '../gate-load.ts',
     '../resources/process-inventory.ts',
+    '../resources/session-process-anchoring.ts',
     './host-pressure-decision.ts',
   ]),
   module('orchestrator/src/monitor/host-pressure-conditions.ts', [
@@ -40,7 +42,7 @@ export const monitorModules: MonitorModule[] = [
     '../database/db.ts',
     '../host-pressure/host-pressure-decision.ts',
     '../host-pressure/host-pressure-service.ts',
-    '../resources/process-inventory.ts',
+    '../resources/session-process-anchoring.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-types.ts', [

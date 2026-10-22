@@ -60,3 +60,22 @@ test('an unavailable latest process table is not reported as no pressure', () =>
   expect(result.report.available).toBeFalse()
   expect(formatHostPressureLine(result.report)).toContain('process attribution unavailable')
 })
+
+test('a malformed stored session chain is reported without aborting observation', () => {
+  const database = migratedTestDatabase()
+  const clock = Date.parse('2026-10-21T20:00:00.000Z')
+  database
+    .query(
+      `INSERT INTO session_seen
+       (session_id,last_seen,ancestor_chain,ancestor_confirmed_at) VALUES (?,?,?,?)`,
+    )
+    .run('broken-session', new Date(clock).toISOString(), 'not json', new Date(clock).toISOString())
+  const result = hostPressureObservation(database, clock)
+  expect(result.conditions).toContainEqual(
+    expect.objectContaining({
+      kind: 'observation-error',
+      subject: 'session-process-chain:broken-session',
+      detail: 'session broken-session has an invalid stored ancestor_chain',
+    }),
+  )
+})

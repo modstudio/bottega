@@ -5,13 +5,14 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, recordSessionSeen, sessionId, writeTransaction } from '../database/db.ts'
 import { type HostLoad, measureHostLoad } from '../gate-load.ts'
+import { processTableSnapshot } from '../resources/process-inventory.ts'
 import {
   ancestorIdentityChain,
-  commonAncestorChain,
+  nextSessionAncestorChain,
   type ProcessIdentity,
-  type ProcessSample,
-  processTableSnapshot,
-} from '../resources/process-inventory.ts'
+  type ProcessTreeSample,
+  parseStoredAncestorChain,
+} from '../resources/session-process-anchoring.ts'
 import {
   HOST_PRESSURE_SAMPLE_INTERVAL_MS,
   HOST_PRESSURE_SAMPLE_RETENTION_MS,
@@ -19,7 +20,7 @@ import {
 } from './host-pressure-decision.ts'
 
 export type ProcessTableObservation = {
-  processes: ProcessSample[] | null
+  processes: ProcessTreeSample[] | null
   error: string | null
   elapsedMs: number
   cpuMs: number
@@ -102,21 +103,6 @@ function sessionAncestorChain(
   return observed.processes ? ancestorIdentityChain(pid, observed.processes) : undefined
 }
 
-function parseAncestorChain(value: string | null): ProcessIdentity[] | null {
-  if (value === null) return null
-  const parsed = JSON.parse(value) as unknown
-  return Array.isArray(parsed) &&
-    parsed.every(
-      (identity) =>
-        typeof identity === 'object' &&
-        identity !== null &&
-        Number.isInteger((identity as ProcessIdentity).pid) &&
-        typeof (identity as ProcessIdentity).startTime === 'string',
-    )
-    ? (parsed as ProcessIdentity[])
-    : null
-}
-
 export function stampSessionProcessObservation(
   database: Database,
   sid: string | null,
@@ -130,17 +116,17 @@ export function stampSessionProcessObservation(
   const stored = database
     .query('SELECT ancestor_chain FROM session_seen WHERE session_id=?')
     .get(sid) as { ancestor_chain: string | null } | null
-  const previous = parseAncestorChain(stored?.ancestor_chain ?? null)
+  const previous = parseStoredAncestorChain(sid, stored?.ancestor_chain ?? null).chain
   recordSessionSeen(
     sid,
     at,
-    { chain: previous ? commonAncestorChain(previous, chain) : chain, confirmedAt: at },
+    { chain: nextSessionAncestorChain(previous, chain), confirmedAt: at },
     database,
   )
 }
 
-function parseProcesses(value: string | null): ProcessSample[] | null {
-  return value === null ? null : (JSON.parse(value) as ProcessSample[])
+function parseProcesses(value: string | null): ProcessTreeSample[] | null {
+  return value === null ? null : (JSON.parse(value) as ProcessTreeSample[])
 }
 
 export function loadHostPressureSamples(database: Database, clock: number): PressureSample[] {

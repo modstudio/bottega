@@ -14,6 +14,18 @@ export type MonitorHostPressure = {
   averageObservationCpuMs: number | null
 }
 
+export type HostPressureConditionDetail = {
+  processes: { pid: number; cpu: number; command: string }[]
+  ownerName: string
+  project: string | null
+  share: number
+  cpu: number
+  loadavg: number
+  ncpu: number
+  waiting: string[]
+  ownerSession: string | null
+}
+
 export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'abandoned-bootstrap': 'revalidated',
   'asking-run': 'revalidated',
@@ -46,6 +58,7 @@ type MonitorConditionFields = {
   issueKey?: string | null
   affectedProject?: string
   severity?: MonitorSeverity | null
+  hostPressureDetail?: HostPressureConditionDetail
 }
 
 export type AddressedMonitorCondition = MonitorConditionFields & {

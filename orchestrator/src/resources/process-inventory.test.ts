@@ -1,13 +1,6 @@
 import { expect, test } from 'bun:test'
 import { processObservationError } from '../../../shared/process-identity.ts'
-import {
-  ancestorChain,
-  ancestorIdentityChain,
-  commonAncestorChain,
-  joinProcessCwd,
-  parseProcessTable,
-  sessionAnchors,
-} from './process-inventory.ts'
+import { joinProcessCwd, parseProcessTable } from './process-inventory.ts'
 
 test('classifies process inventory subprocess failures', () => {
   expect(
@@ -81,75 +74,6 @@ test('parses faithful Linux ps etime output and ignores malformed age', () => {
       cwd: null,
       cwdVerified: false,
     },
-  ])
-})
-
-test('sessions under one terminal receive distinct harness anchors', () => {
-  const anchors = sessionAnchors([
-    {
-      sessionId: 'one',
-      chain: [101, 50, 20, 1].map((pid) => ({ pid, startTime: `birth-${pid}` })),
-    },
-    {
-      sessionId: 'two',
-      chain: [102, 50, 20, 1].map((pid) => ({ pid, startTime: `birth-${pid}` })),
-    },
-  ])
-  expect(anchors).toEqual(
-    new Map([
-      ['one', { pid: 101, startTime: 'birth-101' }],
-      ['two', { pid: 102, startTime: 'birth-102' }],
-    ]),
-  )
-  expect([...anchors.values()].map(({ pid }) => pid)).not.toContain(50)
-})
-
-test('a single session anchors at its nearest ancestor, never pid 1 or the terminal', () => {
-  const anchors = sessionAnchors([
-    {
-      sessionId: 'solo',
-      chain: [400, 300, 1].map((pid) => ({ pid, startTime: `birth-${pid}` })),
-    },
-  ])
-  expect(anchors.get('solo')).toEqual({ pid: 400, startTime: 'birth-400' })
-})
-
-test('differing shells converge on the deepest common ancestor', () => {
-  const identity = (pid: number) => ({ pid, startTime: `birth-${pid}` })
-  expect(
-    commonAncestorChain(
-      [identity(501), identity(400), identity(300), identity(1)],
-      [identity(502), identity(400), identity(300), identity(1)],
-    ),
-  ).toEqual([identity(400), identity(300), identity(1)])
-})
-
-test('an anchor shared with another live session is rejected for both', () => {
-  const chain = [
-    { pid: 400, startTime: 'harness' },
-    { pid: 300, startTime: 'terminal' },
-    { pid: 1, startTime: 'init' },
-  ]
-  expect(
-    sessionAnchors([
-      { sessionId: 'one', chain },
-      { sessionId: 'two', chain },
-    ]),
-  ).toEqual(new Map())
-})
-
-test('ancestor chains stop at pid 1 and at a missing parent', () => {
-  const processes = [
-    { pid: 1, ppid: 0, cpu: 0, command: 'init', startTime: 'one' },
-    { pid: 10, ppid: 1, cpu: 0, command: 'terminal', startTime: 'ten' },
-    { pid: 11, ppid: 10, cpu: 0, command: 'cli', startTime: 'eleven' },
-    { pid: 20, ppid: 19, cpu: 0, command: 'detached', startTime: 'twenty' },
-  ]
-  expect(ancestorChain(11, processes)).toEqual([10, 1])
-  expect(ancestorChain(20, processes)).toEqual([19])
-  expect(ancestorIdentityChain(11, processes)).toEqual([
-    { pid: 10, startTime: 'ten' },
-    { pid: 1, startTime: 'one' },
   ])
 })
 

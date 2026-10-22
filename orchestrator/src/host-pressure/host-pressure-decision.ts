@@ -1,7 +1,10 @@
 // concern: sustained host-pressure attribution
 /** Pure pressure-episode and process-owner decisions over plain sampled values. */
 
-import { type ProcessSample, processDescendsFrom } from '../resources/process-inventory.ts'
+import {
+  type ProcessTreeSample,
+  processDescendsFrom,
+} from '../resources/session-process-anchoring.ts'
 
 export const HOST_PRESSURE_WINDOW_MS = 3 * 60 * 1000
 export const HOST_PRESSURE_SAMPLE_INTERVAL_MS = 30_000
@@ -17,7 +20,7 @@ export type PressureSample = {
   loadavg: number
   ncpu: number
   memoryPressure: string
-  processes: ProcessSample[] | null
+  processes: ProcessTreeSample[] | null
   observationElapsedMs: number
   observationCpuMs: number
 }
@@ -28,7 +31,7 @@ export type SessionAnchor = {
   startTime: string
   project: string | null
 }
-export type LiveRunAnchor = { number: number; pid: number; project: string }
+export type LiveRunAnchor = { number: number; pid: number; startTime: string; project: string }
 type ProcessOwner =
   | { kind: 'run'; name: string; project: string }
   | { kind: 'session'; name: string; sessionId: string; project: string | null }
@@ -41,7 +44,7 @@ export type PressureAttribution = {
   rootCommand: string
   cpu: number
   share: number
-  processes: ProcessSample[]
+  processes: ProcessTreeSample[]
   loadavg: number
   ncpu: number
 }
@@ -63,7 +66,7 @@ export function attributeProcessTrees(
   if (totalCpu <= 0) return []
   const assigned = new Set<number>()
   const result: Candidate[] = []
-  const add = (rootPid: number, owner: ProcessOwner, processes: ProcessSample[]) => {
+  const add = (rootPid: number, owner: ProcessOwner, processes: ProcessTreeSample[]) => {
     const cpu = processes.reduce((sum, process) => sum + process.cpu, 0)
     if (cpu <= 0) return
     processes.forEach((process) => {
@@ -81,6 +84,8 @@ export function attributeProcessTrees(
   }
 
   for (const run of runs) {
+    if (sample.processes.find((process) => process.pid === run.pid)?.startTime !== run.startTime)
+      continue
     const processes = sample.processes.filter((process) =>
       processDescendsFrom(process.pid, run.pid, parents),
     )
