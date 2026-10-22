@@ -23,7 +23,11 @@ import { missingReaderStartWarning, selectPushNotices } from './board-push-polic
 import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
-import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
+import {
+  renderBoardQuestion,
+  renderBoardReply,
+  renderBoardReplyDelivery,
+} from './board-thread-render.ts'
 
 export const BOARD_REFRESH_CURSOR_KEY = 'board_hosted_change_cursor'
 const BOARD_REFRESH_AT_KEY = 'board_hosted_refresh_at'
@@ -588,15 +592,21 @@ export function claimCachedHosted(
     .map(({ message, tags }) => ({
       id: message.id,
       text: renderCached(message, tags, messages, reader.startsWith('run:')),
-      oneLine: renderBoardNoticeOneLine({
-        id: message.id,
-        title:
-          message.kind === 'reply'
-            ? (messages.find((candidate) => candidate.id === message.threadRootId)?.title ?? '')
-            : (message.title ?? ''),
-        sender: originText(message.origin),
-        ackRequired: message.ackRequired,
-      }),
+      oneLine:
+        message.kind === 'reply'
+          ? renderBoardReplyDelivery({
+              origin: originText(message.origin),
+              rootId: message.threadRootId ?? 'unknown',
+              rootTitle:
+                messages.find((candidate) => candidate.id === message.threadRootId)?.title ?? '',
+              body: message.body,
+            })
+          : renderBoardNoticeOneLine({
+              id: message.id,
+              title: message.title ?? '',
+              sender: originText(message.origin),
+              ackRequired: message.ackRequired,
+            }),
       ackRequired: message.ackRequired,
       ackDeadline: message.ackDeadline,
       createdAt: message.createdAt,
