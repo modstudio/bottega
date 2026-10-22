@@ -50,8 +50,8 @@ describe('in-flight migration compatibility', () => {
   })
 
   test('journal validation refuses an index that differs from its position', () => {
-    expect(() =>
-      validatedMigrationJournalEntries([{ idx: 1, when: 1, tag: '0000' }]),
-    ).toThrow('invalid migration journal index for 0000: expected 0, got 1')
+    expect(() => validatedMigrationJournalEntries([{ idx: 1, when: 1, tag: '0000' }])).toThrow(
+      'invalid migration journal index for 0000: expected 0, got 1',
+    )
   })
 })
