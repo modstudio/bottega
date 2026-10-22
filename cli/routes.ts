@@ -175,7 +175,12 @@ export const ROUTES = (
     route('agent set', 'orch', 'agent set'),
     route('agent remove', 'orch', 'agent remove'),
     route('agent list', 'orch', 'agents'),
-    route('agent probe', 'orch', 'agent probe'),
+    route(
+      'agent probe',
+      'orch',
+      'agent probe',
+      'prove registration capabilities and clear a quota cooldown on success',
+    ),
     ...['context', 'contract', 'guide', 'stats', 'routing-backtest', 'metric', 'pick', 'jobs'].map(
       (name) => route(`agent ${name}`, 'orch', name),
     ),

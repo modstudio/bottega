@@ -163,7 +163,7 @@ preview the agent selected for a job
 
 **Synopsis:** `bottega agent probe [args...]`
 
-inspect and change agent registrations
+prove registration capabilities and clear a quota cooldown on success
 
 ### Options
 

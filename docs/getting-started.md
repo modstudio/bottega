@@ -52,8 +52,8 @@ it. On a new machine expect one for each agent:
 
     bottega agent probe codex
 
-The probe runs the agent once to prove it can read a repository and return a
-structured reply. An agent takes repository work only after it passes.
+The probe runs the agent to prove its registration capabilities and, when it
+succeeds, clears any quota cooldown. An agent takes repository work only after it passes.
 `bottega agent list` shows where each one stands.
 
 ## Delegate a first change

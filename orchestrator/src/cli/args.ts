@@ -438,7 +438,6 @@ export const CLI_COMMANDS = new Set([
   'pick',
   'port',
   'pr',
-  'probe',
   'project',
   'provisioning',
   'question',

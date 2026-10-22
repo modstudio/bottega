@@ -165,6 +165,36 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
   refreshAgents()
 }
 
+/** Record the overall successful registration probe as operational availability evidence. */
+export function recordSuccessfulRegistrationProbe(name: string): void {
+  const row = agentRows().find((candidate) => candidate.name === name)
+  if (!row) throw new Error(`unknown agent "${name}"`)
+  const prompt = 'registration probe passed'
+  writableDb()
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,probe,status,latency_ms,exit_code,output_bytes,model,transport)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(
+      newRecordId(),
+      nextRunNumber(writableDb()),
+      nowIso(),
+      name,
+      'agent-probe',
+      createHash('sha256').update(prompt).digest('hex'),
+      Buffer.byteLength(prompt),
+      prompt,
+      1,
+      'ok',
+      0,
+      0,
+      0,
+      row.model,
+      row.transport,
+    )
+}
+
 /** Prove capabilities before routing spends a worktree discovering them. */
 export async function probeAgent(name: string): Promise<RegistrationProbeResult> {
   const row = agentRows().find((candidate) => candidate.name === name)

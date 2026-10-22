@@ -4,7 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { probeAgent } from './agent-probe.ts'
+import { probeAgent, recordSuccessfulRegistrationProbe } from './agent-probe.ts'
 import {
   AGENTS,
   type AgentMutation,
@@ -29,7 +29,11 @@ type AgentCommandHandler = (
   name: string,
   argv: string[],
   presentation: Presentation,
+  dependencies: AgentCommandDependencies,
 ) => void | Promise<void>
+type AgentCommandDependencies = { probeAgent: typeof probeAgent }
+
+const agentCommandDependencies: AgentCommandDependencies = { probeAgent }
 
 const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
   add: addCommand,
@@ -40,7 +44,8 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
     removeAgent(name)
     presentation.log(`removed ${name}`)
   },
-  probe: (name, _argv, presentation) => probeCommand(name, presentation),
+  probe: (name, _argv, presentation, dependencies) =>
+    probeCommand(name, presentation, dependencies),
   show: (name, _argv, presentation) => showCommand(name, presentation),
 }
 
@@ -97,7 +102,11 @@ function mutation(argv: string[]): AgentMutation {
   }
 }
 
-export async function agentCommand(argv: string[], presentation: Presentation): Promise<void> {
+export async function agentCommand(
+  argv: string[],
+  presentation: Presentation,
+  dependencies: AgentCommandDependencies = agentCommandDependencies,
+): Promise<void> {
   const sub = argv[1],
     name = argv[2]
   if (!isAgentCommandVerb(sub)) {
@@ -105,7 +114,11 @@ export async function agentCommand(argv: string[], presentation: Presentation): 
       `unknown agent command "${sub ?? ''}"; valid commands: ${AGENT_COMMAND_VERBS.join(', ')}`,
     )
   }
-  await AGENT_COMMAND_HANDLERS[sub](name!, argv, presentation)
+  if (!name)
+    throw new Error(
+      `an agent name is required\nusage: ${PLATFORM_SLUG} agent ${sub} <name> [options]`,
+    )
+  await AGENT_COMMAND_HANDLERS[sub](name, argv, presentation, dependencies)
 }
 
 function addCommand(name: string, argv: string[], presentation: Presentation): void {
@@ -121,8 +134,13 @@ function addCommand(name: string, argv: string[], presentation: Presentation): v
   presentation.log(JSON.stringify(addAgent(name, input)))
 }
 
-async function probeCommand(name: string, presentation: Presentation): Promise<void> {
-  const result = await probeAgent(name)
+async function probeCommand(
+  name: string,
+  presentation: Presentation,
+  dependencies: AgentCommandDependencies,
+): Promise<void> {
+  const result = await dependencies.probeAgent(name)
+  if (result.ok) recordSuccessfulRegistrationProbe(name)
   presentation.log(JSON.stringify(result, null, 2))
   if (!result.ok) presentation.setExitCode(1)
 }

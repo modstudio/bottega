@@ -5,7 +5,6 @@ import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
-import { vendorProbeCommand } from '../agent/vendor-probe.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { writeAskServerFailure } from '../ask/ask-failure.ts'
@@ -563,11 +562,6 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       log(formatPassingGate(result))
       presentation.setExitCode(result.gateId === null ? 1 : 0)
     })
-  program
-    .command('probe <agent>')
-    .description('clear a vendor-quota exclusion once the agent answers')
-    .allowExcessArguments(false)
-    .action((agent) => vendorProbeCommand(agent, presentation))
   describedCommand(program, 'pick <job>', 'preview the agent selected for a job')
     .option('--agent <value>', 'select this agent if it is eligible')
     .option('--avoid <value>', 'exclude this agent from the preview')

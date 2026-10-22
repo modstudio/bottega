@@ -114,7 +114,7 @@ test('every public route through the agent owner declares a supported verb', () 
   }
 })
 
-test('agent mutations keep their verb and pass remaining arguments to the agent entry', async () => {
+test('agent verbs keep their verb and pass remaining arguments to the agent entry', async () => {
   const calls: string[][] = []
   const orch = async (argv: string[]) => {
     calls.push(argv)
@@ -133,44 +133,21 @@ test('agent mutations keep their verb and pass remaining arguments to the agent 
     schemaCheck: async () => 0,
   }
 
-  for (const verb of ['add', 'set', 'remove'] as const) {
-    await dispatchBinary(
-      ['agent', verb, 'route-test', '--jobs', 'fix,review-lens'],
-      entries,
-      () => '',
-    )
+  for (const [verb, args] of [
+    ['add', ['--jobs', 'fix,review-lens']],
+    ['set', ['--jobs', 'fix,review-lens']],
+    ['remove', []],
+    ['show', []],
+  ] as const) {
+    await dispatchBinary(['agent', verb, 'route-test', ...args], entries, () => '')
   }
 
   expect(calls).toEqual([
     ['agent', 'add', 'route-test', '--jobs', 'fix,review-lens'],
     ['agent', 'set', 'route-test', '--jobs', 'fix,review-lens'],
-    ['agent', 'remove', 'route-test', '--jobs', 'fix,review-lens'],
+    ['agent', 'remove', 'route-test'],
+    ['agent', 'show', 'route-test'],
   ])
-})
-
-test('agent show reaches agentCommand with show and the name', async () => {
-  const calls: string[][] = []
-  const result = await dispatchBinary(
-    ['agent', 'show', 'route-show-test'],
-    {
-      orch: async (argv) => {
-        calls.push(argv)
-        return 0
-      },
-      hub: async () => 0,
-      orchOutbox: async () => [],
-      hubOutbox: async () => [],
-      hubOutboxSummaryLines: async () => [],
-      runExec: async () => 0,
-      askProxy: async () => 0,
-      retrievalSearch: async () => {},
-      checkAttribution: async () => 0,
-      schemaCheck: async () => 0,
-    },
-    () => '',
-  )
-  expect(result).toBe(0)
-  expect(calls).toEqual([['agent', 'show', 'route-show-test']])
 })
 
 function commandAt(program: Command, path: readonly string[]): Command {
