@@ -29,13 +29,13 @@ type RunningRepositoryFacts = {
   hasOlderWaiter: boolean
 }
 
-export type RunHostCapacityWaiter = {
+type RunHostCapacityWaiter = {
   record_id: string
   host_wait_since: string
 }
 
 /** Admission's FIFO waiter set: running repository rows still waiting on host capacity. */
-export function runHostCapacityWaiters(database: Database): RunHostCapacityWaiter[] {
+function runHostCapacityWaiters(database: Database): RunHostCapacityWaiter[] {
   return database
     .query(
       `SELECT record_id, host_wait_since FROM run
