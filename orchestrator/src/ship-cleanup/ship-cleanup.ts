@@ -38,6 +38,7 @@ import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
 import { removalWorkingDirectoryRefusal } from '../worktree/removal-working-directory.ts'
 import {
   decideShipCleanup,
+  decideShipCleanupKeptItem,
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
   type ShipCleanupKeptItem,
@@ -82,7 +83,7 @@ export type ShipCleanupDependencies = {
     branch: string,
   ): {
     deleted: string[]
-    kept: { branch: string; reason: BranchPruneKeptReason }[]
+    kept: { branch: string; reason: BranchPruneKeptReason; holdingPath?: string | null }[]
     errors: string[]
   }
   measure(paths: readonly string[]): { bytes: number; errors: string[]; stoppedAtLimit: boolean }
@@ -218,22 +219,28 @@ function reportMeasurementErrors(
 function reportKeptRuns(
   decisions: readonly ShipCleanupRunDecision[],
   report: ShipCleanupReport,
+  callerLandingTreePath: string | null,
 ): void {
   for (const decision of decisions) {
     if (decision.scope === 'outside' || decision.artifacts !== 'keep') continue
-    report.kept.push({
-      item:
-        `run ${decision.number} artifacts and scratch` +
-        (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
-      reason: decision.reason,
-      reasonKind: decision.worktreeAction === 'keep' ? 'live-run' : 'unjudged-run',
-      owner: 'other',
-      ...(decision.remedy
-        ? {
-            remedy: renderUnjudgedRunRemedy(decision.remedy, decision.rootNumber),
-          }
-        : {}),
-    })
+    report.kept.push(
+      decideShipCleanupKeptItem(
+        {
+          item:
+            `run ${decision.number} artifacts and scratch` +
+            (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
+          reason: decision.reason,
+          reasonKind: decision.worktreeAction === 'keep' ? 'live-run' : 'unjudged-run',
+          holdingPath: null,
+          ...(decision.remedy
+            ? {
+                remedy: renderUnjudgedRunRemedy(decision.remedy, decision.rootNumber),
+              }
+            : {}),
+        },
+        callerLandingTreePath,
+      ),
+    )
   }
 }
 
@@ -244,6 +251,7 @@ function closeBranchWorktrees(
   adapter: ShipCleanupDependencies,
   removedNow: Map<string, ReadonlySet<string>>,
   runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
+  callerLandingTreePath: string | null,
 ): Map<string, string> {
   const closeRows = decisions.filter(
     (decision) => decision.worktreeAction === 'close' && decision.worktree,
@@ -253,7 +261,15 @@ function closeBranchWorktrees(
   for (const row of closeRows) {
     if (closedRoots.has(row.root_record_id)) continue
     closedRoots.add(row.root_record_id)
-    const remedy = closeBranchWorktree(branch, row, report, adapter, removedNow, runIdsByTree)
+    const remedy = closeBranchWorktree(
+      branch,
+      row,
+      report,
+      adapter,
+      removedNow,
+      runIdsByTree,
+      callerLandingTreePath,
+    )
     if (remedy && row.worktree) keptLandingTrees.set(row.worktree, remedy)
   }
   return keptLandingTrees
@@ -266,6 +282,7 @@ function closeBranchWorktree(
   adapter: ShipCleanupDependencies,
   removedNow: Map<string, ReadonlySet<string>>,
   runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
+  callerLandingTreePath: string | null,
 ): string | null {
   try {
     if (row.scope === 'landing-tree' && row.worktree) {
@@ -276,6 +293,7 @@ function closeBranchWorktree(
         adapter,
         removedNow,
         runIdsByTree,
+        callerLandingTreePath,
       )
     }
     const result = adapter.closeOut(row.record_id)
@@ -285,12 +303,17 @@ function closeBranchWorktree(
         removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
       return null
     }
-    report.kept.push({
-      item: `run ${row.number} worktree`,
-      reason: result.detail,
-      reasonKind: 'cleanup-failure',
-      owner: 'other',
-    })
+    report.kept.push(
+      decideShipCleanupKeptItem(
+        {
+          item: `run ${row.number} worktree`,
+          reason: result.detail,
+          reasonKind: 'cleanup-failure',
+          holdingPath: null,
+        },
+        callerLandingTreePath,
+      ),
+    )
     report.errors.push({
       item: `run ${row.number} worktree`,
       detail: `close-out ${result.outcome}: ${result.detail}`,
@@ -313,16 +336,22 @@ function releaseLandingTree(
   adapter: ShipCleanupDependencies,
   removedNow: Map<string, ReadonlySet<string>>,
   runIdsByTree: ReadonlyMap<string, ReadonlySet<string>>,
+  callerLandingTreePath: string | null,
 ): string | null {
   const remedy = `${PLATFORM_SLUG} tree remove ${row.worktree}, then ${cleanupRetry(branch)}`
   if (adapter.runsFromTree(row.worktree)) {
-    report.kept.push({
-      item: `run ${row.number} worktree`,
-      reason: 'the command runs from this tree',
-      reasonKind: 'command-tree',
-      owner: 'caller-landing-tree',
-      remedy,
-    })
+    report.kept.push(
+      decideShipCleanupKeptItem(
+        {
+          item: `run ${row.number} worktree`,
+          reason: 'the command runs from this tree',
+          reasonKind: 'command-tree',
+          holdingPath: row.worktree,
+          remedy,
+        },
+        callerLandingTreePath,
+      ),
+    )
     return remedy
   }
   const result = adapter.removeLandingTree(row.worktree)
@@ -332,13 +361,18 @@ function releaseLandingTree(
     return null
   }
   if (result.outcome === 'kept') {
-    report.kept.push({
-      item: `run ${row.number} worktree`,
-      reason: result.reason,
-      reasonKind: 'safety-hold',
-      owner: 'other',
-      remedy,
-    })
+    report.kept.push(
+      decideShipCleanupKeptItem(
+        {
+          item: `run ${row.number} worktree`,
+          reason: result.reason,
+          reasonKind: 'safety-hold',
+          holdingPath: null,
+          remedy,
+        },
+        callerLandingTreePath,
+      ),
+    )
     return remedy
   }
   report.errors.push({
@@ -354,16 +388,18 @@ function reclaimRemovedTreeLeftovers(
   trees: readonly RemovedRunTree[],
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
+  callerLandingTreePath: string | null,
 ): void {
   try {
     const processResult = adapter.reclaimProcesses(trees.map(({ path }) => path))
     report.reclaimed.processes.push(...processResult.reclaimed)
     report.kept.push(
-      ...processResult.kept.map((item) => ({
-        ...item,
-        reasonKind: 'safety-hold' as const,
-        owner: 'other' as const,
-      })),
+      ...processResult.kept.map((item) =>
+        decideShipCleanupKeptItem(
+          { ...item, reasonKind: 'safety-hold' as const, holdingPath: null },
+          callerLandingTreePath,
+        ),
+      ),
     )
     report.errors.push(
       ...processResult.errors.map((detail) => ({
@@ -383,11 +419,12 @@ function reclaimRemovedTreeLeftovers(
     const composeResult = adapter.reclaimCompose(trees)
     report.reclaimed.compose.push(...composeResult.removed)
     report.kept.push(
-      ...composeResult.kept.map((item) => ({
-        ...item,
-        reasonKind: 'safety-hold' as const,
-        owner: 'other' as const,
-      })),
+      ...composeResult.kept.map((item) =>
+        decideShipCleanupKeptItem(
+          { ...item, reasonKind: 'safety-hold' as const, holdingPath: null },
+          callerLandingTreePath,
+        ),
+      ),
     )
     report.errors.push(
       ...composeResult.errors.map((detail) => ({
@@ -462,26 +499,30 @@ function pruneMergedBranches(
   branches: readonly string[],
   report: ShipCleanupReport,
   adapter: ShipCleanupDependencies,
-  keptLandingTrees: ReadonlyMap<string, string>,
+  callerLandingTreePath: string | null,
+  callerLandingTreeRemedy: string | null,
 ): void {
   for (const branch of branches) {
     try {
       const pruned = adapter.prune(report.project, branch)
       report.removed.branches.push(...pruned.deleted)
-      const landingTreeRemedy = keptLandingTrees.values().next().value
       report.kept.push(
-        ...pruned.kept.map((item) => ({
-          item: `branch ${item.branch}`,
-          reason: item.reason,
-          reasonKind: 'safety-hold' as const,
-          owner:
-            item.reason === 'checked-out' && landingTreeRemedy
-              ? ('caller-landing-tree' as const)
-              : ('other' as const),
-          ...(item.reason === 'checked-out' && landingTreeRemedy
-            ? { remedy: landingTreeRemedy }
-            : {}),
-        })),
+        ...pruned.kept.map((item) =>
+          decideShipCleanupKeptItem(
+            {
+              item: `branch ${item.branch}`,
+              reason: item.reason,
+              reasonKind: 'safety-hold' as const,
+              holdingPath: item.reason === 'checked-out' ? (item.holdingPath ?? null) : null,
+              ...(item.reason === 'checked-out' &&
+              item.holdingPath === callerLandingTreePath &&
+              callerLandingTreeRemedy
+                ? { remedy: callerLandingTreeRemedy }
+                : {}),
+            },
+            callerLandingTreePath,
+          ),
+        ),
       )
       report.errors.push(
         ...pruned.errors.map((detail) => ({
@@ -577,6 +618,53 @@ function runIdsByTree(decisions: readonly ShipCleanupRunDecision[]): Map<string,
   return result
 }
 
+function requireLandingMergedAt(input: {
+  project: string
+  branch: string
+  confirmedLanded: boolean
+  landingRecords: readonly BranchLandingRecord[]
+  adapter: ShipCleanupDependencies
+}): string {
+  const landingMergedAt = recordedLanding(input.project, input.branch, input.landingRecords)
+  if (
+    !input.confirmedLanded &&
+    !landingMergedAt &&
+    input.adapter.landingState(input.project, input.branch).state !== 'landed'
+  ) {
+    throw new Error(
+      `refusing ship cleanup: branch ${input.branch} has not been confirmed landed; cleared by: ${PLATFORM_SLUG} pr merge ${input.branch}`,
+    )
+  }
+  if (landingMergedAt) return landingMergedAt
+  throw new Error(
+    `refusing ship cleanup: branch ${input.branch} has no recorded landing time; cleared by: ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr <number>`,
+  )
+}
+
+function callerLandingTree(
+  decisions: readonly ShipCleanupRunDecision[],
+  adapter: ShipCleanupDependencies,
+): string | null {
+  return (
+    decisions.find(
+      (decision) =>
+        decision.scope === 'landing-tree' &&
+        decision.worktree !== null &&
+        adapter.runsFromTree(decision.worktree),
+    )?.worktree ?? null
+  )
+}
+
+function closableWorktreePaths(decisions: readonly ShipCleanupRunDecision[]): string[] {
+  return [
+    ...new Set(
+      decisions.flatMap((decision) =>
+        decision.worktreeAction === 'close' && decision.worktree ? [decision.worktree] : [],
+      ),
+    ),
+  ]
+}
+
 export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): ShipCleanupReport {
   const database = options.database ?? writableDb()
   const project = options.project
@@ -589,21 +677,13 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
   }
   const adapter = options.dependencies ?? dependencies
   const landingRecords = readBranchLandingRecords(database)
-  const landingMergedAt = recordedLanding(project.name, branch, landingRecords)
-  if (
-    !options.confirmedLanded &&
-    !landingMergedAt &&
-    adapter.landingState(project.name, branch).state !== 'landed'
-  ) {
-    throw new Error(
-      `refusing ship cleanup: branch ${branch} has not been confirmed landed; cleared by: ${PLATFORM_SLUG} pr merge ${branch}`,
-    )
-  }
-  if (!landingMergedAt) {
-    throw new Error(
-      `refusing ship cleanup: branch ${branch} has no recorded landing time; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
-    )
-  }
+  const landingMergedAt = requireLandingMergedAt({
+    project: project.name,
+    branch,
+    confirmedLanded: options.confirmedLanded ?? false,
+    landingRecords,
+    adapter,
+  })
   const facts = runFacts(project.recordId, database)
   const {
     taskKey,
@@ -620,14 +700,9 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
   })
   const decisions = decideShipCleanup(taskKey ?? '', landedBranches, landingMergedAt, facts)
   const report = emptyReport(project.name, branch)
-  reportKeptRuns(decisions, report)
-  const worktreePaths = [
-    ...new Set(
-      decisions.flatMap((decision) =>
-        decision.worktreeAction === 'close' && decision.worktree ? [decision.worktree] : [],
-      ),
-    ),
-  ]
+  const callerLandingTreePath = callerLandingTree(decisions, adapter)
+  reportKeptRuns(decisions, report, callerLandingTreePath)
+  const worktreePaths = closableWorktreePaths(decisions)
   const beforeWorktrees = adapter.measure(worktreePaths)
   const treeRunIds = runIdsByTree(decisions)
   const removedNow = new Map<string, ReadonlySet<string>>()
@@ -638,24 +713,37 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
     adapter,
     removedNow,
     treeRunIds,
+    callerLandingTreePath,
   )
   reclaimRemovedTreeLeftovers(
     branch,
     [...removedNow].map(([path, removedRunIds]) => ({ path, removedRunIds })),
     report,
     adapter,
+    callerLandingTreePath,
   )
   removeRunStorage(branch, decisions, beforeWorktrees, worktreePaths, report, adapter)
   report.kept.push(
-    ...taskBranches.keep.map((item) => ({
-      item: `branch ${item.branch}`,
-      reason: item.reason,
-      reasonKind: 'landing-not-proved' as const,
-      owner: 'other' as const,
-    })),
+    ...taskBranches.keep.map((item) =>
+      decideShipCleanupKeptItem(
+        {
+          item: `branch ${item.branch}`,
+          reason: item.reason,
+          reasonKind: 'landing-not-proved' as const,
+          holdingPath: null,
+        },
+        callerLandingTreePath,
+      ),
+    ),
   )
   report.gone.push(...taskBranches.gone)
-  pruneMergedBranches(taskBranches.delete, report, adapter, keptLandingTrees)
+  pruneMergedBranches(
+    taskBranches.delete,
+    report,
+    adapter,
+    callerLandingTreePath,
+    callerLandingTreePath ? (keptLandingTrees.get(callerLandingTreePath) ?? null) : null,
+  )
   report.verdict = decideShipCleanupVerdict(report)
   return report
 }

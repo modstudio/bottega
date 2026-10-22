@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decideShipCleanup,
+  decideShipCleanupKeptItem,
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
   type ShipCleanupRunFact,
@@ -172,6 +173,20 @@ test('cleanup verdict excludes only items owned by the caller landing tree', () 
     reason: 'errors',
     residue: [],
   })
+})
+
+test('kept-item ownership requires the holding path to match the caller landing tree', () => {
+  const fact = {
+    item: 'branch DEV-1392-c3',
+    reason: 'checked-out',
+    reasonKind: 'safety-hold' as const,
+  }
+  expect(
+    decideShipCleanupKeptItem({ ...fact, holdingPath: '/trees/landing' }, '/trees/landing'),
+  ).toEqual({ ...fact, owner: 'caller-landing-tree' })
+  expect(
+    decideShipCleanupKeptItem({ ...fact, holdingPath: '/trees/sibling' }, '/trees/landing'),
+  ).toEqual({ ...fact, owner: 'other' })
 })
 
 test('task branch pruning accepts squash, recorded PR head, and containment proof but keeps unique work', () => {

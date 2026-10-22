@@ -36,6 +36,25 @@ export type ShipCleanupKeptItem = {
   remedy?: string
 }
 
+export type ShipCleanupKeptFact = Omit<ShipCleanupKeptItem, 'owner'> & {
+  holdingPath: string | null
+}
+
+/** Assign ownership only when the item is held by the command's own landing tree. */
+export function decideShipCleanupKeptItem(
+  fact: ShipCleanupKeptFact,
+  callerLandingTreePath: string | null,
+): ShipCleanupKeptItem {
+  const { holdingPath, ...item } = fact
+  return {
+    ...item,
+    owner:
+      holdingPath !== null && holdingPath === callerLandingTreePath
+        ? 'caller-landing-tree'
+        : 'other',
+  }
+}
+
 export type ShipCleanupResidueReport = {
   kept: readonly ShipCleanupKeptItem[]
   errors: readonly unknown[]
