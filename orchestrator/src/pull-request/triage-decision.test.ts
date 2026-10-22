@@ -191,6 +191,59 @@ describe('pull-request triage decision', () => {
     })
   })
 
+  test('path b ignores an unfinished earlier review when a later round covers every lens', () => {
+    const unfinished = review({
+      reviewId: 2,
+      completedAt: null,
+      patchId: 'patch-first',
+      lensIdentities: ['correctness'],
+      findings: [],
+    })
+    const correctness = review({
+      reviewId: 3,
+      tier: 2,
+      completedAt: '2026-09-25T01:00:00Z',
+      patchId: 'patch-second',
+      lensIdentities: ['correctness'],
+      findings: [],
+    })
+    const craft = review({
+      reviewId: 4,
+      tier: 2,
+      completedAt: '2026-09-25T01:30:00Z',
+      patchId: 'patch-second',
+      lensIdentities: ['craft'],
+      findings: [],
+    })
+
+    expect(
+      decideTriage(
+        evidence({
+          tier: 2,
+          applicableReview: { lenses: ['correctness', 'craft'] },
+          reviews: [],
+          branchReviewGroups: [branchGroup([correctness, craft]), branchGroup([unfinished])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: {
+        admissionPath: 'architect_read',
+        reviewRecordIds: ['review-3', 'review-4'],
+      },
+    })
+  })
+
   test('DEV-1524 admits five lenses composed across three groups after its tier rose', () => {
     const lensReview = (
       reviewId: number,

@@ -155,13 +155,6 @@ function composedReviewEvidence(
   const completed = branchReviews
     .filter((review) => review.completedAt !== null)
     .sort((left, right) => right.completedAt!.localeCompare(left.completedAt!))
-  const unfinishedReviewNumbers = [
-    ...new Set(
-      branchReviews
-        .filter((review) => review.completedAt === null)
-        .map((review) => review.reviewNumber),
-    ),
-  ].sort((left, right) => left - right)
   const selected = new Map<string, TriageReviewRow>()
   const missingLenses: string[] = []
   const undisposedFindings: { reviewNumber: number; ordinal: number }[] = []
@@ -213,8 +206,7 @@ function composedReviewEvidence(
     reviews.length > 0 &&
     missingLenses.length === 0 &&
     sortedUndisposed.length === 0 &&
-    missingSecondOpinion === null &&
-    unfinishedReviewNumbers.length === 0
+    missingSecondOpinion === null
   return {
     round: complete
       ? {
@@ -228,7 +220,7 @@ function composedReviewEvidence(
     missingLenses,
     undisposedFindings: sortedUndisposed,
     missingSecondOpinion,
-    unfinishedReviewNumbers,
+    unfinishedReviewNumbers: [],
   }
 }
 
@@ -314,9 +306,7 @@ function incompleteTriageDecision(input: {
     snapshot: exact.snapshot,
     missingReview:
       (earlierRound && !finalTierRaised) || hasCompletedBranchReview ? false : exact.missingReview,
-    unfinishedReviewNumbers: [
-      ...new Set([...exact.gaps.unfinishedReviewNumbers, ...composed.unfinishedReviewNumbers]),
-    ].sort((left, right) => left - right),
+    unfinishedReviewNumbers: exact.gaps.unfinishedReviewNumbers,
     undisposedFindings: [
       ...new Map(
         [...exact.gaps.undisposedFindings, ...composed.undisposedFindings].map((finding) => [
