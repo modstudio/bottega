@@ -96,6 +96,30 @@ function recordAbandonedBootstrapSubjects(
   )
 }
 
+function recordIdleDetectorSubjects(
+  kinds: Set<string>,
+  record: (kind: string, subjects: string[]) => void,
+): void {
+  if (!kinds.has('idle') && !kinds.has('stuck-host-wait')) return
+  const detected = idleRunConditions()
+  if (kinds.has('idle')) {
+    record(
+      'idle',
+      detected
+        .filter((condition) => condition.kind === 'idle')
+        .map((condition) => condition.subject),
+    )
+  }
+  if (kinds.has('stuck-host-wait')) {
+    record(
+      'stuck-host-wait',
+      detected
+        .filter((condition) => condition.kind === 'stuck-host-wait')
+        .map((condition) => condition.subject),
+    )
+  }
+}
+
 function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {
   for (const kind of kinds) {
     if (!(kind in MONITOR_NOTICE_DELIVERY_POLICY)) {
@@ -118,12 +142,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
       deadRunningProcessConditions().map((condition) => condition.subject),
     )
   }
-  if (kinds.has('idle')) {
-    record(
-      'idle',
-      idleRunConditions().map((condition) => condition.subject),
-    )
-  }
+  recordIdleDetectorSubjects(kinds, record)
   recordStalledRunSubjects(kinds, record)
   if (kinds.has('task-waiting-on-ruling')) {
     record(

@@ -273,10 +273,6 @@ for line in sys.stdin:
         age = "%dm%02ds" % (el // 60, el % 60)
     except Exception:
         age = "?"
-    idle = d.get("idle")
-    idle_note = ""
-    if isinstance(idle, str) and idle.startswith("idle "):
-        idle_note = " " + idle
     stall_state = d.get("stall_state")
     host_wait_since = d.get("host_wait_since")
     if host_wait_since is not None and not isinstance(host_wait_since, str):
@@ -286,6 +282,15 @@ for line in sys.stdin:
         raise SystemExit(2)
     if waiting_for_host_capacity and host_wait_since is None:
         raise SystemExit(2)
+    idle = d.get("idle")
+    idle_note = ""
+    # A fresh host-capacity wait is WAITING, not live idle work.
+    if (
+        not waiting_for_host_capacity
+        and isinstance(idle, str)
+        and idle.startswith("idle ")
+    ):
+        idle_note = " " + idle
     if status == "running" and stall_state not in ("healthy", "stalled", "unknown"):
         raise SystemExit(2)
     stall = d.get("stall")

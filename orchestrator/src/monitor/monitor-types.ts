@@ -3,6 +3,7 @@
 
 import type { HostLoadSample } from '../host-load-sample.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
+import type { RunHostCapacityQueue } from '../run/run-host-capacity.ts'
 
 export type MonitorHostLoad = HostLoadSample
 export type MonitorHostPressure = {
@@ -39,6 +40,7 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'outbox-retired-parent': 'revalidated',
   'stale-run': 'append-only',
   'stalled-run': 'revalidated',
+  'stuck-host-wait': 'revalidated',
   'task-waiting-on-ruling': 'revalidated',
   'terminal-close-out-failed': 'revalidated',
   'terminal-close-out-held': 'revalidated',
@@ -94,6 +96,7 @@ export type MonitorResult = {
   canon: { findings: number; docs: number }
   hostLoad: MonitorHostLoad
   hostPressure: MonitorHostPressure
+  runHostCapacity: RunHostCapacityQueue
 }
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
