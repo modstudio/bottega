@@ -285,9 +285,30 @@ function applyRequestedRunFilter(
   args.push(...requested.ids, ...requested.ids)
 }
 
+function liveStatusSql(): string {
+  return RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')
+}
+
 function liveListingClauses(enabled: boolean): string[] {
-  const statuses = RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')
-  return enabled ? [`current_run.status IN (${statuses})`] : []
+  return enabled
+    ? [
+        `EXISTS (
+          SELECT 1 FROM run live_member
+           WHERE (live_member.record_id = r.record_id OR live_member.parent_run_record_id = r.record_id)
+             AND live_member.status IN (${liveStatusSql()})
+        )`,
+      ]
+    : []
+}
+
+function listingMemberJoin(rootAlias: string, live: boolean): string {
+  if (!live) return currentRunMemberJoin(rootAlias)
+  return `JOIN run current_run ON current_run.record_id = (
+    SELECT member.record_id FROM run member
+     WHERE member.record_id = ${rootAlias}.record_id OR member.parent_run_record_id = ${rootAlias}.record_id
+     ORDER BY CASE WHEN member.status IN (${liveStatusSql()}) THEN 0 ELSE 1 END,
+              member.turn DESC, member.number DESC LIMIT 1
+  )`
 }
 
 function listingLimit(value: string | undefined, json: boolean, live: boolean): number | null {
@@ -446,7 +467,7 @@ export async function runListingCommand(
             }
        FROM run r
        ${unscoredJoin}
-       ${currentRunMemberJoin('r')}
+       ${listingMemberJoin('r', has('live'))}
        LEFT JOIN score s ON s.run_record_id = r.record_id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY r.number DESC${listingLimitSql(limit)}`,

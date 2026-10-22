@@ -27,6 +27,7 @@ class HeartbeatDecisionTest(unittest.TestCase):
             binary.mkdir()
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             root_started = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
             turn_started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
             row = json.dumps(
@@ -92,6 +93,7 @@ esac
             binary.mkdir()
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             started = (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat()
             base = {
                 "record_id": "01990000-0000-7000-8000-000000000001",
@@ -168,6 +170,7 @@ esac
             binary.mkdir()
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             fake = binary / "bottega"
             fake.write_text(
                 """#!/bin/sh
@@ -206,6 +209,7 @@ esac
             helper = hooks / PATH.name
             shutil.copy2(PATH, helper)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
             row = json.dumps(
                 {
@@ -274,6 +278,7 @@ esac
             hooks.mkdir(parents=True)
             binary.mkdir()
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             (hooks / PATH.name).write_text(
                 '''#!/usr/bin/env python3
 import sys
@@ -318,11 +323,11 @@ esac
             self.assertNotIn("ignored second line", completed.stdout)
 
     def test_a_chain_finishing_between_ticks_is_announced_once(self):
-        self.assert_completion_announcement("ok", None, "FINISHED 7/fixture codex 2.0s")
+        self.assert_completion_announcement("ok", None, "FINISHED 8/fixture codex 2.0s")
 
     def test_a_chain_failing_between_ticks_is_announced_once(self):
         self.assert_completion_announcement(
-            "failed", "contract", "FAILED 7/fixture codex contract 2.0s"
+            "failed", "contract", "FAILED 8/fixture codex contract 2.0s"
         )
 
     def assert_completion_announcement(self, status, failure_kind, expected):
@@ -334,6 +339,7 @@ esac
             binary.mkdir()
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             record_id = "01990000-0000-7000-8000-000000000001"
             member_id = "01990000-0000-7000-8000-000000000002"
             started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
@@ -366,6 +372,8 @@ esac
                     "agent": "codex",
                     "status": status,
                     "live_member_status": status,
+                    "live_member_id": member_id,
+                    "live_member_number": 8,
                     "failure_kind": failure_kind,
                     "latency_ms": 2000,
                 }
@@ -409,6 +417,199 @@ esac
             self.assertEqual(completed.stdout.count(expected), 1, completed.stdout)
             self.assertNotIn("DEGRADED", completed.stdout)
 
+    def test_a_continued_chain_announces_each_terminal_turn(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            for name in (PATH.name, "orch-heartbeat.sh", "heartbeat-run-observation.py"):
+                shutil.copy2(PATH.with_name(name), hooks)
+            root_id = "01990000-0000-7000-8000-000000000001"
+            first_id = "01990000-0000-7000-8000-000000000002"
+            second_id = "01990000-0000-7000-8000-000000000003"
+            keeper_root = "01990000-0000-7000-8000-000000000004"
+            keeper_id = "01990000-0000-7000-8000-000000000005"
+            started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+
+            def live(member_id, number, record_id=root_id):
+                return json.dumps(
+                    {
+                        "record_id": record_id,
+                        "number": 7,
+                        "job": "fixture",
+                        "agent": "codex",
+                        "status": "running",
+                        "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
+                        "session_id": "fixture-session",
+                        "started_at": started,
+                        "latency_ms": None,
+                        "live_member_id": member_id,
+                        "live_member_number": number,
+                        "live_member_status": "running",
+                        "waiting_for_host_capacity": False,
+                        "host_wait_since": None,
+                        "stall_state": "healthy",
+                        "stall": None,
+                        "turns": [{"started_at": started, "latency_ms": None}],
+                    }
+                )
+
+            keeper = live(keeper_id, 11, keeper_root)
+
+            def terminal(member_id, number):
+                return json.dumps(
+                    {
+                        "record_id": root_id,
+                        "number": 7,
+                        "job": "fixture",
+                        "agent": "codex",
+                        "status": "ok",
+                        "live_member_id": member_id,
+                        "live_member_number": number,
+                        "live_member_status": "ok",
+                        "latency_ms": 2000,
+                    }
+                )
+
+            fake = binary / "bottega"
+            fake.write_text(
+                f'''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --json") printf '[]\\n' ;;
+  "run list --live --json")
+    if [ ! -f "$FAKE_FIRST_LIVE" ]; then
+      : >"$FAKE_FIRST_LIVE"; printf '%s\\n' '{live(first_id, 8)}' '{keeper}'
+    elif [ ! -f "$FAKE_FIRST_MISSING" ]; then
+      : >"$FAKE_FIRST_MISSING"; printf '%s\\n' '{keeper}'
+    elif [ ! -f "$FAKE_SECOND_LIVE" ]; then
+      : >"$FAKE_SECOND_LIVE"; printf '%s\\n' '{live(second_id, 9)}' '{keeper}'
+    else
+      printf '%s\\n' '{keeper}'
+    fi ;;
+  "run list --json --id {root_id}")
+    if [ -f "$FAKE_SECOND_LIVE" ]; then
+      printf '%s\\n' '{terminal(second_id, 9)}'
+    else
+      printf '%s\\n' '{terminal(first_id, 8)}'
+    fi ;;
+  "machine monitor --notices --json") printf '[]\\n' ;;
+  *) exit 1 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            env = {
+                **os.environ,
+                "ORCH_DB": str(checkout / "absent.db"),
+                "FAKE_FIRST_LIVE": str(checkout / "first-live"),
+                "FAKE_FIRST_MISSING": str(checkout / "first-missing"),
+                "FAKE_SECOND_LIVE": str(checkout / "second-live"),
+            }
+            completed = subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "4"],
+                cwd=checkout,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertEqual(completed.stdout.count("FINISHED 8/fixture codex 2.0s"), 1)
+            self.assertEqual(completed.stdout.count("FINISHED 9/fixture codex 2.0s"), 1)
+
+    def test_relative_path_restart_carries_live_chain_into_completion(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            for name in (PATH.name, "orch-heartbeat.sh", "heartbeat-run-observation.py"):
+                shutil.copy2(PATH.with_name(name), hooks)
+            root_id = "01990000-0000-7000-8000-000000000001"
+            member_id = "01990000-0000-7000-8000-000000000002"
+            started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+            live = json.dumps(
+                {
+                    "record_id": root_id,
+                    "number": 7,
+                    "job": "fixture",
+                    "agent": "codex",
+                    "status": "running",
+                    "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
+                    "session_id": "fixture-session",
+                    "started_at": started,
+                    "latency_ms": None,
+                    "live_member_id": member_id,
+                    "live_member_number": 8,
+                    "live_member_status": "running",
+                    "waiting_for_host_capacity": False,
+                    "host_wait_since": None,
+                    "stall_state": "healthy",
+                    "stall": None,
+                    "turns": [{"started_at": started, "latency_ms": None}],
+                }
+            )
+            terminal = json.dumps(
+                {
+                    "record_id": root_id,
+                    "number": 7,
+                    "job": "fixture",
+                    "agent": "codex",
+                    "status": "ok",
+                    "live_member_id": member_id,
+                    "live_member_number": 8,
+                    "live_member_status": "ok",
+                    "latency_ms": 2000,
+                }
+            )
+            fake = binary / "bottega"
+            fake.write_text(
+                f'''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --json") printf '[]\\n' ;;
+  "run list --live --json")
+    if [ ! -f "$FAKE_LIVE_SEEN" ]; then
+      : >"$FAKE_LIVE_SEEN"; printf '%s\\n' '{live}'
+    fi ;;
+  "run list --json --id {root_id}") printf '%s\\n' '{terminal}' ;;
+  "machine monitor --notices --json")
+    if [ ! -f "$FAKE_UPDATED" ]; then
+      : >"$FAKE_UPDATED"; printf '\\n' >>"$FAKE_OBSERVATION_HELPER"
+    fi
+    printf '[]\\n' ;;
+  *) exit 1 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            completed = subprocess.run(
+                ["bash", "orchestrator/hooks/orch-heartbeat.sh", "fixture-session", "0.01", "2"],
+                cwd=checkout,
+                env={
+                    **os.environ,
+                    "ORCH_DB": str(checkout / "absent.db"),
+                    "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
+                    "FAKE_UPDATED": str(checkout / "updated"),
+                    "FAKE_OBSERVATION_HELPER": str(hooks / "heartbeat-run-observation.py"),
+                },
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertEqual(completed.stdout.count("heartbeat updated on disk; restarting"), 1)
+            self.assertEqual(completed.stdout.count("FINISHED 8/fixture codex 2.0s"), 1)
+            self.assertNotIn("DEGRADED", completed.stdout)
+
     def test_heartbeat_formats_a_monitor_notice_with_its_label_once(self):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)
@@ -418,14 +619,14 @@ esac
             binary.mkdir()
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             fake = binary / "bottega"
             fake.write_text(
                 """#!/bin/sh
 case \"$*\" in
   \"board presence\") exit 0 ;;
   \"question inbox --all --json\") printf '[]\\n' ;;
-  \"run list --live --json\")
-    printf '%s\\n' '{\"record_id\":\"01990000-0000-7000-8000-000000000001\",\"number\":1,\"job\":\"fixture\",\"agent\":\"codex\",\"status\":\"ok\",\"session_id\":\"other\",\"started_at\":\"2026-01-01T00:00:00Z\",\"latency_ms\":1}' ;;
+  \"run list --live --json\") exit 0 ;;
   \"machine monitor --notices --json\")
     printf '%s\\n' '[{\"noticeId\":\"condition:1\",\"kind\":\"worker-gate-tooling-change\",\"subject\":\"run:01990000-0000-7000-8000-000000000002\",\"label\":\"run 16709\",\"detail\":\"detected (age unknown, status ok, project bottega); inspect the run deliberately.\",\"ownerSession\":\"fixture-session\"}]' ;;
   \"machine monitor --ack-notices condition:1\") exit 0 ;;
@@ -544,6 +745,7 @@ esac
                 hooks.mkdir(parents=True)
                 binary.mkdir()
                 shutil.copy2(PATH, hooks / PATH.name)
+                shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
                 heartbeat_fixture = hooks / "orch-heartbeat.sh"
                 heartbeat_source = PATH.with_name("orch-heartbeat.sh").read_text(encoding="utf-8")
                 heartbeat_fixture.write_text(
@@ -562,8 +764,7 @@ esac
 case \"$*\" in
   \"board presence\") exit 0 ;;
   \"question inbox --all --json\") printf '[]\\n' ;;
-  \"run list --live --json\")
-    printf '%s\\n' '{\"record_id\":\"01990000-0000-7000-8000-000000000001\",\"number\":1,\"job\":\"fixture\",\"agent\":\"codex\",\"status\":\"ok\",\"session_id\":\"other\",\"started_at\":\"2026-01-01T00:00:00Z\",\"latency_ms\":1}' ;;
+  \"run list --live --json\") exit 0 ;;
   \"machine monitor --notices --json\") echo $$ >\"$FAKE_MONITOR_PID_FILE\"; sleep 30 ;;
   *) exit 0 ;;
 esac

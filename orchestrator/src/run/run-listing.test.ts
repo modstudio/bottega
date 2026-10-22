@@ -158,6 +158,23 @@ describe('run listing', () => {
     ).toBe(true)
   })
 
+  test('runs --live includes a chain with an earlier member still marked live', async () => {
+    const root = insert('running')
+    const terminalTurn = insert('ok')
+    db()
+      .query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?')
+      .run(root, terminalTurn)
+
+    const rows = (await command({ live: true, json: true })).map(runJson)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      record_id: root,
+      live_member_id: root,
+      live_member_status: 'running',
+    })
+  })
+
   test('runs JSON publishes the stalled live member', async () => {
     const observedAt = Date.parse('2026-09-22T12:30:00.000Z')
     const id = addRun({
