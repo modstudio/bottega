@@ -67,6 +67,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/docs.ts',
+    '../../../shared/github-repository.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
     '../artifact-paths.ts',

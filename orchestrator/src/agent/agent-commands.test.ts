@@ -131,6 +131,8 @@ test('agent add persists job, concurrency, and metered-routing flags', async () 
         '1',
         '--route-metered',
         'true',
+        '--trains-on-inputs',
+        'true',
       ],
       { log: (value) => output.push(value), setExitCode: () => {} },
     )
@@ -140,6 +142,7 @@ test('agent add persists job, concurrency, and metered-routing flags', async () 
       preferred_jobs: '["file-question"]',
       max_concurrent: 1,
       route_metered: 1,
+      trains_on_inputs: 1,
     })
   } finally {
     removeAgent('add-flags-test')

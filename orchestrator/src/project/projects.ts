@@ -34,7 +34,9 @@ import {
   type SequenceKind,
   type SequenceState,
 } from '../../../shared/git.ts'
+import { githubRepository } from '../../../shared/github-repository.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
+import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
@@ -67,13 +69,17 @@ import {
   type ProjectReferenceCounts,
   projectReferenceCounts,
 } from './project-reference-counts.ts'
-
 import type {
   MainStackConsumer,
   ProjectSettings,
   StoredProjectSettings,
   WorktreeTool,
 } from './project-settings.ts'
+import {
+  assertForgeVisibility,
+  type ForgeVisibilityLookup,
+  githubForgeVisibilityLookup,
+} from './project-visibility.ts'
 
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
@@ -656,6 +662,12 @@ function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
   return problems
 }
 
+function visibilityProblems(visibility: ProjectSettings['visibility']): string[] {
+  return visibility === undefined || repositoryVisibility(visibility)
+    ? []
+    : ['visibility must be public or private']
+}
+
 function gateInputProblems(gateInput: ProjectSettings['gateInput']): string[] {
   if (gateInput === undefined || GATE_INPUTS.includes(gateInput)) return []
   return ['gateInput must be staged, worktree, or committed']
@@ -687,6 +699,7 @@ export function validateProjectSettings(
     ...mainStackProblems(settings.mainStack),
     ...reviewLensProblems(settings.review, context.enabledLensIds, context.enabledLensSpaceId),
     ...mcpSettingsProblems(settings.mcp),
+    ...visibilityProblems(settings.visibility),
     ...focusedTestsProblems(settings.focusedTests),
     ...gateInputProblems(settings.gateInput),
   ]
@@ -916,6 +929,33 @@ export function assertRegisterBranches(
     `${project.name}: ${check.problems.join('; ')}\n` +
       'invariant: the register landing branch agrees with the main checkout and its integration-branch canon',
   )
+}
+
+export function assertRegisterVisibility(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+  lookup: ForgeVisibilityLookup = githubForgeVisibilityLookup,
+): string | null {
+  const declared = project.settings.visibility
+  if (!declared) return null
+  const repository = currentProjectRepository(project)
+  if (!repository) {
+    throw new Error(
+      `${project.name}: could not resolve a GitHub owner/name from origin\n` +
+        'cleared by: configure a GitHub origin, or leave repository visibility undeclared',
+    )
+  }
+  assertForgeVisibility({ project: project.name, repository, declared, lookup })
+  return repository
+}
+
+/** Current canonical GitHub owner/name read only from the registered checkout's origin. */
+export function currentProjectRepository(project: Pick<Project, 'path'>): string | null {
+  const origin = Bun.spawnSync(['git', '-C', project.path, 'remote', 'get-url', 'origin'], {
+    env: inspectionGitEnv(),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  return origin.exitCode === 0 ? githubRepository(origin.stdout.toString()) : null
 }
 
 const MAIN_CHECKOUT_INVARIANT = 'A registered main checkout stays clean; work happens in a worktree'

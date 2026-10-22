@@ -307,13 +307,10 @@ export async function run(opts: {
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
-  const resume = resumeFacts(
-    opts.resume?.kind ?? null,
-    opts.reserveId ?? '',
-    opts.resume?.parent ?? null,
-  )
+  const prior = opts.resume
+  const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
   const inheritedDispatch =
-    resume.workspaceSource === 'retained' ? readDispatchState(opts.resume!.parent) : null
+    resume.workspaceSource === 'retained' ? readDispatchState(prior!.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
   const writesJob = Boolean(requestedJob.needs.writesRepo)
@@ -530,6 +527,7 @@ export async function run(opts: {
         noWaitCapacity: opts.noWaitCapacity,
         requiredMcp,
         ...transportPin,
+        project: runProjectName,
       },
       opts.probe,
       opts.lens,

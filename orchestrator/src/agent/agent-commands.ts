@@ -80,6 +80,7 @@ function mutation(argv: string[]): AgentMutation {
   const enabled = booleanFlag('enabled', flag('enabled'))
   const billing = flag('billing')
   const routeMetered = booleanFlag('route-metered', flag('route-metered'))
+  const trainsOnInputs = booleanFlag('trains-on-inputs', flag('trains-on-inputs'))
   const context = flag('context-tokens'),
     jobs = flag('jobs'),
     prefer = flag('prefer'),
@@ -93,6 +94,7 @@ function mutation(argv: string[]): AgentMutation {
     ...(argv.includes('--clear-api-key-secret') ? { apiKeySecret: null } : {}),
     ...(billing ? { billing: billing as AgentMutation['billing'] } : {}),
     ...(routeMetered !== undefined ? { routeMetered } : {}),
+    ...(trainsOnInputs !== undefined ? { trainsOnInputs } : {}),
     ...(context ? { contextTokens: Number(context) } : {}),
     ...(enabled !== undefined ? { enabled } : {}),
     ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),

@@ -2,6 +2,7 @@
 /** Selects the project's ordered review lenses for one classified change. */
 
 import type { ReviewSettings } from '../project/project-injection.ts'
+import { declaredGlobsMatch } from './review-declared-globs.ts'
 import {
   classifyReviewTier,
   type ReviewTier,
@@ -49,11 +50,7 @@ function selectedLensRules(
   const bases: Record<string, string> = {}
   for (const entry of declaration.lenses) {
     if (tier < (entry.minTier ?? 1)) continue
-    if (
-      entry.paths &&
-      !entry.paths.some((pattern) => changedPaths.some((path) => new Bun.Glob(pattern).match(path)))
-    )
-      continue
+    if (entry.paths && !declaredGlobsMatch(changedPaths, entry.paths)) continue
     if (lenses.includes(entry.lens)) continue
     lenses.push(entry.lens)
     if (entry.basis) bases[entry.lens] = entry.basis

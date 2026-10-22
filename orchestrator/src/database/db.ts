@@ -35,7 +35,11 @@ import {
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 
-export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
+export {
+  DATABASE_RESOLUTION,
+  DB_PATH,
+  ROOT,
+} from './database-location.ts'
 
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
