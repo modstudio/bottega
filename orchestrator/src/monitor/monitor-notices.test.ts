@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -7,6 +8,8 @@ import {
 import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
+import { renderBoardReplyDelivery } from '../board/board-thread-render.ts'
+import { askQuestion, replyToThread } from '../board/board-thread-service.ts'
 import { db } from '../database/db.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
@@ -150,6 +153,57 @@ test('session-start monitor skips hosted refresh while the heartbeat monitor ref
   expect(changesCalls).toBe(0)
   await claimMonitorNoticesWithHosted(session)
   expect(changesCalls).toBe(1)
+})
+
+test('heartbeat board notices use the shared reply delivery rendering', async () => {
+  const clock = Date.now()
+  const reader = 'monitor-reply-reader'
+  const postingCwd = resolve(import.meta.dir, '../../..')
+  db()
+    .query(
+      `INSERT INTO project(record_id,name,path,settings)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'monitor-project',?,'{}')`,
+    )
+    .run(postingCwd)
+  for (const session of [reader, 'monitor-thread-author'])
+    db()
+      .query(
+        `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+         VALUES (?,'claude-code','architect','test','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
+      )
+      .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const question = askQuestion(
+    { audience: `session:${reader}`, title: 'Monitor thread', body: 'root body' },
+    { CLAUDE_CODE_SESSION_ID: 'monitor-thread-author' },
+    clock,
+    postingCwd,
+  )
+  replyToThread(
+    question.recordId,
+    'reader participated',
+    { CLAUDE_CODE_SESSION_ID: reader },
+    clock + 1,
+    postingCwd,
+  )
+  const reply = replyToThread(
+    question.recordId,
+    'reply body',
+    { CLAUDE_CODE_SESSION_ID: 'monitor-thread-author' },
+    clock + 2,
+    postingCwd,
+  )
+
+  const delivery = await claimMonitorNoticesWithHosted(reader, { refreshBoard: false })
+  const replyNotice = delivery.notices.find((notice) => notice.noticeId === `board:${reply.number}`)
+  expect(replyNotice?.detail).toBe(
+    renderBoardReplyDelivery({
+      origin: 'architect monitor-thread-author (claude-code, monitor-project)',
+      rootId: question.recordId,
+      rootTitle: 'Monitor thread',
+      body: 'reply body',
+    }),
+  )
+  expect(replyNotice?.detail).not.toContain('root body')
 })
 
 test('an unadopted mixed condition and local-board acknowledgement succeeds without a hosted call', async () => {
