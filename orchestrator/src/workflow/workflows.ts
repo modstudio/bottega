@@ -546,7 +546,6 @@ export function promoteWorkflow(
         preflight: (definition: WorkflowDefinition, targetSpace: string) =>
           workflowPromotionPreflight(slug, definition, d, targetSpace),
         author: () => writeAuthor(authorValue),
-        operator: (author: string) => author !== BUILT_IN_WORKFLOW_AUTHOR,
       }
       const decision = await promoteSharedWorkflow(slug, n, reasonValue, spaceId, d, {
         ...promotionPorts,

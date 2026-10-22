@@ -345,7 +345,7 @@ function addSharedFixtureSpace(
       spaceId,
       ownerVersionId: productionId,
       event: 'promote',
-      author: pinned ? 'operator' : BUILT_IN_WORKFLOW_AUTHOR,
+      author: versionAuthor,
       reason: pinned ? 'pin version one' : 'seed one',
       sessionId: null,
       at,
@@ -407,7 +407,8 @@ function installSharedPromotionFixture(
     options.currentProduction ? 'operator' : BUILT_IN_WORKFLOW_AUTHOR,
     local,
   )
-  setWorkflowLocal(slug, definition, 'seed two', BUILT_IN_WORKFLOW_AUTHOR, local)
+  if (options.currentProduction)
+    setWorkflowLocal(slug, definition, 'seed two', BUILT_IN_WORKFLOW_AUTHOR, local)
 
   const state = new Map<string, SharedFixtureSpace>()
   const targetVersion = options.currentProduction ? 20 : 2
@@ -429,7 +430,7 @@ function installSharedPromotionFixture(
     definition,
     FOLLOWER_SPACE,
     options.currentProduction ? 17 : 1,
-    options.currentProduction ? 17 : 1,
+    options.currentProduction ? 17 : options.pinned ? 2 : 1,
     options.pinned ?? false,
     options.currentProduction ? 'follower-session' : BUILT_IN_WORKFLOW_AUTHOR,
   )

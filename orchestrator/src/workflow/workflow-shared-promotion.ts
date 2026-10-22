@@ -9,13 +9,6 @@ export type WorkflowPromotionVersion = {
   reason?: string
 }
 
-export type WorkflowPromotionEvent = {
-  spaceId: string | null
-  event: string
-  operator: boolean
-  reason: string
-}
-
 export const SHARED_WORKFLOW_PROMOTION_REASON = 'shared promotion:'
 
 export type WorkflowPromotionSpaceDecision = {
@@ -41,12 +34,22 @@ export const workflowPromotionReport = (
   pinnedSpaces: decision.pinned,
 })
 
+const pinsSharedPromotion = (
+  spaceId: string | null,
+  sourceSpace: string,
+  versions: readonly WorkflowPromotionVersion[],
+): boolean => {
+  if (spaceId === sourceSpace) return false
+  const production = versions.find((version) => version.status === 'production')
+  const highestVersion = versions.reduce((highest, version) => Math.max(highest, version.n), 0)
+  return production !== undefined && production.n !== highestVersion
+}
+
 /** A space follows while every version it holds matches the source history. */
 export function sharedWorkflowPromotionSpaces(
   versions: readonly WorkflowPromotionVersion[],
   targetVersion: number,
   sourceSpace: string,
-  events: readonly WorkflowPromotionEvent[],
   targetSpaces: readonly (string | null)[] = versions.map((row) => row.spaceId),
 ): WorkflowPromotionSpaceDecision {
   const sourceVersions = new Map(
@@ -68,14 +71,7 @@ export function sharedWorkflowPromotionSpaces(
       if (spaceId !== null) overrides.push(spaceId)
       continue
     }
-    const operatorPin = events.some(
-      (event) =>
-        event.spaceId === spaceId &&
-        event.event === 'promote' &&
-        event.operator &&
-        !event.reason.startsWith(SHARED_WORKFLOW_PROMOTION_REASON),
-    )
-    if (operatorPin) {
+    if (pinsSharedPromotion(spaceId, sourceSpace, rows)) {
       if (spaceId !== null) pinned.push(spaceId)
       continue
     }

@@ -20,7 +20,7 @@ describe('shared workflow promotion spaces', () => {
       shared('follower', 17),
     ]
 
-    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source', [])).toEqual({
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
       changed: ['source', 'follower'],
       overrides: [],
       pinned: [],
@@ -31,7 +31,7 @@ describe('shared workflow promotion spaces', () => {
     const versions = [shared('source', 17), shared('source', 20, 'draft'), shared('own', 17)]
     versions[2]!.definition = 'different'
 
-    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source', [])).toEqual({
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
       changed: ['source'],
       overrides: ['own'],
       pinned: [],
@@ -41,23 +41,39 @@ describe('shared workflow promotion spaces', () => {
   test('a space with a version absent from the source is an override', () => {
     const versions = [shared('source', 20, 'draft'), shared('own', 17)]
 
-    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source', [])).toEqual({
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
       changed: ['source'],
       overrides: ['own'],
       pinned: [],
     })
   })
 
-  test('keeps a space with its own promotion pin', () => {
+  test('a session-promoted latest production follows the source', () => {
+    const versions = [
+      ...[15, 16, 17, 18, 19].map((n) => shared('source', n, 'retired')),
+      shared('source', 20, 'draft'),
+      ...[15, 16].map((n) => shared('follower', n, 'retired')),
+      { ...shared('follower', 17), author: 'session' },
+    ]
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source', 'follower'],
+      overrides: [],
+      pinned: [],
+    })
+  })
+
+  test('keeps a space whose production is below its highest version', () => {
     const versions = [
       shared('source', 17, 'retired'),
+      shared('source', 18, 'retired'),
       shared('source', 20, 'draft'),
       shared('pinned', 17),
+      shared('pinned', 18, 'draft'),
     ]
-    expect(
-      sharedWorkflowPromotionSpaces(versions, 20, 'source', [
-        { spaceId: 'pinned', event: 'promote', operator: true, reason: 'pin version 17' },
-      ]),
-    ).toEqual({ changed: ['source'], overrides: [], pinned: ['pinned'] })
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source'],
+      overrides: [],
+      pinned: ['pinned'],
+    })
   })
 })
