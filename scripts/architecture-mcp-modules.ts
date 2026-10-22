@@ -100,6 +100,7 @@ export const mcpModules: McpModule[] = [
   ]),
   module('orchestrator/src/sandbox/grok-reader-mcp-inspect.ts', ['./mcp-reader-scope.ts']),
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
+  module('orchestrator/src/mcp/mcp-native-attachment.ts', ['./mcp-compatibility.ts']),
   module('orchestrator/src/mcp/mcp-doc-write.ts', ['../worker-store-write.ts']),
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [
     '../../../shared/brand.ts',
