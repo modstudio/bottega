@@ -215,6 +215,7 @@ test('bounds the recorded tail', async () => {
 
 test('withholds secret-shaped output', async () => {
   const d = database()
+  const sha = 'a'.repeat(40)
   await runArchitectGate({
     cwd: repositoryPath,
     d,
@@ -222,8 +223,12 @@ test('withholds secret-shaped output', async () => {
     gitState: cleanGitState,
     write: () => {},
     runner: () => ({
-      exitCode: 0,
-      output: 'token=ghp_exampletokenvalue',
+      exitCode: 1,
+      output: [
+        `--base=${sha}`,
+        'gate failures: scripts/check-architecture.ts',
+        'ghp_123456789012345678901234567890123456',
+      ].join('\n'),
       startedAt: '2026-09-01T00:00:00.000Z',
       finishedAt: '2026-09-01T00:00:01.000Z',
       elapsedMs: 1,
@@ -232,7 +237,13 @@ test('withholds secret-shaped output', async () => {
   expect(
     (d.query('SELECT output_tail FROM gate_execution').get() as { output_tail: string })
       .output_tail,
-  ).toBe('[withheld: secret-shaped content]')
+  ).toBe(
+    [
+      `--base=${sha}`,
+      'gate failures: scripts/check-architecture.ts',
+      '[withheld line: provider-prefix]',
+    ].join('\n'),
+  )
 })
 
 test('runs and records a relative gate from the caller checkout top level', async () => {

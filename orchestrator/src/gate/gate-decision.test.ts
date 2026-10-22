@@ -20,6 +20,7 @@ import {
   RUN_GATE_WAIT_MS,
   resolveGateCommand,
   shapeGateResult,
+  withholdSecretShapedGateLines,
 } from './gate-decision.ts'
 
 test('both writing ACP broker command shapes retain the real writer profile', () => {
@@ -248,6 +249,27 @@ test('broker tooling evidence combines, deduplicates, filters, and sorts reposit
       gateCommand: 'scripts/gate',
     }),
   ).toEqual(['.githooks/pre-commit', 'package.json', 'scripts/gate'])
+})
+
+test('gate output with a 40-hex base and a failure list is kept verbatim', () => {
+  const output = `--base=${'a'.repeat(40)}\ngate failures: scripts/check-architecture.ts`
+  expect(withholdSecretShapedGateLines(output)).toBe(output)
+})
+
+test('gate output withholds only the secret-shaped line and names the rule', () => {
+  expect(
+    withholdSecretShapedGateLines(
+      [
+        'gate failures: scripts/check-architecture.ts',
+        'ghp_123456789012345678901234567890123456',
+        'ok',
+      ].join('\n'),
+    ),
+  ).toBe(
+    ['gate failures: scripts/check-architecture.ts', '[withheld line: provider-prefix]', 'ok'].join(
+      '\n',
+    ),
+  )
 })
 
 test('gate result bounds the combined output tail and preserves timeout evidence', () => {

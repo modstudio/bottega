@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -28,9 +27,8 @@ import {
   decideGateHeadCommit,
   GATE_OUTPUT_TAIL_BYTES,
   resolveGateCommand,
+  withholdSecretShapedGateLines,
 } from './gate-decision.ts'
-
-const GATE_OUTPUT_WITHHELD = '[withheld: secret-shaped content]'
 
 type ArchitectGateResult = {
   exitCode: number
@@ -208,7 +206,7 @@ export async function runArchitectGate(input: {
   const commit =
     before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
   const tail = boundedGateOutputTail(
-    containsSecretShaped(ran.output) ? GATE_OUTPUT_WITHHELD : ran.output,
+    withholdSecretShapedGateLines(ran.output),
     GATE_OUTPUT_TAIL_BYTES,
   )
   const d = input.d ?? writableDb()
