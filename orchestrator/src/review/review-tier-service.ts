@@ -12,8 +12,10 @@ export function reviewTierForRange(
   review: ReviewSettings | undefined,
 ) {
   const files = diffNumstat(repo, from, to)
+  const plan = applicableReviewForChange(files, review)
   return {
-    ...applicableReviewForChange(files, review),
+    ...plan.tier,
     risk_map: review?.risk ? 'project declaration' : 'fail-closed default',
+    ...plan.applicability,
   }
 }

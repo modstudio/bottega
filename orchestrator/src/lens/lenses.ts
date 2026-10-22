@@ -11,6 +11,7 @@ import type {
 } from '../record/record-lens-contract.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { BUILT_IN_LENS_DEFAULT_PROFILE } from './lens-built-ins.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
@@ -205,20 +206,6 @@ function profileValues(body: string, slots: string): Record<string, string> {
   return values as Record<string, string>
 }
 
-function genericProfileBody(core: CoreRow): string {
-  const values = Object.fromEntries(
-    slotNames(core.slots).names.map((slot) => {
-      if (slot === 'commands')
-        return [slot, 'Use the project commands and checks that apply to the changed files.']
-      if (slot === 'not_a_finding')
-        return [slot, `Do not report concerns excluded here: ${core.excludes}`]
-      if (slot === 'project_rules')
-        return [slot, 'Apply the project canon that governs the changed files.']
-      return [slot, `Apply the lens question without framework-specific guidance: ${core.question}`]
-    }),
-  )
-  return JSON.stringify(values)
-}
 const coreSnapshot = (row: CoreRow) =>
   JSON.stringify({
     title: row.title,
@@ -684,7 +671,7 @@ function resolvedProfile(
     axis,
     name: 'default',
     version: 1,
-    body: genericProfileBody(core),
+    body: BUILT_IN_LENS_DEFAULT_PROFILE,
     enabled: 1,
     space_id: core.space_id,
   }

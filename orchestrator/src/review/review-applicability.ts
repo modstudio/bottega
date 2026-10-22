@@ -2,7 +2,11 @@
 /** Selects the project's ordered review lenses for one classified change. */
 
 import type { ReviewSettings } from '../project/project-injection.ts'
-import { classifyReviewTier, type ReviewTierFile } from './review-tier.ts'
+import {
+  classifyReviewTier,
+  type ReviewTier,
+  type ReviewTierFile,
+} from './review-tier-classifier.ts'
 
 const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
@@ -15,15 +19,20 @@ export type ApplicableReview = {
   secondOpinionBasis?: string
 }
 
+export type ReviewPlan = {
+  tier: ReviewTier
+  applicability: ApplicableReview
+}
+
 /** Classify one change and select its review lenses from those same file facts. */
 export function applicableReviewForChange(
   files: ReviewTierFile[],
   review: ReviewSettings | undefined,
-) {
+): ReviewPlan {
   const tier = classifyReviewTier({ files, risk: review?.risk })
   return {
-    ...tier,
-    ...applicableReview(
+    tier,
+    applicability: applicableReview(
       tier.tier,
       files.map(({ path }) => path),
       review,

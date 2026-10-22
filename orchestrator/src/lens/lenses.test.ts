@@ -6,6 +6,7 @@ import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
+import { BUILT_IN_LENS_SLOTS } from './lens-built-ins.ts'
 import {
   chooseLensProfile,
   listLenses,
@@ -101,11 +102,7 @@ describe('lens catalogue', () => {
       title: 'Specific only',
       question: 'Does the test prove the behavior?',
       excludes: 'Production correctness.',
-      slots: JSON.stringify({
-        type: 'object',
-        properties: { looks_for: { type: 'string' }, commands: { type: 'string' } },
-        additionalProperties: false,
-      }),
+      slots: BUILT_IN_LENS_SLOTS,
       enabled: true,
       requiresExecution: false,
       reason: 'test fixture',
@@ -124,15 +121,13 @@ describe('lens catalogue', () => {
       lensId: 'specific-only',
       axis: 'framework',
       name: 'other-stack',
-      body: '{"looks_for":"Other stack guidance.","commands":"other test"}',
+      body: '{"framework_guidance":"Other stack guidance.","commands":"other test"}',
       enabled: true,
       reason: 'test fixture',
     })
     expect(resolveLens('specific-only', 'generic-fallback')).toMatchObject({
       profiles: [{ axis: 'framework', name: 'default', version: 1, source: 'generic' }],
-      body: expect.stringContaining(
-        'Apply the lens question without framework-specific guidance: Does the test prove the behavior?',
-      ),
+      body: 'FRAMEWORK GUIDANCE\nNo framework-specific guidance for this stack.\n\nCOMMANDS\nNone.',
     })
   })
 

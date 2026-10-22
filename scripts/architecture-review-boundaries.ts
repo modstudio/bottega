@@ -100,10 +100,17 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-applicability-boundary',
     file: 'orchestrator/src/review/review-applicability.ts',
-    allowed: ['./review-tier.ts'],
+    allowed: ['./review-tier-classifier.ts'],
     typeOnlyAllowed: ['../project/project-injection.ts'],
     reason:
       'Keep change classification and project lens selection independent of stores, processes, and clocks.',
+  },
+  {
+    name: 'review-tier-classifier-boundary',
+    file: 'orchestrator/src/review/review-tier-classifier.ts',
+    allowed: ['../../../shared/file-kind.ts'],
+    typeOnlyAllowed: ['../project/project-injection.ts'],
+    reason: 'Keep tier classification independent of git, stores, processes, and clocks.',
   },
   {
     name: 'review-finding-amend-command-boundary',
@@ -183,6 +190,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-group.ts',
       './review-pins.ts',
       './review-tier.ts',
+      './review-tier-classifier.ts',
       './review-yield.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts'],

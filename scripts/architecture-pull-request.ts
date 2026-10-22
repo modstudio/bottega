@@ -40,6 +40,7 @@ export const pullRequestModuleSpecs = [
       './review-applicability.ts',
       './review-pins.ts',
       './review-target.ts',
+      './review-tier-classifier.ts',
       './review-tier.ts',
     ],
   },

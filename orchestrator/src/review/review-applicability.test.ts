@@ -114,7 +114,7 @@ describe('applicable review lenses', () => {
       },
     )
 
-    expect(plan.tier).toBe(2)
-    expect(plan.lenses).toEqual(['correctness', 'craft'])
+    expect(plan.tier.tier).toBe(2)
+    expect(plan.applicability.lenses).toEqual(['correctness', 'craft'])
   })
 })

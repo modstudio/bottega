@@ -2,10 +2,15 @@
 /** Measures change groups and reads their recorded review rows. */
 import type { Database } from 'bun:sqlite'
 import type { Project } from '../project/projects.ts'
-import { type ApplicableReview, applicableReviewForChange } from './review-applicability.ts'
+import {
+  type ApplicableReview,
+  applicableReviewForChange,
+  type ReviewPlan,
+} from './review-applicability.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { resolveReviewMergeBase } from './review-target.ts'
-import { diffNumstat, type ReviewTier } from './review-tier.ts'
+import { diffNumstat } from './review-tier.ts'
+import type { ReviewTier } from './review-tier-classifier.ts'
 
 export type ChangeGroup = {
   project: string
@@ -85,7 +90,7 @@ type ChangeGroupOperations = {
     base: string,
     tip: string,
     review: Project['settings']['review'],
-  ): ReviewTier & ApplicableReview
+  ): ReviewPlan
 }
 
 const changeGroupOperations: ChangeGroupOperations = {
@@ -134,19 +139,8 @@ export function measureReviewChange(
     patchId: identity.patchId,
     pathSet: identity.paths,
     base,
-    tier: {
-      tier: plan.tier,
-      risk: plan.risk,
-      size: plan.size,
-      reasons: plan.reasons,
-      riskBasis: plan.riskBasis,
-    },
-    applicability: {
-      lenses: plan.lenses,
-      ...(plan.secondOpinion ? { secondOpinion: plan.secondOpinion } : {}),
-      ...(plan.lensBases ? { lensBases: plan.lensBases } : {}),
-      ...(plan.secondOpinionBasis ? { secondOpinionBasis: plan.secondOpinionBasis } : {}),
-    },
+    tier: plan.tier,
+    applicability: plan.applicability,
     message: identity.message,
   }
 }
