@@ -10,7 +10,6 @@ export type RequiredMcpServer = {
   project: string
   server: string
   mode: McpCompatibilityMode
-  transport?: 'cli' | 'acp'
 }
 
 export type McpCompatibility = {
@@ -69,7 +68,7 @@ export function predictNativeMcpAttachment(input: {
     return {
       confirmable: false,
       reason:
-        'native project MCP attachment is unconfirmable: ACP session launch does not attach project servers',
+        'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers',
     }
   }
   const harness = input.harness ?? input.name
@@ -85,13 +84,17 @@ export function predictNativeMcpAttachment(input: {
 export function requiredMcpIneligibility(
   agent: { name: string; harness?: string; defaultTransport: 'cli' | 'acp' },
   required: RequiredMcpServer | undefined,
+  pinnedTransport?: 'cli' | 'acp',
 ): string | null {
   if (required?.mode !== 'require') return null
-  return predictNativeMcpAttachment({
+  const prediction = predictNativeMcpAttachment({
     name: agent.name,
     harness: agent.harness,
-    transport: required.transport ?? agent.defaultTransport,
-  }).reason
+    transport: pinnedTransport ?? agent.defaultTransport,
+  })
+  return prediction.reason
+    ? `${prediction.reason}; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp`
+    : null
 }
 
 /** Apply request mode to one observed tool-name compatibility result. */

@@ -99,7 +99,7 @@ describe('required MCP routing', () => {
 
       expect(routed.find((candidate) => candidate.agent === 'grok')).toMatchObject({
         eligible: false,
-        why: 'native project MCP attachment is unconfirmable: ACP session launch does not attach project servers',
+        why: 'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp',
       })
       expect(
         requiredMcpIneligibility({ name: 'codex', defaultTransport: 'cli' }, required),
@@ -120,7 +120,7 @@ describe('required MCP routing', () => {
       expect(() =>
         pick('understand', undefined, 0, false, null, { requiredMcp: required }),
       ).toThrow(
-        /no eligible agent for job "understand"[\s\S]*codex: native project MCP attachment is unconfirmable: ACP session launch does not attach project servers[\s\S]*grok: native project MCP attachment is unconfirmable: ACP session launch does not attach project servers/,
+        /no eligible agent for job "understand"[\s\S]*codex: native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; re-dispatch on an agent that attaches natively \(--agent codex\) or drop --mcp[\s\S]*grok: native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; re-dispatch on an agent that attaches natively \(--agent codex\) or drop --mcp/,
       )
     } finally {
       restoreAgents(rows)
@@ -135,4 +135,35 @@ describe('required MCP routing', () => {
       ),
     ).toBeNull()
   })
+
+  test.each([
+    {
+      name: 'a pinned ACP transport',
+      defaultTransport: 'cli' as const,
+      pinnedTransport: 'acp' as const,
+      confirmable: false,
+    },
+    {
+      name: 'a pinned CLI transport',
+      defaultTransport: 'acp' as const,
+      pinnedTransport: 'cli' as const,
+      confirmable: true,
+    },
+    {
+      name: 'the agent default when transport is unpinned',
+      defaultTransport: 'acp' as const,
+      pinnedTransport: undefined,
+      confirmable: false,
+    },
+  ])(
+    'resolves native attachment against $name',
+    ({ defaultTransport, pinnedTransport, confirmable }) => {
+      const reason = requiredMcpIneligibility(
+        { name: 'codex', defaultTransport },
+        required,
+        pinnedTransport,
+      )
+      expect(reason === null).toBe(confirmable)
+    },
+  )
 })

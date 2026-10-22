@@ -115,7 +115,6 @@ export function requiredMcpServer(
   request: McpRequest | undefined,
   cwd: string,
   projectName?: string,
-  transport?: 'cli' | 'acp',
 ): RequiredMcpServer | undefined {
   if (!requestedMcpMode(request)) return undefined
   const project = projectName ? projectByName(projectName) : projectAt(cwd)
@@ -125,7 +124,6 @@ export function requiredMcpServer(
     project: project.name,
     server: project.settings.mcpServer ?? project.name,
     mode: requestedMcpMode(request)!,
-    transport,
   }
 }
 

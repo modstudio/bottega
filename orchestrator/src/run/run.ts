@@ -39,11 +39,14 @@ import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
+import { predictNativeMcpAttachment } from '../mcp/mcp-compatibility.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
   effectiveMcpRequest,
   type McpRequest,
+  requestedMcpMode,
+  requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
 import {
@@ -113,7 +116,7 @@ import {
   assertWorkerGitGuardOutsideWritableRoots,
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
-import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
+import { decideRunLaunch, isRunTransportPinned, resolveRunTransport } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -121,7 +124,6 @@ import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
-import { mcpForRun, routeMcp } from './run-mcp-routing.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -136,7 +138,11 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
-import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
+import {
+  enforceRunStartupRefusal,
+  recordNeverStartedRunFailure,
+  recordRunStartupFailure,
+} from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
@@ -503,6 +509,11 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
+  const transportPinFacts = {
+    explicitTransport: opts.transport !== undefined,
+    envTransport: Boolean(process.env.ORCH_TRANSPORT),
+  }
+  const pinnedTransport = isRunTransportPinned(transportPinFacts) ? requestedTransport : undefined
   const pickSource = () =>
     pick(
       opts.job,
@@ -518,7 +529,8 @@ export async function run(opts: {
         models: opts.distinctModels,
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
-        requiredMcp: routeMcp(mcpRequest, callerCwd, runProjectName, opts, requestedTransport),
+        requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
+        pinnedTransport,
       },
       opts.probe,
       opts.lens,
@@ -526,11 +538,7 @@ export async function run(opts: {
   const source = resume.isFirstTurn
     ? { source: 'pick' as const, ...pickSource() }
     : { source: 'resume' as const, ...opts.resume! }
-  const launch = decideRunLaunch({
-    ...source,
-    explicitTransport: opts.transport !== undefined,
-    envTransport: Boolean(process.env.ORCH_TRANSPORT),
-  })
+  const launch = decideRunLaunch({ ...source, ...transportPinFacts })
   const a = requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const writingAcp = isWritingAcpRun(transportName, writesJob)
@@ -554,13 +562,13 @@ export async function run(opts: {
     }
   }
   prompt = acpWriter.bindContract(prompt, writingAcp)
-  if (name === 'codex') {
-    const versionRefusal = minimumCliVersionRefusal(a)
-    if (versionRefusal) {
-      recordRunStartupFailure(opts.reserveId, versionRefusal)
-      throw new Error(versionRefusal)
-    }
-  }
+  if (name === 'codex') enforceRunStartupRefusal(opts.reserveId, minimumCliVersionRefusal(a))
+  const mcpLaunchRuling = mcpAttachment.decideMcpLaunchRuling(
+    requestedMcpMode(mcpRequest),
+    predictNativeMcpAttachment({ name: a.name, harness: a.harness, transport: transportName }),
+    a.caps.mcp,
+  )
+  enforceRunStartupRefusal(opts.reserveId, mcpLaunchRuling.refusalReason)
   // Append after routing but before prompt files, hashes, or metadata are written.
   if (requestedJob.findings && resume.isFirstTurn) {
     const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
@@ -582,16 +590,11 @@ export async function run(opts: {
     connection: mcpConnection,
     mcpRequest,
     writesJob,
-    agentHasMcp: mcpForRun(a, transportName, mcpRequest, opts.reserveId),
+    agentHasMcp: mcpLaunchRuling.agentHasMcp,
   })
-  if (attachmentRuling.refusalReason) {
-    recordRunStartupFailure(opts.reserveId, attachmentRuling.refusalReason)
-    throw new Error(attachmentRuling.refusalReason)
-  }
-  const mcpMode = attachmentRuling.mcpMode
-  let usingMcp = attachmentRuling.usingMcp
+  enforceRunStartupRefusal(opts.reserveId, attachmentRuling.refusalReason)
+  let { mcpMode, usingMcp } = attachmentRuling
   // Every repository job gets writable scratch; only `writesJob` requests a diff.
-  const writes = repoJob
   // Minted before the spawn when the agent lets us choose, so the resume handle
   // exists even for a worker that dies mid-turn. codex and qwen name their own
   // and are read back afterwards instead.
@@ -1012,7 +1015,7 @@ export async function run(opts: {
       originalSchemaPath,
       opts,
       sandboxEnvironment,
-      writes,
+      writes: repoJob,
       usingMcp,
       mcpServerName,
       codexMcpScope: mcpLaunch.codex,

@@ -345,8 +345,14 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
   agent: selectAgentForTransport(transport, agent),
   agentExplicit: Boolean(agent),
 })
-const detachedMcpRequirement = (request: McpRequest | undefined, spec: DetachSpec, cwd: string) =>
-  requiredMcpServer(request, spec.cwd ?? cwd, spec.repo, spec.transport)
+const detachedMcpConstraints = (
+  request: McpRequest | undefined,
+  spec: DetachSpec,
+  cwd: string,
+) => ({
+  requiredMcp: requiredMcpServer(request, spec.cwd ?? cwd, spec.repo),
+  pinnedTransport: spec.transport,
+})
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
@@ -393,7 +399,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
           agents: spec.avoid,
           models: spec.distinctModels,
           model: spec.model,
-          requiredMcp: detachedMcpRequirement(mcpRequest, spec, presentation.cwd()),
+          ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
         },
         spec.probe,
         spec.lens,

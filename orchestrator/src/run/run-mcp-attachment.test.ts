@@ -3,6 +3,7 @@ import type { McpConnection } from '../mcp/mcp-preflight.ts'
 import {
   decideFinalMcpConnection,
   decideMcpAttachment,
+  decideMcpLaunchRuling,
   decideMcpMirrorMismatch,
   decideMcpToolProbe,
 } from './run-mcp-attachment.ts'
@@ -22,6 +23,42 @@ const disconnected: McpConnection = {
 }
 
 describe('MCP attachment ruling', () => {
+  test.each([
+    {
+      name: 'required native attachment',
+      mode: 'require' as const,
+      prediction: { confirmable: true, reason: null },
+      probed: false,
+      expected: { agentHasMcp: true, refusalReason: null },
+    },
+    {
+      name: 'preferred unconfirmable attachment',
+      mode: 'prefer' as const,
+      prediction: { confirmable: false, reason: 'not attachable' },
+      probed: true,
+      expected: { agentHasMcp: false, refusalReason: null },
+    },
+    {
+      name: 'implicit probed capability',
+      mode: null,
+      prediction: { confirmable: false, reason: 'not attachable' },
+      probed: true,
+      expected: { agentHasMcp: true, refusalReason: null },
+    },
+  ])('decides $name before preflight', ({ mode, prediction, probed, expected }) => {
+    expect(decideMcpLaunchRuling(mode, prediction, probed)).toEqual(expected)
+  })
+
+  test('required unconfirmable attachment returns the routing remedy', () => {
+    expect(
+      decideMcpLaunchRuling('require', { confirmable: false, reason: 'not attachable' }, true),
+    ).toEqual({
+      agentHasMcp: false,
+      refusalReason:
+        'not attachable; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp',
+    })
+  })
+
   test('a refused required attachment returns the existing refusal reason', () => {
     expect(
       decideMcpAttachment({
