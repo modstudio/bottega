@@ -38,9 +38,23 @@ import {
   type StoreWriteLockReport,
   storeWriteLockReport,
 } from './monitor-store-write-lock.ts'
-import type { MonitorNotice } from './monitor-types.ts'
+import type { MonitorHostPressure, MonitorNotice } from './monitor-types.ts'
 
 const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
+
+export function formatHostPressureLine(report: MonitorHostPressure): string {
+  if (!report.available)
+    return `host: process attribution unavailable${report.error ? `: ${report.error}` : ''}; sampler average ${report.averageObservationElapsedMs?.toFixed(1) ?? 'unknown'}ms wall, ${report.averageObservationCpuMs?.toFixed(1) ?? 'unknown'}ms CPU`
+  const trees = report.attributions.length
+    ? report.attributions
+        .map(
+          (item) =>
+            `${item.owner}${item.project ? ` (${item.project})` : ''} ${item.cpu.toFixed(1)}% CPU/${(item.share * 100).toFixed(1)}% share`,
+        )
+        .join('; ')
+    : 'none'
+  return `host: top process trees ${trees}; sampled memory pressure ${report.memoryPressure ?? 'unknown'}; sampler average ${report.averageObservationElapsedMs?.toFixed(1) ?? 'unknown'}ms wall, ${report.averageObservationCpuMs?.toFixed(1) ?? 'unknown'}ms CPU`
+}
 
 type Options = {
   ackNotices?: string
@@ -241,6 +255,7 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
     const failing = failingCanonEvalSlugs(),
       lines = [
         `host: load ${result.hostLoad.loadavg.toFixed(2)}/${result.hostLoad.ncpu} cpu; pressure ${result.hostLoad.pressure}; swap ${Math.round(result.hostLoad.swapUsed / 1024 / 1024)}/${Math.round(result.hostLoad.swapTotal / 1024 / 1024)} MiB; ${result.hostLoad.liveRuns} live run(s); ${result.hostLoad.waitingRequests} broker request(s) waiting, oldest ${result.hostLoad.oldestWaitMs}ms`,
+        formatHostPressureLine(result.hostPressure),
         `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
       ]
     if (failing.length) lines.push(`canon evals: ${failing.length} failing (${failing.join(', ')})`)
