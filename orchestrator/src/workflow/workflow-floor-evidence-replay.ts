@@ -9,7 +9,6 @@ type CheckoutResolution = {
   headIsTipOrAncestor: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
-  headIsTrunkTipOrAncestor?: boolean
 }
 
 type HubTaskRead = {

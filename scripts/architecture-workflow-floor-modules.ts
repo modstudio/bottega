@@ -60,6 +60,12 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', [
     '../branch/pull-request-view.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
+    'bun:sqlite',
+    '../branch/merged-pull-request.ts',
+    '../branch/task-key-pull-request.ts',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
     'node:child_process',
@@ -81,6 +87,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../review/review-identifier.ts',
     '../run/run-identifier.ts',
     './workflow-floor.ts',
+    './workflow-checkout-landing.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-run-binding.ts',
     './workflow-text.ts',
