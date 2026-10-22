@@ -1016,6 +1016,13 @@
       "when": 1793577600007,
       "tag": "0144_run_continuation_message_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "6",
+      "when": 1793577600008,
+      "tag": "0145_agent_trains_on_inputs",
+      "breakpoints": true
     }
   ]
 }

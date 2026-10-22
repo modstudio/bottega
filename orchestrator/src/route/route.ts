@@ -8,7 +8,7 @@ import {
 } from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
-import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
@@ -16,11 +16,14 @@ import {
   type McpTransportPinFacts,
   requiredMcpIneligibility,
 } from '../mcp/mcp-native-attachment.ts'
+import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
+import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 export type Candidate = {
   agent: string
@@ -76,6 +79,7 @@ type RouteConstraints = {
   requiredMcp?: RequiredMcpServer
   pinnedTransport?: 'cli' | 'acp'
   transportPinSource?: McpTransportPinFacts['transportPinSource']
+  project?: string | null
 }
 
 const RUNNING_RUNS_SQL =
@@ -104,6 +108,16 @@ export const EVIDENCE_WINDOW = 40
  * not depend on a finely tuned number. Revisit it when a run lands in the gap.
  */
 export const PROMPT_SIZE_BOUNDARY = 16 * 1024
+
+function memoizedRepositoryReader(
+  reader: (project: Pick<Project, 'path'>) => string | null,
+): (project: Pick<Project, 'path'>) => string | null {
+  let currentRepository: string | null | undefined
+  return (project) => {
+    if (currentRepository === undefined) currentRepository = reader(project)
+    return currentRepository
+  }
+}
 
 function mcpCandidateIneligibility(
   agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
@@ -229,11 +243,6 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
     )
     .slice(0, EVIDENCE_WINDOW)
   return { rows: modelRows, evidenceModel: currentModel }
-}
-
-/** COOLS_DOWN as a SQL list, so the query uses the canonical vocabulary. */
-function coolsDownSql(): string {
-  return COOLS_DOWN.map((k) => `'${k}'`).join(', ')
 }
 
 /**
@@ -450,8 +459,11 @@ export function candidates(
   pinnedTransport?: 'cli' | 'acp',
   transportPinSource?: McpTransportPinFacts['transportPinSource'],
   explicitlyNamedAgent?: string,
+  projectName?: string | null,
+  repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ): Candidate[] {
   const j = job(jobName)
+  const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
   // let "reply with ok" vouch for an agent on real work.
   //
@@ -583,44 +595,13 @@ export function candidates(
   // a human has fixed the quota or the login, without waiting out the hour or
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
-  const coolingByAgent = new Map(
-    (
-      db()
-        .query(
-          `WITH terminal AS (
-         SELECT record_id, agent, status, failure_kind,
-                julianday(started_at) + latency_ms / 86400000.0 AS finished_at
-           FROM run
-          WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
-            AND job NOT LIKE 'agent-probe-%'
-       ), cooling_failures AS (
-         SELECT record_id, agent, failure_kind, finished_at,
-                ROW_NUMBER() OVER (
-                  PARTITION BY agent ORDER BY finished_at DESC, record_id DESC
-                ) AS recency
-           FROM terminal
-          WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
-       )
-       SELECT f.agent, f.failure_kind,
-              (julianday('now') - f.finished_at) * 1440 AS mins_ago
-         FROM cooling_failures f
-        WHERE f.recency = 1
-          AND (julianday('now') - f.finished_at) * 1440 < ?
-          AND NOT EXISTS (
-                SELECT 1 FROM terminal s
-                 WHERE s.agent = f.agent AND s.status = 'ok'
-                   AND s.finished_at > f.finished_at
-              )`,
-        )
-        .all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[]
-    ).map((r) => [r.agent, r]),
-  )
+  const coolingByAgent = coolingFailures(db(), COOLDOWN_MIN)
 
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
-    const cooling = failure ? `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago` : null
+    const cooling = failure ? coolingPhrase(failure) : null
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel)
     const recent = aggregate(window.rows)
@@ -629,7 +610,14 @@ export function candidates(
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     const mcpWhy = mcpCandidateIneligibility(a, requiredMcp, pinnedTransport, transportPinSource)
-    const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent, pinnedTransport)
+    const policy = routePolicyEligibility(
+      jobName,
+      a,
+      explicitlyNamedAgent,
+      pinnedTransport,
+      projectName,
+      readCurrentRepository,
+    )
     let eligible = true,
       why = policy.why
     const unavailable = unavailableReason(name)
@@ -642,7 +630,7 @@ export function candidates(
       why = `not declared for ${jobName}`
     } else if (cooling && coolingProbeAgent !== name) {
       eligible = false
-      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run '${PLATFORM_SLUG} agent probe ${name}' to clear it`
+      why = coolingRefusal(name, failure!, COOLDOWN_MIN)
     } else if (unavailable) {
       eligible = false
       why = unavailable
@@ -791,11 +779,14 @@ export function evidenceFor(
   jobName: string,
   promptBytes: number,
   stack: string | null | undefined,
-  modelOverride?: string,
-  lens?: string | null,
-  requiredMcp?: RequiredMcpServer,
-  pinnedTransport?: 'cli' | 'acp',
-  transportPinSource?: McpTransportPinFacts['transportPinSource'],
+  options: {
+    modelOverride?: string
+    lens?: string | null
+    requiredMcp?: RequiredMcpServer
+    pinnedTransport?: 'cli' | 'acp'
+    transportPinSource?: McpTransportPinFacts['transportPinSource']
+    project: string | null | undefined
+  },
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'
@@ -804,6 +795,14 @@ export function evidenceFor(
   scoped: Candidate[] | null
   job: Candidate[]
 } {
+  const {
+    lens,
+    modelOverride,
+    pinnedTransport,
+    project: projectName,
+    requiredMcp,
+    transportPinSource,
+  } = options
   const requested =
     lens?.trim() && job(jobName).findings
       ? { level: 'lens' as const, value: lens.trim() }
@@ -820,6 +819,8 @@ export function evidenceFor(
     requiredMcp,
     pinnedTransport,
     transportPinSource,
+    undefined,
+    projectName,
   )
   if (requested) {
     const scoped =
@@ -834,6 +835,8 @@ export function evidenceFor(
             requiredMcp,
             pinnedTransport,
             transportPinSource,
+            undefined,
+            projectName,
           )
         : candidates(
             jobName,
@@ -845,6 +848,8 @@ export function evidenceFor(
             requiredMcp,
             pinnedTransport,
             transportPinSource,
+            undefined,
+            projectName,
           )
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
@@ -903,25 +908,26 @@ function evidenceForPick(
   constraints: RouteConstraints,
   lens?: string,
 ) {
-  return evidenceFor(
-    jobName,
-    promptBytes,
-    stack,
-    constraints.model,
+  return evidenceFor(jobName, promptBytes, stack, {
+    modelOverride: constraints.model,
     lens,
-    constraints.requiredMcp,
-    constraints.pinnedTransport,
-    constraints.transportPinSource,
-  )
+    requiredMcp: constraints.requiredMcp,
+    pinnedTransport: constraints.pinnedTransport,
+    transportPinSource: constraints.transportPinSource,
+    project: constraints.project,
+  })
 }
-
-const mcpRouteArgs = (constraints: RouteConstraints) =>
-  [constraints.requiredMcp, constraints.pinnedTransport, constraints.transportPinSource] as const
 
 type CurrentPolicyCandidate = Pick<
   Candidate,
   'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
 > & { precision?: number | null }
+
+function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
+  if (ev.level === 'lens') return `lens ${ev.lens} cell`
+  if (ev.level === 'stack') return `stack ${ev.stack} cell`
+  return 'job-wide cell'
+}
 
 /** Failure-only history has already answered whether another run is worthwhile. */
 function worthExploring(c: CurrentPolicyCandidate): boolean {
@@ -941,6 +947,32 @@ function capacityRefusal(
     `agent ${candidate.agent} is at capacity ` +
     `(${candidate.maxConcurrent} running: ${candidate.runningRunIds.join(', ')})`
   )
+}
+
+function namedCandidate(
+  jobName: string,
+  name: string,
+  promptBytes: number,
+  ev: ReturnType<typeof evidenceFor>,
+  constraints: RouteConstraints,
+  probe: boolean,
+): Candidate {
+  const rows = candidates(
+    jobName,
+    promptBytes,
+    ev.level === 'stack' ? ev.stack : undefined,
+    constraints.model,
+    probe ? name : undefined,
+    ev.level === 'lens' ? ev.lens : undefined,
+    constraints.requiredMcp,
+    constraints.pinnedTransport,
+    constraints.transportPinSource,
+    name,
+    constraints.project,
+  )
+  const candidate = rows.find((row) => row.agent === name)
+  if (!candidate) throw new Error(`unknown agent "${name}"`)
+  return candidate
 }
 
 /**
@@ -1023,31 +1055,17 @@ export function pick(
 ): { agent: string; reason: string } {
   const j = job(jobName)
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
-  const evidenceCell =
-    ev.level === 'lens'
-      ? `lens ${ev.lens} cell`
-      : ev.level === 'stack'
-        ? `stack ${ev.stack} cell`
-        : 'job-wide cell'
+  // Named in every reason below, so a route drawn from four PHP runs is never
+  // mistaken for one drawn from thirty mixed ones.
+  const evidenceCell = evidenceCellName(ev)
   const scope = (c: Candidate) =>
     ` in ${evidenceCell}${c.evidenceModel ? ` on model ${c.evidenceModel}` : ''}`
   if (override) {
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    // Keep candidate reporting stable; only an explicit probe bypasses cooling.
-    const namedCandidates = candidates(
-      jobName,
-      promptBytes,
-      ev.level === 'stack' ? ev.stack : undefined,
-      avoid.model,
-      probe ? override : undefined,
-      ev.level === 'lens' ? ev.lens : undefined,
-      ...mcpRouteArgs(avoid),
-      override,
-    )
-    const c = namedCandidates.find((x) => x.agent === override)
-    if (!c) throw new Error(`unknown agent "${override}"`)
+    // Keep candidates()' view unchanged. Naming bypasses opt-in; only a probe bypasses cooling.
+    const c = namedCandidate(jobName, override, promptBytes, ev, avoid, probe)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
       throw new Error(capacityRefusal(c))
     }
@@ -1188,11 +1206,15 @@ export function pick(
 export function meteredRouteEligibility(input: {
   billing: string
   routeMetered: boolean
+  trainsOnInputs?: boolean
   writesRepo: boolean
   name: string
   explicitlyNamedAgent?: string
 }): { eligible: boolean; why: string; mayAutoRouteNamedJob: boolean } {
-  if (input.billing !== 'metered' || input.explicitlyNamedAgent === input.name)
+  if (
+    (input.billing !== 'metered' && !input.trainsOnInputs) ||
+    input.explicitlyNamedAgent === input.name
+  )
     return {
       eligible: true,
       why: '',
@@ -1201,7 +1223,9 @@ export function meteredRouteEligibility(input: {
   if (!input.routeMetered)
     return {
       eligible: false,
-      why: 'metered billing is not opted in for automatic routing',
+      why: input.trainsOnInputs
+        ? 'a provider that may train on inputs is not opted in for automatic routing'
+        : 'metered billing is not opted in for automatic routing',
       mayAutoRouteNamedJob: false,
     }
   if (input.writesRepo)
@@ -1215,12 +1239,13 @@ export function meteredRouteEligibility(input: {
 
 export function agentMeteredRouteEligibility(
   jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name'>,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'trainsOnInputs'>,
   explicitlyNamedAgent?: string,
 ): ReturnType<typeof meteredRouteEligibility> {
   return meteredRouteEligibility({
     billing: agent.billing,
     routeMetered: Boolean(agent.routeMetered),
+    trainsOnInputs: Boolean(agent.trainsOnInputs),
     writesRepo: Boolean(job(jobName).needs.writesRepo),
     name: agent.name,
     explicitlyNamedAgent,
@@ -1229,10 +1254,32 @@ export function agentMeteredRouteEligibility(
 
 function routePolicyEligibility(
   jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport'>,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport' | 'trainsOnInputs'>,
   explicitlyNamedAgent: string | undefined,
   pinnedTransport?: 'cli' | 'acp',
+  projectName?: string | null,
+  repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ) {
+  const project = projectName ? projectByName(projectName) : null
+  if (agent.trainsOnInputs && projectName === undefined) {
+    return {
+      eligible: false,
+      why: 'eligible only on public projects',
+      mayAutoRouteNamedJob: false,
+    }
+  }
+  const training = trainingDataEligibility({
+    agent: agent.name,
+    trainsOnInputs: Boolean(agent.trainsOnInputs),
+    project: project?.name ?? null,
+    visibility: project?.settings.visibility ?? null,
+    verifiedRepository: project?.settings.visibilityRepository ?? null,
+    currentRepository:
+      agent.trainsOnInputs && project?.settings.visibility === 'public'
+        ? repositoryReader(project)
+        : null,
+  })
+  if (!training.eligible) return { ...training, mayAutoRouteNamedJob: false }
   const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)
   if (!metered.eligible) return metered
   const transport = pinnedTransport ?? agent.defaultTransport

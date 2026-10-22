@@ -108,6 +108,19 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/project/project-visibility.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/repository-visibility.ts',
+  ]),
+  module('orchestrator/src/route/routing-cooldown.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../failure/failure.ts',
+  ]),
+  module('orchestrator/src/route/training-data-eligibility.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/repository-visibility.ts',
+  ]),
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubImportModules.map((spec) => module(spec.file, [...spec.allowed])),

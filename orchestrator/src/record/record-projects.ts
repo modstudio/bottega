@@ -4,6 +4,7 @@ import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
+import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import {
   type HostedProjectColumns,
   hostedProjectColumns,
@@ -114,13 +115,13 @@ export async function upsertHostedProjectRow(
   const rows = await tx`
     INSERT INTO project (
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
-      landing_branch, production_branch, gate, gate_input, focused_tests, require_clean_main, color,
+      visibility, landing_branch, production_branch, gate, gate_input, focused_tests, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
       mcp_probe_tool, mcp_reader_tools, docs, reference, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     ) VALUES (
       ${id}::uuid, ${input.spaceId}::uuid, ${input.name}, ${tx.array(columns.keyPrefixes, 'text')},
       ${input.path}, ${input.stack}, ${input.canon}, ${columns.managedContext},
-      ${columns.landingBranch}, ${columns.productionBranch}, ${columns.gate}, ${columns.gateInput},
+      ${columns.visibility}, ${columns.landingBranch}, ${columns.productionBranch}, ${columns.gate}, ${columns.gateInput},
       ${bindJsonb(tx, columns.focusedTests)},
       ${columns.requireCleanMain}, ${columns.color}, ${columns.colorDark}, ${columns.envPrefix},
       ${columns.mcpServer}, ${postgresTextArray(tx, columns.workerMcpServers)},
@@ -146,6 +147,7 @@ export async function upsertHostedProjectRow(
       stack = EXCLUDED.stack,
       canon = EXCLUDED.canon,
       managed_context = EXCLUDED.managed_context,
+      visibility = EXCLUDED.visibility,
       landing_branch = EXCLUDED.landing_branch,
       production_branch = EXCLUDED.production_branch,
       gate = EXCLUDED.gate,
@@ -184,6 +186,7 @@ export async function listRecordProjects(
         FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
     return rows.map((row: Record<string, unknown>) => {
       const columns: HostedProjectColumns = {
+        visibility: repositoryVisibility(row.visibility),
         keyPrefixes: row.key_prefixes as string[],
         managedContext: row.managed_context === true,
         landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
