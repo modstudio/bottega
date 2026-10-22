@@ -13,6 +13,7 @@ export async function establishAcpSession(input: {
   mcpServers: acp.McpServer[]
   sessionId?: string
   fallbackToNew: boolean
+  loadFailureKilledProcess?: (error: unknown) => boolean
   onLoadFailure?: (reason: string) => void
 }): Promise<{ sessionId: string; response: unknown; loaded: boolean }> {
   if (input.sessionId) {
@@ -24,6 +25,7 @@ export async function establishAcpSession(input: {
       })
       return { sessionId: input.sessionId, response, loaded: true }
     } catch (error) {
+      if (input.loadFailureKilledProcess?.(error)) throw error
       if (!input.fallbackToNew) throw error
       input.onLoadFailure?.(String((error as Error).message ?? error))
     }

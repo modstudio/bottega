@@ -31,13 +31,21 @@ export const agentProbeModules = [
     './agent-probe-turn.ts',
   ]),
   module('orchestrator/src/agent/agent-writing-probe.ts', [
+    './agent-capability-probe-policy.ts',
+    './agent-capability-probe-sandbox.ts',
+  ]),
+  module('orchestrator/src/agent/agent-capability-probe-policy.ts', []),
+  module('orchestrator/src/agent/agent-capability-probe-sandbox.ts', [
     '../../../shared/config-directory.ts',
     '../../../shared/git.ts',
     './agents.ts',
     '../project/projects.ts',
     '../sandbox/sandbox.ts',
   ]),
-  module('orchestrator/src/agent/agent-resume-probe.ts', []),
+  module('orchestrator/src/agent/agent-resume-probe.ts', [
+    './agent-capability-probe-policy.ts',
+    './agent-capability-probe-sandbox.ts',
+  ]),
   module('orchestrator/src/agent/agent-probe-turn.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',

@@ -73,6 +73,7 @@ export function rowAgent(row: AgentRow): Agent {
     operatedBy: row.operated_by,
     caps: stored,
     defaultTransport: row.transport,
+    acpSessionLoad: row.transport === 'acp',
     contextTokens: Object.hasOwn(stored, 'contextTokens')
       ? stored.contextTokens === null
         ? Number.POSITIVE_INFINITY

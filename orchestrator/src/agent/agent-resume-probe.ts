@@ -1,6 +1,14 @@
 // concern: ACP registration resume probe
 /** Proves that a fresh ACP process can load a prior session and recall its conversation. */
 
+import { observedCapabilityPolicy } from './agent-capability-probe-policy.ts'
+import {
+  type CapabilityProbeConfinement,
+  type CapabilityProbeSandboxInput,
+  type CapabilityProbeSandboxPorts,
+  withCapabilityProbeSandbox,
+} from './agent-capability-probe-sandbox.ts'
+
 export type ResumeProbeResult = { ok: boolean | null; output: string }
 
 /** ACP capabilities change only after an observation; CLI declarations stay untouched. */
@@ -8,10 +16,10 @@ export function resumeCapabilityPolicy(
   transport: 'cli' | 'acp',
   observation: boolean | null | undefined,
 ): { resumable: boolean | null; jobSuccess: boolean } {
-  const observed = transport === 'acp'
+  const policy = observedCapabilityPolicy(transport, observation)
   return {
-    resumable: observed && observation != null ? observation : null,
-    jobSuccess: !observed || observation === true,
+    resumable: policy.value,
+    jobSuccess: policy.jobSuccess,
   }
 }
 
@@ -46,5 +54,29 @@ export async function probeAgentResumes(
   return {
     ok: resumed.status === 'ok' && resumed.output.includes(token),
     output: resumed.output,
+  }
+}
+
+/** Run the ACP resume observation inside the same confinement lifecycle as the writing probe. */
+export async function probeAgentResumesInSandbox(
+  input: CapabilityProbeSandboxInput,
+  ports: CapabilityProbeSandboxPorts,
+  token: string,
+  runTurn: (
+    input: { prompt: string; session?: string },
+    confinement: CapabilityProbeConfinement,
+  ) => ReturnType<ResumeProbeTurn>,
+): Promise<ResumeProbeResult> {
+  if (!observedCapabilityPolicy(input.transport, null).requiresObservation) {
+    return probeAgentResumes(input.transport, token, async () => {
+      throw new Error('CLI resume probe unexpectedly ran')
+    })
+  }
+  try {
+    return await withCapabilityProbeSandbox(input, ports, (confinement) =>
+      probeAgentResumes(input.transport, token, (turn) => runTurn(turn, confinement)),
+    )
+  } catch (error) {
+    return { ok: false, output: String((error as Error).message ?? error) }
   }
 }

@@ -107,6 +107,8 @@ const ACP_HANDSHAKE_TIMEOUT_MS = 60_000
 const MARK_RUN_ASKING_SQL = "UPDATE run SET status='asking' WHERE record_id=? AND status='running'"
 type AcpHandshakeStage = 'initialize' | 'session/load' | 'session/new'
 
+class AcpHandshakeTimeout extends Error {}
+
 /** Bound a startup request before callers have a transport handle or wall timer. */
 export async function awaitAcpHandshake<T>(opts: {
   request: Promise<T>
@@ -128,7 +130,7 @@ export async function awaitAcpHandshake<T>(opts: {
     })
   } catch (error) {
     if (!(error instanceof TransportOperationTimeout)) throw error
-    throw new Error(
+    throw new AcpHandshakeTimeout(
       `ACP handshake refusal: ${opts.stage} timed out after ${ACP_HANDSHAKE_TIMEOUT_MS}ms ` +
         `for ${opts.harness} harness (pid ${opts.pid ?? 'unknown'}); inspect the harness ` +
         `startup logs, fix the stalled stage, and rerun the command`,
@@ -388,6 +390,12 @@ function normalizeAcpAgentTurn(
   input: AcpTurnInput,
 ): TransportResult {
   return normalizeAcpTurn(input, agent.billing)
+}
+
+function warnAcpLoadRejection(opts: TransportStartOpts, reason: string): void {
+  opts.onWarning?.(
+    `ACP session/load explicitly rejected ${opts.session}; continued in a fresh session: ${reason}`,
+  )
 }
 
 function webStream(
@@ -782,11 +790,9 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       cwd: opts.cwd,
       mcpServers,
       sessionId: opts.session,
-      fallbackToNew: Boolean(opts.resume),
-      onLoadFailure: (reason) =>
-        opts.onWarning?.(
-          `ACP session/load failed for ${opts.session}; continued in a fresh session: ${reason}`,
-        ),
+      fallbackToNew: Boolean(opts.session),
+      loadFailureKilledProcess: (error) => error instanceof AcpHandshakeTimeout,
+      onLoadFailure: (reason) => warnAcpLoadRejection(opts, reason),
     })
     sessionId = established.sessionId
     if (grok) {

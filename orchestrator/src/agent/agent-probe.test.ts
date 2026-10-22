@@ -18,6 +18,7 @@ test('a file-question registration probe always requires the reply file but not 
     tool: true,
     schema: false,
     mcp: false,
+    resumable: false,
     file: true,
   })
 })
@@ -91,10 +92,12 @@ test('a CLI probe with no writing observation preserves an existing writing capa
   })
 })
 
-test('cache reuse requires a writing observation only for ACP transport', () => {
+test('cache reuse requires observed ACP capabilities only when the declared jobs need them', () => {
   const previous = result(null)
-  expect(registrationProbeCacheReusable('acp', previous, true)).toBe(false)
-  expect(registrationProbeCacheReusable('cli', previous, true)).toBe(true)
+  expect(registrationProbeCacheReusable('acp', previous, true, true)).toBe(false)
+  expect(registrationProbeCacheReusable('cli', previous, true, true)).toBe(true)
+  const failedResume = result(true, false)
+  expect(registrationProbeCacheReusable('acp', failedResume, true, false)).toBe(true)
 })
 
 test('changing an agent identity resets a probed writing capability', () => {
