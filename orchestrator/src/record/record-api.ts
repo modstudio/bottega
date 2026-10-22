@@ -28,6 +28,7 @@ import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
+import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
 import {
@@ -77,10 +78,6 @@ import type {
   RecordRunsWindowInput,
 } from './record-runs.ts'
 import { runsWindowQuery } from './record-runs-window-query.ts'
-import type {
-  RecordSettingsPermissionInput,
-  RecordSettingsPermissionResult,
-} from './record-settings.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
 import { type RecordScore, RecordVerdictError } from './record-verdicts.ts'
 
@@ -94,6 +91,7 @@ type Deps = RecordSubjectRouteDeps &
   RecordLensRouteDeps &
   RecordPortRouteDeps &
   RecordWorkflowRouteDeps &
+  RecordSettingsRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
   clientAddresses: RecordClientAddresses
@@ -176,9 +174,6 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
     input: Tenant & { from: string; to: string; count: number },
   ): Promise<{ docs: number; revisions: number }>
   countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
-  applySettingsPermission(
-    input: RecordSettingsPermissionInput,
-  ): Promise<RecordSettingsPermissionResult>
   upsertScore(
     input: Tenant &
       Omit<VerdictInput, 'scoredBy'> & {

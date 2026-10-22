@@ -25,6 +25,7 @@ describe('renderOwnedSettingsFile', () => {
     expect(rendered).toContain('"tui": {\n    "compact": true\n  }')
     expect(rendered).toContain('"permissions": {\n    "allow": [\n      "new"\n    ]\n  }')
     expect(rendered).toContain('"hooks": {')
+    expect(rendered).toContain('"autoMode": {}')
     expect(rendered.indexOf('"env"')).toBeLessThan(rendered.indexOf('"permissions"'))
     expect(rendered.indexOf('"permissions"')).toBeLessThan(rendered.indexOf('"tui"'))
     expect(rendered.indexOf('"tui"')).toBeLessThan(rendered.indexOf('"hooks"'))
@@ -69,7 +70,12 @@ describe('parseSettingsFile', () => {
     ])
     expect(parsed.envKeys).toEqual(['FOO'])
     expect(parsed.members.every((member) => !('name' in member))).toBe(true)
-    expect(parsed.owned).toEqual({ permissions: { allow: ['old'] }, hooks: {}, envKeys: [] })
+    expect(parsed.owned).toEqual({
+      permissions: { allow: ['old'] },
+      hooks: {},
+      autoMode: {},
+      envKeys: [],
+    })
   })
 })
 
@@ -114,6 +120,22 @@ describe('diffOwnedSettings', () => {
     }
     expect(ownedSettingsEqual(owned, owned)).toBe(true)
     expect(diffOwnedSettings(owned, owned).hooks.added).toEqual([])
+  })
+
+  test('renders and reports differing auto-mode lists', () => {
+    const rendered = renderOwnedSettingsFile(source, {
+      permissions: {},
+      hooks: {},
+      autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
+    })
+    expect(JSON.parse(rendered).autoMode).toEqual({
+      allow: ['$defaults', 'Bash(docker compose *)'],
+    })
+    const drift = diffOwnedSettings(
+      { permissions: {}, hooks: {}, autoMode: { allow: ['$defaults', 'local'] } },
+      { permissions: {}, hooks: {}, autoMode: { allow: ['$defaults', 'canonical'] } },
+    )
+    expect(drift.autoMode.allow).toEqual({ added: ['local'], removed: ['canonical'] })
   })
 
   test('a defaultMode-only difference is drift', () => {

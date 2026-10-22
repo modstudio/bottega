@@ -11,6 +11,9 @@ import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import {
+  AUTO_MODE_LISTS,
+  type AutoModeList,
+  autoModeLists,
   containsSecretShaped,
   isPlainObject,
   type OwnedSettings,
@@ -24,6 +27,7 @@ import {
   SETTINGS_SLUG,
   serializeOwnedSettings,
 } from './settings.ts'
+import { editSettingsAutoMode, type SettingsAutoModeOperation } from './settings-auto-mode.ts'
 import { selectedSettingsEnvironment, userSettingsEnvPath } from './settings-env.ts'
 import {
   claudeHomeFromEnvironment,
@@ -58,6 +62,88 @@ type SettingsPresentation = {
 }
 
 type SettingsTargetKind = { kind: 'user' } | { kind: 'project'; name: string }
+
+export async function settingsAutoModeCommand(
+  flags: SettingsFlags,
+  operation: SettingsAutoModeOperation,
+): Promise<{
+  revision: string
+  counts: Record<AutoModeList, number>
+  changed: boolean
+  message?: string
+}> {
+  const target = resolveSettingsTarget(flags)
+  if (target.kind === 'project') projectRoot(target.name, process.cwd())
+  const owner = target.kind === 'user' ? await signedInDocOwner() : null
+  const { expectedRevision, list, rule } = settingsAutoModeInput(flags)
+  const row = settingsRow(target, owner)
+  if (!row) {
+    throw new Error(
+      `refusing settings auto-mode ${operation}: no settings row for ${targetLabel(target)}`,
+    )
+  }
+  const revision = decideDocRevisionWrite({
+    expected: expectedRevision,
+    current: row.revision ?? null,
+    isCreate: false,
+    scope: SETTINGS_SCOPE,
+  })
+  if (!revision.allow) throw new Error(revision.reason)
+  const edit = editSettingsAutoMode(parseStoredOwnedSettings(row.body), { list, rule, operation })
+  if (!edit.changed) {
+    return {
+      revision: row.revision!,
+      counts: autoModeCounts(edit.settings),
+      changed: false,
+      message: edit.message,
+    }
+  }
+  const body = serializeOwnedSettings(edit.settings)
+  const refusal = refuseSettingsBody(SETTINGS_SCOPE, body)
+  if (refusal) throw new Error(refusal)
+  const written = await setDoc({
+    scope: SETTINGS_SCOPE,
+    subject: target.kind === 'project' ? target.name : null,
+    owner,
+    slug: SETTINGS_SLUG,
+    title: SETTINGS_SLUG,
+    body,
+    delivery: 'demand',
+    reason: flags.flag('reason')?.trim() || 'updated auto-mode rule',
+    expectedRevision,
+  })
+  return {
+    revision: written.revision!,
+    counts: autoModeCounts(parseStoredOwnedSettings(written.body)),
+    changed: true,
+  }
+}
+
+function settingsAutoModeInput(flags: SettingsFlags): {
+  expectedRevision: string
+  list: AutoModeList
+  rule: string
+} {
+  const expectedRevision = flags.flag('expect')
+  if (!expectedRevision) throw new Error('refusing settings auto-mode: --expect is required')
+  const list = flags.flag('list')
+  if (!AUTO_MODE_LISTS.includes(list as AutoModeList)) {
+    throw new Error(`refusing settings auto-mode: --list must be ${AUTO_MODE_LISTS.join(', ')}`)
+  }
+  const rule = flags.flag('rule')?.trim()
+  if (!rule) throw new Error('refusing settings auto-mode: --rule is required')
+  return { expectedRevision, list: list as AutoModeList, rule }
+}
+
+function autoModeCounts(owned: OwnedSettings): Record<AutoModeList, number> {
+  const lists = autoModeLists(owned.autoMode)
+  return {
+    allow: lists.allow.length,
+    soft_deny: lists.soft_deny.length,
+    hard_deny: lists.hard_deny.length,
+    environment: lists.environment.length,
+  }
+}
 
 export async function settingsPermissionCommand(
   flags: SettingsFlags,
@@ -291,6 +377,17 @@ function redactedDrift(drift: SettingsDrift, file: OwnedSettings, store: OwnedSe
         },
       ]),
     ),
+    autoMode: Object.fromEntries(
+      AUTO_MODE_LISTS.map((name) => [
+        name,
+        {
+          added: drift.autoMode[name].added.map((rule) => displayAutoModeRule(name, rule, file)),
+          removed: drift.autoMode[name].removed.map((rule) =>
+            displayAutoModeRule(name, rule, store),
+          ),
+        },
+      ]),
+    ),
     hooks: {
       added: drift.hooks.added.map(({ event, matcher, fingerprint, path }) => ({
         event: displayHookDrift({ event, matcher, fingerprint, path }, file).includes(
@@ -439,6 +536,7 @@ function logDrift(
       listed++
     }
   }
+  listed += logAutoModeDrift(drift, file, store, log)
   for (const hook of drift.hooks.added) {
     log(`  added hook ${displayHookDrift(hook, file)}`)
     listed++
@@ -458,9 +556,38 @@ function logDrift(
   if (listed === 0) log('  owned settings structure differs')
 }
 
+function logAutoModeDrift(
+  drift: SettingsDrift,
+  file: OwnedSettings,
+  store: OwnedSettings,
+  log: (...values: unknown[]) => void,
+): number {
+  let listed = 0
+  for (const name of AUTO_MODE_LISTS) {
+    for (const rule of drift.autoMode[name].added) {
+      log(`  added autoMode.${name} ${displayAutoModeRule(name, rule, file)}`)
+      listed++
+    }
+    for (const rule of drift.autoMode[name].removed) {
+      log(`  removed autoMode.${name} ${displayAutoModeRule(name, rule, store)}`)
+      listed++
+    }
+  }
+  return listed
+}
+
 function displayRule(list: (typeof PERMISSION_LISTS)[number], rule: string, owned: OwnedSettings) {
   const index = permissionLists(owned.permissions)[list].indexOf(rule)
   return displaySettingsValue(`permissions.${list}[${index}]`, rule)
+}
+
+function displayAutoModeRule(
+  list: (typeof AUTO_MODE_LISTS)[number],
+  rule: string,
+  owned: OwnedSettings,
+) {
+  const index = autoModeLists(owned.autoMode)[list].indexOf(rule)
+  return displaySettingsValue(`autoMode.${list}[${index}]`, rule)
 }
 
 function printFindings(findings: Finding[], log: (...values: unknown[]) => void): void {

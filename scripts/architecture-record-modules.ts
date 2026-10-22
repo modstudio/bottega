@@ -537,9 +537,14 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-settings.ts',
   ]),
+  module('orchestrator/src/record/record-api-client-settings.ts', [
+    './record-api-client-paths.ts',
+    './record-settings.ts',
+  ]),
   module('orchestrator/src/record/record-settings.ts', [
     '../doc/doc-write-allowed.ts',
     '../settings/settings.ts',
+    '../settings/settings-auto-mode.ts',
     '../settings/settings-permission.ts',
     './record-docs.ts',
   ]),

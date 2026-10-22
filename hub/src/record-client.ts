@@ -410,6 +410,15 @@ const settingsPermissionResultSchema = z.object({
     deny: z.array(z.string()),
   }),
 })
+const settingsAutoModeResultSchema = z.object({
+  revision: z.string().uuid(),
+  autoMode: z.object({
+    allow: z.array(z.string()),
+    soft_deny: z.array(z.string()),
+    hard_deny: z.array(z.string()),
+    environment: z.array(z.string()),
+  }),
+})
 
 const boardRootSchema = BoardThreadResultSchema.shape.root
 const hostedBoardMessageSchema = boardRootSchema.omit({ text: true }).extend({
@@ -628,6 +637,37 @@ async function recordSubjects(
   return items
 }
 
+function recordSettingsClient(options: RecordClientOptions) {
+  return {
+    settingsPermission: (input: {
+      target: { kind: 'user' } | { kind: 'project'; project: string }
+      list: 'allow' | 'ask' | 'deny'
+      rule: string
+      operation: 'add' | 'remove'
+      reason: string
+      expectedRevision: string
+    }) =>
+      request(options, '/v1/settings/permission', settingsPermissionResultSchema, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    settingsAutoMode: (input: {
+      target: { kind: 'user' } | { kind: 'project'; project: string }
+      list: 'allow' | 'soft_deny' | 'hard_deny' | 'environment'
+      rule: string
+      operation: 'add' | 'remove'
+      reason: string
+      expectedRevision: string
+    }) =>
+      request(options, '/v1/settings/auto-mode', settingsAutoModeResultSchema, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+  }
+}
+
 export function createRecordClient(options: RecordClientOptions) {
   return {
     publicDocs: () => publicRequest(options, '/public/v1/docs', publicDocsSchema),
@@ -822,19 +862,7 @@ export function createRecordClient(options: RecordClientOptions) {
           body: JSON.stringify({ ...input, environment: 'default' }),
         },
       ),
-    settingsPermission: (input: {
-      target: { kind: 'user' } | { kind: 'project'; project: string }
-      list: 'allow' | 'ask' | 'deny'
-      rule: string
-      operation: 'add' | 'remove'
-      reason: string
-      expectedRevision: string
-    }) =>
-      request(options, '/v1/settings/permission', settingsPermissionResultSchema, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(input),
-      }),
+    ...recordSettingsClient(options),
   }
 }
 

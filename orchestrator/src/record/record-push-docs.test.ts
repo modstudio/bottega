@@ -119,6 +119,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     applySettingsPermission: unused,
+    applySettingsAutoMode: unused,
     inviteMember: unused,
     putSnapshot: unused,
     listSnapshots: unused,

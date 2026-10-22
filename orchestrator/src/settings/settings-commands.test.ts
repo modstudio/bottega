@@ -15,6 +15,7 @@ import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import {
+  settingsAutoModeCommand,
   settingsImportCommand,
   settingsPermissionCommand,
   settingsRenderCheckCommand,
@@ -306,6 +307,7 @@ describe('settings render --check', () => {
           allow: [`Bash(${PLATFORM_SLUG} run result *)`, `Bash(${PLATFORM_SLUG} run diff *)`],
         },
         hooks: {},
+        autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
       }),
       reason: 'seed store',
     })
@@ -319,6 +321,8 @@ describe('settings render --check', () => {
     )
     const text = shown.logs.join('\n')
     expect(text).toContain(`removed allow Bash(${PLATFORM_SLUG} run diff *)`)
+    expect(text).toContain('removed autoMode.allow $defaults')
+    expect(text).toContain('removed autoMode.allow Bash(docker compose *)')
     expect(text).toContain('added hook PreToolUse')
     expect(text).not.toContain('"matcher"')
     expect(shown.code()).toBe(1)
@@ -655,6 +659,23 @@ describe('settings permission', () => {
     )
     expect(added).toMatchObject({ changed: true, counts: { allow: 2, ask: 0, deny: 0 } })
     expect(added.revision).not.toBe(seeded.revision)
+  })
+})
+
+describe('settings auto-mode', () => {
+  test('refuses an unknown list name at the command edge', async () => {
+    fixtureProject('auto-mode-list')
+    await expect(
+      settingsAutoModeCommand(
+        presentation().flags({
+          project: 'auto-mode-list',
+          list: 'unknown',
+          rule: 'Bash(docker compose *)',
+          expect: 'revision-1',
+        }),
+        'add',
+      ),
+    ).rejects.toThrow('--list must be allow, soft_deny, hard_deny, environment')
   })
 })
 
