@@ -23,7 +23,6 @@ export const cliModules = [
   {
     file: 'cli/dispatch.ts',
     allowed: [
-      'node:path',
       'shared/brand.ts',
       'shared/commander-public-path.ts',
       'shared/self-spawn.ts',
