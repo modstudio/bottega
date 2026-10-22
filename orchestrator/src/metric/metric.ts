@@ -7,7 +7,7 @@ import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
-import { projectAt, projects } from '../project/projects.ts'
+import { isProjectRepository, type Project, projects } from '../project/projects.ts'
 
 // A one-day collection over 34 current transcripts took 33m 7s on the
 // production state. Two hours leaves substantial room for the normal 30-day
@@ -25,6 +25,7 @@ type MetricCollectionOptions = {
   transcripts?: MetricTranscriptSource[]
   activity?: Map<string, DayActivity>
   gitRunner?: typeof Bun.spawnSync
+  projectResolver?: (cwd: string) => Pick<Project, 'canon' | 'name'> | null
 }
 
 class MetricCollectionDeadline {
@@ -139,15 +140,10 @@ const targetGitEnvironment = (repo: string) =>
  * somebody else's projects are theirs to declare rather than something to fork
  * this file over.
  *
- * Read per call rather than cached at module load: `bottega project add` can
- * change the answer inside a long-lived process, and a cached list would keep
- * reporting a newly-registered project's spend as untracked.
+ * Read once per collection rather than cached at module load: `bottega project
+ * add` can change the answer inside a long-lived process, while every usage
+ * record in one pass must see the same project snapshot.
  */
-const canonRepos = (): string[] =>
-  projects()
-    .filter((p) => p.canon)
-    .map((p) => p.name)
-
 function keyPattern(prefixes: string[] | undefined): RegExp | null {
   if (!prefixes?.length) return null
   const alternatives = prefixes.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
@@ -206,11 +202,16 @@ function configuredTranscripts(root: string): string[] {
  * about what it touched, and one session moved between two projects inside a
  * single file.
  */
-function repoOfCwd(cwd: string | undefined, cloneRoot: string): string | null {
+function repoOfCwd(
+  cwd: string | undefined,
+  cloneRoot: string,
+  projectResolver: (cwd: string) => Pick<Project, 'canon' | 'name'> | null,
+  canonRepos: Set<string>,
+): string | null {
   if (!cwd) return null
   // The register first: it knows where each project actually is, including
   // ones that live nowhere near a common root.
-  const p = projectAt(cwd)
+  const p = projectResolver(cwd)
   if (p) return p.canon ? p.name : null
 
   // Then the numbered-clone fallback, which is the case the register cannot
@@ -223,15 +224,41 @@ function repoOfCwd(cwd: string | undefined, cloneRoot: string): string | null {
     .slice(cloneRoot.length + 1)
     .split('/')[0]!
     .replace(/-\d+$/, '')
-  return canonRepos().includes(seg) ? seg : null
+  return canonRepos.has(seg) ? seg : null
+}
+
+function projectResolverForCollection(registered: Project[]) {
+  const repositories = registered.filter(isProjectRepository)
+  return (cwd: string): Project | null => {
+    let best: Project | null = null
+    for (const project of repositories) {
+      if (cwd === project.path || cwd.startsWith(`${project.path}/`)) {
+        if (!best || project.path.length > best.path.length) best = project
+      }
+    }
+    return best
+  }
 }
 
 async function claudeTokensByDay(
   since: string,
   sources: MetricTranscriptSource[],
   deadline: MetricCollectionDeadline,
+  injectedProjectResolver?: (cwd: string) => Pick<Project, 'canon' | 'name'> | null,
 ) {
   const cloneRoot = readMachineValue('projects.clone_root')
+  const registered = projects()
+  const projectResolver = injectedProjectResolver ?? projectResolverForCollection(registered)
+  const canonRepos = new Set(
+    registered.filter((project) => project.canon).map((project) => project.name),
+  )
+  const cwdRepos = new Map<string, string | null>()
+  const resolveCwd = (cwd: string | undefined): string | null => {
+    if (!cwd) return null
+    if (!cwdRepos.has(cwd))
+      cwdRepos.set(cwd, repoOfCwd(cwd, cloneRoot, projectResolver, canonRepos))
+    return cwdRepos.get(cwd) ?? null
+  }
   const days = new Map<
     string,
     {
@@ -278,7 +305,7 @@ async function claudeTokensByDay(
       // numerator inflates the ratio against a denominator it never touched.
       // This project is the case in point: a day building the orchestrator
       // spends heavily and commits nothing the denominator can see.
-      if (repoOfCwd(d.cwd, cloneRoot)) row.canon += spend
+      if (resolveCwd(d.cwd)) row.canon += spend
       else row.other += spend
       row.messages += 1
       days.set(day, row)
@@ -394,7 +421,7 @@ export async function collect(windowDays = 30, options: MetricCollectionOptions 
     const start = metricDayStart(windowDays, Date.now())
     const since = metricCalendarDay(start)
     const sources = options.transcripts ?? transcriptSources()
-    const tok = await claudeTokensByDay(since, sources, deadline)
+    const tok = await claudeTokensByDay(since, sources, deadline, options.projectResolver)
     deadline.checkpoint()
     const act =
       options.activity ??

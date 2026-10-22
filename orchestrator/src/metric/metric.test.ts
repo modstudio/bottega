@@ -83,6 +83,40 @@ describe('metric collection transcript lifecycle', () => {
     })
   })
 
+  test('resolves each distinct cwd once per collection', async () => {
+    const now = new Date()
+    const cwds = ['/fixtures/first', '/fixtures/second', '/fixtures/first']
+    const lines = Array.from({ length: 30 }, (_, index) =>
+      JSON.stringify({
+        timestamp: now.toISOString(),
+        cwd: cwds[index % cwds.length],
+        message: { usage: { cache_read_input_tokens: 1, input_tokens: 1 } },
+      }),
+    )
+    const transcript: MetricTranscriptSource = {
+      file: '/fixtures/repeated-cwds.jsonl',
+      modifiedAt: now,
+      open: () => Readable.from([`${lines.join('\n')}\n`]),
+    }
+    const resolved: string[] = []
+    const projectResolver = (cwd: string) => {
+      resolved.push(cwd)
+      return cwd === '/fixtures/first' ? { canon: true, name: 'first' } : null
+    }
+
+    await collect(30, {
+      deadlineMs: 1_000,
+      transcripts: [transcript],
+      activity: new Map(),
+      projectResolver,
+    })
+
+    expect(resolved).toEqual(['/fixtures/first', '/fixtures/second'])
+    expect(
+      db().query('SELECT claude_tokens, canon_tokens, other_tokens FROM metric').get(),
+    ).toEqual({ claude_tokens: 60, canon_tokens: 40, other_tokens: 20 })
+  })
+
   test('git history that outlives the deadline writes no rows', async () => {
     const now = new Date()
     const file = '/fixtures/read-before-git-history.jsonl'
