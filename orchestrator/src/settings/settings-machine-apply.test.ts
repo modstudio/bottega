@@ -14,7 +14,11 @@ import { db } from '../database/db.ts'
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'
-import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
+import {
+  applyMachineSettings,
+  decideMachineSettingsWriteAuthority,
+  printMachineSettingsApplyResults,
+} from './settings-machine-apply.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
@@ -104,6 +108,27 @@ function writeCurrentSettings() {
 }
 
 describe('settings apply', () => {
+  test('write authority allows the main checkout and temporary homes only', () => {
+    expect(
+      decideMachineSettingsWriteAuthority({
+        runningFromRegisteredMainCheckout: true,
+        targetHomesUnderTemporaryDirectory: false,
+      }),
+    ).toEqual({ action: 'allow' })
+    expect(
+      decideMachineSettingsWriteAuthority({
+        runningFromRegisteredMainCheckout: false,
+        targetHomesUnderTemporaryDirectory: true,
+      }),
+    ).toEqual({ action: 'allow' })
+    expect(
+      decideMachineSettingsWriteAuthority({
+        runningFromRegisteredMainCheckout: false,
+        targetHomesUnderTemporaryDirectory: false,
+      }),
+    ).toEqual({ action: 'refuse-linked-worktree' })
+  })
+
   test('--check reports current and changed targets without writing', async () => {
     writeCurrentSettings()
     const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
@@ -338,6 +363,29 @@ describe('settings apply', () => {
         },
       ),
     ).rejects.toThrow('refusing settings apply from an orchestrator worker run')
+    expect(pulls).toBe(0)
+  })
+
+  test('a linked-worktree binary refuses real harness homes before pulling or opening writable state', async () => {
+    await expect(
+      applyMachineSettings(
+        { check: false },
+        {
+          environment: {
+            HOME: '/operator',
+            CODEX_HOME: '/operator/.codex',
+            ORCH_MAIN_CHECKOUT: '/projects/main',
+          },
+          workerProcess: () => false,
+          runningFromRegisteredMainCheckout: false,
+          pull: async () => {
+            pulls++
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
+    )
     expect(pulls).toBe(0)
   })
 

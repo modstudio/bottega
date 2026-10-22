@@ -21,7 +21,7 @@ import {
   userCanonHomePlanDrift,
   userCanonHomesFromEnvironment,
 } from '../canon/user-canon-home-files.ts'
-import { db } from '../database/db.ts'
+import { DATABASE_RESOLUTION, db, linkedWorktreeMigrationAllowed } from '../database/db.ts'
 import { getDoc, listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { pullRecordCache } from '../record/record-cache.ts'
@@ -47,6 +47,19 @@ export type MachineSettingsApplyResult = {
   superseded?: SupersededProfileHook[]
 }
 
+export type MachineSettingsWriteAuthorityDecision =
+  | { action: 'allow' }
+  | { action: 'refuse-linked-worktree' }
+
+export function decideMachineSettingsWriteAuthority(facts: {
+  runningFromRegisteredMainCheckout: boolean
+  targetHomesUnderTemporaryDirectory: boolean
+}): MachineSettingsWriteAuthorityDecision {
+  return facts.runningFromRegisteredMainCheckout || facts.targetHomesUnderTemporaryDirectory
+    ? { action: 'allow' }
+    : { action: 'refuse-linked-worktree' }
+}
+
 type Dependencies = {
   environment: NodeJS.ProcessEnv
   pull(): Promise<unknown>
@@ -56,6 +69,7 @@ type Dependencies = {
   runsDirectory: string
   applySettings: typeof applySettingsWrite
   applyCanon: typeof applyUserCanonHomePlans
+  runningFromRegisteredMainCheckout: boolean
 }
 
 function dependencies(overrides: Partial<Dependencies>): Dependencies {
@@ -69,6 +83,7 @@ function dependencies(overrides: Partial<Dependencies>): Dependencies {
     runsDirectory: resolveRunsDirectory(process.env),
     applySettings: applySettingsWrite,
     applyCanon: applyUserCanonHomePlans,
+    runningFromRegisteredMainCheckout: !DATABASE_RESOLUTION.linkedWorktreeBinary,
     ...overrides,
   }
 }
@@ -160,6 +175,29 @@ function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | 
   return `unmatched drop(s): ${drops.map(({ list, rule }) => `${list} ${rule}`).join(', ')}`
 }
 
+function assertMachineSettingsWriteAuthority(
+  environment: NodeJS.ProcessEnv,
+  runningFromRegisteredMainCheckout: boolean,
+): void {
+  const runsDirectory = resolveRunsDirectory(environment)
+  const targetHomes = [
+    claudeHomeFromEnvironment(environment),
+    ...userCanonHomesFromEnvironment(environment, runsDirectory).map((home) => home.path),
+  ]
+  const decision = decideMachineSettingsWriteAuthority({
+    runningFromRegisteredMainCheckout,
+    targetHomesUnderTemporaryDirectory: targetHomes.every(linkedWorktreeMigrationAllowed),
+  })
+  if (decision.action === 'allow') return
+  const runningRoot = assetPath()
+  const mainCheckout = environment.ORCH_MAIN_CHECKOUT ?? 'MAIN_CHECKOUT'
+  throw new Error(
+    `refusing settings apply from linked worktree ${runningRoot}: real harness homes may only be written by the registered main checkout\n` +
+      'invariant: A linked-worktree binary writes harness settings only under the OS temporary directory.\n' +
+      `cleared by: run \`${join(mainCheckout, 'bin', PLATFORM_SLUG)} machine settings apply\``,
+  )
+}
+
 function applyUserCanon(
   owner: string,
   check: boolean,
@@ -249,6 +287,12 @@ export async function applyMachineSettings(
   if (workerProcess()) {
     throw new Error(
       `refusing settings apply from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings apply`,
+    )
+  }
+  if (!input.check) {
+    assertMachineSettingsWriteAuthority(
+      overrides.environment ?? process.env,
+      overrides.runningFromRegisteredMainCheckout ?? !DATABASE_RESOLUTION.linkedWorktreeBinary,
     )
   }
   const deps = dependencies({ ...overrides, workerProcess })

@@ -509,11 +509,9 @@ class SettingsApplyNotice(unittest.TestCase):
         self.assertIn("move the key first", notice)
         self.assertIn("canon batch refused", notice)
 
-    def test_still_running_names_the_detached_log(self):
-        self.assertEqual(
-            session_brief._settings_apply_notice(None, "/state/orchestrator/settings-apply.log"),
-            "settings apply still running; its result lands in "
-            "/state/orchestrator/settings-apply.log",
+    def test_still_running_adds_no_notice(self):
+        self.assertIsNone(
+            session_brief._settings_apply_notice(None, "/state/orchestrator/settings-apply.log")
         )
 
     def test_detached_completion_uses_logged_result(self):
