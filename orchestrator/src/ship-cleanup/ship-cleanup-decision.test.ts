@@ -17,6 +17,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   mintedBranch: 'DEV-1392-c3',
   launchKey: 'DEV-1392',
   judged: true,
+  failureKind: null,
   worktree: '/trees/1',
   ...overrides,
 })

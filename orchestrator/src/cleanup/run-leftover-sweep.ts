@@ -25,6 +25,7 @@ import {
   type RunLeftoverKeepReason,
   type RunLeftoverKind,
 } from './run-leftover-decision.ts'
+import type { UnjudgedRunRemedy } from './unjudged-run-remedy.ts'
 
 type RunRow = {
   record_id: string
@@ -33,6 +34,7 @@ type RunRow = {
   status: string
   project_record_id: string | null
   judged: number
+  failure_kind: string | null
 }
 
 type Measurement = {
@@ -103,7 +105,7 @@ export type KeptRunLeftover = {
   detail?: string
   bytes: number
   complete: boolean
-  remedy?: 'score'
+  remedy?: UnjudgedRunRemedy
 }
 
 type KeptGroup = readonly KeptRunLeftover[]
@@ -131,9 +133,14 @@ function keptGroupLines(
   items: KeptGroup,
   verbose: boolean,
 ): string[] {
-  const remedy = items.some((item) => item.remedy === 'score')
-    ? [`  ${PLATFORM_SLUG} score pending lists every unjudged run`]
-    : []
+  const remedy = [
+    ...(items.some((item) => item.remedy === 'score')
+      ? [`  ${PLATFORM_SLUG} score pending lists every unjudged run`]
+      : []),
+    ...(items.some((item) => item.remedy === 'void')
+      ? [`  ${PLATFORM_SLUG} score <n> none --void --note "<why>" clears each not-evidence run`]
+      : []),
+  ]
   if (verbose)
     return [
       ...items.map(
@@ -143,7 +150,7 @@ function keptGroupLines(
     ]
   const bytes = items.reduce((total, item) => total + item.bytes, 0)
   const qualifier = items.every((item) => item.complete) ? '' : 'at least '
-  const usesRunNumbers = items.every((item) => item.remedy === 'score' && item.runNumber !== null)
+  const usesRunNumbers = items.every((item) => item.remedy !== undefined && item.runNumber !== null)
   const examples = items
     .slice(0, RUN_LEFTOVER_REPORT_EXAMPLES)
     .map((item) => (usesRunNumbers ? String(item.runNumber) : item.path))
@@ -280,7 +287,7 @@ function applyCandidate(
 function rowsForSweep(database: Database, projectRecordId: string | null): RunRow[] {
   return database
     .query(
-      `SELECT r.record_id,r.number,r.parent_run_record_id,r.status,r.project_record_id,
+      `SELECT r.record_id,r.number,r.parent_run_record_id,r.status,r.project_record_id,r.failure_kind,
               ${EVIDENCE_CLOSED_SQL} AS judged
          FROM run r ${chainScoreJoin('r', 's')}
         WHERE ? IS NULL OR r.project_record_id=?
@@ -335,6 +342,7 @@ function sweepRecordedLeftovers(
       runStatus: row.status,
       finishedAt: terminationByRoot.get(rootId) ?? null,
       judged: Boolean(row.judged) || (input.evidenceClosedRootIds?.has(rootId) ?? false),
+      failureKind: row.failure_kind,
       newestEntryAt: null,
       clock,
     }
@@ -372,6 +380,7 @@ function sweepRecordedLeftovers(
           runStatus: row.status,
           finishedAt: facts.finishedAt,
           judged: facts.judged,
+          failureKind: row.failure_kind,
           newestEntryAt: null,
           clock,
         }),
@@ -411,6 +420,7 @@ function sweepOrphans(
       runStatus: null,
       finishedAt: null,
       judged: false,
+      failureKind: null,
       newestEntryAt: measurement.complete ? measurement.newestEntryAt : null,
       clock,
     })

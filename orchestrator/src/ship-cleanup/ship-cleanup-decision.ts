@@ -20,6 +20,7 @@ export type ShipCleanupRunFact = {
   mintedBranch: string | null
   launchKey: string | null
   judged: boolean
+  failureKind: string | null
   worktree: string | null
 }
 

@@ -24,6 +24,7 @@ import {
   type RemovedTreeDockerCleanup,
   reclaimRemovedTreeDockerResources,
 } from '../cleanup/cleanup-sweep-docker.ts'
+import { decideUnjudgedRunRemedy } from '../cleanup/unjudged-run-remedy.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
 import { type HookTreeRemovalResult, removeHookTreeResult } from '../hook-tree/tree.ts'
@@ -55,6 +56,7 @@ type RunRow = {
   minted_branch: string | null
   launch_key: string | null
   evidence_excluded: string | null
+  failure_kind: string | null
   worktree: string | null
 }
 
@@ -125,7 +127,7 @@ const dependencies: ShipCleanupDependencies = {
 function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFact[] {
   const rows = database
     .query(
-      `SELECT record_id,number,parent_run_record_id,started_at,job,status,branch,minted_branch,launch_key,evidence_excluded,worktree
+      `SELECT record_id,number,parent_run_record_id,started_at,job,status,branch,minted_branch,launch_key,evidence_excluded,failure_kind,worktree
          FROM run WHERE project_record_id=? ORDER BY number`,
     )
     .all(projectRecordId) as RunRow[]
@@ -157,6 +159,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       mintedBranch: row.minted_branch,
       launchKey: row.launch_key,
       judged: scored.has(rootId) || excludedRoots.has(rootId),
+      failureKind: row.failure_kind,
       worktree: row.worktree,
     }
   })
@@ -219,7 +222,12 @@ function reportKeptRuns(
       reason: decision.reason,
       reasonKind: decision.worktreeAction === 'keep' ? 'live-run' : 'unjudged-run',
       ...(!decision.judged && decision.worktreeAction === 'close'
-        ? { remedy: `${PLATFORM_SLUG} score ${decision.number}` }
+        ? {
+            remedy:
+              decideUnjudgedRunRemedy(decision.failureKind) === 'void'
+                ? `${PLATFORM_SLUG} score ${decision.number} none --void --note "<why>"`
+                : `${PLATFORM_SLUG} score ${decision.number}`,
+          }
         : {}),
     })
   }

@@ -139,6 +139,36 @@ describe('scheduled run leftover sweep adapter', () => {
     expect(existsSync(artifacts)).toBeTrue()
   })
 
+  test('keeps old unevidenced artifacts with the void remedy', () => {
+    const root = runsRoot()
+    const runId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'unevidenced',
+      startedAt: old.toISOString(),
+    })
+    db().query('UPDATE run SET latency_ms=? WHERE record_id=?').run(1_000, runId)
+    const artifacts = runArtifactsDir(runId, root)
+    directory(artifacts)
+    const lines: string[] = []
+
+    sweepRunLeftovers({
+      dryRun: false,
+      projectRecordId: null,
+      presentation: presentation(lines),
+      clock,
+      runsDir: root,
+      remove: removeCandidate,
+    })
+
+    expect(existsSync(artifacts)).toBeTrue()
+    expect(lines.join('\n')).toContain(
+      `${PLATFORM_SLUG} score <n> none --void --note "<why>" clears each not-evidence run`,
+    )
+    expect(lines.join('\n')).not.toContain(`${PLATFORM_SLUG} score pending`)
+  })
+
   test('summarizes many measured candidates under one reason with five examples', () => {
     const kept = Array.from({ length: RUN_LEFTOVER_REPORT_EXAMPLES + 2 }, (_, index) => ({
       path: `/runs/${index + 1}/artifacts`,

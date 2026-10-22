@@ -124,7 +124,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/cleanup/run-leftover-sweep.ts',
-    ['c65c784b31da452a'],
+    ['efbd66bd353bcfe4'],
     'run leftover query composes the shared evidence closure and chain-score join fragments',
   ),
   ...exempt(
