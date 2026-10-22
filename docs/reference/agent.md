@@ -5,6 +5,7 @@
 agents, jobs, and routing
 
 - [bottega agent](#bottega-agent)
+- [bottega agent add](#bottega-agent-add)
 - [bottega agent context](#bottega-agent-context)
 - [bottega agent contract](#bottega-agent-contract)
 - [bottega agent guide](#bottega-agent-guide)
@@ -13,7 +14,9 @@ agents, jobs, and routing
 - [bottega agent metric](#bottega-agent-metric)
 - [bottega agent pick](#bottega-agent-pick)
 - [bottega agent probe](#bottega-agent-probe)
+- [bottega agent remove](#bottega-agent-remove)
 - [bottega agent routing-backtest](#bottega-agent-routing-backtest)
+- [bottega agent set](#bottega-agent-set)
 - [bottega agent show](#bottega-agent-show)
 - [bottega agent stats](#bottega-agent-stats)
 
@@ -25,6 +28,7 @@ agents, jobs, and routing
 
 ### Related
 
+- [bottega agent add](./agent.md#bottega-agent-add)
 - [bottega agent context](./agent.md#bottega-agent-context)
 - [bottega agent contract](./agent.md#bottega-agent-contract)
 - [bottega agent guide](./agent.md#bottega-agent-guide)
@@ -33,9 +37,25 @@ agents, jobs, and routing
 - [bottega agent metric](./agent.md#bottega-agent-metric)
 - [bottega agent pick](./agent.md#bottega-agent-pick)
 - [bottega agent probe](./agent.md#bottega-agent-probe)
+- [bottega agent remove](./agent.md#bottega-agent-remove)
 - [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
+- [bottega agent set](./agent.md#bottega-agent-set)
 - [bottega agent show](./agent.md#bottega-agent-show)
 - [bottega agent stats](./agent.md#bottega-agent-stats)
+
+## bottega agent add
+
+**Synopsis:** `bottega agent add [args...]`
+
+inspect and change agent registrations
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega agent](./agent.md#bottega-agent)
 
 ## bottega agent context
 
@@ -149,6 +169,20 @@ clear a vendor-quota exclusion once the agent answers
 
 - [bottega agent](./agent.md#bottega-agent)
 
+## bottega agent remove
+
+**Synopsis:** `bottega agent remove [args...]`
+
+inspect and change agent registrations
+
+### Options
+
+Options are documented by `--help`.
+
+### Related
+
+- [bottega agent](./agent.md#bottega-agent)
+
 ## bottega agent routing-backtest
 
 **Synopsis:** `bottega agent routing-backtest [--job <value>] [--seed <value>] [--json]`
@@ -160,6 +194,20 @@ replay historical routing decisions
 - `--job <value>`: replay decisions for this job
 - `--seed <value>`: reproduce the replay with this random seed
 - `--json`: write the replay as JSON
+
+### Related
+
+- [bottega agent](./agent.md#bottega-agent)
+
+## bottega agent set
+
+**Synopsis:** `bottega agent set [args...]`
+
+inspect and change agent registrations
+
+### Options
+
+Options are documented by `--help`.
 
 ### Related
 

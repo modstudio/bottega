@@ -53,6 +53,14 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
   ])
 })
 
+test('agent command refuses verbs outside its declared dispatch list', async () => {
+  await expect(
+    agentCommand(['agent', 'rename', 'example'], { log: () => {}, setExitCode: () => {} }),
+  ).rejects.toThrow(
+    'unknown agent command "rename"; valid commands: add, set, remove, probe, show, list',
+  )
+})
+
 test('agent add persists job, concurrency, and metered-routing flags', async () => {
   const output: string[] = []
   try {

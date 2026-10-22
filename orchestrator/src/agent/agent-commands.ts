@@ -24,6 +24,13 @@ import {
 } from './model-host.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
+export const AGENT_COMMAND_VERBS = ['add', 'set', 'remove', 'probe', 'show', 'list'] as const
+type AgentCommandVerb = (typeof AGENT_COMMAND_VERBS)[number]
+
+function isAgentCommandVerb(value: string | undefined): value is AgentCommandVerb {
+  return AGENT_COMMAND_VERBS.some((verb) => verb === value)
+}
+
 const parseJobs = (value: string | undefined) =>
   value === undefined
     ? undefined
@@ -74,6 +81,11 @@ function mutation(argv: string[]): AgentMutation {
 export async function agentCommand(argv: string[], presentation: Presentation): Promise<void> {
   const sub = argv[1],
     name = argv[2]
+  if (!isAgentCommandVerb(sub)) {
+    throw new Error(
+      `unknown agent command "${sub ?? ''}"; valid commands: ${AGENT_COMMAND_VERBS.join(', ')}`,
+    )
+  }
   if (sub === 'add') return addCommand(name!, argv, presentation)
   if (sub === 'set') {
     presentation.log(JSON.stringify(setAgent(name!, mutation(argv))))

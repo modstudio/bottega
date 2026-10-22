@@ -66,7 +66,8 @@ function commandAt(program: Command, path: readonly string[]): Command | null {
     const next = command.commands.find(
       (candidate) => candidate.name() === name || candidate.aliases().includes(name),
     )
-    if (!next) return null
+    if (!next)
+      return command.registeredArguments.some((argument) => argument.variadic) ? command : null
     command = next
   }
   return command

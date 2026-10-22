@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { Command } from 'commander'
 import { createHubProgram, program as hubProgram, run as runHub } from '../hub/src/cli-program.ts'
+import { AGENT_COMMAND_VERBS } from '../orchestrator/src/agent/agent-commands.ts'
 import { program as orchProgram, run as runOrchestrator } from '../orchestrator/src/cli/program.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
@@ -10,7 +11,7 @@ function commandExists(program: Command, path: readonly string[]): boolean {
   let current = program
   for (const name of path) {
     const next = current.commands.find((candidate) => candidate.name() === name)
-    if (!next) return false
+    if (!next) return current.registeredArguments.some((argument) => argument.variadic)
     current = next
   }
   return true
@@ -49,10 +50,20 @@ test('wrapper help prints public orchestrator, hub, and translated usage paths',
     ['workflow', 'attach', '--help'],
     ['task', 'new', '--help'],
     ['run', 'start', '--help'],
+    ['agent', 'add', '--help'],
+    ['agent', 'set', '--help'],
+    ['agent', 'remove', '--help'],
   ]) {
     lines.length = 0
     expect(await dispatchBinary(argv, entries, () => '')).toBe(0)
     expect(lines.join('')).toContain(`Usage: ${PLATFORM_SLUG} ${argv.slice(0, -1).join(' ')}`)
+    if (argv[0] === 'agent') {
+      const help = lines.join('')
+      for (const option of commandAt(orchProgram, ['agent']).options) {
+        if (option.long)
+          expect(help, `${argv.slice(0, -1).join(' ')} ${option.long}`).toContain(option.long)
+      }
+    }
   }
 })
 
@@ -71,6 +82,87 @@ test('every route resolves to an existing owner command', () => {
         `${route.command.join(' ')} -> ${target.owner} ${target.argv.join(' ')}`,
       ).toBeTrue()
     }
+  }
+})
+
+test('every agent command verb has a public route to its owner entry', () => {
+  const ownerEntryByVerb = {
+    add: ['agent', 'add'],
+    set: ['agent', 'set'],
+    remove: ['agent', 'remove'],
+    probe: ['probe'],
+    show: ['agent', 'show'],
+    list: ['agents'],
+  } satisfies Record<(typeof AGENT_COMMAND_VERBS)[number], readonly string[]>
+
+  for (const verb of AGENT_COMMAND_VERBS) {
+    const resolved = resolveRoute(['agent', verb])
+    expect(resolved?.route.owner, verb).toBe('orch')
+    expect(resolved?.route.argv, verb).toEqual(ownerEntryByVerb[verb])
+  }
+})
+
+test('agent mutations keep their verb and pass remaining arguments to the agent entry', async () => {
+  const calls: string[][] = []
+  const orch = async (argv: string[]) => {
+    calls.push(argv)
+    return 0
+  }
+  const entries: BinaryEntries = {
+    orch,
+    hub: async () => 0,
+    orchOutbox: async () => [],
+    hubOutbox: async () => [],
+    hubOutboxSummaryLines: async () => [],
+    runExec: async () => 0,
+    askProxy: async () => 0,
+    retrievalSearch: async () => {},
+    checkAttribution: async () => 0,
+    schemaCheck: async () => 0,
+  }
+
+  for (const verb of ['add', 'set', 'remove'] as const) {
+    await dispatchBinary(
+      ['agent', verb, 'route-test', '--jobs', 'fix,review-lens'],
+      PLATFORM_SLUG,
+      entries,
+      () => '',
+    )
+  }
+
+  expect(calls).toEqual([
+    ['agent', 'add', 'route-test', '--jobs', 'fix,review-lens'],
+    ['agent', 'set', 'route-test', '--jobs', 'fix,review-lens'],
+    ['agent', 'remove', 'route-test', '--jobs', 'fix,review-lens'],
+  ])
+})
+
+test('agent show reaches agentCommand with show and the name', async () => {
+  const errors: string[] = []
+  const originalError = console.error
+  console.error = (value) => errors.push(String(value))
+  try {
+    const result = await dispatchBinary(
+      ['agent', 'show', 'route-show-test'],
+      PLATFORM_SLUG,
+      {
+        orch: runOrchestrator,
+        hub: async () => 0,
+        orchOutbox: async () => [],
+        hubOutbox: async () => [],
+        hubOutboxSummaryLines: async () => [],
+        runExec: async () => 0,
+        askProxy: async () => 0,
+        retrievalSearch: async () => {},
+        checkAttribution: async () => 0,
+        schemaCheck: async () => 0,
+      },
+      () => '',
+    )
+    expect(result).toBe(1)
+    expect(errors).toContain('unknown agent "route-show-test"')
+  } finally {
+    console.error = originalError
   }
 })
 

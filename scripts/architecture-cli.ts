@@ -41,6 +41,7 @@ export const cliModules = [
       'commander',
       'shared/brand.ts',
       'hub/src/cli-program.ts',
+      'orchestrator/src/agent/agent-commands.ts',
       'orchestrator/src/cli/program.ts',
       'cli/dispatch.ts',
       'cli/routes.ts',
@@ -85,7 +86,11 @@ export function cliRouteInspectionRule(
     from: { path: '^cli/routes[.]test[.]ts$' },
     to: {
       path: `^(${roots.filter((root) => root !== 'cli').join('|')})/`,
-      pathNot: [exactPath('hub/src/cli-program.ts'), exactPath('orchestrator/src/cli/program.ts')],
+      pathNot: [
+        exactPath('hub/src/cli-program.ts'),
+        exactPath('orchestrator/src/agent/agent-commands.ts'),
+        exactPath('orchestrator/src/cli/program.ts'),
+      ],
     },
   }
 }

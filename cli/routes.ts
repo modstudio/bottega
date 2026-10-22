@@ -170,7 +170,10 @@ export const ROUTES = (
       options: [{ flags: '--json', description: 'print entries as JSON' }],
     },
     route('record', 'orch', 'record'),
-    route('agent show', 'orch', 'agent'),
+    route('agent show', 'orch', 'agent show'),
+    route('agent add', 'orch', 'agent add'),
+    route('agent set', 'orch', 'agent set'),
+    route('agent remove', 'orch', 'agent remove'),
     route('agent list', 'orch', 'agents'),
     ...[
       'context',
