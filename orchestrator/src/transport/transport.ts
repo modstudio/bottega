@@ -398,6 +398,7 @@ export function transportPinIneligibility(
   agentName: string,
   registered: TransportAgent,
   transport: TransportName,
+  agentExplicit = false,
   mayAutoRouteNamedJob = false,
 ): string | null {
   if (transport === 'cli') {
@@ -406,7 +407,7 @@ export function transportPinIneligibility(
       : `agent ${agentName} uses ${registered.defaultTransport}, not pinned cli transport`
   }
   try {
-    assertAcpAllowed(jobName, agentName, registered, false, mayAutoRouteNamedJob)
+    assertAcpAllowed(jobName, agentName, registered, agentExplicit, mayAutoRouteNamedJob)
     return null
   } catch (error) {
     return String((error as Error).message ?? error)

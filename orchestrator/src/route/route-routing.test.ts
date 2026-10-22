@@ -113,6 +113,30 @@ test('a named non-opted-in ACP agent remains eligible for a review lens', () => 
   }
 })
 
+test('only a named ACP agent declared for fix is eligible for fix', () => {
+  const name = 'codex'
+  const original = db()
+    .query('SELECT jobs,transport,probed_at FROM agent WHERE name=?')
+    .get(name) as { jobs: string | null; transport: string; probed_at: string | null }
+  try {
+    db()
+      .query("UPDATE agent SET jobs=?,transport='acp',probed_at=? WHERE name=?")
+      .run(JSON.stringify(['fix']), new Date().toISOString(), name)
+    refreshAgents()
+
+    expect(pick('fix', name)).toEqual({ agent: name, reason: 'explicit --agent' })
+    expect(candidates('fix').find((candidate) => candidate.agent === name)).toMatchObject({
+      eligible: false,
+      why: expect.stringContaining('writing jobs require an agent named with --agent <name>'),
+    })
+  } finally {
+    db()
+      .query('UPDATE agent SET jobs=?,transport=?,probed_at=? WHERE name=?')
+      .run(original.jobs, original.transport, original.probed_at, name)
+    refreshAgents()
+  }
+})
+
 test('the registration probe gates inline and repository jobs', () => {
   const original = db()
     .query("SELECT caps, probed_at, probe_result FROM agent WHERE name = 'codex'")
