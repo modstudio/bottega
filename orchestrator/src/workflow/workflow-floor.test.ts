@@ -64,6 +64,7 @@ const passingExec: ValidatedEvidence = {
     checkoutBranch: 'DEV-977-work',
     headCommit: 'abc',
     cursorBranch: 'DEV-977-work',
+    output: '',
   },
 }
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
@@ -517,19 +518,7 @@ test('pull-request evidence rejects generic artifacts and unrelated successful c
     ).toBe('refuse')
 })
 
-test('pull-request evidence accepts pr-create or a link with the cursor head and base', () => {
-  expect(
-    decide({
-      floors: [pullRequestExit, pullRequestArtifact],
-      evidence: {
-        exec: {
-          ...passingExec.exec!,
-          command: `${PLATFORM_SLUG} pr create`,
-          argv: [PLATFORM_SLUG, 'pr', 'create'],
-        },
-      },
-    }).action,
-  ).toBe('allow')
+test('pull-request evidence accepts a link with the cursor head and base', () => {
   expect(
     decide({
       floors: [pullRequestExit, pullRequestArtifact],
@@ -578,6 +567,7 @@ test('pull-request evidence binds commands to the exact branch and links to the 
     checkoutBranch: 'other-branch',
     headCommit: 'shared-commit',
     cursorBranch: 'DEV-977-work',
+    output: '',
   }
   expect(decidePullRequestEvidence(exec)).toEqual({
     met: false,

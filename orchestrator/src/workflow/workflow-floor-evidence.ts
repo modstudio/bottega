@@ -23,9 +23,9 @@ import {
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   type Floor,
+  githubPullRequestUrlIn,
   isFloorKind,
   type OpenObligation,
-  githubPullRequestUrlIn,
   parseArtifactRef,
   pullRequestCreateArgv,
   type ValidatedEvidence,
@@ -856,9 +856,13 @@ function gatheredCommandEvidence(
   cursorId: number,
   d: Database,
   checkout: CheckoutResolution,
-): Pick<ValidatedEvidence, 'probe' | 'exec'> {
+  ports: FloorEvidencePorts,
+): Pick<ValidatedEvidence, 'probe' | 'exec' | 'pullRequest'> {
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
   const session = sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
+  const url = pullRequestCreateArgv(recordedArgv(row.command))
+    ? githubPullRequestUrlIn(row.output_tail)
+    : undefined
   return {
     exec: {
       id,
@@ -873,6 +877,7 @@ function gatheredCommandEvidence(
       cursorBranch: identity.branch,
       output: row.output_tail,
     },
+    ...(url ? { pullRequest: pullRequestEvidence(url, identity, d, ports) } : {}),
   }
 }
 
@@ -1003,12 +1008,9 @@ export function gatherValidatedEvidence(input: {
           input.cursorId,
           d,
           checkout,
+          ports,
         ),
       )
-      const execUrl = pullRequestCreateArgv(recordedArgv(row.command))
-        ? githubPullRequestUrlIn(row.output_tail)
-        : undefined
-      if (execUrl) gathered.pullRequest = pullRequestEvidence(execUrl, input.identity, d, ports)
     }
   }
   if (input.evidence.task?.trim())

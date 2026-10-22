@@ -608,9 +608,19 @@ test('exec evidence is branch-bound and carries its exit code', () => {
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'','2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(gather(d, { artifact: 'exec:3' }).exec).toMatchObject({
-    id: 3,
-    argv: [PLATFORM_SLUG, 'pr', 'create'],
+  expect(gather(d, { artifact: 'exec:3' })).toMatchObject({
+    exec: { id: 3, argv: [PLATFORM_SLUG, 'pr', 'create'], output: '' },
+  })
+  expect(gather(d, { artifact: 'exec:3' }).pullRequest).toBeUndefined()
+
+  const url = 'https://github.com/acme/app/pull/15'
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
+  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${url}`)
+  expect(gather(d, { artifact: 'exec:4' })).toMatchObject({
+    exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
+    pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
   })
 })
 
