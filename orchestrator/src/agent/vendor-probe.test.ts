@@ -11,7 +11,8 @@ import {
   type TransportHandle,
   type TransportResult,
 } from '../transport/transport.ts'
-import { probeVendor, vendorProbeSettlement } from './vendor-probe.ts'
+import { setAgent } from './agent-registry.ts'
+import { probeVendor } from './vendor-probe.ts'
 
 function excludeCodex() {
   addRun({
@@ -83,38 +84,6 @@ function installVendor(collected: TransportResult) {
   registerTransport('acp', () => transport)
 }
 
-describe('vendor probe settlement', () => {
-  test('a passing probe of an enabled agent reports eligibility', () => {
-    expect(vendorProbeSettlement('grok', { ok: true }, true, null)).toEqual({
-      ok: true,
-      kind: 'ok',
-      message: 'agent "grok" is eligible again',
-    })
-  })
-
-  test('a passing probe of a disabled agent names the disable and the re-enable verb', () => {
-    const reason = 'Not signed in on this machine (failover run 15922 failed auth, 2026-10-20)'
-    expect(vendorProbeSettlement('grok', { ok: true }, false, reason)).toEqual({
-      ok: true,
-      kind: 'ok',
-      message:
-        `probe passed; agent "grok" is still disabled (${reason}); ` +
-        `re-enable with ${PLATFORM_SLUG} agent show set grok --enabled true`,
-    })
-  })
-
-  test('a failed probe surfaces the vendor message', () => {
-    expect(
-      vendorProbeSettlement(
-        'grok',
-        { ok: false, kind: 'other', text: 'connection reset' },
-        true,
-        null,
-      ),
-    ).toEqual({ ok: false, kind: 'failed', message: 'connection reset' })
-  })
-})
-
 describe(`${PLATFORM_SLUG} agent probe`, () => {
   test('a successful probe clears the quota exclusion', async () => {
     excludeCodex()
@@ -170,5 +139,24 @@ describe(`${PLATFORM_SLUG} agent probe`, () => {
         )
         .get(),
     ).toEqual({ n: 0 })
+  })
+
+  test('a passing probe of a disabled agent names the disable and the re-enable verb', async () => {
+    const reason = 'Not signed in on this machine (failover run 15922 failed auth, 2026-10-20)'
+    setAgent('codex', { enabled: false, reason })
+    try {
+      installVendor(result({ status: 'ok', output: 'ok' }))
+      const probed = await probeVendor('codex')
+      expect(probed.ok).toBe(true)
+      expect(probed.kind).toBe('ok')
+      expect(probed.message).toContain('still disabled')
+      expect(probed.message).toContain(reason)
+      expect(probed.message).toContain(`${PLATFORM_SLUG} agent show set codex --enabled true`)
+      expect(
+        db().query("SELECT enabled, disabled_reason FROM agent WHERE name='codex'").get(),
+      ).toEqual({ enabled: 0, disabled_reason: reason })
+    } finally {
+      setAgent('codex', { enabled: true })
+    }
   })
 })

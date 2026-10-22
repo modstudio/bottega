@@ -32,7 +32,7 @@ type VendorProbeOutcome = { ok: true } | { ok: false; kind: FailureKind; text: s
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
 
-export function vendorProbeSettlement(
+function vendorProbeSettlement(
   name: string,
   outcome: VendorProbeOutcome,
   enabled: boolean,
@@ -208,8 +208,8 @@ export async function probeVendor(name: string): Promise<VendorProbeResult> {
       inserted.record_id,
       started,
       await collectProbe(name, agent, scratch),
-      Boolean(row.enabled),
-      row.disabled_reason,
+      agent.enabled !== false,
+      agent.disabledReason ?? null,
     )
   } catch (error) {
     return settleThrown(
@@ -217,8 +217,8 @@ export async function probeVendor(name: string): Promise<VendorProbeResult> {
       inserted.record_id,
       started,
       error,
-      Boolean(row.enabled),
-      row.disabled_reason,
+      agent.enabled !== false,
+      agent.disabledReason ?? null,
     )
   } finally {
     rmSync(scratch, { recursive: true, force: true })
