@@ -26,6 +26,8 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { githubRepository } from '../../../shared/github-repository.ts'
+import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import {
   gitToplevel,
   inspectCheckout,
@@ -66,17 +68,16 @@ import {
   type ProjectReferenceCounts,
   projectReferenceCounts,
 } from './project-reference-counts.ts'
-import type {
-  MainStackConsumer,
-  ProjectSettings,
-  StoredProjectSettings,
-  WorktreeTool,
+import {
+  type MainStackConsumer,
+  type ProjectSettings,
+  type StoredProjectSettings,
+  type WorktreeTool,
 } from './project-settings.ts'
 import {
   assertForgeVisibility,
   type ForgeVisibilityLookup,
   githubForgeVisibilityLookup,
-  githubRepository,
 } from './project-visibility.ts'
 
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
@@ -661,7 +662,7 @@ function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
 }
 
 function visibilityProblems(visibility: ProjectSettings['visibility']): string[] {
-  return visibility === undefined || visibility === 'public' || visibility === 'private'
+  return visibility === undefined || repositoryVisibility(visibility)
     ? []
     : ['visibility must be public or private']
 }

@@ -54,13 +54,6 @@ test('training-data eligibility requires a declared public project even when nam
   })
   expect(
     trainingDataEligibility({
-      ...base,
-      project: 'private-repo',
-      visibility: 'private',
-    }),
-  ).toMatchObject({ eligible: false })
-  expect(
-    trainingDataEligibility({
       agent: 'private-provider',
       trainsOnInputs: false,
       project: 'private-repo',
@@ -281,6 +274,46 @@ test('non-training candidates do not read the project origin', () => {
   expect(reads).toBe(0)
 })
 
+test('a routing call reads a public project origin at most once for training candidates', () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'shared-training-public',
+    path: process.cwd(),
+    settings: { visibility: 'public', visibilityRepository: 'owner/public' },
+  })
+  const originals = db()
+    .query("SELECT name,trains_on_inputs FROM agent WHERE name IN ('codex','grok') ORDER BY name")
+    .all() as { name: string; trains_on_inputs: number }[]
+  let reads = 0
+  try {
+    db().query("UPDATE agent SET trains_on_inputs=1 WHERE name IN ('codex','grok')").run()
+    refreshAgents()
+    candidates(
+      'summarize',
+      0,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'shared-training-public',
+      () => {
+        reads += 1
+        return 'owner/public'
+      },
+    )
+    expect(reads).toBe(1)
+  } finally {
+    for (const original of originals) {
+      db()
+        .query('UPDATE agent SET trains_on_inputs=? WHERE name=?')
+        .run(original.trains_on_inputs, original.name)
+    }
+    refreshAgents()
+  }
+})
+
 test('automatic routing excludes metered billing without opt-in while a named agent may spend it', () => {
   const original = db().query("SELECT billing FROM agent WHERE name='codex'").get() as {
     billing: string
@@ -350,6 +383,30 @@ test('a named non-opted-in ACP agent remains eligible for a review lens', () => 
   }
 })
 
+test('only a named ACP agent declared for fix is eligible for fix', () => {
+  const name = 'codex'
+  const original = db()
+    .query('SELECT jobs,transport,probed_at FROM agent WHERE name=?')
+    .get(name) as { jobs: string | null; transport: string; probed_at: string | null }
+  try {
+    db()
+      .query("UPDATE agent SET jobs=?,transport='acp',probed_at=? WHERE name=?")
+      .run(JSON.stringify(['fix']), new Date().toISOString(), name)
+    refreshAgents()
+
+    expect(pick('fix', name)).toEqual({ agent: name, reason: 'explicit --agent' })
+    expect(candidates('fix').find((candidate) => candidate.agent === name)).toMatchObject({
+      eligible: false,
+      why: expect.stringContaining('writing jobs require an agent named with --agent <name>'),
+    })
+  } finally {
+    db()
+      .query('UPDATE agent SET jobs=?,transport=?,probed_at=? WHERE name=?')
+      .run(original.jobs, original.transport, original.probed_at, name)
+    refreshAgents()
+  }
+})
+
 test('the registration probe gates inline and repository jobs', () => {
   const original = db()
     .query("SELECT caps, probed_at, probe_result FROM agent WHERE name = 'codex'")
@@ -372,17 +429,17 @@ test('the registration probe gates inline and repository jobs', () => {
     )
     expect(unprobedInline).toMatchObject({
       eligible: false,
-      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe codex`,
     })
     expect(unprobedRepository).toMatchObject({
       eligible: false,
-      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', undefined)
     expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
       eligible: false,
-      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', true)
@@ -424,7 +481,7 @@ test('rerunning a narrowed file-question probe clears the file-contract refusal'
       candidates('file-question').find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({
       eligible: false,
-      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     recordAgentProbe('codex', {
@@ -489,7 +546,7 @@ test('a no-agent refusal lists every exclusion in routing order with its remedy'
       .filter((candidate) => !candidate.eligible)
       .map((candidate) => `${candidate.agent}: ${candidate.why}`)
     expect(message).toBe(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
-    expect(message).toContain(`run ${PLATFORM_SLUG} agent show probe codex`)
+    expect(message).toContain(`run ${PLATFORM_SLUG} agent probe codex`)
     expect(message).toContain('disabled for routing refusal test')
   } finally {
     const restore = db().query(
@@ -857,7 +914,7 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
       score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
     for (let i = 0; i < 9; i++)
       score(addRun({ agent: 'grok', job: 'craft', stack: 'node' }), 'full', 'right')
-    expect(evidenceFor('craft', 0, 'php').level).toBe('job')
+    expect(evidenceFor('craft', 0, 'php', { project: undefined }).level).toBe('job')
   })
 
   test('two proven agents on a stack is a real comparison', () => {
@@ -865,7 +922,7 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
       score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
     for (let i = 0; i < 6; i++)
       score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'mixed')
-    const ev = evidenceFor('craft', 0, 'php')
+    const ev = evidenceFor('craft', 0, 'php', { project: undefined })
     expect(ev.level).toBe('stack')
     expect(ev.stack).toBe('php')
   })
@@ -878,16 +935,20 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
     // A disaster on a different stack must not touch the php verdict.
     for (let i = 0; i < 9; i++)
       addRun({ agent: 'codex', job: 'craft', stack: 'node', status: 'failed' })
-    const scoped = evidenceFor('craft', 0, 'php').cands.find((c) => c.agent === 'codex')!
+    const scoped = evidenceFor('craft', 0, 'php', { project: undefined }).cands.find(
+      (c) => c.agent === 'codex',
+    )!
     expect(scoped.evidence).toBe(6)
     expect(scoped.score).toBe(weigh('full', 'right'))
   })
 
   test('no stack at all behaves exactly as it always did', () => {
     for (let i = 0; i < 6; i++) score(addRun({ agent: 'codex', job: 'craft' }), 'full', 'right')
-    expect(evidenceFor('craft', 0, null).level).toBe('job')
+    expect(evidenceFor('craft', 0, null, { project: undefined }).level).toBe('job')
     expect(
-      evidenceFor('craft', 0, undefined).cands.find((c) => c.agent === 'codex')!.evidence,
+      evidenceFor('craft', 0, undefined, { project: undefined }).cands.find(
+        (c) => c.agent === 'codex',
+      )!.evidence,
     ).toBe(6)
   })
 })

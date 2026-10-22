@@ -56,6 +56,30 @@ type ArchitectGateTopLevel = (cwd: string) => string | null
 
 export type ArchitectGateRecord = { id: number; exitCode: number }
 
+/** Record a worker-style gate request; the broker remains the only executor. */
+export function requestGateExecution(runId: string): { id: number; requestedAt: string } {
+  const requestedAt = nowIso()
+  const inserted = db()
+    .query<{ id: number }, [string, string, string]>(
+      'INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?) RETURNING id',
+    )
+    .get(newRecordId(), runId, requestedAt)
+  if (!inserted) throw new Error('gate execution request was not inserted')
+  return { id: inserted.id, requestedAt }
+}
+
+/** Cancel one request only while it remains unfinished. */
+export function cancelPendingGateExecution(id: number, reason: string): boolean {
+  return (
+    db()
+      .query(
+        `UPDATE gate_execution SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=0,
+         cancelled_reason=? WHERE id=? AND finished_at IS NULL`,
+      )
+      .run(nowIso(), reason, id).changes === 1
+  )
+}
+
 export function architectGateProcessExitCode(recordedExitCode: number): number {
   return recordedExitCode >= 0 ? recordedExitCode : 1
 }

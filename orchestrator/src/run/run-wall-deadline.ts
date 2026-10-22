@@ -7,7 +7,6 @@ export type RunWallDeadlineFacts = {
   accruedGateMs: number
   gateStartedAtMs: number | null
   nowMs: number
-  ceilingMs: number
 }
 
 export type RunWallDeadlineDecision = { expireNow: true } | { expireNow: false; delayMs: number }
@@ -52,7 +51,7 @@ export function decideRunWallDeadline(facts: RunWallDeadlineFacts): RunWallDeadl
     facts.gateStartedAtMs,
     facts.nowMs,
   )
-  const deadlineMs = facts.armedAtMs + Math.min(facts.boundMs + excludedGateMs, facts.ceilingMs)
+  const deadlineMs = facts.armedAtMs + facts.boundMs + excludedGateMs
   const delayMs = deadlineMs - facts.nowMs
   return delayMs <= 0 ? { expireNow: true } : { expireNow: false, delayMs }
 }

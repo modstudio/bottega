@@ -2,9 +2,15 @@
 /** Measures change groups and reads their recorded review rows. */
 import type { Database } from 'bun:sqlite'
 import type { Project } from '../project/projects.ts'
+import {
+  type ApplicableReview,
+  applicableReviewForChange,
+  type ReviewPlan,
+} from './review-applicability.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { resolveReviewMergeBase } from './review-target.ts'
-import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
+import { diffNumstat } from './review-tier.ts'
+import type { ReviewTier } from './review-tier-classifier.ts'
 
 export type ChangeGroup = {
   project: string
@@ -59,6 +65,7 @@ export type MeasuredChangeGroup = {
   group: ChangeGroup
   base: string
   tier: ReviewTier
+  applicability: ApplicableReview
   message: string
 }
 
@@ -67,6 +74,7 @@ export type MeasuredReviewChange = {
   pathSet: string[]
   base: string
   tier: ReviewTier
+  applicability: ApplicableReview
   message: string
 }
 
@@ -77,18 +85,19 @@ type ChangeGroupOperations = {
     base: string,
     tip: string,
   ): { patchId: string; paths: string[]; message: string } | null
-  tier(
+  reviewPlan(
     cwd: string,
     base: string,
     tip: string,
-    risk: NonNullable<Project['settings']['review']>['risk'],
-  ): ReviewTier
+    review: Project['settings']['review'],
+  ): ReviewPlan
 }
 
 const changeGroupOperations: ChangeGroupOperations = {
   mergeBase: resolveReviewMergeBase,
   identity: measureChangeIdentity,
-  tier: (cwd, base, tip, risk) => classifyReviewTier({ files: diffNumstat(cwd, base, tip), risk }),
+  reviewPlan: (cwd, base, tip, review) =>
+    applicableReviewForChange(diffNumstat(cwd, base, tip), review),
 }
 
 export const serializePathSet = (paths: readonly string[]): string =>
@@ -125,11 +134,13 @@ export function measureReviewChange(
   if (!base) return null
   const identity = operations.identity(cwd, base, tip)
   if (!identity) return null
+  const plan = operations.reviewPlan(cwd, base, tip, project.settings.review)
   return {
     patchId: identity.patchId,
     pathSet: identity.paths,
     base,
-    tier: operations.tier(cwd, base, tip, project.settings.review?.risk),
+    tier: plan.tier,
+    applicability: plan.applicability,
     message: identity.message,
   }
 }
@@ -153,6 +164,7 @@ export function measureChangeGroup(
     },
     base: measured.base,
     tier: measured.tier,
+    applicability: measured.applicability,
     message: measured.message,
   }
 }

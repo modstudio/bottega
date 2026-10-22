@@ -106,6 +106,11 @@ describe('failure classification', () => {
 
   test('quota and auth are separated, because only one is fixed by waiting', () => {
     expect(classify('HTTP 429: rate limit exceeded')).toBe('quota')
+    expect(
+      classify(
+        '{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-day limit reached"}}',
+      ),
+    ).toBe('daily_quota')
     expect(classify('HTTP 402')).toBe('quota')
     expect(classify('balance exhausted')).toBe('quota')
     expect(classify('401 unauthorized')).toBe('auth')
@@ -197,6 +202,7 @@ describe('failure classification', () => {
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
       'capacity',
+      'daily_quota',
       'quota',
       'auth',
       'entitlement',
@@ -291,7 +297,7 @@ describe('failure classification', () => {
     // costs the whole recovery window.
     expect(NEEDS_HUMAN).toContain('unreachable')
     expect(COOLS_DOWN).not.toContain('unreachable')
-    expect(COOLS_DOWN).toEqual(['quota', 'auth', 'entitlement'])
+    expect(COOLS_DOWN).toEqual(['daily_quota', 'quota', 'auth', 'entitlement'])
   })
 
   test('a peer that reset stays a timeout — it answered before it stopped', () => {
@@ -411,29 +417,33 @@ describe('routing counts failures as evidence', () => {
     expect(c.why).toContain(`run '${PLATFORM_SLUG} agent probe codex' to clear it`)
   })
 
-  test('a recorded daily rate limit holds until the next UTC day; a minute limit does not', () => {
-    const dailyPayload =
-      '{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-day limit reached"}}'
+  test('daily quota cools only through its UTC day while minute quota uses the ordinary cooldown', () => {
     const run = addRun({
       agent: 'codex',
       job: 'craft',
       status: 'failed',
-      kind: 'quota',
-      startedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      kind: 'daily_quota',
     })
-    db().query('UPDATE run SET error=? WHERE record_id=?').run(dailyPayload, run)
+    db()
+      .query("UPDATE run SET started_at=datetime('now','start of day') WHERE record_id=?")
+      .run(run)
     const daily = candidates('craft').find((x) => x.agent === 'codex')!
-    expect(daily.cooling).toContain('quota')
+    expect(daily.cooling).toContain('daily_quota')
     expect(daily.why).toContain('next UTC day')
 
     db()
-      .query('UPDATE run SET error=?,started_at=? WHERE record_id=?')
-      .run(
-        '{"error":{"code":429,"message":"20 requests per minute"}}',
-        new Date(Date.now() - 61 * 60_000).toISOString(),
-        run,
-      )
+      .query("UPDATE run SET started_at=datetime('now','start of day','-1 day') WHERE record_id=?")
+      .run(run)
     expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+
+    db()
+      .query(
+        "UPDATE run SET failure_kind='quota',started_at=datetime('now','-61 minutes') WHERE record_id=?",
+      )
+      .run(run)
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+    db().query("UPDATE run SET started_at=datetime('now','-5 minutes') WHERE record_id=?").run(run)
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toContain('quota')
   })
 
   test('a later-id success finishing before quota failures does not mask them', () => {

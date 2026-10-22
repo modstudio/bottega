@@ -203,7 +203,7 @@ export async function addProject(
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
-  assertRegisterVisibility(candidate)
+  verifyAndRecordVisibility(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
   const recordId =
     decision.kind === 'adopt' ? decision.recordId : await writeHostedProject(candidate)
@@ -477,10 +477,13 @@ function writesVisibility(settingsJson: string | undefined): boolean {
   }
 }
 
-function verifyWrittenVisibility(settingsJson: string | undefined, candidate: Project): void {
-  if (!writesVisibility(settingsJson)) return
+function verifyAndRecordVisibility(candidate: Project): void {
   const repository = assertRegisterVisibility(candidate)
   if (repository) candidate.settings.visibilityRepository = repository
+}
+
+function verifyWrittenVisibility(settingsJson: string | undefined, candidate: Project): void {
+  if (writesVisibility(settingsJson)) verifyAndRecordVisibility(candidate)
 }
 
 async function persistSetProject(

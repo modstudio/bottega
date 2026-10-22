@@ -85,7 +85,7 @@ export type LiveCheckpoint = {
   rootId: string
   worktree: string
   branch: string
-  taskKey: string
+  taskKey: string | null
   scratchDir: string
   guardEnvironment: NodeJS.ProcessEnv
   containment: CheckpointContainment

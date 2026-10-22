@@ -31,13 +31,7 @@ export function dashboardServeCommand(command: string): boolean {
     ) {
       return true
     }
-    return (
-      (word === 'hub' ||
-        word.endsWith('/bin/hub') ||
-        word === 'hub/src/cli.ts' ||
-        word.endsWith('/hub/src/cli.ts')) &&
-      next === 'serve'
-    )
+    return (word === 'hub/src/cli.ts' || word.endsWith('/hub/src/cli.ts')) && next === 'serve'
   })
 }
 

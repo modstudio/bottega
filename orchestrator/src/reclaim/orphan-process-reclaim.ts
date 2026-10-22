@@ -52,9 +52,7 @@ export function orphanProcessReverification(
 
 const platformProcess = (command: string) => {
   const words = command.toLowerCase().split(/[/\s]+/)
-  return (
-    words.includes(PLATFORM_SLUG) || words.includes('orch') || /orchestrator\/src\//.test(command)
-  )
+  return words.includes(PLATFORM_SLUG) || /orchestrator\/src\//.test(command)
 }
 
 export function automaticOrphanReclaimDecision(

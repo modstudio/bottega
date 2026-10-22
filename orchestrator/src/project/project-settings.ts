@@ -2,6 +2,7 @@
 /** Owns the project settings shape. Must not know stores, SQL, or HTTP. */
 
 import type { TrackerSettings } from '../../../shared/trackers.ts'
+import type { RepositoryVisibility } from '../../../shared/repository-visibility.ts'
 import type { MechanicalCheckEntry } from '../enforcement/mechanical-check-declaration.ts'
 import type { FocusedTestRunner } from '../focused-test/focused-test-decision.ts'
 import type { Recipe } from '../recipe/recipe.ts'
@@ -18,7 +19,6 @@ import type {
 } from './project-injection.ts'
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
-export type RepositoryVisibility = 'public' | 'private'
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {

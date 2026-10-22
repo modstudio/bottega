@@ -2,12 +2,10 @@
 /** Verifies a stored repository-visibility declaration against its forge. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-
-export { githubRepository } from '../../../shared/github-repository.ts'
-
-import type { RepositoryVisibility } from './project-settings.ts'
-
-export type { RepositoryVisibility } from './project-settings.ts'
+import {
+  repositoryVisibility,
+  type RepositoryVisibility,
+} from '../../../shared/repository-visibility.ts'
 
 export type ForgeVisibilityLookup = (repository: string) => {
   exitCode: number
@@ -38,12 +36,13 @@ export function githubForgeVisibilityLookup(
   }
 }
 
-/** Canonical owner/name for HTTPS, SSH URL, and SCP-like GitHub repository addresses. */
+/** Parse the visibility value returned by GitHub's JSON response. */
 function forgeVisibility(value: string): RepositoryVisibility | null {
   try {
     const parsed = JSON.parse(value) as { visibility?: unknown }
-    const visibility = typeof parsed.visibility === 'string' ? parsed.visibility.toLowerCase() : ''
-    return visibility === 'public' || visibility === 'private' ? visibility : null
+    return repositoryVisibility(
+      typeof parsed.visibility === 'string' ? parsed.visibility.toLowerCase() : parsed.visibility,
+    )
   } catch {
     return null
   }

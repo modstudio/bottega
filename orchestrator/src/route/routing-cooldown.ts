@@ -7,7 +7,6 @@ import { COOLS_DOWN } from '../failure/failure.ts'
 export type CoolingFailure = {
   agent: string
   failure_kind: string
-  daily_limit: number
   mins_ago: number
 }
 
@@ -17,12 +16,12 @@ export function coolingFailures(d: Database, cooldownMinutes: number): Map<strin
   const rows = d
     .query(
       `WITH terminal AS (
-         SELECT record_id, agent, status, failure_kind, error,
+         SELECT record_id, agent, status, failure_kind,
                 julianday(started_at) + latency_ms / 86400000.0 AS finished_at
            FROM run
           WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
        ), cooling_failures AS (
-         SELECT record_id, agent, failure_kind, error, finished_at,
+         SELECT record_id, agent, failure_kind, finished_at,
                 ROW_NUMBER() OVER (
                   PARTITION BY agent ORDER BY finished_at DESC, record_id DESC
                 ) AS recency
@@ -30,21 +29,12 @@ export function coolingFailures(d: Database, cooldownMinutes: number): Map<strin
           WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
        )
        SELECT f.agent, f.failure_kind,
-              CASE WHEN f.failure_kind = 'quota' AND (
-                lower(COALESCE(f.error, '')) LIKE '%free-models-per-day%' OR
-                lower(COALESCE(f.error, '')) LIKE '%daily%limit%' OR
-                lower(COALESCE(f.error, '')) LIKE '%per day%limit%'
-              ) THEN 1 ELSE 0 END AS daily_limit,
               (julianday('now') - f.finished_at) * 1440 AS mins_ago
          FROM cooling_failures f
         WHERE f.recency = 1
           AND (
             (julianday('now') - f.finished_at) * 1440 < ? OR
-            (f.failure_kind = 'quota' AND date(f.finished_at) = date('now') AND (
-              lower(COALESCE(f.error, '')) LIKE '%free-models-per-day%' OR
-              lower(COALESCE(f.error, '')) LIKE '%daily%limit%' OR
-              lower(COALESCE(f.error, '')) LIKE '%per day%limit%'
-            ))
+            (f.failure_kind = 'daily_quota' AND date(f.finished_at) = date('now'))
           )
           AND NOT EXISTS (
                 SELECT 1 FROM terminal s
@@ -61,10 +51,15 @@ export function coolingRefusal(
   failure: CoolingFailure,
   cooldownMinutes: number,
 ): string {
-  const cooling = `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago`
-  const retry = failure.daily_limit ? 'after the next UTC day' : `after ${cooldownMinutes}m`
+  const cooling = coolingPhrase(failure)
+  const retry =
+    failure.failure_kind === 'daily_quota' ? 'after the next UTC day' : `after ${cooldownMinutes}m`
   return (
     `vendor ${cooling}; retry ${retry} ` +
     `or run '${PLATFORM_SLUG} agent probe ${agent}' to clear it`
   )
+}
+
+export function coolingPhrase(failure: Pick<CoolingFailure, 'failure_kind' | 'mins_ago'>): string {
+  return `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago`
 }

@@ -1,7 +1,11 @@
 // concern: record-project-columns
 /** Maps local project settings onto hosted project columns. Must not know SQL or HTTP. */
 
-import type { ProjectSettings, RepositoryVisibility } from '../project/project-settings.ts'
+import {
+  repositoryVisibility,
+  type RepositoryVisibility,
+} from '../../../shared/repository-visibility.ts'
+import type { ProjectSettings } from '../project/project-settings.ts'
 
 export const PROJECT_SETTINGS_NOT_IMPORTED = [
   { key: 'space', reason: "the imported row's space_id carries this value" },
@@ -101,7 +105,8 @@ function optionalString(value: unknown, location: string): string | null {
 
 function optionalVisibility(value: unknown, project: string): RepositoryVisibility | null {
   if (value === undefined || value === null) return null
-  if (value === 'public' || value === 'private') return value
+  const visibility = repositoryVisibility(value)
+  if (visibility) return visibility
   throw new Error(`project ${project} settings.visibility must be public or private`)
 }
 

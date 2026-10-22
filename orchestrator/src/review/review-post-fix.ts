@@ -11,12 +11,12 @@ import {
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { git, measureChangeIdentity, pinRef } from './review-pins.ts'
+import { diffNumstat } from './review-tier.ts'
 import {
-  diffNumstat,
   type ReviewTier,
   type ReviewTierFile,
   tierThreeRiskPaths,
-} from './review-tier.ts'
+} from './review-tier-classifier.ts'
 import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
 
 const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3

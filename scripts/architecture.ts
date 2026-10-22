@@ -110,8 +110,7 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
-    '../../../shared/github-repository.ts',
-    './project-settings.ts',
+    '../../../shared/repository-visibility.ts',
   ]),
   module('orchestrator/src/route/routing-cooldown.ts', [
     'bun:sqlite',

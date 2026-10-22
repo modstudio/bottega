@@ -282,7 +282,7 @@ describe('ACP transport selection', () => {
       'not pinned cli transport',
     )
     expect(
-      transportPinIneligibility('review-lens', acpAgent.name, acpAgent, 'acp', true),
+      transportPinIneligibility('review-lens', acpAgent.name, acpAgent, 'acp', false, true),
     ).toBeNull()
   })
 
@@ -395,13 +395,26 @@ describe('ACP event fixtures normalize to orchestrator outcomes', () => {
   })
 
   test('provider-reported message costs sum without counting accumulated session cost', () => {
-    const result = normalizeAcpTurn(ACP_FIXTURE_GOOSE_PROVIDER_USAGE)
+    const result = normalizeAcpTurn(ACP_FIXTURE_GOOSE_PROVIDER_USAGE, 'metered')
     expect(result.tokens).toBe(1_200)
     expect(result.vendorUsage?.inputTokens).toBe(1_000)
     expect(result.vendorUsage?.outputTokens).toBe(200)
     expect(result.costUsd).toBeCloseTo(0.03)
     expect(result.vendorUsage?.estimatedCostUsd).toBeNull()
     expect(result.vendorUsage?.costSource).toBe('billed')
+  })
+
+  test('subscription ACP usage keeps tokens but records no provider cost', () => {
+    const result = normalizeAcpTurn(ACP_FIXTURE_GOOSE_PROVIDER_USAGE, 'subscription')
+    expect(result.tokens).toBe(1_200)
+    expect(result.costUsd).toBeNull()
+    expect(result.vendorUsage.estimatedCostUsd).toBeNull()
+    expect(result.vendorUsage.costSource).toBe('none')
+    expect(result.events.find((event) => event.kind === 'usage')).toEqual({
+      kind: 'usage',
+      tokens: 1_200,
+      costUsd: null,
+    })
   })
 
   test('an estimated message makes the run estimated rather than billed', () => {
@@ -554,10 +567,10 @@ describe('ACP event fixtures normalize to orchestrator outcomes', () => {
     expect(refused.error).toBe(stopErrorMessage('refusal'))
   })
 
-  test('a recorded Goose provider 429 is a quota failure, not quality evidence', () => {
+  test('a recorded Goose daily allowance 429 is a daily quota failure, not quality evidence', () => {
     const limited = normalizeAcpTurn(ACP_FIXTURE_RATE_LIMIT)
     expect(limited.status).toBe('failed')
-    expect(limited.failureKind).toBe('quota')
+    expect(limited.failureKind).toBe('daily_quota')
   })
 
   test('partial text does not rescue a non-end_turn stop', () => {

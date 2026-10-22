@@ -4,6 +4,7 @@ import { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
+import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import {
   type HostedProjectColumns,
   hostedProjectColumns,
@@ -184,8 +185,7 @@ export async function listRecordProjects(
         FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
     return rows.map((row: Record<string, unknown>) => {
       const columns: HostedProjectColumns = {
-        visibility:
-          row.visibility === 'public' || row.visibility === 'private' ? row.visibility : null,
+        visibility: repositoryVisibility(row.visibility),
         keyPrefixes: row.key_prefixes as string[],
         managedContext: row.managed_context === true,
         landingBranch: row.landing_branch == null ? null : String(row.landing_branch),

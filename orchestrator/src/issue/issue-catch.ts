@@ -6,8 +6,15 @@ export type CatchFixTree = { path: string; branch: string }
 export function catchFixTreeDisposition(
   tree: CatchFixTree | null,
   dirty: boolean,
+  retainReason?: string,
 ): { action: 'hold' | 'release' | 'none'; handoff: string } {
   if (!tree) return { action: 'none', handoff: 'Fix worktree: none recorded.' }
+  if (retainReason) {
+    return {
+      action: 'hold',
+      handoff: `Worktree held at ${tree.path}: ${retainReason}.`,
+    }
+  }
   if (dirty) {
     return {
       action: 'hold',

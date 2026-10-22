@@ -210,7 +210,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-board-prompt.ts',
     './run-reply-source.ts',
     './run-resume-kind.ts',
-    './run-liveness.ts',
     './run-wall-deadline.ts',
     './run-worker-brokers.ts',
     '../sandbox/sandbox.ts',

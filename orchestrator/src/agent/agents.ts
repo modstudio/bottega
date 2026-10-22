@@ -6,6 +6,7 @@ import { codexAskServerCommand, codexScopeArgs } from '../sandbox/codex-mcp-scop
 import { codexLaunchUsesApproveForMe } from '../sandbox/codex-sandbox.ts'
 import { grokAskCommandFromConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
+import type { AgentBilling } from '../transport/vendor-usage.ts'
 import type { Caps } from './capabilities.ts'
 import { captureCliVersion, capturedCliVersion } from './cli-version.ts'
 
@@ -55,7 +56,7 @@ export type Agent = {
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
   /** What its usage costs. Metered requires a per-agent read-only routing opt-in. */
-  billing: 'subscription' | 'free' | 'metered' | 'none' | 'unknown'
+  billing: AgentBilling
   /** Who operates the agent endpoint. */
   operatedBy: 'vendor' | 'self'
   /**

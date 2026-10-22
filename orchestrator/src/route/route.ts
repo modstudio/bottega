@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RepositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import {
@@ -12,14 +13,13 @@ import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
-import type { RepositoryVisibility } from '../project/project-settings.ts'
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
-import { coolingFailures, coolingRefusal } from './routing-cooldown.ts'
+import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
 
 export type Candidate = {
   agent: string
@@ -78,7 +78,6 @@ const RUNNING_RUNS_SQL =
  */
 export const COOLDOWN_MIN = 60
 
-/** Provider wording observed when a rate-limit response exhausts the day's allowance. */
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 export const MIN_SAMPLE = 5
 
@@ -573,7 +572,7 @@ export function candidates(
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
-    const cooling = failure ? `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago` : null
+    const cooling = failure ? coolingPhrase(failure) : null
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel)
     const recent = aggregate(window.rows)
@@ -610,7 +609,7 @@ export function candidates(
       why = policy.why
     } else if (!a.probedAt) {
       eligible = false
-      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe ${name}`
+      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe ${name}`
     } else if (predatesFileContract(a)) {
       eligible = false
       why = fileContractProbeReason(name)
@@ -750,10 +749,12 @@ export function evidenceFor(
   jobName: string,
   promptBytes: number,
   stack: string | null | undefined,
-  modelOverride?: string,
-  lens?: string | null,
-  requiredMcp?: RequiredMcpServer,
-  projectName?: string | null,
+  options: {
+    modelOverride?: string
+    lens?: string | null
+    requiredMcp?: RequiredMcpServer
+    project: string | null | undefined
+  },
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'
@@ -762,6 +763,7 @@ export function evidenceFor(
   scoped: Candidate[] | null
   job: Candidate[]
 } {
+  const { lens, modelOverride, project: projectName, requiredMcp } = options
   const requested =
     lens?.trim() && job(jobName).findings
       ? { level: 'lens' as const, value: lens.trim() }
@@ -875,15 +877,12 @@ function evidenceForPick(
   avoid: PickAvoid,
   lens: string | undefined,
 ) {
-  return evidenceFor(
-    jobName,
-    promptBytes,
-    stack,
-    avoid.model,
+  return evidenceFor(jobName, promptBytes, stack, {
+    modelOverride: avoid.model,
     lens,
-    avoid.requiredMcp,
-    avoid.project,
-  )
+    requiredMcp: avoid.requiredMcp,
+    project: avoid.project,
+  })
 }
 
 function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
@@ -1292,6 +1291,7 @@ function routePolicyEligibility(
           agent.name,
           AGENTS[agent.name]!,
           agent.defaultTransport,
+          explicitlyNamedAgent === agent.name,
           metered.mayAutoRouteNamedJob,
         )
       : null
@@ -1308,6 +1308,7 @@ export function agentsIneligibleForTransport(jobName: string, transport: 'cli' |
           agent.name,
           agent,
           transport,
+          false,
           policy.mayAutoRouteNamedJob,
         ) !== null
       )
