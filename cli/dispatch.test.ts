@@ -80,40 +80,7 @@ test('record outbox trace reaches the hub owner with its public route', async ()
       () => '',
     ),
   ).toBe(0)
-  expect(calls).toEqual([
-    'outbox trace --row entry-1 | outbox -> record outbox',
-  ])
-})
-
-test('wrapper help prints public orchestrator, hub, and translated usage paths', async () => {
-  const lines: string[] = []
-  const dispatch = entries([])
-  dispatch.orch = async (argv, invocation) => {
-    const { program, run } = await import('../orchestrator/src/cli/program.ts')
-    program.configureOutput({
-      writeOut: (value) => lines.push(value),
-      writeErr: (value) => lines.push(value),
-    })
-    return run(argv, invocation)
-  }
-  dispatch.hub = async (argv, invocation) => {
-    const { createHubProgram, run } = await import('../hub/src/cli-program.ts')
-    const program = createHubProgram().configureOutput({
-      writeOut: (value) => lines.push(value),
-      writeErr: (value) => lines.push(value),
-    })
-    return run(program, argv, invocation)
-  }
-
-  for (const argv of [
-    ['workflow', 'attach', '--help'],
-    ['task', 'new', '--help'],
-    ['run', 'start', '--help'],
-  ]) {
-    lines.length = 0
-    expect(await dispatchBinary(argv, PLATFORM_SLUG, dispatch, () => '')).toBe(0)
-    expect(lines.join('')).toContain(`Usage: ${PLATFORM_SLUG} ${argv.slice(0, -1).join(' ')}`)
-  }
+  expect(calls).toEqual(['outbox trace --row entry-1 | outbox -> record outbox'])
 })
 
 test('record outbox refuses bare ids and hands every verb to the owning command', async () => {

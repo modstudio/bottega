@@ -11,6 +11,7 @@ import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { answerRun as answerRunService, retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
 import { answerInputFromArgv } from './run-message-commands.ts'
@@ -336,7 +337,7 @@ describe('run answers', () => {
       { status: 'failed', excluded: null },
       { status: 'stopped', excluded: null },
       { status: 'stale', excluded: null },
-      { status: 'asking', excluded: `voided with bottega score --void` },
+      { status: 'asking', excluded: VOID_EXCLUSION_REASON },
     ]) {
       const id = addRun({
         agent: 'missing-test-agent',

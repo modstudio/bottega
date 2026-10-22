@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
 import type { Command } from 'commander'
-import { program as hubProgram } from '../hub/src/cli-program.ts'
-import { program as orchProgram } from '../orchestrator/src/cli/program.ts'
+import { createHubProgram, program as hubProgram, run as runHub } from '../hub/src/cli-program.ts'
+import { program as orchProgram, run as runOrchestrator } from '../orchestrator/src/cli/program.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
 import { ROUTES, resolveRoute } from './routes.ts'
 
 function commandExists(program: Command, path: readonly string[]): boolean {
@@ -13,6 +15,46 @@ function commandExists(program: Command, path: readonly string[]): boolean {
   }
   return true
 }
+
+function captureCommandOutput(command: Command, lines: string[]): void {
+  command.configureOutput({
+    writeOut: (value) => lines.push(value),
+    writeErr: (value) => lines.push(value),
+  })
+  for (const child of command.commands) captureCommandOutput(child, lines)
+}
+
+test('wrapper help prints public orchestrator, hub, and translated usage paths', async () => {
+  const lines: string[] = []
+  const entries: BinaryEntries = {
+    orch: async (argv, invocation) => {
+      captureCommandOutput(orchProgram, lines)
+      return runOrchestrator(argv, invocation)
+    },
+    hub: async (argv, invocation) => {
+      const program = createHubProgram()
+      captureCommandOutput(program, lines)
+      return runHub(program, argv, invocation)
+    },
+    orchOutbox: async () => [],
+    hubOutbox: async () => [],
+    hubOutboxSummaryLines: async () => [],
+    runExec: async () => 0,
+    askProxy: async () => 0,
+    retrievalSearch: async () => {},
+    checkAttribution: async () => 0,
+    schemaCheck: async () => 0,
+  }
+  for (const argv of [
+    ['workflow', 'attach', '--help'],
+    ['task', 'new', '--help'],
+    ['run', 'start', '--help'],
+  ]) {
+    lines.length = 0
+    expect(await dispatchBinary(argv, PLATFORM_SLUG, entries, () => '')).toBe(0)
+    expect(lines.join('')).toContain(`Usage: ${PLATFORM_SLUG} ${argv.slice(0, -1).join(' ')}`)
+  }
+})
 
 test('every route resolves to an existing owner command', () => {
   for (const route of ROUTES) {

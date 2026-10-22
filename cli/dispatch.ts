@@ -17,7 +17,7 @@ export type BinaryEntries = {
   schemaCheck(argv: string[]): Promise<number>
 }
 
-export type OwnerInvocation = {
+type OwnerInvocation = {
   publicPath: readonly string[]
   ownerPath: readonly string[]
 }
@@ -64,7 +64,9 @@ async function dispatchOutbox(
   const id = match[2]!
   // The orchestrator reads its id with Number(), which turns `1e2` or `0x10` into another row.
   if (owner === 'orch' && !/^\d+$/.test(id)) {
-    console.error(`orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\``)
+    console.error(
+      `orchestrator outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\``,
+    )
     return 2
   }
   // Each owner's own command validates the verb, so its verb list has one definition.

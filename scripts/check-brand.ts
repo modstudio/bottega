@@ -55,6 +55,8 @@ const ALLOWED = new Set([
   'scripts/smoke-binary.ts',
   // The UI architecture manifest names workspace packages to enforce their boundaries.
   'scripts/architecture-ui-layers.ts',
+  // This Storybook fixture demonstrates the external command text and may import only its subject.
+  'hub/ui/src/form-layout/form-layout.stories.tsx',
   // Shell recipes invoke the front-door executable by its PATH name and cannot import the slug.
   'local-stack/bin/gx10-install.sh',
   'ops/bin/projects-morning-refresh.sh',

@@ -892,7 +892,7 @@ describe('record cache pull', () => {
         3,
         'ask',
         'ok',
-        `voided with bottega score --void`,
+        `voided with ${PLATFORM_SLUG} score --void`,
       )
     if (scored) {
       db()

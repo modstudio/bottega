@@ -1,7 +1,6 @@
 // concern: cli
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { type Command, CommanderError } from 'commander'
-import type { OwnerInvocation } from '../../cli/dispatch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { installationVersionText } from '../../shared/install-root.ts'
 import { HubCommand } from './cli-command.ts'
@@ -11,6 +10,11 @@ import { registerNoteCommands } from './note-cli.ts'
 import { registerOutboxCommands } from './outbox-cli.ts'
 import { registerReportCommands } from './report-cli.ts'
 import { registerTaskCommands } from './task-cli.ts'
+
+export type PublicCommandInvocation = {
+  publicPath: readonly string[]
+  ownerPath: readonly string[]
+}
 
 export function createHubProgram(): HubCommand {
   const command = new HubCommand()
@@ -56,7 +60,7 @@ function defaultCommandUsage(command: Command): string {
 function applyPublicCommandPath(
   root: Command,
   argv: readonly string[],
-  invocation?: OwnerInvocation,
+  invocation?: PublicCommandInvocation,
 ): void {
   if (!invocation) return
   let command = root
@@ -91,7 +95,7 @@ function literalHelp(argv: string[]): string[] {
 export async function run(
   command: Command,
   argv: string[],
-  invocation?: OwnerInvocation,
+  invocation?: PublicCommandInvocation,
 ): Promise<number> {
   if (argv.length === 1 && argv[0] === '--version') {
     console.log(installationVersionText(import.meta.dir, process.env))

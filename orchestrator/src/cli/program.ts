@@ -1,7 +1,6 @@
 // concern: cli
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { Command, CommanderError } from 'commander'
-import type { OwnerInvocation } from '../../../cli/dispatch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
@@ -33,6 +32,11 @@ import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
 import { recordSessionSeen } from '../database/db.ts'
 
+export type PublicCommandInvocation = {
+  publicPath: readonly string[]
+  ownerPath: readonly string[]
+}
+
 export const program = new Command()
   .name(PLATFORM_SLUG)
   .option('--version', 'identify this release or development checkout')
@@ -63,7 +67,10 @@ function defaultCommandUsage(command: Command): string {
   return `${names.join(' ')} ${command.usage()}`
 }
 
-function applyPublicCommandPath(argv: readonly string[], invocation?: OwnerInvocation): void {
+function applyPublicCommandPath(
+  argv: readonly string[],
+  invocation?: PublicCommandInvocation,
+): void {
   if (!invocation) return
   let command = program
   let consumed = 0
@@ -147,7 +154,7 @@ export function recordInvocationSession(argv: string[]): void {
   if (!isReadOnlyInvocation(argv)) recordSessionSeen()
 }
 
-export async function run(argv: string[], invocation?: OwnerInvocation): Promise<number> {
+export async function run(argv: string[], invocation?: PublicCommandInvocation): Promise<number> {
   setRawArgv(argv)
   applyPublicCommandPath(argv, invocation)
   try {

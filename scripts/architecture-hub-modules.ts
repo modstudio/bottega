@@ -159,6 +159,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/cli-program.ts',
     allowed: [
+      '../../shared/brand.ts',
       'commander',
       '../../shared/install-root.ts',
       './cli-command.ts',

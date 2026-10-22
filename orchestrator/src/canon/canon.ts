@@ -550,9 +550,7 @@ export function checkDoc(
           line,
           message: `line ${line}: \`${token}\` names no orchestrator subcommand`,
         })
-      const doJob = token.match(
-        new RegExp(`^${PLATFORM_SLUG} run start\\s+([a-z][\\w-]*)$`),
-      )
+      const doJob = token.match(new RegExp(`^${PLATFORM_SLUG} run start\\s+([a-z][\\w-]*)$`))
       if (doJob && !JOBS[doJob[1]!])
         findings.push({
           kind: 'job',

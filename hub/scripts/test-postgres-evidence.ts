@@ -346,7 +346,7 @@ try {
       why: 'This proves the hosted retry ledger.',
       waiting_since: '2026-09-25T08:00:00.000Z',
       link: 'http://127.0.0.1:7778/inbox/question/943001',
-      answer_command: 'bottega question answer 943 --q943001 --from-operator "Proceed"',
+      answer_command: `${PLATFORM_SLUG} question answer 943 --q943001 --from-operator "Proceed"`,
     }
     const waitingNow = new Date()
     const sent: string[] = []

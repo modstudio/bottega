@@ -1,5 +1,5 @@
 import { SQL } from 'bun'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
@@ -42,9 +42,9 @@ export function fakePostgres(
   principal: string = RECORD_ACTOR_ROLE,
   score?: FakeRecordScore,
   hostedExclusion: HostedExclusion = {
-    rowReason: 'voided with bottega score --void',
+    rowReason: `voided with ${PLATFORM_SLUG} score --void`,
     supersededAt: null,
-    runReason: 'voided with bottega score --void',
+    runReason: `voided with ${PLATFORM_SLUG} score --void`,
   },
   onRunWrite?: (ordinal: number) => void | Promise<void>,
   project: { id: string; name: string; spaceId?: string; retiredAt?: string | null } = {

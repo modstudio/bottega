@@ -34,8 +34,10 @@ export const cliModules = [
     file: 'cli/routes.test.ts',
     allowed: [
       'commander',
+      'shared/brand.ts',
       'hub/src/cli-program.ts',
       'orchestrator/src/cli/program.ts',
+      'cli/dispatch.ts',
       'cli/routes.ts',
     ],
   },

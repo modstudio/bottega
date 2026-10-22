@@ -225,7 +225,9 @@ async function runAskCase(): Promise<Row> {
         stderr: 'pipe',
       })
       if (answer.exitCode !== 0) {
-        throw new Error(`bottega question answer failed: ${answer.stderr.toString().trim()}`)
+        throw new Error(
+          `${PLATFORM_SLUG} question answer failed: ${answer.stderr.toString().trim()}`,
+        )
       }
       break
     }

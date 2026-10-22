@@ -284,7 +284,10 @@ test('the named-secret data form denies each record connection name and leaves o
   expect(reported.status).toBe('ok')
   if (reported.status !== 'ok') return
   expect(reported.namedSecret.recordConnection.access).toBe('denied')
-  expect(reported.namedSecret.other).toEqual({ access: 'open', reason: 'orchestrator has no denial' })
+  expect(reported.namedSecret.other).toEqual({
+    access: 'open',
+    reason: 'orchestrator has no denial',
+  })
   const names = [...RECORD_CONNECTION_ENV_NAMES].sort()
   expect(reported.namedSecret.recordConnection.reason).toBe(
     `${names.join(', ')}: ${RECORD_CONNECTION_WORKER_REFUSAL}`,
