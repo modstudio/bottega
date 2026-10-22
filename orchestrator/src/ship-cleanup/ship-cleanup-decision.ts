@@ -2,6 +2,7 @@
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
 import type { BranchStateDecision } from '../branch/branch-state.ts'
+import { decideUnjudgedRunRemedy, type UnjudgedRunRemedy } from '../cleanup/unjudged-run-remedy.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
 const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -13,6 +14,7 @@ export type ShipCleanupRunFact = {
   record_id: string
   number: number
   root_record_id: string
+  rootNumber: number
   startedAt: string
   job: string
   status: string
@@ -20,7 +22,7 @@ export type ShipCleanupRunFact = {
   mintedBranch: string | null
   launchKey: string | null
   judged: boolean
-  failureKind: string | null
+  rootFailureKind: string | null
   worktree: string | null
 }
 
@@ -91,6 +93,7 @@ export type ShipCleanupRunDecision = ShipCleanupRunFact & {
   artifacts: 'remove' | 'keep' | 'ignore'
   worktreeAction: 'close' | 'keep' | 'ignore'
   reason: string
+  remedy?: UnjudgedRunRemedy
 }
 
 function startedByLanding(startedAt: string, landingMergedAt: string): boolean {
@@ -167,6 +170,9 @@ export function decideShipCleanup(
         artifacts: 'keep',
         worktreeAction: 'close',
         reason: 'run has no recorded verdict',
+        ...(run.record_id === run.root_record_id
+          ? { remedy: decideUnjudgedRunRemedy(run.rootFailureKind) }
+          : {}),
       }
     }
     return {

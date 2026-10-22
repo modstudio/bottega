@@ -10,6 +10,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   record_id: '1',
   number: 1,
   root_record_id: '1',
+  rootNumber: 1,
   startedAt: '2026-10-18T00:00:00Z',
   job: 'implement',
   status: 'ok',
@@ -17,7 +18,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   mintedBranch: 'DEV-1392-c3',
   launchKey: 'DEV-1392',
   judged: true,
-  failureKind: null,
+  rootFailureKind: null,
   worktree: '/trees/1',
   ...overrides,
 })
@@ -58,6 +59,36 @@ describe('ship cleanup decision', () => {
       worktreeAction: 'close',
       reason: 'run has no recorded verdict',
     })
+  })
+
+  test.each([
+    ['unevidenced', 'void'],
+    ['other', 'score'],
+  ] as const)('names one root remedy for an unjudged %s chain', (failureKind, remedy) => {
+    const decisions = decide([
+      run({
+        record_id: 'root',
+        number: 41,
+        root_record_id: 'root',
+        rootNumber: 41,
+        judged: false,
+        rootFailureKind: failureKind,
+      }),
+      run({
+        record_id: 'turn',
+        number: 42,
+        root_record_id: 'root',
+        rootNumber: 41,
+        judged: false,
+        rootFailureKind: failureKind,
+      }),
+    ])
+
+    expect(
+      decisions.flatMap((decision) =>
+        decision.remedy ? [{ remedy: decision.remedy, rootNumber: decision.rootNumber }] : [],
+      ),
+    ).toEqual([{ remedy, rootNumber: 41 }])
   })
 
   test('skips a live run', () => {

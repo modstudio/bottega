@@ -121,10 +121,12 @@ describe('scheduled run leftover sweep adapter', () => {
 
     expect(existsSync(artifacts)).toBeTrue()
     const runNumber = (
-      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as { number: number }
+      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as {
+        number: number
+      }
     ).number
     expect(lines.join('\n')).toContain(`example runs: ${runNumber}`)
-    expect(lines.join('\n')).toContain(`${PLATFORM_SLUG} score pending lists every unjudged run`)
+    expect(lines.join('\n')).toContain(`${PLATFORM_SLUG} score ${runNumber}`)
 
     const dry = sweepRunLeftovers({
       dryRun: true,
@@ -163,10 +165,58 @@ describe('scheduled run leftover sweep adapter', () => {
     })
 
     expect(existsSync(artifacts)).toBeTrue()
+    const runNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as {
+        number: number
+      }
+    ).number
     expect(lines.join('\n')).toContain(
-      `${PLATFORM_SLUG} score <n> none --void --note "<why>" clears each not-evidence run`,
+      `${PLATFORM_SLUG} score ${runNumber} none --void --note "<why>"`,
     )
-    expect(lines.join('\n')).not.toContain(`${PLATFORM_SLUG} score pending`)
+  })
+
+  test.each([
+    ['unevidenced', 'none --void --note "<why>"'],
+    ['other', ''],
+  ] as const)('names one root remedy for an unjudged %s chain', (kind, suffix) => {
+    const runsDir = runsRoot()
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      kind,
+      startedAt: old.toISOString(),
+    })
+    const turn = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      kind: kind === 'unevidenced' ? 'other' : 'unevidenced',
+      parent: root,
+      turn: 2,
+      startedAt: old.toISOString(),
+    })
+    db().query('UPDATE run SET latency_ms=? WHERE record_id IN (?,?)').run(1_000, root, turn)
+    directory(runArtifactsDir(root, runsDir))
+    directory(runArtifactsDir(turn, runsDir))
+    const lines: string[] = []
+
+    sweepRunLeftovers({
+      dryRun: false,
+      projectRecordId: null,
+      presentation: presentation(lines),
+      clock,
+      runsDir,
+      remove: removeCandidate,
+    })
+
+    const rootNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(root) as {
+        number: number
+      }
+    ).number
+    const command = `${PLATFORM_SLUG} score ${rootNumber}${suffix ? ` ${suffix}` : ''}`
+    expect(lines.filter((line) => line.trim() === command)).toHaveLength(1)
   })
 
   test('summarizes many measured candidates under one reason with five examples', () => {
@@ -178,11 +228,18 @@ describe('scheduled run leftover sweep adapter', () => {
       bytes: 10,
       complete: true,
       remedy: 'score' as const,
+      remedyRunNumber: index + 1,
     }))
 
     expect(keptRunLeftoverLines(kept, false)).toEqual([
       'kept 7 run artifacts with no recorded verdict (70 bytes); example runs: 1, 2, 3, 4, 5; and 2 more',
-      `  ${PLATFORM_SLUG} score pending lists every unjudged run`,
+      `  ${PLATFORM_SLUG} score 1`,
+      `  ${PLATFORM_SLUG} score 2`,
+      `  ${PLATFORM_SLUG} score 3`,
+      `  ${PLATFORM_SLUG} score 4`,
+      `  ${PLATFORM_SLUG} score 5`,
+      `  ${PLATFORM_SLUG} score 6`,
+      `  ${PLATFORM_SLUG} score 7`,
     ])
   })
 

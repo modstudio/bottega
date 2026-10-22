@@ -54,7 +54,7 @@ export const cleanupBoundarySpecs = [
   {
     name: 'ship-cleanup-decision-boundary',
     file: 'orchestrator/src/ship-cleanup/ship-cleanup-decision.ts',
-    allowed: ['../run/synthetic-lifecycle-job.ts'],
+    allowed: ['../cleanup/unjudged-run-remedy.ts', '../run/synthetic-lifecycle-job.ts'],
     typeOnlyAllowed: ['../branch/branch-state.ts'],
     reason:
       'Keep ship cleanup selection pure and independent of filesystems, stores, commands, and processes.',
@@ -145,7 +145,7 @@ export const cleanupBoundarySpecs = [
   {
     name: 'unjudged-run-remedy-boundary',
     file: 'orchestrator/src/cleanup/unjudged-run-remedy.ts',
-    allowed: ['../failure/failure.ts'],
+    allowed: ['../../../shared/brand.ts', '../failure/failure.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep the remedy choice pure and shared by every cleanup hold on an unjudged run.',
   },

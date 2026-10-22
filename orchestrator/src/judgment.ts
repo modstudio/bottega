@@ -7,6 +7,7 @@ import { newRecordId } from '../../shared/record-id.ts'
 import { callerIdentityRefusal } from './caller-classification.ts'
 import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './database/db.ts'
 import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
+import { isNotEvidenceFailure } from './failure/failure.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { machineId } from './record/machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
@@ -133,7 +134,6 @@ function requireJudgeableRun(
   requestedId: string,
   row: JudgeableRun | null,
   flags: JudgmentFlags,
-  options: JudgeOptions,
 ): JudgeableRun {
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.record_id
@@ -142,10 +142,7 @@ function requireJudgeableRun(
   }
   if (row.agent === '(pending)')
     throw new Error(`run ${id} cannot be judged: no agent was selected`)
-  if (
-    row.failure_kind === 'unevidenced' ||
-    (row.failure_kind && options.notEvidence.includes(row.failure_kind))
-  ) {
+  if (isNotEvidenceFailure(row.failure_kind)) {
     throw new Error(
       `run ${id} cannot be judged: failure kind '${row.failure_kind}' is not evidence`,
     )
@@ -187,12 +184,9 @@ function refuseForeignScore(
   }
 }
 
-function voidCannotRecord(
-  failureKind: string | null,
-  notEvidence: readonly string[],
-): string | null {
+function voidCannotRecord(failureKind: string | null): string | null {
   if (failureKind === 'unevidenced') return `${failureKind} review`
-  if (failureKind && notEvidence.includes(failureKind)) {
+  if (isNotEvidenceFailure(failureKind)) {
     return `failure kind '${failureKind}' is not evidence`
   }
   return null
@@ -287,7 +281,7 @@ function recordEvidenceExclusion(
   const delivery = options.words[0] as Delivery | undefined
   const quality = options.words[1] as Quality | undefined
   const fidelity = options.words[2] as Fidelity | undefined
-  const cannotRecord = blocked ? null : voidCannotRecord(row.failure_kind, options.notEvidence)
+  const cannotRecord = blocked ? null : voidCannotRecord(row.failure_kind)
   const scoredFidelity =
     !cannotRecord && delivery ? scoredVoidFidelity(row.job, delivery, quality, fidelity) : undefined
   const excludedReason = blocked
@@ -522,7 +516,7 @@ export async function judgeRun(
     WHERE requested.record_id=?`,
     )
     .get(requestedId) as JudgeableRun | null
-  const row = requireJudgeableRun(requestedId, loaded, flags, options)
+  const row = requireJudgeableRun(requestedId, loaded, flags)
   const id = row.record_id
   assertAgentWorkRun(id, row.job, 'judged')
   const words = options.words
