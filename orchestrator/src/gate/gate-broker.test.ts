@@ -19,6 +19,7 @@ import {
   gateBrokerLaunchArgv,
   refreshGateBase,
   runGateAfterBaseRefresh,
+  setGateChildPriority,
   startGateBroker,
 } from './gate-broker.ts'
 
@@ -68,6 +69,16 @@ function git(root: string, ...args: string[]): string {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
   return result.stdout.toString().trim()
 }
+
+test("a broker gate child requests the architect's base niceness", () => {
+  const requests: Array<{ pid: number; priority: number }> = []
+
+  setGateChildPriority({ pid: 1234 }, undefined, (pid, priority) =>
+    requests.push({ pid, priority }),
+  )
+
+  expect(requests).toEqual([{ pid: 1234, priority: 0 }])
+})
 
 test('records machine-readable checks emitted by a worker gate against its execution', async () => {
   const root = mkdtempSync(join(dir, 'gate-broker-check-execution-'))
