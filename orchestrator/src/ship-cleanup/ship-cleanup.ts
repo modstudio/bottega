@@ -24,6 +24,7 @@ import {
   type RemovedTreeDockerCleanup,
   reclaimRemovedTreeDockerResources,
 } from '../cleanup/cleanup-sweep-docker.ts'
+import { renderUnjudgedRunRemedy } from '../cleanup/unjudged-run-remedy.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
 import { type HookTreeRemovalResult, removeHookTreeResult } from '../hook-tree/tree.ts'
@@ -47,6 +48,7 @@ import {
 type RunRow = {
   record_id: string
   number: number
+  root_number: number
   parent_run_record_id: string | null
   started_at: string
   job: string
@@ -55,6 +57,7 @@ type RunRow = {
   minted_branch: string | null
   launch_key: string | null
   evidence_excluded: string | null
+  root_failure_kind: string | null
   worktree: string | null
 }
 
@@ -125,8 +128,12 @@ const dependencies: ShipCleanupDependencies = {
 function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFact[] {
   const rows = database
     .query(
-      `SELECT record_id,number,parent_run_record_id,started_at,job,status,branch,minted_branch,launch_key,evidence_excluded,worktree
-         FROM run WHERE project_record_id=? ORDER BY number`,
+      `SELECT r.record_id,r.number,r.parent_run_record_id,r.started_at,r.job,r.status,r.branch,
+              r.minted_branch,r.launch_key,r.evidence_excluded,r.worktree,
+              root.number AS root_number,root.failure_kind AS root_failure_kind
+         FROM run r
+         JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
+        WHERE r.project_record_id=? ORDER BY r.number`,
     )
     .all(projectRecordId) as RunRow[]
   const scored = new Set(
@@ -150,6 +157,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       record_id: row.record_id,
       number: row.number,
       root_record_id: rootId,
+      rootNumber: row.root_number,
       startedAt: row.started_at,
       job: row.job,
       status: row.status,
@@ -157,6 +165,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       mintedBranch: row.minted_branch,
       launchKey: row.launch_key,
       judged: scored.has(rootId) || excludedRoots.has(rootId),
+      rootFailureKind: row.root_failure_kind,
       worktree: row.worktree,
     }
   })
@@ -218,8 +227,10 @@ function reportKeptRuns(
         (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
       reason: decision.reason,
       reasonKind: decision.worktreeAction === 'keep' ? 'live-run' : 'unjudged-run',
-      ...(!decision.judged && decision.worktreeAction === 'close'
-        ? { remedy: `${PLATFORM_SLUG} score ${decision.number}` }
+      ...(decision.remedy
+        ? {
+            remedy: renderUnjudgedRunRemedy(decision.remedy, decision.rootNumber),
+          }
         : {}),
     })
   }

@@ -1,6 +1,7 @@
 // concern: scheduled run-store leftover cleanup policy
 
 import { RUN_LEFTOVER_MAX_AGE_DAYS } from '../run/run-artifact-limits.ts'
+import { decideUnjudgedRunRemedy, type UnjudgedRunRemedy } from './unjudged-run-remedy.ts'
 
 const TERMINAL_RUN_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 const RUN_LEFTOVER_MAX_AGE_MS = RUN_LEFTOVER_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
@@ -12,6 +13,7 @@ export type RunLeftoverFacts = {
   runStatus: string | null
   finishedAt: number | null
   judged: boolean
+  failureKind: string | null
   newestEntryAt: number | null
   clock: number
 }
@@ -32,7 +34,7 @@ export type RunLeftoverDecision =
       reason: RunLeftoverKeepReason
       status?: string
       detail?: string
-      remedy?: 'score'
+      remedy?: UnjudgedRunRemedy
     }
 
 /** Decide one directory without knowing the filesystem, database, or clock source. */
@@ -49,6 +51,10 @@ export function decideRunLeftover(facts: RunLeftoverFacts): RunLeftoverDecision 
   if (facts.finishedAt === null) return { action: 'keep', reason: 'finish time unknown' }
   if (facts.finishedAt >= cutoff) return { action: 'keep', reason: 'recently finished' }
   if (facts.kind === 'artifacts' && !facts.judged)
-    return { action: 'keep', reason: 'no recorded verdict', remedy: 'score' }
+    return {
+      action: 'keep',
+      reason: 'no recorded verdict',
+      remedy: decideUnjudgedRunRemedy(facts.failureKind),
+    }
   return { action: 'remove', reason: 'terminal run is older than the run leftover age cap' }
 }
