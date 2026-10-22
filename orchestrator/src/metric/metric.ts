@@ -1,12 +1,18 @@
 import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { createInterface } from 'node:readline'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
+import {
+  METRIC_COLLECTION_DEADLINE_MS,
+  MetricCollectionDeadline,
+  type MetricCollectionOptions,
+  type MetricTranscriptSource,
+  readTranscriptLines,
+} from './metric-collection.ts'
 
 const targetGitEnvironment = (repo: string) =>
   (
@@ -119,9 +125,12 @@ function repoOfCwd(cwd: string | undefined, cloneRoot: string): string | null {
   return canonRepos().includes(seg) ? seg : null
 }
 
-async function claudeTokensByDay(since: string) {
+async function claudeTokensByDay(
+  since: string,
+  sources: MetricTranscriptSource[],
+  deadline: MetricCollectionDeadline,
+) {
   const cloneRoot = readMachineValue('projects.clone_root')
-  const transcriptRoot = readMachineValue('hub.transcript_root')
   const days = new Map<
     string,
     {
@@ -132,16 +141,12 @@ async function claudeTokensByDay(since: string) {
       other: number
     }
   >()
-  for (const file of configuredTranscripts(transcriptRoot)) {
+  for (const source of sources) {
+    const { file } = source
     // Skip files untouched since the window opened — the cheap 90% of the work.
-    try {
-      if (metricCalendarDay(statSync(file).mtime) < since) continue
-    } catch {
-      continue
-    }
-    const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
-    for await (const line of rl) {
-      if (!line.includes('"cache_read_input_tokens"')) continue
+    if (metricCalendarDay(source.modifiedAt) < since) continue
+    await readTranscriptLines(source, deadline, (line) => {
+      if (!line.includes('"cache_read_input_tokens"')) return
       let d: {
         timestamp?: string | number | Date
         cwd?: string
@@ -157,12 +162,12 @@ async function claudeTokensByDay(since: string) {
       try {
         d = JSON.parse(line)
       } catch {
-        continue
+        return
       }
       const day = d.timestamp ? metricCalendarDay(d.timestamp) : ''
-      if (!day || day < since) continue
+      if (!day || day < since) return
       const u = d.message?.usage
-      if (!u) continue
+      if (!u) return
       const row = days.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
       const cr = u.cache_read_input_tokens ?? 0
       row.cacheRead += cr
@@ -177,9 +182,22 @@ async function claudeTokensByDay(since: string) {
       else row.other += spend
       row.messages += 1
       days.set(day, row)
-    }
+    })
   }
   return days
+}
+
+function transcriptSources(): MetricTranscriptSource[] {
+  const transcriptRoot = readMachineValue('hub.transcript_root')
+  const sources: MetricTranscriptSource[] = []
+  for (const file of configuredTranscripts(transcriptRoot)) {
+    try {
+      sources.push({ file, modifiedAt: statSync(file).mtime, open: () => createReadStream(file) })
+    } catch {
+      continue
+    }
+  }
+  return sources
 }
 
 type DayActivity = {
@@ -254,14 +272,20 @@ function activityByDay(since: string) {
   return days
 }
 
-export async function collect(windowDays = 30) {
+export async function collect(windowDays = 30, options: MetricCollectionOptions<DayActivity> = {}) {
   writableDb()
-  const start = metricDayStart(windowDays, Date.now())
-  const since = metricCalendarDay(start)
-  const [tok, act] = [await claudeTokensByDay(since), activityByDay(start.toISOString())]
-  const d = db()
-  const stmt = d.query(
-    `INSERT INTO metric (record_id, day, claude_tokens, cache_read, messages, tasks,
+  const deadline = new MetricCollectionDeadline(options.deadlineMs ?? METRIC_COLLECTION_DEADLINE_MS)
+  try {
+    const start = metricDayStart(windowDays, Date.now())
+    const since = metricCalendarDay(start)
+    const sources = options.transcripts ?? transcriptSources()
+    const tok = await claudeTokensByDay(since, sources, deadline)
+    deadline.checkpoint()
+    const act = options.activity ?? activityByDay(start.toISOString())
+    deadline.checkpoint()
+    const d = db()
+    const stmt = d.query(
+      `INSERT INTO metric (record_id, day, claude_tokens, cache_read, messages, tasks,
                          canon_tokens, other_tokens, commits, files,
                          lines_product, lines_test, lines_docs, lines_config, lines_generated,
                          collected_at)
@@ -293,31 +317,39 @@ export async function collect(windowDays = 30) {
        lines_product=excluded.lines_product, lines_test=excluded.lines_test,
        lines_docs=excluded.lines_docs, lines_config=excluded.lines_config,
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
-  )
-  const allDays = new Set([...tok.keys(), ...act.keys()])
-  for (const day of allDays) {
-    const t = tok.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
-    const a = act.get(day)
-    stmt.run(
-      newRecordId(),
-      day,
-      t.tokens,
-      t.cacheRead,
-      t.messages,
-      a?.tasks.size ?? 0,
-      t.canon,
-      t.other,
-      a?.commits ?? 0,
-      a?.files.size ?? 0,
-      a?.lines.product ?? 0,
-      a?.lines.test ?? 0,
-      a?.lines.docs ?? 0,
-      a?.lines.config ?? 0,
-      a?.lines.generated ?? 0,
-      nowIso(),
     )
+    const allDays = new Set([...tok.keys(), ...act.keys()])
+    const write = d.transaction(() => {
+      for (const day of allDays) {
+        deadline.checkpoint()
+        const t = tok.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
+        const a = act.get(day)
+        stmt.run(
+          newRecordId(),
+          day,
+          t.tokens,
+          t.cacheRead,
+          t.messages,
+          a?.tasks.size ?? 0,
+          t.canon,
+          t.other,
+          a?.commits ?? 0,
+          a?.files.size ?? 0,
+          a?.lines.product ?? 0,
+          a?.lines.test ?? 0,
+          a?.lines.docs ?? 0,
+          a?.lines.config ?? 0,
+          a?.lines.generated ?? 0,
+          nowIso(),
+        )
+      }
+    })
+    write()
+    deadline.checkpoint()
+    return allDays.size
+  } finally {
+    deadline.finish()
   }
-  return allDays.size
 }
 
 type Row = {
