@@ -4,11 +4,7 @@
 import { existsSync } from 'node:fs'
 import { db } from '../database/db.ts'
 import { heldTreeInFlight } from '../landing-tree/landing-tree.ts'
-import {
-  annotateHeldTreeDetail,
-  type CloseOutReportResult,
-  closeOutHoldIsInFlightLanding,
-} from './close-out-report.ts'
+import { annotateHeldTreeDetail, type CloseOutReportResult } from './close-out-report.ts'
 
 export const OPEN_PR_TIMEOUT_MS = 3000
 
@@ -135,11 +131,15 @@ export function annotateHeldLandingInFlight<T extends CloseOutReportResult>(resu
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
   const run = lookupRun(result.runId)
   if (!run) return result
+  const inFlight = inFlightForHold(
+    result.worktree,
+    run,
+    result.hold !== 'landing-progress',
+  )
   return {
     ...result,
-    detail: annotateHeldTreeDetail(
-      result.detail,
-      inFlightForHold(result.worktree, run, !closeOutHoldIsInFlightLanding(result.detail)),
-    ),
+    detail: annotateHeldTreeDetail(result.detail, inFlight),
+    inFlightRef: inFlight?.ref ?? null,
+    suppressBlock: inFlight?.suppressBlock ?? false,
   }
 }

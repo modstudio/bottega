@@ -11,7 +11,7 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
-from score_reminder_decision import decide_held_tree, parse_held_run_report
+from score_reminder_decision import decide_held_tree
 
 GLOBAL_BUDGET_SECONDS = 20
 
@@ -27,17 +27,18 @@ def bottega_bin():
     return os.path.join(root, "bin", "bottega")
 
 
-def classify_cleanup_holds(reports):
+def close_out_line(payload):
+    tree = f" {payload['worktree']}" if payload.get("worktree") else ""
+    return f"{payload.get('outcome')} run {payload.get('runId')}{tree}: {payload.get('detail', '')}"
+
+
+def classify_cleanup_holds(holds):
     in_flight_lines = []
     blocking_holds = []
-    for report in reports:
-        parsed = parse_held_run_report(report)
-        if parsed is None:
-            blocking_holds.append(report)
-            continue
-        decision = decide_held_tree(parsed)
+    for payload in holds:
+        decision = decide_held_tree(payload)
         if decision.block:
-            blocking_holds.append(report)
+            blocking_holds.append(close_out_line(payload))
         else:
             in_flight_lines.append(decision.in_flight_line)
     return in_flight_lines, blocking_holds
@@ -194,15 +195,22 @@ def main() -> int:
             break
         try:
             result = subprocess.run(
-                [bottega_bin(), "run", "close-out", str(root_id), "--non-blocking"], capture_output=True,
+                [bottega_bin(), "run", "close-out", str(root_id), "--non-blocking", "--json"],
+                capture_output=True,
                 text=True, timeout=remaining,
             )
-            report = (result.stdout or result.stderr).strip()
-            if report.startswith("held "):
-                cleanup_holds.append(report)
-            elif report.startswith("kept "):
-                cleanup_kept.append(report)
-            elif not (report.startswith("released ") or report.startswith("absent ")):
+            raw = (result.stdout or result.stderr).strip()
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                cleanup_deferred.append(root_id)
+                continue
+            outcome = payload.get("outcome")
+            if outcome == "held":
+                cleanup_holds.append(payload)
+            elif outcome == "kept":
+                cleanup_kept.append(payload)
+            elif outcome not in ("released", "absent"):
                 cleanup_deferred.append(root_id)
         except subprocess.TimeoutExpired:
             cleanup_deferred.extend(root for (root,) in cleanup_roots[index:])
@@ -220,7 +228,7 @@ def main() -> int:
             file=sys.stderr,
         )
     for report in cleanup_kept:
-        print(report, file=sys.stderr)
+        print(close_out_line(report), file=sys.stderr)
 
     in_flight_lines, blocking_holds = classify_cleanup_holds(cleanup_holds)
 

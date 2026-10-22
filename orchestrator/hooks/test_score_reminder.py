@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -8,55 +9,64 @@ SPEC = importlib.util.spec_from_file_location("score_reminder_decision", PATH)
 score_reminder_decision = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(score_reminder_decision)
 
-HeldTreeFacts = score_reminder_decision.HeldTreeFacts
 decide_held_tree = score_reminder_decision.decide_held_tree
-parse_held_run_report = score_reminder_decision.parse_held_run_report
+FIXTURE = PATH.parents[1] / "src" / "close" / "held-tree-json.fixture.json"
 
 
 class HeldTreeDecisionTest(unittest.TestCase):
     def test_in_flight_for_this_tree_is_listed_not_blocking(self):
-        decision = decide_held_tree(HeldTreeFacts("/landing-tree", "cursor 459 merge-pr"))
+        decision = decide_held_tree(
+            {
+                "runId": "abc-1",
+                "worktree": "/landing-tree",
+                "hold": "landing-progress",
+                "inFlightRef": "cursor 459 merge-pr",
+                "suppressBlock": True,
+            }
+        )
         self.assertFalse(decision.block)
         self.assertEqual(
             decision.in_flight_line,
             "in flight: /landing-tree (cursor 459 merge-pr)",
         )
 
-    def test_open_pr_without_cursor_is_listed_not_blocking(self):
-        decision = decide_held_tree(HeldTreeFacts("/landing-tree", "#88"))
-        self.assertFalse(decision.block)
-        self.assertEqual(decision.in_flight_line, "in flight: /landing-tree (#88)")
-
     def test_neither_cursor_nor_pr_blocks(self):
-        decision = decide_held_tree(HeldTreeFacts("/landing-tree", None))
+        decision = decide_held_tree(
+            {
+                "runId": "abc-1",
+                "worktree": "/landing-tree",
+                "hold": "landing-progress",
+                "inFlightRef": None,
+                "suppressBlock": False,
+            }
+        )
         self.assertTrue(decision.block)
         self.assertIsNone(decision.in_flight_line)
 
     def test_dirty_unique_work_hold_blocks(self):
-        parsed = parse_held_run_report(
-            "held run abc-1 /tmp/orch-tree: landing tree held by session owner: tree is dirty; "
-            "in flight (cursor 459 merge-pr)"
+        decision = decide_held_tree(
+            {
+                "runId": "abc-2",
+                "worktree": "/tmp/orch-tree",
+                "hold": "unique-work",
+                "inFlightRef": "cursor 459 merge-pr",
+                "suppressBlock": False,
+            }
         )
-        self.assertEqual(parsed, HeldTreeFacts("/tmp/orch-tree", None))
-        decision = decide_held_tree(parsed)
         self.assertTrue(decision.block)
         self.assertIsNone(decision.in_flight_line)
 
-    def test_parse_held_run_report_reads_in_flight_prefix(self):
+    def test_fixture_shape_feeds_the_decision(self):
+        rows = json.loads(FIXTURE.read_text())
+        in_flight, unique_work, other = rows
+        listed = decide_held_tree(in_flight)
+        self.assertFalse(listed.block)
         self.assertEqual(
-            parse_held_run_report(
-                "held run abc-1 /tmp/orch-tree: in flight (cursor 459 merge-pr); "
-                "landing tree held by session owner: landing is in flight"
-            ),
-            HeldTreeFacts("/tmp/orch-tree", "cursor 459 merge-pr"),
+            listed.in_flight_line,
+            f"in flight: {in_flight['worktree']} ({in_flight['inFlightRef']})",
         )
-        self.assertEqual(
-            parse_held_run_report(
-                "held run abc-1 /tmp/orch-tree: landing tree held by session owner: tree is dirty"
-            ),
-            HeldTreeFacts("/tmp/orch-tree", None),
-        )
-        self.assertIsNone(parse_held_run_report("kept run abc-1 /tmp/orch-tree: clean"))
+        self.assertTrue(decide_held_tree(unique_work).block)
+        self.assertTrue(decide_held_tree(other).block)
 
 
 if __name__ == "__main__":

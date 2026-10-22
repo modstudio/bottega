@@ -10,6 +10,8 @@ import { observeTaskStatus } from '../branch/task-status-observation.ts'
 import { reconcileAbsentClaims } from '../cleanup/claim-reconciliation.ts'
 import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { closeOutRun } from '../close/close-out.ts'
+import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
+import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
 import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
@@ -64,6 +66,7 @@ export type SessionCloseOutReport = {
   mechanical: string[]
   process: { item: string; reason: string; evidence: string; remedy: string }[]
   errors: { item: string; detail: string; retry: string }[]
+  heldTrees: HeldTreeJson[]
   verdict: { clean: boolean; residue: number }
 }
 
@@ -496,11 +499,18 @@ function currentTreeOwners(database: Database, path: string): { runId: string; p
     .map((row) => ({ runId: row.record_id, path: wanted }))
 }
 
+function throwUnlessReleased(result: ReturnType<typeof closeOutRun>): void {
+  const annotated = annotateHeldLandingInFlight(result)
+  if (['released', 'absent'].includes(annotated.outcome)) return
+  const error = new Error(`${annotated.outcome}: ${annotated.detail}`)
+  const held = heldTreeJson(annotated)
+  if (held) Object.assign(error, { heldTree: held })
+  throw error
+}
+
 function applyMechanicalAction(action: SessionMechanicalAction, database: Database): void {
   if (action.kind === 'close-run') {
-    const result = closeOutRun(action.runId, { intent: 'explicit' })
-    if (!['released', 'absent'].includes(result.outcome))
-      throw new Error(`${result.outcome}: ${result.detail}`)
+    throwUnlessReleased(closeOutRun(action.runId, { intent: 'explicit' }))
     return
   }
   if (action.kind === 'remove-tree') {
@@ -509,9 +519,7 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
       throw new Error(
         `planned tree ${action.path} is no longer owned only by run ${action.runId}; gather again before removing it`,
       )
-    const result = closeOutRun(action.runId, { intent: 'tree-remove' })
-    if (!['released', 'absent'].includes(result.outcome))
-      throw new Error(`${result.outcome}: ${result.detail}`)
+    throwUnlessReleased(closeOutRun(action.runId, { intent: 'tree-remove' }))
     return
   }
   if (action.kind === 'ship-cleanup') {
@@ -685,6 +693,7 @@ export function closeOutSession(
     mechanical: [],
     process: [],
     errors: [...initial.observationErrors],
+    heldTrees: [],
     verdict: { clean: false, residue: 0 },
   }
   for (const action of initial.classification.mechanical) {
@@ -697,6 +706,8 @@ export function closeOutSession(
       applyMechanicalAction(action, database)
       report.mechanical.push(label)
     } catch (cause) {
+      const held = heldTreeFromError(cause)
+      if (held) report.heldTrees.push(held)
       report.errors.push({
         item: label,
         detail: cause instanceof Error ? cause.message : String(cause),

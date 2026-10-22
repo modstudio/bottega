@@ -1,38 +1,45 @@
 import { describe, expect, test } from 'bun:test'
-import { annotateHeldTreeDetail, closeOutHoldIsInFlightLanding } from './close-out-report.ts'
+import type { HeldTreeJson } from './close-out-report.ts'
+import { heldTreeJson } from './close-out-report.ts'
+import fixture from './held-tree-json.fixture.json'
 
-describe('close-out held-tree report shape', () => {
-  test('in-flight for this tree prefixes the hold so Stop can list it without blocking', () => {
+const rows = fixture as HeldTreeJson[]
+
+describe('close-out held-tree JSON shape', () => {
+  test('heldTreeJson writes the Stop-hook fixture shape', () => {
+    const [inFlight, uniqueWork, other] = rows
     expect(
-      annotateHeldTreeDetail('landing tree held by session owner: landing is in flight', {
-        ref: 'cursor 459 merge-pr',
+      heldTreeJson({
+        runId: inFlight.runId,
+        worktree: inFlight.worktree,
+        outcome: 'held',
+        detail: 'landing tree held by session owner: landing is in flight',
+        hold: 'landing-progress',
+        inFlightRef: inFlight.inFlightRef,
         suppressBlock: true,
       }),
-    ).toBe(
-      'in flight (cursor 459 merge-pr); landing tree held by session owner: landing is in flight',
-    )
-  })
-
-  test('a unique-work hold keeps the in-flight fact as a suffix', () => {
+    ).toEqual(inFlight)
     expect(
-      annotateHeldTreeDetail('landing tree held by session owner: tree is dirty', {
-        ref: 'cursor 459 merge-pr',
+      heldTreeJson({
+        runId: uniqueWork.runId,
+        worktree: uniqueWork.worktree,
+        outcome: 'held',
+        detail: 'landing tree held by session owner: tree is dirty',
+        hold: 'unique-work',
+        inFlightRef: uniqueWork.inFlightRef,
         suppressBlock: false,
       }),
-    ).toBe('landing tree held by session owner: tree is dirty; in flight (cursor 459 merge-pr)')
-  })
-
-  test('only landing-in-flight and unlanded holds are the in-flight landing hold', () => {
+    ).toEqual(uniqueWork)
     expect(
-      closeOutHoldIsInFlightLanding('landing tree held by session owner: landing is in flight'),
-    ).toBe(true)
-    expect(
-      closeOutHoldIsInFlightLanding(
-        'landing tree held by session owner: branch has not landed; session owner releases it',
-      ),
-    ).toBe(true)
-    expect(closeOutHoldIsInFlightLanding('landing tree held by session owner: tree is dirty')).toBe(
-      false,
-    )
+      heldTreeJson({
+        runId: other.runId,
+        worktree: other.worktree,
+        outcome: 'held',
+        detail: 'landing tree held by session owner: conversation is running',
+        hold: 'other',
+        inFlightRef: null,
+        suppressBlock: false,
+      }),
+    ).toEqual(other)
   })
 })

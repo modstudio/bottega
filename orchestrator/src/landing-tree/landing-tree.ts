@@ -89,7 +89,15 @@ export function landingTreeCommandBase(trunk: string | undefined): string {
   return trunk.trim()
 }
 
-export type LandingTreeReleaseDecision = { action: 'release' } | { action: 'keep'; reason: string }
+export type LandingTreeHoldKind = 'landing-progress' | 'unique-work' | 'other'
+
+export type LandingTreeReleaseDecision =
+  | { action: 'release' }
+  | { action: 'keep'; reason: string; hold: LandingTreeHoldKind }
+
+function keep(reason: string, hold: LandingTreeHoldKind): LandingTreeReleaseDecision {
+  return { action: 'keep', reason, hold }
+}
 
 /** Release an absent terminal landing tree, or a present tree when its release policy permits. */
 export function landingTreeReleaseDecision(
@@ -108,33 +116,29 @@ export function landingTreeReleaseDecision(
   const owner = row.sessionId ? `session ${row.sessionId}` : 'its invoking session'
   if (!row.treeExists) {
     if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
-      return {
-        action: 'keep',
-        reason: `landing tree held by ${owner}: conversation is ${row.status}`,
-      }
+      return keep(`landing tree held by ${owner}: conversation is ${row.status}`, 'other')
     }
     if (row.landingInFlight) {
-      return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+      return keep(`landing tree held by ${owner}: landing is in flight`, 'landing-progress')
     }
     return { action: 'release' }
   }
-  if (!clean) return { action: 'keep', reason: `landing tree held by ${owner}: tree is dirty` }
+  if (!clean) return keep(`landing tree held by ${owner}: tree is dirty`, 'unique-work')
   if (row.explicitTreeRemovalRequested) {
     if (row.landingInFlight) {
-      return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+      return keep(`landing tree held by ${owner}: landing is in flight`, 'landing-progress')
     }
     return { action: 'release' }
   }
   if (row.landingInFlight) {
-    return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+    return keep(`landing tree held by ${owner}: landing is in flight`, 'landing-progress')
   }
   if (!landed)
-    return {
-      action: 'keep',
-      reason:
-        `landing tree held by ${owner}: branch has not landed; ` +
+    return keep(
+      `landing tree held by ${owner}: branch has not landed; ` +
         `${owner} releases it with ${PLATFORM_SLUG} tree remove <path>`,
-    }
+      'landing-progress',
+    )
   return { action: 'release' }
 }
 
@@ -149,6 +153,7 @@ export function landingTreeHoldDecision<T>(
       held: true,
       until: null,
       reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      hold: 'unique-work' as const,
     }
   }
   return {
