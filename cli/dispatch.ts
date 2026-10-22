@@ -1,12 +1,13 @@
 import { basename } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { INTERNAL_CALL_ENV, recordLegacyCall, reportLegacyCalls } from './legacy-calls.ts'
 import { GROUPS, ROUTES, resolveRoute } from './routes.ts'
 
 export type BinaryEntries = {
-  orch(argv: string[], invocation?: OwnerInvocation): Promise<number>
-  hub(argv: string[], invocation?: OwnerInvocation): Promise<number>
+  orch(argv: string[], invocation?: PublicCommandInvocation): Promise<number>
+  hub(argv: string[], invocation?: PublicCommandInvocation): Promise<number>
   orchOutbox(): Promise<Record<string, unknown>[]>
   hubOutbox(): Promise<Record<string, unknown>[]>
   hubOutboxSummaryLines(rows: readonly Record<string, unknown>[]): Promise<string[]>
@@ -15,11 +16,6 @@ export type BinaryEntries = {
   retrievalSearch(argv: string[]): Promise<void>
   checkAttribution(argv: string[]): Promise<number>
   schemaCheck(argv: string[]): Promise<number>
-}
-
-type OwnerInvocation = {
-  publicPath: readonly string[]
-  ownerPath: readonly string[]
 }
 
 type OutboxOwner = 'orch' | 'hub'
@@ -34,9 +30,8 @@ function qualifiedOutboxRows(
 async function dispatchOutbox(
   rest: string[],
   entries: BinaryEntries,
-  invocation: OwnerInvocation,
+  invocation: PublicCommandInvocation,
 ): Promise<number> {
-  if (rest[0] === 'trace') return entries.hub(['outbox', ...rest], invocation)
   if (rest.length === 0 || (rest.length === 1 && rest[0] === '--json')) {
     const hubRows = await entries.hubOutbox()
     const rows = [
@@ -80,15 +75,15 @@ async function dispatchOutbox(
 function invocationFor(
   ownerPath: readonly string[],
   publicPath: readonly string[],
-): OwnerInvocation {
+): PublicCommandInvocation {
   return { ownerPath, publicPath }
 }
 
 function legacyInvocation(
   owner: 'orch' | 'hub',
   argv: readonly string[],
-): OwnerInvocation | undefined {
-  const matches: { ownerPath: readonly string[]; publicPath: readonly string[] }[] = []
+): PublicCommandInvocation | undefined {
+  const matches: PublicCommandInvocation[] = []
   for (const route of ROUTES) {
     const targets =
       route.composite ?? (route.owner === owner ? [{ owner, argv: route.argv ?? [] }] : [])

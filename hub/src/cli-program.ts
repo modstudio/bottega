@@ -2,6 +2,11 @@
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { type Command, CommanderError } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import {
+  applyPublicCommandPath,
+  type PublicCommandInvocation,
+  publicCommandUsage,
+} from '../../shared/commander-public-path.ts'
 import { installationVersionText } from '../../shared/install-root.ts'
 import { HubCommand } from './cli-command.ts'
 import { registerCoreCommands } from './core-cli.ts'
@@ -10,11 +15,6 @@ import { registerNoteCommands } from './note-cli.ts'
 import { registerOutboxCommands } from './outbox-cli.ts'
 import { registerReportCommands } from './report-cli.ts'
 import { registerTaskCommands } from './task-cli.ts'
-
-export type PublicCommandInvocation = {
-  publicPath: readonly string[]
-  ownerPath: readonly string[]
-}
 
 export function createHubProgram(): HubCommand {
   const command = new HubCommand()
@@ -26,11 +26,7 @@ export function createHubProgram(): HubCommand {
     .allowExcessArguments(false)
     .showSuggestionAfterError()
     .configureHelp({
-      commandUsage: (command) => {
-        const publicPath = publicCommandPaths.get(command)
-        if (!publicPath) return defaultCommandUsage(command)
-        return `${PLATFORM_SLUG} ${publicPath.join(' ')} ${command.usage()}`
-      },
+      commandUsage: publicCommandUsage,
     })
     .addHelpText(
       'after',
@@ -45,36 +41,6 @@ export function createHubProgram(): HubCommand {
   registerNoteCommands(command)
   registerReportCommands(command)
   return command
-}
-
-const publicCommandPaths = new WeakMap<Command, readonly string[]>()
-
-function defaultCommandUsage(command: Command): string {
-  const names: string[] = []
-  for (let current: Command | null = command; current; current = current.parent) {
-    names.unshift(current.name())
-  }
-  return `${names.join(' ')} ${command.usage()}`
-}
-
-function applyPublicCommandPath(
-  root: Command,
-  argv: readonly string[],
-  invocation?: PublicCommandInvocation,
-): void {
-  if (!invocation) return
-  let command = root
-  let consumed = 0
-  while (consumed < argv.length) {
-    const child = command.commands.find((candidate) =>
-      [candidate.name(), ...candidate.aliases()].includes(argv[consumed]!),
-    )
-    if (!child) break
-    command = child
-    consumed += 1
-  }
-  const suffix = argv.slice(invocation.ownerPath.length, consumed)
-  publicCommandPaths.set(command, [...invocation.publicPath, ...suffix])
 }
 
 export const program = createHubProgram()

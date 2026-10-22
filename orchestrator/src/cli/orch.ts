@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
 import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
-import type { PublicCommandInvocation } from './program.ts'
 
 function versionCommand(): number {
   try {

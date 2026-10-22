@@ -13,13 +13,19 @@ export const cliConcernEntries = [
 export const cliModules = [
   {
     file: `cli/${PLATFORM_SLUG}.ts`,
-    allowed: [...cliConcernEntries, 'shared/install-root.ts', 'cli/dispatch.ts'],
+    allowed: [
+      ...cliConcernEntries,
+      'shared/commander-public-path.ts',
+      'shared/install-root.ts',
+      'cli/dispatch.ts',
+    ],
   },
   {
     file: 'cli/dispatch.ts',
     allowed: [
       'node:path',
       'shared/brand.ts',
+      'shared/commander-public-path.ts',
       'shared/self-spawn.ts',
       'cli/legacy-calls.ts',
       'cli/routes.ts',

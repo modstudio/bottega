@@ -2,6 +2,11 @@
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { Command, CommanderError } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  applyPublicCommandPath,
+  type PublicCommandInvocation,
+  publicCommandUsage,
+} from '../../../shared/commander-public-path.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
@@ -32,11 +37,6 @@ import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
 import { recordSessionSeen } from '../database/db.ts'
 
-export type PublicCommandInvocation = {
-  publicPath: readonly string[]
-  ownerPath: readonly string[]
-}
-
 export const program = new Command()
   .name(PLATFORM_SLUG)
   .option('--version', 'identify this release or development checkout')
@@ -50,41 +50,8 @@ export const program = new Command()
   .allowExcessArguments(false)
   .showSuggestionAfterError()
   .configureHelp({
-    commandUsage: (command) => {
-      const publicPath = publicCommandPaths.get(command)
-      if (!publicPath) return defaultCommandUsage(command)
-      return `${PLATFORM_SLUG} ${publicPath.join(' ')} ${command.usage()}`
-    },
+    commandUsage: publicCommandUsage,
   })
-
-const publicCommandPaths = new WeakMap<Command, readonly string[]>()
-
-function defaultCommandUsage(command: Command): string {
-  const names: string[] = []
-  for (let current: Command | null = command; current; current = current.parent) {
-    names.unshift(current.name())
-  }
-  return `${names.join(' ')} ${command.usage()}`
-}
-
-function applyPublicCommandPath(
-  argv: readonly string[],
-  invocation?: PublicCommandInvocation,
-): void {
-  if (!invocation) return
-  let command = program
-  let consumed = 0
-  while (consumed < argv.length) {
-    const child = command.commands.find((candidate) =>
-      [candidate.name(), ...candidate.aliases()].includes(argv[consumed]!),
-    )
-    if (!child) break
-    command = child
-    consumed += 1
-  }
-  const suffix = argv.slice(invocation.ownerPath.length, consumed)
-  publicCommandPaths.set(command, [...invocation.publicPath, ...suffix])
-}
 
 registerReview(program)
 registerPullRequest(program)
@@ -156,7 +123,7 @@ export function recordInvocationSession(argv: string[]): void {
 
 export async function run(argv: string[], invocation?: PublicCommandInvocation): Promise<number> {
   setRawArgv(argv)
-  applyPublicCommandPath(argv, invocation)
+  applyPublicCommandPath(program, argv, invocation)
   try {
     await program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
     await drainStdout()

@@ -157,6 +157,12 @@ export const ROUTES = (
     },
     route('record pull', 'hub', 'collect', 'ingest every source into the local record'),
     route('record push', 'orch', 'sync', "push this machine's orchestrator record"),
+    route(
+      'record outbox trace',
+      'hub',
+      'outbox trace',
+      'list non-trivial delivery outcomes, newest first',
+    ),
     {
       command: ['record', 'outbox'],
       owner: 'outbox',

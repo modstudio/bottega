@@ -1,11 +1,12 @@
+import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { installationVersionText } from '../shared/install-root.ts'
 import { dispatchBinary } from './dispatch.ts'
 
 // Each entry loads its owner only when called, so a call to one program never pays for another.
 const entries = {
-  orch: async (argv: string[], invocation?: import('./dispatch.ts').OwnerInvocation) =>
+  orch: async (argv: string[], invocation?: PublicCommandInvocation) =>
     (await import('../orchestrator/src/cli/orch.ts')).main(argv, invocation),
-  hub: async (argv: string[], invocation?: import('./dispatch.ts').OwnerInvocation) =>
+  hub: async (argv: string[], invocation?: PublicCommandInvocation) =>
     (await import('../hub/src/cli.ts')).main(argv, invocation),
   orchOutbox: async () => (await import('../orchestrator/src/cli/orch.ts')).outboxEntries(),
   hubOutbox: async () => (await import('../hub/src/cli.ts')).outboxEntries(),

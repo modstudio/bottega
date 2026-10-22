@@ -211,7 +211,7 @@ function resolutionError(
   argv: readonly string[],
 ): Error {
   return new Error(
-    `${routeSpelling(route)}: cannot resolve visible route owner ${owner} argv ${JSON.stringify(argv)}`,
+    `${routeSpelling(route)}: cannot resolve visible route owner ${owner === 'orch' ? 'orchestrator' : owner} argv ${JSON.stringify(argv)}`,
   )
 }
 
@@ -282,6 +282,7 @@ function compositeRouteUnits(
 function outboxRouteUnits(
   route: CommandRoute,
   programs: CommandPrograms,
+  routedSpellings: ReadonlySet<string>,
   book: CommandBook,
 ): DocumentationUnit[] {
   const spelling = routeSpelling(route)
@@ -322,6 +323,7 @@ function outboxRouteUnits(
       : (hubVerb?.description() ?? orchVerb?.description() ?? '')
     const sourceOwner = orchVerb ? 'orch' : 'hub'
     const verbSpelling = `${spelling} ${name}`
+    if (routedSpellings.has(verbSpelling)) continue
     writeCommand(book, {
       spelling: verbSpelling,
       group: route.command[0]!,
@@ -428,7 +430,7 @@ function routeUnits(
 ): DocumentationUnit[] {
   if (route.hidden) return []
   if (route.owner === 'composite') return compositeRouteUnits(route, programs, book)
-  if (route.owner === 'outbox') return outboxRouteUnits(route, programs, book)
+  if (route.owner === 'outbox') return outboxRouteUnits(route, programs, routedSpellings, book)
   if (route.owner === 'local') {
     const spelling = routeSpelling(route)
     const commandUnit = routeCommandUnit(route, route.description ?? '', 'cli/routes.ts')

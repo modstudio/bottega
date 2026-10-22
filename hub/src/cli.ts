@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-import { type PublicCommandInvocation, program, run } from './cli-program.ts'
+import type { PublicCommandInvocation } from '../../shared/commander-public-path.ts'
+import { program, run } from './cli-program.ts'
 import { requireDatabase } from './db.ts'
 import { hostedOutboxSummaryLines, listHostedOutbox, type OutboxEntry } from './outbox.ts'
 

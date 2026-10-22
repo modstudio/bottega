@@ -80,7 +80,7 @@ test('record outbox trace reaches the hub owner with its public route', async ()
       () => '',
     ),
   ).toBe(0)
-  expect(calls).toEqual(['outbox trace --row entry-1 | outbox -> record outbox'])
+  expect(calls).toEqual(['outbox trace --row entry-1 | outbox trace -> record outbox trace'])
 })
 
 test('record outbox refuses bare ids and hands every verb to the owning command', async () => {
