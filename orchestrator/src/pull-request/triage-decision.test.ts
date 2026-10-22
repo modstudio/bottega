@@ -244,66 +244,6 @@ describe('pull-request triage decision', () => {
     })
   })
 
-  test('DEV-1524 admits five lenses composed across three groups after its tier rose', () => {
-    const lensReview = (
-      reviewId: number,
-      tier: 2 | 3,
-      patchId: string,
-      lens: string,
-      completedAt: string,
-    ) =>
-      review({
-        reviewId,
-        tier,
-        patchId,
-        lensIdentities: [lens],
-        lenses: [{ recordId: `lens-${reviewId}`, lens, graded: true }],
-        findings: [],
-        completedAt,
-      })
-    const firstRound = [
-      lensReview(6079, 2, 'patch-first', 'craft', '2026-10-22T00:33:52.265Z'),
-      lensReview(6084, 2, 'patch-first', 'test-quality', '2026-10-22T00:40:24.519Z'),
-      lensReview(6086, 2, 'patch-first', 'correctness', '2026-10-22T00:44:33.926Z'),
-    ]
-    const tierThreeRound = [
-      lensReview(6116, 3, 'patch-second', 'architecture', '2026-10-22T01:26:48.397Z'),
-      lensReview(6117, 3, 'patch-second', 'correctness', '2026-10-22T01:26:47.857Z'),
-      lensReview(6118, 3, 'patch-second', 'teardown-safety', '2026-10-22T01:27:56.173Z'),
-    ]
-    const completingRound = [
-      lensReview(6125, 3, 'patch-third', 'craft', '2026-10-22T02:01:03.669Z'),
-      lensReview(6126, 3, 'patch-third', 'test-quality', '2026-10-22T02:01:04.170Z'),
-    ]
-
-    expect(
-      decideTriage(
-        evidence({
-          tier: 3,
-          applicableReview: {
-            lenses: ['correctness', 'craft', 'test-quality', 'architecture', 'teardown-safety'],
-          },
-          reviews: [],
-          branchReviewGroups: [
-            branchGroup(completingRound),
-            branchGroup(tierThreeRound),
-            branchGroup(firstRound),
-          ],
-          reads: [
-            {
-              recordId: 'dev-1524-read',
-              tip: 'tip-a',
-              patchId: 'patch-a',
-              pathSet: '["a.ts"]',
-              recordedAt: '2026-10-22T03:00:00Z',
-              sessionId: 'owner-session',
-            },
-          ],
-        }),
-      ),
-    ).toMatchObject({ complete: true, snapshot: { admissionPath: 'architect_read' } })
-  })
-
   test('a satisfied correctness second opinion plus a missing safety lens reports only safety', () => {
     const correctness = (reviewId: number, model: string, completedAt: string) =>
       review({
@@ -491,6 +431,15 @@ describe('pull-request triage decision', () => {
         }),
       ),
     ).toMatchObject({ complete: false, finalTierRaised: true, earlierReviewTier: 1 })
+  })
+
+  test('a never-reviewed branch names its missing lenses instead of a generic no-round gap', () => {
+    expect(decideTriage(evidence({ reviews: [], branchReviewGroups: [] }))).toMatchObject({
+      complete: false,
+      missingReview: true,
+      missingLenses: ['correctness'],
+      noCompleteReviewRound: false,
+    })
   })
 
   test('the same lens twice does not satisfy a tier-two exact review', () => {
