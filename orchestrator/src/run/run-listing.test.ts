@@ -8,6 +8,8 @@ import type { ProcessSample } from '../process-resource-sampler.ts'
 import { runDetail } from '../state/serve.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 import { runIdentityMap, runListingCommand } from './run-listing.ts'
+import type { SubscriptionCostContext } from './run-subscription-cost.ts'
+import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 
 function command(
   args: Record<string, string[] | boolean> = {},
@@ -17,6 +19,7 @@ function command(
     processStartTime: () => null,
   },
   clock: () => number = Date.now,
+  subscriptionCost?: SubscriptionCostContext,
 ) {
   const lines: string[] = []
   const values = (name: string) => (Array.isArray(args[name]) ? (args[name] as string[]) : [])
@@ -44,6 +47,7 @@ function command(
       thinOutputWarning,
       processObservation: observation,
       clock,
+      subscriptionCost,
     },
   ).then(() => lines)
 }
@@ -519,6 +523,46 @@ describe('run listing', () => {
     expect(
       rows.every((row) => JSON.stringify(row.failover_chain) === JSON.stringify(['codex', 'grok'])),
     ).toBe(true)
+  })
+
+  test('runs --json reports amortized subscription cost and ignores a stored estimate', async () => {
+    const id = addRun({
+      agent: 'grok',
+      job: 'understand',
+      startedAt: '2026-10-22T12:00:00.000Z',
+    })
+    db()
+      .query(
+        `UPDATE run SET vendor_tokens=1, vendor_cost_usd=NULL, vendor_estimated_cost_usd=23.5,
+                vendor_cost_source='estimated' WHERE record_id=?`,
+      )
+      .run(id)
+    const other = addRun({
+      agent: 'grok',
+      job: 'understand',
+      startedAt: '2026-10-22T13:00:00.000Z',
+    })
+    db().query('UPDATE run SET vendor_tokens=3 WHERE record_id=?').run(other)
+    const subscriptionCost = { facts: subscriptionCostFacts(), prices: { grok: 100 } }
+    expect(
+      runJson(
+        (
+          await command({ json: true, id: [id] }, undefined, undefined, undefined, subscriptionCost)
+        )[0]!,
+      ),
+    ).toMatchObject({
+      cost_usd: 25,
+      cost_source: 'subscription, amortized',
+      vendor_cost_usd: null,
+      vendor_estimated_cost_usd: 23.5,
+    })
+    expect(runDetail(id, false, { subscriptionCost })).toMatchObject({
+      cost_usd: 25,
+      cost_source: 'subscription, amortized',
+      vendor_cost_usd: null,
+      vendor_estimated_cost_usd: 23.5,
+      vendor_cost_source: 'estimated',
+    })
   })
 
   test('runs --json publishes every question on the root, including child turns', async () => {

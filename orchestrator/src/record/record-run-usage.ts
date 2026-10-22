@@ -2,23 +2,26 @@
 /** Validates usage provenance before a run crosses into the hosted record. */
 
 import { RUN_RESOURCE_SOURCES, type RunResourceSource } from '../process-resource-sampler.ts'
-import { VENDOR_COST_SOURCES, type VendorCostSource } from '../transport/vendor-usage.ts'
+import {
+  PERSISTED_VENDOR_COST_SOURCES,
+  type PersistedVendorCostSource,
+} from '../transport/vendor-usage.ts'
 import { OutboxRowError } from './outbox-failure.ts'
 import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 
-const VENDOR_COST_SOURCE_SET = new Set<string>(VENDOR_COST_SOURCES)
+const VENDOR_COST_SOURCE_SET = new Set<string>(PERSISTED_VENDOR_COST_SOURCES)
 const RUN_RESOURCE_SOURCE_SET = new Set<string>(RUN_RESOURCE_SOURCES)
 
-function nullableVendorCostSource(value: unknown): VendorCostSource | null {
+function nullableVendorCostSource(value: unknown): PersistedVendorCostSource | null {
   if (value == null) return null
   const source = String(value)
   if (!VENDOR_COST_SOURCE_SET.has(source)) {
     throw new OutboxRowError(
-      'run.vendorCostSource must be billed, partial, estimated, none, or null',
+      'run.vendorCostSource must be billed, partial, estimated, none, subscription, or null',
       'row-validation',
     )
   }
-  return source as VendorCostSource
+  return source as PersistedVendorCostSource
 }
 
 function nullableRunResourceSource(value: unknown): RunResourceSource | null {

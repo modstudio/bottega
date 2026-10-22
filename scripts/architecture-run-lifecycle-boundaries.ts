@@ -191,6 +191,8 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-host-capacity.ts',
       './run-identifier.ts',
       './question-open.ts',
+      './run-subscription-cost.ts',
+      './run-subscription-cost-store.ts',
       './synthetic-lifecycle-job.ts',
     ],
     'Keep run listing independent of run control, transports, routing, the CLI, and worktrees.',
