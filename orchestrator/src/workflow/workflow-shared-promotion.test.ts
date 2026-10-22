@@ -23,10 +23,26 @@ describe('shared workflow promotion spaces', () => {
       { ...shared('own-space', 17), author: 'architect' },
     ]
 
-    expect(sharedWorkflowPromotionSpaces(versions, 20, 'seed')).toEqual({
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'seed', [])).toEqual({
       changed: ['source', 'space-a', 'space-b', 'space-c', null],
       overrides: ['own-space'],
+      pinned: [],
     })
+  })
+
+  test('keeps a space with its own promotion pin but not one changed by a shared promotion', () => {
+    const versions = [shared('source', 20, 'draft'), shared('pinned', 17), shared('follow', 17)]
+    expect(
+      sharedWorkflowPromotionSpaces(versions, 20, 'seed', [
+        { spaceId: 'pinned', event: 'promote', author: 'operator', reason: 'pin version 17' },
+        {
+          spaceId: 'follow',
+          event: 'promote',
+          author: 'operator',
+          reason: 'shared promotion: prior release',
+        },
+      ]),
+    ).toEqual({ changed: ['source', 'follow'], overrides: [], pinned: ['pinned'] })
   })
 
   test('copies and promotes the shared history in three spaces while keeping an override', async () => {
@@ -49,6 +65,8 @@ describe('shared workflow promotion spaces', () => {
       sourceSpace: 'source',
       seedAuthor: 'seed',
       versions,
+      events: [],
+      targetSpaces: versions.map((version) => version.spaceId),
       async draftVersion(spaceId, version) {
         copied.push(`${spaceId}:${version.n}`)
         return version.n
@@ -73,6 +91,7 @@ describe('shared workflow promotion spaces', () => {
     expect(report).toEqual({
       changed: ['source', 'space-a', 'space-b', 'space-c'],
       overrides: ['own-space'],
+      pinned: [],
     })
   })
 })

@@ -534,7 +534,7 @@ export function promoteWorkflow(
   return applyRecordWriteAuthority({
     local: () => {
       promoteWorkflowLocal(slug, n, reasonValue, authorValue, d)
-      return { version: n, changedSpaces: ['local'], overrideSpaces: [] }
+      return workflowPromotionReport(n, { changed: [null], overrides: [], pinned: [] })
     },
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
@@ -543,10 +543,10 @@ export function promoteWorkflow(
       if (target.author !== BUILT_IN_WORKFLOW_AUTHOR) {
         await sharedPromotionStore.promoteHostedWorkflowSpace(slug, n, reasonValue, spaceId, d, {
           preflight: (definition, targetSpace) =>
-            workflowPromotionPreflight(slug, definition as WorkflowDefinition, d, targetSpace),
+            workflowPromotionPreflight(slug, definition, d, targetSpace),
           author: () => writeAuthor(authorValue),
         })
-        return { version: n, changedSpaces: [spaceId], overrideSpaces: [] }
+        return workflowPromotionReport(n, { changed: [spaceId], overrides: [], pinned: [] })
       }
 
       const decision = await sharedPromotionStore.promoteSharedWorkflow(
@@ -566,11 +566,11 @@ export function promoteWorkflow(
               'import',
               d,
             ).n,
-          promoteLocal: () => {
-            promoteWorkflowLocal(slug, n, reasonValue, authorValue, d)
+          promoteLocal: (reason) => {
+            promoteWorkflowLocal(slug, n, reason, authorValue, d)
           },
           preflight: (definition, targetSpace) =>
-            workflowPromotionPreflight(slug, definition as WorkflowDefinition, d, targetSpace),
+            workflowPromotionPreflight(slug, definition, d, targetSpace),
           author: () => writeAuthor(authorValue),
         },
       )
