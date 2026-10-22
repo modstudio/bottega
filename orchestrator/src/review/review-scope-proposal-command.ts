@@ -3,10 +3,14 @@
 
 import { Database } from 'bun:sqlite'
 import { readdirSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { categorizeFile } from '../../../shared/file-kind.ts'
 import { DB_PATH } from '../database/database-location.ts'
-import type { ReviewSettings } from '../project/project-injection.ts'
-import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import {
+  parseStoredReviewPathSet,
+  parseStoredReviewSettings,
+  reviewRunEvidenceSql,
+} from './review-evidence-sql.ts'
 import {
   proposeReviewScopes,
   type ReviewScopeProject,
@@ -29,42 +33,18 @@ type EvidenceRow = {
   triaged_severity: string | null
 }
 
-function reviewSettings(settings: string): ReviewSettings {
-  try {
-    const parsed = JSON.parse(settings) as { review?: ReviewSettings }
-    return parsed.review && Array.isArray(parsed.review.lenses) ? parsed.review : { lenses: [] }
-  } catch {
-    return { lenses: [] }
-  }
-}
-
-function pathSet(value: string | null): string[] | null {
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value) as unknown
-    return Array.isArray(parsed) && parsed.every((path) => typeof path === 'string') ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function productPaths(paths: readonly string[] | null): string[] | null {
-  return (
-    paths?.filter((path) => {
-      const kind = categorizeFile(path)
-      return kind !== 'test' && kind !== 'docs' && kind !== 'generated'
-    }) ?? null
-  )
-}
-
-function topLevelDirectories(path: string): string[] {
+function topLevelDirectories(project: string, path: string): string[] {
   try {
     return readdirSync(path, { withFileTypes: true })
       .filter((entry) => entry.name !== '.git' && entry.isDirectory())
       .map((entry) => entry.name)
       .sort()
-  } catch {
-    return []
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `cannot read registered path for project ${project} at ${path}: ${detail}; ` +
+        `fix the checkout or run ${PLATFORM_SLUG} project set ${project} --path <path>`,
+    )
   }
 }
 
@@ -88,12 +68,11 @@ function reviewScopeProposal(database: Database): ReturnType<typeof proposeRevie
   const byProject = new Map<string, Map<string, ReviewScopeRun>>()
   for (const row of evidence) {
     const runs = byProject.get(row.project) ?? new Map<string, ReviewScopeRun>()
-    const paths = pathSet(row.path_set)
+    const recordedPaths = parseStoredReviewPathSet(row.path_set)
     const run = runs.get(row.lens_id) ?? {
       id: row.lens_id,
       lens: row.lens,
-      paths,
-      productPaths: productPaths(paths),
+      paths: recordedPaths?.map((path) => ({ path, kind: categorizeFile(path) })) ?? null,
       complete: row.completed_at !== null,
       findings: [],
     }
@@ -108,8 +87,8 @@ function reviewScopeProposal(database: Database): ReturnType<typeof proposeRevie
 
   const inputs: ReviewScopeProject[] = projects.map((project) => ({
     project: project.name,
-    topLevelDirectories: topLevelDirectories(project.path),
-    review: reviewSettings(project.settings),
+    topLevelDirectories: topLevelDirectories(project.name, project.path),
+    review: parseStoredReviewSettings(project.settings) ?? { lenses: [] },
     runs: [...(byProject.get(project.name)?.values() ?? [])],
   }))
   return proposeReviewScopes(inputs)

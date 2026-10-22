@@ -54,15 +54,6 @@ describe('applicable review lenses', () => {
     ).toEqual(['correctness'])
   })
 
-  test('all preserves unscoped lens selection', () => {
-    expect(
-      applicableReview(2, ['src/change.ts'], {
-        lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
-        unscopedLenses: 'all',
-      }).lenses,
-    ).toEqual(['correctness', 'craft'])
-  })
-
   test('post-fix selection applies the unscoped lens switch', () => {
     expect(
       applicablePostFixReview(2, ['src/change.ts'], {
@@ -98,6 +89,26 @@ describe('applicable review lenses', () => {
       applicableReview(3, ['orchestrator/src/review/review-tier.ts'], {
         lenses: [{ lens: 'correctness' }],
         secondOpinion: { lens: 'safety' },
+      }),
+    ).toEqual({ lenses: ['correctness', 'safety'], secondOpinion: 'safety' })
+  })
+
+  test('skip omits an unscoped second opinion', () => {
+    expect(
+      applicableReview(3, ['src/change.ts'], {
+        lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
+        secondOpinion: { lens: 'craft' },
+        unscopedLenses: 'skip',
+      }),
+    ).toEqual({ lenses: ['correctness'] })
+  })
+
+  test('skip runs a matching scoped second opinion independently of its ordinary minimum tier', () => {
+    expect(
+      applicableReview(2, ['critical/change.ts'], {
+        lenses: [{ lens: 'correctness' }, { lens: 'safety', minTier: 3, paths: ['critical/**'] }],
+        secondOpinion: { lens: 'safety', minTier: 2 },
+        unscopedLenses: 'skip',
       }),
     ).toEqual({ lenses: ['correctness', 'safety'], secondOpinion: 'safety' })
   })

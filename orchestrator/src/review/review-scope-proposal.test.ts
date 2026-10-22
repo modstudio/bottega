@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { categorizeFile } from '../../../shared/file-kind.ts'
 import {
   proposeReviewScopes,
   type ReviewScopeProject,
@@ -8,9 +9,12 @@ import {
 const finding = { disposition: 'accepted', triaged_severity: 'medium' }
 
 function run(
-  value: Omit<ReviewScopeProject['runs'][number], 'productPaths'> & { productPaths?: string[] },
+  value: Omit<ReviewScopeProject['runs'][number], 'paths'> & { paths: string[] | null },
 ): ReviewScopeProject['runs'][number] {
-  return { ...value, productPaths: value.productPaths ?? value.paths }
+  return {
+    ...value,
+    paths: value.paths?.map((path) => ({ path, kind: categorizeFile(path) })) ?? null,
+  }
 }
 
 function project(runs: ReviewScopeProject['runs']): ReviewScopeProject {
@@ -50,7 +54,6 @@ describe('review scope proposal', () => {
           id: 'three',
           lens: 'craft',
           paths: ['docs/a.md'],
-          productPaths: [],
           complete: true,
           findings: [],
         }),
@@ -108,7 +111,6 @@ describe('review scope proposal', () => {
           id: 'one',
           lens: 'craft',
           paths: ['src/a.ts', 'src/a.test.ts'],
-          productPaths: ['src/a.ts'],
           complete: true,
           findings: [finding],
         }),
@@ -116,7 +118,6 @@ describe('review scope proposal', () => {
           id: 'two',
           lens: 'craft',
           paths: ['lib/b.ts', 'lib/b.test.ts'],
-          productPaths: ['lib/b.ts'],
           complete: true,
           findings: [finding],
         }),
@@ -154,5 +155,39 @@ describe('review scope proposal', () => {
     expect(renderReviewScopeProposalHuman(report)).toContain(
       'correctness: always relevant (not scoped)',
     )
+  })
+
+  test('applies the review product-path rule to config and fixture paths', () => {
+    const report = proposeReviewScopes([
+      project([
+        run({
+          id: 'product',
+          lens: 'craft',
+          paths: ['src/a.ts'],
+          complete: true,
+          findings: [finding],
+        }),
+        run({
+          id: 'config',
+          lens: 'craft',
+          paths: ['config/settings.json'],
+          complete: true,
+          findings: [finding],
+        }),
+        run({
+          id: 'fixture',
+          lens: 'craft',
+          paths: ['src/fixtures/example.ts'],
+          complete: true,
+          findings: [finding],
+        }),
+      ]),
+    ])
+
+    expect(report.projects[0]!.lenses[1]).toMatchObject({
+      disposition: 'keep-unscoped',
+      globs: [],
+      acceptedMediumPlus: { kept: 1, total: 3, share: 1 / 3 },
+    })
   })
 })

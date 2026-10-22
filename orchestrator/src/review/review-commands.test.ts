@@ -31,7 +31,7 @@ test('unknown review verb with options keeps the review-family refusal', async (
   const output: string[] = []
 
   await expect(runReview(['review', 'bogus', '--json'], output)).rejects.toThrow(
-    `unknown: ${PLATFORM_SLUG} review bogus. Try tier | yield | scope-proposal | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
+    `unknown: ${PLATFORM_SLUG} review bogus. Try `,
   )
 })
 

@@ -49,12 +49,18 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-scope-proposal.ts',
-    allowed: ['./review-declared-globs.ts', './review-yield-slice.ts'],
-    typeOnlyAllowed: ['../project/project-injection.ts'],
+    allowed: [
+      './review-applicability.ts',
+      './review-declared-globs.ts',
+      './review-tier-classifier.ts',
+      './review-yield-slice.ts',
+    ],
+    typeOnlyAllowed: ['../../../shared/file-kind.ts', '../project/project-injection.ts'],
   },
   {
     file: 'orchestrator/src/review/review-scope-proposal-command.ts',
     allowed: [
+      '../../../shared/brand.ts',
       '../../../shared/file-kind.ts',
       'bun:sqlite',
       'node:fs',
@@ -62,7 +68,6 @@ export const reviewModuleSpecs = [
       './review-evidence-sql.ts',
       './review-scope-proposal.ts',
     ],
-    typeOnlyAllowed: ['../project/project-injection.ts'],
   },
   {
     file: 'orchestrator/src/review/review-command-cwd.ts',
@@ -103,14 +108,20 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-scope-proposal-boundary',
     file: 'orchestrator/src/review/review-scope-proposal.ts',
-    allowed: ['./review-declared-globs.ts', './review-yield-slice.ts'],
-    typeOnlyAllowed: ['../project/project-injection.ts'],
+    allowed: [
+      './review-applicability.ts',
+      './review-declared-globs.ts',
+      './review-tier-classifier.ts',
+      './review-yield-slice.ts',
+    ],
+    typeOnlyAllowed: ['../../../shared/file-kind.ts', '../project/project-injection.ts'],
     reason: 'Keep path-scope proposals as a pure decision over recorded paths and review policy.',
   },
   {
     name: 'review-scope-proposal-command-boundary',
     file: 'orchestrator/src/review/review-scope-proposal-command.ts',
     allowed: [
+      '../../../shared/brand.ts',
       '../../../shared/file-kind.ts',
       'bun:sqlite',
       'node:fs',
@@ -118,7 +129,6 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-evidence-sql.ts',
       './review-scope-proposal.ts',
     ],
-    typeOnlyAllowed: ['../project/project-injection.ts'],
     reason:
       'Keep the scope-proposal adapter limited to local evidence and repository layout facts.',
   },

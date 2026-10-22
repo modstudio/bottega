@@ -4,17 +4,21 @@
  * structure. Must not know stores, filesystems, clocks, or processes.
  */
 
+import type { FileKind } from '../../../shared/file-kind.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
+import { isAlwaysRelevantLens } from './review-applicability.ts'
 import { declaredGlobsMatch } from './review-declared-globs.ts'
+import { isReviewProductPath } from './review-tier-classifier.ts'
 import { isMediumPlusHit, type YieldFinding } from './review-yield-slice.ts'
 
 const MINIMUM_KEPT_SHARE = 0.9
 
+type ReviewScopePath = { path: string; kind: FileKind }
+
 export type ReviewScopeRun = {
   id: string
   lens: string
-  paths: string[] | null
-  productPaths: string[] | null
+  paths: ReviewScopePath[] | null
   complete: boolean
   findings: YieldFinding[]
 }
@@ -48,7 +52,7 @@ const attribution =
   "A finding counts as kept when its review's recorded product paths match the proposed globs, not by the finding's own location."
 
 function candidates(project: ReviewScopeProject): string[] {
-  const productPaths = project.runs.flatMap((run) => run.productPaths ?? [])
+  const productPaths = project.runs.flatMap((run) => productPathsForRun(run))
   const globs = [
     ...project.topLevelDirectories.map((directory) => `${directory}/**`),
     ...project.review.lenses.flatMap((entry) => entry.paths ?? []),
@@ -56,8 +60,16 @@ function candidates(project: ReviewScopeProject): string[] {
   return [...new Set(globs)].filter((glob) => declaredGlobsMatch(productPaths, [glob])).sort()
 }
 
+function productPathsForRun(run: ReviewScopeRun): string[] {
+  return (
+    run.paths
+      ?.filter(({ path, kind }) => isReviewProductPath(path, kind))
+      .map(({ path }) => path) ?? []
+  )
+}
+
 function matches(run: ReviewScopeRun, globs: readonly string[]): boolean {
-  return run.productPaths !== null && declaredGlobsMatch(run.productPaths, globs)
+  return run.paths !== null && declaredGlobsMatch(productPathsForRun(run), globs)
 }
 
 function hitCount(runs: readonly ReviewScopeRun[], globs: readonly string[]): number {
@@ -145,7 +157,7 @@ function proposalForLens(
     0,
   )
   const recordedRuns = runs.filter((run) => run.paths !== null)
-  if (lens === 'correctness') {
+  if (isAlwaysRelevantLens(lens)) {
     return {
       lens,
       disposition: 'always-relevant',
