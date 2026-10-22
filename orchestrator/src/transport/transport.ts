@@ -5,11 +5,10 @@ import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
-import type { VendorUsage } from './vendor-usage.ts'
+import type { AgentBilling, VendorUsage } from './vendor-usage.ts'
 
 export {
   EMPTY_VENDOR_USAGE,
-  type VendorCostSource,
   type VendorUsage,
 } from './vendor-usage.ts'
 
@@ -110,6 +109,7 @@ export type TransportAgent = {
   baseUrl?: string | null
   bin: string
   defaultTransport: TransportName
+  billing: AgentBilling
   /** Exact bottega-ask command this agent definition configures, if any. */
   askServerCommand?(environment: Record<string, string>): string[] | null
   argv(opts: ArgvOpts): string[]
