@@ -36,7 +36,7 @@ function writeDistributionBinary(root: string, name: 'orch' | 'hub'): string {
   return binary
 }
 
-test('a link to a checkout bin/orch is captured and a docs link is not', () => {
+test('a checkout leftover command symlink is captured and a docs link is not', () => {
   const root = scratch()
   const tree = join(root, 'checkout')
   mkdirSync(tree)
@@ -53,7 +53,7 @@ test('a link to a checkout bin/orch is captured and a docs link is not', () => {
   expect(captureLegacyPathSymlinks([pathDir])).toEqual([{ path: capturedLink, target: orch }])
 })
 
-test('a link to a distribution root bin/hub is captured', () => {
+test('a distribution leftover command symlink is captured', () => {
   const root = scratch()
   const dist = join(root, 'dist')
   mkdirSync(dist)

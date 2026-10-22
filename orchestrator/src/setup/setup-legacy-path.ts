@@ -14,7 +14,7 @@ export function pathDirectories(pathValue: string | undefined): string[] {
     .filter((directory) => directory !== '' && isAbsolute(directory))
 }
 
-/** Return the resolved target when `path` is a leftover orch or hub symlink into an installation. */
+/** Return the resolved target when `path` is a removable leftover PATH symlink. */
 export function removableLegacyPathTarget(path: string): string | null {
   const name = basename(path)
   if (name !== 'orch' && name !== 'hub') return null
