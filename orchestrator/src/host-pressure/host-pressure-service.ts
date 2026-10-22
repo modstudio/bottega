@@ -127,11 +127,15 @@ export function loadHostPressureSamples(database: Database, clock: number): Pres
 }
 
 /** The CLI boundary calls one service; observation and advisory failure stay inside it. */
-export function recordSessionHostPressure(database: Database = db()): void {
+export function recordSessionHostPressure(database?: Database): void {
   const observed = observeProcessTable()
-  recordSessionSeen(undefined, undefined, sessionAncestorPids(observed))
   try {
-    sampleHostPressure(database, undefined, undefined, observed)
+    recordSessionSeen(undefined, undefined, sessionAncestorPids(observed))
+  } catch {
+    // Session ancestry is advisory. It must not break the command being stamped.
+  }
+  try {
+    sampleHostPressure(database ?? db(), undefined, undefined, observed)
   } catch {
     // Host sampling is advisory. It must not break the command that supplied the heartbeat.
   }
