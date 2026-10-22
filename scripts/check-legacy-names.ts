@@ -149,6 +149,12 @@ function isExempt(path: string): boolean {
   )
 }
 
+function textForLegacyScan(path: string, text: string): string {
+  if (path !== 'orchestrator/src/verdict/verdict-rules.ts') return text
+  // This exact value is persisted data and must remain readable by unvoid and hosted sync.
+  return text.replaceAll('voided with orch score --void', 'voided with frozen score --void')
+}
+
 function scannedFiles(): string[] {
   const result = Bun.spawnSync(
     ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
@@ -171,9 +177,10 @@ function scanFiles(): LegacyNameCounts {
   for (const path of scannedFiles()) {
     if (isExempt(path)) continue
     const absolute = join(ROOT, path)
-    files[path] = lstatSync(absolute).isSymbolicLink()
+    const text = lstatSync(absolute).isSymbolicLink()
       ? readlinkSync(absolute, 'utf8')
       : readFileSync(absolute, 'utf8')
+    files[path] = textForLegacyScan(path, text)
   }
   return legacyNameCounts(files)
 }

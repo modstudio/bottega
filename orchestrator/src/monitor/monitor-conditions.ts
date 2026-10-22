@@ -709,7 +709,7 @@ export function dockerConditions(clock: number): {
     }
   }
   // Names are not an ownership proof: project tools may name a volume after a
-  // task (`adn-688...`) rather than after its orch run. Inspect labels for all
+  // task (`adn-688...`) rather than after its orchestrator run. Inspect labels for all
   // volumes and classify only compose workdirs under vanished worktrees.
   const candidates = listed.stdout.toString().split('\n').filter(Boolean)
   if (!candidates.length) return { conditions: [], errors: [] }

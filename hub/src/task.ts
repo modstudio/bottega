@@ -429,7 +429,7 @@ export function attachLocalTaskEvidenceInTransaction(
     .get(project, upper)
   if (task?.source !== 'local')
     throw new Error(
-      `no hub task ${upper} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
+      `no local task ${upper} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
     )
   return writeLocalComment(conn, task, body, at, false, UNATTRIBUTED)
 }

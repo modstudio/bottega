@@ -95,7 +95,7 @@ function runRecordedRecipe(
   }
 }
 
-/** Mark a tree as orch-owned without asking the project to track orch metadata. */
+/** Mark a tree as orch-owned without asking the project to track orchestrator metadata. */
 function markWorktree(
   path: string,
   runId: string,
@@ -307,7 +307,7 @@ function createWithToolUnlocked(
   const r = runGuardedCreateTool(tool, vars, repoRoot, detached, existingBranch)
   if (!r.ok) throw new Error(`the project's worktree tool failed:\n${r.out.slice(-1500)}`)
   /**
-   * A successful project tool may still fail orch's postconditions. At that
+   * A successful project tool may still fail orchestrator's postconditions. At that
    * point the tree, branch and database belong to the project's lifecycle and
    * are deliberately left intact: uncertainty is exactly when automatic
    * teardown has lost work. Every such error therefore carries the branch and

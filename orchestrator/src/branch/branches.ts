@@ -445,7 +445,7 @@ function observeOtherBranchProof(input: OtherBranchReportInput): OtherBranchProo
         trunkTip: input.trunkTip,
         branchTip: detail.tip,
         mergeBase,
-        commitMessage: `orch branch report ${branch}`,
+        commitMessage: `orchestrator branch report ${branch}`,
       })
       const key = taskKeyToken(branch, project.settings.keyPrefixes ?? [])
       if (!patchEquivalent && key) {

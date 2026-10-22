@@ -326,7 +326,7 @@ describe('settings apply', () => {
     expect(results.slice(1).every((result) => result.outcome === 'applied')).toBe(true)
   })
 
-  test('refuses from an orch worker before pulling or opening writable state', async () => {
+  test('refuses from an orchestrator worker before pulling or opening writable state', async () => {
     await expect(
       applyMachineSettings(
         { check: true },
@@ -337,7 +337,7 @@ describe('settings apply', () => {
           },
         },
       ),
-    ).rejects.toThrow('refusing settings apply from an orch worker run')
+    ).rejects.toThrow('refusing settings apply from an orchestrator worker run')
     expect(pulls).toBe(0)
   })
 

@@ -135,7 +135,7 @@ export function refuseHubActionOverrides(
     context.addIssue({
       code: 'custom',
       path: ['actions'],
-      message: 'hub protocol accepts no action overrides; remove tracker.actions',
+      message: 'the built-in tracker accepts no action overrides; remove tracker.actions',
     })
   }
 }

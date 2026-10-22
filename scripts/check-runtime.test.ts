@@ -16,6 +16,7 @@ describe('check mode arguments', () => {
     const parsed = parseCheckArguments([])
     expect(parsed).toEqual({ mode: 'static', omit: [] })
     expect(selectedCheckLegs(parsed)).toEqual([
+      'cli',
       'orchestrator',
       'hub',
       'hub/web',

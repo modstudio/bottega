@@ -1,6 +1,7 @@
 import { SQL } from 'bun'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
+import { VOID_EXCLUSION_REASON } from '../../src/verdict/verdict-rules.ts'
 
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
 const PROJECT_ID = '01990000-0000-7000-8000-000000000088'
@@ -42,9 +43,9 @@ export function fakePostgres(
   principal: string = RECORD_ACTOR_ROLE,
   score?: FakeRecordScore,
   hostedExclusion: HostedExclusion = {
-    rowReason: 'voided with orch score --void',
+    rowReason: VOID_EXCLUSION_REASON,
     supersededAt: null,
-    runReason: 'voided with orch score --void',
+    runReason: VOID_EXCLUSION_REASON,
   },
   onRunWrite?: (ordinal: number) => void | Promise<void>,
   project: { id: string; name: string; spaceId?: string; retiredAt?: string | null } = {

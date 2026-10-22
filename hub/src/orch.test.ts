@@ -270,7 +270,7 @@ test('settings check preserves an exit-one refusal with empty stdout', async () 
   }
 })
 
-test('board calls remove worker and harness identity markers from the orch child', async () => {
+test('board calls remove worker and harness identity markers from the orchestrator child', async () => {
   const root = mkdtempSync(join(tmpdir(), 'hub-board-operator-env-'))
   const executable = join(root, 'orch-board-env')
   writeFileSync(
@@ -307,7 +307,7 @@ printf '%s\n' '{"messages":[],"warning":null}'
   }
 })
 
-test('operator file-ruling argv runs the verb through the orch seam with json', () => {
+test('operator file-ruling argv runs the verb through the orchestrator seam with json', () => {
   expect(fileRulingArgv({ questionId: 7, as: 'doc' })).toEqual([
     'question',
     'ruling',
@@ -494,7 +494,7 @@ test('an unknown envelope kind reports its physical line number', () => {
   expect(() => decodeRunsJson(`${runLine(runFixture, 2)}\n\n${other}`)).toThrow('line 3')
 })
 
-test('only the orch client invokes bin/orch', () => {
+test('only the orchestrator client invokes bin/orch', () => {
   const root = fileURLToPath(new URL('./', import.meta.url))
   const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
     (entry) =>
@@ -514,7 +514,7 @@ test('only the orch client invokes bin/orch', () => {
   expect(violations).toEqual([])
 })
 
-test('orch resolution accepts only executable files from override, checkout, and PATH', async () => {
+test('orchestrator resolution accepts only executable files from override, checkout, and PATH', async () => {
   const root = mkdtempSync(join(tmpdir(), 'hub-orch-resolution-'))
   const bundledRoot = join(root, 'checkout')
   const outputDir = join(bundledRoot, 'hub', 'src')
@@ -565,7 +565,7 @@ test('orch resolution accepts only executable files from override, checkout, and
   }
 })
 
-test('dashboard scoring capability is private and bound to this hub process', () => {
+test('dashboard scoring capability is private and bound to this dashboard process', () => {
   const path = startDashboardCapability()
   try {
     const file = statSync(path)

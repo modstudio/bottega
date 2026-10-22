@@ -305,7 +305,7 @@ describe('worker settings apply refusals', () => {
     )
     process.env.ORCH_RUN_ID = 'settings-apply-worker'
     await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
-      'refusing document store write from an orch worker run',
+      'refusing document store write from an orchestrator worker run',
     )
   })
 
@@ -313,7 +313,7 @@ describe('worker settings apply refusals', () => {
     await expect(
       settingsRenderWriteCommand(flags({ user: true, write: true, yes: true }), shown().port),
     ).rejects.toThrow(
-      `refusing settings render --write from an orch worker run; an operator must run ${PLATFORM_SLUG} machine settings render --write`,
+      `refusing settings render --write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings render --write`,
     )
   })
 
@@ -334,6 +334,6 @@ describe('worker settings apply refusals', () => {
     process.env.ORCH_RUN_ID = 'settings-apply-worker'
     await expect(
       settingsAdoptCommand(flags({ user: true, all: true }), [], shown().port),
-    ).rejects.toThrow('refusing document store write from an orch worker run')
+    ).rejects.toThrow('refusing document store write from an orchestrator worker run')
   })
 })

@@ -163,7 +163,7 @@ function lockCondition(report: Extract<StoreWriteLockReport, { supported: true }
     since: null,
     ageMs: null,
     detail: formatStoreWriteLockReport(report),
-    action: 'inspect the named process and run before retrying an orch write',
+    action: 'inspect the named process and run before retrying an orchestrator write',
     pid: report.pid,
     command: report.command,
     runId: report.runId,

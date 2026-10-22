@@ -11,7 +11,7 @@ import { disabledProjectMcpServers, type McpServerConfig } from '../mcp/mcp-prob
 import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
 import { mcpConfigForRun, projectReaderProxyServers } from './mcp-reader-scope.ts'
 export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
-/** Parent environment names Codex may forward into the read-mostly orch subprocess. */
+/** Parent environment names Codex may forward into the read-mostly orchestrator subprocess. */
 export const CODEX_ORCH_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_DEPTH'] as const
 
 /** Worker reasoning is evidence-bearing configuration, never operator config. */

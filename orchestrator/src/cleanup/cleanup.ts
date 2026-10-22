@@ -364,7 +364,7 @@ export function verifyBranchOwnershipAfterCleanup(
  * A WORKTREE NEED NOT BELONG TO ONE RUN, and assuming it did would have
  * deleted somebody's live work.
  *
- * orch names its trees `orch-<id>`, but a project's own script names them
+ * orchestrator names its trees `orch-<id>`, but a project's own script names them
  * however it likes — one project's tool derives the directory from the TICKET KEY, so
  * every run carrying `--key STAR-5084` lands in the same directory. Four
  * runs (665, 666, 668, 669) shared one tree, three of them blocked and one

@@ -1,5 +1,12 @@
 export const CHECK_LEGS = [
   {
+    name: 'cli',
+    directory: 'cli',
+    ciJob: 'cli',
+    typecheck: ['bun', 'run', 'typecheck'],
+    suite: [],
+  },
+  {
     name: 'orchestrator',
     directory: 'orchestrator',
     ciJob: 'orchestrator',

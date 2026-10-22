@@ -147,8 +147,7 @@ for command in orch hub; do
   echo "linked: $link -> $INSTALL_DIR/bottega"
 done
 
-(unset ORCH_DB HUB_DB ORCH_DB_WRITE; "$INSTALL_DIR/bottega" orch migrate)
-(unset ORCH_DB HUB_DB ORCH_DB_WRITE; "$INSTALL_DIR/bottega" hub migrate)
+(unset ORCH_DB HUB_DB ORCH_DB_WRITE; "$INSTALL_DIR/bottega" machine migrate)
 
 case ":${PATH:-}:" in
   *":$INSTALL_DIR:"*) ;;

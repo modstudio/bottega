@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { classifyHubTaskLookup, trackerLookupFailureCondition } from './task-key-lookup.ts'
 
-describe('hub task-key lookup output', () => {
+describe('built-in task-key lookup output', () => {
   test('classifies hub exact not-found output as established absence', () => {
     expect(classifyHubTaskLookup('DEV-99999', 1, '', 'no task DEV-99999\n')).toEqual({
       state: 'not-found',

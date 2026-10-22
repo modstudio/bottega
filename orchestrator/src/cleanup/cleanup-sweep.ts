@@ -932,7 +932,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   }
 
   /**
-   * Then the PROJECT'S OWN sweep, which knows what orch cannot.
+   * Then the PROJECT'S OWN sweep, which knows what orchestrator cannot.
    *
    * A database whose worktree directory was deleted by hand is invisible to
    * everything above — no row points at it, and there is nothing left to

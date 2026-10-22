@@ -147,7 +147,7 @@ function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): voi
   }
 }
 
-/** Let a project provision a detached read-only checkout at orch's chosen path. */
+/** Let a project provision a detached read-only checkout at orchestrator's chosen path. */
 export function createReadOnlyWithTool(
   tool: WorktreeTool,
   cwd: string,

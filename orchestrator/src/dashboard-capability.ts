@@ -41,7 +41,7 @@ export function dashboardServeCommand(command: string): boolean {
   })
 }
 
-/** Verify that this process was launched by the live, same-user hub dashboard. */
+/** Verify that this process was launched by the live, same-user dashboard. */
 export function dashboardCapabilityAuthorized(): boolean {
   const path = process.env[DASHBOARD_CAPABILITY_PATH_ENV]
   const presented = process.env[DASHBOARD_CAPABILITY_TOKEN_ENV]

@@ -89,6 +89,6 @@ export function formatStoreWriteLockReport(report: StoreWriteLockReport): string
   return (
     `${report.kind}: ${report.classification} after ${report.sampleCount} samples; ` +
     `pid ${report.pid}; command ${report.command ?? 'unavailable'}; ` +
-    `run ${report.runId ?? 'none'}; orch run supervisor ${report.isRunSupervisor ? 'yes' : 'no'}`
+    `run ${report.runId ?? 'none'}; orchestrator run supervisor ${report.isRunSupervisor ? 'yes' : 'no'}`
   )
 }

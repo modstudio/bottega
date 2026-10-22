@@ -134,7 +134,8 @@ export function WorkersPage() {
             </div>
             <Panel eyebrow="Query">
               <pre>
-                <span className="c">$</span> <b>orch find</b> "where is a run marked void"{`\n\n`}
+                <span className="c">$</span> <b>orchestrator find</b> "where is a run marked void"
+                {`\n\n`}
                 <span className="c">
                   {' '}
                   embed bge-m3 · local 21 ms{`\n`} search 18,402 chunks 38 ms{`\n`} rerank

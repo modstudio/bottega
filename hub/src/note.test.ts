@@ -390,7 +390,7 @@ describe('suggestion notes', () => {
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
     })
 
-    test('a hub-protocol note promotion mints or links an existing hub task with evidence', async () => {
+    test('a hub-protocol note promotion mints or links an existing local task with evidence', async () => {
       const created = (
         await createNote({
           text: `Hub-owned promotion ${crypto.randomUUID()}`,

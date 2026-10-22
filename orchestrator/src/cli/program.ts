@@ -1,6 +1,12 @@
 // concern: cli
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { Command, CommanderError } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  applyPublicCommandPath,
+  type PublicCommandInvocation,
+  publicCommandUsage,
+} from '../../../shared/commander-public-path.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
@@ -32,7 +38,7 @@ import { register as registerTestSubstance } from '../commands/test-substance.ts
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
 
 export const program = new Command()
-  .name('orch')
+  .name(PLATFORM_SLUG)
   .option('--version', 'identify this release or development checkout')
   .enablePositionalOptions()
   .exitOverride()
@@ -43,6 +49,9 @@ export const program = new Command()
   .allowUnknownOption(false)
   .allowExcessArguments(false)
   .showSuggestionAfterError()
+  .configureHelp({
+    commandUsage: publicCommandUsage,
+  })
 
 registerReview(program)
 registerPullRequest(program)
@@ -113,10 +122,11 @@ export function recordInvocationSession(argv: string[]): void {
   recordSessionHostPressure()
 }
 
-export async function run(argv: string[]): Promise<number> {
+export async function run(argv: string[], invocation?: PublicCommandInvocation): Promise<number> {
   setRawArgv(argv)
+  applyPublicCommandPath(program, argv, invocation)
   try {
-    await program.parseAsync(['bun', 'orch', ...(argv.length ? argv : ['--help'])])
+    await program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
     await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {

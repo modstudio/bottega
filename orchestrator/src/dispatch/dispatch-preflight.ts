@@ -223,7 +223,7 @@ export function preflight(
   }
   if (writesJob && tool?.branch?.includes('{key}') && !key) {
     problems.push(
-      `this project's branch names must carry a ticket key (${tool.branch}), and orch will ` +
+      `this project's branch names must carry a ticket key (${tool.branch}), and orchestrator will ` +
         `not invent one.\n  --key <KEY-123>`,
     )
   }

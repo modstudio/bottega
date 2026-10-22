@@ -107,7 +107,7 @@ describe('git guard', () => {
         },
         {
           cwd: outside,
-          command: `orch workflow exec --cwd ${worktree} -- git status`,
+          command: `${PLATFORM_SLUG} workflow exec --cwd ${worktree} -- git status`,
         },
       ]).map((decision) => decision?.permissionDecision),
     ).toEqual(['allow', 'allow', 'allow'])
@@ -122,7 +122,7 @@ describe('git guard', () => {
       invoke(
         databasePath,
         worktree,
-        'orch workflow exec -- git push --force origin feature:feature',
+        `${PLATFORM_SLUG} workflow exec -- git push --force origin feature:feature`,
       )?.permissionDecision,
     ).toBe('ask')
     const clustered = ['-fu', '-uf', '-ff'].flatMap((flag) =>
@@ -139,20 +139,29 @@ describe('git guard', () => {
   test('honors both workflow exec cwd forms and rejects ambiguous cwd flags', () => {
     const { databasePath, outside, project, worktree } = fixture()
     expect(
-      invoke(databasePath, worktree, `orch workflow exec --cwd=${project} -- git reset --hard`),
+      invoke(
+        databasePath,
+        worktree,
+        `${PLATFORM_SLUG} workflow exec --cwd=${project} -- git reset --hard`,
+      ),
     ).toBeNull()
     expect(
-      invoke(databasePath, outside, `orch workflow exec --cwd=${worktree} -- git reset --hard`)
-        ?.permissionDecision,
+      invoke(
+        databasePath,
+        outside,
+        `${PLATFORM_SLUG} workflow exec --cwd=${worktree} -- git reset --hard`,
+      )?.permissionDecision,
     ).toBe('allow')
     expect(
       invoke(
         databasePath,
         outside,
-        `orch workflow exec --cwd ${worktree} --cwd=${project} -- git status`,
+        `${PLATFORM_SLUG} workflow exec --cwd ${worktree} --cwd=${project} -- git status`,
       ),
     ).toBeNull()
-    expect(invoke(databasePath, outside, 'orch workflow exec --cwd -- git status')).toBeNull()
+    expect(
+      invoke(databasePath, outside, `${PLATFORM_SLUG} workflow exec --cwd -- git status`),
+    ).toBeNull()
   })
 
   test('does not allow repository-redirection options based on the worktree cwd', () => {
@@ -368,7 +377,7 @@ describe('git guard', () => {
     expect(
       invokeMany(databasePath, [
         { cwd: outside, command: 'git status' },
-        { cwd: worktree, command: 'orch workflow exec -- printf nope' },
+        { cwd: worktree, command: `${PLATFORM_SLUG} workflow exec -- printf nope` },
         { cwd: worktree, command: 'git status && git clean -fd' },
       ]),
     ).toEqual([null, null, null])
