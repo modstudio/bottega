@@ -28,7 +28,6 @@ import {
 } from './monitor-types.ts'
 
 function deliveredDetail(row: {
-  kind: string
   subject: string
   age_ms: number | null
   run_status: string | null
@@ -37,7 +36,14 @@ function deliveredDetail(row: {
   const age = row.age_ms == null ? 'age unknown' : `age ${Math.round(row.age_ms / 60_000)}m`
   const status = row.run_status ? `, status ${row.run_status}` : ''
   const project = row.run_project ? `, project ${row.run_project}` : ''
-  return `Orch detected ${row.kind} for ${row.subject} (${age}${status}${project}); inspect the referenced record deliberately.`
+  const target = row.subject.startsWith('run:') ? 'run' : 'referenced record'
+  return `detected (${age}${status}${project}); inspect the ${target} deliberately.`
+}
+
+function deliveredLabel(row: { subject: string; run_number: number | null }): string {
+  return row.subject.startsWith('run:') && row.run_number !== null
+    ? `run ${row.run_number}`
+    : row.subject
 }
 
 function landingNoticeDetail(row: {
@@ -156,7 +162,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     .query(
       `SELECT c.id, c.kind, c.subject, c.condition_since, c.age_ms,
               c.issue_key, c.severity, c.owner_session_id,
-              r.status run_status, r.repo run_project
+              r.number run_number, r.status run_status, r.repo run_project
          FROM monitor_condition c
          LEFT JOIN run r ON c.subject=('run:' || r.record_id)
         WHERE c.owner_session_id=? AND c.delivered_at IS NULL
@@ -177,6 +183,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     issue_key: string | null
     severity: MonitorSeverity | null
     owner_session_id: string
+    run_number: number | null
     run_status: string | null
     run_project: string | null
   }[]
@@ -192,6 +199,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
       noticeId: `condition:${row.id}` as const,
       kind: row.kind,
       subject: row.subject,
+      label: deliveredLabel(row),
       since: row.condition_since,
       ageMs: row.age_ms,
       detail: deliveredDetail(row),
@@ -222,6 +230,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
         noticeId: `landing:${row.record_id}`,
         kind: `landing-${row.status.replaceAll('_', '-')}`,
         subject: `landing:${row.record_id}`,
+        label: `landing:${row.record_id}`,
         since: row.finished_at ?? row.started_at,
         ageMs: null,
         detail: landingNoticeDetail(row),
@@ -252,6 +261,7 @@ export async function claimMonitorNoticesWithHosted(
           noticeId: `board:${notice.id}`,
           kind: 'board-notice',
           subject: `board:${notice.id}`,
+          label: `board:${notice.id}`,
           since: null,
           ageMs: null,
           detail: notice.text,

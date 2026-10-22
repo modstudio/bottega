@@ -864,15 +864,36 @@ describe('operational monitor conditions', () => {
   test('claims an addressed worker gate tooling change as an append-only notice', () => {
     const owner = 'worker-gate-tooling-owner'
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: owner })
+    const runNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as { number: number }
+    ).number
     persistAddressedCondition('worker-gate-tooling-change', `run:${runId}`, owner)
 
     expect(claimMonitorNotices(owner)).toEqual([
       expect.objectContaining({
         kind: 'worker-gate-tooling-change',
         subject: `run:${runId}`,
+        label: `run ${runNumber}`,
+        detail: 'detected (age 0m, status ok); inspect the run deliberately.',
         ownerSession: owner,
       }),
     ])
+  })
+
+  test('keeps an unresolved run subject as its notice label', () => {
+    const owner = 'unresolved-run-owner'
+    const subject = `run:${newRecordId()}`
+    persistAddressedCondition('worker-gate-tooling-change', subject, owner)
+
+    const [notice] = claimMonitorNotices(owner)
+    expect(notice).toEqual(
+      expect.objectContaining({
+        subject,
+        label: subject,
+        detail: 'detected (age 0m); inspect the run deliberately.',
+      }),
+    )
+    expect(notice?.detail).not.toContain(subject)
   })
 
   test(`a missing ${PLATFORM_SLUG} question stats document is an observation error, not emptiness`, () => {
