@@ -102,7 +102,7 @@ export type CloseInput = {
   run: (opts: SuccessorOptions) => Promise<RunResult>
 }
 
-export function failoverRefusalMessage(id: string, reason: string, retryCommand: boolean): string {
+function failoverRefusalMessage(id: string, reason: string, retryCommand: boolean): string {
   const remedy = retryCommand ? `; retry with ${PLATFORM_SLUG} run retry ${id} --agent <name>` : ''
   return `Failover refused: ${reason}${remedy}`
 }

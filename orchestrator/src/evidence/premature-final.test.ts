@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { decidePrematureFinal, type PrematureFinalFacts } from './premature-final.ts'
+import {
+  applyPrematureFinalFailure,
+  decidePrematureFinal,
+  type PrematureFinalFacts,
+} from './premature-final.ts'
 
 const readerOpening =
   "I'll start by reading the full prompt, the review schema, and the MCP tool definitions."
@@ -13,7 +17,9 @@ function facts(overrides: Partial<PrematureFinalFacts> = {}): PrematureFinalFact
     evidence: {},
     reportsRun: false,
     questionsAsked: false,
-    replyShape: 'reader-no-deliverables',
+    replyShape: 'reader',
+    readerDelivered: false,
+    measuredFiles: null,
     textFields: [readerOpening],
     ...overrides,
   }
@@ -31,9 +37,7 @@ describe('premature final decision', () => {
 
   test('classifies review-lens run 16613 with a placeholder finding and no provenance', () => {
     expect(
-      decidePrematureFinal(
-        facts({ replyShape: 'review-no-evidence', textFields: [reviewOpening] }),
-      ),
+      decidePrematureFinal(facts({ replyShape: 'review', textFields: [reviewOpening] })),
     ).not.toBeNull()
   })
 
@@ -51,8 +55,9 @@ describe('premature final decision', () => {
     expect(
       decidePrematureFinal(
         facts({
-          replyShape: 'done-writer-no-files',
+          replyShape: 'done-writer',
           evidence: { filesChanged: [] },
+          measuredFiles: [],
           textFields: ['Before writing the change, I will read the implementation.'],
         }),
       ),
@@ -63,8 +68,9 @@ describe('premature final decision', () => {
     expect(
       decidePrematureFinal(
         facts({
-          replyShape: 'done-writer-no-files',
+          replyShape: 'done-writer',
           evidence: { filesChanged: ['orchestrator/src/run/run.ts'] },
+          measuredFiles: ['orchestrator/src/run/run.ts'],
           textFields: ['Before writing the change, I will read the implementation.'],
         }),
       ),
@@ -75,11 +81,35 @@ describe('premature final decision', () => {
     expect(
       decidePrematureFinal(
         facts({
-          replyShape: 'review-no-evidence',
+          replyShape: 'review',
           evidence: { filesCovered: ['orchestrator/src/run/run.ts'] },
           textFields: [reviewOpening],
         }),
       ),
     ).toBeNull()
+  })
+
+  test.each([
+    ['ok', { status: 'ok' as const, failureKind: null, error: null }],
+    [
+      'unevidenced',
+      { status: 'failed' as const, failureKind: 'unevidenced', error: 'no review evidence' },
+    ],
+    ['other', { status: 'failed' as const, failureKind: 'other', error: 'no writer changes' }],
+  ])('replaces a provisional %s outcome', (_name, outcome) => {
+    const refusal = decidePrematureFinal(facts())
+    expect(applyPrematureFinalFailure(outcome, refusal)).toMatchObject({
+      status: 'failed',
+      failureKind: 'premature-final',
+    })
+  })
+
+  test('preserves a prior substantive failure', () => {
+    const truncated = {
+      status: 'failed' as const,
+      failureKind: 'truncated',
+      error: 'vendor terminated stream',
+    }
+    expect(applyPrematureFinalFailure(truncated, decidePrematureFinal(facts()))).toEqual(truncated)
   })
 })
