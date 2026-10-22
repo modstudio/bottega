@@ -36,6 +36,23 @@ export function reportReplySuccessorDecision(input: {
   )
 }
 
+function acknowledgementPushDecision(input: {
+  acknowledgementDeadline: string | null
+  readerBeganAt: BoardReaderStart
+  postedAt: string
+  clock: number
+}): BoardPushDecision {
+  if (input.acknowledgementDeadline !== null && Date.parse(input.acknowledgementDeadline) <= input.clock)
+    return 'withheld'
+  if (input.readerBeganAt === null) return 'withheld'
+  if (input.readerBeganAt !== 'unbounded' && input.readerBeganAt > input.postedAt) return 'withheld'
+  return 'acknowledgement'
+}
+
+function sessionBeganBeforePost(readerBeganAt: BoardReaderStart, postedAt: string): boolean {
+  return readerBeganAt !== null && readerBeganAt !== 'unbounded' && readerBeganAt <= postedAt
+}
+
 export function boardPushDecision(input: {
   acknowledgementRequired: boolean
   postedAt: string
@@ -51,28 +68,20 @@ export function boardPushDecision(input: {
   if (input.hasReceipt || input.inAudience === false) return 'withheld'
   if (input.expiresAt !== null && Date.parse(input.expiresAt) <= input.clock) return 'withheld'
   if (input.reportReplySuccessor) return 'ordinary'
-  if (input.acknowledgementRequired) {
-    if (
-      input.acknowledgementDeadline !== null &&
-      Date.parse(input.acknowledgementDeadline) <= input.clock
-    )
-      return 'withheld'
-    if (input.readerBeganAt === null) return 'withheld'
-    if (input.readerBeganAt !== 'unbounded' && input.readerBeganAt > input.postedAt)
-      return 'withheld'
-    return 'acknowledgement'
-  }
-  const sessionBeganBeforePost =
-    input.readerBeganAt !== null &&
-    input.readerBeganAt !== 'unbounded' &&
-    input.readerBeganAt <= input.postedAt
+  if (input.acknowledgementRequired)
+    return acknowledgementPushDecision({
+      acknowledgementDeadline: input.acknowledgementDeadline,
+      readerBeganAt: input.readerBeganAt,
+      postedAt: input.postedAt,
+      clock: input.clock,
+    })
   if (
     lateDeliveryDecision({
       purpose: input.purpose ?? 'information',
       inAudience: true,
       expired: false,
       hasReceipt: false,
-      sessionBeganBeforePost,
+      sessionBeganBeforePost: sessionBeganBeforePost(input.readerBeganAt, input.postedAt),
     }) === 'deliver'
   )
     return 'ordinary'

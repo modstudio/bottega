@@ -4,7 +4,7 @@ import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { classifyCaller } from '../caller-classification.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { reapHostedBoardCache } from './board-hosted-cache.ts'
 import {
@@ -13,9 +13,15 @@ import {
   needsAckEscalation,
   OPERATOR_READER,
   parseAudience,
+  type PresenceFact,
   requireRealSession,
+  resolveAudience,
 } from './board-policy.ts'
-import { missingReaderStartWarning, selectPushNotices } from './board-push-policy.ts'
+import {
+  missingReaderStartWarning,
+  reportReplySuccessorDecision,
+  selectPushNotices,
+} from './board-push-policy.ts'
 import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import {
   addressed,
@@ -31,8 +37,8 @@ import {
   originText,
   type PostNoticeInput,
   type PostNoticeResult,
+  presenceFacts,
   recipients,
-  replySuccessorPush,
   rowIsLive,
 } from './board-store.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
@@ -133,6 +139,43 @@ function wasDelivered(messageRecordId: string, reader: string, database = db()):
     .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?')
     .get(messageRecordId, reader) as { delivered_at: string | null } | null
   return Boolean(receipt?.delivered_at)
+}
+
+function replySuccessorPush(
+  reply: MessageRow,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  if (reply.kind !== 'reply' || reply.thread_root_record_id === null) return false
+  const root = messageRows(database).find(
+    (candidate) => candidate.record_id === reply.thread_root_record_id,
+  )
+  if (!root?.author_session || !root.author_project) return false
+  const facts = presenceFacts(database, clock)
+  const readerFact = facts.find(
+    (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
+  )
+  return reportReplySuccessorDecision({
+    rootAuthorLive: resolveAudience(
+      { kind: 'session', value: root.author_session },
+      facts,
+      clock,
+      SESSION_LIVE_MS,
+    ).includes(root.author_session),
+    readerIsArchitect: readerFact?.role === 'architect',
+    readerProject: readerFact?.project ?? '',
+    rootProject: root.author_project,
+    readerIsParticipant: hasReceipt(reply.record_id, reader, database),
+    successorAlreadyReceived: Boolean(
+      database
+        .query(
+          `SELECT 1 AS ok FROM board_receipt
+           WHERE message_record_id=? AND audience_at_posting=0 AND delivered_at IS NOT NULL`,
+        )
+        .get(reply.record_id),
+    ),
+  })
 }
 
 export function deliverableTo(

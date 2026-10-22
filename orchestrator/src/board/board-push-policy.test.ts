@@ -120,7 +120,7 @@ test('a report reply reaches the first later architect session of the posting pr
   expect(reportReplySuccessorDecision({ ...successor, rootAuthorLive: true })).toBe(false)
   expect(reportReplySuccessorDecision({ ...successor, readerIsParticipant: true })).toBe(false)
   expect(reportReplySuccessorDecision({ ...successor, successorAlreadyReceived: true })).toBe(false)
-  expect(reportReplySuccessorDecision({ ...successor, readerProject: 'bottega' })).toBe(false)
+  expect(reportReplySuccessorDecision({ ...successor, readerProject: 'other' })).toBe(false)
   expect(reportReplySuccessorDecision({ ...successor, readerIsArchitect: false })).toBe(false)
   expect(
     decision({

@@ -11,6 +11,7 @@ import sys
 import time
 
 from board_hook_common import (
+    board_bin,
     marker_path,
     mark_delivered,
     new_emission_id,
@@ -55,12 +56,9 @@ def refresh_presence(session: str, now: float, interval: float) -> None:
     if now - last < interval:
         return
     write_marker(path, {"ran_at": now})
-    binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
-    )
     try:
         subprocess.run(
-            [binary, "board", "presence"],
+            [board_bin(), "board", "presence"],
             capture_output=True,
             timeout=BOARD_PRESENCE_CALL_TIMEOUT_SECONDS,
             check=False,

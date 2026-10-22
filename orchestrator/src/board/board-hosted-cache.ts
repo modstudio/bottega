@@ -18,6 +18,7 @@ import {
   messageIsLive,
   OPERATOR_READER,
   parseAudience,
+  type PresenceFact,
   resolveAudience,
 } from './board-policy.ts'
 import {
@@ -469,7 +470,9 @@ function hostedReplySuccessorPush(
     .find((candidate) => candidate.id === rootId)
   if (!root?.authorSession || !root.origin.project) return false
   const facts = presenceFacts(database, clock)
-  const readerFact = facts.find((row) => row.reader === reader && !row.taskAudienceOnly)
+  const readerFact = facts.find(
+    (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
+  )
   return reportReplySuccessorDecision({
     rootAuthorLive: resolveAudience(
       { kind: 'session', value: root.authorSession },
