@@ -133,6 +133,12 @@ export function reclaimsTreeByDefault(name: string): boolean {
   return Boolean(j?.needs.readsRepo)
 }
 
+/** A repository job whose tree is a reader clone: it reads the repo and does not write it. */
+export function isReadOnlyRepositoryJob(name: string): boolean {
+  const j = JOBS[name]
+  return Boolean(j?.needs.readsRepo) && !j?.needs.writesRepo
+}
+
 export function jobTimeoutCeilingMs(j: Job): number {
   const declared =
     j.timeoutCeilingMs ?? JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS].ceilingMinutes * 60_000

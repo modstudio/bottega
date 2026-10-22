@@ -5,6 +5,8 @@ export const runStopBoundarySpecs = [
     allowed: [
       '../../../shared/brand.ts',
       '../cleanup/cleanup.ts',
+      '../cleanup/discard-worktree-absence.ts',
+      '../close/close-out.ts',
       '../database/db.ts',
       '../jobs/jobs.ts',
       '../record/machine-identity.ts',
