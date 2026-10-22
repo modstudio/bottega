@@ -17,6 +17,7 @@ function command(
     processStartTime: () => null,
   },
   clock: () => number = Date.now,
+  subscriptionPrices: Readonly<Record<string, number | null>> = {},
 ) {
   const lines: string[] = []
   const values = (name: string) => (Array.isArray(args[name]) ? (args[name] as string[]) : [])
@@ -44,6 +45,7 @@ function command(
       thinOutputWarning,
       processObservation: observation,
       clock,
+      subscriptionPrices,
     },
   ).then(() => lines)
 }
@@ -509,6 +511,38 @@ describe('run listing', () => {
     expect(
       rows.every((row) => JSON.stringify(row.failover_chain) === JSON.stringify(['codex', 'grok'])),
     ).toBe(true)
+  })
+
+  test('runs --json reports amortized subscription cost and ignores a stored estimate', async () => {
+    const id = addRun({
+      agent: 'grok',
+      job: 'understand',
+      startedAt: '2026-10-22T12:00:00.000Z',
+    })
+    db()
+      .query(
+        `UPDATE run SET vendor_tokens=1, vendor_cost_usd=NULL, vendor_estimated_cost_usd=23.5,
+                vendor_cost_source='estimated' WHERE record_id=?`,
+      )
+      .run(id)
+    const other = addRun({
+      agent: 'grok',
+      job: 'understand',
+      startedAt: '2026-10-22T13:00:00.000Z',
+    })
+    db().query('UPDATE run SET vendor_tokens=3 WHERE record_id=?').run(other)
+    const row = runJson(
+      (await command({ json: true, id: [id] }, undefined, undefined, undefined, { grok: 100 }))[0]!,
+    ) as {
+      cost_usd: number
+      cost_source: string
+      vendor_cost_usd: number | null
+      vendor_estimated_cost_usd: number
+    }
+    expect(row.cost_usd).toBe(25)
+    expect(row.cost_source).toBe('subscription, amortized')
+    expect(row.vendor_cost_usd).toBeNull()
+    expect(row.vendor_estimated_cost_usd).toBe(23.5)
   })
 
   test('runs --json publishes every question on the root, including child turns', async () => {

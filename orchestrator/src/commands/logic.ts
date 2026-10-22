@@ -52,6 +52,7 @@ import {
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
+import { loadSubscriptionPrices } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
@@ -604,7 +605,9 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .action((key, options) => {
       const project = projectAt(process.cwd())
       if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
-      return epicCommand(project.name, key, Boolean(options.json), presentation)
+      return loadSubscriptionPrices().then((prices) =>
+        epicCommand(project.name, key, Boolean(options.json), presentation, prices),
+      )
     })
   describedCommand(program, 'jobs', 'list jobs and their capability requirements')
     .option('--json', 'write the job catalogue as JSON')

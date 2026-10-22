@@ -131,7 +131,13 @@ export function register(program: Command): void {
     })
   config
     .command('set <key> <value>')
-    .description('set one configuration value')
+    .description(
+      `set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD`,
+    )
+    .addHelpText(
+      'after',
+      `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd.\nExamples:\n  ${PLATFORM_SLUG} machine config set subscription.codex.monthly_usd <usd>\n  ${PLATFORM_SLUG} machine config set subscription.grok.monthly_usd <usd>\n`,
+    )
     .option('--space', 'write the value in the active space scope')
     .option('--machine', 'write the value in machine configuration')
     .option('--expect <rowVersion>', 'row version required before writing')

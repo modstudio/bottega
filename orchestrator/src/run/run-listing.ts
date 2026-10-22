@@ -19,6 +19,8 @@ import type {
 } from './question-vocabulary.ts'
 import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
+import { reportedCostForRun } from './run-subscription-cost.ts'
+import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
 export function runIdentityMap(): RunIdentity[] {
@@ -76,6 +78,27 @@ type RunListingPresentation = {
     processStartTime(pid: number): string | null
   }
   clock(): number
+  subscriptionPrices?: Readonly<Record<string, number | null>>
+}
+
+function withReportedCost(
+  row: Record<string, unknown>,
+  facts: ReturnType<typeof subscriptionCostFacts>,
+  prices: Readonly<Record<string, number | null>>,
+) {
+  const cost = reportedCostForRun(
+    {
+      agent: String(row.agent ?? ''),
+      startedAt: String(row.started_at ?? ''),
+      vendorTokens: (row.vendor_tokens as number | null) ?? null,
+      vendorCostUsd: (row.vendor_cost_usd as number | null) ?? null,
+      vendorEstimatedCostUsd: (row.vendor_estimated_cost_usd as number | null) ?? null,
+      vendorCostSource: (row.vendor_cost_source as string | null) ?? null,
+    },
+    facts,
+    prices,
+  )
+  return { ...row, cost_usd: cost.usd, cost_source: cost.source }
 }
 
 function processSamplesForRows(
@@ -228,11 +251,13 @@ export async function runListingCommand(
     thinOutputWarning,
     processObservation,
     clock,
+    subscriptionPrices = {},
   } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const jsonV1 = options.jsonV1
   const json = has('json') || jsonV1
+  const costFacts = json ? subscriptionCostFacts() : null
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
@@ -291,7 +316,7 @@ export async function runListingCommand(
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${
               json
-                ? ', r.cwd, r.session_id, r.started_by_user_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,' +
+                ? ', r.cwd, r.session_id, r.started_by_user_id, r.vendor_cost_usd, r.vendor_estimated_cost_usd, r.vendor_cost_source, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,' +
                   ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of_record_id, r.launch_key, r.evidence_excluded, r.resource_cpu_ms, r.resource_peak_rss_bytes, r.resource_samples, r.resource_source'
                 : ''
             }
@@ -326,7 +351,7 @@ export async function runListingCommand(
     const turns = json
       ? db()
           .query(
-            `SELECT record_id, number, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
+            `SELECT record_id, number, started_at, agent, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
          FROM run WHERE record_id = ? OR parent_run_record_id = ?
         ORDER BY turn, number`,
           )
@@ -374,23 +399,28 @@ export async function runListingCommand(
           deliveries: questionDeliveries(q.record_id),
         }))
       : undefined
-    return [
-      {
-        ...r,
-        ...current,
-        ...(turns ? { turns } : {}),
-        ...(questions ? { questions } : {}),
-        answer_agent: final.agent,
-        failover_chain: chain.attempts.map((attempt) => attempt.agent),
-        ...(chainIsStranded(r.record_id as string)
-          ? {
-              status: 'stranded',
-              stranded: true,
-              recovery_hint: strandedRecovery(r.record_id as string),
-            }
-          : {}),
-      },
-    ]
+    const pricedTurns =
+      turns && costFacts
+        ? (turns as Record<string, unknown>[]).map((turn) =>
+            withReportedCost(turn, costFacts, subscriptionPrices),
+          )
+        : turns
+    const listed = {
+      ...r,
+      ...current,
+      ...(pricedTurns ? { turns: pricedTurns } : {}),
+      ...(questions ? { questions } : {}),
+      answer_agent: final.agent,
+      failover_chain: chain.attempts.map((attempt) => attempt.agent),
+      ...(chainIsStranded(r.record_id as string)
+        ? {
+            status: 'stranded',
+            stranded: true,
+            recovery_hint: strandedRecovery(r.record_id as string),
+          }
+        : {}),
+    }
+    return [costFacts ? withReportedCost(listed, costFacts, subscriptionPrices) : listed]
   })
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes

@@ -29,6 +29,8 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { reportedCostForRun } from '../run/run-subscription-cost.ts'
+import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 import { guide } from './guide.ts'
@@ -116,8 +118,38 @@ function reviewsForRun(runId: string): RunDetailReviewLens[] {
   }))
 }
 
+function runDetailCost(
+  row: Record<string, unknown>,
+  prices: Readonly<Record<string, number | null>>,
+) {
+  const {
+    started_at,
+    vendor_cost_usd,
+    vendor_estimated_cost_usd,
+    vendor_cost_source,
+    ...detailRow
+  } = row
+  const cost = reportedCostForRun(
+    {
+      agent: String(row.agent),
+      startedAt: String(started_at),
+      vendorTokens: (row.vendor_tokens as number | null) ?? null,
+      vendorCostUsd: (vendor_cost_usd as number | null) ?? null,
+      vendorEstimatedCostUsd: (vendor_estimated_cost_usd as number | null) ?? null,
+      vendorCostSource: (vendor_cost_source as string | null) ?? null,
+    },
+    subscriptionCostFacts(),
+    prices,
+  )
+  return { detailRow, cost_usd: cost.usd, cost_source: cost.source }
+}
+
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
-export function runDetail(id: string, receipt = false) {
+export function runDetail(
+  id: string,
+  receipt = false,
+  subscriptionPrices: Readonly<Record<string, number | null>> = {},
+) {
   const row = db()
     .query(
       `SELECT r.number AS id, r.record_id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
@@ -129,12 +161,14 @@ export function runDetail(id: string, receipt = false) {
             r.provisioning_entries, r.provisioning_entries_limited, r.provisioning_host_load,
             r.provisioning_outcome, r.provisioning_entry_roots,
             r.resource_cpu_ms, r.resource_peak_rss_bytes, r.resource_samples, r.resource_source,
+            r.started_at, r.vendor_cost_usd, r.vendor_estimated_cost_usd, r.vendor_cost_source,
             s.delivery, s.quality, s.fidelity, s.note, s.scored_at
        FROM run r
        LEFT JOIN score s ON s.run_record_id = r.record_id WHERE r.record_id = ?`,
     )
     .get(id) as Record<string, unknown> | null
   if (!row) return null
+  const { detailRow, cost_usd, cost_source } = runDetailCost(row, subscriptionPrices)
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
   const eventsPath = runEventsPath(id)
@@ -177,7 +211,9 @@ export function runDetail(id: string, receipt = false) {
       return { id: number, ...row }
     })
   return {
-    ...row,
+    ...detailRow,
+    cost_usd,
+    cost_source,
     requested_id: id,
     resolved_from: identity.parent_run_record_id === null ? 'root' : 'turn',
     root_id: identity.root_id,

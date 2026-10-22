@@ -8,7 +8,14 @@ export async function epicCommand(
   key: string,
   json: boolean,
   presentation: { log(value: string): void },
+  subscriptionPrices: Readonly<Record<string, number | null>> = {},
 ): Promise<void> {
-  const report = epicScoreboard(key, await epicChildren(project, key))
+  const report = epicScoreboard(
+    key,
+    await epicChildren(project, key),
+    undefined,
+    undefined,
+    subscriptionPrices,
+  )
   presentation.log(json ? JSON.stringify(report) : renderEpicHuman(report))
 }

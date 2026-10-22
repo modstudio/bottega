@@ -212,6 +212,7 @@ export type TerminalInput = {
   exitCode: number
   vendorTokens: number | null
   costUsd: number | null
+  billing: string | null
   vendorUsage: VendorUsage
   effectiveModel: string | null
   resolvedSession: string | null
@@ -460,6 +461,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     exitCode,
     vendorTokens,
     costUsd,
+    billing,
     vendorUsage,
     effectiveModel,
     resolvedSession,
@@ -728,7 +730,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     latencyMs: Date.now() - started,
     vendorTokens,
     vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage),
+    ...runUsageColumns(vendorUsage, billing),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -771,7 +773,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           promptPath,
           vendorTokens,
           costUsd,
-          ...runUsageColumnValues(runUsageColumns(vendorUsage)),
+          ...runUsageColumnValues(runUsageColumns(vendorUsage, billing)),
           effectiveModel,
           status,
           error,
