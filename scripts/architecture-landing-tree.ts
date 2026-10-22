@@ -37,6 +37,7 @@ export const landingTreeModules = [
     allowed: [
       '../../../shared/brand.ts',
       '../../../shared/record-id.ts',
+      'bun:sqlite',
       'node:crypto',
       '../close/close-out.ts',
       '../database/db.ts',

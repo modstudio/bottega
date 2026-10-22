@@ -1,6 +1,7 @@
 // concern: landing-tree
 /** Opens an architect-owned, project-provisioned tree on a finished run branch. */
 
+import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -139,6 +140,18 @@ function resolveLandingTarget(runId: string, root: LandingTreeRunRow, latest: La
     )
   }
   return { project, branch, plan }
+}
+
+function finishLandingTreeOpen(
+  root: LandingTreeRunRow,
+  database: Database,
+  recordId: string,
+  startedAt: string,
+): void {
+  adoptCoordinatorRunsForLanding(root, database)
+  database
+    .query("UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?")
+    .run(Math.max(0, Date.now() - Date.parse(startedAt)), recordId)
 }
 
 export function openLandingTree(runId: string, seed?: string): OpenedLandingTree {
@@ -310,10 +323,7 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
         `landing tree postcondition failed: expected ${branch} at ${plan.tip} with run ${inserted.record_id} ownership`,
       )
     }
-    adoptCoordinatorRunsForLanding(root, database)
-    db()
-      .query("UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?")
-      .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.record_id)
+    finishLandingTreeOpen(root, database, inserted.record_id, startedAt)
     return { path: created.path, branch, tip: plan.tip }
   } catch (error) {
     recordLandingTreeFailure(inserted.record_id, startedAt, error)
