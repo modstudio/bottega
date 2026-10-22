@@ -747,8 +747,34 @@ esac
             "",
             "",
         )
+        self.assertFalse(decision.should_exit)
         self.assertIn("WAITING", decision.lines[0])
         self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
+        self.assertNotIn("BLOCKED", decision.lines[0])
+
+    def test_foreign_workflow_question_is_not_blocked(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56",
+            [
+                {
+                    "kind": "workflow",
+                    "question_id": 1936,
+                    "session_id": "eaabda0a",
+                    "can_answer": False,
+                    "ownership_notice": (
+                        "owned by session eaabda0a; only that session, or the operator "
+                        "relaying a decision, may answer it"
+                    ),
+                }
+            ],
+            0,
+            0,
+            0,
+            "",
+            "",
+        )
+        self.assertTrue(decision.should_exit)
+        self.assertEqual(decision.lines, [])
 
     def test_foreign_question_is_not_counted(self):
         decision = heartbeat_decision.heartbeat_decision(
@@ -756,6 +782,26 @@ esac
         )
         self.assertTrue(decision.should_exit)
         self.assertEqual(decision.lines, [])
+
+    def test_foreign_workflow_does_not_add_to_an_own_run_question(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56",
+            [
+                self.worker_question(),
+                {
+                    "kind": "workflow",
+                    "question_id": 1936,
+                    "session_id": "eaabda0a",
+                    "can_answer": False,
+                },
+            ],
+            0,
+            0,
+            0,
+            "",
+            "",
+        )
+        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
 
     def test_duplicate_question_rows_count_once(self):
         question = self.worker_question()

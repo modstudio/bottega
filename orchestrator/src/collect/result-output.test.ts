@@ -6,3 +6,9 @@ test('shows observed tests and their disagreement independently of a reply', () 
     'tests observed: {"ran":false,"passed":null}; tests_claim_disagrees: true',
   )
 })
+
+test('shows an unavailable runner as unobserved and non-disagreeing', () => {
+  expect(observedTestsLine({ ran: null, passed: null, claimDisagrees: 0 })).toBe(
+    'tests observed: not observed; tests_claim_disagrees: false',
+  )
+})

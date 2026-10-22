@@ -114,6 +114,8 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../project/projects.ts',
       './continuation-checkpoint-context.ts',
       './continuation-checkout-service.ts',
+      './continuation-message.ts',
+      './continuation-provision-service.ts',
       './continuation-tree-decision.ts',
       './continuation-tree-service.ts',
       './resume-tree.ts',

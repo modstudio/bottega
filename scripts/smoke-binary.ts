@@ -203,10 +203,10 @@ try {
   if (existsSync(stateHome))
     throw new Error('help, version, and schema-check commands created the state directory')
   await smoke(binary, ['agent', 'jobs'], stateHome, 'implement')
-  const agentList = await smoke(binary, ['agent', 'show', 'list'], stateHome)
+  const agentList = await smoke(binary, ['agent', 'list'], stateHome)
   for (const builtIn of ['codex', 'grok']) {
     if (!agentList.split('\n').some((line) => line.startsWith(`${builtIn} `))) {
-      throw new Error(`${PLATFORM_SLUG} agent show list did not show built-in agent ${builtIn}`)
+      throw new Error(`${PLATFORM_SLUG} agent list did not show built-in agent ${builtIn}`)
     }
   }
   await smoke(binary, ['task', 'list'], stateHome)

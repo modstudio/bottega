@@ -137,7 +137,6 @@
       "orchestrator/src/agent/agents.ts": 2,
       "orchestrator/src/agent/model-host.test.ts": 7,
       "orchestrator/src/agent/model-host.ts": 3,
-      "orchestrator/src/agent/vendor-probe.ts": 1,
       "orchestrator/src/ask/ask-failure.ts": 1,
       "orchestrator/src/ask/ask-proxy.test.ts": 2,
       "orchestrator/src/ask/ask-proxy.ts": 3,

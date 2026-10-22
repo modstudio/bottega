@@ -5,12 +5,13 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { UNIT_TEST_CHECK_CATEGORY } from '../../../shared/check-execution.ts'
 import { runEventsPath } from '../events.ts'
+import { hasFocusedTestRunner } from '../focused-test/focused-test-decision.ts'
 
 export type TestExecutionObservation = { executed: true; passed: boolean }
 export type TestOutcomeClaim = { ran?: boolean; passed?: boolean | null } | null
 
 export type ObservedTestOutcome = {
-  ran: boolean
+  ran: boolean | null
   passed: boolean | null
   claimDisagrees: boolean
 }
@@ -19,8 +20,12 @@ export function deriveObservedTestOutcome(input: {
   focused: readonly TestExecutionObservation[]
   gate: readonly TestExecutionObservation[]
   claim: TestOutcomeClaim
+  focusedRunnerRegistered: boolean
 }): ObservedTestOutcome {
   const executions = [...input.focused, ...input.gate]
+  if (executions.length === 0 && !input.focusedRunnerRegistered) {
+    return { ran: null, passed: null, claimDisagrees: false }
+  }
   const ran = executions.length > 0
   const passed = ran ? executions.every((execution) => execution.passed) : null
   const claimDisagrees = Boolean(
@@ -75,9 +80,17 @@ export function observedTestOutcome(
   runId: string,
   claim: TestOutcomeClaim,
 ): ObservedTestOutcome {
+  const project = database
+    .query<{ settings: string | null }, [string]>(
+      `SELECT p.settings FROM run r JOIN project p ON p.record_id=r.project_record_id
+       WHERE r.record_id=?`,
+    )
+    .get(runId)
+  const settings = JSON.parse(project?.settings ?? '{}') as { focusedTests?: unknown }
   return deriveObservedTestOutcome({
     focused: focusedTestObservations(runId),
     gate: gateTestObservations(database, runId),
     claim,
+    focusedRunnerRegistered: hasFocusedTestRunner(settings.focusedTests),
   })
 }

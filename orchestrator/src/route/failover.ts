@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
+import type { ContinuationMessageBinding } from '../run/continuation-message.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
@@ -44,6 +45,7 @@ export type DetachSpec = {
   model?: string
   probe?: boolean
   transport?: TransportName
+  transportPinSource?: 'explicit' | 'environment'
   label?: string
   lens?: string
   seed?: string
@@ -78,6 +80,7 @@ export type DetachSpec = {
     worktree: RetryWorktree | null
     treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
     readOnlyBase?: string
+    continuationMessage?: ContinuationMessageBinding
   }
 }
 
@@ -140,7 +143,7 @@ export function detachedRunOptions(
     keepTree,
     resolvedTaskBranch,
   } = spec
-  const consumed: Required<Record<keyof DetachSpec, unknown>> = {
+  const consumed: Required<Record<Exclude<keyof DetachSpec, 'transportPinSource'>, unknown>> = {
     agent,
     agentExplicit: spec.agentExplicit,
     schema: spec.schema,

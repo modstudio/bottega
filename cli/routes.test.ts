@@ -1,8 +1,13 @@
 import { expect, test } from 'bun:test'
 import type { Command } from 'commander'
 import { createHubProgram, program as hubProgram, run as runHub } from '../hub/src/cli-program.ts'
-import { program as orchProgram, run as runOrchestrator } from '../orchestrator/src/cli/program.ts'
+import {
+  AGENT_COMMAND_VERBS,
+  program as orchProgram,
+  run as runOrchestrator,
+} from '../orchestrator/src/cli/program.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { takesVariadicArgument } from '../shared/commander-public-path.ts'
 import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
 import { ROUTES, resolveRoute } from './routes.ts'
 
@@ -10,7 +15,7 @@ function commandExists(program: Command, path: readonly string[]): boolean {
   let current = program
   for (const name of path) {
     const next = current.commands.find((candidate) => candidate.name() === name)
-    if (!next) return false
+    if (!next) return takesVariadicArgument(current)
     current = next
   }
   return true
@@ -26,6 +31,7 @@ function captureCommandOutput(command: Command, lines: string[]): void {
 
 test('wrapper help prints public orchestrator, hub, and translated usage paths', async () => {
   const lines: string[] = []
+  let agentHelp = ''
   const entries: BinaryEntries = {
     orch: async (argv, invocation) => {
       captureCommandOutput(orchProgram, lines)
@@ -49,11 +55,19 @@ test('wrapper help prints public orchestrator, hub, and translated usage paths',
     ['workflow', 'attach', '--help'],
     ['task', 'new', '--help'],
     ['run', 'start', '--help'],
+    ['agent', 'add', '--help'],
+    ['agent', 'set', '--help'],
+    ['agent', 'remove', '--help'],
   ]) {
     lines.length = 0
     expect(await dispatchBinary(argv, entries, () => '')).toBe(0)
     expect(lines.join('')).toContain(`Usage: ${PLATFORM_SLUG} ${argv.slice(0, -1).join(' ')}`)
+    if (argv[0] === 'agent' && argv[1] === 'add') agentHelp = lines.join('')
   }
+  for (const option of commandAt(orchProgram, ['agent']).options) {
+    if (option.long) expect(agentHelp, `agent help ${option.long}`).toContain(option.long)
+  }
+  expect(agentHelp).toContain(`Valid verbs: ${AGENT_COMMAND_VERBS.join(', ')}`)
 })
 
 test('every route resolves to an existing owner command', () => {
@@ -72,6 +86,68 @@ test('every route resolves to an existing owner command', () => {
       ).toBeTrue()
     }
   }
+})
+
+test('every agent command verb has a public route to its owner entry', () => {
+  const ownerEntryByVerb = {
+    add: ['agent', 'add'],
+    set: ['agent', 'set'],
+    remove: ['agent', 'remove'],
+    probe: ['agent', 'probe'],
+    show: ['agent', 'show'],
+  } satisfies Record<(typeof AGENT_COMMAND_VERBS)[number], readonly string[]>
+
+  for (const verb of AGENT_COMMAND_VERBS) {
+    const resolved = resolveRoute(['agent', verb])
+    expect(resolved?.route.owner, verb).toBe('orch')
+    expect(resolved?.route.argv, verb).toEqual(ownerEntryByVerb[verb])
+  }
+})
+
+test('every public route through the agent owner declares a supported verb', () => {
+  for (const route of ROUTES) {
+    if (route.owner !== 'orch' || route.argv?.[0] !== 'agent') continue
+    expect(
+      AGENT_COMMAND_VERBS.some((verb) => verb === route.command[1]),
+      route.command.join(' '),
+    ).toBeTrue()
+  }
+})
+
+test('agent verbs keep their verb and pass remaining arguments to the agent entry', async () => {
+  const calls: string[][] = []
+  const orch = async (argv: string[]) => {
+    calls.push(argv)
+    return 0
+  }
+  const entries: BinaryEntries = {
+    orch,
+    hub: async () => 0,
+    orchOutbox: async () => [],
+    hubOutbox: async () => [],
+    hubOutboxSummaryLines: async () => [],
+    runExec: async () => 0,
+    askProxy: async () => 0,
+    retrievalSearch: async () => {},
+    checkAttribution: async () => 0,
+    schemaCheck: async () => 0,
+  }
+
+  for (const [verb, args] of [
+    ['add', ['--jobs', 'fix,review-lens']],
+    ['set', ['--jobs', 'fix,review-lens']],
+    ['remove', []],
+    ['show', []],
+  ] as const) {
+    await dispatchBinary(['agent', verb, 'route-test', ...args], entries, () => '')
+  }
+
+  expect(calls).toEqual([
+    ['agent', 'add', 'route-test', '--jobs', 'fix,review-lens'],
+    ['agent', 'set', 'route-test', '--jobs', 'fix,review-lens'],
+    ['agent', 'remove', 'route-test'],
+    ['agent', 'show', 'route-test'],
+  ])
 })
 
 function commandAt(program: Command, path: readonly string[]): Command {

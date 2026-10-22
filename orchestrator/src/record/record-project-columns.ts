@@ -24,6 +24,7 @@ export type HostedProjectColumns = {
   landingBranch: string | null
   productionBranch: string | null
   gate: string | null
+  gateInput: string | null
   focusedTests: JsonObject | null
   requireCleanMain: boolean
   color: string | null
@@ -57,6 +58,7 @@ export const PROJECT_SETTING_COLUMNS = {
   docs: 'docs',
   envPrefix: 'envPrefix',
   gate: 'gate',
+  gateInput: 'gateInput',
   focusedTests: 'focusedTests',
   keyPrefixes: 'keyPrefixes',
   managedContext: 'managedContext',
@@ -159,6 +161,10 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.gate]: optionalString(
       settings.gate,
       `project ${project} settings.gate`,
+    ),
+    [PROJECT_SETTING_COLUMNS.gateInput]: optionalString(
+      settings.gateInput,
+      `project ${project} settings.gateInput`,
     ),
     [PROJECT_SETTING_COLUMNS.focusedTests]: settingDocument(settings, 'focusedTests', project),
     [PROJECT_SETTING_COLUMNS.requireCleanMain]: settings.requireCleanMain !== false,

@@ -2,6 +2,7 @@
 /** Shared usage provenance values carried from transports into run persistence. */
 const VENDOR_COST_SOURCES = ['billed', 'partial', 'estimated', 'none'] as const
 export type VendorCostSource = (typeof VENDOR_COST_SOURCES)[number]
+export type AgentBilling = 'subscription' | 'free' | 'metered' | 'none' | 'unknown'
 export const SUBSCRIPTION_STORED_SOURCE = 'subscription'
 export const PERSISTED_VENDOR_COST_SOURCES = [
   ...VENDOR_COST_SOURCES,
@@ -21,4 +22,22 @@ export const EMPTY_VENDOR_USAGE: VendorUsage = {
   outputTokens: null,
   estimatedCostUsd: null,
   costSource: null,
+}
+
+type ObservedUsage = {
+  costUsd: number | null
+  vendorUsage: VendorUsage
+}
+
+/** Records USD only when the agent's billing can charge it to this run. */
+export function usageForBilling(billing: AgentBilling, observed: ObservedUsage): ObservedUsage {
+  if (billing !== 'subscription' && billing !== 'free') return observed
+  return {
+    costUsd: null,
+    vendorUsage: {
+      ...observed.vendorUsage,
+      estimatedCostUsd: null,
+      costSource: 'none',
+    },
+  }
 }

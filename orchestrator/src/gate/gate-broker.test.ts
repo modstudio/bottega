@@ -101,12 +101,12 @@ function git(root: string, ...args: string[]): string {
 
 test('records machine-readable checks emitted by a worker gate against its execution', async () => {
   const root = mkdtempSync(join(dir, 'gate-broker-check-execution-'))
-  const scratch = join(root, 'scratch')
+  const scratch = mkdtempSync(join(dir, 'gate-broker-check-execution-scratch-'))
   mkdirSync(join(root, 'scripts'))
   const gatePath = join(root, 'scripts', 'gate')
   writeFileSync(
     gatePath,
-    `#!/bin/sh\nprintf '%s\\n' '{"check":"unit suite","category":"unit-tests","wallMs":1,"exitCode":0}' >> "$${CHECK_EXECUTION_FILE_ENV}"\n`,
+    `#!/bin/sh\ngit diff --cached --name-only "$ORCH_GATE_BASE_COMMIT" | grep -Fx worker.txt >/dev/null || exit 9\nprintf '%s\\n' '{"check":"unit suite","category":"unit-tests","wallMs":1,"exitCode":0}' >> "$${CHECK_EXECUTION_FILE_ENV}"\n`,
   )
   chmodSync(gatePath, 0o755)
   git(root, 'init', '-q')
@@ -115,6 +115,7 @@ test('records machine-readable checks emitted by a worker gate against its execu
   git(root, 'add', 'scripts/gate')
   git(root, 'commit', '-qm', 'fixture')
   const head = git(root, 'rev-parse', 'HEAD')
+  writeFileSync(join(root, 'worker.txt'), 'worker change')
 
   const projectId = (
     db()
@@ -170,9 +171,12 @@ test('records machine-readable checks emitted by a worker gate against its execu
       category: 'unit-tests',
       exit_code: 0,
     })
+    expect(git(root, 'diff', '--cached', '--name-only')).toBe('')
+    expect(git(root, 'rev-parse', 'HEAD')).toBe(head)
   } finally {
     await broker.close()
     rmSync(root, { recursive: true, force: true })
+    rmSync(scratch, { recursive: true, force: true })
   }
 })
 
