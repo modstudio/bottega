@@ -27,6 +27,8 @@ export type FrozenCheckout = {
   untrackedHash: string | null
   headOid: string | null
   untrusted: boolean
+  caller?: boolean
+  writeExcluded?: boolean
 }
 
 type ConfinementLockHolder = {
@@ -180,6 +182,8 @@ function freezeCheckout(
     untrackedHash: untrackedPathHash(checkout.path),
     headOid: headOid(checkout.path),
     untrusted,
+    caller: checkout.caller,
+    writeExcluded: checkout.writeExcluded,
   }
 }
 

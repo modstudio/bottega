@@ -6,6 +6,7 @@ import {
   classifyRemovedCallerCheckout,
   divergenceAttributionLabel,
   type FrozenCheckout,
+  freezeCheckouts,
   lockHolderObservationIsUnknown,
   removedCallerCheckoutError,
   removedCheckoutEvent,
@@ -84,6 +85,10 @@ test('a missing caller checkout passes only when every writable root excludes it
   expect(
     classifyRemovedCallerCheckout({ ...failure, ...callerCheckoutWatch([checkout], null)[0] }),
   ).toBe('unverified')
+  expect(
+    freezeCheckouts(callerCheckoutWatch([{ ...checkout, path: process.cwd() }], ['/elsewhere']))
+      .snapshots[0],
+  ).toMatchObject({ caller: true, writeExcluded: true })
 })
 
 test('a present changed caller checkout is still classified as divergent', () => {

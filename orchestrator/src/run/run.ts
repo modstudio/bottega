@@ -947,11 +947,7 @@ export async function run(opts: {
       : skipLines.join('\n')
   }
   frozenBefore = beforeFreeze.snapshots
-  const watchedCheckouts = frozenBefore.map(({ project, path, expectedHead }) => ({
-    project,
-    path,
-    expectedHead: expectedHead ?? undefined,
-  }))
+  const watchedCheckouts = frozenBefore
   try {
     runLease = requiredRunLease(claim.id, (cause) => {
       error = String((cause as Error).message ?? cause)
