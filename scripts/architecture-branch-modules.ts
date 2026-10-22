@@ -103,8 +103,9 @@ export const branchModuleSpecs = [
   },
   {
     file: 'orchestrator/src/branch/merged-pull-request.ts',
-    allowed: ['../git/git-environment.ts', '../project/projects.ts'],
+    allowed: ['../git/git-environment.ts', '../project/projects.ts', './pull-request-view.ts'],
   },
+  { file: 'orchestrator/src/branch/pull-request-view.ts', allowed: [] },
   {
     file: 'orchestrator/src/branch/other-branch-state.ts',
     allowed: ['./branch-state.ts', './merged-pull-request.ts'],

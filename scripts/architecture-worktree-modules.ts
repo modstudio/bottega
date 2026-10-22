@@ -13,7 +13,32 @@ const module = (file: string, allowed: string[]): WorktreeModule => ({
 
 export const worktreeModules: WorktreeModule[] = [
   module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
-  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/reclaim/reclaim-residue.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/process-identity.ts',
+    '../../../shared/state-directory.ts',
+    'node:fs',
+    'node:path',
+    '../agent/agent-registry.ts',
+    '../database/db.ts',
+    '../evidence/unjudged-expiry.ts',
+    '../git/git-environment.ts',
+    '../idle-kill.ts',
+    '../project/project-lock.ts',
+    '../project/projects.ts',
+    '../resources/git-locks.ts',
+    '../run/run-alive.ts',
+    '../run/run-artifacts.ts',
+    '../run/run-identifier.ts',
+    '../run/run-lease.ts',
+    '../run/run-process.ts',
+    '../sandbox/grok-trust.ts',
+    './reclaim-residue-policy.ts',
+  ]),
+  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', [
+    '../../../shared/brand.ts',
+    'node:path',
+  ]),
   module('orchestrator/src/worktree/worktree-porcelain.ts', []),
   module('orchestrator/src/worktree/worktree-caller.ts', [
     '../project/projects.ts',
