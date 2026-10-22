@@ -24,7 +24,7 @@ import {
 } from './model-host.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
-type AgentCommandVerb = 'add' | 'set' | 'remove' | 'probe' | 'show' | 'list'
+type AgentCommandVerb = 'add' | 'set' | 'remove' | 'probe' | 'show'
 type AgentCommandHandler = (
   name: string,
   argv: string[],
@@ -42,7 +42,6 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
   },
   probe: (name, _argv, presentation) => probeCommand(name, presentation),
   show: (name, _argv, presentation) => showCommand(name, presentation),
-  list: (_name, argv, presentation) => listCommand(argv.includes('--json'), presentation),
 }
 
 export const AGENT_COMMAND_VERBS = Object.keys(AGENT_COMMAND_HANDLERS) as AgentCommandVerb[]
@@ -150,57 +149,6 @@ function showCommand(name: string, presentation: Presentation): void {
   )
 }
 
-function listedRow(row: ReturnType<typeof agentRows>[number]) {
-  const caps = JSON.parse(row.caps),
-    probe = row.probe_result ? JSON.parse(row.probe_result) : null
-  const eligibility =
-    probe?.ok === false
-      ? 'ineligible: registration probe failed'
-      : !Object.hasOwn(caps, 'contextTokens')
-        ? 'ineligible: no declared or probed context window'
-        : !row.probed_at
-          ? 'inline only: unprobed and ineligible for repository jobs'
-          : row.enabled
-            ? 'eligible by registration'
-            : `ineligible: disabled — ${row.disabled_reason}`
-  return {
-    name: row.name,
-    harness: row.harness,
-    backend: row.backend,
-    model: row.model,
-    baseUrl: row.base_url,
-    apiKeySecret: row.api_key_secret,
-    transport: row.transport,
-    caps,
-    billing: row.billing,
-    operatedBy: row.operated_by,
-    enabled: Boolean(row.enabled),
-    disabledReason: row.disabled_reason,
-    jobs: row.jobs ? JSON.parse(row.jobs) : null,
-    preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
-    maxConcurrent: row.max_concurrent,
-    routeMetered: Boolean(row.route_metered),
-    probedAt: row.probed_at,
-    probeResult: probe,
-    legacy: !['codex', 'grok', 'opencode', 'goose', 'claude-code'].includes(row.harness),
-    limitation:
-      row.name === 'qwen36-goose' && Number(caps.contextTokens ?? 0) < 147_456
-        ? 'understand requires the endpoint served at 147456 tokens or more'
-        : null,
-    eligibility,
-  }
-}
-
-function listCommand(json: boolean, presentation: Presentation): void {
-  const rows = agentRows().map(listedRow)
-  if (json) presentation.log(JSON.stringify(rows))
-  else
-    for (const row of rows)
-      presentation.log(
-        `${row.name.padEnd(12)} ${row.enabled ? 'enabled ' : 'disabled'} ${row.harness}/${row.backend ?? '-'} ${row.model}${row.legacy ? ' [legacy]' : ''} — ${row.eligibility}; jobs ${row.jobs?.join(',') ?? 'any'}; prefer ${row.preferredJobs.join(',') || '-'}; cap ${row.maxConcurrent ?? 'none'}${row.limitation ? `; ${row.limitation}` : ''}`,
-      )
-}
-
 export function agentReadinessPresentation(facts: {
   name: string
   enabled: boolean
@@ -213,7 +161,7 @@ export function agentReadinessPresentation(facts: {
   if (!facts.enabled) return `disabled — ${facts.disabledReason}`
   if (!facts.executableFound) return 'not installed'
   if (!facts.probedAt)
-    return `installed but not probed — ${PLATFORM_SLUG} agent show probe ${facts.name}`
+    return `installed but not probed — ${PLATFORM_SLUG} agent probe ${facts.name}`
   if (!facts.available) return `unavailable — ${facts.unavailableReason}`
   return 'ready'
 }

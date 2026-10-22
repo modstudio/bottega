@@ -84,7 +84,7 @@ function installVendor(collected: TransportResult) {
   registerTransport('acp', () => transport)
 }
 
-describe(`${PLATFORM_SLUG} agent probe`, () => {
+describe('vendor quota probe', () => {
   test('a successful probe clears the quota exclusion', async () => {
     excludeCodex()
     expect(() => pick('implement', 'codex')).toThrow(/vendor quota/)
@@ -151,7 +151,7 @@ describe(`${PLATFORM_SLUG} agent probe`, () => {
       expect(probed.kind).toBe('ok')
       expect(probed.message).toContain('still disabled')
       expect(probed.message).toContain(reason)
-      expect(probed.message).toContain(`${PLATFORM_SLUG} agent show set codex --enabled true`)
+      expect(probed.message).toContain(`${PLATFORM_SLUG} agent set codex --enabled true`)
       expect(
         db().query("SELECT enabled, disabled_reason FROM agent WHERE name='codex'").get(),
       ).toEqual({ enabled: 0, disabled_reason: reason })

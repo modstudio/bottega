@@ -233,7 +233,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
             await transport.prompt(handle, prompt)
             return handle.collect()
           })(),
-          operationName: `${agent.harness} agent probe prompt and collection; inspect harness logs and rerun ${PLATFORM_SLUG} agent show probe ${name}`,
+          operationName: `${agent.harness} agent probe prompt and collection; inspect harness logs and rerun ${PLATFORM_SLUG} agent probe ${name}`,
           timeoutMs: agent.timeoutMs,
           onTimeout: () => transport.cancel(handle),
         })

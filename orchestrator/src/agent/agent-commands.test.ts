@@ -47,7 +47,7 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
 
   expect(fixed.map(agentReadinessPresentation)).toEqual([
     'not installed',
-    `installed but not probed — ${PLATFORM_SLUG} agent show probe newcomer`,
+    `installed but not probed — ${PLATFORM_SLUG} agent probe newcomer`,
     'disabled — retired after replacement',
     'ready',
   ])
@@ -56,9 +56,7 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
 test('agent command refuses verbs outside its declared dispatch list', async () => {
   await expect(
     agentCommand(['agent', 'rename', 'example'], { log: () => {}, setExitCode: () => {} }),
-  ).rejects.toThrow(
-    'unknown agent command "rename"; valid commands: add, set, remove, probe, show, list',
-  )
+  ).rejects.toThrow('unknown agent command "rename"; valid commands: add, set, remove, probe, show')
 })
 
 test('agent add persists job, concurrency, and metered-routing flags', async () => {

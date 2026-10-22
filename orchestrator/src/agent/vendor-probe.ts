@@ -49,7 +49,7 @@ function vendorProbeSettlement(
       kind: 'ok',
       message:
         `probe passed; agent "${name}" is still disabled (${disabledReason}); ` +
-        `re-enable with ${PLATFORM_SLUG} agent show set ${name} --enabled true`,
+        `re-enable with ${PLATFORM_SLUG} agent set ${name} --enabled true`,
     }
   }
   return { ok: true, kind: 'ok', message: `agent "${name}" is eligible again` }

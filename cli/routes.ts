@@ -175,17 +175,10 @@ export const ROUTES = (
     route('agent set', 'orch', 'agent set'),
     route('agent remove', 'orch', 'agent remove'),
     route('agent list', 'orch', 'agents'),
-    ...[
-      'context',
-      'contract',
-      'guide',
-      'stats',
-      'routing-backtest',
-      'metric',
-      'probe',
-      'pick',
-      'jobs',
-    ].map((name) => route(`agent ${name}`, 'orch', name)),
+    route('agent probe', 'orch', 'agent probe'),
+    ...['context', 'contract', 'guide', 'stats', 'routing-backtest', 'metric', 'pick', 'jobs'].map(
+      (name) => route(`agent ${name}`, 'orch', name),
+    ),
     route('dashboard start', 'hub', 'serve', 'start the local dashboard'),
     route(
       'dashboard check',

@@ -628,7 +628,7 @@ export function candidates(
       why = policy.why
     } else if (!a.probedAt) {
       eligible = false
-      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe ${name}`
+      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe ${name}`
     } else if (predatesFileContract(a)) {
       eligible = false
       why = fileContractProbeReason(name)

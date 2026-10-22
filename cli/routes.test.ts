@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
 import type { Command } from 'commander'
 import { createHubProgram, program as hubProgram, run as runHub } from '../hub/src/cli-program.ts'
-import { AGENT_COMMAND_VERBS } from '../orchestrator/src/agent/agent-commands.ts'
-import { program as orchProgram, run as runOrchestrator } from '../orchestrator/src/cli/program.ts'
+import {
+  AGENT_COMMAND_VERBS,
+  program as orchProgram,
+  run as runOrchestrator,
+} from '../orchestrator/src/cli/program.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { takesVariadicArgument } from '../shared/commander-public-path.ts'
 import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
@@ -64,6 +67,7 @@ test('wrapper help prints public orchestrator, hub, and translated usage paths',
   for (const option of commandAt(orchProgram, ['agent']).options) {
     if (option.long) expect(agentHelp, `agent help ${option.long}`).toContain(option.long)
   }
+  expect(agentHelp).toContain(`Valid verbs: ${AGENT_COMMAND_VERBS.join(', ')}`)
 })
 
 test('every route resolves to an existing owner command', () => {
@@ -89,9 +93,8 @@ test('every agent command verb has a public route to its owner entry', () => {
     add: ['agent', 'add'],
     set: ['agent', 'set'],
     remove: ['agent', 'remove'],
-    probe: ['probe'],
+    probe: ['agent', 'probe'],
     show: ['agent', 'show'],
-    list: ['agents'],
   } satisfies Record<(typeof AGENT_COMMAND_VERBS)[number], readonly string[]>
 
   for (const verb of AGENT_COMMAND_VERBS) {
@@ -103,8 +106,7 @@ test('every agent command verb has a public route to its owner entry', () => {
 
 test('every public route through the agent owner declares a supported verb', () => {
   for (const route of ROUTES) {
-    if (route.owner !== 'orch' || route.argv?.[0] !== 'agent' || route.command[0] !== 'agent')
-      continue
+    if (route.owner !== 'orch' || route.argv?.[0] !== 'agent') continue
     expect(
       AGENT_COMMAND_VERBS.some((verb) => verb === route.command[1]),
       route.command.join(' '),

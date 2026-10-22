@@ -161,9 +161,13 @@ preview the agent selected for a job
 
 ## bottega agent probe
 
-**Synopsis:** `bottega agent probe <agent>`
+**Synopsis:** `bottega agent probe [args...]`
 
-clear a vendor-quota exclusion once the agent answers
+inspect and change agent registrations
+
+### Options
+
+Options are documented by `--help`.
 
 ### Related
 
