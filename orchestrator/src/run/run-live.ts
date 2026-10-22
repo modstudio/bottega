@@ -106,6 +106,37 @@ function outputCeilingReached(
   )
 }
 
+function firstThrottleObserver(cancel: () => void) {
+  const state: { first: Extract<StreamEvent, { kind: 'throttled' }> | null } = { first: null }
+  return {
+    state,
+    observe(event: StreamEvent) {
+      if (event.kind !== 'throttled' || state.first) return
+      state.first = event
+      cancel()
+    },
+  }
+}
+
+function throttleReplyError(
+  throttle: Extract<StreamEvent, { kind: 'throttled' }> | null,
+  replyError: string | null | undefined,
+  collectedError: string | null,
+): string | null {
+  return throttle
+    ? `Codex throttled: 429 Too Many Requests (retry ${throttle.attempt}/${throttle.max})`
+    : (replyError ?? collectedError)
+}
+
+async function recordInitialDeliveries(
+  runId: string,
+  messageIds: number[],
+  noticeIds: Array<number | string>,
+): Promise<void> {
+  receiptWorkerMessages(runId, messageIds)
+  await markRunBoardNoticesDelivered(runId, noticeIds)
+}
+
 function idleSnapshotObserver(
   runId: string,
   stopped: () => boolean,
@@ -773,23 +804,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
       idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
-    const throttleState: { first: Extract<StreamEvent, { kind: 'throttled' }> | null } = {
-      first: null,
-    }
-    const teeing = teeTransportEvents(handle.events(), claim.id, (event) => {
-      if (event.kind !== 'throttled' || throttleState.first) return
-      throttleState.first = event
-      void t.cancel(handle)
-    })
+    const throttle = firstThrottleObserver(() => void t.cancel(handle))
+    const teeing = teeTransportEvents(handle.events(), claim.id, throttle.observe)
     await t.prompt(handle, prompt)
-    receiptWorkerMessages(
+    await recordInitialDeliveries(
       claim.id,
       checkpointMessages.map((message) => message.id),
+      [...initialBoardNoticeIds, ...checkpointNotices.map((notice) => notice.id)],
     )
-    await markRunBoardNoticesDelivered(claim.id, [
-      ...initialBoardNoticeIds,
-      ...checkpointNotices.map((notice) => notice.id),
-    ])
     const collected = await Promise.race([handle.collect(), forcedCollect])
     workerEvents = collected.events.filter(
       (event): event is StreamEvent =>
@@ -804,11 +826,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     vendorTerminatedStream = [stdout, stderr].find(hasVendorTerminationMarker) ?? null
     exitCode = collected.exitCode
     const reply = collected.parsed
-    const firstThrottle = throttleState.first
-    const replyError =
-      firstThrottle === null
-        ? (reply?.error ?? collected.error)
-        : `Codex throttled: 429 Too Many Requests (retry ${firstThrottle.attempt}/${firstThrottle.max})`
+    const replyError = throttleReplyError(throttle.state.first, reply?.error, collected.error)
     const reachedOutputCeiling = outputCeilingReached(reply, a.outputCeilingStopReason)
     vendorTokens = collected.tokens
     costUsd = collected.costUsd

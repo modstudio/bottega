@@ -138,6 +138,38 @@ function lifecyclePresentation(
   }
 }
 
+function liveOperationalStatus(liveMemberId: string, live: boolean) {
+  const eventLog = live ? readEventLog(runEventsPath(liveMemberId)) : []
+  const capacityWait = eventLog.findLast((event) => event.type === 'capacity_wait')
+  const throttle = eventLog.findLast((event) => event.type === 'throttled')
+  return {
+    waiting_for_capacity: capacityWait?.type === 'capacity_wait' ? capacityWait.waiting : false,
+    capacity_wait_since:
+      capacityWait?.type === 'capacity_wait' && capacityWait.waiting ? capacityWait.ts : null,
+    throttled:
+      throttle?.type === 'throttled'
+        ? {
+            attempt: throttle.attempt,
+            max: throttle.max,
+            retry_at: throttle.retryAt,
+            status: throttle.status,
+            concurrency: throttle.concurrency,
+          }
+        : null,
+  }
+}
+
+function addExactFilter(
+  where: string[],
+  args: Array<string | number>,
+  clause: 'r.job = ?' | 'r.agent = ?',
+  value: string | undefined,
+): void {
+  if (!value) return
+  where.push(clause)
+  args.push(value)
+}
+
 function resolveRequestedRunIds(values: string[]): { ids: string[]; unknown: string[] } {
   const ids = new Set<string>()
   const unknown: string[] = []
@@ -254,15 +286,9 @@ export async function runListingCommand(
   // satisfy the query signature, which is why this file never typechecked.
   const args: (string | number)[] = []
   const jobFlag = flag('job')
-  if (jobFlag) {
-    where.push('r.job = ?')
-    args.push(jobFlag)
-  }
+  addExactFilter(where, args, 'r.job = ?', jobFlag)
   const agentFlag = flag('agent')
-  if (agentFlag) {
-    where.push('r.agent = ?')
-    args.push(agentFlag)
-  }
+  addExactFilter(where, args, 'r.agent = ?', agentFlag)
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
@@ -467,9 +493,6 @@ export async function runListingCommand(
         ? 'idle-killed'
         : null
     const since = live ? idleMsSince(lastEventAt, startedAt, observedAt) : null
-    const eventLog = live ? readEventLog(runEventsPath(String(r.live_member_record_id))) : []
-    const capacityWait = eventLog.findLast((event) => event.type === 'capacity_wait')
-    const throttle = eventLog.findLast((event) => event.type === 'throttled')
     const stallObservation = live
       ? liveMemberStall(
           {
@@ -504,19 +527,7 @@ export async function runListingCommand(
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
-      waiting_for_capacity: capacityWait?.type === 'capacity_wait' ? capacityWait.waiting : false,
-      capacity_wait_since:
-        capacityWait?.type === 'capacity_wait' && capacityWait.waiting ? capacityWait.ts : null,
-      throttled:
-        throttle?.type === 'throttled'
-          ? {
-              attempt: throttle.attempt,
-              max: throttle.max,
-              retry_at: throttle.retryAt,
-              status: throttle.status,
-              concurrency: throttle.concurrency,
-            }
-          : null,
+      ...liveOperationalStatus(String(r.live_member_record_id), live),
       stall_state: stallObservation?.state ?? null,
       stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,

@@ -9,9 +9,11 @@ import {
 import { attributionCounts, parseConfinement } from '../confinement/confinement.ts'
 import { summarizeContention } from '../database/contention.ts'
 import { db } from '../database/db.ts'
+import { readEventLog, runEventsPath } from '../events.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from '../failure/failure.ts'
 import { parseIdleReclaimedMs } from '../idle-kill.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
+import { bucketThrottles, type ThrottleBucket } from './throttle-health.ts'
 
 const HEALTH_DEFAULT_DAYS = 14
 const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
@@ -19,6 +21,27 @@ type HealthClass = FailureKind | 'stale' | 'stopped'
 
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
+
+export function throttleBuckets(input: {
+  database: Database
+  from: string
+  runsDir?: string
+}): ThrottleBucket[] {
+  const runs = input.database
+    .query(
+      `SELECT r.record_id FROM run r LEFT JOIN agent a ON a.name=r.agent
+        WHERE COALESCE(a.harness,r.agent)='codex'`,
+    )
+    .all() as { record_id: string }[]
+  const events = runs.flatMap((run) =>
+    readEventLog(runEventsPath(run.record_id, input.runsDir)).flatMap((event) =>
+      event.type === 'throttled' && event.ts >= input.from
+        ? [{ concurrency: event.concurrency }]
+        : [],
+    ),
+  )
+  return bucketThrottles(events)
+}
 
 export function landingsWithPostStepError(database: Database = db()): {
   project: string

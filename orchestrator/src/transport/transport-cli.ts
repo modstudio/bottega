@@ -60,6 +60,45 @@ async function readStdoutLines(
   return stdout
 }
 
+function codexThrottleEvent(line: string): NormalizedEvent | null {
+  const throttle = classifyCodexThrottle(line)
+  if (!throttle) return null
+  return {
+    kind: 'throttled',
+    attempt: throttle.attempt,
+    max: throttle.max,
+    retryDelayMs: throttle.retryDelayMs,
+    httpStatus: throttle.status,
+    retryAt:
+      throttle.retryDelayMs === null
+        ? null
+        : new Date(Date.now() + throttle.retryDelayMs).toISOString(),
+  }
+}
+
+function startCliStreamReaders(input: {
+  stdout: AsyncIterable<string | Uint8Array>
+  stderr: AsyncIterable<string | Uint8Array>
+  codex: boolean
+  push: (event: NormalizedEvent) => void
+}) {
+  let throttleSeen = false
+  const observeThrottle = (line: string) => {
+    if (!input.codex || throttleSeen) return
+    const event = codexThrottleEvent(line)
+    if (!event) return
+    throttleSeen = true
+    input.push(event)
+  }
+  return {
+    stdoutTask: readStdoutLines(input.stdout, (line) => {
+      observeThrottle(line)
+      for (const event of eventsFromVendorLine(line)) input.push(event)
+    }),
+    stderrTask: readStdoutLines(input.stderr, observeThrottle),
+  }
+}
+
 function spawnCliChild(
   launchArgv: string[],
   opts: TransportStartOpts,
@@ -84,8 +123,8 @@ function spawnCliChild(
   )
 }
 
-async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
-  const argvOpts: ArgvOpts = {
+function agentArgv(opts: TransportStartOpts): string[] {
+  const argv: ArgvOpts = {
     prompt: opts.prompt,
     out: opts.outPath,
     schema: opts.schemaPath,
@@ -103,10 +142,13 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     recipeEnvironment: opts.recipeEnvironment,
     session: opts.session,
   }
-  const argv =
-    opts.resume && opts.session && opts.agent.resumeArgv
-      ? opts.agent.resumeArgv({ ...argvOpts, session: opts.session })
-      : opts.agent.argv(argvOpts)
+  return opts.resume && opts.session && opts.agent.resumeArgv
+    ? opts.agent.resumeArgv({ ...argv, session: opts.session })
+    : opts.agent.argv(argv)
+}
+
+async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
+  const argv = agentArgv(opts)
   const bin = opts.bin ?? opts.agent.bin
   const launchArgv = opts.srt
     ? await sandboxLaunchArgv(opts.srt.profile, bin, argv)
@@ -117,8 +159,6 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   let cancelled = false
   let collected: Promise<TransportResult> | null = null
   const liveEvents: NormalizedEvent[] = []
-  let throttleSeen = false
-  const codexHarness = (opts.agent.harness ?? opts.agent.name) === 'codex'
   const eventWaiters: Array<() => void> = []
   let closed = false
 
@@ -126,43 +166,11 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     liveEvents.push(event)
     eventWaiters.shift()?.()
   }
-
-  const stdoutTask = readStdoutLines(p.stdout!, (line) => {
-    if (codexHarness) {
-      const throttle = classifyCodexThrottle(line)
-      if (throttle && !throttleSeen) {
-        throttleSeen = true
-        pushEvent({
-          kind: 'throttled',
-          attempt: throttle.attempt,
-          max: throttle.max,
-          retryDelayMs: throttle.retryDelayMs,
-          httpStatus: throttle.status,
-          retryAt:
-            throttle.retryDelayMs === null
-              ? null
-              : new Date(Date.now() + throttle.retryDelayMs).toISOString(),
-        })
-      }
-    }
-    for (const event of eventsFromVendorLine(line)) pushEvent(event)
-  })
-  const stderrTask = readStdoutLines(p.stderr!, (line) => {
-    if (!codexHarness) return
-    const throttle = classifyCodexThrottle(line)
-    if (!throttle || throttleSeen) return
-    throttleSeen = true
-    pushEvent({
-      kind: 'throttled',
-      attempt: throttle.attempt,
-      max: throttle.max,
-      retryDelayMs: throttle.retryDelayMs,
-      httpStatus: throttle.status,
-      retryAt:
-        throttle.retryDelayMs === null
-          ? null
-          : new Date(Date.now() + throttle.retryDelayMs).toISOString(),
-    })
+  const { stdoutTask, stderrTask } = startCliStreamReaders({
+    stdout: p.stdout!,
+    stderr: p.stderr!,
+    codex: (opts.agent.harness ?? opts.agent.name) === 'codex',
+    push: pushEvent,
   })
 
   const finishEvents = () => {

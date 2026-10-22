@@ -38,6 +38,30 @@ registerStandardRuntime()
 const jsonArray = (value: unknown) =>
   typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
 
+function liveEventStatus(events: ReturnType<typeof readEventLog> | null) {
+  const throttle = events?.findLast((event) => event.type === 'throttled')
+  const capacityWait = events?.findLast((event) => event.type === 'capacity_wait')
+  return {
+    live_status_detail:
+      capacityWait?.type === 'capacity_wait' && capacityWait.waiting
+        ? `waiting for capacity since ${capacityWait.ts}`
+        : throttle?.type === 'throttled'
+          ? `throttled (${throttle.status}), retry ${throttle.attempt}/${throttle.max} at ${throttle.retryAt ?? 'unknown'}`
+          : null,
+    throttled:
+      throttle?.type === 'throttled'
+        ? {
+            attempt: throttle.attempt,
+            max: throttle.max,
+            retry_delay_ms: throttle.retryDelayMs,
+            retry_at: throttle.retryAt,
+            status: throttle.status,
+            concurrency: throttle.concurrency,
+          }
+        : null,
+  }
+}
+
 function reviewsForRun(runId: string): RunDetailReviewLens[] {
   const lenses = db()
     .query(
@@ -139,8 +163,6 @@ export function runDetail(id: string, receipt = false) {
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
   const eventsPath = runEventsPath(id)
   const events = existsSync(eventsPath) ? readEventLog(eventsPath) : null
-  const throttle = events?.findLast((event) => event.type === 'throttled')
-  const capacityWait = events?.findLast((event) => event.type === 'capacity_wait')
   const identity = db()
     .query(
       `SELECT subject.parent_run_record_id, root.number root_id,
@@ -202,23 +224,7 @@ export function runDetail(id: string, receipt = false) {
       : ['delivery', 'quality'],
     prompt: read(row.prompt_path),
     output: read(row.output_path),
-    live_status_detail:
-      capacityWait?.type === 'capacity_wait' && capacityWait.waiting
-        ? `waiting for capacity since ${capacityWait.ts}`
-        : throttle?.type === 'throttled'
-          ? `throttled (${throttle.status}), retry ${throttle.attempt}/${throttle.max} at ${throttle.retryAt ?? 'unknown'}`
-          : null,
-    throttled:
-      throttle?.type === 'throttled'
-        ? {
-            attempt: throttle.attempt,
-            max: throttle.max,
-            retry_delay_ms: throttle.retryDelayMs,
-            retry_at: throttle.retryAt,
-            status: throttle.status,
-            concurrency: throttle.concurrency,
-          }
-        : null,
+    ...liveEventStatus(events),
     ask_server: summarizeAskServer(
       events,
       readAskServerFailure(runScratchDir(id)) ?? readAskServerFailure(runArtifactsDir(id)),

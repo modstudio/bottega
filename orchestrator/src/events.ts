@@ -212,6 +212,25 @@ function isWorkerActivity(event: RunLogEvent): boolean {
 
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
 
+function simpleObservedEvent(
+  event: Extract<StreamEvent, { kind: 'usage' | 'throttled' }>,
+  ts: string,
+  throttleConcurrency: () => number,
+): RunLogEvent {
+  return event.kind === 'usage'
+    ? { ts, type: 'usage', tokens: event.tokens, costUsd: event.costUsd }
+    : {
+        ts,
+        type: 'throttled',
+        attempt: event.attempt,
+        max: event.max,
+        retryDelayMs: event.retryDelayMs,
+        retryAt: event.retryAt,
+        status: event.httpStatus,
+        concurrency: throttleConcurrency(),
+      }
+}
+
 export function createEventLog(
   runId: string,
   path?: string,
@@ -263,21 +282,8 @@ export function createEventLog(
         }
         return
       }
-      if (event.kind === 'usage') {
-        write({ ts, type: 'usage', tokens: event.tokens, costUsd: event.costUsd })
-        return
-      }
-      if (event.kind === 'throttled') {
-        write({
-          ts,
-          type: 'throttled',
-          attempt: event.attempt,
-          max: event.max,
-          retryDelayMs: event.retryDelayMs,
-          retryAt: event.retryAt,
-          status: event.httpStatus,
-          concurrency: throttleConcurrency(),
-        })
+      if (event.kind === 'usage' || event.kind === 'throttled') {
+        write(simpleObservedEvent(event, ts, throttleConcurrency))
       }
     },
     flush,
@@ -718,6 +724,17 @@ function formatArtifactPeekEvent(event: ArtifactPeekEvent) {
   )
 }
 
+type OperationalPeekEvent = Extract<
+  PeekEventSummary,
+  { type: 'usage' | 'throttled' | 'capacity_wait' }
+>
+
+function formatOperationalPeekEvent(event: OperationalPeekEvent): string {
+  if (event.type === 'usage') return `  usage ${event.tokens}`
+  if (event.type === 'capacity_wait') return '  waiting for capacity'
+  return `  throttled (${event.status}), retry ${event.attempt}/${event.max} at ${event.retryAt ?? 'unknown'} (codex concurrency ${event.concurrency})`
+}
+
 function formatPeekEvent(event: PeekEventSummary): string {
   if ('text' in event) return `  ${event.type} ${event.text}`
   if (event.type === 'note') {
@@ -729,11 +746,8 @@ function formatPeekEvent(event: PeekEventSummary): string {
   if (event.type === 'tool_result') {
     return `  result ${event.status ?? ''}${event.bytes != null ? ` ${event.bytes}b` : ''}`.trimEnd()
   }
-  if (event.type === 'usage') return `  usage ${event.tokens}`
-  if (event.type === 'throttled') {
-    return `  throttled (${event.status}), retry ${event.attempt}/${event.max} at ${event.retryAt ?? 'unknown'} (codex concurrency ${event.concurrency})`
-  }
-  if (event.type === 'capacity_wait') return '  waiting for capacity'
+  if (event.type === 'usage' || event.type === 'throttled' || event.type === 'capacity_wait')
+    return formatOperationalPeekEvent(event)
   if (event.type === 'ask_expected') {
     return `  ask expected ${event.transport} ${event.command.join(' ')}`
   }

@@ -342,6 +342,37 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
   agentExplicit: Boolean(agent),
 })
 
+async function selectBeforeDetach(
+  jobName: string,
+  text: string,
+  spec: DetachSpec,
+  presentation: Pick<Presentation, 'cwd' | 'error'>,
+): Promise<string | undefined> {
+  if (spec.resume) return undefined
+  const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
+  return waitForAgentSelection({
+    select: () =>
+      pick(
+        jobName,
+        spec.agent,
+        text.length,
+        true,
+        stackAt(spec.cwd ?? presentation.cwd()),
+        {
+          agents: spec.avoid,
+          models: spec.distinctModels,
+          model: spec.model,
+          noWaitCapacity: spec.noWaitCapacity,
+          requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
+        },
+        spec.probe,
+        spec.lens,
+      ).agent,
+    noWait: spec.noWaitCapacity,
+    onWait: () => presentation.error('waiting for capacity'),
+  })
+}
+
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
   const flag = (name: string) => flagValue(argv, name)
@@ -374,31 +405,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
     }
   }
   const detach = async (jobName: string, text: string, spec: DetachSpec) => {
-    let selected: string | undefined
-    const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
-    if (!spec.resume) {
-      selected = await waitForAgentSelection({
-        select: () =>
-          pick(
-            jobName,
-            spec.agent,
-            text.length,
-            true,
-            stackAt(spec.cwd ?? presentation.cwd()),
-            {
-              agents: spec.avoid,
-              models: spec.distinctModels,
-              model: spec.model,
-              noWaitCapacity: spec.noWaitCapacity,
-              requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
-            },
-            spec.probe,
-            spec.lens,
-          ).agent,
-        noWait: spec.noWaitCapacity,
-        onWait: () => presentation.error('waiting for capacity'),
-      })
-    }
+    const selected = await selectBeforeDetach(jobName, text, spec, presentation)
     return dispatchDetached(
       jobName,
       text,

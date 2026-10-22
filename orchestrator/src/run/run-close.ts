@@ -219,6 +219,15 @@ function notifyFailureRequiringHuman(input: {
     )
 }
 
+function recordFailoverRefusal(
+  runId: string,
+  facts: Parameters<typeof decideFailover>[0],
+): boolean {
+  const reason = failoverRefusalReason(decideFailover(facts))
+  if (reason) appendFailoverRefusal(runId, reason)
+  return Boolean(reason)
+}
+
 export async function closeRun(input: CloseInput): Promise<RunResult> {
   const {
     failureKind,
@@ -299,15 +308,13 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       agentsTried: tried,
       originalPromptAvailable: Boolean(first.prompt_path && existsSync(first.prompt_path)),
     }
-    const refusalReason = failoverRefusalReason(decideFailover(failoverFacts))
-    if (refusalReason) {
-      appendFailoverRefusal(claim.id, refusalReason)
-    } else {
+    if (!recordFailoverRefusal(claim.id, failoverFacts)) {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
         const transportConstraints = storedFailoverSelectionConstraints(first, opts, tried)
         const selected = await selectFailoverSuccessor({
-          runId: claim.id, job: opts.job,
+          runId: claim.id,
+          job: opts.job,
           prompt: originalPrompt,
           findings: requestedJob.findings,
           lens: first.lens,
@@ -329,9 +336,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         // The recursive successor has its own terminalisation path. Reclaim
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
-        if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job)) {
+        if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job))
           reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid)
-        }
         return await run({
           job: opts.job,
           prompt: originalPrompt,

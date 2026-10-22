@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { appendRunEvent, runEventsPath } from '../events.ts'
-import { bucketThrottles, throttleBuckets } from './throttle-health.ts'
+import { throttleBuckets } from './health.ts'
+import { bucketThrottles } from './throttle-health.ts'
 
 test('throttles are bucketed by live codex concurrency', () => {
   expect(bucketThrottles([{ concurrency: 8 }, { concurrency: 6 }, { concurrency: 8 }])).toEqual([

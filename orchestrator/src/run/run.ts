@@ -95,7 +95,7 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
-import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
+import { initialRunSource } from './run-agent-capacity.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -185,6 +185,20 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
   ) + 2
 
 const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
+
+function routedPromptBytes(
+  prompt: string,
+  replySchemaName: string,
+  requestedJob: { findings?: unknown },
+  requiresCanonSource: boolean,
+): number {
+  return (
+    Buffer.byteLength(prompt) +
+    replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID)) +
+    (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
+    (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0)
+  )
+}
 
 function confinementSkipLines(failures: FreezeFailure[]): string[] {
   return failures.map(
@@ -498,10 +512,7 @@ export async function run(opts: {
     pick(
       opts.job,
       selectAgentForTransport(requestedTransport, opts.agent),
-      Buffer.byteLength(prompt) +
-        replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID)) +
-        (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
-        (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
+      routedPromptBytes(prompt, replySchemaName, requestedJob, requiresCanonSource),
       true,
       stackAt(callerCwd),
       {
@@ -514,16 +525,13 @@ export async function run(opts: {
       opts.probe,
       opts.lens,
     )
-  const source = resume.isFirstTurn
-    ? {
-        source: 'pick' as const,
-        ...(await selectAgentWithCapacityEvents({
-          runId: opts.reserveId,
-          select: pickSource,
-          noWait: opts.noWaitCapacity,
-        })),
-      }
-    : { source: 'resume' as const, ...opts.resume! }
+  const source = await initialRunSource({
+    first: resume.isFirstTurn,
+    resume: opts.resume,
+    runId: opts.reserveId,
+    noWait: opts.noWaitCapacity,
+    pick: pickSource,
+  })
   const launch = decideRunLaunch({
     ...source,
     explicitTransport: opts.transport !== undefined,

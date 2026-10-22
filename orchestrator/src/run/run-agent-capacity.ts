@@ -5,6 +5,7 @@ import { AgentCapacityError } from '../route/route.ts'
 import { appendRunEvent } from '../events.ts'
 import { nowIso } from '../database/db.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
+import type { RunResumeOptions } from './run-resume-options.ts'
 
 export type CapacityWaitDecision = 'select' | 'wait' | 'refuse'
 
@@ -69,11 +70,28 @@ export async function selectAgentWithCapacityEvents<T>(input: {
     noWait: input.noWait,
     onWait: (at) => {
       waiting = true
-      if (input.runId)
-        appendRunEvent(input.runId, { ts: at, type: 'capacity_wait', waiting: true })
+      if (input.runId) appendRunEvent(input.runId, { ts: at, type: 'capacity_wait', waiting: true })
     },
   })
   if (waiting && input.runId)
     appendRunEvent(input.runId, { ts: nowIso(), type: 'capacity_wait', waiting: false })
   return selected
+}
+
+export async function initialRunSource(input: {
+  first: boolean
+  resume: RunResumeOptions | undefined
+  runId: string | undefined
+  noWait: boolean | undefined
+  pick: () => { agent: string; reason: string }
+}) {
+  if (!input.first) return { source: 'resume' as const, ...input.resume! }
+  return {
+    source: 'pick' as const,
+    ...(await selectAgentWithCapacityEvents({
+      runId: input.runId,
+      select: input.pick,
+      noWait: input.noWait,
+    })),
+  }
 }
