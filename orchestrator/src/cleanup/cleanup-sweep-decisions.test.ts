@@ -17,11 +17,11 @@ import {
   type FilesystemOrphanEligibilityFacts,
   type FilesystemOrphanUnderLockFacts,
   isSweepCandidate,
+  ownerIsGone,
   type RecordedRunCloseOutFacts,
   type RecordedRunPointerFacts,
   type RecordedRunPostInventoryFacts,
   type RecordedRunPreInventoryFacts,
-  ownerIsGone,
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'

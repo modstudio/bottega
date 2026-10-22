@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { branchOf, checkedOutWorktree, gitContext } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectAt, resolvedWorktreeTool, stackAt } from '../project/projects.ts'
@@ -188,7 +188,6 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
       `branch ${branch} already has a live tree at ${existingPath}; use that path or release it with ${PLATFORM_SLUG} tree remove ${existingPath}`,
     )
   }
-  writableDb()
   adoptCoordinatorRunsForLanding(root)
   const startedAt = nowIso()
   const prompt = `landing tree for run ${runId}`

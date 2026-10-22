@@ -2,7 +2,7 @@
 /** Transfers coordinator-run judgment to the architect who opens its landing tree. */
 
 import type { Database } from 'bun:sqlite'
-import { db, sessionId, writeTransaction } from '../database/db.ts'
+import { sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { auditRunMutation, type RootAuthority } from '../run/run-authority.ts'
@@ -38,8 +38,9 @@ function adoptionAuthority(root: CoordinatorRoot, actor: string): RootAuthority 
 /** Atomically adopt every root and turn selected by the shipping-time ruling. */
 export function adoptCoordinatorRunsForLanding(
   opened: CoordinatorRoot,
-  database: Database = db(),
+  providedDatabase?: Database,
 ): number {
+  const database = providedDatabase ?? writableDb()
   const actor = sessionId(database)
   if (!actor || actor === opened.session_id) return 0
   const openedIssueKey = issueKey(opened)
