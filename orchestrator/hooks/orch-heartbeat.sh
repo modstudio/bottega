@@ -72,6 +72,8 @@ INTERVAL="${2:-60}"
 MAX="${3:-60}"
 KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
 NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
+BOARD_REFRESH_EVERY_TICKS="${BOARD_REFRESH_EVERY_TICKS:-5}"
+BOARD_REFRESH_TIMEOUT_SECONDS="${BOARD_REFRESH_TIMEOUT_SECONDS:-10}"
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS=0
 HEARTBEAT_CLEAR_EXIT_STATUS=10
 
@@ -90,6 +92,7 @@ ACTIVE_WATCHDOG_PID=""
 start_watchdog() {
   local watchdog_target_pid="$1"
   local watchdog_marker="$2"
+  local timeout_seconds="$3"
   (
     watchdog_sleep_pid=""
     trap '
@@ -99,7 +102,7 @@ start_watchdog() {
       fi
       exit 0
     ' TERM INT
-    sleep "$NOTICE_TIMEOUT_SECONDS" &
+    sleep "$timeout_seconds" &
     watchdog_sleep_pid=$!
     wait "$watchdog_sleep_pid" 2>/dev/null || exit 0
     if kill -0 "$watchdog_target_pid" 2>/dev/null; then
@@ -143,7 +146,7 @@ report_store_write_lock() {
   lock_timed_out=$(mktemp)
   CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --lock-holder --json >"$lock_out" 2>/dev/null &
   ACTIVE_GUARDED_PID=$!
-  start_watchdog "$ACTIVE_GUARDED_PID" "$lock_timed_out"
+  start_watchdog "$ACTIVE_GUARDED_PID" "$lock_timed_out" "$NOTICE_TIMEOUT_SECONDS"
   ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
   wait "$ACTIVE_GUARDED_PID"; lock_rc=$?
   ACTIVE_GUARDED_PID=""
@@ -434,9 +437,18 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   monitor_err=$(mktemp)
   monitor_out=$(mktemp)
   monitor_timed_out=$(mktemp)
-  CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --notices --json >"$monitor_out" 2>"$monitor_err" &
+  monitor_args=(machine monitor --notices --json)
+  monitor_label="monitor notices"
+  monitor_timeout="$NOTICE_TIMEOUT_SECONDS"
+  if [ $((i % BOARD_REFRESH_EVERY_TICKS)) -eq 0 ]; then
+    monitor_label="board refresh"
+    monitor_timeout="$BOARD_REFRESH_TIMEOUT_SECONDS"
+  else
+    monitor_args+=(--skip-board-refresh)
+  fi
+  CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" "${monitor_args[@]}" >"$monitor_out" 2>"$monitor_err" &
   ACTIVE_GUARDED_PID=$!
-  start_watchdog "$ACTIVE_GUARDED_PID" "$monitor_timed_out"
+  start_watchdog "$ACTIVE_GUARDED_PID" "$monitor_timed_out" "$monitor_timeout"
   ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
   wait "$ACTIVE_GUARDED_PID"; monitor_rc=$?
   ACTIVE_GUARDED_PID=""
@@ -490,14 +502,14 @@ for row in rows:
 ' 2>/dev/null); monitor_parse_rc=$?
 
   if [ "$monitor_rc" -ne 0 ] || [ "$monitor_parse_rc" -ne 0 ]; then
-    monitor_failure_key="$monitor_rc|$monitor_parse_rc|$monitor_reason"
+    monitor_failure_key="$monitor_label|$monitor_rc|$monitor_parse_rc|$monitor_reason"
     monitor_failure_ticks=$((monitor_failure_ticks + 1))
     if [ "$monitor_failure_key" != "$prev_monitor_failure_key" ] || \
        [ "$monitor_failure_ticks" -ge "$KEEPALIVE_TICKS" ]; then
       prev_monitor_failure_key="$monitor_failure_key"
       monitor_failure_ticks=0
-      printf '[%s] DEGRADED - monitor notices unavailable (rc=%s parse=%s reason=%s). Health state still follows inbox and runs; inspect monitor diagnostics directly.\n' \
-        "$(date +%H:%M:%S)" "$monitor_rc" "$monitor_parse_rc" "$monitor_reason"
+      printf '[%s] DEGRADED - %s unavailable (rc=%s parse=%s reason=%s). Health state still follows inbox and runs; inspect monitor diagnostics directly.\n' \
+        "$(date +%H:%M:%S)" "$monitor_label" "$monitor_rc" "$monitor_parse_rc" "$monitor_reason"
     fi
     report_store_write_lock
   else
@@ -541,7 +553,7 @@ print(token)
           ack_timed_out=$(mktemp)
           CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
           ACTIVE_GUARDED_PID=$!
-          start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
+          start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out" "$NOTICE_TIMEOUT_SECONDS"
           ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
           wait "$ACTIVE_GUARDED_PID"; ack_rc=$?
           ACTIVE_GUARDED_PID=""
