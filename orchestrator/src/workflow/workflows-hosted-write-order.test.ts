@@ -165,48 +165,57 @@ test('hosted promote failure leaves draft state and success adopts promoted stat
   const ownerId = newRecordId(),
     versionId = newRecordId(),
     setEventId = newRecordId()
+  const identity = {
+      id: ownerId,
+      spaceId: SPACE,
+      slug: 'hosted-promote',
+      generation: 1,
+      createdAt: at,
+      updatedAt: at,
+    },
+    draftVersion = {
+      id: versionId,
+      spaceId: SPACE,
+      ownerId,
+      n: 1,
+      status: 'draft' as const,
+      definition: JSON.stringify(definition),
+      author: 'unknown',
+      reason: 'set',
+      createdAt: at,
+      promotedAt: null,
+      retiredAt: null,
+      updatedAt: at,
+    },
+    setEvent = {
+      id: setEventId,
+      spaceId: SPACE,
+      ownerVersionId: versionId,
+      event: 'set' as const,
+      author: 'unknown',
+      reason: 'set',
+      sessionId: null,
+      at,
+      updatedAt: at,
+    }
+  const catalogueItems = (table: string) => {
+    if (table === 'workflow') return [identity]
+    if (table === 'workflow_version') return [draftVersion]
+    if (table === 'workflow_event') return [setEvent]
+    return []
+  }
   process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
+    async listWorkflowCatalogue(table) {
+      return { items: catalogueItems(table), nextCursor: null }
+    },
     async draftWorkflow() {
       return {
-        identity: {
-          id: ownerId,
-          spaceId: SPACE,
-          slug: 'hosted-promote',
-          generation: 1,
-          createdAt: at,
-          updatedAt: at,
-        },
-        versions: [
-          {
-            id: versionId,
-            spaceId: SPACE,
-            ownerId,
-            n: 1,
-            status: 'draft',
-            definition: JSON.stringify(definition),
-            author: 'unknown',
-            reason: 'set',
-            createdAt: at,
-            promotedAt: null,
-            retiredAt: null,
-            updatedAt: at,
-          },
-        ],
-        events: [
-          {
-            id: setEventId,
-            spaceId: SPACE,
-            ownerVersionId: versionId,
-            event: 'set',
-            author: 'unknown',
-            reason: 'set',
-            sessionId: null,
-            at,
-          },
-        ],
+        identity,
+        versions: [draftVersion],
+        events: [setEvent],
       }
     },
     async promoteWorkflow() {
@@ -225,16 +234,12 @@ test('hosted promote failure leaves draft state and success adopts promoted stat
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
+    async listWorkflowCatalogue(table) {
+      return { items: catalogueItems(table), nextCursor: null }
+    },
     async promoteWorkflow() {
       return {
-        identity: {
-          id: ownerId,
-          spaceId: SPACE,
-          slug: 'hosted-promote',
-          generation: 1,
-          createdAt: at,
-          updatedAt: at,
-        },
+        identity,
         versions: [
           {
             id: versionId,
@@ -281,6 +286,7 @@ test('hosted promote failure leaves draft state and success adopts promoted stat
 })
 
 const FOLLOWER_SPACE = '01990000-0000-7000-8000-000000000333'
+const SECOND_FOLLOWER_SPACE = '01990000-0000-7000-8000-000000000444'
 type SharedFixtureSpace = {
   identity: RecordWorkflowWriteResponse['identity']
   versions: RecordWorkflowWriteResponse['versions']
@@ -293,8 +299,10 @@ function addSharedFixtureSpace(
   slug: string,
   definition: WorkflowDefinition,
   spaceId: string,
-  source: boolean,
+  productionVersion: number,
+  latestVersion: number,
   pinned: boolean,
+  versionAuthor = BUILT_IN_WORKFLOW_AUTHOR,
 ): void {
   const ownerId = newRecordId()
   const identity: RecordWorkflowWriteResponse['identity'] = {
@@ -305,38 +313,37 @@ function addSharedFixtureSpace(
     createdAt: at,
     updatedAt: at,
   }
-  const firstId = newRecordId()
-  const versions: RecordWorkflowWriteResponse['versions'] = [
-    {
-      id: firstId,
-      spaceId,
-      ownerId,
-      n: 1,
-      status: source ? 'retired' : 'production',
-      definition: JSON.stringify(definition),
-      author: BUILT_IN_WORKFLOW_AUTHOR,
-      reason: 'seed one',
-      createdAt: at,
-      promotedAt: at,
-      retiredAt: source ? at : null,
-      updatedAt: at,
+  const versions: RecordWorkflowWriteResponse['versions'] = Array.from(
+    { length: latestVersion },
+    (_, index) => {
+      const n = index + 1
+      return {
+        id: newRecordId(),
+        spaceId,
+        ownerId,
+        n,
+        status:
+          n === productionVersion
+            ? ('production' as const)
+            : n < productionVersion
+              ? ('retired' as const)
+              : ('draft' as const),
+        definition: JSON.stringify(definition),
+        author: versionAuthor,
+        reason: n === 1 ? 'seed one' : n === 2 ? 'seed two' : `version ${n}`,
+        createdAt: at,
+        promotedAt: n <= productionVersion ? at : null,
+        retiredAt: n < productionVersion ? at : null,
+        updatedAt: at,
+      }
     },
-  ]
-  if (source)
-    versions.push({
-      ...versions[0]!,
-      id: newRecordId(),
-      n: 2,
-      status: 'draft',
-      reason: 'seed two',
-      promotedAt: null,
-      retiredAt: null,
-    })
+  )
+  const productionId = versions.find((version) => version.n === productionVersion)!.id
   const events: SharedFixtureSpace['events'] = [
     {
       id: newRecordId(),
       spaceId,
-      ownerVersionId: firstId,
+      ownerVersionId: productionId,
       event: 'promote',
       author: pinned ? 'operator' : BUILT_IN_WORKFLOW_AUTHOR,
       reason: pinned ? 'pin version one' : 'seed one',
@@ -381,25 +388,63 @@ function sharedFixtureItems(table: string, current: SharedFixtureSpace): Record<
   return []
 }
 
-function installSharedPromotionFixture(options: { pinned?: boolean; unreadable?: boolean } = {}) {
+function installSharedPromotionFixture(
+  options: {
+    currentProduction?: boolean
+    pinned?: boolean
+    secondFollower?: boolean
+    unreadable?: boolean
+  } = {},
+) {
   const local = db()
   const slug = 'shared-hosted'
   const definition = structuredClone(productionWorkflows(local, null)[0]!.definition)
   setWorkflowLocal(slug, definition, 'seed one', BUILT_IN_WORKFLOW_AUTHOR, local)
-  promoteWorkflowLocal(slug, 1, 'seed one', BUILT_IN_WORKFLOW_AUTHOR, local)
+  promoteWorkflowLocal(
+    slug,
+    1,
+    'seed one',
+    options.currentProduction ? 'operator' : BUILT_IN_WORKFLOW_AUTHOR,
+    local,
+  )
   setWorkflowLocal(slug, definition, 'seed two', BUILT_IN_WORKFLOW_AUTHOR, local)
 
   const state = new Map<string, SharedFixtureSpace>()
-  addSharedFixtureSpace(local, state, slug, definition, SPACE, true, false)
+  const targetVersion = options.currentProduction ? 20 : 2
+  addSharedFixtureSpace(
+    local,
+    state,
+    slug,
+    definition,
+    SPACE,
+    options.currentProduction ? 20 : 1,
+    targetVersion,
+    false,
+    options.currentProduction ? 'source-session' : BUILT_IN_WORKFLOW_AUTHOR,
+  )
   addSharedFixtureSpace(
     local,
     state,
     slug,
     definition,
     FOLLOWER_SPACE,
-    false,
+    options.currentProduction ? 17 : 1,
+    options.currentProduction ? 17 : 1,
     options.pinned ?? false,
+    options.currentProduction ? 'follower-session' : BUILT_IN_WORKFLOW_AUTHOR,
   )
+  if (options.secondFollower)
+    addSharedFixtureSpace(
+      local,
+      state,
+      slug,
+      definition,
+      SECOND_FOLLOWER_SPACE,
+      17,
+      17,
+      false,
+      'second-follower-session',
+    )
 
   const calls: string[] = []
   process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
@@ -407,7 +452,11 @@ function installSharedPromotionFixture(options: { pinned?: boolean; unreadable?:
     ...createMemoryRecordApiClient(),
     whoami: async () => ({
       ...(await whoami()),
-      memberships: [SPACE, FOLLOWER_SPACE].map((spaceId) => ({
+      memberships: [
+        SPACE,
+        FOLLOWER_SPACE,
+        ...(options.secondFollower ? [SECOND_FOLLOWER_SPACE] : []),
+      ].map((spaceId) => ({
         space_id: spaceId,
         name: spaceId,
         slug: spaceId,
@@ -468,7 +517,7 @@ function installSharedPromotionFixture(options: { pinned?: boolean; unreadable?:
       return { identity: current.identity, versions: current.versions, events: [event] }
     },
   })
-  return { slug, calls }
+  return { slug, calls, targetVersion }
 }
 
 test('shared hosted promotion reads every space, copies followers, and reports all changes', async () => {
@@ -503,4 +552,22 @@ test('shared hosted promotion refuses before writing when a target cannot be rea
     `could not read authoritative workflow state for space ${FOLLOWER_SPACE}: hosted read failed; refresh and retry`,
   )
   expect(fixture.calls).toEqual([])
+})
+
+test('shared hosted promotion copies through current production without writing the source', async () => {
+  const fixture = installSharedPromotionFixture({ currentProduction: true, secondFollower: true })
+  expect(await promoteWorkflow(fixture.slug, fixture.targetVersion, 'release')).toEqual({
+    version: 20,
+    changedSpaces: [FOLLOWER_SPACE, SECOND_FOLLOWER_SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+  })
+  expect(fixture.calls).toEqual(
+    [FOLLOWER_SPACE, SECOND_FOLLOWER_SPACE].flatMap((spaceId) => [
+      `draft:${spaceId}:version 18`,
+      `draft:${spaceId}:version 19`,
+      `draft:${spaceId}:version 20`,
+      `promote:${spaceId}:shared promotion: release`,
+    ]),
+  )
 })

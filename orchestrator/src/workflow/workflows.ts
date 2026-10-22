@@ -31,10 +31,7 @@ import {
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
-import {
-  promoteHostedWorkflowSpace,
-  promoteSharedWorkflow,
-} from './workflow-shared-promotion-store.ts'
+import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowModeSteps,
@@ -543,37 +540,27 @@ export function promoteWorkflow(
       if (!reasonValue?.trim()) throw new Error('reason is required')
       const spaceId = await hostedSpace(d)
       const target = selectedWorkflow(slug, n, d, spaceId)
+      if (target.status === 'retired')
+        throw new Error(`workflow "${slug}" version ${n} is not a draft`)
       const promotionPorts = {
         preflight: (definition: WorkflowDefinition, targetSpace: string) =>
           workflowPromotionPreflight(slug, definition, d, targetSpace),
         author: () => writeAuthor(authorValue),
+        operator: (author: string) => author !== BUILT_IN_WORKFLOW_AUTHOR,
       }
-      if (target.author !== BUILT_IN_WORKFLOW_AUTHOR) {
-        await promoteHostedWorkflowSpace(slug, n, reasonValue, spaceId, d, promotionPorts)
-        return workflowPromotionReport(n, { changed: [spaceId], overrides: [], pinned: [] })
-      }
-
-      const decision = await promoteSharedWorkflow(
-        slug,
-        n,
-        reasonValue,
-        spaceId,
-        BUILT_IN_WORKFLOW_AUTHOR,
-        d,
-        {
-          ...promotionPorts,
-          draftLocal: (version) =>
-            writeDraftLocal(
-              slug,
-              JSON.parse(version.definition),
-              version.reason,
-              BUILT_IN_WORKFLOW_AUTHOR,
-              'import',
-              d,
-            ).n,
-          promoteLocal: (reason) => promoteWorkflowLocal(slug, n, reason, authorValue, d),
-        },
-      )
+      const decision = await promoteSharedWorkflow(slug, n, reasonValue, spaceId, d, {
+        ...promotionPorts,
+        draftLocal: (version) =>
+          writeDraftLocal(
+            slug,
+            JSON.parse(version.definition),
+            version.reason,
+            BUILT_IN_WORKFLOW_AUTHOR,
+            'import',
+            d,
+          ).n,
+        promoteLocal: (reason) => promoteWorkflowLocal(slug, n, reason, authorValue, d),
+      })
       return workflowPromotionReport(n, decision)
     },
   })

@@ -1,19 +1,18 @@
 // concern: workflow-shared-promotion
 /** Decides which catalogue spaces follow a shared workflow promotion. */
-
 export type WorkflowPromotionVersion = {
   spaceId: string | null
   n: number
   status: 'draft' | 'production' | 'retired'
   author: string
-  definition?: string
+  definition: string
   reason?: string
 }
 
 export type WorkflowPromotionEvent = {
   spaceId: string | null
   event: string
-  author: string
+  operator: boolean
   reason: string
 }
 
@@ -42,14 +41,17 @@ export const workflowPromotionReport = (
   pinnedSpaces: decision.pinned,
 })
 
-/** A space owns its history as soon as any version was authored outside the shared seed. */
+/** A space follows while every version it holds matches the source history. */
 export function sharedWorkflowPromotionSpaces(
   versions: readonly WorkflowPromotionVersion[],
   targetVersion: number,
-  seedAuthor: string,
+  sourceSpace: string,
   events: readonly WorkflowPromotionEvent[],
   targetSpaces: readonly (string | null)[] = versions.map((row) => row.spaceId),
 ): WorkflowPromotionSpaceDecision {
+  const sourceVersions = new Map(
+    versions.filter((row) => row.spaceId === sourceSpace).map((row) => [row.n, row.definition]),
+  )
   const bySpace = new Map<string | null, WorkflowPromotionVersion[]>()
   for (const spaceId of targetSpaces) bySpace.set(spaceId, [])
   for (const version of versions) {
@@ -62,7 +64,7 @@ export function sharedWorkflowPromotionSpaces(
     overrides: string[] = [],
     pinned: string[] = []
   for (const [spaceId, rows] of bySpace) {
-    if (rows.some((row) => row.author !== seedAuthor)) {
+    if (rows.some((row) => sourceVersions.get(row.n) !== row.definition)) {
       if (spaceId !== null) overrides.push(spaceId)
       continue
     }
@@ -70,7 +72,7 @@ export function sharedWorkflowPromotionSpaces(
       (event) =>
         event.spaceId === spaceId &&
         event.event === 'promote' &&
-        event.author !== seedAuthor &&
+        event.operator &&
         !event.reason.startsWith(SHARED_WORKFLOW_PROMOTION_REASON),
     )
     if (operatorPin) {
