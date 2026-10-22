@@ -295,7 +295,7 @@ describe('worker settings apply refusals', () => {
     delete process.env.ORCH_RUN_ID
     await seedUser()
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { FIRST: 'private' } }))
-    await settingsEnvImportCommand(flags({ user: true }), shown().port)
+    await settingsEnvImportCommand(flags({ user: true }), shown().port, () => false)
     expect(
       parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).envKeys,
     ).toEqual(['FIRST'])
@@ -304,9 +304,10 @@ describe('worker settings apply refusals', () => {
       join(claude, 'settings.json'),
       JSON.stringify({ env: { FIRST: 'private', SECOND: 'private' } }),
     )
-    process.env.ORCH_RUN_ID = 'settings-apply-worker'
-    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
-      'refusing document store write from an orchestrator worker run',
+    await expect(
+      settingsEnvImportCommand(flags({ user: true }), shown().port, () => true),
+    ).rejects.toThrow(
+      `refusing settings env import from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings env import --user`,
     )
   })
 

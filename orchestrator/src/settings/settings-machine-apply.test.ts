@@ -16,7 +16,6 @@ import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
-import { decideMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
@@ -105,27 +104,6 @@ function writeCurrentSettings() {
 }
 
 describe('settings apply', () => {
-  test('write authority allows the main checkout and temporary homes only', () => {
-    expect(
-      decideMachineHomeWriteAuthority({
-        runningFromRegisteredMainCheckout: true,
-        targetHomesUnderTemporaryDirectory: false,
-      }),
-    ).toEqual({ action: 'allow' })
-    expect(
-      decideMachineHomeWriteAuthority({
-        runningFromRegisteredMainCheckout: false,
-        targetHomesUnderTemporaryDirectory: true,
-      }),
-    ).toEqual({ action: 'allow' })
-    expect(
-      decideMachineHomeWriteAuthority({
-        runningFromRegisteredMainCheckout: false,
-        targetHomesUnderTemporaryDirectory: false,
-      }),
-    ).toEqual({ action: 'refuse-not-registered-main' })
-  })
-
   test('--check reports current and changed targets without writing', async () => {
     writeCurrentSettings()
     const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')

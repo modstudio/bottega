@@ -62,6 +62,7 @@ function withProductHooksForTarget(target: Target, settings: OwnedSettings): Own
 export async function settingsEnvImportCommand(
   flags: Flags,
   presentation: Presentation,
+  workerProcess = () => isOrchWorkerProcess(process.env, process.pid),
 ): Promise<void> {
   if (flags.has('project')) {
     throw new Error(
@@ -70,6 +71,11 @@ export async function settingsEnvImportCommand(
     )
   }
   if (!flags.has('user')) throw new Error('refusing settings env import: pass --user')
+  if (workerProcess()) {
+    throw new Error(
+      `refusing settings env import from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings env import --user`,
+    )
+  }
   const home = claudeHomeFromEnvironment(process.env)
   if (!flags.has('dry-run')) {
     assertCurrentMachineHomeWriteAuthority('machine settings env import --user', [home])

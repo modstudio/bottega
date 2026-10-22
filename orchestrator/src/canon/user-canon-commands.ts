@@ -69,6 +69,12 @@ function assertUserCanonHydrateWriteAuthority(
   )
 }
 
+function assertUserCanonHydrateFlags(flags: UserCanonFlags): void {
+  if (flags.has('force')) {
+    throw new Error(`unknown flag for ${PLATFORM_SLUG} doc canon hydrate --user: --force`)
+  }
+}
+
 export async function userCanonImportCommand(
   flags: UserCanonFlags,
   presentation: UserCanonPresentation,
@@ -164,9 +170,7 @@ export async function userCanonHydrateCommand(
   flags: UserCanonFlags,
   presentation: UserCanonPresentation,
 ): Promise<void> {
-  if (flags.has('force')) {
-    throw new Error(`unknown flag for ${PLATFORM_SLUG} doc canon hydrate --user: --force`)
-  }
+  assertUserCanonHydrateFlags(flags)
   const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
   assertUserCanonHydrateWriteAuthority(flags, homes)
   const owner = await signedInDocOwner()

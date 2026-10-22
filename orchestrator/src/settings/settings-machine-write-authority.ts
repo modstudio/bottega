@@ -1,7 +1,7 @@
 // concern: settings-machine-write-authority
 /** Guards writes to real harness homes with the registered installation identity. */
 import type { Database } from 'bun:sqlite'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { mainCheckoutOf } from '../../../shared/git.ts'
@@ -26,11 +26,11 @@ export function decideMachineHomeWriteAuthority(facts: {
     : { action: 'refuse-not-registered-main' }
 }
 
-export function registeredMainCheckout(database: Database = db()): string | null {
+function registeredMainCheckout(database: Database): string | null {
   return projectByName(PLATFORM_SLUG, database)?.path ?? null
 }
 
-export function isRunningFromRegisteredMainCheckout(
+function isRunningFromRegisteredMainCheckout(
   runningInstallationRoot: string,
   mainCheckout: string | null,
 ): boolean {
@@ -40,8 +40,19 @@ export function isRunningFromRegisteredMainCheckout(
   )
 }
 
-export function machineHomesUnderTemporaryDirectory(targetHomes: readonly string[]): boolean {
-  const temporaryDirectory = realPathForPotentialPath(tmpdir())
+export function machineHomesUnderTemporaryDirectory(
+  targetHomes: readonly string[],
+  temporaryRoot = tmpdir(),
+  userHome = homedir(),
+): boolean {
+  const temporaryDirectory = realPathForPotentialPath(temporaryRoot)
+  const resolvedUserHome = realPathForPotentialPath(userHome)
+  if (
+    resolvedUserHome === temporaryDirectory ||
+    temporaryStateStoreMigrationAllowed(resolvedUserHome, temporaryDirectory)
+  ) {
+    return false
+  }
   return targetHomes.every((home) =>
     temporaryStateStoreMigrationAllowed(realPathForPotentialPath(home), temporaryDirectory),
   )
@@ -73,18 +84,29 @@ export function assertCurrentMachineHomeWriteAuthority(
   command: string,
   targetHomes: readonly string[],
   database: Database = db(),
+  overrides: {
+    runningFromRegisteredMainCheckout?: boolean
+    registeredMainCheckout?: string | null
+    runningInstallationRoot?: string
+    binaryRepositoryRoot?: string | null
+  } = {},
 ): void {
-  const runningRoot = assetPath()
-  const mainCheckout = registeredMainCheckout(database)
+  const runningRoot = overrides.runningInstallationRoot ?? assetPath()
+  const mainCheckout =
+    overrides.registeredMainCheckout !== undefined
+      ? overrides.registeredMainCheckout
+      : registeredMainCheckout(database)
   assertMachineHomeWriteAuthority({
     command,
     targetHomes,
-    runningFromRegisteredMainCheckout: isRunningFromRegisteredMainCheckout(
-      runningRoot,
-      mainCheckout,
-    ),
+    runningFromRegisteredMainCheckout:
+      overrides.runningFromRegisteredMainCheckout ??
+      isRunningFromRegisteredMainCheckout(runningRoot, mainCheckout),
     registeredMainCheckout: mainCheckout,
     runningInstallationRoot: runningRoot,
-    binaryRepositoryRoot: mainCheckoutOf(runningRoot),
+    binaryRepositoryRoot:
+      overrides.binaryRepositoryRoot !== undefined
+        ? overrides.binaryRepositoryRoot
+        : mainCheckoutOf(runningRoot),
   })
 }

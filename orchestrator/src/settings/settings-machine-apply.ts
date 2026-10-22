@@ -4,7 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { mainCheckoutOf } from '../../../shared/git.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import {
@@ -36,11 +35,7 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
-import {
-  assertMachineHomeWriteAuthority,
-  isRunningFromRegisteredMainCheckout,
-  registeredMainCheckout,
-} from './settings-machine-write-authority.ts'
+import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
@@ -175,26 +170,21 @@ function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | 
 
 function assertMachineSettingsWriteAuthority(
   environment: NodeJS.ProcessEnv,
-  runningFromRegisteredMainCheckout: boolean,
-  facts: {
-    registeredMainCheckout: string | null
-    runningInstallationRoot: string
-    binaryRepositoryRoot: string | null
-  },
+  database: Database,
+  overrides: Pick<
+    ApplyOverrides,
+    | 'runningFromRegisteredMainCheckout'
+    | 'registeredMainCheckout'
+    | 'runningInstallationRoot'
+    | 'binaryRepositoryRoot'
+  >,
 ): void {
   const runsDirectory = resolveRunsDirectory(environment)
   const targetHomes = [
     claudeHomeFromEnvironment(environment),
     ...userCanonHomesFromEnvironment(environment, runsDirectory).map((home) => home.path),
   ]
-  assertMachineHomeWriteAuthority({
-    command: 'machine settings apply',
-    targetHomes,
-    runningFromRegisteredMainCheckout,
-    registeredMainCheckout: facts.registeredMainCheckout,
-    runningInstallationRoot: facts.runningInstallationRoot,
-    binaryRepositoryRoot: facts.binaryRepositoryRoot,
-  })
+  assertCurrentMachineHomeWriteAuthority('machine settings apply', targetHomes, database, overrides)
 }
 
 function applyUserCanon(
@@ -290,19 +280,8 @@ export async function applyMachineSettings(
   }
   const environment = overrides.environment ?? process.env
   const local = overrides.local ?? db()
-  const mainCheckout = overrides.registeredMainCheckout ?? registeredMainCheckout(local)
-  const runningInstallationRoot = overrides.runningInstallationRoot ?? assetPath()
-  const binaryRepositoryRoot =
-    overrides.binaryRepositoryRoot ?? mainCheckoutOf(runningInstallationRoot)
-  const runningFromRegisteredMainCheckout =
-    overrides.runningFromRegisteredMainCheckout ??
-    isRunningFromRegisteredMainCheckout(runningInstallationRoot, mainCheckout)
   if (!input.check) {
-    assertMachineSettingsWriteAuthority(environment, runningFromRegisteredMainCheckout, {
-      registeredMainCheckout: mainCheckout,
-      runningInstallationRoot,
-      binaryRepositoryRoot,
-    })
+    assertMachineSettingsWriteAuthority(environment, local, overrides)
   }
   const deps = dependencies({ ...overrides, environment, local, workerProcess })
   const stateDirectory = resolveStatePaths(deps.environment).orchestratorDirectory

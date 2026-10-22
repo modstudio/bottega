@@ -4,14 +4,29 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   assertMachineHomeWriteAuthority,
-  isRunningFromRegisteredMainCheckout,
+  decideMachineHomeWriteAuthority,
   machineHomesUnderTemporaryDirectory,
 } from './settings-machine-write-authority.ts'
 
-test('a standalone secondary clone is not the registered main checkout', () => {
+test('write authority allows the main checkout and temporary homes only', () => {
   expect(
-    isRunningFromRegisteredMainCheckout('/projects/secondary-clone', '/projects/registered-main'),
-  ).toBeFalse()
+    decideMachineHomeWriteAuthority({
+      runningFromRegisteredMainCheckout: true,
+      targetHomesUnderTemporaryDirectory: false,
+    }),
+  ).toEqual({ action: 'allow' })
+  expect(
+    decideMachineHomeWriteAuthority({
+      runningFromRegisteredMainCheckout: false,
+      targetHomesUnderTemporaryDirectory: true,
+    }),
+  ).toEqual({ action: 'allow' })
+  expect(
+    decideMachineHomeWriteAuthority({
+      runningFromRegisteredMainCheckout: false,
+      targetHomesUnderTemporaryDirectory: false,
+    }),
+  ).toEqual({ action: 'refuse-not-registered-main' })
 })
 
 test('temporary authority requires every target home to be under the OS temporary directory', () => {
@@ -24,6 +39,36 @@ test('temporary authority requires every target home to be under the OS temporar
   expect(
     machineHomesUnderTemporaryDirectory([join(tmpdir(), 'fixture', '.claude'), '/operator/.codex']),
   ).toBeFalse()
+})
+
+test('a temporary root at or above the user home is never an exception', () => {
+  expect(
+    machineHomesUnderTemporaryDirectory(['/operator/.claude'], '/operator', '/operator'),
+  ).toBeFalse()
+  expect(machineHomesUnderTemporaryDirectory(['/operator/.claude'], '/', '/operator')).toBeFalse()
+})
+
+test('a temporary root below the user home remains an exception', () => {
+  expect(
+    machineHomesUnderTemporaryDirectory(
+      ['/operator/tmp/fixture/.claude'],
+      '/operator/tmp',
+      '/operator',
+    ),
+  ).toBeTrue()
+})
+
+test('a standalone secondary clone is refused', () => {
+  expect(() =>
+    assertMachineHomeWriteAuthority({
+      command: 'machine settings apply',
+      targetHomes: ['/operator/.claude'],
+      runningFromRegisteredMainCheckout: false,
+      registeredMainCheckout: '/projects/registered-main',
+      runningInstallationRoot: '/projects/secondary-clone',
+      binaryRepositoryRoot: '/projects/secondary-clone',
+    }),
+  ).toThrow('real harness homes may only be written from the registered main checkout')
 })
 
 test('a linked invocation without ORCH_MAIN_CHECKOUT names the binary repository root', () => {
