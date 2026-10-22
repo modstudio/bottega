@@ -288,7 +288,7 @@ export function shouldCheckpointAtTerminal(input: {
   return input.writesJob && input.hasWorktree
 }
 
-export function terminalCheckpointHeader(commit: string): string {
+function terminalCheckpointHeader(commit: string): string {
   return `Harness checkpoint: committed uncommitted work as ${commit}.`
 }
 

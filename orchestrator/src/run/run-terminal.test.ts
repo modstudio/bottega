@@ -11,7 +11,6 @@ import {
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
-  terminalCheckpointHeader,
 } from './run-terminal.ts'
 
 test('an ok child refreshes the failed root run record with the chain outcome', () => {
@@ -191,12 +190,6 @@ describe('terminal checkpoint decision', () => {
         hasWorktree: true,
       }),
     ).toBe(false)
-  })
-
-  test('names the harness commit in the result header', () => {
-    expect(terminalCheckpointHeader('abc123')).toBe(
-      'Harness checkpoint: committed uncommitted work as abc123.',
-    )
   })
 })
 
