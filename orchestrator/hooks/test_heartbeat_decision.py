@@ -17,6 +17,49 @@ SPEC.loader.exec_module(heartbeat_decision)
 
 
 class HeartbeatDecisionTest(unittest.TestCase):
+    def test_heartbeat_formats_a_monitor_notice_with_its_label_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            shutil.copy2(PATH, hooks / PATH.name)
+            shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            fake = binary / "bottega"
+            fake.write_text(
+                """#!/bin/sh
+case \"$*\" in
+  \"board presence\") exit 0 ;;
+  \"question inbox --all --json\") printf '[]\\n' ;;
+  \"run list --limit 200 --json\")
+    printf '%s\\n' '{\"record_id\":\"01990000-0000-7000-8000-000000000001\",\"number\":1,\"job\":\"fixture\",\"agent\":\"codex\",\"status\":\"ok\",\"session_id\":\"other\",\"started_at\":\"2026-01-01T00:00:00Z\",\"latency_ms\":1}' ;;
+  \"machine monitor --notices --json\")
+    printf '%s\\n' '[{\"noticeId\":\"condition:1\",\"kind\":\"worker-gate-tooling-change\",\"subject\":\"run:01990000-0000-7000-8000-000000000002\",\"label\":\"run 16709\",\"detail\":\"detected (age unknown, status ok, project bottega); inspect the run deliberately.\",\"ownerSession\":\"fixture-session\"}]' ;;
+  \"machine monitor --ack-notices condition:1\") exit 0 ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            completed = subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                cwd=checkout,
+                env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertIn(
+                "MONITOR worker-gate-tooling-change run 16709: detected (age unknown, status ok, project bottega); inspect the run deliberately.",
+                completed.stdout.splitlines(),
+            )
+            self.assertNotIn("run:01990000", completed.stdout)
+
     def test_one_tick_reports_blocked_and_stalled_once(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56", 1, 2, 0, 1, "run 7 idle", "ignored"

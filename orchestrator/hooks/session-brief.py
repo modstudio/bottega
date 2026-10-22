@@ -302,6 +302,7 @@ def _monitor_delivery(stdout, owner_session):
         isinstance(item, dict)
         and isinstance(item.get("kind"), str)
         and isinstance(item.get("subject"), str)
+        and isinstance(item.get("label"), str)
         and isinstance(item.get("detail"), str)
         and isinstance(item.get("noticeId"), str)
         and _valid_notice_id(item["noticeId"])
@@ -909,7 +910,7 @@ def main() -> int:
         if monitor_notices or monitor_warning:
             monitor_text = "\n".join([
                 *(
-                    f'MONITOR {item["kind"]} {item["subject"]}: {item["detail"]}'
+                    f'MONITOR {item["kind"]} {item["label"]}: {item["detail"]}'
                     for item in monitor_notices
                 ),
                 *([monitor_warning] if monitor_warning else []),
