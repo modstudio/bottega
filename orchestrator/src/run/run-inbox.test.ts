@@ -224,11 +224,13 @@ test('inbox lists workflow questions with their identity and answer command', as
       mode: 'default',
       step: { n: 3, slug: 'fix' },
       can_answer: true,
+      session_id: 'orch-test-session',
       answer_command: `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"`,
       ownership_notice: null,
     }),
   )
 })
+
 test('inbox gives no answer command for a foreign-owned workflow question', async () => {
   db()
     .query(
