@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { Readable } from 'node:stream'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
@@ -104,10 +104,7 @@ describe('metric collection transcript lifecycle', () => {
       canon: true,
     })
     const timeouts: number[] = []
-    spyOn(Bun, 'spawnSync').mockImplementation(((
-      args: string[],
-      options?: { timeout?: number },
-    ) => {
+    const gitRunner = ((args: string[], options?: { timeout?: number }) => {
       expect(args.slice(0, 4)).toEqual(['git', '-C', '/fixtures/slow-history', 'log'])
       timeouts.push(options?.timeout ?? 0)
       const finish = Date.now() + 20
@@ -123,10 +120,13 @@ describe('metric collection transcript lifecycle', () => {
         exitedDueToTimeout: true,
         resourceUsage: {},
       }
-    }) as unknown as typeof Bun.spawnSync)
+    }) as unknown as typeof Bun.spawnSync
 
-    await expect(collect(30, { deadlineMs: 10, transcripts: [transcript] })).rejects.toThrow(
-      `metric collection deadline of 10ms exceeded after reading transcript ${file}`,
+    await expect(
+      collect(30, { deadlineMs: 10, transcripts: [transcript], gitRunner }),
+    ).rejects.toThrow(
+      'metric collection deadline of 10ms exceeded while reading git history for repository ' +
+        'slow-history at /fixtures/slow-history',
     )
     expect(timeouts).toHaveLength(1)
     expect(timeouts[0]).toBeGreaterThan(0)

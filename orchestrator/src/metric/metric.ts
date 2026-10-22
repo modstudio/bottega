@@ -20,10 +20,11 @@ export type MetricTranscriptSource = {
   open(): Readable
 }
 
-type MetricCollectionOptions<Activity> = {
+type MetricCollectionOptions = {
   deadlineMs?: number
   transcripts?: MetricTranscriptSource[]
-  activity?: Map<string, Activity>
+  activity?: Map<string, DayActivity>
+  gitRunner?: typeof Bun.spawnSync
 }
 
 class MetricCollectionDeadline {
@@ -32,8 +33,8 @@ class MetricCollectionDeadline {
   private readonly controller = new AbortController()
   private readonly expiresAt: number
   private readonly timer: ReturnType<typeof setTimeout>
-  private currentFile: string | null = null
-  private lastFile: string | null = null
+  private currentUnit: string | null = null
+  private lastUnit: string | null = null
 
   constructor(milliseconds: number) {
     this.milliseconds = milliseconds
@@ -42,14 +43,14 @@ class MetricCollectionDeadline {
     this.timer = setTimeout(() => this.abort(), milliseconds)
   }
 
-  beginFile(file: string): void {
-    this.currentFile = file
-    this.lastFile = file
+  beginUnit(unit: string): void {
+    this.currentUnit = unit
+    this.lastUnit = unit
     this.checkpoint()
   }
 
-  endFile(): void {
-    this.currentFile = null
+  endUnit(): void {
+    this.currentUnit = null
   }
 
   checkpoint(): void {
@@ -67,10 +68,10 @@ class MetricCollectionDeadline {
   }
 
   private abort(): void {
-    const context = this.currentFile
-      ? `while reading transcript ${this.currentFile}`
-      : this.lastFile
-        ? `after reading transcript ${this.lastFile}`
+    const context = this.currentUnit
+      ? `while reading ${this.currentUnit}`
+      : this.lastUnit
+        ? `after reading ${this.lastUnit}`
         : 'before a transcript was opened'
     this.controller.abort(
       new Error(`metric collection deadline of ${this.milliseconds}ms exceeded ${context}`),
@@ -91,7 +92,7 @@ async function readTranscriptLines(
   deadline: MetricCollectionDeadline,
   consume: (line: string) => void,
 ): Promise<void> {
-  deadline.beginFile(source.file)
+  deadline.beginUnit(`transcript ${source.file}`)
   const stream = source.open()
   const lines = createInterface({ input: stream, crlfDelay: Infinity })
   const abort = () => {
@@ -110,7 +111,7 @@ async function readTranscriptLines(
     deadline.signal.removeEventListener('abort', abort)
     lines.close()
     await releaseStream(stream)
-    deadline.endFile()
+    deadline.endUnit()
   }
 }
 
@@ -315,7 +316,11 @@ type DayActivity = {
  * depth. Generated output is excluded outright and tests are counted apart,
  * because both swamp a line count without reflecting effort in proportion.
  */
-function activityByDay(since: string, deadline: MetricCollectionDeadline) {
+function activityByDay(
+  since: string,
+  deadline: MetricCollectionDeadline,
+  gitRunner: typeof Bun.spawnSync,
+) {
   const days = new Map<string, DayActivity>()
   const get = (d: string) => {
     if (!days.has(d))
@@ -329,53 +334,60 @@ function activityByDay(since: string, deadline: MetricCollectionDeadline) {
   }
   for (const { name: repo, path, settings } of projects().filter((p) => p.canon)) {
     const key = keyPattern(settings.keyPrefixes)
-    const proc = Bun.spawnSync(
-      [
-        'git',
-        '-C',
-        path,
-        'log',
-        '--all',
-        `--since=${since}`,
-        '--numstat',
-        '--pretty=format:%x00%cI%x09%H%x09%s',
-      ],
-      {
-        env: targetGitEnvironment(path),
-        stdout: 'pipe',
-        stderr: 'ignore',
-        timeout: deadline.remainingMilliseconds(),
-      },
-    )
-    deadline.checkpoint()
-    let day: string | null = null
-    for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
-      if (line.startsWith('\u0000')) {
-        const [d, , subject] = line.slice(1).split('\t')
-        if (!d) {
-          day = null
+    deadline.beginUnit(`git history for repository ${repo} at ${path}`)
+    try {
+      const proc = gitRunner(
+        [
+          'git',
+          '-C',
+          path,
+          'log',
+          '--all',
+          `--since=${since}`,
+          '--numstat',
+          '--pretty=format:%x00%cI%x09%H%x09%s',
+        ],
+        {
+          env: targetGitEnvironment(path),
+          stdout: 'pipe',
+          stderr: 'ignore',
+          timeout: deadline.remainingMilliseconds(),
+        },
+      )
+      deadline.checkpoint()
+      let day: string | null = null
+      for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
+        if (line.startsWith('\u0000')) {
+          const [d, , subject] = line.slice(1).split('\t')
+          if (!d) {
+            day = null
+            continue
+          }
+          day = metricCalendarDay(d)
+          const row = get(day)
+          row.commits++
+          for (const k of key ? ((subject ?? '').match(key) ?? []) : [])
+            row.tasks.add(`${repo}:${k}`)
           continue
         }
-        day = metricCalendarDay(d)
+        if (!day) continue
+        const [add, del, file] = line.split('\t')
+        // "-" is git's marker for a binary file: no line count exists.
+        if (add === undefined || add === '-' || !file) continue
         const row = get(day)
-        row.commits++
-        for (const k of key ? ((subject ?? '').match(key) ?? []) : []) row.tasks.add(`${repo}:${k}`)
-        continue
+        const kind = categorizeFile(file)
+        row.lines[kind] += Number(add) + Number(del ?? 0)
+        if (kind === 'product') row.files.add(`${repo}:${file}`)
       }
-      if (!day) continue
-      const [add, del, file] = line.split('\t')
-      // "-" is git's marker for a binary file: no line count exists.
-      if (add === undefined || add === '-' || !file) continue
-      const row = get(day)
-      const kind = categorizeFile(file)
-      row.lines[kind] += Number(add) + Number(del ?? 0)
-      if (kind === 'product') row.files.add(`${repo}:${file}`)
+      deadline.checkpoint()
+    } finally {
+      deadline.endUnit()
     }
   }
   return days
 }
 
-export async function collect(windowDays = 30, options: MetricCollectionOptions<DayActivity> = {}) {
+export async function collect(windowDays = 30, options: MetricCollectionOptions = {}) {
   writableDb()
   const deadline = new MetricCollectionDeadline(options.deadlineMs ?? METRIC_COLLECTION_DEADLINE_MS)
   try {
@@ -384,7 +396,9 @@ export async function collect(windowDays = 30, options: MetricCollectionOptions<
     const sources = options.transcripts ?? transcriptSources()
     const tok = await claudeTokensByDay(since, sources, deadline)
     deadline.checkpoint()
-    const act = options.activity ?? activityByDay(start.toISOString(), deadline)
+    const act =
+      options.activity ??
+      activityByDay(start.toISOString(), deadline, options.gitRunner ?? Bun.spawnSync)
     deadline.checkpoint()
     const d = db()
     const stmt = d.query(
