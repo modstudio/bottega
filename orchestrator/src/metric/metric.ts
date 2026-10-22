@@ -218,7 +218,7 @@ type DayActivity = {
  * depth. Generated output is excluded outright and tests are counted apart,
  * because both swamp a line count without reflecting effort in proportion.
  */
-function activityByDay(since: string) {
+function activityByDay(since: string, deadline: MetricCollectionDeadline) {
   const days = new Map<string, DayActivity>()
   const get = (d: string) => {
     if (!days.has(d))
@@ -243,8 +243,14 @@ function activityByDay(since: string) {
         '--numstat',
         '--pretty=format:%x00%cI%x09%H%x09%s',
       ],
-      { env: targetGitEnvironment(path), stdout: 'pipe', stderr: 'ignore' },
+      {
+        env: targetGitEnvironment(path),
+        stdout: 'pipe',
+        stderr: 'ignore',
+        timeout: deadline.remainingMilliseconds(),
+      },
     )
+    deadline.checkpoint()
     let day: string | null = null
     for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
       if (line.startsWith('\u0000')) {
@@ -281,7 +287,7 @@ export async function collect(windowDays = 30, options: MetricCollectionOptions<
     const sources = options.transcripts ?? transcriptSources()
     const tok = await claudeTokensByDay(since, sources, deadline)
     deadline.checkpoint()
-    const act = options.activity ?? activityByDay(start.toISOString())
+    const act = options.activity ?? activityByDay(start.toISOString(), deadline)
     deadline.checkpoint()
     const d = db()
     const stmt = d.query(

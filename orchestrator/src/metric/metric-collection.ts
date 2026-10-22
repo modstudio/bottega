@@ -1,7 +1,7 @@
 import type { Readable } from 'node:stream'
 import { createInterface } from 'node:readline'
 
-export const METRIC_COLLECTION_DEADLINE_MS = 15 * 60 * 1000
+export const METRIC_COLLECTION_DEADLINE_MS = 45 * 60 * 1000
 
 export type MetricTranscriptSource = {
   file: string
@@ -43,6 +43,11 @@ export class MetricCollectionDeadline {
   checkpoint(): void {
     if (!this.signal.aborted && Date.now() >= this.expiresAt) this.abort()
     if (this.signal.aborted) throw this.signal.reason
+  }
+
+  remainingMilliseconds(): number {
+    this.checkpoint()
+    return Math.max(1, this.expiresAt - Date.now())
   }
 
   finish(): void {
