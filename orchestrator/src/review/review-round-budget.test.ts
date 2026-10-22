@@ -24,6 +24,23 @@ describe('review round budget decision', () => {
       wouldExceedCeiling,
     })
   })
+
+  test('does not start a round when review policy says no round is needed', () => {
+    expect(
+      reviewRoundBudgetDecision({
+        tier: 3,
+        roundsUsed: 1,
+        currentChangeCounted: false,
+        roundNeeded: false,
+      }),
+    ).toEqual({
+      roundsUsed: 1,
+      ceiling: 3,
+      currentChangeCounted: false,
+      startsNewRound: false,
+      wouldExceedCeiling: false,
+    })
+  })
 })
 
 function addEvidence(input: {

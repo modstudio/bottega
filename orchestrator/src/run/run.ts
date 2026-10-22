@@ -1115,7 +1115,6 @@ export async function run(opts: {
       runLease?.release()
     }
   }
-
   return closeRun({
     failureKind,
     name,

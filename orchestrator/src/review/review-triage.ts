@@ -26,6 +26,10 @@ export const MIN_REVIEW_TRIAGED = 10
 export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
 export type Disposition = (typeof DISPOSITIONS)[number]
 
+/** The `--finding` value after `N=`, shared by score help and its missing-finding refusal. */
+export const FINDING_VALUE = `<${DISPOSITIONS.join('|')}>:<detail>`
+export const FINDING_DETAIL_RULE = `accepted/modified/skipped detail is ${REVIEW_SEVERITY.join('|')}; rejected detail is a lowercase stable category ID of 1-64 characters`
+
 export function triageValues(
   disposition: Disposition,
   rejectionCategory?: string,

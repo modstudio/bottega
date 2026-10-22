@@ -5,6 +5,7 @@ import {
   resolveTierRange,
   type TierRangeEndpoint,
   type TierRangeFacts,
+  tierThreeRiskPaths,
 } from './review-tier.ts'
 
 describe('tier range parsing', () => {
@@ -287,6 +288,25 @@ describe('review tier classification', () => {
       },
     })
     expect(actual).toMatchObject({ risk: 0, size: 0, tier: 0 })
+  })
+
+  test('names only paths whose surface risk is tier three', () => {
+    expect(
+      tierThreeRiskPaths(
+        [
+          { path: 'src/ordinary.ts', insertions: 1, deletions: 0 },
+          { path: 'src/security.ts', insertions: 1, deletions: 0 },
+          { path: 'src/security.test.ts', insertions: 1, deletions: 0 },
+        ],
+        {
+          paths: [
+            { pattern: '^src/security', tier: 3, reason: 'security boundary' },
+            { pattern: '^src/', tier: 2, reason: 'product source' },
+          ],
+          unlisted: 1,
+        },
+      ),
+    ).toEqual(['src/security.ts'])
   })
 
   const precedenceCases: {

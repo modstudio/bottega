@@ -43,13 +43,12 @@ import {
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 import {
-  namedRunArtifactPaths,
   persistRunArtifacts,
   persistTerminalSnapshot,
   runArtifactsDir,
-  runScratchDir,
   runTerminalReplyPath,
   type TerminalSnapshot,
+  terminalRunArtifactPaths,
 } from './run-artifacts.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
@@ -381,16 +380,10 @@ function clearRunTimers(
 function persistTerminalArtifacts(
   id: string,
   readerReply: ReaderReply | null,
-  output: string,
   worktree: Worktree | null,
   changes: Changes | null,
 ): void {
-  persistRunArtifacts(
-    id,
-    namedRunArtifactPaths(readerReply, output, runScratchDir(id), runArtifactsDir(id)),
-    worktree,
-    changes,
-  )
+  persistRunArtifacts(id, terminalRunArtifactPaths(id, readerReply), worktree, changes)
 }
 
 function recordedReviewedHead(runId: string, required: boolean): string | null {
@@ -920,7 +913,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
 
   try {
-    persistTerminalArtifacts(claim.id, readerReply, output, worktree, changes)
+    persistTerminalArtifacts(claim.id, readerReply, worktree, changes)
   } catch (e) {
     artifactsPersisted = false
     const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
