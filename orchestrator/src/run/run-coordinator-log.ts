@@ -11,11 +11,6 @@ import { RUNS_DIR } from './run-artifacts.ts'
 const COORDINATOR_ERROR_TAIL_LIMIT = 2000
 const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
 
-/** Routing marks refusals at their source so prose changes cannot re-arm withholding. */
-export function isRoutingRefusal(value: string): boolean {
-  return value.includes(ROUTING_REFUSAL_MARKER)
-}
-
 function withoutRoutingRefusalMarker(value: string): string {
   return value
     .replaceAll(`${ROUTING_REFUSAL_MARKER}.AgentCapacityError: `, '')
@@ -89,10 +84,11 @@ export const runCoordinatorLogPath = (runRecordId: string, runsDir = RUNS_DIR): 
 
 /** Bound coordinator diagnostics only after checking the whole candidate tail for secrets. */
 export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
-  const routingRefusal = isRoutingRefusal(output)
-  const trimmed = (routingRefusal ? withoutRoutingRefusalMarker(output) : output).trim()
+  const routingRefusalAt = output.indexOf(ROUTING_REFUSAL_MARKER)
+  const outsideRoutingRefusal = routingRefusalAt >= 0 ? output.slice(0, routingRefusalAt) : output
+  const trimmed = (routingRefusalAt >= 0 ? withoutRoutingRefusalMarker(output) : output).trim()
   if (!trimmed) return '(no output)'
-  if (containsSecretShaped(trimmed) && !routingRefusal) return SECRET_SHAPED_OUTPUT
+  if (containsSecretShaped(outsideRoutingRefusal)) return SECRET_SHAPED_OUTPUT
   if (trimmed.length <= limit) return trimmed
   const marker = '… [earlier output omitted] …\n'
   if (limit <= marker.length) return trimmed.slice(-limit)

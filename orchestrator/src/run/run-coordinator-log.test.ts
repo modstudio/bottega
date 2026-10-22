@@ -1,13 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { ROUTING_REFUSAL_MARKER } from '../route/routing-refusal.ts'
-import { coordinatorErrorTail, isRoutingRefusal } from './run-coordinator-log.ts'
+import { coordinatorErrorTail } from './run-coordinator-log.ts'
 
 describe('coordinatorErrorTail', () => {
   test('preserves a routing refusal even when its reason looks secret-shaped', () => {
     const reason = 'no eligible agent for job "implement"\ngrok: disabled — Not signed in token=abc'
     const refusal = `${ROUTING_REFUSAL_MARKER}: ${reason}`
-    expect(isRoutingRefusal(reason)).toBe(false)
-    expect(isRoutingRefusal(refusal)).toBe(true)
     expect(coordinatorErrorTail(refusal)).toBe(reason)
     expect(
       coordinatorErrorTail(
@@ -26,6 +24,11 @@ describe('coordinatorErrorTail', () => {
     expect(coordinatorErrorTail(`failure: token=${'s'.repeat(100)}`, 24)).toBe(
       '[withheld: secret-shaped content]',
     )
+  })
+
+  test('withholds secret-shaped output outside a marked routing refusal', () => {
+    const output = `failure: token=${'s'.repeat(100)}\n${ROUTING_REFUSAL_MARKER}: no eligible agent`
+    expect(coordinatorErrorTail(output)).toBe('[withheld: secret-shaped content]')
   })
 
   test('names an empty coordinator log', () => {
