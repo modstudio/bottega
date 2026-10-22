@@ -46,6 +46,7 @@ describe('deriveObservedTestOutcome', () => {
       timedOut: false,
       elapsedMs: 10,
       logName: 'started.log',
+      logPath: '/scratch/started.log',
     })
     appendRunEvent(runId, {
       ts: '2026-10-21T00:00:01.000Z',
@@ -56,6 +57,7 @@ describe('deriveObservedTestOutcome', () => {
       timedOut: false,
       elapsedMs: 1,
       logName: 'launch-failure.log',
+      logPath: '/scratch/launch-failure.log',
     })
     const gateId = db()
       .query<{ id: number }, [string, string, string, string, string]>(

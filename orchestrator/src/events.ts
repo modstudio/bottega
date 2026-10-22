@@ -25,7 +25,25 @@ const DEFAULT_IDLE_WARN_MS = 5 * 60_000
 const DEFAULT_PEEK_EVENTS = 5
 const PEEK_TEXT_CHARS = 120
 
+type FocusedTestRunLogEvent = {
+  ts: string
+  type: 'focused_test'
+  paths: string[]
+  started: boolean
+  exitCode: number
+  timedOut: boolean
+  elapsedMs: number
+  logName: string
+  logPath: string
+}
+
+type GateLogRunLogEvent = { ts: string; type: 'gate_log'; logPath: string }
+
+/** Run events whose structured fields name files retained at terminalisation. */
+export type ArtifactPathEvent = FocusedTestRunLogEvent | GateLogRunLogEvent
+
 export type RunLogEvent =
+  | ArtifactPathEvent
   | { ts: string; type: 'text'; text: string }
   | { ts: string; type: 'warning'; text: string }
   | {
@@ -53,16 +71,6 @@ export type RunLogEvent =
   | { ts: string; type: 'ask_started'; tools: string[] }
   | { ts: string; type: 'ask_initialized' }
   | { ts: string; type: 'ask_listed'; tools: string[] }
-  | {
-      ts: string
-      type: 'focused_test'
-      paths: string[]
-      started: boolean
-      exitCode: number
-      timedOut: boolean
-      elapsedMs: number
-      logName: string
-    }
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
@@ -84,6 +92,7 @@ type PeekEventSummary =
       elapsedMs: number
       logName: string
     }
+  | { type: 'gate_log' }
 
 export type PeekSummary = {
   id: number
@@ -546,6 +555,7 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
       logName: event.logName,
     }
   }
+  if (event.type === 'gate_log') return { type: 'gate_log' }
   return { type: 'ask_initialized' }
 }
 
@@ -629,7 +639,14 @@ export function peekRun(
   }
 }
 
-function formatFocusedTestPeekEvent(event: Extract<PeekEventSummary, { type: 'focused_test' }>) {
+type ArtifactPeekEvent = Extract<PeekEventSummary, { type: 'focused_test' } | { type: 'gate_log' }>
+
+function isArtifactPeekEvent(event: PeekEventSummary): event is ArtifactPeekEvent {
+  return event.type === 'focused_test' || event.type === 'gate_log'
+}
+
+function formatArtifactPeekEvent(event: ArtifactPeekEvent) {
+  if (event.type === 'gate_log') return '  gate log recorded'
   return (
     `  focused test exit ${event.exitCode}${event.timedOut ? ' timed out' : ''} ` +
     `${event.elapsedMs}ms ${event.paths.join(',')} (${event.logName})`
@@ -653,7 +670,7 @@ function formatPeekEvent(event: PeekEventSummary): string {
   }
   if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
   if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
-  if (event.type === 'focused_test') return formatFocusedTestPeekEvent(event)
+  if (isArtifactPeekEvent(event)) return formatArtifactPeekEvent(event)
   return '  ask initialized'
 }
 
