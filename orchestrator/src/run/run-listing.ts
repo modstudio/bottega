@@ -19,10 +19,7 @@ import type {
 } from './question-vocabulary.ts'
 import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
-import {
-  type SubscriptionCostContext,
-  withReportedCost,
-} from './run-subscription-cost.ts'
+import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
@@ -426,13 +423,7 @@ export async function runListingCommand(
   rows = rows
     .map(withRetryRecordId)
     .flatMap((r) =>
-      listingConversation(
-        r,
-        json,
-        subscriptionCost,
-        chainIsStranded,
-        strandedRecovery,
-      ),
+      listingConversation(r, json, subscriptionCost, chainIsStranded, strandedRecovery),
     )
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes

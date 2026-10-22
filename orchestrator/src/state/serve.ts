@@ -29,10 +29,7 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { reapStale } from '../run/run-liveness.ts'
-import {
-  type SubscriptionCostContext,
-  withReportedCost,
-} from '../run/run-subscription-cost.ts'
+import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
@@ -145,10 +142,13 @@ export function runDetail(
     )
     .get(id) as Record<string, unknown> | null
   if (!row) return null
-  const detailRow = withReportedCost(row, options.subscriptionCost ?? {
-    facts: subscriptionCostFacts(),
-    prices: {},
-  })
+  const detailRow = withReportedCost(
+    row,
+    options.subscriptionCost ?? {
+      facts: subscriptionCostFacts(),
+      prices: {},
+    },
+  )
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
   const eventsPath = runEventsPath(id)

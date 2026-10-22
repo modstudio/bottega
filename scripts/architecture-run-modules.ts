@@ -18,7 +18,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/run-usage-columns.ts',
-    allowed: ['../agent/agents.ts', '../transport/vendor-usage.ts'],
+    allowed: ['../transport/vendor-usage.ts'],
   },
   {
     file: 'orchestrator/src/run/run-mcp-mode.ts',

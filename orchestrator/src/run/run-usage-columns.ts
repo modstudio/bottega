@@ -1,6 +1,5 @@
 // concern: run usage columns
 /** Maps transport usage into the four columns persisted on a run. */
-import type { Agent } from '../agent/agents.ts'
 import { SUBSCRIPTION_STORED_SOURCE, type VendorUsage } from '../transport/vendor-usage.ts'
 
 export type RunUsageColumns = {
@@ -12,7 +11,7 @@ export type RunUsageColumns = {
 
 export function runUsageColumns(
   usage: VendorUsage,
-  billing?: Agent['billing'] | null,
+  billing?: 'subscription' | 'free' | 'metered' | 'none' | 'unknown' | null,
 ): RunUsageColumns {
   if (billing === 'subscription') {
     return {

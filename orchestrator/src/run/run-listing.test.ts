@@ -536,7 +536,9 @@ describe('run listing', () => {
     const subscriptionCost = { facts: subscriptionCostFacts(), prices: { grok: 100 } }
     expect(
       runJson(
-        (await command({ json: true, id: [id] }, undefined, undefined, undefined, subscriptionCost))[0]!,
+        (
+          await command({ json: true, id: [id] }, undefined, undefined, undefined, subscriptionCost)
+        )[0]!,
       ),
     ).toMatchObject({
       cost_usd: 25,

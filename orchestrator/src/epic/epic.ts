@@ -5,10 +5,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
-import {
-  type SubscriptionCostContext,
-  withReportedCost,
-} from '../run/run-subscription-cost.ts'
+import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 export type EpicChild = { key: string; title?: string; status?: string | null }
 type NotRecorded = { metric: string; needed: string }
@@ -214,6 +211,15 @@ function epicRunCosts(taskRuns: RunRow[], subscriptionCost: SubscriptionCostCont
   }
 }
 
+export type EpicScoreboardOptions = { subscriptionCost?: SubscriptionCostContext }
+
+function epicCostContext(
+  database: Database,
+  options: EpicScoreboardOptions,
+): SubscriptionCostContext {
+  return options.subscriptionCost ?? { facts: subscriptionCostFacts(database), prices: {} }
+}
+
 /**
  * Evidence attribution is deliberately ordered. run.launch_key is authoritative
  * when present; otherwise the task key embedded in run.branch and then its head
@@ -222,7 +228,6 @@ function epicRunCosts(taskRuns: RunRow[], subscriptionCost: SubscriptionCostCont
  * a non-child launch key, or no child by any route, is outside this epic rather
  * than being silently assigned to its nearest task.
  */
-export type EpicScoreboardOptions = { subscriptionCost?: SubscriptionCostContext }
 
 export function epicScoreboard(
   epicKey: string,
@@ -234,10 +239,7 @@ export function epicScoreboard(
   const keys = children.map((child) => child.key.toUpperCase())
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
   const { runs, landings, reviews } = epicEvidence(database)
-  const subscriptionCost = options.subscriptionCost ?? {
-    facts: subscriptionCostFacts(database),
-    prices: {},
-  }
+  const subscriptionCost = epicCostContext(database, options)
   const subjects = commitSubjects(database)
   const subjectKey = (projectId: string | null, commit: string | null) =>
     keyInBranch(projectId && commit ? (subjects.get(projectId)?.get(commit) ?? null) : null, keys)

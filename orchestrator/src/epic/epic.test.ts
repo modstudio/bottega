@@ -191,9 +191,7 @@ describe('epic scoreboard', () => {
       latency: 10_000,
       startedAt: '2026-10-22T12:00:00.000Z',
     })
-    db()
-      .query(`UPDATE run SET launch_key='DEV-PRICE',vendor_tokens=1 WHERE record_id=?`)
-      .run(first)
+    db().query(`UPDATE run SET launch_key='DEV-PRICE',vendor_tokens=1 WHERE record_id=?`).run(first)
     const second = addRun({
       agent: 'codex',
       job: 'implement',
@@ -225,9 +223,7 @@ describe('epic scoreboard', () => {
       latency: 10_000,
       startedAt: '2026-10-22T12:00:00.000Z',
     })
-    db()
-      .query(`UPDATE run SET launch_key='DEV-MIX',vendor_tokens=2 WHERE record_id=?`)
-      .run(priced)
+    db().query(`UPDATE run SET launch_key='DEV-MIX',vendor_tokens=2 WHERE record_id=?`).run(priced)
     const unpriced = addRun({
       agent: 'codex',
       job: 'implement',
