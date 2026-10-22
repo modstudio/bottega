@@ -272,11 +272,10 @@ test('a sha line is withheld while a pull-request URL and refusal remain usable 
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const url = 'https://github.com/acme/app/pull/7'
     const refusal = 'applicable lens safety has no recorded result on this branch'
-    const streamed = [
-      `--base=${'a'.repeat(40)}\n`,
-      `opened ${url}\n`,
-      `${refusal}\n`,
-    ].reduce(appendWorkflowOutput, { output: '', secretFound: false })
+    const streamed = [`--base=${'a'.repeat(40)}\n`, `opened ${url}\n`, `${refusal}\n`].reduce(
+      appendWorkflowOutput,
+      { output: '', secretFound: false },
+    )
     expect(streamed.output).toBe(`[withheld line: hex-run]\nopened ${url}\n${refusal}\n`)
     expect(streamed.output).toContain(url)
     expect(streamed.output).toContain(refusal)

@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { withholdSecretShapedGateLines } from '../secret-shaped-output.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -18,6 +17,7 @@ import {
 } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
+import { withholdSecretShapedGateLines } from '../secret-shaped-output.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,

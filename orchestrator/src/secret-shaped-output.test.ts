@@ -6,9 +6,7 @@ const githubPat = 'ghp_123456789012345678901234567890123456'
 
 test('a 40-hex line is withheld and a failure list survives', () => {
   expect(
-    withholdSecretShapedGateLines(
-      `--base=${hex40}\ngate failures: scripts/check-architecture.ts`,
-    ),
+    withholdSecretShapedGateLines(`--base=${hex40}\ngate failures: scripts/check-architecture.ts`),
   ).toBe(`[withheld line: hex-run]\ngate failures: scripts/check-architecture.ts`)
 })
 
