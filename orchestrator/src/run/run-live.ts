@@ -49,11 +49,7 @@ import {
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
-import {
-  type SandboxSelection,
-  sandboxLaunchArgv,
-  writerBrokerProfile,
-} from '../sandbox/sandbox.ts'
+import { type SandboxSelection, writerBrokerProfile } from '../sandbox/sandbox.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -67,6 +63,7 @@ import {
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   checkpointRun,
+  type CheckpointContainment,
   DEFAULT_CHECKPOINT_MINUTES,
   latestCheckpoint,
   recordFailedIdlePreservation,
@@ -88,6 +85,7 @@ import {
 } from './run-wall-deadline.ts'
 import {
   closeWorkerExecutionBrokers,
+  type BrokerConfinement,
   startWorkerExecutionBrokers,
   type WorkerExecutionBrokers,
 } from './run-worker-brokers.ts'
@@ -156,14 +154,15 @@ function recordConfiguredAsk(input: {
   }
 }
 
-function brokerSandbox(
+function brokerConfinement(
   writingAcp: boolean,
   profile: SandboxSelection['profile'],
   needsProjectNetwork: boolean,
-): { launch(bin: string, argv: string[]): Promise<string[]> } | null {
-  if (!writingAcp || !profile) return null
+): BrokerConfinement {
+  if (!writingAcp) return { kind: 'host' }
+  if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
   const brokerProfile = writerBrokerProfile(profile, needsProjectNetwork)
-  return { launch: (bin, argv) => sandboxLaunchArgv(brokerProfile, bin, argv) }
+  return { kind: 'srt', profile: brokerProfile }
 }
 
 function replyFileMatches(
@@ -315,7 +314,7 @@ export type LiveInput = {
   initialBoardNoticeIds: Array<number | string>
   askLoopback: AskLoopback | null
   writingAcp: boolean
-  checkpointGitDir: string | null
+  checkpointContainment: CheckpointContainment
   brokerNeedsNetwork: boolean
 }
 
@@ -354,10 +353,6 @@ export type LiveResult = {
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
   workerEvents: StreamEvent[]
-}
-
-function checkpointContainment(input: LiveInput) {
-  return { gitDir: input.checkpointGitDir, disableHooks: input.writingAcp }
 }
 
 function vendorProcessSample(pid: number | null): ProcessSample | undefined {
@@ -532,7 +527,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
-      sandbox: brokerSandbox(input.writingAcp, sandboxSelection.profile, input.brokerNeedsNetwork),
+      confinement: brokerConfinement(
+        input.writingAcp,
+        sandboxSelection.profile,
+        input.brokerNeedsNetwork,
+      ),
       onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
@@ -571,6 +570,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       startedAt: started,
       write: writes,
       writingAcp: input.writingAcp,
+      ask:
+        askLoopback?.kind === 'endpoint' ? { kind: 'endpoint', url: askLoopback.url } : undefined,
       sandbox: codexSandbox.sandbox,
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
@@ -641,7 +642,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         taskKey: launchKey,
         scratchDir,
         guardEnvironment: gitConfigEnvironment ?? {},
-        ...checkpointContainment(input),
+        containment: input.checkpointContainment,
         final,
       })
       if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
@@ -663,7 +664,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           taskKey: launchKey,
           scratchDir,
           guardEnvironment: gitConfigEnvironment ?? {},
-          ...checkpointContainment(input),
+          containment: input.checkpointContainment,
         })
       }
     }

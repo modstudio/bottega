@@ -36,7 +36,7 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { checkpointRun, type CheckpointContainment, latestCheckpoint } from './checkpoint.ts'
 import {
   closeRunChainQuestions,
   QUESTION_CLOSE_CHAIN_TERMINAL,
@@ -179,7 +179,7 @@ export type TerminalInput = {
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
   writingAcp: boolean
-  checkpointGitDir: string | null
+  checkpointContainment: CheckpointContainment
   opts: TerminalOptions
   watchedCheckouts: CheckoutToWatch[]
   confinementFailures: FreezeFailure[]
@@ -231,10 +231,6 @@ export type TerminalResult = {
   confinementEvent: ConfinementEvent | null
   preConfinement: string | null
   artifactsPersisted: boolean
-}
-
-function checkpointContainment(input: TerminalInput) {
-  return { gitDir: input.checkpointGitDir, disableHooks: input.writingAcp }
 }
 
 function checkpointAtTerminal(input: TerminalInput): boolean {
@@ -491,7 +487,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       taskKey: launchKey!,
       scratchDir,
       guardEnvironment: gitConfigEnvironment ?? {},
-      ...checkpointContainment(input),
+      containment: input.checkpointContainment,
       final: true,
     })
     if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {

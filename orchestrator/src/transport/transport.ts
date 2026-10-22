@@ -211,6 +211,7 @@ export type TransportStartOpts = {
   startedAt: number
   write?: boolean
   writingAcp?: boolean
+  ask?: import('../events.ts').ConfiguredAsk
   sandbox?: SandboxLevel
   sandboxWorkspaceWriteNetworkAccess?: boolean
   mcp?: boolean

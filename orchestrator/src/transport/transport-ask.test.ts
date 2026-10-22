@@ -66,6 +66,7 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
           ORCH_ASK_URL: 'http://127.0.0.1:43127/mcp',
         }),
         writingAcp: true,
+        ask: { kind: 'endpoint', url: 'http://127.0.0.1:43127/mcp' },
       }),
     ).toEqual({ kind: 'endpoint', url: 'http://127.0.0.1:43127/mcp' })
   })

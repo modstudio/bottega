@@ -17,7 +17,7 @@ import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
-import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { checkpointRun, type CheckpointContainment, latestCheckpoint } from './checkpoint.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 export function childEnv(
@@ -88,8 +88,7 @@ export type LiveCheckpoint = {
   taskKey: string
   scratchDir: string
   guardEnvironment: NodeJS.ProcessEnv
-  gitDir: string | null
-  disableHooks: boolean
+  containment: CheckpointContainment
 }
 export const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
 const liveGateTerminators = new Set<() => Promise<void>>()
@@ -456,8 +455,7 @@ export function bindSignals() {
           taskKey: checkpoint.taskKey,
           scratchDir: checkpoint.scratchDir,
           guardEnvironment: checkpoint.guardEnvironment,
-          gitDir: checkpoint.gitDir,
-          disableHooks: checkpoint.disableHooks,
+          containment: checkpoint.containment,
           final: true,
         })
         if (result.created || latestCheckpoint(db(), checkpoint.rootId)) {

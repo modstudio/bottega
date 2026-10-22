@@ -795,7 +795,11 @@ export function createAskMcpServer(
   return server
 }
 
-export type AskLoopback = { url: string; close(): Promise<void> }
+export type AskLoopback = {
+  kind: 'endpoint' | 'stdio-loopback'
+  url: string
+  close(): Promise<void>
+}
 
 /** Build the authenticated streamable-HTTP seam without opening a socket. */
 export function createAskHttpHandler(
@@ -828,6 +832,7 @@ export function startAskHttpEndpoint(runId: string, token: string): AskLoopback 
     fetch: createAskHttpHandler(runId, token),
   })
   return {
+    kind: 'endpoint',
     url: `http://127.0.0.1:${server.port}/mcp`,
     close: async () => {
       await server.stop(true)
@@ -865,6 +870,7 @@ export async function startAskLoopback(runId: string, token: string): Promise<As
     throw new Error(`${WORKER_MCP_SERVER_NAME} loopback did not receive a TCP port`)
   }
   return {
+    kind: 'stdio-loopback',
     url: `tcp://127.0.0.1:${address.port}`,
     close: () =>
       new Promise<void>((resolve) => {

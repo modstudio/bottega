@@ -500,12 +500,12 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
 
 function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   if (opts.agent.name === 'grok' || !opts.env.ORCH_RUN_ID || !opts.env.ORCH_RUN_TOKEN) return []
-  if (opts.writingAcp && opts.env.ORCH_ASK_URL?.startsWith('http://')) {
+  if (opts.writingAcp && opts.ask?.kind === 'endpoint') {
     return [
       {
         type: 'http',
         name: WORKER_MCP_SERVER_NAME,
-        url: opts.env.ORCH_ASK_URL,
+        url: opts.ask.url,
         headers: [{ name: 'Authorization', value: `Bearer ${opts.env.ORCH_RUN_TOKEN}` }],
       },
     ]
@@ -545,6 +545,7 @@ export function configuredAcpAsk(
     const argv = opts.agent.askServerCommand?.(opts.env) ?? null
     return argv ? { kind: 'command', argv } : null
   }
+  if (opts.writingAcp && opts.ask?.kind === 'endpoint') return opts.ask
   const server = acpMcpServers(opts).find((entry) => entry.name === WORKER_MCP_SERVER_NAME)
   if (!server) return null
   if ('command' in server)

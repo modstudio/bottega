@@ -6,7 +6,13 @@ import { closeSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
-import { brokerGateEnvironment, GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
+import {
+  type BrokerConfinement,
+  type BrokerLaunchDecision,
+  brokerGateEnvironment,
+  decideBrokerLaunch,
+  GATE_COMMAND_TIMEOUT_MS,
+} from '../gate/gate-decision.ts'
 import { hostSlotWaitCallbacks } from '../gate/host-slot-wait.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -15,6 +21,7 @@ import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   boundedFocusedTestOutputTail,
   type FocusedTestRequest,
@@ -132,22 +139,33 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
 }
 
 export async function focusedTestBrokerLaunchArgv(
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null,
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
   command: string,
   argv: string[],
 ): Promise<string[]> {
-  return sandbox ? sandbox.launch(command, argv) : [command, ...argv]
+  const decision = focusedTestBrokerLaunchDecision(confinement, command, argv)
+  return decision.kind === 'srt'
+    ? sandboxLaunchArgv(decision.profile, decision.bin, decision.argv)
+    : decision.argv
+}
+
+export function focusedTestBrokerLaunchDecision(
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
+  command: string,
+  argv: string[],
+): BrokerLaunchDecision<SandboxRuntimeConfig> {
+  return decideBrokerLaunch(confinement, command, argv)
 }
 
 async function spawnFocusedTestChild(input: {
   invocation: ReturnType<typeof focusedTestInvocation>
   worktree: string
   environment: Record<string, string>
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   record: (chunk: Buffer | string) => void
 }) {
   const launch = await focusedTestBrokerLaunchArgv(
-    input.sandbox,
+    input.confinement,
     input.invocation.command,
     input.invocation.argv,
   )
@@ -173,7 +191,7 @@ async function runFocusedTestProcess(input: {
   invocation: ReturnType<typeof focusedTestInvocation>
   worktree: string
   environment: Record<string, string>
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   state: FocusedTestProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -211,7 +229,7 @@ function startFocusedTest(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   request: FocusedTestRequest
   registerActive: (terminate: () => Promise<void>) => () => void
 }): ActiveFocusedTest {
@@ -265,7 +283,7 @@ function startFocusedTest(input: {
             invocation,
             worktree: plan.worktree,
             environment: input.environment,
-            sandbox: input.sandbox,
+            confinement: input.confinement,
             state,
             record,
             stop,
@@ -311,7 +329,7 @@ export function startFocusedTestBroker(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
-  sandbox?: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   registerActive?: (terminate: () => Promise<void>) => () => void
 }): FocusedTestBroker {
   ensureFocusedTestDirectory(input.scratchDir)
@@ -342,7 +360,7 @@ export function startFocusedTestBroker(input: {
     if (!request) return
     const execution = startFocusedTest({
       ...input,
-      sandbox: input.sandbox ?? null,
+      confinement: input.confinement,
       request,
       registerActive: input.registerActive ?? (() => () => {}),
     })

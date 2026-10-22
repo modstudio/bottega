@@ -19,15 +19,19 @@ import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,
   readGateCheckExecutions,
 } from './gate-check-executions.ts'
 import {
+  type BrokerConfinement,
+  type BrokerLaunchDecision,
   boundedGateOutputTail,
   brokerGateEnvironment,
   changedGateToolingPaths,
+  decideBrokerLaunch,
   decideGateExecutionFinalization,
   decideGateHeadCommit,
   decideGateToolingDiffBase,
@@ -331,20 +335,30 @@ function recordFinishedGate(input: {
 }
 
 export async function gateBrokerLaunchArgv(
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null,
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
   command: string,
 ): Promise<string[]> {
-  return sandbox ? sandbox.launch('sh', ['-c', command]) : ['sh', '-c', command]
+  const decision = gateBrokerLaunchDecision(confinement, command)
+  return decision.kind === 'srt'
+    ? sandboxLaunchArgv(decision.profile, decision.bin, decision.argv)
+    : decision.argv
+}
+
+export function gateBrokerLaunchDecision(
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
+  command: string,
+): BrokerLaunchDecision<SandboxRuntimeConfig> {
+  return decideBrokerLaunch(confinement, 'sh', ['-c', command])
 }
 
 async function spawnGateChild(input: {
   command: string
   worktree: string
   environment: Record<string, string>
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   record: (chunk: Buffer | string) => void
 }) {
-  const launch = await gateBrokerLaunchArgv(input.sandbox, input.command)
+  const launch = await gateBrokerLaunchArgv(input.confinement, input.command)
   return lowerRunChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
@@ -367,7 +381,7 @@ async function runGateProcess(input: {
   command: string
   worktree: string
   environment: Record<string, string>
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -443,7 +457,7 @@ async function runPreparedGate(input: {
   prepared: ReturnType<typeof prepareGateExecution>
   refreshBase: GateBaseRefresh
   environment: Record<string, string>
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -464,7 +478,7 @@ async function runPreparedGate(input: {
         command: input.prepared.command,
         worktree: input.prepared.worktree,
         environment: input.environment,
-        sandbox: input.sandbox,
+        confinement: input.confinement,
         state: input.state,
         record: input.record,
         stop: input.stop,
@@ -518,7 +532,7 @@ function startGateExecution(
   request: PendingGate,
   scratchDir: string,
   environment: Record<string, string>,
-  sandbox: { launch(bin: string, argv: string[]): Promise<string[]> } | null,
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
   registerActive: (terminate: () => Promise<void>) => () => void,
   onFinish: ((moment: GateExecutionMoment) => void) | undefined,
   hostSlot: HostSlotRunner,
@@ -575,7 +589,7 @@ function startGateExecution(
             prepared,
             refreshBase,
             environment: gateExecutionEnvironment(environment, checkExecutionPath),
-            sandbox,
+            confinement,
             state,
             record,
             stop,
@@ -623,7 +637,7 @@ export function startGateBroker(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
-  sandbox?: { launch(bin: string, argv: string[]): Promise<string[]> } | null
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   registerActive?: (terminate: () => Promise<void>) => () => void
   onExecutionStart?: (moment: GateExecutionMoment) => void
   onExecutionFinish?: (moment: GateExecutionMoment) => void
@@ -645,7 +659,7 @@ export function startGateBroker(input: {
       request,
       input.scratchDir,
       input.environment,
-      input.sandbox ?? null,
+      input.confinement,
       registerActive,
       input.onExecutionFinish,
       input.withHostSlot ?? withGateSlot,

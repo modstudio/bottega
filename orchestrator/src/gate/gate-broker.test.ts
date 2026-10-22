@@ -16,7 +16,7 @@ import { db } from '../database/db.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import {
   GATE_BASE_REFRESH_TIMEOUT_MS,
-  gateBrokerLaunchArgv,
+  gateBrokerLaunchDecision,
   refreshGateBase,
   runGateAfterBaseRefresh,
   startGateBroker,
@@ -37,19 +37,15 @@ const brokerProfile: SandboxRuntimeConfig = {
   },
 }
 
-test('a writing ACP gate launch is wrapped in its writer profile', async () => {
-  const seen: Array<{ profile: SandboxRuntimeConfig; bin: string; argv: string[] }> = []
-  const launch = await gateBrokerLaunchArgv(
-    {
-      async launch(bin, argv) {
-        seen.push({ profile: brokerProfile, bin, argv })
-        return ['srt', '--', bin, ...argv]
-      },
-    },
-    'bun run check',
-  )
-  expect(seen).toEqual([{ profile: brokerProfile, bin: 'sh', argv: ['-c', 'bun run check'] }])
-  expect(launch).toEqual(['srt', '--', 'sh', '-c', 'bun run check'])
+test('a writing ACP gate launch is wrapped in its writer profile', () => {
+  expect(
+    gateBrokerLaunchDecision({ kind: 'srt', profile: brokerProfile }, 'bun run check'),
+  ).toEqual({
+    kind: 'srt',
+    profile: brokerProfile,
+    bin: 'sh',
+    argv: ['-c', 'bun run check'],
+  })
 })
 
 async function waitForFinishedGate(id: number): Promise<void> {
@@ -122,6 +118,7 @@ test('records machine-readable checks emitted by a worker gate against its execu
     runId,
     scratchDir: scratch,
     environment: { ORCH_MAIN_CHECKOUT: root },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
   try {
@@ -353,6 +350,7 @@ test('an occupied gate log path fails the execution without following the path',
     runId,
     scratchDir: scratch,
     environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
+    confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
   try {

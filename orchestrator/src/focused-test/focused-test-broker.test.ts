@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
-import { focusedTestBrokerLaunchArgv } from './focused-test-broker.ts'
+import { focusedTestBrokerLaunchDecision } from './focused-test-broker.ts'
 
-test('a writing ACP focused-test launch is wrapped in its writer profile', async () => {
+test('a writing ACP focused-test launch is wrapped in its writer profile', () => {
   const profile: SandboxRuntimeConfig = {
     network: {
       allowedDomains: [],
@@ -17,18 +17,12 @@ test('a writing ACP focused-test launch is wrapped in its writer profile', async
       denyWrite: ['/tree/.git'],
     },
   }
-  const seen: Array<{ profile: SandboxRuntimeConfig; bin: string; argv: string[] }> = []
-  const launch = await focusedTestBrokerLaunchArgv(
-    {
-      async launch(bin, argv) {
-        seen.push({ profile, bin, argv })
-        return ['srt', '--', bin, ...argv]
-      },
-    },
-    'bun',
-    ['test', 'one.test.ts'],
-  )
-
-  expect(seen).toEqual([{ profile, bin: 'bun', argv: ['test', 'one.test.ts'] }])
-  expect(launch).toEqual(['srt', '--', 'bun', 'test', 'one.test.ts'])
+  expect(
+    focusedTestBrokerLaunchDecision({ kind: 'srt', profile }, 'bun', ['test', 'one.test.ts']),
+  ).toEqual({
+    kind: 'srt',
+    profile,
+    bin: 'bun',
+    argv: ['test', 'one.test.ts'],
+  })
 })
