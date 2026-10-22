@@ -13,6 +13,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       'bun:sqlite',
       'node:fs',
+      'node:os',
       '../../../shared/brand.ts',
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
@@ -25,6 +26,8 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-engine.ts',
       './setup-facts.ts',
       './setup-mcp.ts',
+      './setup-mcp-config.ts',
+      './setup-mcp-config-migration.ts',
       './setup-planner.ts',
       './setup-registration-write.ts',
     ],
@@ -62,7 +65,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     name: 'setup-engine-boundary',
     file: 'orchestrator/src/setup/setup-engine.ts',
     allowed: ['../../../shared/brand.ts', './setup-mcp.ts', './setup-toolchain.ts'],
-    typeOnlyAllowed: ['../project/projects.ts', './repository-facts.ts', './setup-facts.ts'],
+    typeOnlyAllowed: [
+      '../project/projects.ts',
+      './repository-facts.ts',
+      './setup-facts.ts',
+      './setup-mcp-config.ts',
+    ],
     reason:
       'Keep setup proposals pure and independent of stores, filesystems, commands, and processes.',
   },
@@ -75,13 +83,20 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-engine.ts',
       './setup-facts.ts',
       './setup-mcp.ts',
+      './setup-mcp-config.ts',
     ],
     reason: 'Keep setup action planning pure and independent of stores, adapters, and commands.',
   },
   {
     name: 'setup-apply-boundary',
     file: 'orchestrator/src/setup/setup-apply.ts',
-    allowed: ['../../../shared/brand.ts', 'node:fs/promises', 'node:path', './setup-mcp.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      'node:fs/promises',
+      'node:path',
+      './setup-mcp.ts',
+      './setup-mcp-config.ts',
+    ],
     typeOnlyAllowed: ['./setup-planner.ts'],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
@@ -107,12 +122,29 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     reason: 'Keep gate and recipe proposals pure and independent of adapters and persistence.',
   },
   {
+    name: 'setup-mcp-config-boundary',
+    file: 'orchestrator/src/setup/setup-mcp-config.ts',
+    allowed: ['../../../shared/brand.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep legacy MCP identities and the JSON rewrite pure so planning and apply share one contract.',
+  },
+  {
+    name: 'setup-mcp-config-migration-boundary',
+    file: 'orchestrator/src/setup/setup-mcp-config-migration.ts',
+    allowed: ['node:fs', 'node:path', './setup-mcp-config.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep setup-owned JSON name migration independent of stores, setup policy, and harness CLI execution.',
+  },
+  {
     name: 'setup-mcp-boundary',
     file: 'orchestrator/src/setup/setup-mcp.ts',
     allowed: [
       '../../../shared/brand.ts',
       '../../../shared/secret-shaped.ts',
       '../../../shared/self-spawn.ts',
+      './setup-mcp-config.ts',
     ],
     typeOnlyAllowed: [],
     reason: 'Keep harness MCP CLI grammar independent of setup policy, stores, and projects.',

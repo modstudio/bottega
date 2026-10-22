@@ -17,6 +17,7 @@ import {
   type FilesystemOrphanEligibilityFacts,
   type FilesystemOrphanUnderLockFacts,
   isSweepCandidate,
+  ownerIsGone,
   type RecordedRunCloseOutFacts,
   type RecordedRunPointerFacts,
   type RecordedRunPostInventoryFacts,
@@ -198,6 +199,7 @@ describe('unjudged owner expiry', () => {
         ownerSessionId: null,
         ownerLastSeenAt: null,
         runLastActivityAt: now,
+        coordinatorRun: false,
         now,
         windowMs,
       }),
@@ -210,6 +212,7 @@ describe('unjudged owner expiry', () => {
         ownerSessionId: 'owner',
         ownerLastSeenAt: now - windowMs + 1,
         runLastActivityAt: now - windowMs * 2,
+        coordinatorRun: false,
         now,
         windowMs,
       }),
@@ -222,6 +225,7 @@ describe('unjudged owner expiry', () => {
         ownerSessionId: 'owner',
         ownerLastSeenAt: now - windowMs - 1,
         runLastActivityAt: now - windowMs * 2,
+        coordinatorRun: false,
         now,
         windowMs,
       }),
@@ -234,6 +238,44 @@ describe('unjudged owner expiry', () => {
         ownerSessionId: 'owner',
         ownerLastSeenAt: null,
         runLastActivityAt: now - windowMs + 1,
+        coordinatorRun: false,
+        now,
+        windowMs,
+      }),
+    ).toBe(false)
+  })
+
+  test('expires an operator-owned coordinator run by run activity despite recent operator activity', () => {
+    const facts = {
+      ownerSessionId: 'operator:machine-id',
+      ownerLastSeenAt: now - 60_000,
+      runLastActivityAt: now - windowMs - 1,
+      coordinatorRun: true,
+      now,
+      windowMs,
+    }
+    expect(ownerIsGone(facts)).toBe(true)
+  })
+
+  test('keeps an operator-owned run whose run activity is inside the window', () => {
+    const facts = {
+      ownerSessionId: 'operator:machine-id',
+      ownerLastSeenAt: now - windowMs * 2,
+      runLastActivityAt: now - windowMs + 1,
+      coordinatorRun: true,
+      now,
+      windowMs,
+    }
+    expect(ownerIsGone(facts)).toBe(false)
+  })
+
+  test('keeps an ordinary operator-owned run while its operator was seen recently', () => {
+    expect(
+      ownerIsGone({
+        ownerSessionId: 'operator:machine-id',
+        ownerLastSeenAt: now - 60_000,
+        runLastActivityAt: now - windowMs - 1,
+        coordinatorRun: false,
         now,
         windowMs,
       }),
@@ -248,6 +290,7 @@ describe('unattended residue reclaim', () => {
     ownerSessionId: 'owner',
     ownerLastSeenAt: now - UNJUDGED_OWNER_WINDOW_MS - 1,
     runLastActivityAt: now - UNJUDGED_OWNER_WINDOW_MS - 1,
+    coordinatorRun: false,
     now,
     windowMs: UNJUDGED_OWNER_WINDOW_MS,
     liveness: 'dead' as const,

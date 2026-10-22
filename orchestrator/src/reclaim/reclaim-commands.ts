@@ -43,6 +43,7 @@ function reclaimFixtureQuestionsCommand(
 function reclaimNamed(kind: string, subject: string, dryRun: boolean) {
   if (kind === 'worktree') return reclaimWorktree(subject, { dryRun })
   if (kind === 'branch') return reclaimBranch(subject, { dryRun })
+  if (kind === 'git-lock') return reclaimResidue(kind, subject, { dryRun })
   const match = /^([^:]+):(.+)$/.exec(subject)
   const resolved = match
     ? `${match[1]}:${resolveRunIdentifier(db(), match[2]!)}`

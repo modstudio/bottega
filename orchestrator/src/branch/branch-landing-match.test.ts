@@ -108,6 +108,7 @@ describe('automatic branch landing tip decision', () => {
       containingBranch: null,
       laterTurnBranches: [],
       superseded: false,
+      targetedPullRequests: null,
     })
 
     expect(matching).toBeNull()

@@ -37,6 +37,7 @@ export type RecordDocWriteMethod =
   | 'upsertDoc'
   | 'reorderDocs'
   | 'applySettingsPermission'
+  | 'applySettingsAutoMode'
   | 'importDoc'
   | 'importCanon'
   | 'deleteDoc'

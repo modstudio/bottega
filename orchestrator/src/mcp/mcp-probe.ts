@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
   output: string,
@@ -86,7 +86,7 @@ export function disabledProjectMcpServers(
   return names.filter((name) => !allow.has(name))
 }
 
-const ALLOWED_EXTRA_SERVERS = new Set(['orch-ask', 'orch'])
+const ALLOWED_EXTRA_SERVERS = new Set([WORKER_MCP_SERVER_NAME, MCP_SERVER_NAME])
 const MCP_PROBE_ERROR_LIMIT = 400
 
 /** Remove configured credentials from probe errors before they become durable evidence. */
@@ -425,7 +425,7 @@ export async function probeMcpServer(input: {
     params: {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'orch', version: '0.1.0' },
+      clientInfo: { name: MCP_SERVER_NAME, version: '0.1.0' },
     },
   }
   const initialized = { jsonrpc: '2.0', method: 'notifications/initialized' }

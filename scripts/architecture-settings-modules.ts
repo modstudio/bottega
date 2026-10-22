@@ -62,6 +62,7 @@ export const settingsModules: SettingsModule[] = [
     '../settings/settings-machine-permissions.ts',
     './support.ts',
   ]),
+  module('orchestrator/src/settings/settings-auto-mode.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission-overlay.ts', [
     '../../../shared/machine-config.ts',

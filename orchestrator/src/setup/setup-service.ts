@@ -3,6 +3,8 @@
 
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectByName, projects } from '../project/projects.ts'
@@ -17,6 +19,7 @@ import {
 import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts'
 import { gatherSetupFacts } from './setup-facts.ts'
 import { stableMcpServers } from './setup-mcp.ts'
+import { captureMcpConfigMigrations } from './setup-mcp-config-migration.ts'
 import {
   planSetupActions,
   recommendedAnswers,
@@ -51,7 +54,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     Promise.resolve(readSetupState()),
   ])
   const repositories = await gatherRepositoryFactsReport(folders)
-  return proposeSetup(
+  const plan = proposeSetup(
     resolveWorktreeLifecycle,
     machine,
     repositories.repositories,
@@ -59,6 +62,27 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     state.agents,
     repositories.notices,
     stableMcpServers(),
+  )
+  addMcpConfigMigrations(
+    plan,
+    homedir(),
+    state.projects.map((project) => project.path),
+  )
+  return plan
+}
+
+export function addMcpConfigMigrations(
+  plan: SetupPlan,
+  home: string,
+  projectPaths: readonly string[],
+): void {
+  const configMigrations = captureMcpConfigMigrations(home, projectPaths)
+  plan.mcpConfigMigrations = configMigrations.migrations
+  plan.notices.push(
+    ...configMigrations.notices.map(({ path, error }) => ({
+      message: `MCP configuration ${path} could not be migrated: ${error}`,
+      fix: `fix or remove ${path}, then re-run ${PLATFORM_SLUG} machine setup plan`,
+    })),
   )
 }
 

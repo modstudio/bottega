@@ -334,6 +334,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')
     },
+    async applySettingsAutoMode() {
+      throw new Error('settings auto-mode endpoint is not implemented by the memory fixture')
+    },
     async whoami() {
       return {
         user: {

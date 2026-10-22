@@ -8,6 +8,7 @@ import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
   type GitHubPullRequest,
+  type MergedPullRequest,
   pullRequestListing,
 } from './merged-pull-request.ts'
 import {
@@ -233,7 +234,12 @@ describe('task branch landing decision', () => {
     expect(
       decideTaskBranchLanding({
         ...landingInput,
-        pullRequestCheck: { state: 'landed', landedBy: 'name', number: 216 },
+        pullRequestCheck: {
+          state: 'landed',
+          landedBy: 'name',
+          number: 216,
+          pullRequest: { ...pullRequest(216), state: 'MERGED', mergedAt: '2026-09-18T00:00:00Z' },
+        },
       }),
     ).toEqual({ action: 'skip', number: 216 })
   })
@@ -362,7 +368,7 @@ describe('targeted task branch pull-request decision', () => {
   })
 
   test('a merged containing pull request takes precedence over open and closed pull requests', () => {
-    const merged = taskPullRequest(415, 'MERGED')
+    const merged = taskPullRequest(415, 'MERGED') as MergedPullRequest
     expect(
       decideTaskBranchPullRequestCheck({
         nameListing: {
@@ -373,7 +379,30 @@ describe('targeted task branch pull-request decision', () => {
         nameCheck: { pullRequest: merged, containsTip: true },
         commitCheck: null,
       }),
-    ).toEqual({ state: 'landed', landedBy: 'name', number: 415 })
+    ).toEqual({ state: 'landed', landedBy: 'name', number: 415, pullRequest: merged })
+  })
+
+  test('a merged exact-head match wins when the key listing is truncated', () => {
+    const merged = taskPullRequest(416, 'MERGED') as MergedPullRequest
+    expect(
+      decideTaskBranchPullRequestCheck({
+        nameListing: { pullRequests: [merged], truncated: false },
+        commitListing: listing(GH_TARGETED_MERGED_PR_LIMIT),
+        nameCheck: { pullRequest: merged, containsTip: true },
+        commitCheck: null,
+      }),
+    ).toEqual({ state: 'landed', landedBy: 'name', number: 416, pullRequest: merged })
+  })
+
+  test('a failed commit check without head evidence stays unknown', () => {
+    expect(
+      decideTaskBranchPullRequestCheck({
+        nameListing: listing(0),
+        commitListing: listing(0),
+        nameCheck: null,
+        commitCheck: { error: 'PR #43 fetch failed' },
+      }),
+    ).toEqual({ state: 'unknown', reason: 'PR #43 fetch failed' })
   })
 })
 

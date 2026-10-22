@@ -89,7 +89,7 @@ import { recordReleaseCheck } from './record-release-check.ts'
 import { listRecordReleases, readLatestRecordReleases } from './record-releases.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
-import { applyRecordSettingsPermission } from './record-settings.ts'
+import { applyRecordSettingsAutoMode, applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import {
@@ -261,7 +261,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     reorderSubjects: reorderRecordSubjects,
     retireSubject: retireRecordSubject,
     ...recordDocDependencies(),
-    applySettingsPermission: applyRecordSettingsPermission,
+    ...recordSettingsDependencies(),
     upsertScore: async (input) =>
       upsertRecordScore({
         ...input,
@@ -315,6 +315,13 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
   return serveRecordApi(app, config.port, boardWakeSource, boardStreamRegistry)
+}
+
+function recordSettingsDependencies() {
+  return {
+    applySettingsPermission: applyRecordSettingsPermission,
+    applySettingsAutoMode: applyRecordSettingsAutoMode,
+  }
 }
 
 function recordApiAccessDependencies(

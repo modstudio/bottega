@@ -3,6 +3,18 @@
 
 import type { MergedPullRequest, PullRequestCommitCheck } from './merged-pull-request.ts'
 
+export type TaskBranchPullRequestCheck =
+  | {
+      state: 'landed'
+      landedBy: 'name'
+      number: number
+      pullRequest: MergedPullRequest
+    }
+  | { state: 'landed'; landedBy: 'pr-commits'; number: number }
+  | { state: 'closed-unmerged'; number: number }
+  | { state: 'unmatched' }
+  | { state: 'unknown'; reason: string }
+
 export function pullRequestCarriesKey(
   pullRequest: Pick<MergedPullRequest, 'headRefName' | 'title'>,
   key: string,
@@ -87,6 +99,56 @@ export type BranchStateDecision = BranchLanding & {
   note?: typeof STALE_RECORDED_LANDING
 }
 
+type TargetedBranchLandingDecision =
+  | Extract<BranchLanding, { landedBy: { type: 'pr' | 'pr-commits' } }>
+  | { state: 'unlanded' }
+  | { state: 'unknown'; error?: string }
+
+/** Translate the shared targeted task-branch result into branch-report vocabulary. */
+function targetedBranchLandingDecision(
+  check: TaskBranchPullRequestCheck,
+): TargetedBranchLandingDecision {
+  if (check.state === 'landed' && check.landedBy === 'name') {
+    const pullRequest = check.pullRequest
+    return {
+      state: 'landed',
+      landedBy: {
+        type: 'pr',
+        number: pullRequest.number,
+        mergeCommit: pullRequest.mergeCommit?.oid ?? null,
+        mergedAt: pullRequest.mergedAt,
+      },
+    }
+  }
+  if (check.state === 'landed') {
+    return {
+      state: 'landed',
+      landedBy: { type: 'pr-commits', number: check.number },
+    }
+  }
+  if (check.state === 'unknown') return { state: 'unknown', error: check.reason }
+  return { state: 'unlanded' }
+}
+
+/** Settles the fallback after every non-forge landing proof has been exhausted. */
+export function decideUnmatchedBranchLanding(
+  mergedPullRequestsTruncated: boolean,
+  targetedPullRequests: TaskBranchPullRequestCheck | null,
+): TargetedBranchLandingDecision {
+  if (!mergedPullRequestsTruncated) return { state: 'unlanded' }
+  return targetedPullRequests
+    ? targetedBranchLandingDecision(targetedPullRequests)
+    : { state: 'unknown' }
+}
+
+/** Whether capped global evidence needs the shared targeted forge settlement. */
+export function shouldSettleTruncatedBranch(
+  mergedPullRequestsTruncated: boolean,
+  preliminary: { state: string; error?: string },
+): boolean {
+  return mergedPullRequestsTruncated && preliminary.state === 'unknown' && !preliminary.error
+}
+
 export type ProtectedBranchKind = 'trunk' | 'production'
 
 /** Decides whether a branch is reserved by the project's registered branch settings. */
@@ -114,6 +176,7 @@ export function decideBranchState(input: {
   containingBranch: string | null
   laterTurnBranches: readonly LaterTurnBranch[]
   superseded: boolean
+  targetedPullRequests: TaskBranchPullRequestCheck | null
 }): BranchStateDecision {
   const staleRecordedLanding =
     input.recordedLanding !== null && input.recordedLanding.tip !== input.tip
@@ -170,8 +233,9 @@ export function decideBranchState(input: {
   if (input.pullRequestCommitCheck && 'error' in input.pullRequestCommitCheck) {
     return decide({ state: 'unknown', error: input.pullRequestCommitCheck.error })
   }
-  if (input.mergedPullRequestsTruncated) return decide({ state: 'unknown' })
-  return decide({ state: 'unlanded' })
+  return decide(
+    decideUnmatchedBranchLanding(input.mergedPullRequestsTruncated, input.targetedPullRequests),
+  )
 }
 
 export type PruneEligibility =

@@ -21,7 +21,7 @@ import {
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -313,7 +313,7 @@ export function readonlyLensProfile(input: {
         deniedDomains: [],
         allowUnixSockets: [],
         // On macOS srt's one switch covers both binding and outbound loopback.
-        // The per-run orch-ask listener uses an OS-assigned loopback port, so it
+        // The per-run bottega-ask listener uses an OS-assigned loopback port, so it
         // cannot be named in the static domain list before srt starts.
         allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
@@ -529,17 +529,17 @@ export async function resetSandbox(): Promise<void> {
   await resetSandboxRuntime()
 }
 
-const ORCH_ASK_TOML_TABLE = 'mcp_servers.orch-ask'
+const WORKER_MCP_TOML_TABLE = `mcp_servers.${WORKER_MCP_SERVER_NAME}`
 
 function tomlTableName(line: string): string | null {
   return /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$/.exec(line)?.[1] ?? null
 }
 
 function isOrchAskTable(name: string): boolean {
-  return name === ORCH_ASK_TOML_TABLE || name.startsWith(`${ORCH_ASK_TOML_TABLE}.`)
+  return name === WORKER_MCP_TOML_TABLE || name.startsWith(`${WORKER_MCP_TOML_TABLE}.`)
 }
 
-/** Remove any user-registered orch-ask table and its subtables. */
+/** Remove any user-registered bottega-ask table and its subtables. */
 export function withoutRegisteredOrchAskServer(config: string): string {
   const kept: string[] = []
   let inAskTable = false
@@ -554,8 +554,8 @@ export function withoutRegisteredOrchAskServer(config: string): string {
 /** Read the argv from the same Grok table that the run-home writer owns. */
 export function grokAskCommandFromConfig(config: string): string[] {
   const lines = config.split(/\r?\n/)
-  const start = lines.findIndex((line) => tomlTableName(line) === ORCH_ASK_TOML_TABLE)
-  if (start < 0) throw new Error('Grok config has no mcp_servers.orch-ask table')
+  const start = lines.findIndex((line) => tomlTableName(line) === WORKER_MCP_TOML_TABLE)
+  if (start < 0) throw new Error(`Grok config has no ${WORKER_MCP_TOML_TABLE} table`)
   const following = lines.slice(start + 1)
   const end = following.findIndex((line) => tomlTableName(line) !== null)
   const section = end < 0 ? following : following.slice(0, end)
@@ -571,20 +571,20 @@ export function grokAskCommandFromConfig(config: string): string[] {
     !Array.isArray(args) ||
     args.some((arg) => typeof arg !== 'string')
   ) {
-    throw new Error('Grok orch-ask command or args are malformed')
+    throw new Error(`Grok ${WORKER_MCP_SERVER_NAME} command or args are malformed`)
   }
   return [command, ...args]
 }
 
 /**
- * Replace any user-registered orch-ask table (and its subtables) with one built
- * from the running binary. Grok reads orch-ask only from its config file, and a
+ * Replace any user-registered bottega-ask table (and its subtables) with one built
+ * from the running binary. Grok reads bottega-ask only from its config file, and a
  * one-time registration goes stale when the entrypoint moves or bun is upgraded.
  */
 function withLiveGrokAskServer(config: string, command: string[]): string {
   const kept = withoutRegisteredOrchAskServer(config)
   const section = [
-    '[mcp_servers.orch-ask]',
+    `[${WORKER_MCP_TOML_TABLE}]`,
     `command = ${JSON.stringify(command[0])}`,
     `args = ${JSON.stringify(command.slice(1))}`,
     'enabled = true',
@@ -592,12 +592,12 @@ function withLiveGrokAskServer(config: string, command: string[]): string {
   return `${kept.trimEnd()}\n\n${section}\n`
 }
 
-/** Choose the Grok orch-ask command from the sandbox this turn launches in. */
+/** Choose the Grok bottega-ask command from the sandbox this turn launches in. */
 export function grokAskServerCommand(sandbox: RunSandbox): string[] {
   return bottegaEntryArgv(sandbox === 'srt' ? 'ask-proxy' : 'ask-server')
 }
 
-/** Point a Grok run's orch-ask at the command for its launch sandbox. */
+/** Point a Grok run's bottega-ask at the command for its launch sandbox. */
 export function grokSandboxConfig(config: string, sandbox: RunSandbox): string {
   return withLiveGrokAskServer(config, grokAskServerCommand(sandbox))
 }

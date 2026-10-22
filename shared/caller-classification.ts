@@ -1,4 +1,10 @@
 /** Classifies a caller from environment markers without knowing any concern state. */
+export const OPERATOR_SESSION_PREFIX = 'operator:'
+
+export function isOperatorSession(sessionId: string | null): boolean {
+  return sessionId?.startsWith(OPERATOR_SESSION_PREFIX) ?? false
+}
+
 export type CallerClassification =
   | { kind: 'worker' }
   | { kind: 'harness'; harness: 'claude-code'; session: string }
@@ -32,7 +38,7 @@ export function classifyCaller(env: Record<string, string | undefined>): CallerC
   for (const entry of RECOGNIZED_HARNESSES) {
     const session = env[entry.environment]?.trim()
     if (session)
-      return session.startsWith('operator:')
+      return isOperatorSession(session)
         ? { kind: 'reserved-operator-session' }
         : { kind: 'harness', harness: entry.harness, session }
   }

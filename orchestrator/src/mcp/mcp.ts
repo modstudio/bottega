@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
@@ -441,7 +441,7 @@ export async function fileIssue(
 }
 
 export function createDocsMcpServer(): McpServer {
-  const server = new McpServer({ name: 'orch', version: '0.1.0' })
+  const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
     console.error(
       `schema changed: re-preparing statements and re-advertising tools (user_version ${from} -> ${to})`,
@@ -1018,7 +1018,7 @@ export function createDocsMcpServer(): McpServer {
     async (input) => {
       if (process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH) {
         throw new Error(
-          'Worker note filing is available only through the orch-ask note tool; do not retry this orch MCP tool.',
+          `Worker note filing is available only through the ${WORKER_MCP_SERVER_NAME} note tool; do not retry this ${MCP_SERVER_NAME} MCP tool.`,
         )
       }
       try {
