@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  BOARD_READ_REFRESH_BUDGET_MS,
   hostedBoardVerificationWarning,
   refreshHostedBoard,
   takeHostedBoardVerificationTransition,
@@ -269,17 +270,19 @@ export function claimMonitorNotices(
   ]
 }
 
-export async function claimMonitorNoticesWithHosted(
+type HostedVerificationSource = { source: 'stored' } | { source: 'refresh'; warning: string | null }
+
+async function claimMonitorNoticesWithHosted(
   ownerSession: string,
-  verificationWarning?: string | null,
+  verificationSource: HostedVerificationSource,
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
   const database = openReadOnlyDatabase()
   try {
     const board = await pendingBoardDelivery({ session: ownerSession, budgetMs: 0, database })
     const verification =
-      verificationWarning === undefined
+      verificationSource.source === 'stored'
         ? hostedBoardVerificationWarning(database)
-        : verificationWarning
+        : verificationSource.warning
     const overflow = board.delivery.length ? board.overflow : null
     return {
       notices: [
@@ -304,10 +307,20 @@ export async function claimMonitorNoticesWithHosted(
   }
 }
 
-/** Refresh hosted cache on the write path before a separate read-only notice claim. */
-export async function refreshMonitorHostedBoard(): Promise<string | null> {
-  await refreshHostedBoard({ budgetMs: 500 })
-  return takeHostedBoardVerificationTransition()
+/** Refresh when requested, then claim notices through a separate read-only store handle. */
+export async function claimMonitorNoticesForCommand(
+  ownerSession: string,
+  input: { skipBoardRefresh: boolean },
+): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
+  let verificationSource: HostedVerificationSource = { source: 'stored' }
+  if (!input.skipBoardRefresh) {
+    await refreshHostedBoard({ budgetMs: BOARD_READ_REFRESH_BUDGET_MS })
+    verificationSource = {
+      source: 'refresh',
+      warning: takeHostedBoardVerificationTransition(),
+    }
+  }
+  return claimMonitorNoticesWithHosted(ownerSession, verificationSource)
 }
 
 /** Acknowledge only rows the hook has already emitted to its consumer. */

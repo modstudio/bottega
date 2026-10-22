@@ -37,6 +37,7 @@ export const BOARD_CACHE_OWNER_KEY = 'board_hosted_cache_owner'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
 export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
+export const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 
 export type HostedCacheNotice = {
