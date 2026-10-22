@@ -139,7 +139,10 @@ async function probeCommand(
   presentation: Presentation,
   dependencies: AgentCommandDependencies,
 ): Promise<void> {
-  const result = await dependencies.probeAgent(name)
+  const result = await dependencies.probeAgent(name, {
+    path: process.env.PATH,
+    environment: process.env,
+  })
   if (result.ok) recordSuccessfulRegistrationProbe(name)
   presentation.log(JSON.stringify(result, null, 2))
   if (!result.ok) presentation.setExitCode(1)
