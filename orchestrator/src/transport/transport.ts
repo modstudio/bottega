@@ -240,6 +240,8 @@ export type TransportHandle = {
   pid: number | null
   /** Available once session/new or session/load has returned. */
   effectiveModel?: string | null
+  /** ACP capability observed from initialize; absent on transports without ACP. */
+  loadSessionAdvertised?: boolean
   kill(sig?: number | string): void
   prompt(text: string): Promise<void>
   events(): AsyncIterable<NormalizedEvent>

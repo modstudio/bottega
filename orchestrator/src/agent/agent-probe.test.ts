@@ -22,7 +22,10 @@ test('a file-question registration probe always requires the reply file but not 
   })
 })
 
-function result(writing: boolean | null): RegistrationProbeResult {
+function result(
+  writing: boolean | null,
+  resuming: boolean | null = writing,
+): RegistrationProbeResult {
   return {
     harness: 'goose',
     ok: true,
@@ -32,6 +35,7 @@ function result(writing: boolean | null): RegistrationProbeResult {
     file: { ok: true, output: '{"status":"ok"}' },
     mcp: { verifiable: true, output: 'ok' },
     writing: { ok: writing, output: writing ? 'created' : 'not created' },
+    resuming: { ok: resuming, output: resuming ? 'recalled token' : 'did not recall token' },
     contextTokens: null,
     contextSource: null,
   }
@@ -55,6 +59,15 @@ test('a passing writing observation sets writesRepo and a failing one leaves it 
   })
 })
 
+test('an observed ACP resume result sets or clears resumable', () => {
+  registered('resume-capability-fixture')
+  recordAgentProbe('resume-capability-fixture', result(true, true))
+  expect(JSON.parse(registeredCaps('resume-capability-fixture')).resumable).toBe(true)
+
+  recordAgentProbe('resume-capability-fixture', result(true, false))
+  expect(JSON.parse(registeredCaps('resume-capability-fixture')).resumable).toBe(false)
+})
+
 test('a CLI probe with no writing observation preserves an existing writing capability', () => {
   addAgent('cli-writing-capability-fixture', {
     harness: 'codex',
@@ -65,8 +78,17 @@ test('a CLI probe with no writing observation preserves an existing writing capa
   writableDb()
     .query('UPDATE agent SET caps=? WHERE name=?')
     .run(JSON.stringify({ ...caps, writesRepo: true }), 'cli-writing-capability-fixture')
-  recordAgentProbe('cli-writing-capability-fixture', result(null))
-  expect(JSON.parse(registeredCaps('cli-writing-capability-fixture')).writesRepo).toBe(true)
+  writableDb()
+    .query('UPDATE agent SET caps=? WHERE name=?')
+    .run(
+      JSON.stringify({ ...caps, writesRepo: true, resumable: true }),
+      'cli-writing-capability-fixture',
+    )
+  recordAgentProbe('cli-writing-capability-fixture', result(null, null))
+  expect(JSON.parse(registeredCaps('cli-writing-capability-fixture'))).toMatchObject({
+    writesRepo: true,
+    resumable: true,
+  })
 })
 
 test('cache reuse requires a writing observation only for ACP transport', () => {

@@ -9,6 +9,7 @@ import { terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { establishAcpSession } from './acp-session.ts'
 import {
   type AcpTrace,
   createAcpTrace,
@@ -624,6 +625,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   let prompted = false
   let sessionId: string | null = opts.session ?? null
   let effectiveModel: string | null = null
+  let loadSessionAdvertised = false
   let connection: acp.ClientConnection | null = null
   let ctx: acp.ClientContext | null = null
 
@@ -748,7 +750,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           terminate: () => terminateProcessGroup(child.pid ?? 0, { direct: child }),
         }),
       )
-    await handshake(
+    const initialized = await handshake(
       ctx.request(acp.methods.agent.initialize, {
         // ACP has no result object, so the reply file is the one advertised write.
         // Gap: usage_update.used is session context, not CLI input+output.
@@ -758,47 +760,41 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       }),
       'initialize',
     )
+    loadSessionAdvertised = initialized.agentCapabilities?.loadSession === true
     // The ruling channel is transport infrastructure, not a project MCP opt-in.
     // codex-acp needs it on session/new. Grok loads the per-run config prepared
     // in GROK_HOME; passing the same stdio server here makes 1.0.13 reject
     // session/new with "Path not found."
     const mcpServers = acpMcpServers(opts)
-    if (opts.session) {
-      const loaded = await handshake(
-        ctx.request(acp.methods.agent.session.load, {
-          // orchestrator resumes the vendor conversation; the prompt is the ruling.
-          cwd: opts.cwd,
-          sessionId: opts.session,
-          mcpServers,
-        }),
-        'session/load',
+    const established = await establishAcpSession({
+      connection: {
+        loadSession: (request) =>
+          handshake(ctx!.request(acp.methods.agent.session.load, request), 'session/load'),
+        newSession: (request) =>
+          handshake(
+            ctx!.request(acp.methods.agent.session.new, {
+              ...request,
+              ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
+            }),
+            'session/new',
+          ),
+      },
+      cwd: opts.cwd,
+      mcpServers,
+      sessionId: opts.session,
+      fallbackToNew: Boolean(opts.resume),
+      onLoadFailure: (reason) =>
+        opts.onWarning?.(
+          `ACP session/load failed for ${opts.session}; continued in a fresh session: ${reason}`,
+        ),
+    })
+    sessionId = established.sessionId
+    if (grok) {
+      effectiveModel = grokEffectiveModel(
+        established.response as GrokSessionResponse,
+        opts.model,
+        Boolean(opts.modelExplicit),
       )
-      sessionId = opts.session
-      if (grok) {
-        effectiveModel = grokEffectiveModel(
-          loaded as GrokSessionResponse,
-          opts.model,
-          Boolean(opts.modelExplicit),
-        )
-      }
-    } else {
-      const created = await handshake(
-        ctx.request(acp.methods.agent.session.new, {
-          // orchestrator opens a read-only session with its per-run ruling channel.
-          cwd: opts.cwd,
-          mcpServers,
-          ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
-        }),
-        'session/new',
-      )
-      sessionId = created.sessionId
-      if (grok) {
-        effectiveModel = grokEffectiveModel(
-          created as GrokSessionResponse,
-          opts.model,
-          Boolean(opts.modelExplicit),
-        )
-      }
     }
     if (sessionId) pushEvent({ kind: 'session', sessionId })
   } catch (error) {
@@ -826,6 +822,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const handle: TransportHandle = {
     pid: child.pid ?? null,
     effectiveModel,
+    loadSessionAdvertised,
     kill(_sig) {
       void terminateProcessGroup(child.pid ?? 0, { direct: child })
     },

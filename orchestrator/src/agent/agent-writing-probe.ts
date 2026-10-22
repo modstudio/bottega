@@ -28,7 +28,7 @@ type WritingProbeAgentCall = (
   input: WritingProbeLaunch,
 ) => Promise<{ status: 'ok' | 'failed' | 'asking'; output: string }>
 
-type WritingProbePorts = {
+export type WritingProbePorts = {
   createWorktree(path: string): void
   removeWorktree(path: string): void
   callAgent: WritingProbeAgentCall
@@ -94,63 +94,76 @@ function openProbeAskListener(): WritingProbeAskListener {
   }
 }
 
+export type WritingProbeInput = {
+  transport: 'cli' | 'acp'
+  scratch: string
+  agent: Agent
+  path?: string
+  environment: ConfigEnvironment
+}
+
+/** Share the writer's disposable worktree, ask listener, srt profile, and teardown. */
+export async function withWritingProbeSandbox<T>(
+  input: WritingProbeInput,
+  ports: WritingProbePorts,
+  operation: (confinement: WritingProbeConfinement) => Promise<T>,
+): Promise<T> {
+  const worktree = join(input.scratch, 'writing-worktree')
+  let askListener: WritingProbeAskListener | null = null
+  try {
+    ports.createWorktree(worktree)
+    askListener = ports.openAskListener()
+    const selection = selectReadonlySandbox({
+      agent: input.agent.name,
+      readsRepo: true,
+      writesRepo: true,
+      worktree,
+      runsDir: input.scratch,
+      scratchDir: input.scratch,
+      project: probeProject(worktree),
+      path: input.path,
+      baseUrl: input.agent.baseUrl,
+      environment: input.environment,
+      writingAcp: true,
+      askAddress: askListener.address,
+    })
+    if (!selection.profile) throw new Error('registration writing probe did not select srt')
+    return await operation({ cwd: worktree, profile: selection.profile })
+  } finally {
+    try {
+      await ports.resetSandbox()
+    } finally {
+      try {
+        await askListener?.close()
+      } finally {
+        ports.removeWorktree(worktree)
+      }
+    }
+  }
+}
+
 /** Run one ACP writer inside the same profile and transport launch used by a writing run. */
 export async function probeAgentWrites(
-  input: {
-    transport: 'cli' | 'acp'
-    scratch: string
-    agent: Agent
-    path?: string
-    environment: ConfigEnvironment
-  },
+  input: WritingProbeInput,
   ports: WritingProbePorts,
 ): Promise<WritingProbeResult> {
   if (!writingCapabilityPolicy(input.transport, null).requiresObservation) {
     return { ok: null, output: 'skipped: CLI transport never receives the writing check' }
   }
-  const worktree = join(input.scratch, 'writing-worktree')
-  const target = join(worktree, WRITING_PROBE_FILE)
-  let askListener: WritingProbeAskListener | null = null
   try {
-    try {
-      ports.createWorktree(worktree)
-      askListener = ports.openAskListener()
-      const selection = selectReadonlySandbox({
-        agent: input.agent.name,
-        readsRepo: true,
-        writesRepo: true,
-        worktree,
-        runsDir: input.scratch,
-        scratchDir: input.scratch,
-        project: probeProject(worktree),
-        path: input.path,
-        baseUrl: input.agent.baseUrl,
-        environment: input.environment,
-        writingAcp: true,
-        askAddress: askListener.address,
-      })
-      if (!selection.profile) throw new Error('registration writing probe did not select srt')
+    return await withWritingProbeSandbox(input, ports, async ({ cwd, profile }) => {
+      const target = join(cwd, WRITING_PROBE_FILE)
       const outcome = await ports.callAgent({
-        cwd: worktree,
+        cwd,
         prompt: `Create ${WRITING_PROBE_FILE} with exactly this content, including the final newline:\n${WRITING_PROBE_CONTENT}`,
-        profile: selection.profile,
+        profile,
       })
       const content = existsSync(target) ? readFileSync(target, 'utf8') : ''
       return {
         ok: outcome.status === 'ok' && content === WRITING_PROBE_CONTENT,
         output: outcome.output,
       }
-    } finally {
-      try {
-        await ports.resetSandbox()
-      } finally {
-        try {
-          await askListener?.close()
-        } finally {
-          ports.removeWorktree(worktree)
-        }
-      }
-    }
+    })
   } catch (error) {
     return { ok: false, output: String((error as Error).message ?? error) }
   }
