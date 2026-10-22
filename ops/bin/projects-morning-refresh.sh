@@ -125,6 +125,11 @@ echo
 echo "--- bottega agent metric (Claude tokens per shipped task) ---"
 if [[ -x "$ORCH" ]]; then
   "$ORCH" agent metric collect --days 30 2>&1 | sed 's/^/  /'
+  rc=${PIPESTATUS[0]}
+  case "$rc" in
+    0) echo "  OK: bottega agent metric collect" ;;
+    *) echo "  FAILED (exit $rc): bottega agent metric collect" ;;
+  esac
 else
   echo "  SKIP: bottega is not executable at $ORCH"
 fi
