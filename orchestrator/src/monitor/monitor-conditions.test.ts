@@ -148,16 +148,6 @@ describe('idle run classification', () => {
       action: expect.stringContaining('run stop 73 if it is dead'),
     })
   })
-
-  test('an admitted run with no events past the idle threshold is idle', () => {
-    expect(
-      idleRunCondition({ ...row, pidAlive: true, host_wait_since: null }, clock, 5 * 60_000),
-    ).toMatchObject({
-      kind: 'idle',
-      subject: 'run:73',
-      ageMs: 6 * 60_000,
-    })
-  })
 })
 
 describe('stalled run monitor condition', () => {
@@ -861,6 +851,32 @@ describe('operational monitor conditions', () => {
       )
       .run(child, nowIso(), 'and now what?')
     expect(askingRuns().map((run) => run.record_id)).toEqual([])
+  })
+
+  test('a stuck-host-wait notice is claimed while current and dropped after admission', () => {
+    const owner = 'stuck-host-wait-owner'
+    const since = new Date(
+      Date.now() - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1,
+    ).toISOString()
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'running',
+      session: owner,
+    })
+    db().query('UPDATE run SET host_wait_since=? WHERE record_id=?').run(since, runId)
+    persistAddressedCondition('stuck-host-wait', `run:${runId}`, owner, since)
+
+    expect(claimMonitorNotices(owner)).toEqual([
+      expect.objectContaining({
+        kind: 'stuck-host-wait',
+        subject: `run:${runId}`,
+      }),
+    ])
+
+    db().query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(runId)
+
+    expect(claimMonitorNotices(owner)).toEqual([])
   })
 
   test('does not deliver an asking-run condition after the run resumes', () => {

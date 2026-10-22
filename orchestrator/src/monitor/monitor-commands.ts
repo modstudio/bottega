@@ -21,8 +21,7 @@ import {
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
-import { callerIdentity, db, sessionId } from '../database/db.ts'
-import { type RunHostCapacityQueue, runHostCapacityQueue } from '../run/run-host-capacity.ts'
+import { callerIdentity, sessionId } from '../database/db.ts'
 import {
   displayConditions,
   formatMonitorPass,
@@ -39,11 +38,19 @@ import {
   type StoreWriteLockReport,
   storeWriteLockReport,
 } from './monitor-store-write-lock.ts'
-import type { MonitorHostLoad, MonitorHostPressure, MonitorNotice } from './monitor-types.ts'
+import type {
+  MonitorHostLoad,
+  MonitorHostPressure,
+  MonitorNotice,
+  MonitorResult,
+} from './monitor-types.ts'
 
 const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
 
-export function formatHostLoadLine(hostLoad: MonitorHostLoad, queue: RunHostCapacityQueue): string {
+export function formatHostLoadLine(
+  hostLoad: MonitorHostLoad,
+  queue: MonitorResult['runHostCapacity'],
+): string {
   const held = queue.heldOn.join('+') || 'none'
   const behind = queue.waiting > 1 ? `; ${queue.waiting - 1} queued behind` : ''
   return `host: load ${hostLoad.loadavg.toFixed(2)}/${hostLoad.ncpu} cpu; pressure ${hostLoad.pressure}; swap ${Math.round(hostLoad.swapUsed / 1024 / 1024)}/${Math.round(hostLoad.swapTotal / 1024 / 1024)} MiB; ${hostLoad.liveRuns} live run(s); ${hostLoad.waitingRequests} broker request(s) waiting, oldest ${hostLoad.oldestWaitMs}ms; ${queue.waiting} run(s) waiting for host capacity, oldest ${queue.oldestWaitMs}ms, held on ${held}${behind}`
@@ -257,13 +264,11 @@ async function monitorResultOrReport(
 async function runMonitor(options: Options, presentation: Presentation): Promise<void> {
   const result = await monitorResultOrReport(options, presentation)
   if (!result) return
-  const queue = runHostCapacityQueue(db())
-  if (options.json)
-    await presentation.write(`${JSON.stringify({ ...result, runHostCapacity: queue })}\n`)
+  if (options.json) await presentation.write(`${JSON.stringify(result)}\n`)
   else {
     const failing = failingCanonEvalSlugs(),
       lines = [
-        formatHostLoadLine(result.hostLoad, queue),
+        formatHostLoadLine(result.hostLoad, result.runHostCapacity),
         formatHostPressureLine(result.hostPressure),
         `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
       ]
