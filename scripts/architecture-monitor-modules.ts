@@ -47,6 +47,7 @@ export const monitorModules: MonitorModule[] = [
     '../board/board-service.ts',
     '../database/db.ts',
     '../host-load-sample.ts',
+    '../host-pressure.ts',
     '../resources/docker-resources.ts',
     '../resources/git-locks.ts',
     '../worktree/keep-tree-hold.ts',

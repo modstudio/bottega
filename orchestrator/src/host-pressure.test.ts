@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { migratedTestDatabase } from './database/test-database.fixture.ts'
 import type { HostLoad } from './gate-load.ts'
-import { sampleHostPressure } from './host-pressure.ts'
+import { hostPressureConditions, sampleHostPressure } from './host-pressure.ts'
 
 const load: HostLoad = {
   gates: 0,
@@ -26,4 +26,7 @@ test('an unavailable process table is stored as unavailable rather than zero', (
     processes: null,
     process_error: 'process table unavailable: refused',
   })
+  expect(hostPressureConditions(database, Date.parse('2026-10-21T20:00:01.000Z'))).toMatchObject([
+    { kind: 'observation-error', detail: 'process table unavailable: refused' },
+  ])
 })

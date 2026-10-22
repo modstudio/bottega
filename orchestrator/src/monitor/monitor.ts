@@ -99,13 +99,20 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
 
-async function initialMonitorObservations(clock: number): Promise<{
+async function initialMonitorObservations(
+  database: ReturnType<typeof writableDb>,
+  clock: number,
+): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
 }> {
   const diskPressure = await diskPressureObservation(clock)
   return {
-    conditions: [...staleCustomerGuideCommandConditions(), ...diskPressure.conditions],
+    conditions: [
+      ...hostPressureConditions(database, clock),
+      ...staleCustomerGuideCommandConditions(),
+      ...diskPressure.conditions,
+    ],
     errors: diskPressure.errors,
   }
 }
@@ -597,8 +604,7 @@ export async function monitor(
   const startedAt = new Date(clock).toISOString()
   const { database, invocation } = startMonitorInvocation(trigger, startedAt)
   const hostLoad = sampleMonitorHostLoad(database, invocation)
-  const { conditions, errors } = await initialMonitorObservations(clock)
-  conditions.push(...hostPressureConditions(database, clock))
+  const { conditions, errors } = await initialMonitorObservations(database, clock)
   const canonRows = allInjectChecks()
   const canon = {
     findings: canonRows.reduce(

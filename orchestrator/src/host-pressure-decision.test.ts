@@ -32,7 +32,7 @@ test('a single pressure spike yields no attribution', () => {
   ).toEqual([])
 })
 
-test('a busy tree under a live Bottega run yields no attribution', () => {
+test('a busy tree under a live orchestrator run yields no attribution', () => {
   expect(
     decideHostPressure({
       samples: sustained(),

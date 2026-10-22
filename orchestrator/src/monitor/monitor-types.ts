@@ -11,7 +11,7 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'asking-run': 'revalidated',
   'dead-running-process': 'revalidated',
   'ghost-open-interval': 'append-only',
-  'host-pressure': 'revalidated',
+  'host-pressure': 'append-only',
   idle: 'revalidated',
   'observation-error': 'append-only',
   'outbox-quarantined': 'revalidated',

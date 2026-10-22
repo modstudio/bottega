@@ -4,8 +4,8 @@
 import { type ProcessSample, processDescendsFrom } from './process-tree.ts'
 
 export const HOST_PRESSURE_WINDOW_MS = 3 * 60 * 1000
-export const HOST_PRESSURE_MIN_CPU_PERCENT = 200
-export const HOST_PRESSURE_MIN_PROCESS_SHARE = 0.2
+const HOST_PRESSURE_MIN_CPU_PERCENT = 200
+const HOST_PRESSURE_MIN_PROCESS_SHARE = 0.2
 
 export type PressureSample = {
   sampledAt: number

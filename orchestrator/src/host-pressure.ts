@@ -3,6 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { newRecordId } from '../../shared/record-id.ts'
+import { writeTransaction } from './database/db.ts'
 import { type HostLoad, measureHostLoad } from './gate-load.ts'
 import { decideHostPressure, type PressureSample } from './host-pressure-decision.ts'
 import type { MonitorCondition } from './monitor/monitor-types.ts'
@@ -13,8 +15,8 @@ import {
   sessionAnchors,
 } from './process-tree.ts'
 
-export const HOST_PRESSURE_SAMPLE_INTERVAL_MS = 30_000
-export const HOST_PRESSURE_SAMPLE_RETENTION_MS = 15 * 60 * 1000
+const HOST_PRESSURE_SAMPLE_INTERVAL_MS = 30_000
+const HOST_PRESSURE_SAMPLE_RETENTION_MS = 15 * 60 * 1000
 const PROCESS_TABLE_TIMEOUT_MS = 1_000
 
 export type ProcessTableObservation = {
@@ -48,32 +50,32 @@ export function sampleHostPressure(
   observed: ProcessTableObservation = observeProcessTable(),
 ): boolean {
   const sampledMs = Date.parse(sampledAt)
-  return database
-    .transaction(() => {
-      const latest = database
-        .query('SELECT sampled_at FROM host_pressure_sample ORDER BY sampled_at DESC LIMIT 1')
-        .get() as { sampled_at: string } | null
-      if (latest && sampledMs - Date.parse(latest.sampled_at) < HOST_PRESSURE_SAMPLE_INTERVAL_MS)
-        return false
-      database
-        .query(
-          `INSERT INTO host_pressure_sample
-         (sampled_at,loadavg,ncpu,pressure,processes,process_error) VALUES (?,?,?,?,?,?)`,
-        )
-        .run(
-          sampledAt,
-          load.loadavg,
-          load.ncpu,
-          load.pressure,
-          observed.processes ? JSON.stringify(observed.processes) : null,
-          observed.error,
-        )
-      database
-        .query('DELETE FROM host_pressure_sample WHERE sampled_at < ?')
-        .run(new Date(sampledMs - HOST_PRESSURE_SAMPLE_RETENTION_MS).toISOString())
-      return true
-    })
-    .immediate()
+  return writeTransaction(() => {
+    const latest = database
+      .query('SELECT sampled_at FROM host_pressure_sample ORDER BY sampled_at DESC LIMIT 1')
+      .get() as { sampled_at: string } | null
+    if (latest && sampledMs - Date.parse(latest.sampled_at) < HOST_PRESSURE_SAMPLE_INTERVAL_MS)
+      return false
+    database
+      .query(
+        `INSERT INTO host_pressure_sample
+         (record_id,sampled_at,loadavg,ncpu,pressure,processes,process_error)
+         VALUES (?,?,?,?,?,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        sampledAt,
+        load.loadavg,
+        load.ncpu,
+        load.pressure,
+        observed.processes ? JSON.stringify(observed.processes) : null,
+        observed.error,
+      )
+    database
+      .query('DELETE FROM host_pressure_sample WHERE sampled_at < ?')
+      .run(new Date(sampledMs - HOST_PRESSURE_SAMPLE_RETENTION_MS).toISOString())
+    return true
+  }, database)
 }
 
 export function sessionAncestorPids(
@@ -149,6 +151,23 @@ export function hostPressureConditions(database: Database, clock = Date.now()): 
     .filter((run) => run.host_wait_since !== null)
     .map((run) => `run ${run.number} (${run.record_id})`)
   const samples = loadSamples(database, clock)
+  const latestStored = database
+    .query(
+      `SELECT sampled_at,process_error FROM host_pressure_sample
+       ORDER BY sampled_at DESC LIMIT 1`,
+    )
+    .get() as { sampled_at: string; process_error: string | null } | null
+  if (latestStored?.process_error)
+    return [
+      {
+        kind: 'observation-error',
+        subject: `host-process-table:${latestStored.sampled_at}`,
+        since: latestStored.sampled_at,
+        ageMs: clock - Date.parse(latestStored.sampled_at),
+        detail: latestStored.process_error,
+        action: `restore permission to run /bin/ps and read the process table, then run ${PLATFORM_SLUG} machine monitor; no host-pressure attribution was inferred`,
+      },
+    ]
   const attributions = decideHostPressure({
     samples,
     anchors: sessionAnchors(chains),
