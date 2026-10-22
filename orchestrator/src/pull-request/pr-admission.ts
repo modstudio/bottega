@@ -233,9 +233,13 @@ export function triageRefusal(
       `findings without a disposition: ${decision.undisposedFindings.map((finding) => `${finding.reviewNumber}/${finding.ordinal}`).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `${PLATFORM_SLUG} review triage ${finding.reviewNumber} ${finding.ordinal} <disposition>`).join('; ')}`,
     )
   }
+  const recordedOnBranch = new Set(decision.missingLensesRecordedOnBranch)
   for (const lens of decision.missingLenses) {
+    const condition = recordedOnBranch.has(lens)
+      ? 'has no recorded result for this change'
+      : 'has no recorded result on this branch'
     lines.push(
-      `applicable lens ${lens} has no recorded result on this branch; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+      `applicable lens ${lens} ${condition}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
     )
   }
   if (decision.missingSecondOpinion) {
