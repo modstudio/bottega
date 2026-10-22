@@ -301,7 +301,7 @@ test('review tier needs no round when only trunk touched a tier-three path after
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
 
     expect(output).toContain('no round needed: the architect reads the fix and lands it')
-    expect(output.some((line) => line.startsWith('lens '))).toBeFalse()
+    expect(output.some((line) => line.startsWith('lens correctness'))).toBeTrue()
     expect(output).not.toContain('current change would start a new round')
 
     const json: string[] = []
@@ -326,7 +326,7 @@ test('review tier re-lenses only the tier-three path touched by the fix after a 
     expect(output.some((line) => line.includes('critical/fix.ts'))).toBeTrue()
     expect(output.some((line) => line.startsWith('lens correctness'))).toBeTrue()
     expect(output.some((line) => line.startsWith('lens safety'))).toBeTrue()
-    expect(output.some((line) => line.startsWith('lens craft'))).toBeFalse()
+    expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
 
     const json: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)

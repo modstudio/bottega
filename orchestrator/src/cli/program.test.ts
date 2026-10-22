@@ -33,9 +33,8 @@ test('canon command recognition is pinned to the Commander registry', () => {
   expect([...CLI_COMMANDS].sort()).toEqual([...registered].sort())
 })
 
-test('probe is listed with a one-line description', () => {
-  const probe = program.commands.find((command) => command.name() === 'probe')
-  expect(probe?.description()).toBe('clear a vendor-quota exclusion once the agent answers')
+test('the retired top-level probe spelling is not registered', () => {
+  expect(program.commands.some((command) => command.name() === 'probe')).toBeFalse()
 })
 
 test('setup facts reaches the executable entry without creating or mutating a store', async () => {

@@ -83,7 +83,21 @@ export async function main(argv: string[]): Promise<number> {
     const { run } = await import('./run.ts')
     const { detachedRunOptions } = await import('../route/failover.ts')
     const spec = JSON.parse(specJson ?? '{}') as import('../route/failover.ts').DetachSpec
-    await run(detachedRunOptions(jobName, readFileSync(promptPath, 'utf8'), id, spec))
+    const prompt = readFileSync(promptPath, 'utf8')
+    const { db } = await import('../database/db.ts')
+    const continuation = db()
+      .query('SELECT continuation_message_sha FROM run WHERE record_id=?')
+      .get(id) as { continuation_message_sha: string | null } | null
+    if (!continuation) throw new Error(`run ${id} disappeared before coordinator launch`)
+    const { assertContinuationPromptCarriesPersistedMessage } = await import(
+      './continuation-message.ts'
+    )
+    assertContinuationPromptCarriesPersistedMessage(
+      prompt,
+      continuation.continuation_message_sha,
+      spec.resume?.continuationMessage,
+    )
+    await run(detachedRunOptions(jobName, prompt, id, spec))
     return 0
   } catch (e) {
     const message = String((e as Error)?.message ?? e)

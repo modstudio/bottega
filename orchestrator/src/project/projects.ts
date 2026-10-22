@@ -40,6 +40,7 @@ import {
   DEFAULT_LOCAL_PROJECT_NAME,
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
+import { GATE_INPUTS } from '../gate/gate-decision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { autonomySettingsForStorage, validateAutonomySettings } from '../workflow/autonomy.ts'
@@ -655,6 +656,11 @@ function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
   return problems
 }
 
+function gateInputProblems(gateInput: ProjectSettings['gateInput']): string[] {
+  if (gateInput === undefined || GATE_INPUTS.includes(gateInput)) return []
+  return ['gateInput must be staged, worktree, or committed']
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   projectPath?: string,
@@ -682,6 +688,7 @@ export function validateProjectSettings(
     ...reviewLensProblems(settings.review, context.enabledLensIds, context.enabledLensSpaceId),
     ...mcpSettingsProblems(settings.mcp),
     ...focusedTestsProblems(settings.focusedTests),
+    ...gateInputProblems(settings.gateInput),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

@@ -28,7 +28,6 @@ import {
 } from './monitor-types.ts'
 
 function deliveredDetail(row: {
-  kind: string
   subject: string
   age_ms: number | null
   run_status: string | null
@@ -37,7 +36,13 @@ function deliveredDetail(row: {
   const age = row.age_ms == null ? 'age unknown' : `age ${Math.round(row.age_ms / 60_000)}m`
   const status = row.run_status ? `, status ${row.run_status}` : ''
   const project = row.run_project ? `, project ${row.run_project}` : ''
-  return `Orch detected ${row.kind} for ${row.subject} (${age}${status}${project}); inspect the referenced record deliberately.`
+  const target = row.subject.startsWith('run:') ? 'run' : 'referenced record'
+  return `detected (${age}${status}${project}); inspect the ${target} deliberately.`
+}
+
+/** A notice names a run by its local number; any other subject, or an unresolved run, by its subject. */
+function noticeLabel(subject: string, runNumber: number | null = null): string {
+  return subject.startsWith('run:') && runNumber !== null ? `run ${runNumber}` : subject
 }
 
 function landingNoticeDetail(row: {
@@ -91,6 +96,30 @@ function recordAbandonedBootstrapSubjects(
   )
 }
 
+function recordIdleDetectorSubjects(
+  kinds: Set<string>,
+  record: (kind: string, subjects: string[]) => void,
+): void {
+  if (!kinds.has('idle') && !kinds.has('stuck-host-wait')) return
+  const detected = idleRunConditions()
+  if (kinds.has('idle')) {
+    record(
+      'idle',
+      detected
+        .filter((condition) => condition.kind === 'idle')
+        .map((condition) => condition.subject),
+    )
+  }
+  if (kinds.has('stuck-host-wait')) {
+    record(
+      'stuck-host-wait',
+      detected
+        .filter((condition) => condition.kind === 'stuck-host-wait')
+        .map((condition) => condition.subject),
+    )
+  }
+}
+
 function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {
   for (const kind of kinds) {
     if (!(kind in MONITOR_NOTICE_DELIVERY_POLICY)) {
@@ -113,12 +142,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
       deadRunningProcessConditions().map((condition) => condition.subject),
     )
   }
-  if (kinds.has('idle')) {
-    record(
-      'idle',
-      idleRunConditions().map((condition) => condition.subject),
-    )
-  }
+  recordIdleDetectorSubjects(kinds, record)
   recordStalledRunSubjects(kinds, record)
   if (kinds.has('task-waiting-on-ruling')) {
     record(
@@ -156,7 +180,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     .query(
       `SELECT c.id, c.kind, c.subject, c.condition_since, c.age_ms,
               c.issue_key, c.severity, c.owner_session_id,
-              r.status run_status, r.repo run_project
+              r.number run_number, r.status run_status, r.repo run_project
          FROM monitor_condition c
          LEFT JOIN run r ON c.subject=('run:' || r.record_id)
         WHERE c.owner_session_id=? AND c.delivered_at IS NULL
@@ -177,6 +201,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     issue_key: string | null
     severity: MonitorSeverity | null
     owner_session_id: string
+    run_number: number | null
     run_status: string | null
     run_project: string | null
   }[]
@@ -192,6 +217,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
       noticeId: `condition:${row.id}` as const,
       kind: row.kind,
       subject: row.subject,
+      label: noticeLabel(row.subject, row.run_number),
       since: row.condition_since,
       ageMs: row.age_ms,
       detail: deliveredDetail(row),
@@ -222,6 +248,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
         noticeId: `landing:${row.record_id}`,
         kind: `landing-${row.status.replaceAll('_', '-')}`,
         subject: `landing:${row.record_id}`,
+        label: noticeLabel(`landing:${row.record_id}`),
         since: row.finished_at ?? row.started_at,
         ageMs: null,
         detail: landingNoticeDetail(row),
@@ -252,6 +279,7 @@ export async function claimMonitorNoticesWithHosted(
           noticeId: `board:${notice.id}`,
           kind: 'board-notice',
           subject: `board:${notice.id}`,
+          label: noticeLabel(`board:${notice.id}`),
           since: null,
           ageMs: null,
           detail: notice.text,

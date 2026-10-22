@@ -11,11 +11,7 @@ import {
 
 export type SettingsTarget = { id: string; settings: OwnedSettings }
 
-const BIN_PREFIXES = [
-  [`./bin/${PLATFORM_SLUG}`, PLATFORM_SLUG],
-  ['./bin/orch', 'orch'],
-  ['./bin/hub', 'hub'],
-] as const
+const BIN_PREFIXES = [[`./bin/${PLATFORM_SLUG}`, PLATFORM_SLUG]] as const
 
 export function lintSettings(targets: SettingsTarget[]): Finding[] {
   const findings: Finding[] = []

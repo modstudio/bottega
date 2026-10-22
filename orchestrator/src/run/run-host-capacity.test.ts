@@ -4,6 +4,7 @@ import { db } from '../database/db.ts'
 import type { HostLoad } from '../gate-load.ts'
 import {
   RUN_HOST_WAIT_MAX_MS,
+  runHostCapacityQueue,
   startRunAfterHostCapacity,
   waitForRunHostCapacity,
 } from './run-host-capacity.ts'
@@ -242,6 +243,36 @@ describe('run host capacity', () => {
     expect(db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId)).toEqual({
       host_wait_since: null,
     })
+  })
+
+  test('the queue summary is empty when no run is waiting', () => {
+    repositoryRun()
+    expect(
+      runHostCapacityQueue(db(), Date.parse('2026-01-01T00:01:00.000Z'), {
+        env: {},
+        platform: 'linux',
+        measure: loaded,
+      }),
+    ).toEqual({ waiting: 0, oldestWaitMs: 0, heldOn: [] })
+  })
+
+  test('the queue summary uses the oldest waiter and the head hold reason', () => {
+    repositoryRun()
+    const older = repositoryRun()
+    const younger = repositoryRun()
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run('2026-01-01T00:00:00.000Z', older)
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run('2026-01-01T00:00:10.000Z', younger)
+    expect(
+      runHostCapacityQueue(db(), Date.parse('2026-01-01T00:01:00.000Z'), {
+        env: {},
+        platform: 'linux',
+        measure: loaded,
+      }),
+    ).toEqual({ waiting: 2, oldestWaitMs: 60_000, heldOn: ['load'] })
   })
 
   test('the wait bound starts the run and records contention', async () => {

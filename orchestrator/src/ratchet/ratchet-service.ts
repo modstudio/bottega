@@ -14,10 +14,12 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { type ChangeViewMode, openChangeView } from '../../../shared/change-view.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { type Finding, ratchetDecision } from '../../../shared/ratchet.ts'
+import { WORKER_GATE_BASE_ENV } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
 import { biomeFindings } from './biome-adapter.ts'
 import { type MeasurePattern, phpcsFindings, phpstanFindings } from './php-report-adapters.ts'
 import { commandForSide, type SideFile, sideFiles, supportPlacements } from './ratchet-plan.ts'
+import { ratchetVisibility } from './ratchet-visibility.ts'
 
 type Reporter = Pick<Console, 'error' | 'log'>
 type RatchetOptions = {
@@ -54,6 +56,8 @@ function checkoutRoot(cwd: string) {
 }
 
 function comparisonBase(root: string, options: RatchetOptions): string {
+  const workerGateBase = process.env[WORKER_GATE_BASE_ENV]?.trim()
+  if (workerGateBase) return workerGateBase
   if (options.staged) return 'HEAD'
   if (options.base) return options.base
   const project = projectAt(root)
@@ -277,6 +281,16 @@ export async function runRatchet(options: RatchetOptions, reporter: Reporter = c
   const base = comparisonBase(root, options)
   const mode: ChangeViewMode = options.staged ? 'staged' : 'worktree'
   const view = openChangeView({ cwd: root, base, mode })
+  const comparisonView =
+    mode === 'staged' ? openChangeView({ cwd: root, base, mode: 'worktree' }) : view
+  const visibility = ratchetVisibility({
+    comparisonPaths: comparisonView.entries.map(({ path }) => path),
+    visiblePaths: view.entries.map(({ path }) => path),
+  })
+  if (!visibility.visible) {
+    reporter.error(visibility.reason)
+    return false
+  }
   if (reportsMode) {
     return runReportsMode(options, root, view, headReport, baseReport, reporter)
   }

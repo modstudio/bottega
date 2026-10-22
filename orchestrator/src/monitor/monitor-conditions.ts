@@ -33,6 +33,7 @@ import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
+import { isFreshRunHostWait } from '../run/run-host-capacity.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import {
   HOOK_TREE_JOB,
@@ -216,6 +217,8 @@ type IdleRunFacts = {
   job: string
   session_id: string | null
   pidAlive: boolean | null
+  pid?: number | null
+  host_wait_since?: string | null
 }
 
 /** Classify one running row from already-observed process and elapsed-time facts. */
@@ -224,6 +227,7 @@ export function idleRunCondition(
   clock = Date.now(),
   threshold = idleWarnMs(),
 ): MonitorCondition | null {
+  if (isFreshRunHostWait('running', run.host_wait_since, clock)) return null
   if (run.pidAlive === false) {
     return {
       kind: 'stale-run',
@@ -232,6 +236,19 @@ export function idleRunCondition(
       ageMs: age(run.started_at, clock),
       detail: `run ${run.record_id} is running but its recorded pid is gone; no terminal state was recorded`,
       action: `run ${PLATFORM_SLUG} run stop ${run.record_id}`,
+      ownerSession: run.session_id,
+    }
+  }
+  if (run.host_wait_since) {
+    const ageMs = age(run.host_wait_since, clock)
+    const pid = run.pid == null ? 'none' : String(run.pid)
+    return {
+      kind: 'stuck-host-wait',
+      subject: `run:${run.record_id}`,
+      since: run.host_wait_since,
+      ageMs,
+      detail: `run ${run.record_id} host-capacity wait is stuck; wait age ${elapsedDetail(ageMs)}; coordinator pid ${pid}`,
+      action: `check the coordinator pid named on the row; run ${PLATFORM_SLUG} run stop ${run.record_id} if it is dead`,
       ownerSession: run.session_id,
     }
   }
@@ -252,7 +269,8 @@ export function idleRunCondition(
 export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
   const running = db()
     .query(
-      `SELECT record_id, started_at, last_event_at, agent, job, session_id, pid FROM run WHERE status='running'`,
+      `SELECT record_id, started_at, last_event_at, agent, job, session_id, pid, host_wait_since
+       FROM run WHERE status='running'`,
     )
     .all() as {
     record_id: string
@@ -262,6 +280,7 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
     job: string
     session_id: string | null
     pid: number | null
+    host_wait_since: string | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
     const condition = idleRunCondition(

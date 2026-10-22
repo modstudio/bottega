@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ANSWER_WORKING_FORMS,
   assertWorkerText,
@@ -13,6 +14,7 @@ import {
   isCliCommand,
   misparsedMessage,
   parseAnswerTextSources,
+  parseContinueArgs,
   parseWorkerMessageArgs,
   readMessageText,
   readWorkerFile,
@@ -67,7 +69,6 @@ test('every registered top-level command is recognized as canon', () => {
     'spawns',
     'stats',
     'pick',
-    'probe',
     'pending',
     'metric',
     'reclassify-failures',
@@ -147,6 +148,7 @@ describe('answer text sources', () => {
         { identifier: '264', file: 'a.txt' },
         { identifier: '265', file: 'b.txt' },
       ],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: [],
     })
@@ -159,10 +161,31 @@ describe('answer text sources', () => {
           { identifier: '264', text: 'use option A' },
           { identifier: '265', file: 'b.txt' },
         ],
+        fromOperatorIds: [],
         commandFile: undefined,
         positionals: [],
       },
     )
+  })
+
+  test('--from-operator-q<id> is parsed independently of its question ruling', () => {
+    expect(
+      parseAnswerTextSources([
+        '--q264',
+        'agent ruling',
+        '--from-operator-q265',
+        '--q265',
+        'operator ruling',
+      ]),
+    ).toEqual({
+      byId: [
+        { identifier: '264', text: 'agent ruling' },
+        { identifier: '265', text: 'operator ruling' },
+      ],
+      fromOperatorIds: ['265'],
+      commandFile: undefined,
+      positionals: [],
+    })
   })
 
   test('UUID question selectors keep text, equals, and file forms', () => {
@@ -184,6 +207,7 @@ describe('answer text sources', () => {
         { identifier: second, text: 'equals ruling' },
         { identifier: third, file: 'ruling.txt' },
       ],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: [],
     })
@@ -192,6 +216,7 @@ describe('answer text sources', () => {
   test('a command-level --file is distinct from a per-question --file', () => {
     expect(parseAnswerTextSources(['--file', 'ruling.txt'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: 'ruling.txt',
       positionals: [],
     })
@@ -200,11 +225,13 @@ describe('answer text sources', () => {
   test('a quoted dash-prefixed value is message text, not an unknown flag', () => {
     expect(parseAnswerTextSources(['--literal is intended'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: ['--literal is intended'],
     })
     expect(parseAnswerTextSources(['--q31', '--literal is intended'])).toEqual({
       byId: [{ identifier: '31', text: '--literal is intended' }],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: [],
     })
@@ -213,6 +240,7 @@ describe('answer text sources', () => {
   test('once the message starts, flag-shaped words stay in the message', () => {
     expect(parseAnswerTextSources(['use', '--quiet', 'mode'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: ['use', '--quiet', 'mode'],
     })
@@ -223,6 +251,7 @@ describe('answer text sources', () => {
     })
     expect(parseAnswerTextSources(['--follow', 'use', '--quiet', 'mode'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: ['use', '--quiet', 'mode'],
     })
@@ -259,6 +288,28 @@ describe('a message that is not a ruling is refused', () => {
 })
 
 describe('continue message grammar', () => {
+  test('--file is structural before or after the run id', () => {
+    const usage = `${PLATFORM_SLUG} run continue <id> [--file PATH | message]`
+    expect(parseContinueArgs(['--file', 'fixes.md', '17074'], usage)).toEqual({
+      identifier: '17074',
+      sources: { commandFile: 'fixes.md', positionals: [] },
+    })
+    expect(parseContinueArgs(['17074', '--file=fixes.md'], usage)).toEqual({
+      identifier: '17074',
+      sources: { commandFile: 'fixes.md', positionals: [] },
+    })
+  })
+
+  test('unknown options and leftover file positionals are refused with usage', () => {
+    const usage = `${PLATFORM_SLUG} run continue <id> [--file PATH | message]`
+    expect(() => parseContinueArgs(['--agent', 'codex', '--file', 'fixes.md'], usage)).toThrow(
+      `unknown option --agent\nworking form: ${usage}`,
+    )
+    expect(() => parseContinueArgs(['17074', '--file', 'fixes.md', 'literal'], usage)).toThrow(
+      `unexpected positional arguments with --file: literal\nworking form: ${usage}`,
+    )
+  })
+
   test('continue --file reads the follow-up without shell interpolation', async () => {
     const path = join(messageDir, 'literal.txt')
     const body = 'Next: keep `literal` and $(hostname) byte-for-byte.\n'

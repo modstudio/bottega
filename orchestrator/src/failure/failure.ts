@@ -67,6 +67,8 @@ export const FAILURE_KINDS = [
   'contract',
   /** A clean review reply that does not establish it reviewed the dispatched change. */
   'unevidenced',
+  /** The agent ended its turn with only an opening plan and no work. */
+  'premature-final',
   'abandoned',
   'other',
 ] as const
@@ -355,6 +357,7 @@ export const FAILS_OVER: FailureKind[] = [
   'content_refusal',
   'contract',
   'unevidenced',
+  'premature-final',
 ]
 
 /**
@@ -393,6 +396,14 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'harness',
   'abandoned',
 ]
+
+/** Whether a run failure is ineligible for a recorded evidence verdict. */
+export function isNotEvidenceFailure(failureKind: string | null): boolean {
+  return (
+    failureKind === 'unevidenced' ||
+    (failureKind !== null && NOT_EVIDENCE.includes(failureKind as FailureKind))
+  )
+}
 
 /**
  * Raise a macOS banner. Detached and never awaited: a notification that could

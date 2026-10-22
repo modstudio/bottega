@@ -12,6 +12,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from inbox_question_decision import decide_parsed_inbox_questions, parse_inbox_questions
+
 
 def _start(bottega, *args, env=None, cwd=None):
     return subprocess.Popen(
@@ -302,6 +304,7 @@ def _monitor_delivery(stdout, owner_session):
         isinstance(item, dict)
         and isinstance(item.get("kind"), str)
         and isinstance(item.get("subject"), str)
+        and isinstance(item.get("label"), str)
         and isinstance(item.get("detail"), str)
         and isinstance(item.get("noticeId"), str)
         and _valid_notice_id(item["noticeId"])
@@ -410,47 +413,38 @@ def _inbox_counts(stdout):
     ):
         raise ValueError("invalid scoped inbox JSON")
     questions = inbox_result.get("rows")
-    if not isinstance(questions, list):
-        raise ValueError("invalid inbox JSON")
-    for item in questions:
-        if not isinstance(item, dict):
-            raise ValueError("invalid inbox JSON")
-        if item.get("kind") == "workflow":
-            valid = (
-                isinstance(item.get("question_id"), int)
-                and isinstance(item.get("can_answer"), bool)
-                and (
-                    item.get("session_id") is None
-                    or isinstance(item.get("session_id"), str)
-                )
-            )
-        else:
-            valid = (
-                item.get("session_liveness") in ("live", "unknown")
-                and isinstance(item.get("answer_id"), int)
-                and isinstance(item.get("can_answer"), bool)
-            )
-        if not valid:
+    parsed_questions = parse_inbox_questions(questions)
+    for item, parsed in zip(questions, parsed_questions):
+        if parsed.kind == "worker" and not (
+            item.get("session_liveness") in ("live", "unknown")
+            and isinstance(item.get("answer_id"), int)
+        ):
             raise ValueError("invalid inbox JSON")
 
-    answerable_count = sum(item["can_answer"] for item in questions)
-    run_questions = [item for item in questions if item.get("kind") != "workflow"]
-    workflow_questions = [item for item in questions if item.get("kind") == "workflow"]
+    answerable_count = decide_parsed_inbox_questions(parsed_questions).answerable_now
+    run_questions = [
+        (item, parsed)
+        for item, parsed in zip(questions, parsed_questions)
+        if parsed.kind == "worker"
+    ]
+    workflow_questions = [
+        parsed for parsed in parsed_questions if parsed.kind == "workflow"
+    ]
     foreign_count = len(
-        {item["answer_id"] for item in run_questions if not item["can_answer"]}
+        {item["answer_id"] for item, parsed in run_questions if not parsed.can_answer}
     )
     unknown_count = len(
         {
             item["answer_id"]
-            for item in run_questions
-            if not item["can_answer"] and item["session_liveness"] == "unknown"
+            for item, parsed in run_questions
+            if not parsed.can_answer and item["session_liveness"] == "unknown"
         }
     )
     foreign_workflow_count = len(
         {
-            item["question_id"]
+            item.question_id
             for item in workflow_questions
-            if not item["can_answer"]
+            if not item.can_answer
         }
     )
     return answerable_count, foreign_count, unknown_count, foreign_workflow_count
@@ -909,7 +903,7 @@ def main() -> int:
         if monitor_notices or monitor_warning:
             monitor_text = "\n".join([
                 *(
-                    f'MONITOR {item["kind"]} {item["subject"]}: {item["detail"]}'
+                    f'MONITOR {item["kind"]} {item["label"]}: {item["detail"]}'
                     for item in monitor_notices
                 ),
                 *([monitor_warning] if monitor_warning else []),

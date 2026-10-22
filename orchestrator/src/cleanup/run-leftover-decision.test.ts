@@ -12,6 +12,7 @@ function facts(overrides: Partial<RunLeftoverFacts>): RunLeftoverFacts {
     runStatus: 'ok',
     finishedAt: old,
     judged: true,
+    failureKind: null,
     newestEntryAt: old,
     clock,
     ...overrides,

@@ -86,6 +86,14 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
   )
 }
 
+function detachedProject(cwd: string, spec: DetachSpec) {
+  const projectName = spec.repo ?? repoOf(cwd)
+  return {
+    projectName,
+    projectId: projectName ? (projectByName(projectName)?.recordId ?? null) : null,
+  }
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -161,14 +169,13 @@ export async function detach(
   // running turn already linked to its chain.
   const claimed = writeTransaction(() => {
     const identity = claimIdentity(spec.resume)
-    const projectName = spec.repo ?? repoOf(cwd)
-    const projectId = projectName ? (projectByName(projectName)?.recordId ?? null) : null
+    const { projectName, projectId } = detachedProject(cwd, spec)
     refuseLiveRetryOwner(spec)
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -199,6 +206,7 @@ export async function detach(
         storedMcpRequest(mcpRequest),
         spec.resume?.session ?? null,
         startedByUserId,
+        spec.resume?.continuationMessage?.sha256 ?? null,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
@@ -264,7 +272,6 @@ export async function detach(
     const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
     handoffStep = 'record prompt artifact'
     db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, recordId)
-
     /**
      * Spawned into its OWN SESSION, which is the whole point and was missing.
      *
