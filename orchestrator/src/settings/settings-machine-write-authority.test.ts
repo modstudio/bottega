@@ -6,7 +6,7 @@ import {
   assertMachineHomeWriteAuthority,
   isRunningFromRegisteredMainCheckout,
   machineHomesUnderTemporaryDirectory,
-} from './machine-home-write-authority.ts'
+} from './settings-machine-write-authority.ts'
 
 test('a standalone secondary clone is not the registered main checkout', () => {
   expect(

@@ -7,7 +7,6 @@ import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
-import { assertCurrentMachineHomeWriteAuthority } from '../operator/machine-home-write-authority.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
@@ -37,6 +36,7 @@ import {
   userSettingsPath,
 } from './settings-files.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { displaySettingsValue, renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite, restoreSettingsBackup } from './settings-write.ts'
@@ -163,6 +163,13 @@ function adoptPermissionRules(
   return adopted
 }
 
+function assertSettingsRenderWriteAuthority(target: Target): void {
+  if (target.kind !== 'user') return
+  assertCurrentMachineHomeWriteAuthority('machine settings render --write --user', [
+    claudeHomeFromEnvironment(process.env),
+  ])
+}
+
 export async function settingsRenderWriteCommand(
   flags: Flags,
   presentation: Presentation,
@@ -174,11 +181,7 @@ export async function settingsRenderWriteCommand(
     )
   }
   const target = resolveTarget(flags)
-  if (target.kind === 'user') {
-    assertCurrentMachineHomeWriteAuthority('machine settings render --write --user', [
-      claudeHomeFromEnvironment(process.env),
-    ])
-  }
+  assertSettingsRenderWriteAuthority(target)
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const row = settingsRow(target, owner)
   if (!row) throw new Error(`refusing settings render: no settings row for ${targetLabel(target)}`)

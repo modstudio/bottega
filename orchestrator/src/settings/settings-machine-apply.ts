@@ -23,12 +23,6 @@ import {
 } from '../canon/user-canon-home-files.ts'
 import { db } from '../database/db.ts'
 import { getDoc, listDocs, signedInDocOwner } from '../doc/docs.ts'
-import {
-  assertMachineHomeWriteAuthority,
-  decideMachineHomeWriteAuthority,
-  isRunningFromRegisteredMainCheckout,
-  registeredMainCheckout,
-} from '../operator/machine-home-write-authority.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { pullRecordCache } from '../record/record-cache.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -41,6 +35,11 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
+import {
+  assertMachineHomeWriteAuthority,
+  isRunningFromRegisteredMainCheckout,
+  registeredMainCheckout,
+} from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
@@ -52,8 +51,6 @@ export type MachineSettingsApplyResult = {
   changed: boolean
   superseded?: SupersededProfileHook[]
 }
-
-export { decideMachineHomeWriteAuthority as decideMachineSettingsWriteAuthority }
 
 type Dependencies = {
   environment: NodeJS.ProcessEnv
@@ -113,13 +110,11 @@ function applyUserSettings(
       parseStoredOwnedSettings(row.body),
       readMachinePermissions(deps.environment),
     )
-    const hookStarted = performance.now()
     const productHooks = withMachineProductHooks(
       merged.settings,
       assetPath(),
       resolveOrchestratorDatabase(deps.environment),
     )
-    console.error(`TIMING profile-hook-audit ${(performance.now() - hookStarted).toFixed(2)}ms`)
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)
     const secrets = readSettingsEnv(secretsPath)
@@ -133,9 +128,7 @@ function applyUserSettings(
     }
     const environment = selectedSettingsEnvironment(secretsPath, owned.envKeys ?? [])
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
-    const writeStarted = performance.now()
     const plan = planSettingsWrite(path, rendered)
-    console.error(`TIMING settings-write ${(performance.now() - writeStarted).toFixed(2)}ms`)
     if (plan.currentText === plan.renderedText) {
       return {
         target,
@@ -217,14 +210,7 @@ function applyUserCanon(
       try {
         return {
           target,
-          plan: (() => {
-            const started = performance.now()
-            const plan = planUserCanonHome({ home, rows, files: collectUserCanonHome(home) })
-            console.error(
-              `TIMING canon-render-${home.mapping.harness} ${(performance.now() - started).toFixed(2)}ms`,
-            )
-            return plan
-          })(),
+          plan: planUserCanonHome({ home, rows, files: collectUserCanonHome(home) }),
         }
       } catch (error) {
         return { target, error }
@@ -321,9 +307,7 @@ export async function applyMachineSettings(
     return [{ target: 'settings apply', outcome: 'skipped', changed: false }]
   }
   try {
-    const hostedStarted = performance.now()
     await applyRecordWriteAuthority({ local: () => undefined, hosted: deps.pull })
-    console.error(`TIMING hosted-record-reads ${(performance.now() - hostedStarted).toFixed(2)}ms`)
     const owner = await deps.owner()
     return [
       applyUserSettings(owner, input.check, deps),

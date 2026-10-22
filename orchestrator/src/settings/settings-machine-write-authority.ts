@@ -1,15 +1,16 @@
-// concern: machine-home-write-authority
+// concern: settings-machine-write-authority
 /** Guards writes to real harness homes with the registered installation identity. */
 import type { Database } from 'bun:sqlite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { mainCheckoutOf } from '../../../shared/git.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import {
   realPathForPotentialPath,
   temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
-import { DATABASE_RESOLUTION, db } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 
 export type MachineHomeWriteAuthorityDecision =
@@ -63,7 +64,7 @@ export function assertMachineHomeWriteAuthority(input: {
   const remedyRoot =
     input.registeredMainCheckout ??
     input.binaryRepositoryRoot ??
-    DATABASE_RESOLUTION.binaryRepositoryRoot ??
+    mainCheckoutOf(runningRoot) ??
     runningRoot
   throw new Error(
     `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from the registered main checkout\n` +
@@ -77,14 +78,17 @@ export function assertCurrentMachineHomeWriteAuthority(
   targetHomes: readonly string[],
   database: Database = db(),
 ): void {
+  const runningRoot = assetPath()
   const mainCheckout = registeredMainCheckout(database)
   assertMachineHomeWriteAuthority({
     command,
     targetHomes,
     runningFromRegisteredMainCheckout: isRunningFromRegisteredMainCheckout(
-      assetPath(),
+      runningRoot,
       mainCheckout,
     ),
     registeredMainCheckout: mainCheckout,
+    runningInstallationRoot: runningRoot,
+    binaryRepositoryRoot: mainCheckoutOf(runningRoot),
   })
 }
