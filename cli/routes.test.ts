@@ -124,7 +124,6 @@ test('agent mutations keep their verb and pass remaining arguments to the agent 
   for (const verb of ['add', 'set', 'remove'] as const) {
     await dispatchBinary(
       ['agent', verb, 'route-test', '--jobs', 'fix,review-lens'],
-      PLATFORM_SLUG,
       entries,
       () => '',
     )
@@ -144,7 +143,6 @@ test('agent show reaches agentCommand with show and the name', async () => {
   try {
     const result = await dispatchBinary(
       ['agent', 'show', 'route-show-test'],
-      PLATFORM_SLUG,
       {
         orch: runOrchestrator,
         hub: async () => 0,
