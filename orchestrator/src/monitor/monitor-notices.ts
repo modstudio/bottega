@@ -123,7 +123,9 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
     if (kinds.has('idle')) {
       record(
         'idle',
-        detected.filter((condition) => condition.kind === 'idle').map((condition) => condition.subject),
+        detected
+          .filter((condition) => condition.kind === 'idle')
+          .map((condition) => condition.subject),
       )
     }
     if (kinds.has('stuck-host-wait')) {

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import type { MonitorHostLoad } from './monitor-types.ts'
 import { formatHostLoadLine } from './monitor-commands.ts'
+import type { MonitorHostLoad } from './monitor-types.ts'
 
 const hostLoad: MonitorHostLoad = {
   gates: 0,

@@ -132,11 +132,13 @@ describe('idle run classification', () => {
   })
 
   test('an over-bound host wait is stuck-host-wait', () => {
-    const since = new Date(
-      clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1,
-    ).toISOString()
+    const since = new Date(clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1).toISOString()
     expect(
-      idleRunCondition({ ...row, pidAlive: null, pid: null, host_wait_since: since }, clock, 5 * 60_000),
+      idleRunCondition(
+        { ...row, pidAlive: null, pid: null, host_wait_since: since },
+        clock,
+        5 * 60_000,
+      ),
     ).toMatchObject({
       kind: 'stuck-host-wait',
       subject: 'run:73',

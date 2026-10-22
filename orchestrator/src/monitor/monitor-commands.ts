@@ -22,10 +22,7 @@ import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-iden
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
-import {
-  type RunHostCapacityQueue,
-  runHostCapacityQueue,
-} from '../run/run-host-capacity.ts'
+import { type RunHostCapacityQueue, runHostCapacityQueue } from '../run/run-host-capacity.ts'
 import {
   displayConditions,
   formatMonitorPass,
@@ -46,10 +43,7 @@ import type { MonitorHostLoad, MonitorHostPressure, MonitorNotice } from './moni
 
 const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
 
-export function formatHostLoadLine(
-  hostLoad: MonitorHostLoad,
-  queue: RunHostCapacityQueue,
-): string {
+export function formatHostLoadLine(hostLoad: MonitorHostLoad, queue: RunHostCapacityQueue): string {
   const held = queue.heldOn.join('+') || 'none'
   const behind = queue.waiting > 1 ? `; ${queue.waiting - 1} queued behind` : ''
   return `host: load ${hostLoad.loadavg.toFixed(2)}/${hostLoad.ncpu} cpu; pressure ${hostLoad.pressure}; swap ${Math.round(hostLoad.swapUsed / 1024 / 1024)}/${Math.round(hostLoad.swapTotal / 1024 / 1024)} MiB; ${hostLoad.liveRuns} live run(s); ${hostLoad.waitingRequests} broker request(s) waiting, oldest ${hostLoad.oldestWaitMs}ms; ${queue.waiting} run(s) waiting for host capacity, oldest ${queue.oldestWaitMs}ms, held on ${held}${behind}`
@@ -264,7 +258,8 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
   const result = await monitorResultOrReport(options, presentation)
   if (!result) return
   const queue = runHostCapacityQueue(db())
-  if (options.json) await presentation.write(`${JSON.stringify({ ...result, runHostCapacity: queue })}\n`)
+  if (options.json)
+    await presentation.write(`${JSON.stringify({ ...result, runHostCapacity: queue })}\n`)
   else {
     const failing = failingCanonEvalSlugs(),
       lines = [
