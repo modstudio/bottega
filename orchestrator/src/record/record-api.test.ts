@@ -61,6 +61,10 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
       revision: id,
       permissions: { allow: [], ask: [], deny: [] },
     }),
+    applySettingsAutoMode: async () => ({
+      revision: id,
+      autoMode: { allow: [], soft_deny: [], hard_deny: [], environment: [] },
+    }),
     upsertScore: async () => undefined,
     voidRun: async () => undefined,
     unvoidRun: async () => undefined,

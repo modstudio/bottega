@@ -37,6 +37,10 @@ upkeep of this machine
 - [bottega machine settings](#bottega-machine-settings)
 - [bottega machine settings adopt](#bottega-machine-settings-adopt)
 - [bottega machine settings apply](#bottega-machine-settings-apply)
+- [bottega machine settings auto-mode](#bottega-machine-settings-auto-mode)
+- [bottega machine settings auto-mode add](#bottega-machine-settings-auto-mode-add)
+- [bottega machine settings auto-mode help](#bottega-machine-settings-auto-mode-help)
+- [bottega machine settings auto-mode remove](#bottega-machine-settings-auto-mode-remove)
 - [bottega machine settings env](#bottega-machine-settings-env)
 - [bottega machine settings env help](#bottega-machine-settings-env-help)
 - [bottega machine settings env import](#bottega-machine-settings-env-import)
@@ -501,6 +505,7 @@ manage canonical Claude settings
 - [bottega machine](./machine.md#bottega-machine)
 - [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
 - [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
+- [bottega machine settings auto-mode](./machine.md#bottega-machine-settings-auto-mode)
 - [bottega machine settings env](./machine.md#bottega-machine-settings-env)
 - [bottega machine settings help](./machine.md#bottega-machine-settings-help)
 - [bottega machine settings import](./machine.md#bottega-machine-settings-import)
@@ -535,6 +540,69 @@ apply managed settings and canon to installed harnesses
 ### Related
 
 - [bottega machine settings](./machine.md#bottega-machine-settings)
+
+## bottega machine settings auto-mode
+
+**Synopsis:** `bottega machine settings auto-mode`
+
+manage canonical auto-mode rules
+
+### Related
+
+- [bottega machine settings](./machine.md#bottega-machine-settings)
+- [bottega machine settings auto-mode add](./machine.md#bottega-machine-settings-auto-mode-add)
+- [bottega machine settings auto-mode help](./machine.md#bottega-machine-settings-auto-mode-help)
+- [bottega machine settings auto-mode remove](./machine.md#bottega-machine-settings-auto-mode-remove)
+
+## bottega machine settings auto-mode add
+
+**Synopsis:** `bottega machine settings auto-mode add [--user] [--project <name>] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
+
+add a canonical auto-mode rule
+
+### Options
+
+- `--user`: target the signed-in user settings
+- `--project <name>`: registered project whose rule is edited
+- `--list <name>`: auto-mode list containing the rule
+- `--rule <rule>`: auto-mode rule to edit
+- `--expect <revision>`: document revision required before editing
+- `--reason <text>`: reason recorded for the settings revision
+- `--json`: write the auto-mode result as JSON
+
+### Related
+
+- [bottega machine settings auto-mode](./machine.md#bottega-machine-settings-auto-mode)
+
+## bottega machine settings auto-mode help
+
+**Synopsis:** `bottega machine settings auto-mode help [command]`
+
+display help for command
+
+### Related
+
+- [bottega machine settings auto-mode](./machine.md#bottega-machine-settings-auto-mode)
+
+## bottega machine settings auto-mode remove
+
+**Synopsis:** `bottega machine settings auto-mode remove [--user] [--project <name>] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
+
+remove a canonical auto-mode rule
+
+### Options
+
+- `--user`: target the signed-in user settings
+- `--project <name>`: registered project whose rule is edited
+- `--list <name>`: auto-mode list containing the rule
+- `--rule <rule>`: auto-mode rule to edit
+- `--expect <revision>`: document revision required before editing
+- `--reason <text>`: reason recorded for the settings revision
+- `--json`: write the auto-mode result as JSON
+
+### Related
+
+- [bottega machine settings auto-mode](./machine.md#bottega-machine-settings-auto-mode)
 
 ## bottega machine settings env
 
