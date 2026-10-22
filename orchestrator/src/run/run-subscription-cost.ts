@@ -1,9 +1,6 @@
 // concern: run-subscription-cost
 /** Derives a subscription run's dollar cost from its share of the monthly price. */
 import type { Agent } from '../agent/agents.ts'
-import { SUBSCRIPTION_STORED_SOURCE } from '../transport/vendor-usage.ts'
-
-export { SUBSCRIPTION_STORED_SOURCE }
 
 export const SUBSCRIPTION_AMORTIZED_SOURCE = 'subscription, amortized'
 export const SUBSCRIPTION_UNPRICED_SOURCE = 'subscription, unpriced'
@@ -16,7 +13,7 @@ export type ReportedRunCost = {
   source: string | null
 }
 
-export type ReportedCostRunRow = {
+type ReportedCostRunRow = {
   agent: string
   started_at: string
   vendor_tokens: number | null
@@ -60,7 +57,7 @@ export function parseSubscriptionMonthlyUsd(value: string): number | null {
 }
 
 /** Every stored started_at is UTC ISO, so the calendar month is the YYYY-MM prefix. */
-export function subscriptionCalendarMonth(startedAt: string): string {
+function subscriptionCalendarMonth(startedAt: string): string {
   return startedAt.slice(0, 7)
 }
 
@@ -128,7 +125,7 @@ function reportedCostRunRow(row: CostRowFields): ReportedCostRunRow {
   }
 }
 
-export function reportedCostForRun(
+function reportedCostForRun(
   run: ReportedCostRunRow,
   context: SubscriptionCostContext,
 ): ReportedRunCost {

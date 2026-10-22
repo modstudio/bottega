@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { epicChildren, epicScoreboard } from './epic.ts'
 
 const intervalOrigin = Date.parse('2026-09-08T10:00:00.000Z')
@@ -179,6 +180,74 @@ describe('epic scoreboard', () => {
       agentTimeMs: 210_000,
       occupancyMs: 150_000,
       elapsedSpanMs: 330_000,
+    })
+  })
+
+  test('a priced scoreboard sums amortized subscription shares', () => {
+    const first = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      latency: 10_000,
+      startedAt: '2026-10-22T12:00:00.000Z',
+    })
+    db()
+      .query(`UPDATE run SET launch_key='DEV-PRICE',vendor_tokens=1 WHERE record_id=?`)
+      .run(first)
+    const second = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      latency: 10_000,
+      startedAt: '2026-10-22T13:00:00.000Z',
+    })
+    db()
+      .query(`UPDATE run SET launch_key='DEV-PRICE',vendor_tokens=3 WHERE record_id=?`)
+      .run(second)
+    const report = epicScoreboard(
+      'DEV-PRICE-PARENT',
+      [{ key: 'DEV-PRICE' }],
+      db(),
+      Date.parse('2026-10-22T14:00:00.000Z'),
+      { subscriptionCost: { facts: subscriptionCostFacts(), prices: { codex: 100 } } },
+    )
+    expect(report.children[0]).toMatchObject({
+      vendorCostUsd: 100,
+      unreportedUsageRuns: { tokens: 0, cost: 0 },
+    })
+  })
+
+  test('a mixed priced and unpriced scoreboard counts unpriced runs as unreported', () => {
+    const priced = addRun({
+      agent: 'grok',
+      job: 'implement',
+      status: 'ok',
+      latency: 10_000,
+      startedAt: '2026-10-22T12:00:00.000Z',
+    })
+    db()
+      .query(`UPDATE run SET launch_key='DEV-MIX',vendor_tokens=2 WHERE record_id=?`)
+      .run(priced)
+    const unpriced = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      latency: 10_000,
+      startedAt: '2026-10-22T13:00:00.000Z',
+    })
+    db()
+      .query(`UPDATE run SET launch_key='DEV-MIX',vendor_tokens=5 WHERE record_id=?`)
+      .run(unpriced)
+    const report = epicScoreboard(
+      'DEV-MIX-PARENT',
+      [{ key: 'DEV-MIX' }],
+      db(),
+      Date.parse('2026-10-22T14:00:00.000Z'),
+      { subscriptionCost: { facts: subscriptionCostFacts(), prices: { grok: 80 } } },
+    )
+    expect(report.children[0]).toMatchObject({
+      vendorCostUsd: 80,
+      unreportedUsageRuns: { tokens: 0, cost: 1 },
     })
   })
 

@@ -1,13 +1,21 @@
 import { describe, expect, test } from 'bun:test'
 import {
   amortizedSubscriptionShare,
-  harnessFromSubscriptionPriceKey,
-  reportedCostForRun,
   reportedRunCost,
   SUBSCRIPTION_AMORTIZED_SOURCE,
+  SUBSCRIPTION_NO_TOKENS_SOURCE,
   SUBSCRIPTION_UNPRICED_SOURCE,
   subscriptionMonthlyUsdKey,
+  withReportedCost,
 } from './run-subscription-cost.ts'
+
+const grokContext = {
+  facts: {
+    agents: { grok: { billing: 'subscription' as const, harness: 'grok' } },
+    monthTokens: { 'grok:2026-10': 4 },
+  },
+  prices: { grok: 100 },
+}
 
 describe('amortizedSubscriptionShare', () => {
   test('is the run tokens over the month tokens times the monthly price', () => {
@@ -32,6 +40,12 @@ describe('amortizedSubscriptionShare', () => {
       amortizedSubscriptionShare({ monthlyPriceUsd: null, runTokens: 40, monthTokens: 80 }),
     ).toEqual({ usd: null, source: SUBSCRIPTION_UNPRICED_SOURCE })
   })
+
+  test('null run tokens give no figure', () => {
+    expect(
+      amortizedSubscriptionShare({ monthlyPriceUsd: 100, runTokens: null, monthTokens: 80 }),
+    ).toEqual({ usd: null, source: SUBSCRIPTION_NO_TOKENS_SOURCE })
+  })
 })
 
 describe('reportedRunCost', () => {
@@ -40,7 +54,6 @@ describe('reportedRunCost', () => {
       reportedRunCost({
         billing: 'subscription',
         billedUsd: 23.5,
-        estimatedUsd: 23.5,
         storedSource: 'estimated',
         monthlyPriceUsd: 100,
         runTokens: 1,
@@ -54,7 +67,6 @@ describe('reportedRunCost', () => {
       reportedRunCost({
         billing: 'metered',
         billedUsd: 0.11,
-        estimatedUsd: null,
         storedSource: 'billed',
         monthlyPriceUsd: 200,
         runTokens: 111,
@@ -64,28 +76,32 @@ describe('reportedRunCost', () => {
   })
 })
 
-test('reportedCostForRun ignores a stored estimate on a subscription agent', () => {
+test('the shared row adapter returns cost fields and keeps the stored columns', () => {
   expect(
-    reportedCostForRun(
+    withReportedCost(
       {
         agent: 'grok',
-        startedAt: '2026-10-22T13:00:00.000Z',
-        vendorTokens: 1,
-        vendorCostUsd: null,
-        vendorEstimatedCostUsd: 23.5,
-        vendorCostSource: 'estimated',
+        started_at: '2026-10-22T13:00:00.000Z',
+        vendor_tokens: 1,
+        vendor_cost_usd: null,
+        vendor_estimated_cost_usd: 23.5,
+        vendor_cost_source: 'estimated',
       },
-      {
-        agents: { grok: { billing: 'subscription', harness: 'grok' } },
-        monthTokens: { 'grok:2026-10': 4 },
-      },
-      { grok: 100 },
+      grokContext,
     ),
-  ).toEqual({ usd: 25, source: SUBSCRIPTION_AMORTIZED_SOURCE })
+  ).toEqual({
+    agent: 'grok',
+    started_at: '2026-10-22T13:00:00.000Z',
+    vendor_tokens: 1,
+    vendor_cost_usd: null,
+    vendor_estimated_cost_usd: 23.5,
+    vendor_cost_source: 'estimated',
+    cost_usd: 25,
+    cost_source: SUBSCRIPTION_AMORTIZED_SOURCE,
+  })
 })
 
 test('subscription price keys are named for the harness', () => {
   expect(subscriptionMonthlyUsdKey('codex')).toBe('subscription.codex.monthly_usd')
-  expect(harnessFromSubscriptionPriceKey('subscription.grok.monthly_usd')).toBe('grok')
-  expect(harnessFromSubscriptionPriceKey('autonomy.ship-to')).toBeNull()
+  expect(subscriptionMonthlyUsdKey('grok')).toBe('subscription.grok.monthly_usd')
 })

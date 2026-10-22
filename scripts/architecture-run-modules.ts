@@ -1,7 +1,7 @@
 export const runModuleSpecs = [
   {
     file: 'orchestrator/src/run/run-subscription-cost.ts',
-    allowed: [],
+    allowed: ['../agent/agents.ts'],
   },
   {
     file: 'orchestrator/src/run/run-subscription-cost-store.ts',
@@ -9,11 +9,16 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/run-subscription-prices.ts',
-    allowed: ['../config/config-service.ts', './run-subscription-cost.ts'],
+    allowed: [
+      '../../../shared/config-client.ts',
+      '../config/config-service.ts',
+      './run-subscription-cost.ts',
+      './run-subscription-cost-store.ts',
+    ],
   },
   {
     file: 'orchestrator/src/run/run-usage-columns.ts',
-    allowed: ['../transport/vendor-usage.ts', './run-subscription-cost.ts'],
+    allowed: ['../agent/agents.ts', '../transport/vendor-usage.ts'],
   },
   {
     file: 'orchestrator/src/run/run-mcp-mode.ts',

@@ -222,12 +222,14 @@ function epicRunCosts(taskRuns: RunRow[], subscriptionCost: SubscriptionCostCont
  * a non-child launch key, or no child by any route, is outside this epic rather
  * than being silently assigned to its nearest task.
  */
+export type EpicScoreboardOptions = { subscriptionCost?: SubscriptionCostContext }
+
 export function epicScoreboard(
   epicKey: string,
   children: EpicChild[],
   database: Database = db(),
   clock = Date.now(),
-  options: { subscriptionCost?: SubscriptionCostContext } = {},
+  options: EpicScoreboardOptions = {},
 ): EpicScoreboard {
   const keys = children.map((child) => child.key.toUpperCase())
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))

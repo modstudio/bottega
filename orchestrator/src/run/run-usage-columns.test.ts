@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { SUBSCRIPTION_STORED_SOURCE } from './run-subscription-cost.ts'
+import { SUBSCRIPTION_STORED_SOURCE } from '../transport/vendor-usage.ts'
 import { runUsageColumns } from './run-usage-columns.ts'
 
 test('a subscription agent stores billing kind and no list-price estimate', () => {

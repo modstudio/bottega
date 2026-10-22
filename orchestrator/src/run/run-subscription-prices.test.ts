@@ -1,32 +1,21 @@
 import { expect, test } from 'bun:test'
+import { ConfigClientError } from '../../../shared/config-client.ts'
 import { loadSubscriptionPrices } from './run-subscription-prices.ts'
 
-test('loadSubscriptionPrices reads user-scope harness monthly prices', async () => {
-  const prices = await loadSubscriptionPrices(async () => [
-    {
-      scope: 'user',
-      key: 'subscription.codex.monthly_usd',
-      value: '200',
-      environment: 'default',
-      rowVersion: 1,
-      updatedAt: '2026-10-22T00:00:00.000Z',
-    },
-    {
-      scope: 'space',
-      key: 'subscription.grok.monthly_usd',
-      value: '300',
-      environment: 'default',
-      rowVersion: 1,
-      updatedAt: '2026-10-22T00:00:00.000Z',
-    },
-    {
-      scope: 'user',
-      key: 'autonomy.ship-to',
-      value: 'production',
-      environment: 'default',
-      rowVersion: 1,
-      updatedAt: '2026-10-22T00:00:00.000Z',
-    },
-  ])
-  expect(prices).toEqual({ codex: 200 })
+test('loadSubscriptionPrices reads the caller user-scope harness monthly prices', async () => {
+  const prices = await loadSubscriptionPrices(['codex', 'grok'], async (key) => {
+    if (key === 'subscription.codex.monthly_usd') return { value: '200' }
+    throw new ConfigClientError('response', `/v1/config/entries/${key}`, 404)
+  })
+  expect(prices).toEqual({ codex: 200, grok: null })
+})
+
+test('a price read failure refuses rather than reporting unpriced', async () => {
+  await expect(
+    loadSubscriptionPrices(['codex'], async () => {
+      throw new Error('hosted config route /v1/config/entries is unreachable')
+    }),
+  ).rejects.toThrow(
+    'refusing to read user-scope subscription.codex.monthly_usd: hosted config route /v1/config/entries is unreachable',
+  )
 })
