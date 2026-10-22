@@ -25,6 +25,29 @@ export type ReviewPlan = {
   applicability: ApplicableReview
 }
 
+/** Keep only selected lenses and their attached applicability metadata. */
+export function selectReviewApplicability(
+  applicable: ApplicableReview,
+  lenses: string[],
+): ApplicableReview {
+  const selected = new Set(lenses)
+  const lensBases = Object.fromEntries(
+    Object.entries(applicable.lensBases ?? {}).filter(([lens]) => selected.has(lens)),
+  )
+  return {
+    lenses,
+    ...(applicable.secondOpinion && selected.has(applicable.secondOpinion)
+      ? { secondOpinion: applicable.secondOpinion }
+      : {}),
+    ...(Object.keys(lensBases).length ? { lensBases } : {}),
+    ...(applicable.secondOpinion &&
+    selected.has(applicable.secondOpinion) &&
+    applicable.secondOpinionBasis
+      ? { secondOpinionBasis: applicable.secondOpinionBasis }
+      : {}),
+  }
+}
+
 /** Classify one change and select its review lenses from those same file facts. */
 export function applicableReviewForChange(
   files: ReviewTierFile[],
@@ -56,6 +79,13 @@ function selectedLensRules(
     if (entry.basis) bases[entry.lens] = entry.basis
   }
   return { lenses, bases }
+}
+
+/** Lenses whose declaration can select them from newly touched paths. */
+export function pathScopedLenses(review: ReviewSettings | undefined): string[] {
+  return (review ?? BUILT_IN_REVIEW).lenses
+    .filter(({ paths }) => paths !== undefined)
+    .map(({ lens }) => lens)
 }
 
 /** Decide the review opinions that apply, preserving lens declaration order. */

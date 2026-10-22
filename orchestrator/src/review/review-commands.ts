@@ -12,6 +12,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
+import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
@@ -21,7 +22,12 @@ import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
-import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
+import { roundApplicabilityForChange } from './review-round-lens-service.ts'
+import {
+  resolveReviewMergeBase,
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+} from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
 import {
@@ -38,6 +44,30 @@ type ReviewFlags = { has(name: string): boolean; flag(name: string): string | un
 type ReviewPresentation = { log(...values: unknown[]): void }
 const TIER_RUN_SQL =
   'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
+
+function roundApplicabilityForTierOutput(input: {
+  output: ReturnType<typeof reviewTierForRange>
+  identity: ReturnType<typeof measureChangeIdentity>
+  project: string
+  branch: string
+  postFix: ReturnType<typeof postFixReviewDecision>
+  review: Parameters<typeof reviewTierForRange>[3]
+}): ApplicableReview {
+  const relevant = selectReviewApplicability(input.output, input.output.lenses)
+  if (!input.identity) return relevant
+  return roundApplicabilityForChange({
+    database: db(),
+    group: {
+      project: input.project,
+      branch: input.branch,
+      patchId: input.identity.patchId,
+      pathSet: input.identity.paths,
+    },
+    relevant,
+    postFix: input.postFix,
+    review: input.review,
+  })
+}
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
@@ -98,6 +128,16 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   })
   if ('refusal' in resolution) throw new Error(resolution.refusal)
   return resolution
+}
+
+function spawnGitProbe(repo: string): (args: string[]) => boolean {
+  return (args) =>
+    Bun.spawnSync(['git', ...args], {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }).exitCode === 0
 }
 
 function resolveTierTarget(
@@ -200,13 +240,7 @@ function resolveTierTarget(
   }
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists =
-    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).exitCode === 0
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
   return {
     repo,
     ...resolveTierRangeInRepo(repo, reviewTrunkRef(remoteTrackingRefExists, trunk), value, trunk),
@@ -219,13 +253,7 @@ function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists =
-    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).exitCode === 0
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
   const output = reviewTierForRange(repo, from, to, project.settings.review)
   const identity = measureChangeIdentity(repo, from, to)
   const currentRoundIdentity = identity
@@ -250,22 +278,34 @@ function reviewTierOutput(value: string, cwd: string) {
     tier: output.tier,
     review: project.settings.review,
   })
+  const roundApplicability = roundApplicabilityForTierOutput({
+    output,
+    identity,
+    project: project.name,
+    branch,
+    postFix,
+    review: project.settings.review,
+  })
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,
     ...branchBudget,
-    roundNeeded: postFix.kind !== 'no-round-needed',
+    roundNeeded: roundApplicability.lenses.length > 0,
   })
   return {
     ...output,
+    lenses: roundApplicability.lenses,
+    secondOpinion: roundApplicability.secondOpinion,
+    lensBases: roundApplicability.lensBases,
+    secondOpinionBasis: roundApplicability.secondOpinionBasis,
     post_fix: postFix,
     review_budget: {
       ...reviewBudget,
       eligibleReviewCount: branchBudget.eligibleReviewCount,
       unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
     },
-    lens_profiles: output.lenses.map((id) => ({
+    lens_profiles: roundApplicability.lenses.map((id) => ({
       id,
-      basis: output.lensBases?.[id] ?? null,
+      basis: roundApplicability.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
@@ -275,7 +315,7 @@ function printReviewRoundStatus(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): void {
-  if (output.post_fix.kind === 'no-round-needed') {
+  if (output.post_fix.kind === 'no-round-needed' && output.lenses.length === 0) {
     log('no round needed: the architect reads the fix and lands it')
     return
   }

@@ -35,7 +35,12 @@ export type TriageReviewRow = {
     model?: string | null
     graded: boolean
   }[]
-  findings: readonly { recordId: string; ordinal: number; disposition: string | null }[]
+  findings: readonly {
+    recordId: string
+    ordinal: number
+    disposition: string | null
+    lens?: string
+  }[]
 }
 
 export function reviewLensGraded(lens: {
@@ -227,7 +232,7 @@ function reviewsForBranch(
               rf.record_id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
-         LEFT JOIN review_finding rf ON rf.review_record_id=r.record_id
+         LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (run.branch=? OR r.record_id=?) ORDER BY r.number DESC,rl.record_id,rf.ordinal`,
     )
@@ -271,11 +276,17 @@ function reviewsForBranch(
       !review.findings.some((finding) => finding.recordId === row.finding_id)
     ) {
       ;(
-        review.findings as { recordId: string; ordinal: number; disposition: string | null }[]
+        review.findings as {
+          recordId: string
+          ordinal: number
+          disposition: string | null
+          lens?: string
+        }[]
       ).push({
         recordId: row.finding_id,
         ordinal: row.ordinal!,
         disposition: row.disposition,
+        lens: row.lens,
       })
     }
     reviews.set(row.review_record_id, review)

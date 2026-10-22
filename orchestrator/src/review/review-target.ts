@@ -43,10 +43,20 @@ export function reviewTrunkRef(remoteTrackingRefExists: boolean, trunk: string):
   return remoteTrackingRefExists ? `origin/${trunk}` : trunk
 }
 
+/** Probe whether the last-fetched remote-tracking ref exists. */
+export function reviewRemoteTrunkRefExists(
+  trunk: string,
+  probe: (args: string[]) => boolean,
+): boolean {
+  return probe(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`])
+}
+
 /** Trunk merge-base of a reviewed commit. Same resolution for --review and implicit lenses. */
 export function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): string | null {
-  const remoteTrackingRefExists =
-    gitContext(cwd, 'show-ref', '--verify', `refs/remotes/origin/${trunk}`) !== null
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
+    trunk,
+    (args) => gitContext(cwd, ...args) !== null,
+  )
   const trunkCommit = resolveBase(cwd, `${reviewTrunkRef(remoteTrackingRefExists, trunk)}^{commit}`)
   return gitContext(cwd, 'merge-base', commit, trunkCommit)
 }
