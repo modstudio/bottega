@@ -103,6 +103,46 @@ describe('round lens plan', () => {
     ).toEqual({ lenses: ['architecture', 'safety'] })
   })
 
+  test('no newly risky paths still lists a relevant lens that never completed', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness', 'safety'] },
+        facts: {
+          completedLenses: ['correctness'],
+          latestAcceptedOrModifiedLenses: ['correctness'],
+        },
+        postFix: {
+          kind: 'no-round-needed',
+          reviewNumber: 1,
+          reviewedTip: 'reviewed-tip',
+          tierThreePaths: [],
+          applicability: { lenses: [] },
+        },
+        pathScopedLenses: ['safety'],
+      }),
+    ).toEqual({ lenses: ['safety'] })
+  })
+
+  test('no newly risky paths needs no round when every relevant lens completed', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness', 'safety'] },
+        facts: {
+          completedLenses: ['correctness', 'safety'],
+          latestAcceptedOrModifiedLenses: ['correctness'],
+        },
+        postFix: {
+          kind: 'no-round-needed',
+          reviewNumber: 1,
+          reviewedTip: 'reviewed-tip',
+          tierThreePaths: [],
+          applicability: { lenses: [] },
+        },
+        pathScopedLenses: ['safety'],
+      }),
+    ).toEqual({ lenses: [] })
+  })
+
   test('facts use the latest prior round and attribute accepted and modified findings by lens', () => {
     const row = (
       reviewNumber: number,

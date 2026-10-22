@@ -304,7 +304,7 @@ function reviewTierOutput(value: string, cwd: string) {
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,
     ...branchBudget,
-    roundNeeded: postFix.kind !== 'no-round-needed',
+    roundNeeded: roundApplicability.lenses.length > 0,
   })
   return {
     ...output,
@@ -330,7 +330,7 @@ function printReviewRoundStatus(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): void {
-  if (output.post_fix.kind === 'no-round-needed') {
+  if (output.post_fix.kind === 'no-round-needed' && output.lenses.length === 0) {
     log('no round needed: the architect reads the fix and lands it')
     return
   }

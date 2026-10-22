@@ -86,8 +86,14 @@ export function applicableRoundLensPlan(input: {
   pathScopedLenses: readonly string[]
 }): ApplicableReview {
   if (input.postFix.kind === 'no-completed-round') return input.relevant
-  if (input.postFix.kind === 'no-round-needed') return { lenses: [] }
   if (input.postFix.kind === 'reviewed-tip-unidentified') return input.relevant
+  if (input.postFix.kind === 'no-round-needed') {
+    const completed = new Set(input.facts.completedLenses)
+    return selectApplicability(
+      input.relevant,
+      input.relevant.lenses.filter((lens) => !completed.has(lens)),
+    )
+  }
   const pathScoped = new Set(input.pathScopedLenses)
   const newlyTouchedLenses =
     input.postFix.kind === 're-lens'

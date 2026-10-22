@@ -294,15 +294,16 @@ function postFixFixture(fixPath: string): {
   return { repo, branch, runId, reviewed }
 }
 
-test('review tier needs no round when only trunk touched a tier-three path after review', async () => {
+test('review tier lists a never-completed lens when no tier-three fix path was touched', async () => {
   const { repo, branch, reviewed } = postFixFixture('src/fix.ts')
   try {
     const output: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
 
-    expect(output).toContain('no round needed: the architect reads the fix and lands it')
+    expect(output).not.toContain('no round needed: the architect reads the fix and lands it')
     expect(output.some((line) => line.startsWith('lens correctness'))).toBeFalse()
-    expect(output).not.toContain('current change would start a new round')
+    expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
+    expect(output).toContain('current change would start a new round')
 
     const json: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
