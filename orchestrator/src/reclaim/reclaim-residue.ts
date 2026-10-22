@@ -11,8 +11,8 @@ import { settleRunEvidence } from '../evidence/unjudged-expiry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { processStartTime, projectGitCommonDir } from '../project/project-lock.ts'
-import { projectByName, projects } from '../project/projects.ts'
-import { gitLockOwnerPids } from '../resources/git-locks.ts'
+import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
+import { gitLockOwnerPids, shellQuote } from '../resources/git-locks.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
@@ -54,24 +54,30 @@ function runSubject(subject: string): string {
   return subject
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`
-}
-
 function gitLockProjects(): { name: string; gitCommonDir: string }[] {
-  return projects().map((project) => ({
-    name: project.name,
-    gitCommonDir: projectGitCommonDir(project.path),
-  }))
+  return projects()
+    .filter(isProjectRepository)
+    .map((project) => ({
+      name: project.name,
+      gitCommonDir: projectGitCommonDir(project.path),
+    }))
 }
 
-function gitLockAge(path: string, clock: number): number | null {
+type GitLockIdentity = { dev: number; ino: number; mtimeMs: number }
+
+function gitLockIdentity(path: string): GitLockIdentity | null {
   try {
     const stat = lstatSync(path)
-    return stat.isFile() ? Math.max(0, clock - stat.mtimeMs) : null
+    return stat.isFile() ? { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs } : null
   } catch {
     return null
   }
+}
+
+function sameGitLockIdentity(left: GitLockIdentity, right: GitLockIdentity | null): boolean {
+  return Boolean(
+    right && left.dev === right.dev && left.ino === right.ino && left.mtimeMs === right.mtimeMs,
+  )
 }
 
 function sanitizedGitLockRelativePath(path: string): string {
@@ -84,13 +90,14 @@ function sanitizedGitLockRelativePath(path: string): string {
 function reclaimGitLock(subject: string, options: Options) {
   const clock = Date.now()
   const observedPath = isAbsolute(subject) ? canonical(subject) : subject
-  const ageMs = gitLockAge(subject, clock)
-  const ownerPids = gitLockOwnerPids(subject)
+  const identity = gitLockIdentity(subject)
+  const ownerPids = identity ? gitLockOwnerPids(subject) : null
   const decision = gitLockReleaseDecision({
     path: observedPath,
     projects: gitLockProjects(),
+    exists: identity !== null,
     ownerPids,
-    ageMs,
+    ageMs: identity ? Math.max(0, clock - identity.mtimeMs) : null,
   })
   if (!decision.allowed) return denied(decision)
   const timestamp = new Date(clock).toISOString().replaceAll(':', '-')
@@ -103,6 +110,19 @@ function reclaimGitLock(subject: string, options: Options) {
   if (!options.dryRun) {
     mkdirSync(resolve(archive, '..'), { recursive: true, mode: 0o700 })
     renameSync(subject, archive)
+    const archivedIdentity = gitLockIdentity(archive)
+    const archivedOwnerPids = archivedIdentity ? gitLockOwnerPids(archive) : null
+    if (
+      !sameGitLockIdentity(identity!, archivedIdentity) ||
+      archivedOwnerPids === null ||
+      archivedOwnerPids.length > 0
+    ) {
+      renameSync(archive, subject)
+      return {
+        ok: false,
+        action: `refused; invariant: the archived lock is the ownerless file that was classified; fix: a replacement or owner raced reclamation, retry after concurrent Git activity stops`,
+      }
+    }
   }
   const restore = `mv -- ${shellQuote(archive)} ${shellQuote(subject)}`
   return {

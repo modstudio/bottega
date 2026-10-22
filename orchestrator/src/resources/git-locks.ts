@@ -15,6 +15,11 @@ export type GitLock = {
 
 const GIT_LOCK_LSOF_TIMEOUT_MS = 10_000
 
+/** Quotes one value for display in a pasteable POSIX shell command. */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
 function git(cwd: string, args: string[]): string | null {
   const p = Bun.spawnSync(['git', ...args], {
     cwd,

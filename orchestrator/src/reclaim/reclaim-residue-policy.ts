@@ -28,9 +28,15 @@ export type GitLockReleaseDecision =
 export function gitLockReleaseDecision(facts: {
   path: string
   projects: readonly { name: string; gitCommonDir: string }[]
+  exists: boolean
   ownerPids: number[] | null
   ageMs: number | null
 }): GitLockReleaseDecision {
+  if (!facts.exists)
+    return refuse(
+      'the lock exists at the named path',
+      `run ${PLATFORM_SLUG} machine monitor again and reclaim a lock it currently reports`,
+    )
   if (!isAbsolute(facts.path) || !basename(facts.path).endsWith('.lock'))
     return refuse(
       'the subject is an absolute path whose file name ends .lock',
@@ -54,10 +60,7 @@ export function gitLockReleaseDecision(facts: {
       `wait for owner pid ${facts.ownerPids.join(', ')} to release it`,
     )
   if (facts.ageMs === null)
-    return refuse(
-      'the lock is a readable regular file with a known mtime',
-      `run ${PLATFORM_SLUG} machine monitor again and retry its reported lock path`,
-    )
+    return refuse('the lock mtime is known', `run ${PLATFORM_SLUG} machine monitor again`)
   if (facts.ageMs < GIT_LOCK_RECLAIM_AGE_MS)
     return refuse(
       `the lock mtime is at least ${GIT_LOCK_RECLAIM_AGE_MS / 60_000} minutes old`,

@@ -16,6 +16,7 @@ describe('residue release decisions', () => {
     const safe = {
       path: '/projects/example/.git/worktrees/orch-1/index.lock',
       projects: [{ name: 'example', gitCommonDir: '/projects/example/.git' }],
+      exists: true,
       ownerPids: [] as number[] | null,
       ageMs: GIT_LOCK_RECLAIM_AGE_MS,
     }
@@ -26,6 +27,11 @@ describe('residue release decisions', () => {
     })
 
     const refusals = [
+      {
+        facts: { ...safe, exists: false, ownerPids: null, ageMs: null },
+        invariant: 'the lock exists at the named path',
+        fix: `run ${PLATFORM_SLUG} machine monitor again and reclaim a lock it currently reports`,
+      },
       {
         facts: { ...safe, ownerPids: [42] },
         invariant: 'the lock has no live owner',
