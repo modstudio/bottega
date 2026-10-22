@@ -36,6 +36,7 @@ import {
   userSettingsPath,
 } from './settings-files.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { displaySettingsValue, renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite, restoreSettingsBackup } from './settings-write.ts'
@@ -61,6 +62,7 @@ function withProductHooksForTarget(target: Target, settings: OwnedSettings): Own
 export async function settingsEnvImportCommand(
   flags: Flags,
   presentation: Presentation,
+  workerProcess = () => isOrchWorkerProcess(process.env, process.pid),
 ): Promise<void> {
   if (flags.has('project')) {
     throw new Error(
@@ -69,10 +71,18 @@ export async function settingsEnvImportCommand(
     )
   }
   if (!flags.has('user')) throw new Error('refusing settings env import: pass --user')
+  if (workerProcess()) {
+    throw new Error(
+      `refusing settings env import from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings env import --user`,
+    )
+  }
+  const home = claudeHomeFromEnvironment(process.env)
+  if (!flags.has('dry-run')) {
+    assertCurrentMachineHomeWriteAuthority('machine settings env import --user', [home])
+  }
   const owner = await signedInDocOwner()
   const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) throw new Error('refusing settings env import: no user settings row')
-  const home = claudeHomeFromEnvironment(process.env)
   const settingsPath = userSettingsPath(home)
   const secretsPath = userSettingsEnvPath(home)
   const imported = settingsEnvironmentFromJson(settingsPath)
@@ -159,6 +169,13 @@ function adoptPermissionRules(
   return adopted
 }
 
+function assertSettingsRenderWriteAuthority(target: Target): void {
+  if (target.kind !== 'user') return
+  assertCurrentMachineHomeWriteAuthority('machine settings render --write --user', [
+    claudeHomeFromEnvironment(process.env),
+  ])
+}
+
 export async function settingsRenderWriteCommand(
   flags: Flags,
   presentation: Presentation,
@@ -170,6 +187,7 @@ export async function settingsRenderWriteCommand(
     )
   }
   const target = resolveTarget(flags)
+  assertSettingsRenderWriteAuthority(target)
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const row = settingsRow(target, owner)
   if (!row) throw new Error(`refusing settings render: no settings row for ${targetLabel(target)}`)
@@ -242,11 +260,19 @@ export function settingsRestoreCommand(
   flags: Flags,
   backup: string,
   presentation: Presentation,
+  workerProcess = () => isOrchWorkerProcess(process.env, process.pid),
 ): void {
+  if (workerProcess()) {
+    throw new Error(
+      `refusing settings restore from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings restore`,
+    )
+  }
   if (!flags.has('user') || flags.has('project')) {
     throw new Error('refusing settings restore: pass --user <backup>')
   }
-  const target = userSettingsPath(claudeHomeFromEnvironment(process.env))
+  const home = claudeHomeFromEnvironment(process.env)
+  assertCurrentMachineHomeWriteAuthority('machine settings restore --user', [home])
+  const target = userSettingsPath(home)
   restoreSettingsBackup(target, backup, process.env, flags.has('force'))
   presentation.log(`restored ${target} from ${backup}`)
 }

@@ -326,6 +326,46 @@ describe('run continuation', () => {
     )
   })
 
+  test('a provision refusal leaves a stopped root stopped and creates no child turn', async () => {
+    const root = insert('stopped', 'implement')
+    const projectPath = trackResidue(join(dir, `continue-provision-${root}`))
+    mkdirSync(projectPath)
+    const initialized = Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
+    if (initialized.exitCode !== 0) {
+      throw new Error(initialized.stderr.toString().trim() || 'git init failed')
+    }
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'continuation-fixture',
+      path: projectPath,
+      settings: { worktree: { seeds: ['minimal'] } },
+    })
+    db()
+      .query(
+        `UPDATE run SET vendor_session=?,cwd=?,worktree=?,branch=?,branch_kept_tip=? WHERE record_id=?`,
+      )
+      .run(
+        'vendor-session',
+        projectPath,
+        join(projectPath, 'released-tree'),
+        'DEV-1560-continue',
+        'abc123def',
+        root,
+      )
+
+    await expect(continueRun(root, 'continue after stop', limit)).rejects.toThrow(
+      /cannot be continued: it must recreate its worktree and has no recorded launch seed/,
+    )
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
+      status: 'stopped',
+    })
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
+      {
+        n: 0,
+      },
+    )
+  })
+
   test('a repository-free continuation needs neither a project nor a reader base', async () => {
     const root = addRun({
       agent: 'codex',

@@ -77,6 +77,7 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/settings/settings-machine-apply.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/git.ts',
     'bun:sqlite',
     'fs',
     'path',
@@ -96,7 +97,19 @@ export const settingsModules: SettingsModule[] = [
     './settings-render.ts',
     './settings-permission-overlay.ts',
     './settings-machine-hooks.ts',
+    './settings-machine-write-authority.ts',
     './settings-write.ts',
+  ]),
+  module('orchestrator/src/settings/settings-machine-write-authority.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/git.ts',
+    '../../../shared/install-root.ts',
+    '../../../shared/state-directory.ts',
+    'bun:sqlite',
+    'node:os',
+    'node:path',
+    '../database/db.ts',
+    '../project/projects.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-hooks.ts', [
     '../../../shared/brand.ts',
