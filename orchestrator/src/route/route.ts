@@ -1,5 +1,4 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { RepositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import {
@@ -13,17 +12,18 @@ import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
-import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import {
   type McpTransportPinFacts,
   requiredMcpIneligibility,
 } from '../mcp/mcp-native-attachment.ts'
+import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
+import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 export type Candidate = {
   agent: string
@@ -108,6 +108,16 @@ export const EVIDENCE_WINDOW = 40
  * not depend on a finely tuned number. Revisit it when a run lands in the gap.
  */
 export const PROMPT_SIZE_BOUNDARY = 16 * 1024
+
+function memoizedRepositoryReader(
+  reader: (project: Pick<Project, 'path'>) => string | null,
+): (project: Pick<Project, 'path'>) => string | null {
+  let currentRepository: string | null | undefined
+  return (project) => {
+    if (currentRepository === undefined) currentRepository = reader(project)
+    return currentRepository
+  }
+}
 
 function mcpCandidateIneligibility(
   agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
@@ -453,11 +463,7 @@ export function candidates(
   repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ): Candidate[] {
   const j = job(jobName)
-  let currentRepository: string | null | undefined
-  const readCurrentRepository = (project: Pick<Project, 'path'>): string | null => {
-    if (currentRepository === undefined) currentRepository = repositoryReader(project)
-    return currentRepository
-  }
+  const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
   // let "reply with ok" vouch for an agent on real work.
   //
@@ -1229,48 +1235,6 @@ export function meteredRouteEligibility(input: {
       mayAutoRouteNamedJob: false,
     }
   return { eligible: true, why: '', mayAutoRouteNamedJob: true }
-}
-
-export function trainingDataEligibility(input: {
-  agent: string
-  trainsOnInputs: boolean
-  project: string | null
-  visibility: RepositoryVisibility | null
-  verifiedRepository: string | null
-  currentRepository: string | null
-}): { eligible: boolean; why: string } {
-  if (!input.trainsOnInputs) {
-    return { eligible: true, why: '' }
-  }
-  if (
-    input.project !== null &&
-    input.visibility === 'public' &&
-    input.verifiedRepository !== null &&
-    input.currentRepository === input.verifiedRepository
-  ) {
-    return { eligible: true, why: '' }
-  }
-  const project = input.project ?? '(no project)'
-  if (input.project !== null && input.visibility === 'public') {
-    return {
-      eligible: false,
-      why:
-        `project ${project} is declared public, but its current origin ` +
-        `${input.currentRepository ?? '(unresolved)'} does not match verified repository ` +
-        `${input.verifiedRepository ?? '(unrecorded)'}; agent ${input.agent} may train on inputs; ` +
-        `cleared by: re-run ${PLATFORM_SLUG} project set ${input.project} --settings '{"visibility":"public"}', or choose another agent`,
-    }
-  }
-  const declaration =
-    input.project === null
-      ? 'dispatch from a registered public project'
-      : `declare it public with ${PLATFORM_SLUG} project set ${input.project} --settings '{"visibility":"public"}'`
-  return {
-    eligible: false,
-    why:
-      `project ${project} is not declared public and agent ${input.agent} may train on inputs; ` +
-      `cleared by: ${declaration} (the declaration is verified against the forge), or choose another agent`,
-  }
 }
 
 export function agentMeteredRouteEligibility(

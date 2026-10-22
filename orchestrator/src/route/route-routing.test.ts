@@ -23,8 +23,8 @@ import {
   pick,
   promptSizeBucket,
   scoreboard,
-  trainingDataEligibility,
 } from './route.ts'
+import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 test('training-data eligibility requires a declared public project even when named', () => {
   const base = {
