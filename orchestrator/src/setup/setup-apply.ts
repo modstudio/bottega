@@ -5,6 +5,7 @@ import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/p
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
   commandFailureReason,
   mcpAddArgv,
@@ -22,6 +23,7 @@ import type { SetupAction } from './setup-planner.ts'
 type AddAction = Extract<SetupAction, { kind: 'add' }>
 type SetAction = Extract<SetupAction, { kind: 'set' }>
 type RegistrationAction = Extract<SetupAction, { kind: 'register-mcp' }>
+type LegacySymlinkAction = Extract<SetupAction, { kind: 'remove-legacy-symlink' }>
 
 export type SetupActionResult = SetupAction & {
   status: 'applied' | 'unchanged' | 'refused' | 'not-attempted'
@@ -246,6 +248,7 @@ async function applySetupAction(
     await writeFile(action.path, migrated, 'utf8')
     return 'applied'
   }
+  if (action.kind === 'remove-legacy-symlink') return applyLegacyPathSymlinkRemoval(action)
   if (action.kind === 'register-mcp') return applyMcpRegistration(action, runner)
   if (action.kind === 'add') {
     await applyAddAction(action, service)
@@ -256,6 +259,30 @@ async function applySetupAction(
     return 'applied'
   }
   return 'unchanged'
+}
+
+async function applyLegacyPathSymlinkRemoval(
+  action: LegacySymlinkAction,
+): Promise<'applied' | 'unchanged'> {
+  try {
+    await lstat(action.path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'unchanged'
+    throw error
+  }
+  const target = removableLegacyPathTarget(action.path)
+  if (target === null) {
+    throw new Error(
+      `refusing to remove ${action.path}: it is not a removable leftover PATH symlink; leave it or remove it by hand if you own it, then re-run ${PLATFORM_SLUG} machine setup plan`,
+    )
+  }
+  if (target !== action.target) {
+    throw new Error(
+      `refusing to remove ${action.path}: it now points at ${target}; re-run ${PLATFORM_SLUG} machine setup plan and apply the new plan`,
+    )
+  }
+  await rm(action.path)
+  return 'applied'
 }
 
 async function applyAddAction(action: AddAction, service: SetupProjectService): Promise<void> {

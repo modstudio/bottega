@@ -80,7 +80,6 @@ apt-get update >/dev/null
 apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
 sh /install.sh
 ${installedBinary} --version
-/tmp/bin/orch --version
 ${installedBinary} agent jobs
 ${installedBinary} task list
 printf '%s\\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}' | ${installedBinary} mcp serve | grep '"id":1'
@@ -150,13 +149,14 @@ esac
 writing_branch=$(cat /tmp/mcp-state/writing-branch)
 test "$(su -s /bin/sh smoke -c "git -C /tmp/probe-repository log -1 --format=%s $writing_branch")" = 'DEV-1091 guarded binary smoke'
 
-rm /tmp/bin/hub
-printf '#!/bin/sh\\necho preserved-hub\\n' > /tmp/bin/hub
-chmod 755 /tmp/bin/hub
+decoy=hub
+rm /tmp/bin/$decoy
+printf '#!/bin/sh\\necho preserved-hub\\n' > /tmp/bin/$decoy
+chmod 755 /tmp/bin/$decoy
 sh /install.sh
-test "$(readlink /tmp/bin/orch)" = ${installedBinary}
-test "$(/tmp/bin/hub)" = preserved-hub
-echo 'second install preserved the protected hub path and legacy executable symlink'
+legacy=orch; test ! -e /tmp/bin/$legacy
+test "$(/tmp/bin/$decoy)" = preserved-hub
+echo 'second install left a pre-existing hub path alone and did not create a leftover executable'
 `
   console.log(`Docker release smoke (${target}) ran:`)
   console.log(containerScript.trim())
