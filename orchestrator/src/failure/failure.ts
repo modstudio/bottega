@@ -394,6 +394,14 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'abandoned',
 ]
 
+/** Whether a run failure is ineligible for a recorded evidence verdict. */
+export function isNotEvidenceFailure(failureKind: string | null): boolean {
+  return (
+    failureKind === 'unevidenced' ||
+    (failureKind !== null && NOT_EVIDENCE.includes(failureKind as FailureKind))
+  )
+}
+
 /**
  * Raise a macOS banner. Detached and never awaited: a notification that could
  * delay or fail a run would be worse than no notification.

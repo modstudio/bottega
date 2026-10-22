@@ -440,6 +440,7 @@ class MonitorDelivery(unittest.TestCase):
         return {
             "kind": "board-notice",
             "subject": "board:7",
+            "label": "board:7",
             "detail": "notice",
             "noticeId": "board:7",
             "ownerSession": "session-1",

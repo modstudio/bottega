@@ -98,6 +98,7 @@ export type MonitorResult = {
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
   noticeId: `condition:${number}` | `landing:${string}` | `board:${string}`
+  label: string
   detail: string
 }
 

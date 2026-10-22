@@ -484,15 +484,15 @@ for row in rows:
         raise SystemExit(2)
     if source not in ("condition", "landing", "board") or separator != ":" or not (numeric or hosted):
         raise SystemExit(2)
-    if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "detail")):
+    if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "label", "detail")):
         raise SystemExit(2)
     if row.get("ownerSession") != os.environ["SID"]:
         raise SystemExit(2)
     values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
-              for key in ("kind", "subject", "detail")]
+              for key in ("kind", "subject", "label", "detail")]
     directly_reported = set(filter(None, os.environ["STALLED_SUBJECTS"].split(",")))
-    message = "" if values[0] == "stalled-run" and values[1] in directly_reported else (values[2] if values[0].startswith("landing-") else (
-        "MONITOR " + values[0] + " " + values[1] + ": " + values[2]
+    message = "" if values[0] == "stalled-run" and values[1] in directly_reported else (values[3] if values[0].startswith("landing-") else (
+        "MONITOR " + values[0] + " " + values[2] + ": " + values[3]
     ))
     print(str(row["noticeId"]) + "\t" + message)
 ' 2>/dev/null); monitor_parse_rc=$?
