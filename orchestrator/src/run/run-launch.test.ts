@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideRunLaunch, type RunLaunchFacts } from './run-launch.ts'
+import { decideRunLaunch, type RunLaunchFacts, runTransportPin } from './run-launch.ts'
 
 const baseFacts: RunLaunchFacts = {
   source: 'pick',
@@ -10,6 +10,13 @@ const baseFacts: RunLaunchFacts = {
 }
 
 describe('run launch ruling', () => {
+  test('an explicit transport wins over the environment when classifying the pin', () => {
+    expect(runTransportPin('cli', 'acp')).toEqual({
+      pinnedTransport: 'cli',
+      transportPinSource: 'explicit',
+    })
+  })
+
   test.each([
     {
       name: 'resume wins over any pick and keeps the requested transport',

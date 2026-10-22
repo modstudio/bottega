@@ -460,9 +460,16 @@ export type RegistrationProbeResult = {
   schema: { ok: boolean | null; output: string }
   file?: { ok: boolean | null; output: string }
   mcp?: { verifiable: boolean | null; output: string }
+  writing?: { ok: boolean | null; output: string }
   jobs?: Record<
     string,
-    { reply?: boolean; tool?: boolean | null; schema?: boolean | null; mcp?: boolean | null }
+    {
+      reply?: boolean
+      tool?: boolean | null
+      schema?: boolean | null
+      mcp?: boolean | null
+      writing?: boolean | null
+    }
   >
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null

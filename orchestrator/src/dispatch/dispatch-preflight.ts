@@ -10,6 +10,7 @@ import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import {
   borrowedCheckoutOf,
   gitContext,
+  gitToplevel,
   linkedWorktreePaths,
   repoRootOf,
 } from '../git/git-environment.ts'
@@ -18,6 +19,7 @@ import { resolveLens } from '../lens/lenses.ts'
 import {
   assertMainCheckoutClean,
   assertRegisterBranches,
+  type Project,
   projectAt,
   projectByName,
   resolvedWorktreeTool,
@@ -49,6 +51,51 @@ export function resolvedFindingsLens(
 }
 
 const warnedMainCheckouts = new Set<string>()
+
+export function sourceIsRegisteredMain(input: {
+  sourceToplevel: string | null
+  sourceRepoRoot: string | null
+  borrowedFromMain: string | null
+  registeredMainPath: string
+}): boolean {
+  if (input.sourceToplevel === input.registeredMainPath) return true
+  if (
+    input.sourceRepoRoot === input.registeredMainPath ||
+    input.borrowedFromMain === input.registeredMainPath
+  ) {
+    return false
+  }
+  return true
+}
+
+function sourceIsMainCheckout(cwd: string, registeredMainPath: string): boolean {
+  const registeredMain = realpathOrSpelled(registeredMainPath)
+  const sourceToplevel = gitToplevel(cwd)
+  const realpath = (path: string | null): string | null =>
+    path === null ? null : realpathOrSpelled(path)
+  return sourceIsRegisteredMain({
+    sourceToplevel: realpath(sourceToplevel),
+    sourceRepoRoot: realpath(repoRootOf(cwd)),
+    borrowedFromMain: realpath(sourceToplevel ? borrowedCheckoutOf(sourceToplevel) : null),
+    registeredMainPath: registeredMain,
+  })
+}
+
+function assertSourceMainCheckoutClean(
+  cwd: string,
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+  resume: boolean,
+): void {
+  if (
+    project.settings.requireCleanMain === false ||
+    resume ||
+    !sourceIsMainCheckout(cwd, project.path)
+  ) {
+    return
+  }
+  const warning = assertMainCheckoutClean(project)
+  if (warning) warnMainCheckoutUntracked(project.path, warning)
+}
 
 function assertImplicitReviewTarget(input: {
   jobName: string
@@ -138,13 +185,8 @@ export function preflight(
         'Answer the question with the tools you have, or hand it back to the caller.',
     )
   }
-  if (!reusesWorktree) {
-    const named = repo?.trim() ? projectByName(repo) : projectAt(cwd)
-    if (named) {
-      const warning = assertMainCheckoutClean(named)
-      if (warning) warnMainCheckoutUntracked(named.path, warning)
-    }
-  }
+  const named = repo?.trim() ? projectByName(repo) : projectAt(cwd)
+  if (named) assertSourceMainCheckoutClean(cwd, named, reusesWorktree)
   const j = job(jobName)
   resolveReviewTarget(jobName, cwd, reviewRef, carry)
   const writesJob = Boolean(j.needs.writesRepo)

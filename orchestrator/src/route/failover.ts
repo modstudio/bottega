@@ -45,6 +45,7 @@ export type DetachSpec = {
   model?: string
   probe?: boolean
   transport?: TransportName
+  transportPinSource?: 'explicit' | 'environment'
   label?: string
   lens?: string
   seed?: string
@@ -142,7 +143,7 @@ export function detachedRunOptions(
     keepTree,
     resolvedTaskBranch,
   } = spec
-  const consumed: Required<Record<keyof DetachSpec, unknown>> = {
+  const consumed: Required<Record<Exclude<keyof DetachSpec, 'transportPinSource'>, unknown>> = {
     agent,
     agentExplicit: spec.agentExplicit,
     schema: spec.schema,
