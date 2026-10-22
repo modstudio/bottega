@@ -23,6 +23,7 @@ import {
   parseStoredAutonomy,
   resolveAutonomy,
 } from './autonomy.ts'
+import { type CachedSessionContext, readSessionContextCache } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
@@ -96,7 +97,8 @@ export async function resolveProjectAutonomy(
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
   stages: readonly AutonomyStage[] = [],
-  hostedFallback?: { user: AutonomySettings; space: AutonomySettings },
+  hostedFallback?: CachedSessionContext,
+  now: () => Date = () => new Date(),
 ): Promise<AutonomyResolution> {
   if (session.shipTo !== undefined) {
     throw new Error(
@@ -107,9 +109,13 @@ export async function resolveProjectAutonomy(
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
+  const cached =
+    hosted.status === 'unavailable'
+      ? (hostedFallback ?? readSessionContextCache(project, env))
+      : null
   const hostedSettings =
-    hosted.status === 'unavailable' && hostedFallback
-      ? hostedFallback
+    hosted.status === 'unavailable' && cached
+      ? cached.hosted
       : { user: hosted.user, space: hosted.space }
   const resolved = resolveAutonomy(
     steps,
@@ -143,6 +149,15 @@ export async function resolveProjectAutonomy(
       note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
       session,
     }
+  if (cached) {
+    const ageMs = Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))
+    return {
+      ...resolution,
+      hosted: { status: hosted.status, reason: hosted.reason },
+      note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from cached hosted autonomy settings, local and project scopes (cache age ${ageMs} ms)`,
+      session,
+    }
+  }
   return {
     ...resolution,
     rulings: {

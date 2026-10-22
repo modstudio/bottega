@@ -200,7 +200,8 @@ async function architectSessionContext(
     dependencies.configEnvironment,
     undefined,
     autonomyStages,
-    cached?.hosted,
+    cached ?? undefined,
+    dependencies.now,
   )
   const byStage = new Map<AutonomyStage, { value: AutonomyValue; scope: string }[]>()
   for (const step of steps) {

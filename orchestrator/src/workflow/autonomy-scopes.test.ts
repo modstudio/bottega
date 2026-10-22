@@ -12,6 +12,7 @@ import {
   resolveAnswerRulings,
   resolveProjectAutonomy,
 } from './autonomy-scopes.ts'
+import { writeSessionContextCache } from './session-context-cache.ts'
 
 const steps = [
   { slug: 'design', stage: 'plan' as const, autonomy: 'ask' as const },
@@ -142,6 +143,44 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
   )
 })
 
+test('a timed-out hosted read resolves from the cached hosted copy and names its age', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'autonomy-scopes-state-'))
+  const environment = {
+    ...missingConfig,
+    BOTTEGA_STATE_HOME: state,
+  }
+  writeSessionContextCache(
+    {
+      version: 1,
+      resolvedAt: '2026-10-22T12:00:00.000Z',
+      project: 'fixture',
+      hosted: { user: { rulings: 'agent', shipTo: 'trunk' }, space: {} },
+    },
+    environment,
+  )
+
+  const result = await resolveProjectAutonomy(
+    'fixture',
+    undefined,
+    'guided',
+    steps,
+    {},
+    timeoutClient,
+    database(),
+    environment,
+    10,
+    [],
+    undefined,
+    () => new Date('2026-10-22T12:02:00.000Z'),
+  )
+
+  expect(result.rulings).toEqual({ value: 'agent', scope: 'hosted user' })
+  expect(result.shipTo).toEqual({ value: 'trunk', scope: 'hosted user' })
+  expect(result.note).toBe(
+    'hosted autonomy settings unavailable: timed out after 10 ms; resolved from cached hosted autonomy settings, local and project scopes (cache age 120000 ms)',
+  )
+})
+
 test('workflow built-in defaults and local workflow overrides resolve every step', async () => {
   const builtIn = await resolveProjectAutonomy(
     'fixture',
@@ -235,7 +274,7 @@ test('answer proceeds when hosted is not configured', async () => {
   expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
 
-test('answer refuses an unavailable hosted resolution without a higher ruling', async () => {
+test('answer refuses an unavailable hosted resolution without a cached copy or higher ruling', async () => {
   const rulings = await resolveAnswerRulings(
     'fixture',
     null,
