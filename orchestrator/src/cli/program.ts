@@ -29,8 +29,7 @@ import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
-import { db, recordSessionSeen } from '../database/db.ts'
-import { observeProcessTable, sampleHostPressure, sessionAncestorPids } from '../host-pressure.ts'
+import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
 
 export const program = new Command()
   .name('orch')
@@ -111,13 +110,7 @@ function exitCodeFor(error: unknown): number {
 
 export function recordInvocationSession(argv: string[]): void {
   if (isReadOnlyInvocation(argv)) return
-  const observed = observeProcessTable()
-  recordSessionSeen(undefined, undefined, sessionAncestorPids(observed))
-  try {
-    sampleHostPressure(db(), undefined, undefined, observed)
-  } catch {
-    // Sampling and process ancestry are advisory. Neither may break the command.
-  }
+  recordSessionHostPressure()
 }
 
 export async function run(argv: string[]): Promise<number> {

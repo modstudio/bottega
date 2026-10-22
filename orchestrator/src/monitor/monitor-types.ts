@@ -5,6 +5,14 @@ import type { HostLoadSample } from '../host-load-sample.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 
 export type MonitorHostLoad = HostLoadSample
+export type MonitorHostPressure = {
+  available: boolean
+  error: string | null
+  memoryPressure: string | null
+  attributions: { owner: string; project: string | null; cpu: number; share: number }[]
+  averageObservationElapsedMs: number | null
+  averageObservationCpuMs: number | null
+}
 
 export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'abandoned-bootstrap': 'revalidated',
@@ -72,6 +80,7 @@ export type MonitorResult = {
   errors: string[]
   canon: { findings: number; docs: number }
   hostLoad: MonitorHostLoad
+  hostPressure: MonitorHostPressure
 }
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {

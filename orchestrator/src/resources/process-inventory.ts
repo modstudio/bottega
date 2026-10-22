@@ -8,12 +8,14 @@ export type ProcessFact = {
   pid: number
   ppid: number
   pgid: number
+  cpu: number
   command: string
   ageSeconds: number
   startTime: string
   cwd: string | null
   cwdVerified: boolean
 }
+export type ProcessSample = Pick<ProcessFact, 'pid' | 'ppid' | 'cpu' | 'command'>
 export type OrphanProcess = ProcessFact & {
   missingTree: string
   project: string
@@ -38,20 +40,22 @@ function elapsedSeconds(value: string): number | null {
 export function parseProcessTable(output: string): ProcessFact[] {
   return output.split('\n').flatMap((line): ProcessFact[] => {
     const match =
-      /^\s*(\d+)\s+(\d+)\s+(\d+)\s+((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+\S+\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+((?:\d+-)?(?:\d+:)?\d+:\d+)\s+(.+)$/.exec(
+      /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+\S+\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+((?:\d+-)?(?:\d+:)?\d+:\d+)\s+(.+)$/.exec(
         line,
       )
     if (!match) return []
-    const ageSeconds = elapsedSeconds(match[5]!)
-    if (ageSeconds === null) return []
+    const ageSeconds = elapsedSeconds(match[6]!)
+    const cpu = Number(match[4])
+    if (ageSeconds === null || !Number.isFinite(cpu)) return []
     return [
       {
         pid: Number(match[1]),
         ppid: Number(match[2]),
         pgid: Number(match[3]),
+        cpu,
         ageSeconds,
-        startTime: match[4]!,
-        command: match[6]!,
+        startTime: match[5]!,
+        command: match[7]!,
         cwd: null,
         cwdVerified: false,
       },
@@ -85,11 +89,11 @@ function processCwds(): { values: Map<number, string>; error: string | null } {
   }
 }
 
-function processTableSnapshot(): { facts: ProcessFact[]; error: string | null } {
+export function processTableSnapshot(): { facts: ProcessFact[]; error: string | null } {
   try {
     const { process: ps, error } = observeBoundedSubprocess(
       'ps',
-      ['ps', '-axo', 'pid=,ppid=,pgid=,lstart=,etime=,command='],
+      ['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,lstart=,etime=,command='],
       {
         env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
         stdout: 'pipe',
@@ -105,6 +109,53 @@ function processTableSnapshot(): { facts: ProcessFact[]; error: string | null } 
   } catch (error) {
     return { facts: [], error: String((error as Error).message ?? error) }
   }
+}
+
+export type SessionProcessChain = { sessionId: string; chain: number[] }
+
+/** The highest ancestor unique to one live session is its harness-independent anchor. */
+export function sessionAnchors(chains: SessionProcessChain[]): Map<string, number> {
+  const appearances = new Map<number, Set<string>>()
+  for (const { sessionId, chain } of chains)
+    for (const pid of new Set(chain)) {
+      const sessions = appearances.get(pid) ?? new Set<string>()
+      sessions.add(sessionId)
+      appearances.set(pid, sessions)
+    }
+  const anchors = new Map<string, number>()
+  for (const { sessionId, chain } of chains) {
+    const anchor = [...chain].reverse().find((pid) => appearances.get(pid)?.size === 1)
+    if (anchor !== undefined) anchors.set(sessionId, anchor)
+  }
+  return anchors
+}
+
+export function processDescendsFrom(
+  pid: number,
+  ancestor: number,
+  parents: ReadonlyMap<number, number>,
+): boolean {
+  const visited = new Set<number>()
+  for (let current = pid; current > 0 && !visited.has(current); ) {
+    if (current === ancestor) return true
+    visited.add(current)
+    current = parents.get(current) ?? 0
+  }
+  return false
+}
+
+export function ancestorChain(pid: number, processes: readonly ProcessSample[]): number[] {
+  const parents = new Map(processes.map((process) => [process.pid, process.ppid]))
+  const chain: number[] = []
+  const visited = new Set<number>()
+  let current = parents.get(pid)
+  while (current !== undefined && current > 0 && !visited.has(current)) {
+    chain.push(current)
+    if (current === 1) break
+    visited.add(current)
+    current = parents.get(current)
+  }
+  return chain
 }
 
 /** Preserve cwd evidence, but mark it safe to act on only when both snapshots agree on birth. */
