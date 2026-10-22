@@ -49,7 +49,7 @@ import {
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
-import type { SandboxSelection } from '../sandbox/sandbox.ts'
+import { type SandboxSelection, writerBrokerProfile } from '../sandbox/sandbox.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -143,9 +143,9 @@ function recordConfiguredAsk(input: {
   startOpts: TransportStartOpts
 }): void {
   try {
-    const command = input.transport.configuredAsk(input.startOpts)
-    if (command) {
-      recordAskExpected(input.runId, input.sandbox === 'srt' ? 'srt' : 'host', command)
+    const configured = input.transport.configuredAsk(input.startOpts)
+    if (configured) {
+      recordAskExpected(input.runId, input.sandbox === 'srt' ? 'srt' : 'host', configured)
     }
   } catch {
     // Configuration evidence is best effort and must never prevent launch.
@@ -300,6 +300,9 @@ export type LiveInput = {
   mcpSetupHeader: string | null
   initialBoardNoticeIds: Array<number | string>
   askLoopback: AskLoopback | null
+  writingAcp: boolean
+  checkpointGitDir: string | null
+  brokerNeedsNetwork: boolean
 }
 
 export type LiveResult = {
@@ -507,6 +510,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
+      sandboxProfile:
+        input.writingAcp && sandboxSelection.profile
+          ? writerBrokerProfile(sandboxSelection.profile, input.brokerNeedsNetwork)
+          : null,
       onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
@@ -545,6 +552,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       home: sandboxEnvironment.HOME,
       startedAt: started,
       write: writes,
+      writingAcp: input.writingAcp,
       sandbox: codexSandbox.sandbox,
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
@@ -620,6 +628,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         taskKey: launchKey,
         scratchDir,
         guardEnvironment: gitConfigEnvironment ?? {},
+        gitDir: input.checkpointGitDir,
+        disableHooks: input.writingAcp,
         final,
       })
       if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
@@ -641,6 +651,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           taskKey: launchKey,
           scratchDir,
           guardEnvironment: gitConfigEnvironment ?? {},
+          gitDir: input.checkpointGitDir,
+          disableHooks: input.writingAcp,
         })
       }
     }

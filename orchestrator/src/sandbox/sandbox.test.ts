@@ -42,6 +42,7 @@ import {
   sandboxRuntimeConfig,
   selectReadonlySandbox,
   withoutRegisteredOrchAskServer,
+  writerBrokerProfile,
   writerProfile,
 } from './sandbox.ts'
 
@@ -782,17 +783,11 @@ describe('readonly-lens sandbox profile', () => {
     expect(selected.profile?.network.allowUnixSockets).toEqual([])
   })
 
-  test('a writer grants only its tree, scratch, and exact git roots', () => {
+  test('a writer grants only its tree and scratch, and denies its git pointer', () => {
     const profile = writerProfile({
       worktree: '/projects/main/.claude/worktrees/run-42',
       runsDir: '/state/runs/run-42',
       scratchDir: '/state/runs/run-42/scratch',
-      gitWriteRoots: [
-        '/projects/main/.git/worktrees/run-42',
-        '/projects/main/.git/objects',
-        '/projects/main/.git/refs/heads/DEV-1530',
-        '/projects/main/.git/logs/refs/heads/DEV-1530',
-      ],
       askAddress: '127.0.0.1:43127',
       project: fixtureProject(),
       agent: 'goose-openrouter',
@@ -803,18 +798,24 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWrite).toEqual([
       '/projects/main/.claude/worktrees/run-42',
       '/state/runs/run-42/scratch',
-      '/projects/main/.git/worktrees/run-42',
-      '/projects/main/.git/objects',
-      '/projects/main/.git/refs/heads/DEV-1530',
-      '/projects/main/.git/logs/refs/heads/DEV-1530',
     ])
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main')
-    expect(profile.filesystem.allowWrite).not.toContain(
-      '/projects/main/.git/refs/heads/another-run',
-    )
+    expect(profile.filesystem.allowWrite).not.toContain('/projects/main/.git/objects')
+    expect(profile.filesystem.denyWrite).toContain('/projects/main/.claude/worktrees/run-42/.git')
     expect(profile.network.allowedDomains).toContain('127.0.0.1:43127')
     expect(profile.network.allowedDomains).not.toContain('127.0.0.1')
     expect(profile.network.allowLocalBinding).toBe(false)
+
+    const broker = writerBrokerProfile(profile)
+    expect(broker.filesystem).toEqual(profile.filesystem)
+    expect(broker.network.allowedDomains).toEqual([])
+    expect(broker.network.allowLocalBinding).toBe(false)
+    expect(writerBrokerProfile(profile, true).network).toEqual({
+      allowedDomains: ['localhost', '127.0.0.1', '[::1]'],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: true,
+    })
   })
 
   test('a writing ACP run cannot bypass an unavailable sandbox through the host', () => {
@@ -828,7 +829,6 @@ describe('readonly-lens sandbox profile', () => {
         worktree: '/runs/tree',
         runsDir: '/runs/evidence',
         scratchDir: '/runs/evidence/scratch',
-        writerGitWriteRoots: ['/git/objects'],
         askAddress: '127.0.0.1:43127',
         project: fixtureProject(),
       }),

@@ -88,6 +88,8 @@ export type LiveCheckpoint = {
   taskKey: string
   scratchDir: string
   guardEnvironment: NodeJS.ProcessEnv
+  gitDir: string | null
+  disableHooks: boolean
 }
 export const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
 const liveGateTerminators = new Set<() => Promise<void>>()
@@ -454,6 +456,8 @@ export function bindSignals() {
           taskKey: checkpoint.taskKey,
           scratchDir: checkpoint.scratchDir,
           guardEnvironment: checkpoint.guardEnvironment,
+          gitDir: checkpoint.gitDir,
+          disableHooks: checkpoint.disableHooks,
           final: true,
         })
         if (result.created || latestCheckpoint(db(), checkpoint.rootId)) {

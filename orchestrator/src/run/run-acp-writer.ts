@@ -1,22 +1,21 @@
 // concern: host-side ask endpoint preparation for sandboxed ACP writers
 
 import { type AskLoopback, startAskHttpEndpoint } from '../ask/ask.ts'
-import type { TransportName } from '../transport/transport.ts'
+export const WRITING_ACP_GIT_INSTRUCTION =
+  'The orchestrator checkpoints and commits this run from the host. Do not run git commands that write.'
 
 export function prepareWritingAcpAsk(
-  transport: TransportName,
-  writesRepo: boolean,
+  writingAcp: boolean,
   runId: string,
   token: string,
 ): {
   loopback: AskLoopback | null
-  sandbox: { writingAcp: boolean; askAddress?: string }
+  sandbox: { askAddress?: string }
 } {
-  const writingAcp = transport === 'acp' && writesRepo
-  if (!writingAcp) return { loopback: null, sandbox: { writingAcp } }
+  if (!writingAcp) return { loopback: null, sandbox: {} }
   const loopback = startAskHttpEndpoint(runId, token)
   return {
     loopback,
-    sandbox: { writingAcp, askAddress: new URL(loopback.url).host },
+    sandbox: { askAddress: new URL(loopback.url).host },
   }
 }

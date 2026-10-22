@@ -500,7 +500,7 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
 
 function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   if (opts.agent.name === 'grok' || !opts.env.ORCH_RUN_ID || !opts.env.ORCH_RUN_TOKEN) return []
-  if (opts.write && opts.env.ORCH_ASK_URL?.startsWith('http://')) {
+  if (opts.writingAcp && opts.env.ORCH_ASK_URL?.startsWith('http://')) {
     return [
       {
         type: 'http',
@@ -538,12 +538,20 @@ function observeAcpUpdate(
   }
 }
 
-export function configuredAcpAsk(opts: TransportStartOpts): string[] | null {
-  if (opts.agent.name === 'grok') return opts.agent.askServerCommand?.(opts.env) ?? null
+export function configuredAcpAsk(
+  opts: TransportStartOpts,
+): { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string } | null {
+  if (opts.agent.name === 'grok') {
+    const argv = opts.agent.askServerCommand?.(opts.env) ?? null
+    return argv ? { kind: 'command', argv } : null
+  }
   const server = acpMcpServers(opts).find((entry) => entry.name === WORKER_MCP_SERVER_NAME)
   if (!server) return null
-  if ('command' in server) return [server.command, ...(server.args ?? [])]
-  return server.type === 'http' || server.type === 'sse' ? [server.url] : null
+  if ('command' in server)
+    return { kind: 'command', argv: [server.command, ...(server.args ?? [])] }
+  return server.type === 'http' || server.type === 'sse'
+    ? { kind: 'endpoint', url: server.url }
+    : null
 }
 
 function spawnAcpChild(launch: string[], opts: TransportStartOpts) {

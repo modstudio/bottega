@@ -20,6 +20,7 @@ const grok: ConfinementReportAgent = {
   readsRepo: true,
   writesRepo: true,
   mcp: true,
+  transport: 'acp',
 }
 
 const codex: ConfinementReportAgent = {
@@ -92,15 +93,14 @@ test('a Grok reading job with MCP is reported as host with env file, keychain, a
   expect(reported.keychain.reason).toBe('orch has no denial')
 })
 
-test('a Grok writing job is reported as host with loopback open', () => {
+test('a Grok writing job agrees with launch and is reported as srt', () => {
   const reported = row(grok, 'writing', false)
   expect(reported.status).toBe('ok')
   if (reported.status !== 'ok') return
-  expect(reported.confinement.sandbox).toBe('host')
-  expect(reported.confinement.reason).toBe('writing jobs are not readonly-sandbox candidates')
-  expect(reported.envFile.access).toBe('open')
-  expect(reported.keychain.access).toBe('open')
-  expect(reported.loopback.reason).toBe('orch has no denial')
+  expect(reported.confinement.sandbox).toBe('srt')
+  expect(reported.envFile.access).toBe('denied')
+  expect(reported.keychain.access).toBe('denied')
+  expect(reported.loopback.access).toBe('open')
 })
 
 test('an srt deny list that covers the operator env file reports the env file as denied', () => {

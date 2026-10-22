@@ -21,6 +21,7 @@ import {
   decideAcpPermission,
   failureKindFromStop,
   isAcpPilotJob,
+  isWritingAcpRun,
   outcomeFromTransport,
   resolveCodexAcpBin,
   resolveTransportName,
@@ -203,6 +204,12 @@ describe('ACP transport selection', () => {
     expect(isAcpPilotJob('diagnose')).toBe(false)
   })
 
+  test('the writing ACP decision requires both ACP and repository writes', () => {
+    expect(isWritingAcpRun('acp', true)).toBe(true)
+    expect(isWritingAcpRun('acp', false)).toBe(false)
+    expect(isWritingAcpRun('cli', true)).toBe(false)
+  })
+
   test('writing jobs require an explicitly named ACP agent', () => {
     const registered = { ...AGENTS.codex!, defaultTransport: 'acp' as const }
     expect(() => assertAcpAllowed('implement', 'codex')).toThrow(ACP_PILOT_TASK)
@@ -213,6 +220,16 @@ describe('ACP transport selection', () => {
     )
     expect(() => assertAcpAllowed('fix', 'goose-trial', registered, true)).not.toThrow()
     expect(() => assertAcpAllowed('implement', 'goose-trial', registered, true)).not.toThrow()
+  })
+
+  test('issue-worker names the pilot jobs instead of repeating the agent remedy', () => {
+    const registered = { ...AGENTS.codex!, defaultTransport: 'acp' as const }
+    expect(() => assertAcpAllowed('issue-worker', 'goose-trial', registered, true)).toThrow(
+      'only fix and implement',
+    )
+    expect(() => assertAcpAllowed('issue-worker', 'goose-trial', registered, true)).not.toThrow(
+      '--agent',
+    )
   })
 
   test('routing cannot select an ACP agent for a writing job', () => {

@@ -178,6 +178,8 @@ export type TerminalInput = {
   failureKind: ReturnType<typeof classify> | null
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
+  writingAcp: boolean
+  checkpointGitDir: string | null
   opts: TerminalOptions
   watchedCheckouts: CheckoutToWatch[]
   confinementFailures: FreezeFailure[]
@@ -481,6 +483,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       taskKey: launchKey!,
       scratchDir,
       guardEnvironment: gitConfigEnvironment ?? {},
+      gitDir: input.checkpointGitDir,
+      disableHooks: input.writingAcp,
       final: true,
     })
     if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {

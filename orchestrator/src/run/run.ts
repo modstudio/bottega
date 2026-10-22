@@ -37,7 +37,7 @@ import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
-import { gitContext } from '../git/git-environment.ts'
+import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
 import { job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
@@ -88,6 +88,7 @@ import {
 import {
   assertAcpReady,
   EMPTY_VENDOR_USAGE,
+  isWritingAcpRun,
   selectAgentForTransport,
   type TransportName,
 } from '../transport/transport.ts'
@@ -95,7 +96,7 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
-import { prepareWritingAcpAsk } from './run-acp-writer.ts'
+import { prepareWritingAcpAsk, WRITING_ACP_GIT_INSTRUCTION } from './run-acp-writer.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -531,6 +532,7 @@ export async function run(opts: {
   })
   const a = requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
+  const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
   const harnessName = workerHarnessName(a)
   const codexSandbox = decideCodexSandbox()
@@ -563,6 +565,7 @@ export async function run(opts: {
       throw e
     }
   }
+  if (writingAcp) prompt += `\n\n${WRITING_ACP_GIT_INSTRUCTION}`
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
@@ -699,9 +702,13 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
-  // Reader Git metadata stays in-tree; writers receive only their guarded shared roots.
-  const writerGitWriteRoots = provisionWriterSharedGitRoots(worktree, repoJob && writesJob)
+  // ACP writers cannot write shared Git state; the host owns their checkpoints.
+  const writerGitWriteRoots = provisionWriterSharedGitRoots(
+    worktree,
+    repoJob && writesJob && !writingAcp,
+  )
   const writableRoots = [scratchDir, ...writerGitWriteRoots]
+  const checkpointGitDir = writingAcp && worktree ? worktreeGitDir(worktree.path) : null
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
@@ -724,8 +731,9 @@ export async function run(opts: {
   let mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
   let hasRunScopedHome: boolean
+  const runProject = projectAt(callerCwd)
   try {
-    const writingAcpAsk = prepareWritingAcpAsk(transportName, writesJob, claim.id, runToken)
+    const writingAcpAsk = prepareWritingAcpAsk(writingAcp, claim.id, runToken)
     askLoopback = writingAcpAsk.loopback
     sandboxSelection = selectReadonlySandbox({
       agent: name,
@@ -734,13 +742,13 @@ export async function run(opts: {
       worktree: worktree?.path ?? isolatedCwd,
       runsDir: sandboxRunDir,
       scratchDir,
-      project: projectAt(callerCwd),
+      project: runProject,
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       baseUrl: a.baseUrl,
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpLaunch.allowlist : [],
-      writerGitWriteRoots,
+      writingAcp,
       ...writingAcpAsk.sandbox,
     })
     const home = await workerHome.prepareWorkerHomeLaunch({
@@ -1047,6 +1055,9 @@ export async function run(opts: {
       mcpSetupHeader,
       initialBoardNoticeIds: initialBoard.noticeIds,
       askLoopback,
+      writingAcp,
+      checkpointGitDir,
+      brokerNeedsNetwork: Boolean(runProject?.settings.mainStack?.consumers?.includes('gate')),
     }))
   } finally {
     const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
@@ -1074,6 +1085,8 @@ export async function run(opts: {
         failureKind,
         scratchDir,
         gitConfigEnvironment,
+        writingAcp,
+        checkpointGitDir,
         opts,
         watchedCheckouts,
         confinementFailures,

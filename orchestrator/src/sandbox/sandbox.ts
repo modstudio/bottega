@@ -88,6 +88,7 @@ export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.
 
 /** Loopback TCP is allowed on every readonly-lens SRT profile. */
 export const READONLY_LENS_ALLOW_LOCAL_BINDING = true
+const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '[::1]'] as const
 
 /** Reads denied by every SRT profile, including profiles outside normal runs. */
 function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
@@ -304,9 +305,7 @@ export function readonlyLensProfile(input: {
           ...new Set([
             ...vendorDomains,
             ...endpointHost(input.baseUrl),
-            'localhost',
-            '127.0.0.1',
-            '[::1]',
+            ...LOOPBACK_DOMAINS,
             ...(input.mcpAllowlist ?? []),
           ]),
         ],
@@ -333,7 +332,6 @@ export function writerProfile(input: {
   worktree: string
   runsDir: string
   scratchDir: string
-  gitWriteRoots: string[]
   askAddress: string
   project: Project
   agent: string
@@ -349,7 +347,7 @@ export function writerProfile(input: {
     worktree,
     scratchDir,
   })
-  const broadLoopback = new Set(['localhost', '127.0.0.1', '[::1]'])
+  const broadLoopback = new Set<string>(LOOPBACK_DOMAINS)
   return {
     ...profile,
     network: {
@@ -362,9 +360,24 @@ export function writerProfile(input: {
     },
     filesystem: {
       ...profile.filesystem,
-      allowWrite: [
-        ...new Set([worktree, scratchDir, ...input.gitWriteRoots.map((path) => resolve(path))]),
-      ],
+      allowWrite: [worktree, scratchDir],
+      denyWrite: [...profile.filesystem.denyWrite, join(worktree, '.git')],
+    },
+  }
+}
+
+/** Run writer-authored checks with the writer filesystem boundary and no network. */
+export function writerBrokerProfile(
+  profile: SandboxRuntimeConfig,
+  needsProjectNetwork = false,
+): SandboxRuntimeConfig {
+  return {
+    ...profile,
+    network: {
+      allowedDomains: needsProjectNetwork ? [...LOOPBACK_DOMAINS] : [],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: needsProjectNetwork,
     },
   }
 }
@@ -459,7 +472,7 @@ export function selectReadonlySandboxKind(input: {
   if (!isSandboxCandidate(input)) {
     return { sandbox: 'host', reason: null, missingRoot: false }
   }
-  if (input.writesRepo) {
+  if (input.writingAcp) {
     if (!input.worktreePresent || !input.projectPresent) {
       return { sandbox: 'srt', reason: null, missingRoot: true }
     }
@@ -511,7 +524,6 @@ export function selectReadonlySandbox(input: {
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
   writingAcp?: boolean
-  writerGitWriteRoots?: string[]
   askAddress?: string
 }): SandboxSelection {
   const kind = selectReadonlySandboxKind({
@@ -534,7 +546,7 @@ export function selectReadonlySandbox(input: {
     return { sandbox: kind.sandbox, profile: null, reason: kind.reason }
   }
   const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
-  if (input.writesRepo) {
+  if (input.writingAcp) {
     if (!input.scratchDir || !input.project || !input.askAddress) {
       throw new Error(
         'writing ACP sandbox refusal: worktree, scratch, project, and ask endpoint are required',
@@ -547,7 +559,6 @@ export function selectReadonlySandbox(input: {
         worktree: input.worktree!,
         runsDir: input.runsDir,
         scratchDir: input.scratchDir,
-        gitWriteRoots: input.writerGitWriteRoots ?? [],
         askAddress: input.askAddress,
         project: input.project,
         agent: input.agent,

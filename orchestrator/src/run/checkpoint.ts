@@ -55,8 +55,18 @@ function git(
   cwd: string,
   args: string[],
   guardEnvironment: NodeJS.ProcessEnv,
+  containment?: { gitDir: string; disableHooks: boolean },
 ): { ok: boolean; out: string; error: string } {
-  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+  const repository = containment
+    ? [
+        `--git-dir=${containment.gitDir}`,
+        `--work-tree=${cwd}`,
+        ...(containment.disableHooks
+          ? ['-c', `core.hooksPath=${guardEnvironment.GIT_CONFIG_VALUE_0 ?? '/dev/null'}`]
+          : []),
+      ]
+    : ['-C', cwd]
+  const p = Bun.spawnSync(['git', ...repository, ...args], {
     env: { ...targetGitEnvironment(cwd), ...guardEnvironment },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -85,6 +95,8 @@ export function checkpointRun(input: {
   taskKey: string
   scratchDir: string
   guardEnvironment: NodeJS.ProcessEnv
+  gitDir?: string | null
+  disableHooks?: boolean
   final?: boolean
 }): CheckpointResult {
   const previous = input.database
@@ -96,16 +108,22 @@ export function checkpointRun(input: {
     appendRunEvent(input.runId, { ts: nowIso(), type: 'text', text: `checkpoint failed: ${error}` })
     return { created: false, commit: null, checkpointNo, taskPointer, error }
   }
-  const dirty = git(input.worktree, ['status', '--porcelain'], input.guardEnvironment)
+  if (input.disableHooks && !input.gitDir) {
+    return refusal('checkpoint refused: writing ACP run has no recorded git directory')
+  }
+  const containment =
+    input.disableHooks && input.gitDir ? { gitDir: input.gitDir, disableHooks: true } : undefined
+  const dirty = git(input.worktree, ['status', '--porcelain'], input.guardEnvironment, containment)
   if (!dirty.ok) return refusal(dirty.error)
   if (!dirty.out) return { created: false, commit: null, checkpointNo, taskPointer, error: null }
-  const staged = git(input.worktree, ['add', '-A'], input.guardEnvironment)
+  const staged = git(input.worktree, ['add', '-A'], input.guardEnvironment, containment)
   if (!staged.ok) return refusal(staged.error)
   // Adjacent to commit so the checked branch is the ref the commit will move.
   const currentBranch = git(
     input.worktree,
     ['symbolic-ref', '--short', 'HEAD'],
     input.guardEnvironment,
+    containment,
   )
   if (!currentBranch.ok || currentBranch.out !== input.branch) {
     return refusal(
@@ -113,9 +131,14 @@ export function checkpointRun(input: {
     )
   }
   const subject = `${input.taskKey} checkpoint run ${input.runId} #${checkpointNo}`
-  const committed = git(input.worktree, ['commit', '-m', subject], input.guardEnvironment)
+  const committed = git(
+    input.worktree,
+    ['commit', ...(input.disableHooks ? ['--no-verify'] : []), '-m', subject],
+    input.guardEnvironment,
+    containment,
+  )
   if (!committed.ok) return refusal(committed.error)
-  const commit = git(input.worktree, ['rev-parse', 'HEAD'], input.guardEnvironment)
+  const commit = git(input.worktree, ['rev-parse', 'HEAD'], input.guardEnvironment, containment)
   if (!commit.ok) return refusal(commit.error)
   input.database
     .query(

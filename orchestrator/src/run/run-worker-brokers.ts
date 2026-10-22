@@ -1,11 +1,13 @@
 // concern: run-worker-brokers
 /** Starts and stops worker-requested host execution brokers as one live-run resource. */
 
+import { join } from 'node:path'
 import {
   type FocusedTestBroker,
   startFocusedTestBroker,
 } from '../focused-test/focused-test-broker.ts'
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
+import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { registerLiveGate } from './run-process.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
@@ -19,16 +21,28 @@ export function startWorkerExecutionBrokers(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
+  sandboxProfile: SandboxRuntimeConfig | null
   onGateStart: (at: string) => void
   onGateFinish: (at: string) => void
 }): WorkerExecutionBrokers | null {
   if (!input.repoJob || !input.worktree) return null
-  const environment = runTestWorkerEnvironment(input.environment)
+  const environment = {
+    ...runTestWorkerEnvironment(input.environment),
+    ...(input.sandboxProfile
+      ? {
+          TMPDIR: input.scratchDir,
+          TMP: input.scratchDir,
+          TEMP: input.scratchDir,
+          BUN_INSTALL_CACHE_DIR: join(input.scratchDir, 'bun-cache'),
+        }
+      : {}),
+  }
   return {
     gate: startGateBroker({
       runId: input.runId,
       scratchDir: input.scratchDir,
       environment,
+      sandboxProfile: input.sandboxProfile,
       registerActive: registerLiveGate,
       onExecutionStart: ({ at }) => input.onGateStart(at),
       onExecutionFinish: ({ at }) => input.onGateFinish(at),
@@ -38,6 +52,7 @@ export function startWorkerExecutionBrokers(input: {
           runId: input.runId,
           scratchDir: input.scratchDir,
           environment,
+          sandboxProfile: input.sandboxProfile,
           registerActive: registerLiveGate,
         })
       : null,

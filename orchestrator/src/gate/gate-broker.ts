@@ -19,6 +19,7 @@ import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,
@@ -330,14 +331,24 @@ function recordFinishedGate(input: {
   }, database)
 }
 
-function spawnGateChild(input: {
+export async function gateBrokerLaunchArgv(
+  profile: SandboxRuntimeConfig | null,
+  command: string,
+  launch: typeof sandboxLaunchArgv = sandboxLaunchArgv,
+): Promise<string[]> {
+  return profile ? launch(profile, 'sh', ['-c', command]) : ['sh', '-c', command]
+}
+
+async function spawnGateChild(input: {
   command: string
   worktree: string
   environment: Record<string, string>
+  sandboxProfile: SandboxRuntimeConfig | null
   record: (chunk: Buffer | string) => void
 }) {
+  const launch = await gateBrokerLaunchArgv(input.sandboxProfile, input.command)
   return lowerRunChildPriority(
-    spawn('sh', ['-c', input.command], {
+    spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
       env: {
         ...brokerGateEnvironment(
@@ -358,12 +369,13 @@ async function runGateProcess(input: {
   command: string
   worktree: string
   environment: Record<string, string>
+  sandboxProfile: SandboxRuntimeConfig | null
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
 }): Promise<void> {
   const { state } = input
-  state.child = spawnGateChild(input)
+  state.child = await spawnGateChild(input)
   state.child.stdout?.on('data', input.record)
   state.child.stderr?.on('data', input.record)
   state.child.once('error', (error) => input.record(`gate could not start: ${String(error)}\n`))
@@ -433,6 +445,7 @@ async function runPreparedGate(input: {
   prepared: ReturnType<typeof prepareGateExecution>
   refreshBase: GateBaseRefresh
   environment: Record<string, string>
+  sandboxProfile: SandboxRuntimeConfig | null
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
@@ -453,6 +466,7 @@ async function runPreparedGate(input: {
         command: input.prepared.command,
         worktree: input.prepared.worktree,
         environment: input.environment,
+        sandboxProfile: input.sandboxProfile,
         state: input.state,
         record: input.record,
         stop: input.stop,
@@ -506,6 +520,7 @@ function startGateExecution(
   request: PendingGate,
   scratchDir: string,
   environment: Record<string, string>,
+  sandboxProfile: SandboxRuntimeConfig | null,
   registerActive: (terminate: () => Promise<void>) => () => void,
   onFinish: ((moment: GateExecutionMoment) => void) | undefined,
   hostSlot: HostSlotRunner,
@@ -544,7 +559,7 @@ function startGateExecution(
     let tail = ''
     let command: string | null = null
     let checkExecutions: CheckExecutionRecord[] = []
-    const checkExecutionPath = gateCheckExecutionPath()
+    const checkExecutionPath = gateCheckExecutionPath(scratchDir)
     const record = (chunk: Buffer | string) => {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       if (fd === null) throw new Error('gate log is not open')
@@ -562,6 +577,7 @@ function startGateExecution(
             prepared,
             refreshBase,
             environment: gateExecutionEnvironment(environment, checkExecutionPath),
+            sandboxProfile,
             state,
             record,
             stop,
@@ -609,6 +625,7 @@ export function startGateBroker(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
+  sandboxProfile?: SandboxRuntimeConfig | null
   registerActive?: (terminate: () => Promise<void>) => () => void
   onExecutionStart?: (moment: GateExecutionMoment) => void
   onExecutionFinish?: (moment: GateExecutionMoment) => void
@@ -630,6 +647,7 @@ export function startGateBroker(input: {
       request,
       input.scratchDir,
       input.environment,
+      input.sandboxProfile ?? null,
       registerActive,
       input.onExecutionFinish,
       input.withHostSlot ?? withGateSlot,
