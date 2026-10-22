@@ -3,20 +3,35 @@ import { expect, test } from 'bun:test'
 import { db, recordSessionSeen } from './db.ts'
 
 test('a session stamp records its process ancestor chain', () => {
-  recordSessionSeen('ancestor-test', '2026-10-21T20:00:00.000Z', [42, 7, 1])
+  const at = '2026-10-21T20:00:00.000Z'
+  const chain = [{ pid: 42, startTime: 'birth-42' }]
+  recordSessionSeen('ancestor-test', at, { chain, confirmedAt: at })
   expect(
-    db().query('SELECT ancestor_pids FROM session_seen WHERE session_id=?').get('ancestor-test'),
-  ).toEqual({ ancestor_pids: '[42,7,1]' })
+    db()
+      .query('SELECT ancestor_chain,ancestor_confirmed_at FROM session_seen WHERE session_id=?')
+      .get('ancestor-test'),
+  ).toEqual({ ancestor_chain: JSON.stringify(chain), ancestor_confirmed_at: at })
 })
 
 test('a session stamp without a chain preserves the stored chain', () => {
-  recordSessionSeen('ancestor-preserve-test', '2026-10-21T20:00:00.000Z', [42, 7, 1])
+  const chain = [{ pid: 42, startTime: 'birth-42' }]
+  recordSessionSeen('ancestor-preserve-test', '2026-10-21T20:00:00.000Z', {
+    chain,
+    confirmedAt: '2026-10-21T20:00:00.000Z',
+  })
   recordSessionSeen('ancestor-preserve-test', '2026-10-21T20:01:00.000Z')
   expect(
     db()
-      .query('SELECT ancestor_pids,last_seen FROM session_seen WHERE session_id=?')
+      .query(
+        `SELECT ancestor_chain,ancestor_confirmed_at,last_seen
+         FROM session_seen WHERE session_id=?`,
+      )
       .get('ancestor-preserve-test'),
-  ).toEqual({ ancestor_pids: '[42,7,1]', last_seen: '2026-10-21T20:01:00.000Z' })
+  ).toEqual({
+    ancestor_chain: JSON.stringify(chain),
+    ancestor_confirmed_at: '2026-10-21T20:00:00.000Z',
+    last_seen: '2026-10-21T20:01:00.000Z',
+  })
 })
 
 test('a failed heartbeat stamp never propagates', () => {

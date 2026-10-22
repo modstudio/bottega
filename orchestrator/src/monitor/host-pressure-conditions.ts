@@ -52,20 +52,33 @@ function pressureOwners(
   const chains = (
     database
       .query(
-        `SELECT session_id,ancestor_pids FROM session_seen
-         WHERE last_seen >= ? AND ancestor_pids IS NOT NULL`,
+        `SELECT session_id,ancestor_chain FROM session_seen
+         WHERE last_seen >= ? AND ancestor_confirmed_at >= ? AND ancestor_chain IS NOT NULL`,
       )
-      .all(liveSince) as { session_id: string; ancestor_pids: string }[]
+      .all(liveSince, liveSince) as { session_id: string; ancestor_chain: string }[]
   ).flatMap((row) => {
-    const chain = JSON.parse(row.ancestor_pids) as unknown
-    return Array.isArray(chain) && chain.every((pid) => Number.isInteger(pid))
-      ? [{ sessionId: row.session_id, chain: chain as number[] }]
+    const chain = JSON.parse(row.ancestor_chain) as unknown
+    return Array.isArray(chain) &&
+      chain.every(
+        (identity) =>
+          typeof identity === 'object' &&
+          identity !== null &&
+          Number.isInteger((identity as { pid?: unknown }).pid) &&
+          typeof (identity as { startTime?: unknown }).startTime === 'string',
+      )
+      ? [
+          {
+            sessionId: row.session_id,
+            chain: chain as { pid: number; startTime: string }[],
+          },
+        ]
       : []
   })
   const projects = sessionProjectRows(database)
-  const sessions = [...sessionAnchors(chains)].map(([sessionId, pid]) => ({
+  const sessions = [...sessionAnchors(chains)].map(([sessionId, anchor]) => ({
     sessionId,
-    pid,
+    pid: anchor.pid,
+    startTime: anchor.startTime,
     project: projects.get(sessionId) ?? null,
   }))
   const runRows = database

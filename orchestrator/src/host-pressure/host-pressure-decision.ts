@@ -22,7 +22,12 @@ export type PressureSample = {
   observationCpuMs: number
 }
 
-export type SessionAnchor = { sessionId: string; pid: number; project: string | null }
+export type SessionAnchor = {
+  sessionId: string
+  pid: number
+  startTime: string
+  project: string | null
+}
 export type LiveRunAnchor = { number: number; pid: number; project: string }
 type ProcessOwner =
   | { kind: 'run'; name: string; project: string }
@@ -82,6 +87,11 @@ export function attributeProcessTrees(
     add(run.pid, { kind: 'run', name: `run ${run.number}`, project: run.project }, processes)
   }
   for (const session of sessions) {
+    if (
+      sample.processes.find((process) => process.pid === session.pid)?.startTime !==
+      session.startTime
+    )
+      continue
     const processes = sample.processes.filter(
       (process) =>
         !assigned.has(process.pid) && processDescendsFrom(process.pid, session.pid, parents),

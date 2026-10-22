@@ -15,7 +15,7 @@ export type ProcessFact = {
   cwd: string | null
   cwdVerified: boolean
 }
-export type ProcessSample = Pick<ProcessFact, 'pid' | 'ppid' | 'cpu' | 'command'>
+export type ProcessSample = Pick<ProcessFact, 'pid' | 'ppid' | 'cpu' | 'command' | 'startTime'>
 export type OrphanProcess = ProcessFact & {
   missingTree: string
   project: string
@@ -111,21 +111,42 @@ export function processTableSnapshot(): { facts: ProcessFact[]; error: string | 
   }
 }
 
-export type SessionProcessChain = { sessionId: string; chain: number[] }
+export type ProcessIdentity = Pick<ProcessFact, 'pid' | 'startTime'>
+export type SessionProcessChain = { sessionId: string; chain: ProcessIdentity[] }
 
-/** The highest ancestor unique to one live session is its harness-independent anchor. */
-export function sessionAnchors(chains: SessionProcessChain[]): Map<string, number> {
+/** Keep the ancestors shared by both observations, ordered nearest the CLI to PID 1. */
+export function commonAncestorChain(
+  previous: readonly ProcessIdentity[],
+  observed: readonly ProcessIdentity[],
+): ProcessIdentity[] {
+  let previousIndex = previous.length - 1
+  let observedIndex = observed.length - 1
+  while (
+    previousIndex >= 0 &&
+    observedIndex >= 0 &&
+    previous[previousIndex]!.pid === observed[observedIndex]!.pid &&
+    previous[previousIndex]!.startTime === observed[observedIndex]!.startTime
+  ) {
+    previousIndex--
+    observedIndex--
+  }
+  return observed.slice(observedIndex + 1)
+}
+
+/** The nearest non-init ancestor, unless another live session also contains that PID. */
+export function sessionAnchors(chains: SessionProcessChain[]): Map<string, ProcessIdentity> {
   const appearances = new Map<number, Set<string>>()
   for (const { sessionId, chain } of chains)
-    for (const pid of new Set(chain)) {
+    for (const pid of new Set(chain.map((identity) => identity.pid))) {
       const sessions = appearances.get(pid) ?? new Set<string>()
       sessions.add(sessionId)
       appearances.set(pid, sessions)
     }
-  const anchors = new Map<string, number>()
+  const anchors = new Map<string, ProcessIdentity>()
   for (const { sessionId, chain } of chains) {
-    const anchor = [...chain].reverse().find((pid) => appearances.get(pid)?.size === 1)
-    if (anchor !== undefined) anchors.set(sessionId, anchor)
+    const anchor = chain[0]
+    if (anchor && anchor.pid !== 1 && appearances.get(anchor.pid)?.size === 1)
+      anchors.set(sessionId, anchor)
   }
   return anchors
 }
@@ -156,6 +177,19 @@ export function ancestorChain(pid: number, processes: readonly ProcessSample[]):
     current = parents.get(current)
   }
   return chain
+}
+
+export function ancestorIdentityChain(
+  pid: number,
+  processes: readonly ProcessSample[],
+): ProcessIdentity[] {
+  const identities = new Map(
+    processes.map((process) => [process.pid, { pid: process.pid, startTime: process.startTime }]),
+  )
+  return ancestorChain(pid, processes).flatMap((ancestorPid) => {
+    const identity = identities.get(ancestorPid)
+    return identity ? [identity] : []
+  })
 }
 
 /** Preserve cwd evidence, but mark it safe to act on only when both snapshots agree on birth. */

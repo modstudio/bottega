@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { HostLoad } from '../gate-load.ts'
-import { loadHostPressureSamples, sampleHostPressure } from './host-pressure-service.ts'
+import {
+  loadHostPressureSamples,
+  sampleHostPressure,
+  stampSessionProcessObservation,
+} from './host-pressure-service.ts'
 
 const load: HostLoad = {
   gates: 0,
@@ -41,4 +45,38 @@ test('an unavailable process table and sampler cost are stored as observed', () 
   expect(loadHostPressureSamples(database, Date.parse('2026-10-21T20:00:01.000Z'))).toMatchObject([
     { processes: null, observationElapsedMs: 12.5, observationCpuMs: 3.25 },
   ])
+})
+
+test('session process stamps retain the common suffix and do not refresh on failure', () => {
+  const database = migratedTestDatabase()
+  const firstAt = '2026-10-21T20:00:00.000Z'
+  const secondAt = '2026-10-21T20:01:00.000Z'
+  const failedAt = '2026-10-21T20:02:00.000Z'
+  const identity = (pid: number) => ({ pid, startTime: `birth-${pid}` })
+  stampSessionProcessObservation(database, 'session-common', firstAt, [
+    identity(501),
+    identity(400),
+    identity(300),
+    identity(1),
+  ])
+  stampSessionProcessObservation(database, 'session-common', secondAt, [
+    identity(502),
+    identity(400),
+    identity(300),
+    identity(1),
+  ])
+  stampSessionProcessObservation(database, 'session-common', failedAt, undefined)
+
+  expect(
+    database
+      .query(
+        `SELECT ancestor_chain,ancestor_confirmed_at,last_seen
+         FROM session_seen WHERE session_id='session-common'`,
+      )
+      .get(),
+  ).toEqual({
+    ancestor_chain: JSON.stringify([identity(400), identity(300), identity(1)]),
+    ancestor_confirmed_at: secondAt,
+    last_seen: failedAt,
+  })
 })

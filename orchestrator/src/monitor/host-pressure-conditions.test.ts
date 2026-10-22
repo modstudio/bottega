@@ -19,8 +19,14 @@ const load: HostLoad = {
   oldestWaitMs: 0,
 }
 const processes = [
-  { pid: 1, ppid: 0, cpu: 0, command: 'launchd' },
-  { pid: 10, ppid: 1, cpu: 250, command: '/opt/LogiPluginService --daemon' },
+  { pid: 1, ppid: 0, cpu: 0, command: 'launchd', startTime: 'init-birth' },
+  {
+    pid: 10,
+    ppid: 1,
+    cpu: 250,
+    command: '/opt/LogiPluginService --daemon',
+    startTime: 'service-birth',
+  },
 ]
 const observed = { processes, error: null, elapsedMs: 8, cpuMs: 3 }
 

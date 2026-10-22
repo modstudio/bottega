@@ -8,9 +8,9 @@ import {
 } from './host-pressure-decision.ts'
 
 const busy: ProcessSample[] = [
-  { pid: 1, ppid: 0, cpu: 0, command: 'launchd' },
-  { pid: 10, ppid: 1, cpu: 10, command: 'harness' },
-  { pid: 11, ppid: 10, cpu: 240, command: 'python tune.py' },
+  { pid: 1, ppid: 0, cpu: 0, command: 'launchd', startTime: 'init-birth' },
+  { pid: 10, ppid: 1, cpu: 10, command: 'harness', startTime: 'harness-birth' },
+  { pid: 11, ppid: 10, cpu: 240, command: 'python tune.py', startTime: 'job-birth' },
 ]
 const sample = (sampledAt: number, processes: ProcessSample[] | null = busy): PressureSample => ({
   sampledAt,
@@ -25,7 +25,7 @@ const sustained = (processes: ProcessSample[] | null = busy) => [
   sample(0, processes),
   sample(HOST_PRESSURE_WINDOW_MS, processes),
 ]
-const session = [{ sessionId: 'session', pid: 10, project: 'alpha' }]
+const session = [{ sessionId: 'session', pid: 10, startTime: 'harness-birth', project: 'alpha' }]
 
 test('sustained session pressure yields one addressed attribution with its project', () => {
   expect(decideHostPressure({ samples: sustained(), sessions: session, runs: [] })).toMatchObject([
@@ -60,6 +60,28 @@ test('an unowned busy tree yields an operator attribution named by command', () 
   expect(decideHostPressure({ samples: sustained(), sessions: [], runs: [] })).toMatchObject([
     { owner: { kind: 'outside', name: 'harness' }, rootPid: 10, rootCommand: 'harness' },
   ])
+})
+
+test('a reused anchor pid with another start time owns nothing', () => {
+  const staleSession = [{ ...session[0]!, startTime: 'earlier-harness-birth' }]
+  expect(attributeProcessTrees(sample(0), staleSession, [])[0]).toMatchObject({
+    owner: { kind: 'outside', name: 'harness' },
+  })
+  expect(
+    decideHostPressure({ samples: sustained(), sessions: staleSession, runs: [] }),
+  ).toMatchObject([{ owner: { kind: 'outside', name: 'harness' } }])
+})
+
+test('a process outside a session anchor tree stays outside', () => {
+  const processes: ProcessSample[] = [
+    ...busy,
+    { pid: 20, ppid: 1, cpu: 300, command: 'other-service', startTime: 'other-birth' },
+  ]
+  expect(attributeProcessTrees(sample(0, processes), session, [])).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ owner: expect.objectContaining({ kind: 'outside' }), rootPid: 20 }),
+    ]),
+  )
 })
 
 test('a persisting episode remains one episode attribution', () => {

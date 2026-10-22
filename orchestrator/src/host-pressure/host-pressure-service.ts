@@ -3,10 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, recordSessionSeen, writeTransaction } from '../database/db.ts'
+import { db, recordSessionSeen, sessionId, writeTransaction } from '../database/db.ts'
 import { type HostLoad, measureHostLoad } from '../gate-load.ts'
 import {
-  ancestorChain,
+  ancestorIdentityChain,
+  commonAncestorChain,
+  type ProcessIdentity,
   type ProcessSample,
   processTableSnapshot,
 } from '../resources/process-inventory.ts'
@@ -32,7 +34,13 @@ function observeProcessTable(): ProcessTableObservation {
     return {
       processes: observed.error
         ? null
-        : observed.facts.map(({ pid, ppid, cpu, command }) => ({ pid, ppid, cpu, command })),
+        : observed.facts.map(({ pid, ppid, cpu, command, startTime }) => ({
+            pid,
+            ppid,
+            cpu,
+            command,
+            startTime,
+          })),
       error: observed.error ? `process table unavailable: ${observed.error}` : null,
       elapsedMs: performance.now() - startedAt,
       cpuMs: (cpu.user + cpu.system) / 1_000,
@@ -87,11 +95,48 @@ export function sampleHostPressure(
   }, database)
 }
 
-function sessionAncestorPids(
+function sessionAncestorChain(
   observed: ProcessTableObservation,
   pid = process.pid,
-): number[] | undefined {
-  return observed.processes ? ancestorChain(pid, observed.processes) : undefined
+): ProcessIdentity[] | undefined {
+  return observed.processes ? ancestorIdentityChain(pid, observed.processes) : undefined
+}
+
+function parseAncestorChain(value: string | null): ProcessIdentity[] | null {
+  if (value === null) return null
+  const parsed = JSON.parse(value) as unknown
+  return Array.isArray(parsed) &&
+    parsed.every(
+      (identity) =>
+        typeof identity === 'object' &&
+        identity !== null &&
+        Number.isInteger((identity as ProcessIdentity).pid) &&
+        typeof (identity as ProcessIdentity).startTime === 'string',
+    )
+    ? (parsed as ProcessIdentity[])
+    : null
+}
+
+export function stampSessionProcessObservation(
+  database: Database,
+  sid: string | null,
+  at: string,
+  chain: ProcessIdentity[] | undefined,
+): void {
+  if (!sid || chain === undefined) {
+    recordSessionSeen(sid, at, undefined, database)
+    return
+  }
+  const stored = database
+    .query('SELECT ancestor_chain FROM session_seen WHERE session_id=?')
+    .get(sid) as { ancestor_chain: string | null } | null
+  const previous = parseAncestorChain(stored?.ancestor_chain ?? null)
+  recordSessionSeen(
+    sid,
+    at,
+    { chain: previous ? commonAncestorChain(previous, chain) : chain, confirmedAt: at },
+    database,
+  )
 }
 
 function parseProcesses(value: string | null): ProcessSample[] | null {
@@ -129,13 +174,20 @@ export function loadHostPressureSamples(database: Database, clock: number): Pres
 /** The CLI boundary calls one service; observation and advisory failure stay inside it. */
 export function recordSessionHostPressure(database?: Database): void {
   const observed = observeProcessTable()
+  const store = database ?? db()
+  const observedAt = new Date().toISOString()
   try {
-    recordSessionSeen(undefined, undefined, sessionAncestorPids(observed))
+    stampSessionProcessObservation(
+      store,
+      sessionId(store),
+      observedAt,
+      sessionAncestorChain(observed),
+    )
   } catch {
     // Session ancestry is advisory. It must not break the command being stamped.
   }
   try {
-    sampleHostPressure(database ?? db(), undefined, undefined, observed)
+    sampleHostPressure(store, undefined, observedAt, observed)
   } catch {
     // Host sampling is advisory. It must not break the command that supplied the heartbeat.
   }

@@ -1,4 +1,5 @@
-ALTER TABLE session_seen ADD COLUMN ancestor_pids TEXT;
+ALTER TABLE session_seen ADD COLUMN ancestor_chain TEXT;
+ALTER TABLE session_seen ADD COLUMN ancestor_confirmed_at TEXT;
 
 CREATE TABLE host_pressure_sample (
   record_id TEXT PRIMARY KEY NOT NULL,
