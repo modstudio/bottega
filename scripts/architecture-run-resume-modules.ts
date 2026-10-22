@@ -12,6 +12,10 @@ export const runResumeModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/run/continuation-message.ts',
+    allowed: ['node:crypto'],
+  },
+  {
     file: 'orchestrator/src/run/checkpoint-resume-context.ts',
     allowed: [],
   },

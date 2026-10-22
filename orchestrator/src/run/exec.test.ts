@@ -6,8 +6,8 @@ import { RefusalError } from '../refusal-error.ts'
 import { main, startupFailureDiagnostic } from './exec.ts'
 
 test('a startup refusal reports its message without a stack', () => {
-  const refusal = new RefusalError(`run ${PLATFORM_SLUG} agent show probe codex`)
-  expect(startupFailureDiagnostic(refusal)).toBe(`run ${PLATFORM_SLUG} agent show probe codex`)
+  const refusal = new RefusalError(`run ${PLATFORM_SLUG} agent probe codex`)
+  expect(startupFailureDiagnostic(refusal)).toBe(`run ${PLATFORM_SLUG} agent probe codex`)
 })
 
 test('an unexpected startup error keeps its stack', () => {

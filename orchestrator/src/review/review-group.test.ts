@@ -3,8 +3,9 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
+import type { ReviewPlan } from './review-applicability.ts'
 import { measureChangeGroup, reviewsForTriage } from './review-group.ts'
-import type { ReviewTier } from './review-tier.ts'
+import type { ReviewTier } from './review-tier-classifier.ts'
 
 test('change-group lookup carries the same patch after rebase and rejects a different patch', () => {
   const database = new Database(':memory:')
@@ -137,6 +138,7 @@ test('a rebase credits the complete round from the same branch and never another
 test('a moved remote trunk is the shared base for review and admission despite stale local trunk', () => {
   const calls: string[] = []
   const tier: ReviewTier = { tier: 1, risk: 1, size: 0, reasons: ['fixture'], riskBasis: null }
+  const plan: ReviewPlan = { tier, applicability: { lenses: ['correctness'] } }
   const operations = {
     mergeBase: (_cwd: string, tip: string, trunk: string) => {
       calls.push(`${tip}:${trunk}`)
@@ -147,7 +149,7 @@ test('a moved remote trunk is the shared base for review and admission despite s
       paths: ['src/change.ts'],
       message: `${base}:${tip}`,
     }),
-    tier: () => tier,
+    reviewPlan: () => plan,
   }
   const project = { name: 'fixture', settings: { trunk: 'main' } }
   const reviewed = measureChangeGroup('/fixture', project, 'DEV-977', 'rebased-tip', operations)
@@ -156,5 +158,6 @@ test('a moved remote trunk is the shared base for review and admission despite s
   expect(calls).toEqual(['rebased-tip:main', 'changed-tip:main'])
   expect(reviewed?.base).toBe('moved-origin-base')
   expect(reviewed?.group.patchId).toBe('reviewed-patch')
+  expect(reviewed?.applicability.lenses).toEqual(['correctness'])
   expect(changed?.group.patchId).toBe('changed-patch')
 })

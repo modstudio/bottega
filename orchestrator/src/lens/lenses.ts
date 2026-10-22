@@ -11,6 +11,7 @@ import type {
 } from '../record/record-lens-contract.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { BUILT_IN_LENS_DEFAULT_PROFILE } from './lens-built-ins.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
@@ -204,6 +205,19 @@ function profileValues(body: string, slots: string): Record<string, string> {
     )
   return values as Record<string, string>
 }
+
+function defaultProfileBody(slots: string): string {
+  const builtInValues = objectJson(BUILT_IN_LENS_DEFAULT_PROFILE, 'built-in default profile')
+  return JSON.stringify(
+    Object.fromEntries(
+      slotNames(slots).names.map((slot) => [
+        slot,
+        typeof builtInValues[slot] === 'string' ? builtInValues[slot] : 'None.',
+      ]),
+    ),
+  )
+}
+
 const coreSnapshot = (row: CoreRow) =>
   JSON.stringify({
     title: row.title,
@@ -647,6 +661,34 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
 const disabledLensRefusal = (id: string, what: string) =>
   `${what}\ninvariant: A disabled catalogue lens or selected profile never dispatches.\ncleared by: enable ${id} or select an enabled profile`
 
+function resolvedProfile(
+  core: CoreRow,
+  axis: LensAxis,
+  choice: ProfileSelection & { source: LensProfileSource },
+  catalogueProfiles: ProfileRow[],
+  d: Database,
+): ProfileRow {
+  const profile = catalogueProfiles.find(
+    (candidate) => candidate.axis === axis && candidate.name === choice.name,
+  )
+  if (profile) return versionedProfile(profile, choice.version, d)
+  if (choice.source !== 'generic')
+    throw new Error(
+      disabledLensRefusal(core.id, `lens "${core.id}" has no ${axis} profile "${choice.name}"`),
+    )
+  return {
+    record_id: `generic:${core.record_id}:${axis}`,
+    lens_record_id: core.record_id,
+    lens_id: core.id,
+    axis,
+    name: 'default',
+    version: 1,
+    body: defaultProfileBody(core.slots),
+    enabled: 1,
+    space_id: core.space_id,
+  }
+}
+
 export function resolveLens(id: string, projectName: string | null, d: Database = db()) {
   const spaceId = lensProfileSpace(projectName, d)
   const core = d
@@ -655,7 +697,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
   if (!core) return null
   if (!core.enabled) throw new Error(disabledLensRefusal(id, `lens "${id}" is disabled`))
   const project = projectName ? projectByName(projectName, d) : null
-  const axes = d
+  const declaredAxes = d
     .query(`SELECT axis FROM (
     SELECT DISTINCT p.axis FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id WHERE l.id=? AND p.enabled=1 AND p.space_id IS ?
     UNION
@@ -663,6 +705,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
       WHERE s.project_record_id=? AND (l.id=? OR s.lens_record_id IS NULL) AND s.space_id IS ?
   ) ORDER BY axis`)
     .all(id, spaceId, project?.recordId ?? -1, id, spaceId) as { axis: LensAxis }[]
+  const axes = declaredAxes.length ? declaredAxes : [{ axis: LENS_AXES[0] }]
   const profiles: (ProfileRow & { source: LensProfileSource })[] = []
   for (const { axis } of axes) {
     const selections = project
@@ -692,14 +735,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
       enabledProfileNames,
       stack: project?.stack ?? null,
     })
-    const profile = catalogueProfiles.find(
-      (candidate) => candidate.axis === axis && candidate.name === choice.name,
-    ) as ProfileRow | undefined
-    if (!profile)
-      throw new Error(
-        disabledLensRefusal(id, `lens "${id}" has no ${axis} profile "${choice.name}"`),
-      )
-    const chosen = versionedProfile(profile, choice.version, d)
+    const chosen = resolvedProfile(core, axis, choice, catalogueProfiles, d)
     if (!chosen.enabled)
       throw new Error(
         disabledLensRefusal(id, `lens "${id}" selected disabled ${axis} profile "${choice.name}"`),

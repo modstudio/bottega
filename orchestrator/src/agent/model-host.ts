@@ -219,7 +219,7 @@ export function localAgentHealth(name: string): LocalHealth | null {
  * binary that is sitting right there on PATH.
  */
 export function fileContractProbeReason(name: string): string {
-  return `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe ${name}`
+  return `registration probe predates the file contract; run ${PLATFORM_SLUG} agent probe ${name}`
 }
 
 export function predatesFileContract(agent: Agent): boolean {
@@ -231,10 +231,10 @@ export function unavailableReason(name: string): string | null {
   if (!a) return 'unknown agent'
   if (a.enabled === false) return `disabled — ${a.disabledReason}`
   if (a.probePassed === null)
-    return `registration probe incomplete; run ${PLATFORM_SLUG} agent show probe ${name}`
+    return `registration probe incomplete; run ${PLATFORM_SLUG} agent probe ${name}`
   if (a.probedAt && a.probePassed === false) return 'registration probe failed'
   if (a.contextTokens === 0) {
-    return `no declared context window; run ${PLATFORM_SLUG} agent show set ${name} --context-tokens <tokens>`
+    return `no declared context window; run ${PLATFORM_SLUG} agent set ${name} --context-tokens <tokens>`
   }
   if (!harnessInstalled(name)) return 'not installed'
   if (a.operatedBy === 'self') {

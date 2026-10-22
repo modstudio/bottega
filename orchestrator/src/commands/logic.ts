@@ -5,11 +5,11 @@ import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
-import { vendorProbeCommand } from '../agent/vendor-probe.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { checkCommand } from '../check/check-commands.ts'
+import { parseContinueArgs } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
@@ -61,6 +61,7 @@ import { collect, log, productArgv, rawArgv, write, writeStdout } from './suppor
 import { registerWorkflowCommands } from './workflow.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
+const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
     .number
@@ -316,7 +317,6 @@ function registerAgentCommands(program: Command): void {
     .option('--max-concurrent <value>', 'limit concurrent runs for this agent')
     .option('--enabled <value>', 'enable or disable the agent')
     .option('--reason <value>', 'record why the agent is disabled')
-    .option('--json', 'write the agent listing as JSON')
     .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
 }
 
@@ -509,10 +509,11 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--detach', 'return after starting the continuation')
     .option('--quiet', 'suppress collection guidance and followed output')
     .option('--findings', 'include prior review findings in the continuation')
-    .action((id, _message, options, command) =>
-      continueCommand(
-        localRunId(id),
-        rawArgv(command).slice(2),
+    .action((_id, _message, options, command) => {
+      const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
+      return continueCommand(
+        localRunId(parsed.identifier),
+        parsed,
         Boolean(options.findings),
         runFlags(options),
         presentation,
@@ -523,8 +524,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
             message,
           ),
         dependencies.continueCommandDependencies,
-      ),
-    )
+      )
+    })
   const doVerb = describedCommand(
     program,
     'do <job> [prompt...]',
@@ -561,11 +562,6 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       log(formatPassingGate(result))
       presentation.setExitCode(result.gateId === null ? 1 : 0)
     })
-  program
-    .command('probe <agent>')
-    .description('clear a vendor-quota exclusion once the agent answers')
-    .allowExcessArguments(false)
-    .action((agent) => vendorProbeCommand(agent, presentation))
   describedCommand(program, 'pick <job>', 'preview the agent selected for a job')
     .option('--agent <value>', 'select this agent if it is eligible')
     .option('--avoid <value>', 'exclude this agent from the preview')

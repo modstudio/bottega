@@ -141,7 +141,7 @@ A vendor **content refusal** fails over immediately, but neither cools the agent
 
 An agent is a row: harness, backend, and model. None of those is a capability declaration.
 
-**Capabilities come from `bottega agent show probe`, never from inference or a model card.** An unprobed row is ineligible for repository work; a row with no declared or probed window is ineligible for every job with a working set.
+**Capabilities come from `bottega agent probe`, never from inference or a model card.** An unprobed row is ineligible for repository work; a row with no declared or probed window is ineligible for every job with a working set.
 
 - `readsRepo` — can find and open files unaided. **`agy` cannot.** Its row is disabled and retained as the referent for that history. Inline work routes to the cheapest enabled inline-capable row. **A diff is already a self-contained pack.** Packs that name sources instead of carrying them fail on an agent that cannot prompt for a read. Detail: `bottega doc list --scope job`.
 - `mcp` — can call the MCP servers **that client has registered**, not this machine's. `--mcp` means this agent can use the servers it has. Grok does not start a repo-local server until the folder is trusted; for an orch-created worktree, `--mcp` passes scoped `--trust`. A healthy unrelated server such as `bottega-ask` does not count. Detail: `bottega doc list --scope agent`.
@@ -152,7 +152,7 @@ An agent is a row: harness, backend, and model. None of those is a capability de
 
 # Local model
 
-`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `bottega agent show add`, then probe. `bottega machine doctor` prints the command when `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
+`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `bottega agent add`, then probe. `bottega machine doctor` prints the command when `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
 
 `available()` is configuration; `bottega machine doctor` is reachability. The registration probe is the authority on file tools and structured output; `/v1/models` is the authority on the served window. `local-acp` must be served with a window of at least a deep job's `contextTokens` plus `OUTPUT_RESERVE`.
 

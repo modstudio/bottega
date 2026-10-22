@@ -28,14 +28,4 @@ export const agentProbeModules = [
     '../run/run-number.ts',
     '../transport/transport.ts',
   ]),
-  module('orchestrator/src/agent/vendor-probe.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
-    './agent-registry.ts',
-    './endpoint-api-key.ts',
-    '../database/db.ts',
-    '../failure/failure.ts',
-    '../run/run-number.ts',
-    '../transport/transport.ts',
-  ]),
 ]

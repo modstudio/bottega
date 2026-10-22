@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { categorizeFile } from '../../../shared/file-kind.ts'
-import { classifyReviewTier } from '../review/review-tier.ts'
+import { classifyReviewTier } from '../review/review-tier-classifier.ts'
 import { applyHydration } from './canon-apply.ts'
 import {
   canonMirrorCommitBody,

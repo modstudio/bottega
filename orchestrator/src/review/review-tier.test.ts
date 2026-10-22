@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  classifyReviewTier,
   parseTierRange,
   resolveTierRange,
   type TierRangeEndpoint,
   type TierRangeFacts,
-  tierThreeRiskPaths,
 } from './review-tier.ts'
+import { classifyReviewTier, tierThreeRiskPaths } from './review-tier-classifier.ts'
 
 describe('tier range parsing', () => {
   test.each([

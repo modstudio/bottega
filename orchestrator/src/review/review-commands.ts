@@ -255,25 +255,17 @@ function reviewTierOutput(value: string, cwd: string) {
     ...branchBudget,
     roundNeeded: postFix.kind !== 'no-round-needed',
   })
-  const selected =
-    postFix.kind === 'no-round-needed' || postFix.kind === 're-lens'
-      ? postFix.applicability
-      : output
   return {
     ...output,
-    ...selected,
-    lensBases: selected.lensBases,
-    secondOpinion: selected.secondOpinion,
-    secondOpinionBasis: selected.secondOpinionBasis,
     post_fix: postFix,
     review_budget: {
       ...reviewBudget,
       eligibleReviewCount: branchBudget.eligibleReviewCount,
       unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
     },
-    lens_profiles: selected.lenses.map((id) => ({
+    lens_profiles: output.lenses.map((id) => ({
       id,
-      basis: selected.lensBases?.[id] ?? null,
+      basis: output.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
