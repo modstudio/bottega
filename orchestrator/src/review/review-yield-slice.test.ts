@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { ReviewSettings } from '../project/project-injection.ts'
 import {
   isMediumPlusHit,
   mediumPlusAcceptedCount,
@@ -6,13 +7,12 @@ import {
   NO_DECLARED_GLOB,
   UNRECORDED_SLICE,
   yieldAreaKey,
-  yieldLensDeclarations,
   yieldPathAreas,
   yieldRiskKey,
   yieldSizeKey,
 } from './review-yield-slice.ts'
 
-const lenses = [
+const lenses: ReviewSettings['lenses'] = [
   { lens: 'correctness' },
   { lens: 'craft', minTier: 2 },
   { lens: 'test-quality', paths: ['**/*.test.ts'] },
@@ -22,25 +22,22 @@ const lenses = [
 
 describe('yield path areas', () => {
   test('matches declared globs and ignores unscoped lenses', () => {
-    expect(yieldPathAreas('["src/a.ts"]', lenses)).toEqual([NO_DECLARED_GLOB])
-    expect(yieldPathAreas('["foo.test.ts"]', lenses)).toEqual(['test-quality'])
+    expect(yieldPathAreas(['src/a.ts'], lenses)).toEqual([NO_DECLARED_GLOB])
+    expect(yieldPathAreas(['foo.test.ts'], lenses)).toEqual(['test-quality'])
   })
 
-  test('counts a path_set in every matching concern and keeps declaration order', () => {
+  test('counts a path_set in every matching concern', () => {
     expect(
-      yieldPathAreas('["foo.test.ts","orchestrator/hooks/no-attribution.py"]', lenses),
-    ).toEqual(['test-quality', 'safety'])
+      new Set(yieldPathAreas(['foo.test.ts', 'orchestrator/hooks/no-attribution.py'], lenses)),
+    ).toEqual(new Set(['test-quality', 'safety']))
   })
 
   test('collapses a concern declared twice', () => {
-    expect(yieldPathAreas('["foo.test.ts","bar.test.tsx"]', lenses)).toEqual(['test-quality'])
+    expect(yieldPathAreas(['foo.test.ts', 'bar.test.tsx'], lenses)).toEqual(['test-quality'])
   })
 
-  test('an unreadable or empty path_set is the residual', () => {
-    expect(yieldPathAreas(null, lenses)).toEqual([NO_DECLARED_GLOB])
-    expect(yieldPathAreas('not-json', lenses)).toEqual([NO_DECLARED_GLOB])
-    expect(yieldPathAreas('{"path":"a.ts"}', lenses)).toEqual([NO_DECLARED_GLOB])
-    expect(yieldPathAreas('[]', lenses)).toEqual([NO_DECLARED_GLOB])
+  test('a readable path_set that matches no declared glob is the residual', () => {
+    expect(yieldPathAreas([], lenses)).toEqual([NO_DECLARED_GLOB])
   })
 })
 
@@ -52,21 +49,7 @@ describe('yield slice keys', () => {
     expect(yieldRiskKey('craft', null)).toBe(`craft / risk ${UNRECORDED_SLICE}`)
     expect(yieldAreaKey('craft', 'test-quality')).toBe('craft / test-quality')
     expect(yieldAreaKey('craft', NO_DECLARED_GLOB)).toBe(`craft / ${NO_DECLARED_GLOB}`)
-  })
-
-  test('reads path-scoped lenses from project settings and drops a malformed blob', () => {
-    expect(
-      yieldLensDeclarations(
-        JSON.stringify({
-          review: {
-            lenses: [{ lens: 'craft' }, { lens: 'safety', paths: ['hooks/**'] }],
-          },
-        }),
-      ),
-    ).toEqual([{ lens: 'craft' }, { lens: 'safety', paths: ['hooks/**'] }])
-    expect(yieldLensDeclarations(null)).toEqual([])
-    expect(yieldLensDeclarations('not-json')).toEqual([])
-    expect(yieldLensDeclarations('{"review":{"lenses":"craft"}}')).toEqual([])
+    expect(yieldAreaKey('craft', UNRECORDED_SLICE)).toBe(`craft / ${UNRECORDED_SLICE}`)
   })
 })
 

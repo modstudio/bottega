@@ -34,7 +34,8 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-yield-slice.ts',
-    allowed: ['./review-vocabulary.ts'],
+    allowed: ['./review-declared-globs.ts', './review-vocabulary.ts'],
+    typeOnlyAllowed: ['../project/project-injection.ts'],
   },
   {
     file: 'orchestrator/src/review/review-command-cwd.ts',
@@ -94,7 +95,8 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-yield-slice-boundary',
     file: 'orchestrator/src/review/review-yield-slice.ts',
-    allowed: ['./review-vocabulary.ts'],
+    allowed: ['./review-declared-globs.ts', './review-vocabulary.ts'],
+    typeOnlyAllowed: ['../project/project-injection.ts'],
     reason:
       'Keep yield slice keys and path-area matching as a pure decision over path_set and declared globs.',
   },
@@ -113,7 +115,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-applicability-boundary',
     file: 'orchestrator/src/review/review-applicability.ts',
-    allowed: ['./review-tier-classifier.ts'],
+    allowed: ['./review-declared-globs.ts', './review-tier-classifier.ts'],
     typeOnlyAllowed: ['../project/project-injection.ts'],
     reason:
       'Keep change classification and project lens selection independent of stores, processes, and clocks.',

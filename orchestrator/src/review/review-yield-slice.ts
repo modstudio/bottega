@@ -5,6 +5,8 @@
  * Must not know the store, clocks, or processes.
  */
 
+import type { ReviewSettings } from '../project/project-injection.ts'
+import { declaredGlobsMatch } from './review-declared-globs.ts'
 import { REVIEW_SEVERITY, type ReviewSeverity } from './review-vocabulary.ts'
 
 export const NO_DECLARED_GLOB = '(no declared glob)'
@@ -12,44 +14,24 @@ export const UNRECORDED_SLICE = 'unrecorded'
 
 const MEDIUM_PLUS = REVIEW_SEVERITY.slice(0, 3)
 
-export type YieldLensDeclaration = {
-  lens: string
-  paths?: readonly string[]
-}
-
 export type YieldFinding = {
   disposition: string | null
   triaged_severity: string | null
 }
 
-/** Declared path-scoped lenses from a project settings JSON blob. */
-export function yieldLensDeclarations(projectSettings: string | null): YieldLensDeclaration[] {
-  if (!projectSettings) return []
-  try {
-    const parsed = JSON.parse(projectSettings) as {
-      review?: { lenses?: YieldLensDeclaration[] }
-    }
-    return Array.isArray(parsed.review?.lenses) ? parsed.review.lenses : []
-  } catch {
-    return []
-  }
-}
-
 /**
  * Concerns whose declared globs match any path in the review's path_set.
  * Unscoped lenses are not areas. A path_set may belong to several concerns;
- * none matching, or an unreadable path_set, is the residual.
+ * none matching is the residual.
  */
 export function yieldPathAreas(
-  pathSet: string | null,
-  lenses: readonly YieldLensDeclaration[],
+  paths: readonly string[],
+  lenses: ReviewSettings['lenses'],
 ): string[] {
-  const paths = changedPaths(pathSet)
   const areas: string[] = []
   for (const entry of lenses) {
     if (!entry.paths?.length) continue
-    if (!entry.paths.some((pattern) => paths.some((path) => new Bun.Glob(pattern).match(path))))
-      continue
+    if (!declaredGlobsMatch(paths, entry.paths)) continue
     if (areas.includes(entry.lens)) continue
     areas.push(entry.lens)
   }
@@ -86,15 +68,4 @@ export function mediumPlusAcceptedYield(
   if (!completeRows.length) return null
   const hits = completeRows.filter((row) => row.findings.some(isMediumPlusHit)).length
   return hits / completeRows.length
-}
-
-function changedPaths(pathSet: string | null): string[] {
-  if (!pathSet) return []
-  try {
-    const parsed = JSON.parse(pathSet) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((path): path is string => typeof path === 'string')
-  } catch {
-    return []
-  }
 }

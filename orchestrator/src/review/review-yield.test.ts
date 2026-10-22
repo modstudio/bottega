@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { renderYieldTable, reviewYield } from './review-yield.ts'
+import { renderReviewYieldHuman, renderYieldTable, reviewYield } from './review-yield.ts'
 
 function addReview(
   recordedAt: string,
@@ -551,6 +551,44 @@ describe('review yield', () => {
       alone: 1,
     })
   })
+
+  test('an unreadable path_set is the unrecorded area', () => {
+    const projectId = newRecordId()
+    db()
+      .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+      .run(
+        projectId,
+        'unrecorded-project',
+        '/unrecorded-project',
+        JSON.stringify({
+          review: { lenses: [{ lens: 'craft', paths: ['**/*.test.ts'] }] },
+        }),
+      )
+    const attach = (reviewId: string, lensId: string) => {
+      db().query('UPDATE review SET project_record_id=? WHERE record_id=?').run(projectId, reviewId)
+      db()
+        .query(
+          `UPDATE run SET project_record_id=?,repo='unrecorded-project'
+            WHERE record_id=(SELECT run_record_id FROM review_lens WHERE record_id=?)`,
+        )
+        .run(projectId, lensId)
+    }
+    const missing = addReview('2026-09-08T19:00:00Z', 'missing', true, null)
+    attach(missing, addLens(missing, { lens: 'craft', agent: 'codex', model: 'gpt-a', minutes: 1 }))
+    const unreadable = addReview('2026-09-08T19:01:00Z', 'unreadable', true, 'not-json')
+    attach(
+      unreadable,
+      addLens(unreadable, { lens: 'craft', agent: 'codex', model: 'gpt-a', minutes: 1 }),
+    )
+    const empty = addReview('2026-09-08T19:02:00Z', 'empty', true, '[]')
+    attach(empty, addLens(empty, { lens: 'craft', agent: 'codex', model: 'gpt-a', minutes: 1 }))
+
+    const report = reviewYield({ project: 'unrecorded-project' }, db())
+    expect(report.byArea.find((row) => row.key === 'craft / unrecorded')).toMatchObject({ runs: 2 })
+    expect(report.byArea.find((row) => row.key === 'craft / (no declared glob)')).toMatchObject({
+      runs: 1,
+    })
+  })
 })
 
 describe('review yield text table', () => {
@@ -567,8 +605,55 @@ describe('review yield text table', () => {
       ],
     )
     expect(lines).toEqual(['KEY           C  REC', 'craft       683 1102', 'correctness   1    2'])
-    expect(lines[1]).toContain('683 1102')
-    expect(lines[1]!.startsWith('craft')).toBe(true)
-    expect(lines[2]!.startsWith('correctness')).toBe(true)
+  })
+
+  test('prints size, risk and area section headings with one slice row each', () => {
+    const overlap = {
+      unique: 0,
+      shared: 0,
+      none: 0,
+      alone: 0,
+      unrecorded: 0,
+      invalid: 0,
+    }
+    const row = (key: string) => ({
+      key,
+      runs: 1,
+      reviews: { recorded: 1, completed: 1 },
+      recordedFindings: 0,
+      findings: 0,
+      triaged: 0,
+      untriaged: 0,
+      hits: 0,
+      accepted: 0,
+      rejected: 0,
+      modified: 0,
+      skipped: 0,
+      findingsPerRun: null,
+      highOrCriticalPerRun: null,
+      medianLensMinutes: null,
+      linkedFindings: 0,
+      mediumPlusAccepted: 0,
+      mediumPlusAcceptedYield: null,
+      overlap,
+    })
+    const text = renderReviewYieldHuman({
+      filters: { project: null, since: null, task: null, lens: null, agent: null },
+      lenses: [row('craft')],
+      bySize: [row('craft / size 0')],
+      byRisk: [row('craft / risk 2')],
+      byArea: [row('craft / test-quality')],
+      lensPairs: [],
+      rounds: [],
+      agents: [],
+      models: [],
+      notRecorded: [],
+    })
+    expect(text).toContain('BY SIZE')
+    expect(text).toContain('craft / size 0')
+    expect(text).toContain('BY RISK')
+    expect(text).toContain('craft / risk 2')
+    expect(text).toContain('BY AREA')
+    expect(text).toContain('craft / test-quality')
   })
 })

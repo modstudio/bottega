@@ -17,8 +17,8 @@ import {
 import {
   mediumPlusAcceptedCount,
   mediumPlusAcceptedYield,
+  UNRECORDED_SLICE,
   yieldAreaKey,
-  yieldLensDeclarations,
   yieldPathAreas,
   yieldRiskKey,
   yieldSizeKey,
@@ -303,11 +303,13 @@ function classifySecondOpinions(rows: ReviewRoundEvidenceRow[]): Set<string> {
   const result = new Set<string>()
   for (const members of groups.values()) {
     const first = members[0]!
-    const settings = first.project_settings
-      ? (JSON.parse(first.project_settings) as { review?: ReviewSettings })
-      : null
-    const paths = JSON.parse(first.path_set!) as string[]
-    const lens = applicableReview(first.tier!, paths, settings?.review).secondOpinion
+    const paths = parsePathSet(first.path_set)
+    if (!paths) continue
+    const lens = applicableReview(
+      first.tier!,
+      paths,
+      projectReviewSettings(first.project_settings),
+    ).secondOpinion
     if (!lens) continue
     const creditedRuns = identifySecondOpinionRun(
       members.map((row) => ({
@@ -388,6 +390,34 @@ function lensPairs(rows: ComputedLens[]): ReviewYieldLensPair[] {
     })
 }
 
+function projectReviewSettings(projectSettings: string | null): ReviewSettings | undefined {
+  if (!projectSettings) return undefined
+  try {
+    const parsed = JSON.parse(projectSettings) as { review?: ReviewSettings }
+    const review = parsed.review
+    return review && Array.isArray(review.lenses) ? review : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function parsePathSet(pathSet: string | null): string[] | null {
+  if (!pathSet) return null
+  try {
+    const parsed = JSON.parse(pathSet) as unknown
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) return null
+    return parsed as string[]
+  } catch {
+    return null
+  }
+}
+
+function yieldRowAreas(row: ComputedLens): string[] {
+  const paths = parsePathSet(row.path_set)
+  if (paths === null) return [UNRECORDED_SLICE]
+  return yieldPathAreas(paths, projectReviewSettings(row.project_settings)?.lenses ?? [])
+}
+
 function changeSlices(
   rows: ComputedLens[],
 ): Pick<ReviewYieldReport, 'bySize' | 'byRisk' | 'byArea'> {
@@ -396,12 +426,7 @@ function changeSlices(
     bySize: grouped(rows, (row) => yieldSizeKey(displayLens(row), row.tier_size), sliceSort),
     byRisk: grouped(rows, (row) => yieldRiskKey(displayLens(row), row.tier_risk), sliceSort),
     byArea: grouped(
-      rows.flatMap((row) =>
-        yieldPathAreas(row.path_set, yieldLensDeclarations(row.project_settings)).map((area) => ({
-          ...row,
-          area,
-        })),
-      ),
+      rows.flatMap((row) => yieldRowAreas(row).map((area) => ({ ...row, area }))),
       (row) => yieldAreaKey(displayLens(row), row.area),
       sliceSort,
     ),
