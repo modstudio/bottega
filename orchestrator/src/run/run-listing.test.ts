@@ -146,15 +146,16 @@ describe('run listing', () => {
   })
 
   test('runs --live returns supported live lifecycle statuses and no terminal status', async () => {
+    const statuses = ['queued', 'reserved', 'attached', 'running', 'asking']
     const live = ['running', 'asking'].map((status) => insert(status))
     insert('ok')
 
+    const rows = (await command({ live: true, json: true })).map(runJson)
+    expect(rows.map((row) => row.record_id).sort()).toEqual(live.sort())
+    expect(rows.map((row) => row.live_member_status).sort()).toEqual(['asking', 'running'])
     expect(
-      (await command({ live: true, json: true }))
-        .map(runJson)
-        .map((row) => row.record_id)
-        .sort(),
-    ).toEqual(live.sort())
+      rows.every((row) => JSON.stringify(row.live_statuses) === JSON.stringify(statuses)),
+    ).toBe(true)
   })
 
   test('runs JSON publishes the stalled live member', async () => {

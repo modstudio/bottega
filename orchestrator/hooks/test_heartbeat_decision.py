@@ -36,11 +36,13 @@ class HeartbeatDecisionTest(unittest.TestCase):
                     "job": "fixture",
                     "agent": "codex",
                     "status": "running",
+                    "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
                     "session_id": "fixture-session",
                     "started_at": root_started,
                     "latency_ms": None,
                     "live_member_id": "01990000-0000-7000-8000-000000000002",
                     "live_member_number": 501,
+                    "live_member_status": "running",
                     "waiting_for_host_capacity": False,
                     "host_wait_since": None,
                     "stall_state": "healthy",
@@ -97,11 +99,13 @@ esac
                 "job": "fixture",
                 "agent": "codex",
                 "status": "running",
+                "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
                 "session_id": "fixture-session",
                 "started_at": started,
                 "latency_ms": None,
                 "live_member_id": "01990000-0000-7000-8000-000000000002",
                 "live_member_number": 501,
+                "live_member_status": "running",
                 "waiting_for_host_capacity": True,
                 "host_wait_since": started,
                 "stall_state": "healthy",
@@ -154,6 +158,135 @@ esac
                 check=True,
             )
             self.assertEqual(keepalive.stdout.count("WAITING"), 2)
+
+    def test_empty_live_listing_reaches_clear_without_degrading(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            shutil.copy2(PATH, hooks / PATH.name)
+            shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            fake = binary / "bottega"
+            fake.write_text(
+                """#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --json") printf '[]\\n' ;;
+  "run list --live --json") exit 0 ;;
+  "machine monitor --notices --json") printf '[]\\n' ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            completed = subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                cwd=checkout,
+                env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertNotIn("DEGRADED", completed.stdout)
+            self.assertNotIn("HEARTBEAT ENDED", completed.stdout)
+
+    def test_a_chain_finishing_between_ticks_is_announced_once(self):
+        self.assert_completion_announcement("ok", None, "FINISHED 7/fixture codex 2.0s")
+
+    def test_a_chain_failing_between_ticks_is_announced_once(self):
+        self.assert_completion_announcement(
+            "failed", "contract", "FAILED 7/fixture codex contract 2.0s"
+        )
+
+    def assert_completion_announcement(self, status, failure_kind, expected):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            shutil.copy2(PATH, hooks / PATH.name)
+            shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            record_id = "01990000-0000-7000-8000-000000000001"
+            member_id = "01990000-0000-7000-8000-000000000002"
+            started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+            live = json.dumps(
+                {
+                    "record_id": record_id,
+                    "number": 7,
+                    "job": "fixture",
+                    "agent": "codex",
+                    "status": "running",
+                    "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
+                    "session_id": "fixture-session",
+                    "started_at": started,
+                    "latency_ms": None,
+                    "live_member_id": member_id,
+                    "live_member_number": 8,
+                    "live_member_status": "running",
+                    "waiting_for_host_capacity": False,
+                    "host_wait_since": None,
+                    "stall_state": "healthy",
+                    "stall": None,
+                    "turns": [{"started_at": started, "latency_ms": None}],
+                }
+            )
+            terminal = json.dumps(
+                {
+                    "record_id": record_id,
+                    "number": 7,
+                    "job": "fixture",
+                    "agent": "codex",
+                    "status": status,
+                    "live_member_status": status,
+                    "failure_kind": failure_kind,
+                    "latency_ms": 2000,
+                }
+            )
+            fake = binary / "bottega"
+            fake.write_text(
+                f'''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --json") printf '[]\\n' ;;
+  "run list --live --json")
+    if [ -f "$FAKE_LIVE_SEEN" ]; then
+      exit 0
+    else
+      : >"$FAKE_LIVE_SEEN"
+      printf '%s\\n' '{live}'
+    fi ;;
+  "run list --json --id {record_id}") printf '%s\\n' '{terminal}' ;;
+  "machine monitor --notices --json") printf '[]\\n' ;;
+  *) exit 1 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            completed = subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "3"],
+                cwd=checkout,
+                env={
+                    **os.environ,
+                    "ORCH_DB": str(checkout / "absent.db"),
+                    "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
+                },
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertEqual(completed.stdout.count(expected), 1, completed.stdout)
+            self.assertNotIn("DEGRADED", completed.stdout)
 
     def test_heartbeat_formats_a_monitor_notice_with_its_label_once(self):
         with tempfile.TemporaryDirectory() as root:

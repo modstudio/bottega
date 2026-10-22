@@ -25,6 +25,8 @@ import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
 const FAILURE_KINDS_WITH_LISTED_ERROR = new Set(['contract', 'unevidenced', 'premature-final'])
 
+const RUN_LIVE_STATUSES = ['queued', 'reserved', 'attached', 'running', 'asking'] as const
+
 export function runIdentityMap(): RunIdentity[] {
   return db().query<RunIdentity, []>('SELECT number, record_id FROM run ORDER BY number').all()
 }
@@ -284,9 +286,8 @@ function applyRequestedRunFilter(
 }
 
 function liveListingClauses(enabled: boolean): string[] {
-  return enabled
-    ? ["current_run.status IN ('queued','reserved','attached','running','asking')"]
-    : []
+  const statuses = RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')
+  return enabled ? [`current_run.status IN (${statuses})`] : []
 }
 
 function listingLimit(value: string | undefined, json: boolean, live: boolean): number | null {
@@ -429,7 +430,7 @@ export async function runListingCommand(
      SELECT r.record_id, r.number, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
-            current_run.number AS live_member_number,
+            current_run.number AS live_member_number, current_run.status AS live_member_status,
             current_run.record_id AS live_member_id, current_run.record_id AS live_member_record_id,
             current_run.agent AS current_agent,
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
@@ -545,6 +546,7 @@ export async function runListingCommand(
     const reclaimed = r.failure_kind === 'idle' ? parseIdleReclaimedMs(String(r.error ?? '')) : null
     return {
       ...rest,
+      ...(has('live') ? { live_statuses: RUN_LIVE_STATUSES } : {}),
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
@@ -608,5 +610,4 @@ export async function runListingCommand(
   }
   for (const id of [...unknownIds, ...unknownRecordIds])
     log(`${String(id).padStart(4)}  unknown run id`)
-  return
 }

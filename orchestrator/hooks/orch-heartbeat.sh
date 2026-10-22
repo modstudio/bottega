@@ -85,6 +85,7 @@ cap_failure_ticks=0
 prev_ack_failure_state=""
 ack_failure_ticks=0
 reported_ids=""
+previous_live_roots=""
 ACTIVE_GUARDED_PID=""
 ACTIVE_WATCHDOG_PID=""
 
@@ -213,14 +214,11 @@ print(sum(item["can_answer"] for item in d))
 import sys, json, os, datetime
 sid = os.environ["SID"]
 now = datetime.datetime.now(datetime.timezone.utc)
-recent_seconds = max(2 * float(os.environ["INTERVAL"]), 600)
-out, ids, events, stalled, stalled_subjects = [], [], [], [], []
-saw = False
+out, ids, roots, stalled, stalled_subjects = [], [], [], [], []
 for line in sys.stdin:
     line = line.strip()
     if not line:
         continue
-    saw = True
     try:
         d = json.loads(line)
     except Exception:
@@ -245,40 +243,14 @@ for line in sys.stdin:
         raise SystemExit(2)
     if d.get("session_id") != sid:
         continue
-    status = d.get("status")
-    if status == "ok" or status in ("failed", "stale", "stopped", "abandoned"):
-        timing = d
-        if d.get("turns") is not None:
-            if not isinstance(d["turns"], list):
-                raise SystemExit(2)
-            if d["turns"]:
-                timing = d["turns"][-1]
-                if not isinstance(timing, dict):
-                    raise SystemExit(2)
-                if not isinstance(timing.get("started_at"), str):
-                    raise SystemExit(2)
-                if timing.get("latency_ms") is not None and not isinstance(timing.get("latency_ms"), (int, float)):
-                    raise SystemExit(2)
-        latency = timing.get("latency_ms")
-        try:
-            started = datetime.datetime.fromisoformat(timing["started_at"].replace("Z", "+00:00"))
-            terminal = started if latency is None else started + datetime.timedelta(milliseconds=latency)
-            recent = (now - terminal).total_seconds() <= recent_seconds
-        except Exception:
-            raise SystemExit(2)
-        if latency is None:
-            duration = "?"
-        elif latency < 60000:
-            duration = "%.1fs" % (latency / 1000)
-        else:
-            seconds = round(latency / 1000)
-            duration = "%dm%02ds" % (seconds // 60, seconds % 60)
-        events.append((str(d["number"]), "1" if recent else "0", status, d["job"], d["agent"],
-                       d.get("failure_kind") or "-", duration))
-    # `asking` counts as live. A heartbeat that watches only `running` reports
-    # CLEAR while a worker sits blocked - the exact failure this file prevents.
-    if status not in ("queued", "reserved", "attached", "running", "asking"):
-        continue
+    status = d.get("live_member_status")
+    if not isinstance(status, str):
+        raise SystemExit(2)
+    live_statuses = d.get("live_statuses")
+    if not isinstance(live_statuses, list) or not all(isinstance(value, str) for value in live_statuses):
+        raise SystemExit(2)
+    if status not in live_statuses:
+        raise SystemExit(2)
     member_number = d.get("live_member_number")
     member_id = d.get("live_member_id")
     if not isinstance(member_number, int) or not isinstance(member_id, str):
@@ -321,16 +293,97 @@ for line in sys.stdin:
     # label still crosses its display threshold while queued, but that hidden
     # transition must not turn an unchanged host wait into a new heartbeat state.
     ids.append(member_id + ("s" if stall_state == "stalled" else ("i" if idle_note and not waiting_for_host_capacity else "")))
-    display = ("waiting for host capacity since " + host_wait_since) if waiting_for_host_capacity else (str(d.get("status")) + " " + age + idle_note)
+    roots.append(d["record_id"])
+    display = ("waiting for host capacity since " + host_wait_since) if waiting_for_host_capacity else (status + " " + age + idle_note)
     out.append("%s/%s %s %s" % (member_number, d.get("job"), d.get("agent"), display))
-if not saw:
-    raise SystemExit(2)
 # count \t detail \t state-key (ids only - elapsed must never enter the key)
 print("STATE", len(out), " | ".join(out), ",".join(sorted(ids)), len(stalled),
-      ",".join(sorted(stalled_subjects)), " | ".join(stalled), sep="\t")
-for event in events:
-    print("EVENT", *event, sep="\t")
+      ",".join(sorted(stalled_subjects)), " | ".join(stalled), ",".join(sorted(roots)), sep="\t")
 ') ; runs_parse_rc=$?
+
+  # `--live` deliberately contains no terminal rows. Compare its exact chain
+  # ids with the prior tick and look up only chains that disappeared, by id and
+  # without a status filter, so completion notices never depend on recency.
+  completion_observed=""
+  completion_rc=0
+  completion_parse_rc=0
+  current_live_roots=""
+  if [ "$runs_rc" -eq 0 ] && [ "$runs_parse_rc" -eq 0 ]; then
+    current_live_roots=$(printf '%s\n' "$observed" | awk -F '\t' '$1 == "STATE" {print $8; exit}')
+    missing_live_roots=""
+    if [ -n "$previous_live_roots" ]; then
+      IFS=',' read -r -a prior_roots <<< "$previous_live_roots"
+      for root_id in "${prior_roots[@]}"; do
+        [ -n "$root_id" ] || continue
+        case ",$current_live_roots," in
+          *",$root_id,"*) ;;
+          *) missing_live_roots="${missing_live_roots}${missing_live_roots:+,}$root_id" ;;
+        esac
+      done
+    fi
+    if [ -n "$missing_live_roots" ]; then
+      completion_args=(run list --json)
+      IFS=',' read -r -a missing_roots <<< "$missing_live_roots"
+      for root_id in "${missing_roots[@]}"; do
+        completion_args+=(--id "$root_id")
+      done
+      completion_raw=$("$BOTTEGA" "${completion_args[@]}" 2>/dev/null); completion_rc=$?
+      completion_observed=$(printf '%s' "$completion_raw" | MISSING_ROOTS="$missing_live_roots" python3 -c '
+import json, os, sys
+expected = set(filter(None, os.environ["MISSING_ROOTS"].split(",")))
+seen = set()
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+    except Exception:
+        raise SystemExit(2)
+    if not isinstance(d, dict):
+        raise SystemExit(2)
+    if "schema_version" in d:
+        d = d.get("data")
+        if not isinstance(d, dict):
+            raise SystemExit(2)
+    root_id = d.get("record_id")
+    if root_id not in expected or root_id in seen:
+        raise SystemExit(2)
+    seen.add(root_id)
+    if not isinstance(d.get("number"), int) or not all(isinstance(d.get(key), str) for key in ("status", "job", "agent")):
+        raise SystemExit(2)
+    status = d.get("live_member_status")
+    if not isinstance(status, str):
+        raise SystemExit(2)
+    if status == "ok":
+        outcome = "FINISHED"
+    elif status in ("failed", "stale", "stopped", "abandoned"):
+        outcome = "HARNESS-REFUSED" if d.get("failure_kind") == "harness" else "FAILED"
+    else:
+        raise SystemExit(2)
+    timing = d
+    turns = d.get("turns")
+    if turns is not None:
+        if not isinstance(turns, list) or not turns or not isinstance(turns[-1], dict):
+            raise SystemExit(2)
+        timing = turns[-1]
+    latency = timing.get("latency_ms")
+    if latency is not None and not isinstance(latency, (int, float)):
+        raise SystemExit(2)
+    if latency is None:
+        duration = "?"
+    elif latency < 60000:
+        duration = "%.1fs" % (latency / 1000)
+    else:
+        seconds = round(latency / 1000)
+        duration = "%dm%02ds" % (seconds // 60, seconds % 60)
+    print("EVENT", root_id, d["number"], outcome, d["job"], d["agent"],
+          d.get("failure_kind") or "-", duration, sep="\t")
+if seen != expected:
+    raise SystemExit(2)
+' 2>/dev/null); completion_parse_rc=$?
+    fi
+  fi
 
   # A landing is deliberately not a run, but it is live work owned by the same
   # session. Read only the small session slice directly from the store; this is
@@ -374,12 +427,13 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
 
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
      [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ] || \
+     [ "$completion_rc" -ne 0 ] || [ "$completion_parse_rc" -ne 0 ] || \
      [ "$landings_parse_rc" -ne 0 ]; then
     key="degraded"
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
+      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
@@ -392,7 +446,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   detail=${rest%%$'\t'*}; rest=${rest#*$'\t'}
   ids=${rest%%$'\t'*}; rest=${rest#*$'\t'}
   stalled_n=${rest%%$'\t'*}; rest=${rest#*$'\t'}
-  stalled_subjects=${rest%%$'\t'*}; stalled_detail=${rest#*$'\t'}
+  stalled_subjects=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+  stalled_detail=${rest%%$'\t'*}; live_roots=${rest#*$'\t'}
   n=${n:-0}
   stalled_n=${stalled_n:-0}
   landing_state=${landings_observed%%$'\n'*}
@@ -401,21 +456,21 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   landing_detail=${landing_rest%%$'\t'*}; landing_ids=${landing_rest#*$'\t'}
   landing_n=${landing_n:-0}
 
-  while IFS=$'\t' read -r record id recent status job agent failure_kind latency; do
+  while IFS=$'\t' read -r record record_id id outcome job agent failure_kind latency; do
     [ "$record" = "EVENT" ] || continue
     case " $reported_ids " in
-      *" $id "*) continue ;;
+      *" $record_id "*) continue ;;
     esac
-    reported_ids="$reported_ids $id"
-    [ "$recent" = "1" ] || continue
-    if [ "$status" = "ok" ]; then
+    reported_ids="$reported_ids $record_id"
+    if [ "$outcome" = "FINISHED" ]; then
       echo "FINISHED $id/$job $agent $latency"
-    elif [ "$failure_kind" = "harness" ]; then
+    elif [ "$outcome" = "HARNESS-REFUSED" ]; then
       echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     else
       echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     fi
-  done <<< "$observed"
+  done <<< "$completion_observed"
+  previous_live_roots="$live_roots"
 
   key="$asking|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
