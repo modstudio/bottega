@@ -1,9 +1,9 @@
 // concern: agent capacity admission
 /** Pure wait-or-refuse decision plus the bounded polling adapter. */
 
-import { AgentCapacityError } from '../route/route.ts'
-import { appendRunEvent } from '../events.ts'
 import { nowIso } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
+import { AgentCapacityError } from '../route/route.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 
