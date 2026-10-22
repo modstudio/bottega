@@ -26,7 +26,7 @@ function coordinatorRun(input: {
   return id
 }
 
-test('landing adoption transfers same-key and recorded cross-key coordinator conversations', () => {
+test('landing adoption transfers only classified same-key and recorded cross-key coordinators', () => {
   const fix = coordinatorRun({ job: 'issue-worker', key: 'FIX-42', label: 'issue DEV-1528 fix' })
   const diagnosis = coordinatorRun({
     job: 'diagnose',
@@ -85,7 +85,7 @@ test('landing adoption transfers same-key and recorded cross-key coordinator con
       },
       db(),
     ),
-  ).toBe(3)
+  ).toBe(2)
 
   expect(
     db()
@@ -111,7 +111,7 @@ test('landing adoption transfers same-key and recorded cross-key coordinator con
     { record_id: diagnosis, session_id: architectSession },
     { record_id: turn, session_id: architectSession },
     { record_id: independentlyOwnedTurn, session_id: 'architect:other' },
-    { record_id: sameKey, session_id: architectSession },
+    { record_id: sameKey, session_id: 'operator:machine' },
     { record_id: differentOwner, session_id: 'operator:other-machine' },
     { record_id: landingTree, session_id: 'operator:machine' },
     { record_id: hookTree, session_id: 'operator:machine' },
@@ -126,12 +126,11 @@ test('landing adoption transfers same-key and recorded cross-key coordinator con
   ).toEqual([
     { run_record_id: fix, action: 'adopt', actor_session: architectSession },
     { run_record_id: diagnosis, action: 'adopt', actor_session: architectSession },
-    { run_record_id: sameKey, action: 'adopt', actor_session: architectSession },
   ])
   expect(
     db()
       .query<{ row_id: string }, []>("SELECT row_id FROM outbox WHERE kind='run' ORDER BY id")
       .all()
       .map((row) => row.row_id),
-  ).toEqual([fix, diagnosis, turn, independentlyOwnedTurn, sameKey])
+  ).toEqual([fix, diagnosis, turn, independentlyOwnedTurn])
 })

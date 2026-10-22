@@ -13,9 +13,11 @@ import {
 describe('landing-tree run adoption', () => {
   const linked = {
     openedOwner: 'operator:machine-id',
+    openedCoordinator: true,
     openedLaunchKey: 'DEV-1528',
     openedIssueKey: null,
     candidateOwner: 'operator:machine-id',
+    candidateCoordinator: true,
     candidateLaunchKey: 'DEV-1528',
     candidateIssueKey: null,
   }
@@ -41,6 +43,11 @@ describe('landing-tree run adoption', () => {
         candidateOwner: 'architect-session',
       }),
     ).toBe(false)
+  })
+
+  test('does not adopt when either run is not a coordinator run', () => {
+    expect(landingTreeRunAdoptionDecision({ ...linked, openedCoordinator: false })).toBe(false)
+    expect(landingTreeRunAdoptionDecision({ ...linked, candidateCoordinator: false })).toBe(false)
   })
 
   test('adopts a different launch key through the recorded coordinator issue link', () => {

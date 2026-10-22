@@ -16,8 +16,8 @@ type CoordinatorRoot = Pick<
   'record_id' | 'session_id' | 'launch_key' | 'job' | 'label'
 >
 
-function issueKey(row: CoordinatorRoot): string | null {
-  return filedIssueLoopRun({ id: row.record_id, job: row.job, label: row.label })?.issueKey ?? null
+function coordinator(row: CoordinatorRoot) {
+  return filedIssueLoopRun({ id: row.record_id, job: row.job, label: row.label })
 }
 
 /** Atomically adopt every root and turn selected by the shipping-time ruling. */
@@ -27,7 +27,7 @@ export function adoptCoordinatorRunsForLanding(
 ): number {
   const actor = sessionId(database)
   if (!actor || actor === opened.session_id) return 0
-  const openedIssueKey = issueKey(opened)
+  const openedCoordinator = coordinator(opened)
   const candidates = database
     .query<CoordinatorRoot, [string | null]>(
       `SELECT record_id,session_id,launch_key,job,label FROM run
@@ -36,16 +36,19 @@ export function adoptCoordinatorRunsForLanding(
        ORDER BY number`,
     )
     .all(opened.session_id)
-    .filter((candidate) =>
-      landingTreeRunAdoptionDecision({
+    .filter((candidate) => {
+      const candidateCoordinator = coordinator(candidate)
+      return landingTreeRunAdoptionDecision({
         openedOwner: opened.session_id,
+        openedCoordinator: openedCoordinator !== null,
         openedLaunchKey: opened.launch_key,
-        openedIssueKey,
+        openedIssueKey: openedCoordinator?.issueKey ?? null,
         candidateOwner: candidate.session_id,
+        candidateCoordinator: candidateCoordinator !== null,
         candidateLaunchKey: candidate.launch_key,
-        candidateIssueKey: issueKey(candidate),
-      }),
-    )
+        candidateIssueKey: candidateCoordinator?.issueKey ?? null,
+      })
+    })
   if (!candidates.length) return 0
   return writeTransaction(() => {
     let adopted = 0

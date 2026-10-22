@@ -13,6 +13,7 @@ import {
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
+import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
@@ -49,6 +50,7 @@ export type RootAuthority = {
   actor: string | null
   ownerLastSeenAt: number | null
   chainLastActivityAt: number
+  coordinatorRun: boolean
   now: number
   windowMs: number
 }
@@ -62,6 +64,7 @@ function auditOnlyRootAuthority(rootId: string, actor: string): RootAuthority {
     actor,
     ownerLastSeenAt: null,
     chainLastActivityAt: 0,
+    coordinatorRun: false,
     now: 0,
     windowMs: 0,
   }
@@ -70,7 +73,8 @@ function auditOnlyRootAuthority(rootId: string, actor: string): RootAuthority {
 export function runMutationAuthority(database: Database, runId: string): RootAuthority {
   const row = database
     .query(
-      `SELECT requested.record_id run_record_id, root.record_id root_id, root.session_id owner, seen.last_seen,
+      `SELECT requested.record_id run_record_id, root.record_id root_id, root.session_id owner,
+              root.job, root.label, seen.last_seen,
               (SELECT COALESCE(turn.last_event_at,turn.started_at)
                  FROM run turn
                 WHERE turn.record_id=root.record_id OR turn.parent_run_record_id=root.record_id
@@ -84,6 +88,8 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
     run_record_id: string
     root_id: string
     owner: string | null
+    job: string
+    label: string | null
     last_seen: string | null
     chain_last_activity: string
   } | null
@@ -95,6 +101,7 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
     actor: sessionId(),
     ownerLastSeenAt: row.last_seen === null ? null : Date.parse(row.last_seen),
     chainLastActivityAt: Date.parse(row.chain_last_activity),
+    coordinatorRun: filedIssueLoopRun({ id: row.root_id, job: row.job, label: row.label }) !== null,
     now: Date.now(),
     windowMs: RUN_MUTATION_WINDOW_MS,
   }

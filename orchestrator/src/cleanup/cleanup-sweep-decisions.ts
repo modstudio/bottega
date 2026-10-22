@@ -85,15 +85,17 @@ export type UnjudgedOwnerFacts = {
   ownerSessionId: string | null
   ownerLastSeenAt: number | null
   runLastActivityAt: number
+  coordinatorRun?: boolean
   now: number
   windowMs: number
 }
 
 export function ownerIsGone(facts: UnjudgedOwnerFacts): boolean {
   if (facts.ownerSessionId === null) return true
-  const ownerLastActivity = isOperatorSession(facts.ownerSessionId)
-    ? facts.runLastActivityAt
-    : Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)
+  const ownerLastActivity =
+    isOperatorSession(facts.ownerSessionId) && facts.coordinatorRun
+      ? facts.runLastActivityAt
+      : Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)
   return facts.now - ownerLastActivity > facts.windowMs
 }
 

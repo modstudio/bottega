@@ -5,14 +5,15 @@ import { ownerIsGone, UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-
 
 export const RUN_MUTATION_WINDOW_MS = UNJUDGED_OWNER_WINDOW_MS
 
-// An operator-owned chain becomes adoptable once its run activity is older than this window;
-// ownerIsGone deliberately ignores the operator identity's own last-seen time.
+// An operator-owned coordinator chain becomes adoptable once its run activity is older than this
+// window because ownerIsGone ignores the operator identity's own last-seen time for those runs.
 
 export type RunMutationOwnerFacts = {
   owner: string | null
   actor: string | null
   ownerLastSeenAt: number | null
   chainLastActivityAt: number
+  coordinatorRun: boolean
   now: number
   windowMs: number
 }
@@ -27,6 +28,7 @@ export function runMutationOwnerDecision(
       ownerSessionId: input.owner,
       ownerLastSeenAt: input.ownerLastSeenAt,
       runLastActivityAt: input.chainLastActivityAt,
+      coordinatorRun: input.coordinatorRun,
       now: input.now,
       windowMs: input.windowMs,
     })

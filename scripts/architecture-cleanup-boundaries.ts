@@ -117,6 +117,7 @@ export const cleanupBoundarySpecs = [
       '../branch/branch-disposal.ts',
       '../database/db.ts',
       '../evidence/unjudged-expiry.ts',
+      '../issue/issue-queue.ts',
       '../resources/docker-resources.ts',
       '../hook-tree/hook-tree.ts',
       '../landing-tree/release-observation.ts',

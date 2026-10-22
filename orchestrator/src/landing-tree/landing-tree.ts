@@ -31,16 +31,23 @@ export type LandingTreeRunRow = {
 
 export type LandingTreeRunAdoptionFacts = {
   openedOwner: string | null
+  openedCoordinator: boolean
   openedLaunchKey: string | null
   openedIssueKey: string | null
   candidateOwner: string | null
+  candidateCoordinator: boolean
   candidateLaunchKey: string | null
   candidateIssueKey: string | null
 }
 
 /** Adopt only coordinator roots tied to the opened run by recorded identity. */
 export function landingTreeRunAdoptionDecision(input: LandingTreeRunAdoptionFacts): boolean {
-  if (!isOperatorSession(input.openedOwner) || input.candidateOwner !== input.openedOwner)
+  if (
+    !input.openedCoordinator ||
+    !input.candidateCoordinator ||
+    !isOperatorSession(input.openedOwner) ||
+    input.candidateOwner !== input.openedOwner
+  )
     return false
   if (input.openedLaunchKey !== null && input.candidateLaunchKey === input.openedLaunchKey)
     return true

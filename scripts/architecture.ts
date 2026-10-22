@@ -236,6 +236,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/evidence/unjudged-expiry.ts', [
     '../../../shared/record/schema.ts',
     '../database/db.ts',
+    '../issue/issue-queue.ts',
     '../record/machine-identity.ts',
     '../run/run-outbox.ts',
     './evidence-query.ts',

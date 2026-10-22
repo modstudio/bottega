@@ -11,6 +11,7 @@ import { closeOutRun } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
+import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import {
   isProjectRepository,
@@ -378,6 +379,7 @@ function reportClosedSweepRow(
           actor: sessionId(),
           ownerLastSeenAt: null,
           chainLastActivityAt: Date.now(),
+          coordinatorRun: false,
           now: Date.now(),
           windowMs: UNJUDGED_OWNER_WINDOW_MS,
         },
@@ -446,6 +448,8 @@ function sweepUnjudgedRuns(
       ownerSessionId: row.session_id,
       ownerLastSeenAt: row.session_last_seen === null ? null : Date.parse(row.session_last_seen),
       runLastActivityAt: Date.parse(row.run_last_activity),
+      coordinatorRun:
+        filedIssueLoopRun({ id: row.record_id, job: row.job, label: row.label }) !== null,
       now,
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
     })
