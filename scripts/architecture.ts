@@ -336,6 +336,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-inventory.ts',
     '../run/run-alive.ts',
     '../run/run-bootstrap.ts',
+    '../run/run-host-capacity.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
     '../run/run-number.ts',
