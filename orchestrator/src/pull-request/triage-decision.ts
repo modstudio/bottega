@@ -47,8 +47,7 @@ export type TriageDecision =
       missingReview: boolean
       unfinishedReviewNumbers: number[]
       undisposedFindings: { reviewNumber: number; ordinal: number }[]
-      missingLenses: string[]
-      missingLensesRecordedOnBranch: string[]
+      missingLenses: { lens: string; recordedOnBranch: boolean }[]
       missingSecondOpinion: { lens: string; firstRunId: string | null } | null
       architectReadRequired: boolean
       earlierReviewNumber: number | null
@@ -64,8 +63,7 @@ type CompleteReviewRound = {
 }
 
 type ReviewGaps = {
-  missingLenses: string[]
-  missingLensesRecordedOnBranch: string[]
+  missingLenses: { lens: string; recordedOnBranch: boolean }[]
   undisposedFindings: { reviewNumber: number; ordinal: number }[]
   missingSecondOpinion: { lens: string; firstRunId: string | null } | null
 }
@@ -179,8 +177,7 @@ function composedReviewEvidence(
     .filter((review) => review.completedAt !== null)
     .sort((left, right) => right.completedAt!.localeCompare(left.completedAt!))
   const selected = new Map<string, TriageReviewRow>()
-  const missingLenses: string[] = []
-  const missingLensesRecordedOnBranch: string[] = []
+  const missingLenses: ReviewGaps['missingLenses'] = []
   const undisposedFindings: { reviewNumber: number; ordinal: number }[] = []
   const exactCompleted = exactReviews
     .filter((review) => review.completedAt !== null)
@@ -189,8 +186,7 @@ function composedReviewEvidence(
   for (const lens of applicableReview.lenses) {
     const coverage = coverApplicableLens(lens, exactRequired, exactCompleted, completed)
     if (coverage.kind === 'missing') {
-      missingLenses.push(lens)
-      if (coverage.recordedOnBranch) missingLensesRecordedOnBranch.push(lens)
+      missingLenses.push({ lens, recordedOnBranch: coverage.recordedOnBranch })
       continue
     }
     const untriaged = undisposedReviewFindings(coverage.review)
@@ -252,7 +248,6 @@ function composedReviewEvidence(
       : null,
     coverageGaps: {
       missingLenses,
-      missingLensesRecordedOnBranch,
       undisposedFindings: sortedUndisposed,
       missingSecondOpinion,
     },
@@ -300,8 +295,9 @@ function exactReviewEvidence(evidence: TriageEvidence) {
   }
   const coverageGaps: ReviewGaps = {
     undisposedFindings: [],
-    missingLenses: evidence.applicableReview.lenses.filter((lens) => !judgedLenses.has(lens)),
-    missingLensesRecordedOnBranch: [],
+    missingLenses: evidence.applicableReview.lenses
+      .filter((lens) => !judgedLenses.has(lens))
+      .map((lens) => ({ lens, recordedOnBranch: false })),
     missingSecondOpinion: secondOpinion.complete
       ? null
       : { lens: secondOpinion.lens, firstRunId: secondOpinion.firstRunId },
@@ -334,7 +330,6 @@ function incompleteTriageDecision(input: {
     input
   const emptyGaps: ReviewGaps = {
     missingLenses: [],
-    missingLensesRecordedOnBranch: [],
     undisposedFindings: [],
     missingSecondOpinion: null,
   }
@@ -360,7 +355,6 @@ function incompleteTriageDecision(input: {
     unfinishedReviewNumbers: exact.currentPatch.unfinishedReviewNumbers,
     undisposedFindings,
     missingLenses: coverageGaps.missingLenses,
-    missingLensesRecordedOnBranch: coverageGaps.missingLensesRecordedOnBranch,
     missingSecondOpinion: coverageGaps.missingSecondOpinion,
     architectReadRequired: Boolean(earlierRound && !finalTierRaised && !exactRead),
     earlierReviewNumber: earlierRound?.reviews[0]?.reviewNumber ?? null,

@@ -192,8 +192,7 @@ test('a never-reviewed branch names its missing lens without the generic no-roun
     missingReview: true,
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
-    missingLenses: ['craft'],
-    missingLensesRecordedOnBranch: [],
+    missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
     missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -238,8 +237,7 @@ test('a lens recorded on the branch is refused as missing for this change, not a
   })
   expect(decision).toMatchObject({
     complete: false,
-    missingLenses: ['craft'],
-    missingLensesRecordedOnBranch: ['craft'],
+    missingLenses: [{ lens: 'craft', recordedOnBranch: true }],
   })
   if (decision.complete) throw new Error('expected incomplete triage')
   const message = triageRefusal(
@@ -279,7 +277,6 @@ test('a no-round refusal prints the generic remedy only from its decision field'
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
     missingLenses: [],
-    missingLensesRecordedOnBranch: [],
     missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -329,7 +326,6 @@ test('a creditable composed round refusal names only the architect read', () => 
     complete: false,
     missingReview: false,
     missingLenses: [],
-    missingLensesRecordedOnBranch: [],
     missingSecondOpinion: null,
     architectReadRequired: true,
   })
@@ -364,7 +360,6 @@ test('a missing second opinion refusal names the lens and distinct first run', (
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
     missingLenses: [],
-    missingLensesRecordedOnBranch: [],
     missingSecondOpinion: { lens: 'correctness', firstRunId: '47' },
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -400,7 +395,6 @@ test('unfinished-review refusals print display numbers, never review UUIDs', () 
     unfinishedReviewNumbers: [104],
     undisposedFindings: [],
     missingLenses: [],
-    missingLensesRecordedOnBranch: [],
     missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -450,7 +444,6 @@ test.each([
       unfinishedReviewNumbers: [],
       undisposedFindings: [],
       missingLenses: [],
-      missingLensesRecordedOnBranch: [],
       missingSecondOpinion: null,
       architectReadRequired: state.architectReadRequired,
       earlierReviewNumber: 93,

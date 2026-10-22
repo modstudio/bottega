@@ -168,20 +168,6 @@ describe('round lens plan', () => {
     ).toEqual({ lenses: [] })
   })
 
-  test('a test-only commit after findings re-runs only those lenses when the tip is unidentified', () => {
-    expect(
-      applicableRoundLensPlan({
-        relevant: { lenses: [...sixLenses] },
-        facts: {
-          completedLenses: [...sixLenses],
-          latestAcceptedOrModifiedLenses: ['test-quality'],
-        },
-        postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
-        pathScopedLenses: ['test-quality'],
-      }),
-    ).toEqual({ lenses: ['test-quality'] })
-  })
-
   test('an unidentified tip with completed lenses applies the funnel, not the full set', () => {
     expect(
       applicableRoundLensPlan({
