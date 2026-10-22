@@ -3,6 +3,8 @@
 
 import { writableDb } from '../database/db.ts'
 import { closeOutRun } from './close-out.ts'
+import { annotateHeldLandingInFlight } from './close-out-in-flight.ts'
+import { formatCloseOutReport } from './close-out-report.ts'
 
 export function closeOutCommand(
   id: string,
@@ -10,10 +12,10 @@ export function closeOutCommand(
   presentation: { log(value: string): void; setExitCode(code: number): void },
 ): void {
   writableDb()
-  const result = closeOutRun(id, { intent: 'explicit', lockTimeoutMs: nonBlocking ? 0 : undefined })
-  const reportOutcome = result.reportOutcome ?? result.outcome
-  presentation.log(
-    `${reportOutcome} run ${result.runId}${result.worktree ? ` ${result.worktree}` : ''}: ${result.detail}`,
+  const result = annotateHeldLandingInFlight(
+    closeOutRun(id, { intent: 'explicit', lockTimeoutMs: nonBlocking ? 0 : undefined }),
   )
+  const reportOutcome = result.reportOutcome ?? result.outcome
+  presentation.log(formatCloseOutReport(result))
   if (reportOutcome === 'held' || reportOutcome === 'failed') presentation.setExitCode(1)
 }

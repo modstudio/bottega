@@ -11,14 +11,7 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
-from score_reminder_decision import (
-    HeldTreeFacts,
-    cursor_is_in_flight,
-    decide_held_tree,
-    parse_held_run_report,
-)
-
-OPEN_PR_TIMEOUT_SECONDS = 3
+from score_reminder_decision import decide_held_tree, parse_held_run_report
 
 GLOBAL_BUDGET_SECONDS = 20
 
@@ -34,88 +27,7 @@ def bottega_bin():
     return os.path.join(root, "bin", "bottega")
 
 
-def lookup_run_row(con, run_id):
-    row = con.execute(
-        "SELECT branch, repo, worktree FROM run WHERE record_id=?",
-        (run_id,),
-    ).fetchone()
-    if row:
-        return row
-    if run_id.isdigit():
-        row = con.execute(
-            "SELECT branch, repo, worktree FROM run WHERE number=?",
-            (int(run_id),),
-        ).fetchone()
-        if row:
-            return row
-    return None
-
-
-def first_existing_dir(*paths):
-    for path in paths:
-        if path and os.path.isdir(path):
-            return path
-    return None
-
-
-def lookup_ship_task_cursor(con, session_ids, branch):
-    if not branch or not session_ids:
-        return None
-    try:
-        return con.execute(
-            """SELECT id, step_slug, workflow_slug
-                 FROM workflow_cursor
-                WHERE session_id IN ({})
-                  AND workflow_slug = 'ship-task'
-                  AND state IN ('running','awaiting-ruling')
-                  AND json_extract(args, '$.branch') = ?
-                ORDER BY id LIMIT 1""".format(",".join("?" for _ in session_ids)),
-            (*session_ids, branch),
-        ).fetchone()
-    except sqlite3.Error:
-        return None
-
-
-def lookup_open_pr(cwd, branch, timeout):
-    if not branch or not cwd or timeout <= 0:
-        return None
-    try:
-        result = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "list",
-                "--head",
-                branch,
-                "--state",
-                "open",
-                "--json",
-                "number",
-                "--limit",
-                "1",
-            ],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=min(OPEN_PR_TIMEOUT_SECONDS, timeout),
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    try:
-        rows = json.loads(result.stdout or "[]")
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
-        return None
-    number = rows[0].get("number")
-    if not isinstance(number, int) or number <= 0:
-        return None
-    return f"#{number}"
-
-
-def classify_cleanup_holds(con, reports, session_ids, remaining_budget):
+def classify_cleanup_holds(reports):
     in_flight_lines = []
     blocking_holds = []
     for report in reports:
@@ -123,33 +35,7 @@ def classify_cleanup_holds(con, reports, session_ids, remaining_budget):
         if parsed is None:
             blocking_holds.append(report)
             continue
-        run_id, path = parsed
-        row = lookup_run_row(con, run_id)
-        branch, repo, recorded_tree = row if row else (None, None, None)
-        cursor = lookup_ship_task_cursor(con, session_ids, branch)
-        cursor_id, cursor_step, cursor_workflow = (
-            (cursor[0], cursor[1], cursor[2]) if cursor else (None, None, None)
-        )
-        cursor_live = cursor is not None
-        open_pr = None
-        if not cursor_is_in_flight(cursor_workflow, cursor_step, cursor_live):
-            open_pr = lookup_open_pr(
-                first_existing_dir(path, recorded_tree, repo),
-                branch,
-                remaining_budget(),
-            )
-        decision = decide_held_tree(
-            HeldTreeFacts(
-                path=path,
-                branch=branch,
-                cursor_id=cursor_id,
-                cursor_step=cursor_step,
-                cursor_workflow=cursor_workflow,
-                cursor_live=cursor_live,
-                open_pr=open_pr,
-            ),
-            session_close_out=False,
-        )
+        decision = decide_held_tree(parsed)
         if decision.block:
             blocking_holds.append(report)
         else:
@@ -336,9 +222,7 @@ def main() -> int:
     for report in cleanup_kept:
         print(report, file=sys.stderr)
 
-    in_flight_lines, blocking_holds = classify_cleanup_holds(
-        con, cleanup_holds, session_ids, remaining_budget
-    )
+    in_flight_lines, blocking_holds = classify_cleanup_holds(cleanup_holds)
 
     notes = []
     try:

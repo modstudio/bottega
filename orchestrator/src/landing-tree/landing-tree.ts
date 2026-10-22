@@ -159,3 +159,68 @@ export function landingTreeHoldDecision<T>(
       `${PLATFORM_SLUG} tree open ${row.runId} recreates it`,
   }
 }
+
+const SHIP_TASK_WORKFLOW = 'ship-task'
+const AFTER_FINISH_SHIP_CLEANUP = new Set(['finish-ship-cleanup', 'promote-release', 'close-task'])
+
+type HeldTreeCursorFacts = {
+  id: number
+  workflow: string | null
+  step: string | null
+  live: boolean
+  project: string | null
+  branch: string | null
+  worktree: string | null
+}
+
+export type HeldTreeInFlightFacts = {
+  treePath: string
+  project: string | null
+  branch: string | null
+  cursor: HeldTreeCursorFacts | null
+  openPr: string | null
+  uniqueWork: boolean
+}
+
+type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
+
+function shipTaskCursorIsInFlight(
+  cursor: Pick<HeldTreeCursorFacts, 'workflow' | 'step' | 'live'>,
+): boolean {
+  return (
+    cursor.live &&
+    cursor.workflow === SHIP_TASK_WORKFLOW &&
+    !AFTER_FINISH_SHIP_CLEANUP.has(cursor.step ?? '')
+  )
+}
+
+function cursorMatchesThisTree(
+  tree: Pick<HeldTreeInFlightFacts, 'treePath' | 'project' | 'branch'>,
+  cursor: HeldTreeCursorFacts | null,
+): cursor is HeldTreeCursorFacts {
+  return Boolean(
+    cursor &&
+      tree.project &&
+      tree.branch &&
+      tree.treePath &&
+      shipTaskCursorIsInFlight(cursor) &&
+      cursor.project === tree.project &&
+      cursor.branch === tree.branch &&
+      cursor.worktree === tree.treePath,
+  )
+}
+
+function inFlightRef(facts: HeldTreeInFlightFacts): string | null {
+  const cursor = facts.cursor
+  if (cursorMatchesThisTree(facts, cursor)) {
+    return cursor.step ? `cursor ${cursor.id} ${cursor.step}` : `cursor ${cursor.id}`
+  }
+  return facts.openPr
+}
+
+/** Cursor or open PR for this exact tree; unique-work holds still carry the fact without suppressing. */
+export function heldTreeInFlight(facts: HeldTreeInFlightFacts): HeldTreeInFlight | null {
+  const ref = inFlightRef(facts)
+  if (!ref) return null
+  return { ref, suppressBlock: !facts.uniqueWork }
+}

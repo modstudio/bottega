@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  type HeldTreeInFlightFacts,
+  heldTreeInFlight,
   LANDING_TREE_JOB,
   landingTreeCommandBase,
   landingTreeCommandCapability,
@@ -249,5 +251,64 @@ describe('landing-tree decisions', () => {
         false,
       ),
     ).toEqual({ action: 'release' })
+  })
+})
+
+describe('held-tree in-flight landing', () => {
+  const cursor = (overrides: Partial<NonNullable<HeldTreeInFlightFacts['cursor']>> = {}) => ({
+    id: 459,
+    workflow: 'ship-task',
+    step: 'merge-pr',
+    live: true,
+    project: 'fixture',
+    branch: 'DEV-1594-ship',
+    worktree: '/landing-tree',
+    ...overrides,
+  })
+  const facts = (overrides: Partial<HeldTreeInFlightFacts> = {}): HeldTreeInFlightFacts => ({
+    treePath: '/landing-tree',
+    project: 'fixture',
+    branch: 'DEV-1594-ship',
+    cursor: cursor(),
+    openPr: null,
+    uniqueWork: false,
+    ...overrides,
+  })
+
+  test('a matching worktree cursor at merge-pr is in flight and does not block', () => {
+    expect(heldTreeInFlight(facts())).toEqual({
+      ref: 'cursor 459 merge-pr',
+      suppressBlock: true,
+    })
+  })
+
+  test('a cursor for another tree is not in flight for this tree', () => {
+    expect(heldTreeInFlight(facts({ cursor: cursor({ worktree: '/other-tree' }) }))).toBeNull()
+  })
+
+  test('a cursor for another project is not in flight for this tree', () => {
+    expect(heldTreeInFlight(facts({ cursor: cursor({ project: 'segnavia' }) }))).toBeNull()
+  })
+
+  test('a dirty unique-work hold still carries the matching cursor without suppressing', () => {
+    expect(heldTreeInFlight(facts({ uniqueWork: true }))).toEqual({
+      ref: 'cursor 459 merge-pr',
+      suppressBlock: false,
+    })
+  })
+
+  test('an open PR without a cursor is in flight and does not block', () => {
+    expect(heldTreeInFlight(facts({ cursor: null, openPr: '#88' }))).toEqual({
+      ref: '#88',
+      suppressBlock: true,
+    })
+  })
+
+  test('neither cursor nor PR is not in flight', () => {
+    expect(heldTreeInFlight(facts({ cursor: null, openPr: null }))).toBeNull()
+  })
+
+  test('finish-ship-cleanup without a PR is not in flight', () => {
+    expect(heldTreeInFlight(facts({ cursor: cursor({ step: 'finish-ship-cleanup' }) }))).toBeNull()
   })
 })

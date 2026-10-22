@@ -193,17 +193,6 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
     expect(hook).not.toContain('timeout=300')
   })
 
-  test('Stop classifies in-flight landing trees through the held-tree decision', () => {
-    const hook = readFileSync(
-      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
-      'utf8',
-    )
-    expect(hook).toContain('decide_held_tree(')
-    expect(hook).toContain('session_close_out=False')
-    expect(hook).toContain('"systemMessage"')
-    expect(hook).toContain('blocking_holds')
-  })
-
   test('Stop note reminders parse labels and suggest label-addressed commands', () => {
     const hook = readFileSync(
       fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
