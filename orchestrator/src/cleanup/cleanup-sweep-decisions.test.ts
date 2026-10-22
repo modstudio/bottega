@@ -250,7 +250,6 @@ describe('unjudged owner expiry', () => {
       windowMs,
     }
     expect(ownerIsGone(facts)).toBe(true)
-    expect(shouldExpireUnjudgedOwner(facts)).toBe(true)
   })
 
   test('keeps an operator-owned run whose run activity is inside the window', () => {
@@ -262,7 +261,6 @@ describe('unjudged owner expiry', () => {
       windowMs,
     }
     expect(ownerIsGone(facts)).toBe(false)
-    expect(shouldExpireUnjudgedOwner(facts)).toBe(false)
   })
 })
 

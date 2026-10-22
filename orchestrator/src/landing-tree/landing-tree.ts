@@ -11,6 +11,24 @@ export { LANDING_TREE_JOB }
 export const LANDING_TREE_AGENT = '(architect)'
 export const LANDING_TREE_EVIDENCE_EXCLUSION = 'landing tree lifecycle row; not agent execution'
 
+export type LandingTreeRunRow = {
+  record_id: string
+  parent_run_record_id: string | null
+  repo: string | null
+  project_record_id: string | null
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  branch_kept: string | null
+  branch_kept_tip: string | null
+  launch_cwd: string | null
+  launch_key: string | null
+  launch_seed: string | null
+  session_id: string | null
+  job: string
+  label: string | null
+}
+
 export type LandingTreeRunAdoptionFacts = {
   openedOwner: string | null
   openedLaunchKey: string | null

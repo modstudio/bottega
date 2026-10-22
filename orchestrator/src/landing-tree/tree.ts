@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
-import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { branchOf, checkedOutWorktree, gitContext } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectAt, resolvedWorktreeTool, stackAt } from '../project/projects.ts'
@@ -25,6 +25,7 @@ import type { RecordRecipeResource } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { projectSeedPreflight, validateProjectSeed } from '../worktree/worktree-seed.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import type { LandingTreeRunRow } from './landing-tree.ts'
 import {
   LANDING_TREE_AGENT,
   LANDING_TREE_EVIDENCE_EXCLUSION,
@@ -34,24 +35,6 @@ import {
   landingTreeOpeningRefusal,
 } from './landing-tree.ts'
 import { adoptCoordinatorRunsForLanding } from './run-adoption.ts'
-
-type RunRow = {
-  record_id: string
-  parent_run_record_id: string | null
-  repo: string | null
-  project_record_id: string | null
-  cwd: string | null
-  worktree: string | null
-  branch: string | null
-  branch_kept: string | null
-  branch_kept_tip: string | null
-  launch_cwd: string | null
-  launch_key: string | null
-  launch_seed: string | null
-  session_id: string | null
-  job: string
-  label: string | null
-}
 
 export function landingTreeSeedRequest(input: {
   requested: string | undefined
@@ -70,20 +53,25 @@ export function landingTreeSeedRequest(input: {
   }
 }
 
-export function landingTreeSourceRun(runId: string): { root: RunRow; latest: RunRow } {
+export function landingTreeSourceRun(runId: string): {
+  root: LandingTreeRunRow
+  latest: LandingTreeRunRow
+} {
   const columns = `record_id,parent_run_record_id,repo,project_record_id,cwd,worktree,branch,
     branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed,session_id,job,label`
   const selected = db()
     .query(`SELECT ${columns} FROM run WHERE record_id=?`)
-    .get(runId) as RunRow | null
+    .get(runId) as LandingTreeRunRow | null
   if (!selected) throw new Error(`no run ${runId}; pass an existing writer run id`)
   const rootId = selected.parent_run_record_id ?? selected.record_id
-  const root = db().query(`SELECT ${columns} FROM run WHERE record_id=?`).get(rootId) as RunRow
+  const root = db()
+    .query(`SELECT ${columns} FROM run WHERE record_id=?`)
+    .get(rootId) as LandingTreeRunRow
   const latest = db()
     .query(
       `SELECT ${columns} FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as RunRow
+    .get(rootId, rootId) as LandingTreeRunRow
   return { root, latest }
 }
 
@@ -111,7 +99,7 @@ function recordLandingTreeFailure(recordId: string, startedAt: string, error: un
     )
 }
 
-function resolveLandingTarget(runId: string, root: RunRow, latest: RunRow) {
+function resolveLandingTarget(runId: string, root: LandingTreeRunRow, latest: LandingTreeRunRow) {
   const project = projectAt(latest.cwd ?? root.launch_cwd ?? '')
   if (!project) {
     throw new Error(
@@ -188,9 +176,9 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
       `branch ${branch} already has a live tree at ${existingPath}; use that path or release it with ${PLATFORM_SLUG} tree remove ${existingPath}`,
     )
   }
-  adoptCoordinatorRunsForLanding(root)
-  const startedAt = nowIso()
-  const prompt = `landing tree for run ${runId}`
+  const database = writableDb(),
+    startedAt = nowIso(),
+    prompt = `landing tree for run ${runId}`
   const inserted = db()
     .query(
       `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
@@ -218,7 +206,6 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
       LANDING_TREE_EVIDENCE_EXCLUSION,
       process.pid,
     ) as { record_id: string }
-
   const record = (created: Worktree) =>
     writeTransaction(() => {
       db()
@@ -323,6 +310,7 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
         `landing tree postcondition failed: expected ${branch} at ${plan.tip} with run ${inserted.record_id} ownership`,
       )
     }
+    adoptCoordinatorRunsForLanding(root, database)
     db()
       .query("UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?")
       .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.record_id)

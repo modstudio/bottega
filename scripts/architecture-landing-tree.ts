@@ -18,6 +18,7 @@ export const landingTreeModules = [
       '../run/run-authority.ts',
       '../run/run-mutation-owner.ts',
       '../run/run-outbox.ts',
+      '../run/synthetic-lifecycle-job.ts',
       './landing-tree.ts',
     ],
   },

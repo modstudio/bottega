@@ -5,7 +5,14 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
-import { callerIdentity, db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import {
+  callerIdentity,
+  db,
+  nowIso,
+  sessionId,
+  writableDb,
+  writeTransaction,
+} from '../database/db.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
@@ -44,6 +51,20 @@ export type RootAuthority = {
   chainLastActivityAt: number
   now: number
   windowMs: number
+}
+
+/** Build the authority shape used only to record an ownership transfer already authorized by its caller. */
+function auditOnlyRootAuthority(rootId: string, actor: string): RootAuthority {
+  return {
+    runId: rootId,
+    rootId,
+    owner: actor,
+    actor,
+    ownerLastSeenAt: null,
+    chainLastActivityAt: 0,
+    now: 0,
+    windowMs: 0,
+  }
 }
 
 export function runMutationAuthority(database: Database, runId: string): RootAuthority {
@@ -146,6 +167,27 @@ export function auditRunMutation(
     )
 }
 
+/** Transfer a root and only the turns still held by its expected owner, then record the adoption. */
+export function transferRunMutationOwnership(
+  rootId: string,
+  expectedOwner: string | null,
+  newOwner: string,
+  reason: string,
+  database: Database = db(),
+): boolean {
+  return writeTransaction(() => {
+    const claimed = database
+      .query('UPDATE run SET session_id=? WHERE record_id=? AND session_id IS ?')
+      .run(newOwner, rootId, expectedOwner)
+    if (claimed.changes !== 1) return false
+    database
+      .query('UPDATE run SET session_id=? WHERE parent_run_record_id=? AND session_id IS ?')
+      .run(newOwner, rootId, expectedOwner)
+    auditRunMutation(auditOnlyRootAuthority(rootId, newOwner), 'adopt', reason, database)
+    return true
+  }, database)
+}
+
 const ADOPTING_ACTIONS = [
   'answer',
   'overturn',
@@ -176,10 +218,14 @@ export function adoptRunMutation(
       `run ${authority.runId} is unowned; ${callerIdentityRefusal(callerIdentity(), action)}`,
     )
   }
-  const claimed = database
-    .query('UPDATE run SET session_id=? WHERE record_id=? AND session_id IS NULL')
-    .run(authority.actor, authority.rootId)
-  if (claimed.changes !== 1) {
+  const claimed = transferRunMutationOwnership(
+    authority.rootId,
+    null,
+    authority.actor,
+    `before ${action}`,
+    database,
+  )
+  if (!claimed) {
     const owner = database
       .query('SELECT session_id FROM run WHERE record_id=?')
       .get(authority.rootId) as {
@@ -194,6 +240,5 @@ export function adoptRunMutation(
     return { ...authority, owner: owner.session_id }
   }
   const adopted = { ...authority, owner: authority.actor }
-  auditRunMutation(adopted, 'adopt', `before ${action}`, database)
   return adopted
 }
