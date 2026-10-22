@@ -71,7 +71,7 @@ import {
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick, routeProjectContext } from '../route/route.ts'
+import { pick, routeProject } from '../route/route.ts'
 import {
   type CodexMcpCatalogue,
   codexMcpSetupHeader,
@@ -303,13 +303,10 @@ export async function run(opts: {
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
-  const resume = resumeFacts(
-    opts.resume?.kind ?? null,
-    opts.reserveId ?? '',
-    opts.resume?.parent ?? null,
-  )
+  const prior = opts.resume
+  const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
   const inheritedDispatch =
-    resume.workspaceSource === 'retained' ? readDispatchState(opts.resume!.parent) : null
+    resume.workspaceSource === 'retained' ? readDispatchState(prior!.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
   const writesJob = Boolean(requestedJob.needs.writesRepo)
@@ -518,10 +515,8 @@ export async function run(opts: {
         models: opts.distinctModels,
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
-        ...routeProjectContext(
-          runProjectName,
-          requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
-        ),
+        requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
+        ...routeProject(runProjectName),
       },
       opts.probe,
       opts.lens,
@@ -903,6 +898,8 @@ export async function run(opts: {
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
+  // Keep this handle visible to signals/finally so a running row can terminate.
+  // A full Subprocess would widen the narrowed `p` streams.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null

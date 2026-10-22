@@ -888,11 +888,8 @@ type PickAvoid = {
   project?: string | null
 }
 
-export function routeProjectContext(
-  project: string | null,
-  requiredMcp: RequiredMcpServer | undefined,
-): Pick<PickAvoid, 'project' | 'requiredMcp'> {
-  return { project, requiredMcp }
+export function routeProject(project: string | null): Pick<PickAvoid, 'project'> {
+  return { project }
 }
 
 function evidenceForPick(

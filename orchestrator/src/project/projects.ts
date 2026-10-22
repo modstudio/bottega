@@ -62,22 +62,21 @@ import {
 } from './project-hosted-write.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
 import {
-  assertForgeVisibility,
-  type ForgeVisibilityLookup,
-  githubRepository,
-} from './project-visibility.ts'
-import {
   PROJECT_REFERENCES,
   type ProjectReferenceCounts,
   projectReferenceCounts,
 } from './project-reference-counts.ts'
-
 import type {
   MainStackConsumer,
   ProjectSettings,
   StoredProjectSettings,
   WorktreeTool,
 } from './project-settings.ts'
+import {
+  assertForgeVisibility,
+  type ForgeVisibilityLookup,
+  githubRepository,
+} from './project-visibility.ts'
 
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
