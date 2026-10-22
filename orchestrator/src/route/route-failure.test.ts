@@ -13,7 +13,7 @@ import {
   NOT_EVIDENCE,
 } from '../failure/failure.ts'
 import { WEIGHT, weigh } from '../score/score.ts'
-import { candidates, isDailyRateLimit, isRoutingEvidence, scoreboard } from './route.ts'
+import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
@@ -414,10 +414,6 @@ describe('routing counts failures as evidence', () => {
   test('a recorded daily rate limit holds until the next UTC day; a minute limit does not', () => {
     const dailyPayload =
       '{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-day limit reached"}}'
-    expect(isDailyRateLimit(dailyPayload)).toBe(true)
-    expect(isDailyRateLimit('{"error":{"code":429,"message":"20 requests per minute"}}')).toBe(
-      false,
-    )
     const run = addRun({
       agent: 'codex',
       job: 'craft',

@@ -111,6 +111,12 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
     '../../../shared/github-repository.ts',
+    './project-settings.ts',
+  ]),
+  module('orchestrator/src/route/routing-cooldown.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../failure/failure.ts',
   ]),
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),

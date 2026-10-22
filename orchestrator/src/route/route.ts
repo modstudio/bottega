@@ -8,17 +8,18 @@ import {
 } from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
-import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
-import type { RepositoryVisibility } from '../project/project-visibility.ts'
+import type { RepositoryVisibility } from '../project/project-settings.ts'
 import { currentProjectRepository, projectByName } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import { coolingFailures, coolingRefusal } from './routing-cooldown.ts'
 
 export type Candidate = {
   agent: string
@@ -78,15 +79,6 @@ const RUNNING_RUNS_SQL =
 export const COOLDOWN_MIN = 60
 
 /** Provider wording observed when a rate-limit response exhausts the day's allowance. */
-export function isDailyRateLimit(error: string | null | undefined): boolean {
-  const message = error?.toLowerCase() ?? ''
-  return (
-    message.includes('free-models-per-day') ||
-    /\bdaily\b.*\blimit\b/.test(message) ||
-    /\bper day\b.*\blimit\b/.test(message)
-  )
-}
-
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 export const MIN_SAMPLE = 5
 
@@ -221,11 +213,6 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
     )
     .slice(0, EVIDENCE_WINDOW)
   return { rows: modelRows, evidenceModel: currentModel }
-}
-
-/** COOLS_DOWN as a SQL list, so the query uses the canonical vocabulary. */
-function coolsDownSql(): string {
-  return COOLS_DOWN.map((k) => `'${k}'`).join(', ')
 }
 
 /**
@@ -574,54 +561,7 @@ export function candidates(
   // a human has fixed the quota or the login, without waiting out the hour or
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
-  const coolingByAgent = new Map(
-    (
-      db()
-        .query(
-          `WITH terminal AS (
-         SELECT record_id, agent, status, failure_kind, error,
-                julianday(started_at) + latency_ms / 86400000.0 AS finished_at
-           FROM run
-          WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
-       ), cooling_failures AS (
-         SELECT record_id, agent, failure_kind, error, finished_at,
-                ROW_NUMBER() OVER (
-                  PARTITION BY agent ORDER BY finished_at DESC, record_id DESC
-                ) AS recency
-           FROM terminal
-          WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
-       )
-       SELECT f.agent, f.failure_kind,
-              CASE WHEN f.failure_kind = 'quota' AND (
-                lower(COALESCE(f.error, '')) LIKE '%free-models-per-day%' OR
-                lower(COALESCE(f.error, '')) LIKE '%daily%limit%' OR
-                lower(COALESCE(f.error, '')) LIKE '%per day%limit%'
-              ) THEN 1 ELSE 0 END AS daily_limit,
-              (julianday('now') - f.finished_at) * 1440 AS mins_ago
-         FROM cooling_failures f
-        WHERE f.recency = 1
-          AND (
-            (julianday('now') - f.finished_at) * 1440 < ? OR
-            (f.failure_kind = 'quota' AND date(f.finished_at) = date('now') AND (
-              lower(COALESCE(f.error, '')) LIKE '%free-models-per-day%' OR
-              lower(COALESCE(f.error, '')) LIKE '%daily%limit%' OR
-              lower(COALESCE(f.error, '')) LIKE '%per day%limit%'
-            ))
-          )
-          AND NOT EXISTS (
-                SELECT 1 FROM terminal s
-                 WHERE s.agent = f.agent AND s.status = 'ok'
-                   AND s.finished_at > f.finished_at
-              )`,
-        )
-        .all(COOLDOWN_MIN) as {
-        agent: string
-        failure_kind: string
-        daily_limit: number
-        mins_ago: number
-      }[]
-    ).map((r) => [r.agent, r]),
-  )
+  const coolingByAgent = coolingFailures(db(), COOLDOWN_MIN)
 
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
@@ -649,9 +589,7 @@ export function candidates(
       why = `not declared for ${jobName}`
     } else if (cooling && coolingProbeAgent !== name) {
       eligible = false
-      why =
-        `vendor ${cooling}; retry ${failure?.daily_limit ? 'after the next UTC day' : `after ${COOLDOWN_MIN}m`} ` +
-        `or run '${PLATFORM_SLUG} agent probe ${name}' to clear it`
+      why = coolingRefusal(name, failure!, COOLDOWN_MIN)
     } else if (unavailable) {
       eligible = false
       why = unavailable
@@ -962,6 +900,30 @@ function capacityRefusal(
   )
 }
 
+function namedCandidate(
+  jobName: string,
+  name: string,
+  promptBytes: number,
+  ev: ReturnType<typeof evidenceFor>,
+  avoid: PickAvoid,
+  probe: boolean,
+): Candidate {
+  const rows = candidates(
+    jobName,
+    promptBytes,
+    ev.level === 'stack' ? ev.stack : undefined,
+    avoid.model,
+    probe ? name : undefined,
+    ev.level === 'lens' ? ev.lens : undefined,
+    avoid.requiredMcp,
+    name,
+    avoid.project,
+  )
+  const candidate = rows.find((row) => row.agent === name)
+  if (!candidate) throw new Error(`unknown agent "${name}"`)
+  return candidate
+}
+
 /**
  * The incumbent ranking policy, independent of where its evidence came from.
  *
@@ -1053,19 +1015,7 @@ export function pick(
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
     // Keep candidates()' view unchanged. Naming bypasses metering; only a probe bypasses cooling.
-    const namedCandidates = candidates(
-      jobName,
-      promptBytes,
-      ev.level === 'stack' ? ev.stack : undefined,
-      avoid.model,
-      probe ? override : undefined,
-      ev.level === 'lens' ? ev.lens : undefined,
-      avoid.requiredMcp,
-      override,
-      avoid.project,
-    )
-    const c = namedCandidates.find((x) => x.agent === override)
-    if (!c) throw new Error(`unknown agent "${override}"`)
+    const c = namedCandidate(jobName, override, promptBytes, ev, avoid, probe)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
       throw new Error(capacityRefusal(c))
     }

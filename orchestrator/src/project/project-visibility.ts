@@ -2,9 +2,12 @@
 /** Verifies a stored repository-visibility declaration against its forge. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export { githubRepository } from '../../../shared/github-repository.ts'
 
-export type RepositoryVisibility = 'public' | 'private'
+import type { RepositoryVisibility } from './project-settings.ts'
+
+export type { RepositoryVisibility } from './project-settings.ts'
 
 export type ForgeVisibilityLookup = (repository: string) => {
   exitCode: number

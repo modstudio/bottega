@@ -1,8 +1,7 @@
 // concern: record-project-columns
 /** Maps local project settings onto hosted project columns. Must not know SQL or HTTP. */
 
-import type { ProjectSettings } from '../project/project-settings.ts'
-import type { RepositoryVisibility } from '../project/project-visibility.ts'
+import type { ProjectSettings, RepositoryVisibility } from '../project/project-settings.ts'
 
 export const PROJECT_SETTINGS_NOT_IMPORTED = [
   { key: 'space', reason: "the imported row's space_id carries this value" },
