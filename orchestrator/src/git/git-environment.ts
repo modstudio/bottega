@@ -191,8 +191,8 @@ export type TemporaryIndexGit = {
   gitRaw(args: string[]): string
 }
 
-export type PreparedTemporaryGitIndex = {
-  environment: Record<string, string>
+export type PreparedTemporaryGitIndex = TemporaryIndexGit & {
+  environment: { GIT_INDEX_FILE: string }
   remove(): void
 }
 
@@ -206,17 +206,20 @@ export function prepareTemporaryGitIndex(input: {
 }): PreparedTemporaryGitIndex {
   rmSync(input.indexPath, { force: true })
   rmSync(`${input.indexPath}.lock`, { force: true })
-  const environment: Record<string, string> = {}
+  const gitEnvironment: Record<string, string> = {}
   for (const [name, value] of Object.entries(targetGitEnvironment(input.cwd))) {
-    if (value !== undefined) environment[name] = value
+    if (value !== undefined) gitEnvironment[name] = value
   }
-  environment.GIT_INDEX_FILE = input.indexPath
-  git(['read-tree', input.seedTree], input.cwd, environment, input.failureContext)
+  gitEnvironment.GIT_INDEX_FILE = input.indexPath
+  git(['read-tree', input.seedTree], input.cwd, gitEnvironment, input.failureContext)
   if (input.stageWorkingTree) {
-    git(['add', '-A', '--'], input.cwd, environment, input.failureContext)
+    git(['add', '-A', '--'], input.cwd, gitEnvironment, input.failureContext)
   }
   return {
-    environment,
+    environment: { GIT_INDEX_FILE: input.indexPath },
+    git: (args) => git(args, input.cwd, gitEnvironment, input.failureContext),
+    gitOk: (args) => gitOk(args, input.cwd, gitEnvironment),
+    gitRaw: (args) => gitRaw(args, input.cwd, gitEnvironment),
     remove: () => {
       rmSync(input.indexPath, { force: true })
       rmSync(`${input.indexPath}.lock`, { force: true })
@@ -238,14 +241,8 @@ export function withTemporaryGitIndex<T>(
     indexPath: join(temporary, 'index'),
     failureContext,
   })
-  const env = prepared.environment
-  const bound = {
-    git: (args: string[]) => git(args, cwd, env, failureContext),
-    gitOk: (args: string[]) => gitOk(args, cwd, env),
-    gitRaw: (args: string[]) => gitRaw(args, cwd, env),
-  }
   try {
-    return action(bound)
+    return action(prepared)
   } finally {
     prepared.remove()
     rmSync(temporary, { recursive: true, force: true })

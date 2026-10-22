@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { prepareSyntheticGateIndex } from './gate-index.ts'
 
 function git(root: string, args: string[], env?: NodeJS.ProcessEnv): string {
@@ -16,8 +16,7 @@ function git(root: string, args: string[], env?: NodeJS.ProcessEnv): string {
 
 test('the synthetic index stages the whole current tree without touching the real index or HEAD', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-gate-index-'))
-  const indexDirectory = mkdtempSync(join(tmpdir(), 'orch-gate-index-state-'))
-  const indexPath = join(indexDirectory, 'synthetic.index')
+  let indexPath = ''
   let removeIndex: (() => void) | undefined
   try {
     git(root, ['init', '-q'])
@@ -31,8 +30,9 @@ test('the synthetic index stages the whole current tree without touching the rea
     writeFileSync(join(root, 'untracked.txt'), 'new\n')
     const realIndexBefore = git(root, ['write-tree'])
 
-    const prepared = prepareSyntheticGateIndex({ worktree: root, baseCommit: base, indexPath })
+    const prepared = prepareSyntheticGateIndex({ worktree: root, baseCommit: base })
     removeIndex = prepared.remove
+    indexPath = prepared.environment.GIT_INDEX_FILE!
 
     expect(
       git(root, ['diff', '--cached', '--name-only', base], prepared.environment).split('\n'),
@@ -41,7 +41,8 @@ test('the synthetic index stages the whole current tree without touching the rea
     expect(git(root, ['rev-parse', 'HEAD'])).toBe(base)
   } finally {
     removeIndex?.()
+    expect(existsSync(indexPath)).toBeFalse()
+    expect(existsSync(dirname(indexPath))).toBeFalse()
     rmSync(root, { recursive: true, force: true })
-    rmSync(indexDirectory, { recursive: true, force: true })
   }
 })

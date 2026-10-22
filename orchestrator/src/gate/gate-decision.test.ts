@@ -95,6 +95,30 @@ test('broker gate environment adds host paths without exposing secrets and appli
   })
 })
 
+test('synthetic-index gate environment exposes no broker variable', () => {
+  expect(
+    brokerGateEnvironment(
+      { PATH: '/bin', ORCH_RUN_ID: '41' },
+      {
+        HOME: '/Users/operator',
+        TMPDIR: '/tmp/operator',
+        BROKER_FAKE_SECRET: 'must-not-cross',
+      },
+      {
+        GIT_INDEX_FILE: '/private/broker/index',
+        ORCH_GATE_BASE_COMMIT: 'a'.repeat(40),
+      },
+    ),
+  ).toEqual({
+    PATH: '/bin',
+    ORCH_RUN_ID: '41',
+    HOME: '/Users/operator',
+    TMPDIR: '/tmp/operator',
+    GIT_INDEX_FILE: '/private/broker/index',
+    ORCH_GATE_BASE_COMMIT: 'a'.repeat(40),
+  })
+})
+
 test('relative gate scripts resolve from the run tree while PATH programs stay registered', () => {
   expect(resolveGateCommand('scripts/gate --plain', '/runs/41/tree')).toBe(
     "'/runs/41/tree/scripts/gate' --plain",

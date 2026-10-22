@@ -454,7 +454,6 @@ async function runPreparedGate(input: {
   state: GateProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
-  indexPath: string
 }): Promise<void> {
   await runGateAfterBaseRefresh({
     refreshInput: input.prepared.refreshInput,
@@ -515,7 +514,6 @@ async function runPreparedGate(input: {
       const gateIndex = prepareSyntheticGateIndex({
         worktree: input.prepared.worktree,
         baseCommit: input.prepared.baseCommit,
-        indexPath: input.indexPath,
       })
       try {
         await runGateProcess({
@@ -641,7 +639,6 @@ function startGateExecution(
             state,
             record,
             stop,
-            indexPath: join(scratchDir, `gate-${request.id}.index`),
           }),
         {
           signal: slotWait.signal,
