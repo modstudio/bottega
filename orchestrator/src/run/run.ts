@@ -39,14 +39,11 @@ import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
-import { predictNativeMcpAttachment } from '../mcp/mcp-compatibility.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
   effectiveMcpRequest,
   type McpRequest,
-  requestedMcpMode,
-  requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
 import {
@@ -124,6 +121,7 @@ import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
+import { mcpForRun, routeMcp } from './run-mcp-routing.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -188,17 +186,6 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
   ) + 2
 
 const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
-
-function routeMcp(
-  request: McpRequest | undefined,
-  cwd: string,
-  project: string | null,
-  opts: { transport?: TransportName },
-  transport: TransportName,
-) {
-  const pinned = opts.transport !== undefined || Boolean(process.env.ORCH_TRANSPORT)
-  return requiredMcpServer(request, cwd, project ?? undefined, pinned ? transport : undefined)
-}
 
 function confinementSkipLines(failures: FreezeFailure[]): string[] {
   return failures.map(
@@ -574,16 +561,6 @@ export async function run(opts: {
       throw new Error(versionRefusal)
     }
   }
-  const nativeMcpAttachment = predictNativeMcpAttachment({
-    name: a.name,
-    harness: a.harness,
-    transport: transportName,
-  })
-  if (requestedMcpMode(mcpRequest) === 'require' && !nativeMcpAttachment.confirmable) {
-    const why = nativeMcpAttachment.reason!
-    recordRunStartupFailure(opts.reserveId, why)
-    throw new Error(why)
-  }
   // Append after routing but before prompt files, hashes, or metadata are written.
   if (requestedJob.findings && resume.isFirstTurn) {
     const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
@@ -605,8 +582,7 @@ export async function run(opts: {
     connection: mcpConnection,
     mcpRequest,
     writesJob,
-    agentHasMcp: a.caps.mcp,
-    nativeMcpAttachment: nativeMcpAttachment.confirmable,
+    agentHasMcp: mcpForRun(a, transportName, mcpRequest, opts.reserveId),
   })
   if (attachmentRuling.refusalReason) {
     recordRunStartupFailure(opts.reserveId, attachmentRuling.refusalReason)
