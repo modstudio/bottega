@@ -101,6 +101,115 @@ function withReportedCost(
   return { ...row, cost_usd: cost.usd, cost_source: cost.source }
 }
 
+function listedRunWithCost(
+  listed: Record<string, unknown>,
+  turns: unknown,
+  facts: ReturnType<typeof subscriptionCostFacts> | null,
+  prices: Readonly<Record<string, number | null>>,
+) {
+  const pricedTurns =
+    Array.isArray(turns) && facts
+      ? turns.map((turn) => withReportedCost(turn as Record<string, unknown>, facts, prices))
+      : turns
+  const row = pricedTurns ? { ...listed, turns: pricedTurns } : listed
+  return facts ? withReportedCost(row, facts, prices) : row
+}
+
+function listingConversation(
+  r: Record<string, unknown>,
+  json: boolean,
+  costFacts: ReturnType<typeof subscriptionCostFacts> | null,
+  prices: Readonly<Record<string, number | null>>,
+  chainIsStranded: (id: string) => boolean,
+  strandedRecovery: (id: string) => string,
+): Record<string, unknown>[] {
+  const chain = resolveFailover(db(), r.record_id as string)
+  const final = chain.attempts.at(-1)!
+  const current = json
+    ? {}
+    : (db()
+        .query(
+          `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path, branch, minted_branch
+         FROM run WHERE record_id=?`,
+        )
+        .get(final.record_id) as {
+        status: string
+        latency_ms: number | null
+        vendor_tokens: number | null
+        route_reason: string | null
+        probe: number
+        output_path: string | null
+        branch: string | null
+        minted_branch: string | null
+      })
+  const turns = json
+    ? db()
+        .query(
+          `SELECT record_id, number, started_at, agent, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
+         FROM run WHERE record_id = ? OR parent_run_record_id = ?
+        ORDER BY turn, number`,
+        )
+        .all(String(r.record_id), String(r.record_id))
+    : undefined
+  const questions = json
+    ? (
+        db()
+          .query(
+            `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
+                      q.asked_at, q.answered_at, q.asked_via,
+                      q.answerer_kind, q.answer_channel, q.overturned_at,
+                      q.closed_at, q.close_reason
+         FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+        WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
+        ORDER BY q.number`,
+          )
+          .all(String(r.record_id), String(r.record_id)) as {
+          number: number
+          record_id: string
+          run_record_id: string
+          run_number: number
+          asked_at: string
+          answered_at: string | null
+          asked_via: AskedVia | null
+          answerer_kind: AnswererKind | null
+          answer_channel: AnswerChannel | null
+          overturned_at: string | null
+          closed_at: string | null
+          close_reason: string | null
+        }[]
+      ).map((q) => ({
+        id: q.number,
+        record_id: q.record_id,
+        run_record_id: q.run_record_id,
+        run_number: q.run_number,
+        asked_at: q.asked_at,
+        answered_at: q.answered_at ?? null,
+        asked_via: q.asked_via ?? null,
+        answerer_kind: q.answerer_kind ?? null,
+        answer_channel: q.answer_channel ?? null,
+        overturned_at: q.overturned_at ?? null,
+        closed_at: q.closed_at ?? null,
+        close_reason: q.close_reason ?? null,
+        deliveries: questionDeliveries(q.record_id),
+      }))
+    : undefined
+  const listed = {
+    ...r,
+    ...current,
+    ...(questions ? { questions } : {}),
+    answer_agent: final.agent,
+    failover_chain: chain.attempts.map((attempt) => attempt.agent),
+    ...(chainIsStranded(r.record_id as string)
+      ? {
+          status: 'stranded',
+          stranded: true,
+          recovery_hint: strandedRecovery(r.record_id as string),
+        }
+      : {}),
+  }
+  return [listedRunWithCost(listed, turns, costFacts, prices)]
+}
+
 function processSamplesForRows(
   rows: Record<string, unknown>[],
   sampleProcesses: () => ProcessSample[],
@@ -255,8 +364,7 @@ export async function runListingCommand(
   } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
-  const jsonV1 = options.jsonV1
-  const json = has('json') || jsonV1
+  const json = has('json') || options.jsonV1
   const costFacts = json ? subscriptionCostFacts() : null
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
@@ -328,100 +436,18 @@ export async function runListingCommand(
       ORDER BY r.number DESC LIMIT ?`,
     )
     .all(...args, limit) as Record<string, unknown>[]
-  rows = rows.map(withRetryRecordId).flatMap((r) => {
-    const chain = resolveFailover(db(), r.record_id as string)
-    const final = chain.attempts.at(-1)!
-    const current = json
-      ? {}
-      : (db()
-          .query(
-            `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path, branch, minted_branch
-         FROM run WHERE record_id=?`,
-          )
-          .get(final.record_id) as {
-          status: string
-          latency_ms: number | null
-          vendor_tokens: number | null
-          route_reason: string | null
-          probe: number
-          output_path: string | null
-          branch: string | null
-          minted_branch: string | null
-        })
-    const turns = json
-      ? db()
-          .query(
-            `SELECT record_id, number, started_at, agent, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
-         FROM run WHERE record_id = ? OR parent_run_record_id = ?
-        ORDER BY turn, number`,
-          )
-          .all(String(r.record_id), String(r.record_id))
-      : undefined
-    const questions = json
-      ? (
-          db()
-            .query(
-              `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
-                      q.asked_at, q.answered_at, q.asked_via,
-                      q.answerer_kind, q.answer_channel, q.overturned_at,
-                      q.closed_at, q.close_reason
-         FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-        WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
-        ORDER BY q.number`,
-            )
-            .all(String(r.record_id), String(r.record_id)) as {
-            number: number
-            record_id: string
-            run_record_id: string
-            run_number: number
-            asked_at: string
-            answered_at: string | null
-            asked_via: AskedVia | null
-            answerer_kind: AnswererKind | null
-            answer_channel: AnswerChannel | null
-            overturned_at: string | null
-            closed_at: string | null
-            close_reason: string | null
-          }[]
-        ).map((q) => ({
-          id: q.number,
-          record_id: q.record_id,
-          run_record_id: q.run_record_id,
-          run_number: q.run_number,
-          asked_at: q.asked_at,
-          answered_at: q.answered_at ?? null,
-          asked_via: q.asked_via ?? null,
-          answerer_kind: q.answerer_kind ?? null,
-          answer_channel: q.answer_channel ?? null,
-          overturned_at: q.overturned_at ?? null,
-          closed_at: q.closed_at ?? null,
-          close_reason: q.close_reason ?? null,
-          deliveries: questionDeliveries(q.record_id),
-        }))
-      : undefined
-    const pricedTurns =
-      turns && costFacts
-        ? (turns as Record<string, unknown>[]).map((turn) =>
-            withReportedCost(turn, costFacts, subscriptionPrices),
-          )
-        : turns
-    const listed = {
-      ...r,
-      ...current,
-      ...(pricedTurns ? { turns: pricedTurns } : {}),
-      ...(questions ? { questions } : {}),
-      answer_agent: final.agent,
-      failover_chain: chain.attempts.map((attempt) => attempt.agent),
-      ...(chainIsStranded(r.record_id as string)
-        ? {
-            status: 'stranded',
-            stranded: true,
-            recovery_hint: strandedRecovery(r.record_id as string),
-          }
-        : {}),
-    }
-    return [costFacts ? withReportedCost(listed, costFacts, subscriptionPrices) : listed]
-  })
+  rows = rows
+    .map(withRetryRecordId)
+    .flatMap((r) =>
+      listingConversation(
+        r,
+        json,
+        costFacts,
+        subscriptionPrices,
+        chainIsStranded,
+        strandedRecovery,
+      ),
+    )
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes
   // it). Omission and non-existence are different facts for machine callers.
@@ -528,7 +554,7 @@ export async function runListingCommand(
   // how two concerns quietly become one.
   if (json) {
     const publish = (data: unknown) =>
-      JSON.stringify(jsonV1 ? data : { schema_version: 2, kind: 'run', data })
+      JSON.stringify(options.jsonV1 ? data : { schema_version: 2, kind: 'run', data })
     for (const r of rows) log(publish(r))
     publishUnknownRuns({ ids: unknownIds, recordIds: unknownRecordIds, publish, log })
     return

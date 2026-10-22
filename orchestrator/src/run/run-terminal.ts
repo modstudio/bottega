@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
@@ -212,7 +213,6 @@ export type TerminalInput = {
   exitCode: number
   vendorTokens: number | null
   costUsd: number | null
-  billing: string | null
   vendorUsage: VendorUsage
   effectiveModel: string | null
   resolvedSession: string | null
@@ -461,7 +461,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     exitCode,
     vendorTokens,
     costUsd,
-    billing,
     vendorUsage,
     effectiveModel,
     resolvedSession,
@@ -730,7 +729,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     latencyMs: Date.now() - started,
     vendorTokens,
     vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage, billing),
+    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -773,7 +772,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           promptPath,
           vendorTokens,
           costUsd,
-          ...runUsageColumnValues(runUsageColumns(vendorUsage, billing)),
+          ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
           status,
           error,

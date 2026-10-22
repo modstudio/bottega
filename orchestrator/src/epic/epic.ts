@@ -201,6 +201,33 @@ function addStrandingReasons(
 const reviewRoundKey = (review: ReviewRow) =>
   review.patch_id ?? review.head_commit ?? `review:${review.record_id}`
 
+function epicRunCosts(
+  taskRuns: RunRow[],
+  facts: ReturnType<typeof subscriptionCostFacts>,
+  prices: Readonly<Record<string, number | null>>,
+) {
+  const priced = taskRuns
+    .map((run) =>
+      reportedCostForRun(
+        {
+          agent: run.agent,
+          startedAt: run.started_at,
+          vendorTokens: run.vendor_tokens,
+          vendorCostUsd: run.vendor_cost_usd,
+          vendorEstimatedCostUsd: run.vendor_estimated_cost_usd,
+          vendorCostSource: run.vendor_cost_source,
+        },
+        facts,
+        prices,
+      ),
+    )
+    .filter((cost) => cost.usd !== null)
+  return {
+    vendorCostUsd: priced.length ? priced.reduce((sum, cost) => sum + cost.usd!, 0) : null,
+    unreportedCost: taskRuns.length - priced.length,
+  }
+}
+
 /**
  * Evidence attribution is deliberately ordered. run.launch_key is authoritative
  * when present; otherwise the task key embedded in run.branch and then its head
@@ -243,21 +270,7 @@ export function epicScoreboard(
     for (const run of taskRuns) byJob[run.job] = (byJob[run.job] ?? 0) + 1
     const timing = durationMetrics(taskRuns, clock)
     const tokenRows = taskRuns.filter((run) => run.vendor_tokens !== null)
-    const costRows = taskRuns.map((run) =>
-      reportedCostForRun(
-        {
-          agent: run.agent,
-          startedAt: run.started_at,
-          vendorTokens: run.vendor_tokens,
-          vendorCostUsd: run.vendor_cost_usd,
-          vendorEstimatedCostUsd: run.vendor_estimated_cost_usd,
-          vendorCostSource: run.vendor_cost_source,
-        },
-        costFacts,
-        subscriptionPrices,
-      ),
-    )
-    const pricedRows = costRows.filter((cost) => cost.usd !== null)
+    const costs = epicRunCosts(taskRuns, costFacts, subscriptionPrices)
     const refused = taskLandings.filter((landing) => landing.status === 'refused')
     const refusedByCause: Record<string, number> = {}
     for (const landing of refused) {
@@ -287,12 +300,10 @@ export function epicScoreboard(
       vendorTokens: tokenRows.length
         ? tokenRows.reduce((sum, run) => sum + run.vendor_tokens!, 0)
         : null,
-      vendorCostUsd: pricedRows.length
-        ? pricedRows.reduce((sum, cost) => sum + cost.usd!, 0)
-        : null,
+      vendorCostUsd: costs.vendorCostUsd,
       unreportedUsageRuns: {
         tokens: taskRuns.length - tokenRows.length,
-        cost: taskRuns.length - pricedRows.length,
+        cost: costs.unreportedCost,
       },
       lensRounds: new Set(taskReviews.map(reviewRoundKey)).size,
       fixRounds: rootFixRuns.length,

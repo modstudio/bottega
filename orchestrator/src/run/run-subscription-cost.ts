@@ -10,7 +10,7 @@ export type ReportedRunCost = {
   source: string | null
 }
 
-export type SubscriptionAgent = {
+type SubscriptionAgent = {
   billing: string
   harness: string
 }
@@ -26,6 +26,8 @@ export function subscriptionMonthlyUsdKey(harness: string): string {
   return `subscription.${harness}.monthly_usd`
 }
 
+export const SUBSCRIPTION_PRICE_HARNESSES = ['codex', 'grok'] as const
+
 export function harnessFromSubscriptionPriceKey(key: string): string | null {
   const match = PRICE_KEY.exec(key)
   return match?.[1] ?? null
@@ -37,7 +39,7 @@ export function parseSubscriptionMonthlyUsd(value: string): number | null {
   return parsed
 }
 
-export function utcCalendarMonth(startedAt: string): string {
+function utcCalendarMonth(startedAt: string): string {
   const instant = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(startedAt) ? startedAt : `${startedAt}Z`
   const date = new Date(instant)
   if (Number.isNaN(date.getTime())) return startedAt.slice(0, 7)
@@ -45,7 +47,7 @@ export function utcCalendarMonth(startedAt: string): string {
   return `${date.getUTCFullYear()}-${month}`
 }
 
-export function subscriptionMonthTokenKey(harness: string, startedAt: string): string {
+function subscriptionMonthTokenKey(harness: string, startedAt: string): string {
   return `${harness}:${utcCalendarMonth(startedAt)}`
 }
 

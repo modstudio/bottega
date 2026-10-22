@@ -1095,7 +1095,6 @@ export async function run(opts: {
         exitCode,
         vendorTokens,
         costUsd,
-        billing: a.billing,
         vendorUsage,
         effectiveModel,
         resolvedSession,

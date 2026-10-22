@@ -28,7 +28,50 @@ import {
 } from '../config/config-service.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
+import {
+  SUBSCRIPTION_PRICE_HARNESSES,
+  subscriptionMonthlyUsdKey,
+} from '../run/run-subscription-cost.ts'
 import { log, rawArgv } from './support.ts'
+
+const SUBSCRIPTION_PRICE_HELP = `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd.\nExamples:\n${SUBSCRIPTION_PRICE_HARNESSES.map((harness) => `  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey(harness)} <usd>`).join('\n')}\n`
+
+function registerConfigSet(config: Command): void {
+  config
+    .command('set <key> <value>')
+    .description(
+      'set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD',
+    )
+    .addHelpText('after', SUBSCRIPTION_PRICE_HELP)
+    .option('--space', 'write the value in the active space scope')
+    .option('--machine', 'write the value in machine configuration')
+    .option('--expect <rowVersion>', 'row version required before writing')
+    .option('--json', 'write the resulting configuration row as JSON')
+    .action(async (key, value, options) => {
+      const write = shipToWrite(key, value)
+      assertConfigWriteAllowed(write.key, write.value)
+      if (options.machine) {
+        if (options.space || options.expect)
+          throw new Error(
+            'refusing machine config set: --machine cannot be combined with --space or --expect',
+          )
+        const row = setMachineEntry(write.key, write.value)
+        if (options.json) log(JSON.stringify(row))
+        else
+          log(
+            `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+          )
+        return
+      }
+      const row = await setEntry(
+        write.key,
+        write.value,
+        scope(options),
+        expectedRowVersion(options.expect),
+      )
+      if (options.json) log(configGetPresentation(row, true))
+    })
+}
 
 const scope = (options: { space?: boolean }): ConfigScope => (options.space ? 'space' : 'user')
 type ConfigRow = Awaited<ReturnType<typeof getEntry>>
@@ -129,43 +172,7 @@ export function register(program: Command): void {
       const row = await getEntry(key, scope(options))
       log(configGetPresentation(row, Boolean(options.json)))
     })
-  config
-    .command('set <key> <value>')
-    .description(
-      `set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD`,
-    )
-    .addHelpText(
-      'after',
-      `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd.\nExamples:\n  ${PLATFORM_SLUG} machine config set subscription.codex.monthly_usd <usd>\n  ${PLATFORM_SLUG} machine config set subscription.grok.monthly_usd <usd>\n`,
-    )
-    .option('--space', 'write the value in the active space scope')
-    .option('--machine', 'write the value in machine configuration')
-    .option('--expect <rowVersion>', 'row version required before writing')
-    .option('--json', 'write the resulting configuration row as JSON')
-    .action(async (key, value, options) => {
-      const write = shipToWrite(key, value)
-      assertConfigWriteAllowed(write.key, write.value)
-      if (options.machine) {
-        if (options.space || options.expect)
-          throw new Error(
-            'refusing machine config set: --machine cannot be combined with --space or --expect',
-          )
-        const row = setMachineEntry(write.key, write.value)
-        if (options.json) log(JSON.stringify(row))
-        else
-          log(
-            `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
-          )
-        return
-      }
-      const row = await setEntry(
-        write.key,
-        write.value,
-        scope(options),
-        expectedRowVersion(options.expect),
-      )
-      if (options.json) log(configGetPresentation(row, true))
-    })
+  registerConfigSet(config)
   config
     .command('list')
     .description('list configuration values')

@@ -320,6 +320,16 @@ function registerAgentCommands(program: Command): void {
     .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
 }
 
+async function epicAction(
+  key: string,
+  json: boolean,
+  presentation: { log(value: string): void },
+): Promise<void> {
+  const project = projectAt(process.cwd())
+  if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
+  await epicCommand(project.name, key, json, presentation, await loadSubscriptionPrices())
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   program
     .command('enforcement')
@@ -602,13 +612,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .command('epic <key>')
     .option('--json', 'write the scoreboard as JSON')
     .allowExcessArguments(false)
-    .action((key, options) => {
-      const project = projectAt(process.cwd())
-      if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
-      return loadSubscriptionPrices().then((prices) =>
-        epicCommand(project.name, key, Boolean(options.json), presentation, prices),
-      )
-    })
+    .action((key, options) => epicAction(key, Boolean(options.json), presentation))
   describedCommand(program, 'jobs', 'list jobs and their capability requirements')
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
