@@ -57,7 +57,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-self-ruling.ts',
   ]),
   module('orchestrator/src/workflow/workflow-run-binding.ts', []),
-  module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', []),
+  module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', [
+    '../branch/pull-request-view.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
     'node:child_process',

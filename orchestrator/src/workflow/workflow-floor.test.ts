@@ -4,6 +4,7 @@ import {
   catalogueFloors,
   decideCloseFloors,
   decideFloorSatisfaction,
+  decidePullRequestEvidence,
   type Floor,
   type FloorSatisfactionInput,
   mayCloseOnAgentSelfRuling,
@@ -23,6 +24,8 @@ const ruling: Floor = {
 }
 const commandExit: Floor = { ...ruling, kind: 'command-exit' }
 const artifact: Floor = { ...ruling, kind: 'recorded-artifact' }
+const pullRequestExit: Floor = { ...commandExit, commandEvidence: 'pull-request' }
+const pullRequestArtifact: Floor = { ...artifact, commandEvidence: 'pull-request' }
 const tracker: Floor = {
   ...ruling,
   kind: 'tracker-transition',
@@ -52,11 +55,15 @@ const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
 const passingExec: ValidatedEvidence = {
   exec: {
     id: 4,
-    command: `${PLATFORM_SLUG} pr create`,
+    command: 'true',
+    argv: ['true'],
     exitCode: 0,
     sessionMatches: true,
     sessionAdoptedCursor: false,
     createdAfterStepActivation: true,
+    checkoutBranch: 'DEV-977-work',
+    headCommit: 'abc',
+    cursorBranch: 'DEV-977-work',
   },
 }
 const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
@@ -298,7 +305,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
@@ -328,12 +335,9 @@ test('an exec with the expected exit satisfies command-exit', () => {
       floors: [commandExit],
       evidence: {
         exec: {
-          id: 4,
+          ...passingExec.exec!,
           command: `${PLATFORM_SLUG} pr create`,
           exitCode: 1,
-          sessionMatches: true,
-          sessionAdoptedCursor: false,
-          createdAfterStepActivation: true,
         },
       },
     }).action,
@@ -347,12 +351,9 @@ test('a failed exec cannot use the recorded-artifact alternative on a command-ex
       evidence: {
         artifact: { ref: 'exec:4', exists: true },
         exec: {
-          id: 4,
+          ...passingExec.exec!,
           command: `${PLATFORM_SLUG} pr create`,
           exitCode: 1,
-          sessionMatches: true,
-          sessionAdoptedCursor: false,
-          createdAfterStepActivation: true,
         },
       },
     }),
@@ -423,12 +424,9 @@ test('a failed exec remains valid for a recorded-artifact-only step', () => {
       evidence: {
         artifact: { ref: 'exec:4', exists: true },
         exec: {
-          id: 4,
+          ...passingExec.exec!,
           command: `${PLATFORM_SLUG} pr create`,
           exitCode: 1,
-          sessionMatches: true,
-          sessionAdoptedCursor: false,
-          createdAfterStepActivation: true,
         },
       },
     }).action,
@@ -440,12 +438,9 @@ test('an exec from another session is refused with the rerun remedy', () => {
     floors: [commandExit],
     evidence: {
       exec: {
-        id: 4,
-        command: 'true',
-        exitCode: 0,
+        ...passingExec.exec!,
         sessionMatches: false,
         sessionAdoptedCursor: false,
-        createdAfterStepActivation: true,
       },
     },
   })
@@ -461,12 +456,9 @@ test("an adopting session's exec satisfies command-exit", () => {
       floors: [commandExit],
       evidence: {
         exec: {
-          id: 4,
-          command: 'true',
-          exitCode: 0,
+          ...passingExec.exec!,
           sessionMatches: false,
           sessionAdoptedCursor: true,
-          createdAfterStepActivation: true,
         },
       },
     }).action,
@@ -478,11 +470,7 @@ test('an exec older than the active step is refused with the rerun remedy', () =
     floors: [commandExit],
     evidence: {
       exec: {
-        id: 4,
-        command: 'true',
-        exitCode: 0,
-        sessionMatches: true,
-        sessionAdoptedCursor: false,
+        ...passingExec.exec!,
         createdAfterStepActivation: false,
       },
     },
@@ -516,6 +504,107 @@ test('a recorded artifact satisfies that floor', () => {
   expect(decide({ floors: [artifact], evidence: presentArtifact })).toMatchObject({
     action: 'allow',
     refs: [{ flag: '--artifact', value: 'probe:3' }],
+  })
+})
+
+test('pull-request evidence rejects generic artifacts and unrelated successful commands', () => {
+  for (const evidence of [presentArtifact, passingExec, passingRun, passingProbe, passingGate])
+    expect(
+      decide({
+        floors: [pullRequestExit, pullRequestArtifact],
+        evidence,
+      }).action,
+    ).toBe('refuse')
+})
+
+test('pull-request evidence accepts pr-create or a link with the cursor head and base', () => {
+  expect(
+    decide({
+      floors: [pullRequestExit, pullRequestArtifact],
+      evidence: {
+        exec: {
+          ...passingExec.exec!,
+          command: `${PLATFORM_SLUG} pr create`,
+          argv: [PLATFORM_SLUG, 'pr', 'create'],
+        },
+      },
+    }).action,
+  ).toBe('allow')
+  expect(
+    decide({
+      floors: [pullRequestExit, pullRequestArtifact],
+      evidence: {
+        artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
+        pullRequest: {
+          url: 'https://github.com/acme/app/pull/7',
+          repository: 'acme/app',
+          projectRepository: 'acme/app',
+          state: 'OPEN',
+          head: 'DEV-977-work',
+          base: 'main',
+          cursorBranch: 'DEV-977-work',
+          trunk: 'main',
+        },
+      },
+    }).action,
+  ).toBe('allow')
+  expect(
+    decide({
+      floors: [pullRequestExit, pullRequestArtifact],
+      evidence: {
+        artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
+        pullRequest: {
+          url: 'https://github.com/acme/app/pull/7',
+          repository: 'acme/app',
+          projectRepository: 'acme/app',
+          state: 'OPEN',
+          head: 'DEV-977-work',
+          base: 'wrong',
+          cursorBranch: 'DEV-977-work',
+          trunk: 'main',
+        },
+      },
+    }).action,
+  ).toBe('refuse')
+})
+
+test('pull-request evidence binds commands to the exact branch and links to the project repository and state', () => {
+  const exec = {
+    kind: 'exec' as const,
+    argv: [PLATFORM_SLUG, 'pr', 'create'],
+    exitCode: 0,
+    sessionBound: true,
+    createdAfterStepActivation: true,
+    checkoutBranch: 'other-branch',
+    headCommit: 'shared-commit',
+    cursorBranch: 'DEV-977-work',
+  }
+  expect(decidePullRequestEvidence(exec)).toEqual({
+    met: false,
+    condition:
+      "the recorded command checkout branch is other-branch, not this cursor's DEV-977-work",
+  })
+
+  const link = {
+    kind: 'link' as const,
+    repository: 'foreign/app',
+    projectRepository: 'acme/app',
+    state: 'OPEN',
+    head: 'DEV-977-work',
+    base: 'main',
+    cursorBranch: 'DEV-977-work',
+    trunk: 'main',
+  }
+  expect(decidePullRequestEvidence(link)).toEqual({
+    met: false,
+    condition: "the pull request repository is foreign/app, not this project's acme/app",
+  })
+  expect(decidePullRequestEvidence({ ...link, repository: 'acme/app', state: 'CLOSED' })).toEqual({
+    met: false,
+    condition: 'the pull request state is CLOSED, not open or merged',
+  })
+  expect(decidePullRequestEvidence({ ...link, repository: 'acme/app', state: 'MERGED' })).toEqual({
+    met: true,
   })
 })
 
@@ -920,6 +1009,10 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   })
   expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: '8' })
   expect(parseArtifactRef('attached-text:14')).toEqual({ kind: 'attached-text', id: 14 })
+  expect(parseArtifactRef('https://github.com/acme/app/pull/15')).toEqual({
+    kind: 'pull-request',
+    url: 'https://github.com/acme/app/pull/15',
+  })
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })
   expect(parseArtifactRef('nope')).toMatchObject({ error: expect.stringContaining('--artifact') })
 })
@@ -939,6 +1032,16 @@ test('catalogueFloors marks deferrable kinds and pull-request tracker floors', (
   expect(catalogueFloors(['command-exit'], [], 'done', false, false, 'gate')[0]).toMatchObject({
     commandEvidence: 'gate',
   })
+  expect(
+    catalogueFloors(
+      ['command-exit', 'recorded-artifact'],
+      [],
+      'done',
+      false,
+      false,
+      'pull-request',
+    ),
+  ).toEqual([pullRequestExit, pullRequestArtifact])
 })
 
 test('catalogueFloors refuses an unknown kind', () => {

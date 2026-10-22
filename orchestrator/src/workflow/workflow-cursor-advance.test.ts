@@ -28,7 +28,13 @@ const testPorts = {
   }),
   runHasArtifacts: () => true,
   resolveCheckout: () => ({ project: 'fixture', branch: 'work', headIsTipOrAncestor: true }),
-  viewPullRequest: () => ({ state: 'MERGED', mergedAt: '2026-10-20' }),
+  viewPullRequest: () => ({
+    state: 'MERGED',
+    mergedAt: '2026-10-20',
+    headRefName: 'work',
+    baseRefName: 'main',
+    url: 'https://github.com/acme/app/pull/1',
+  }),
   resolveTreeCommit: () => 'abc',
 }
 
