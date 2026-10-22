@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
+import {
+  Client,
+  InMemoryTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
@@ -14,7 +18,7 @@ import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { ask, createAskMcpServer } from './ask.ts'
+import { ask, createAskHttpHandler, createAskMcpServer } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
 
 async function askClient(
@@ -50,6 +54,47 @@ afterEach(() => {
 })
 
 describe('the live ask channel always answers', () => {
+  test('the HTTP endpoint rejects a missing token and serves an authenticated MCP request', async () => {
+    const run = addRun({ agent: 'goose-trial', job: 'implement', status: 'running' })
+    db().query('UPDATE run SET run_token=? WHERE record_id=?').run('run-token', run)
+    const handle = createAskHttpHandler(run, 'run-token')
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'ask-http-test', version: '1' },
+      },
+    })
+    const request = (authorization?: string) =>
+      new Request('http://127.0.0.1:43127/mcp', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+          ...(authorization ? { authorization } : {}),
+        },
+        body,
+      })
+
+    expect((await handle(request())).status).toBe(401)
+    const client = new Client({ name: 'ask-http-test', version: '1' })
+    const transport = new StreamableHTTPClientTransport(new URL('http://127.0.0.1:43127/mcp'), {
+      requestInit: { headers: { authorization: 'Bearer run-token' } },
+      fetch: (input, init) => handle(new Request(input, init)),
+    })
+    await client.connect(transport)
+    try {
+      expect((await client.listTools()).tools.map((tool) => tool.name)).toContain(
+        'ask_orchestrator',
+      )
+    } finally {
+      await client.close()
+    }
+  })
+
   test('reports the tools actually registered for writers, readers, and unauthenticated runs', async () => {
     const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })

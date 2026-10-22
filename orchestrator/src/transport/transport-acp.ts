@@ -479,6 +479,25 @@ function acpLaunchArgv(
   return sandboxLaunchArgv(profile, bin, agentArgv)
 }
 
+function openAcpTrace(
+  opts: TransportStartOpts,
+  child: ReturnType<typeof spawnAcpChild>,
+  bin: string,
+  agentArgv: string[],
+  profile: SandboxRuntimeConfig | null,
+): AcpTrace | null {
+  return createAcpTrace(
+    opts.env.ORCH_ACP_TRACE,
+    opts.env.ORCH_RUN_ID ?? 'unknown-run',
+    child.pid ?? 0,
+    bin,
+    agentArgv,
+    opts.cwd,
+    profile !== null,
+    [opts.env.ORCH_RUN_TOKEN ?? ''],
+  )
+}
+
 function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput['usage'] {
   const meta = isRecord(response._meta) ? response._meta : null
   const nested = meta && isRecord(meta.usage) ? meta.usage : null
@@ -500,6 +519,16 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
 
 function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   if (opts.agent.name === 'grok' || !opts.env.ORCH_RUN_ID || !opts.env.ORCH_RUN_TOKEN) return []
+  if (opts.writingAcp && opts.ask?.kind === 'endpoint') {
+    return [
+      {
+        type: 'http',
+        name: WORKER_MCP_SERVER_NAME,
+        url: opts.ask.url,
+        headers: [{ name: 'Authorization', value: `Bearer ${opts.env.ORCH_RUN_TOKEN}` }],
+      },
+    ]
+  }
   const [command, ...args] = bottegaEntryArgv('ask-server')
   return [
     {
@@ -528,10 +557,21 @@ function observeAcpUpdate(
   }
 }
 
-export function configuredAcpAsk(opts: TransportStartOpts): string[] | null {
-  if (opts.agent.name === 'grok') return opts.agent.askServerCommand?.(opts.env) ?? null
+export function configuredAcpAsk(
+  opts: TransportStartOpts,
+): { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string } | null {
+  if (opts.agent.name === 'grok') {
+    const argv = opts.agent.askServerCommand?.(opts.env) ?? null
+    return argv ? { kind: 'command', argv } : null
+  }
+  if (opts.writingAcp && opts.ask?.kind === 'endpoint') return opts.ask
   const server = acpMcpServers(opts).find((entry) => entry.name === WORKER_MCP_SERVER_NAME)
-  return server && 'command' in server ? [server.command, ...(server.args ?? [])] : null
+  if (!server) return null
+  if ('command' in server)
+    return { kind: 'command', argv: [server.command, ...(server.args ?? [])] }
+  return server.type === 'http' || server.type === 'sse'
+    ? { kind: 'endpoint', url: server.url }
+    : null
 }
 
 function spawnAcpChild(launch: string[], opts: TransportStartOpts) {
@@ -555,15 +595,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
   const launch = await acpLaunchArgv(opts, profile, bin, agentArgv)
   const child = spawnAcpChild(launch, opts)
-  const trace = createAcpTrace(
-    opts.env.ORCH_ACP_TRACE,
-    opts.env.ORCH_RUN_ID ?? 'unknown-run',
-    child.pid ?? 0,
-    bin,
-    agentArgv,
-    opts.cwd,
-    profile !== null,
-  )
+  const trace = openAcpTrace(opts, child, bin, agentArgv, profile)
   installAcpChildTrace(trace, child)
   const stderrChunks: Buffer[] = []
   child.stderr?.on('data', (chunk: Buffer) => {

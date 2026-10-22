@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -10,6 +10,7 @@ import { checkpointRun } from './checkpoint.ts'
 
 const temporary = mkdtempSync(join(tmpdir(), 'orch-checkpoint-'))
 const branch = 'DEV-835-checkpoint-test'
+const hostContainment = { gitDir: null, hooksDir: null, disableHooks: false } as const
 const identity = {
   GIT_AUTHOR_NAME: 'Orch Test',
   GIT_AUTHOR_EMAIL: 'orch@example.invalid',
@@ -58,6 +59,7 @@ function checkpoint(database: Database, repository: string, runId: string) {
     taskKey: 'DEV-835',
     scratchDir: temporary,
     guardEnvironment: identity,
+    containment: hostContainment,
   })
 }
 
@@ -85,6 +87,40 @@ test('checkpoint does not commit a gitignored file', () => {
 
     expect(checkpoint(database, repository, runId).created).toBe(true)
     expect(git(['show', '--format=', '--name-only', 'HEAD'], repository)).toBe('.gitignore')
+  } finally {
+    database.close()
+  }
+})
+
+test('a writing ACP checkpoint uses its recorded gitdir and never runs authored hooks', () => {
+  const { database, repository, runId } = fixture('acp-hooks')
+  try {
+    const hooks = join(repository, '.githooks')
+    mkdirSync(hooks)
+    const hook = join(hooks, 'reference-transaction')
+    writeFileSync(hook, '#!/bin/sh\nexit 91\n')
+    chmodSync(hook, 0o755)
+    git(['config', 'core.hooksPath', '.githooks'], repository)
+    writeFileSync(join(repository, 'fresh.ts'), 'export const fresh = true\n')
+    mkdirSync(join(temporary, 'checkpoint-hooks'), { recursive: true })
+
+    const result = checkpointRun({
+      database,
+      runId,
+      worktree: repository,
+      branch,
+      taskKey: 'DEV-835',
+      scratchDir: temporary,
+      guardEnvironment: identity,
+      containment: {
+        gitDir: join(repository, '.git'),
+        hooksDir: join(temporary, 'checkpoint-hooks'),
+        disableHooks: true,
+      },
+    })
+
+    expect(result.created).toBe(true)
+    expect(git(['show', '--format=', '--name-only', 'HEAD'], repository)).toContain('fresh.ts')
   } finally {
     database.close()
   }

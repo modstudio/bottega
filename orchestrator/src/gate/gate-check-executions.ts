@@ -11,9 +11,9 @@ import {
 import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 
-export function gateCheckExecutionPath(): string {
+export function gateCheckExecutionPath(directory?: string): string {
   return join(
-    dirname(resolveOrchestratorDatabase(process.env)),
+    directory ?? dirname(resolveOrchestratorDatabase(process.env)),
     `check-execution-${crypto.randomUUID()}.jsonl`,
   )
 }
