@@ -46,14 +46,13 @@ test('recorded confinement exposes sandbox roots and leaves host workers unprove
       '/run/tree',
       [],
       '/tmp',
+      'workspace-write',
     ),
   ).toEqual(['/run/tree'])
-  expect(confinementRoots(null, 'grok', '/run/tree', [], '/tmp')).toBeNull()
-  expect(confinementRoots(null, 'codex', '/run/tree', ['/run/scratch'], '/tmp')).toEqual([
-    '/run/tree',
-    '/run/scratch',
-    '/tmp',
-  ])
+  expect(confinementRoots(null, 'grok', '/run/tree', [], '/tmp', 'workspace-write')).toBeNull()
+  expect(
+    confinementRoots(null, 'codex', '/run/tree', ['/run/scratch'], '/tmp', 'workspace-write'),
+  ).toEqual(['/run/tree', '/run/scratch', '/tmp'])
 })
 
 test('a startup failure after creating the writing ACP ask endpoint closes its listener', async () => {

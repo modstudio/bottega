@@ -4,7 +4,7 @@
  * Must not know databases, worktree lifecycle, run state, or routing.
  */
 import { realpathSync, statSync } from 'node:fs'
-import { dirname, sep } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { projects } from '../project/projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
@@ -24,6 +24,26 @@ export function realpathOrSpelled(path: string): string {
   }
 }
 
+const PARTIAL_FULL_CASE_FOLD = new Map([
+  ['İ', 'i\u0307'],
+  ['ß', 'ss'],
+  ['ẞ', 'ss'],
+  ['ﬀ', 'ff'],
+  ['ﬁ', 'fi'],
+  ['ﬂ', 'fl'],
+  ['ﬃ', 'ffi'],
+  ['ﬄ', 'ffl'],
+  ['ﬅ', 'st'],
+  ['ﬆ', 'st'],
+])
+
+export function partialUnicodeCaseFold(value: string): string {
+  return [...value.normalize('NFC')]
+    .map((character) => PARTIAL_FULL_CASE_FOLD.get(character) ?? character.toLowerCase())
+    .join('')
+    .normalize('NFC')
+}
+
 export type CheckoutAliases = {
   roots: string[]
   caseInsensitive: boolean
@@ -34,8 +54,6 @@ export type CheckoutToWatch = {
   project: string
   path: string
   expectedHead?: string | null
-  caller?: boolean
-  writeExcluded?: boolean
 }
 export type CheckoutWatchFailure = CheckoutToWatch & { error: string }
 
@@ -122,6 +140,43 @@ function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'roots'> {
   return { caseInsensitive, diagnostic }
 }
 
+function physicalPathPair(left: string, right: string): [string, string, boolean] | null {
+  const physical = (path: string): string | null => {
+    const canonical = realpathOrSpelled(path)
+    try {
+      statSync(canonical)
+      return resolve(canonical)
+    } catch {
+      return null
+    }
+  }
+  const leftPhysical = physical(left)
+  const rightPhysical = physical(right)
+  if (!leftPhysical || !rightPhysical) return null
+  return [leftPhysical, rightPhysical, checkoutCaseSensitivity(leftPhysical).caseInsensitive]
+}
+
+export function checkoutPathsSame(left: string, right: string): boolean | null {
+  const pair = physicalPathPair(left, right)
+  if (!pair) return null
+  const [leftPhysical, rightPhysical, caseInsensitive] = pair
+  const fold = caseInsensitive ? partialUnicodeCaseFold : (value: string) => value
+  return fold(leftPhysical) === fold(rightPhysical)
+}
+
+/** Compare containment using physical path identity and the checkout volume's case rules. */
+export function checkoutPathsOverlap(left: string, right: string): boolean | null {
+  const pair = physicalPathPair(left, right)
+  if (!pair) return null
+  const [leftPhysical, rightPhysical, caseInsensitive] = pair
+  const fold = caseInsensitive ? partialUnicodeCaseFold : (value: string) => value
+  const atOrBelow = (path: string, root: string): boolean => {
+    const offset = relative(fold(root), fold(path))
+    return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset))
+  }
+  return atOrBelow(leftPhysical, rightPhysical) || atOrBelow(rightPhysical, leftPhysical)
+}
+
 /**
  * The checkouts a run is confined against: the registered main checkout of
  * the run's OWN project, plus the caller checkout it was dispatched from.
@@ -165,11 +220,6 @@ export function checkoutWatchSet(
     }
     if (canonical === active) continue
     if (seen.has(canonical)) {
-      const existing = watched.find(({ path }) => path === canonical)!
-      if (checkout.caller) {
-        existing.caller = true
-        existing.writeExcluded = checkout.writeExcluded
-      }
       continue
     }
     seen.add(canonical)
@@ -177,8 +227,6 @@ export function checkoutWatchSet(
       project: checkout.project,
       path: canonical,
       expectedHead: checkout.expectedHead ?? null,
-      caller: checkout.caller,
-      writeExcluded: checkout.writeExcluded,
     })
   }
   return { watched, failures }

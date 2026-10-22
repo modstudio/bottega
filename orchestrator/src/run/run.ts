@@ -59,7 +59,10 @@ import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
-import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
+import {
+  checkoutRemovalAttribution,
+  recordSandboxDirectoryClaim,
+} from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
@@ -212,6 +215,18 @@ function completeStartup(): true {
   return true
 }
 
+function freezeCallerCheckouts(
+  watched: import('../git/checkout-identity.ts').CheckoutToWatch[],
+  callerCheckout: string | null,
+  roots: string[] | null,
+) {
+  return freezeCheckouts(watched, { callerWatch: callerCheckoutWatch(callerCheckout, roots) })
+}
+
+function callerRemovalAtRunEnd(callerCheckout: string | null, started: number) {
+  return checkoutRemovalAttribution(db(), callerCheckout ?? '', new Date(started).toISOString())
+}
+
 export async function run(opts: {
   job: string
   prompt: string
@@ -281,14 +296,12 @@ export async function run(opts: {
   reserveId?: string
   /**
    * Continue a worker that stopped to ask, instead of starting a new one.
-   *
    * Threaded through `run()` rather than given its own function because
    * everything after the command line is identical — the same spawn, the same
    * timeout, the same reaping, the same `finally` that must write a terminal
    * row whatever happened. A second copy of that machinery would be a second
    * place for the bug this system has already had twice: a run that never says
    * it stopped.
-   *
    * What a resume changes is only the front: no routing (the conversation
    * belongs to the agent that started it), no new worktree (the worker is
    * mid-edit in one), and `resumeArgv` in place of `argv`.
@@ -934,16 +947,17 @@ export async function run(opts: {
     cwd,
     writableRoots,
     process.env.TMPDIR,
+    codexSandbox.sandbox,
   )
   const callerCheckout = runProject
     ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
     : null
   const candidates = checkoutWatchSet(
-    callerCheckoutWatch(callerWatch(callerCheckout, isolatedCwd, runProject), roots),
+    callerWatch(callerCheckout, isolatedCwd, runProject),
     worktree?.path,
     runProjectName,
   )
-  const beforeFreeze = freezeCheckouts(candidates.watched)
+  const beforeFreeze = freezeCallerCheckouts(candidates.watched, callerCheckout, roots)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   const skipLines = confinementSkipLines(skipped)
   for (const line of skipLines) console.error(line)
@@ -1060,6 +1074,7 @@ export async function run(opts: {
         watchedCheckouts,
         confinementFailures,
         frozenBefore,
+        callerRemoval: callerRemovalAtRunEnd(callerCheckout, started),
         removeIsolatedCwd,
         changes,
         provisionedMcpConfig,

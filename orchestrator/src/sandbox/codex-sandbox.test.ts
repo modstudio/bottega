@@ -11,11 +11,13 @@ describe('Codex sandbox decision', () => {
 })
 
 test('native writable roots include temporary directories once', () => {
-  expect(codexWritableRoots('/run/tree', ['/run/scratch'], '/private/tmp')).toEqual([
+  expect(
+    codexWritableRoots('workspace-write', '/run/tree', ['/run/scratch'], '/private/tmp'),
+  ).toEqual(['/run/tree', '/run/scratch', '/tmp', '/private/tmp'])
+  expect(codexWritableRoots('workspace-write', '/run/tree', ['/tmp'], '/tmp')).toEqual([
     '/run/tree',
-    '/run/scratch',
     '/tmp',
-    '/private/tmp',
   ])
-  expect(codexWritableRoots('/run/tree', ['/tmp'], '/tmp')).toEqual(['/run/tree', '/tmp'])
+  expect(codexWritableRoots('read-only', '/run/tree', [], '/tmp')).toBeNull()
+  expect(codexWritableRoots('danger-full-access', '/run/tree', [], '/tmp')).toBeNull()
 })

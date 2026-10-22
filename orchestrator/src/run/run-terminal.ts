@@ -12,6 +12,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
+  type CheckoutRemovalAttribution,
   type ConfinementEvent,
   classifyCheckoutChanges,
   type FreezeFailure,
@@ -189,6 +190,7 @@ export type TerminalInput = {
   watchedCheckouts: CheckoutToWatch[]
   confinementFailures: FreezeFailure[]
   frozenBefore: FrozenCheckout[]
+  callerRemoval: CheckoutRemovalAttribution
   removeIsolatedCwd: (() => void) | null
   changes: Changes | null
   provisionedMcpConfig: { measure<T>(operation: () => T): T } | null
@@ -269,15 +271,21 @@ function checkpointTerminalWork(input: TerminalInput): string | null {
 function terminalAfterCheckouts(
   watched: CheckoutToWatch[],
   before: FrozenCheckout[],
-  database: Database,
-  startedAt: string,
   runId: string,
-): ReturnType<typeof freezeAfterCheckouts> {
+  removal: CheckoutRemovalAttribution,
+): ReturnType<typeof freezeAfterCheckouts> & {
+  removal: CheckoutRemovalAttribution
+} {
   try {
-    return freezeAfterCheckouts({ watched, before, database, startedAt })
+    return { ...freezeAfterCheckouts({ watched, before, removal }), removal }
   } catch (error) {
     console.error(`orch: could not freeze watched checkouts for run ${runId}: ${error}`)
-    return { snapshots: [], failures: [], removedCaller: null }
+    return {
+      snapshots: [],
+      failures: [],
+      removedCaller: null,
+      removal: { attribution: 'unattributed', removalSession: null, removalRun: null },
+    }
   }
 }
 
@@ -473,6 +481,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     watchedCheckouts,
     confinementFailures,
     frozenBefore,
+    callerRemoval,
     removeIsolatedCwd,
     changes,
     provisionedMcpConfig,
@@ -526,12 +535,10 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const frozenAfter = terminalAfterCheckouts(
     watchedCheckouts,
     frozenBefore,
-    db(),
-    startedAt?.started_at ?? new Date(started).toISOString(),
     claim.id,
+    callerRemoval,
   )
   confinementFailures.push(...frozenAfter.failures)
-
   // The directory contains no input and is useful only while the vendor is
   // alive. Remove it after readSession has had the chance to derive any
   // vendor-owned transcript location from cwd.
@@ -578,6 +585,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       chainRoot: startedAt?.head_commit ?? null,
       database: db(),
       startedAt: startedAt?.started_at ?? new Date(started).toISOString(),
+      removal: frozenAfter.removal,
     })
   }
 
