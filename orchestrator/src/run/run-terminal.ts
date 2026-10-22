@@ -6,7 +6,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
@@ -229,6 +229,10 @@ export type TerminalResult = {
   confinementEvent: ConfinementEvent | null
   preConfinement: string | null
   artifactsPersisted: boolean
+}
+
+function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | undefined): boolean {
+  return server !== ownMcpServer && server !== MCP_SERVER_NAME && server !== WORKER_MCP_SERVER_NAME
 }
 
 /** Which accepted questions have not already been recorded, preserving reply order. */
@@ -583,7 +587,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const otherProjectMcpServers = new Set(
     projects()
       .map((project) => project.settings.mcpServer ?? project.name)
-      .filter((server) => server !== ownMcpServer && server !== 'orch' && server !== 'orch-ask'),
+      .filter((server) => isNonPlatformMcpServer(server, ownMcpServer)),
   )
   const cleanReview =
     parsedReview && status === 'ok' && confinementEvent?.classification !== 'overlapping'

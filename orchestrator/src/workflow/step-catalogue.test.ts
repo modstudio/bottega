@@ -252,6 +252,35 @@ test('commandEvidence gate requires a non-deferrable command-exit floor', () => 
   ).toContain('step "design" cannot defer command-exit when commandEvidence is "gate"')
 })
 
+test('pull-request commandEvidence requires a capable floor and cannot defer command-exit', () => {
+  for (const floor of [['command-exit'], ['recorded-artifact']])
+    expect(
+      validateStepCatalogue({
+        steps: [{ ...step, stage: 'ship', floor, commandEvidence: 'pull-request' }],
+      }),
+    ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...step, stage: 'ship', floor: ['ruling'], commandEvidence: 'pull-request' }],
+    }),
+  ).toContain(
+    'step "design" pull-request commandEvidence requires a command-exit or recorded-artifact floor',
+  )
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...step,
+          stage: 'ship',
+          floor: ['command-exit'],
+          deferrable: ['command-exit'],
+          commandEvidence: 'pull-request',
+        },
+      ],
+    }),
+  ).toContain('step "design" cannot defer command-exit when commandEvidence is "pull-request"')
+})
+
 test(`${PLATFORM_SLUG} run start dispatches require a prompt or file`, () => {
   const definition = (body: string) => ({ steps: [{ ...step, stage: 'implement', body }] })
 

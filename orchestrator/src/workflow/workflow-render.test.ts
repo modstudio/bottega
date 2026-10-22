@@ -130,9 +130,7 @@ describe('workflow rendering', () => {
     )
     expect(
       renderWorkflowStep(getWorkflowStep('flow', 'fixture', 'lens', args, d, { mode: 'default' })),
-    ).toContain(
-      'Evidence for recorded-artifact: record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>`.',
-    )
+    ).toContain(`Evidence for recorded-artifact: ${floorGuidance['recorded-artifact']}.`)
   })
 
   test('a composed mode tells the agent how to fetch and finish every step', () => {

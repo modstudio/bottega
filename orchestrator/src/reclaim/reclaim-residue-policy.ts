@@ -1,16 +1,79 @@
 // concern: reclaim-residue-policy
 /** Pure release decisions for residue observed by `bottega machine monitor`. */
 
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export type ReleaseDecision =
   | { allowed: true; action: string }
   | { allowed: false; refusal: string }
 
 const allow = (action: string): ReleaseDecision => ({ allowed: true, action })
-const refuse = (invariant: string, fix: string): ReleaseDecision => ({
+const refuse = (invariant: string, fix: string): Extract<ReleaseDecision, { allowed: false }> => ({
   allowed: false,
   refusal: `refused; invariant: ${invariant}; fix: ${fix}`,
 })
+
+export const GIT_LOCK_RECLAIM_AGE_MS = 10 * 60_000
+
+export type GitLockReleaseDecision =
+  | {
+      allowed: true
+      action: string
+      projectName: string
+      gitCommonDir: string
+      relativePath: string
+    }
+  | Extract<ReleaseDecision, { allowed: false }>
+
+export function gitLockReleaseDecision(facts: {
+  path: string
+  projects: readonly { name: string; gitCommonDir: string }[]
+  exists: boolean
+  ownerPids: number[] | null
+  ageMs: number | null
+}): GitLockReleaseDecision {
+  if (!facts.exists)
+    return refuse(
+      'the lock exists at the named path',
+      `run ${PLATFORM_SLUG} machine monitor again and reclaim a lock it currently reports`,
+    )
+  if (!isAbsolute(facts.path) || !basename(facts.path).endsWith('.lock'))
+    return refuse(
+      'the subject is an absolute path whose file name ends .lock',
+      'pass the absolute path of a Git lock file',
+    )
+  const lockPath = resolve(facts.path)
+  const project = facts.projects.find((item) => {
+    const child = relative(resolve(item.gitCommonDir), lockPath)
+    return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child)
+  })
+  if (!project)
+    return refuse(
+      "the lock is inside a registered project's Git common directory",
+      'register the project or pass a lock beneath its Git common directory',
+    )
+  if (facts.ownerPids === null)
+    return refuse('the lock owner inventory is known', 'restore lsof access and retry')
+  if (facts.ownerPids.length)
+    return refuse(
+      'the lock has no live owner',
+      `wait for owner pid ${facts.ownerPids.join(', ')} to release it`,
+    )
+  if (facts.ageMs === null)
+    return refuse('the lock mtime is known', `run ${PLATFORM_SLUG} machine monitor again`)
+  if (facts.ageMs < GIT_LOCK_RECLAIM_AGE_MS)
+    return refuse(
+      `the lock mtime is at least ${GIT_LOCK_RECLAIM_AGE_MS / 60_000} minutes old`,
+      'wait until the lock reaches the age floor, then retry',
+    )
+  return {
+    allowed: true,
+    action: 'archive the Git lock',
+    projectName: project.name,
+    gitCommonDir: resolve(project.gitCommonDir),
+    relativePath: relative(resolve(project.gitCommonDir), lockPath),
+  }
+}
 
 export function refGuardReleaseDecision(facts: {
   exists: boolean

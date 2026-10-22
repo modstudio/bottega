@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { codexAskServerCommand, codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
 import { codexLaunchUsesApproveForMe } from '../sandbox/codex-sandbox.ts'
 import { grokAskCommandFromConfig } from '../sandbox/sandbox.ts'
@@ -47,7 +48,7 @@ export type Agent = {
   /** Whether automatic routing may spend this metered agent on read-only jobs. */
   routeMetered?: boolean
   bin: string
-  /** Exact orch-ask command this harness registration configures, if any. */
+  /** Exact bottega-ask command this harness registration configures, if any. */
   askServerCommand?(environment: Record<string, string>): string[] | null
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
@@ -315,8 +316,8 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * `--approve-for-me` is required for MCP tool calls and is mutually exclusive
    * with `--sandbox`; it implies the same workspace-write sandbox repository
    * jobs already receive. Every repository job therefore uses it for the
-   * always-present orch-ask channel, whether or not project MCP was requested.
-   * No-repository jobs use an explicit workspace-write sandbox, so orch-ask
+   * always-present bottega-ask channel, whether or not project MCP was requested.
+   * No-repository jobs use an explicit workspace-write sandbox, so bottega-ask
    * tools without a read-only annotation still cannot run without approval.
    */
   if (o.writableRoots?.length) {
@@ -414,8 +415,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
     askServerCommand: () => codexAskServerCommand(),
     acp: {
       mcpServers: true,
-      mcpReason:
-        'codex-acp 1.10.0 accepts session/new mcpServers, but the 2026-09-07 ask case returned prose without calling orch-ask',
+      mcpReason: `codex-acp 1.10.0 accepts session/new mcpServers, but the 2026-09-07 ask case returned prose without calling ${WORKER_MCP_SERVER_NAME}`,
       nativeElicitation: false,
       nativeElicitationReason:
         'codex-acp 1.10.0 answered the requested user question as prose and emitted no elicitation/create',

@@ -5,13 +5,16 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
+import type { LegacyMcpServerName } from './setup-mcp.ts'
 import {
   harnessMcpServers,
+  legacyMcpServerName,
   type McpReadback,
   type McpServer,
   manualMcpInstructions,
   sameMcpRegistration,
 } from './setup-mcp.ts'
+import type { McpConfigMigration } from './setup-mcp-config.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 export type SetupQuestion = {
@@ -62,6 +65,7 @@ type SetupRegistrationProposal = {
   current: McpReadback
   questionId: string | null
   state: 'absent' | 'same' | 'stale' | 'different' | 'unreadable'
+  legacyName?: LegacyMcpServerName
 }
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
@@ -69,6 +73,7 @@ export type SetupPlan = {
   registrations: SetupRegistrationProposal[]
   questions: SetupQuestion[]
   notices: SetupNotice[]
+  mcpConfigMigrations?: McpConfigMigration[]
 }
 
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`
@@ -81,6 +86,76 @@ function registrationState(current: McpReadback): SetupRegistrationProposal['sta
   if (current.status === 'registered' || current.status === 'different') return 'different'
   if (current.status === 'stale') return 'stale'
   return 'unreadable'
+}
+
+function registrationToMigrate(
+  facts: NonNullable<HarnessFacts['mcp']>,
+  server: McpServer,
+): { current: McpReadback; legacyName: LegacyMcpServerName | null } {
+  const legacyName = legacyMcpServerName(server.name)
+  const legacy = facts.legacyRegistrations?.[legacyName]
+  if (legacy && legacy.status !== 'absent') return { current: legacy, legacyName }
+  return {
+    current: facts.registrations[server.name] ?? {
+      status: 'unreadable',
+      detail: 'registration was not captured',
+    },
+    legacyName: null,
+  }
+}
+
+function replacementQuestion(
+  harness: keyof SetupFacts['harnesses'],
+  server: McpServer,
+  current: McpReadback,
+  legacyName: LegacyMcpServerName | null,
+): SetupQuestion {
+  const id = registrationQuestionId(harness, server.name)
+  if (legacyName) {
+    return {
+      id,
+      question: `Rename the legacy ${legacyName} MCP registration to ${server.name} in ${harness}?`,
+      options: [
+        {
+          id: 'keep',
+          label: 'Keep legacy',
+          why: `Preserves ${harness}'s legacy ${legacyName} registration.`,
+        },
+        {
+          id: 'replace',
+          label: 'Rename',
+          why: `Removes ${legacyName} and registers ${server.name} with ${PLATFORM_NAME}'s current command and arguments.`,
+        },
+      ],
+      recommendation: 'replace',
+      why: `${legacyName} is the legacy name for ${server.name}.`,
+    }
+  }
+  return {
+    id,
+    question: `Replace the existing ${server.name} MCP registration in ${harness}?`,
+    options: [
+      {
+        id: 'keep',
+        label: 'Keep existing',
+        why: `Preserves ${harness}'s current ${server.name} registration.`,
+      },
+      {
+        id: 'replace',
+        label: 'Replace',
+        why: `Updates ${server.name} to ${PLATFORM_NAME}'s current command and arguments.`,
+      },
+    ],
+    recommendation: current.status === 'stale' ? 'replace' : 'keep',
+    why:
+      current.status === 'stale'
+        ? `The existing registration is stale: ${current.detail}.`
+        : current.status === 'different' || current.status === 'registered'
+          ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
+          : current.status === 'unreadable'
+            ? `The existing registration could not be read exactly: ${current.detail}`
+            : 'The existing registration was not found.',
+  }
 }
 
 function proposeHarnessRegistrations(
@@ -99,9 +174,11 @@ function proposeHarnessRegistrations(
     return []
   }
   const desired = servers.filter((server) => harnessMcpServers(harness).includes(server.name))
-  const absent = desired.filter(
-    (server) => facts.mcp?.registrations[server.name]?.status === 'absent',
-  )
+  const absent = desired.filter((server) => {
+    if (facts.mcp?.registrations[server.name]?.status !== 'absent') return false
+    const legacy = facts.mcp.legacyRegistrations?.[legacyMcpServerName(server.name)]
+    return !legacy || legacy.status === 'absent'
+  })
   const absentQuestionId = absent.length ? registrationQuestionId(harness) : null
   if (absentQuestionId) {
     const recommendation = facts.auth === 'signed-out' ? 'skip' : 'register'
@@ -128,11 +205,9 @@ function proposeHarnessRegistrations(
     })
   }
   return desired.map((server) => {
-    const current = facts.mcp!.registrations[server.name] ?? {
-      status: 'unreadable' as const,
-      detail: 'registration was not captured',
-    }
-    if (sameMcpRegistration(current, server)) {
+    const { current, legacyName } = registrationToMigrate(facts.mcp!, server)
+    const migrating = legacyName !== null
+    if (!migrating && sameMcpRegistration(current, server)) {
       return { harness, bin: facts.path!, server, current, questionId: null, state: 'same' }
     }
     if (current.status === 'absent') {
@@ -146,29 +221,7 @@ function proposeHarnessRegistrations(
       }
     }
     const replaceQuestionId = registrationQuestionId(harness, server.name)
-    questions.push({
-      id: replaceQuestionId,
-      question: `Replace the existing ${server.name} MCP registration in ${harness}?`,
-      options: [
-        {
-          id: 'keep',
-          label: 'Keep existing',
-          why: `Preserves ${harness}'s current ${server.name} registration.`,
-        },
-        {
-          id: 'replace',
-          label: 'Replace',
-          why: `Updates ${server.name} to ${PLATFORM_NAME}'s current command and arguments.`,
-        },
-      ],
-      recommendation: current.status === 'stale' ? 'replace' : 'keep',
-      why:
-        current.status === 'stale'
-          ? `The existing registration is stale: ${current.detail}.`
-          : current.status === 'different' || current.status === 'registered'
-            ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
-            : `The existing registration could not be read exactly: ${current.detail}`,
-    })
+    questions.push(replacementQuestion(harness, server, current, legacyName))
     if (current.status === 'unreadable')
       notices.push({
         message: `${harness} ${server.name} registration could not be read exactly: ${current.detail}`,
@@ -181,6 +234,7 @@ function proposeHarnessRegistrations(
       current,
       questionId: replaceQuestionId,
       state: registrationState(current),
+      ...(migrating ? { legacyName } : {}),
     }
   })
 }

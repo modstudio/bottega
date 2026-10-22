@@ -4,6 +4,7 @@
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseToml, stringify as stringifyToml } from '@decimalturn/toml-patch'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   grokReaderMcpServerTable,
   READER_PLATFORM_MCP_SERVERS,
@@ -27,7 +28,7 @@ export function scopeGrokReaderMcpHome(
   return {
     configPath: target,
     platformServers: READER_PLATFORM_MCP_SERVERS.filter(
-      (name) => name === 'orch-ask' || Boolean(userServers?.[name]),
+      (name) => name === WORKER_MCP_SERVER_NAME || Boolean(userServers?.[name]),
     ),
   }
 }

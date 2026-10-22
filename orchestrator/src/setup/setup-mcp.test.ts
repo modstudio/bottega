@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
+  type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
   readMcpRegistration,
@@ -114,8 +115,8 @@ test('rules out timeout and spawn errors before missing-server diagnostics', () 
 
 test('captures Grok list rows and marks unsupported harnesses manual', () => {
   const runner = () =>
-    result(JSON.stringify([{ name: 'orch', command: '/bin/orch', args: ['mcp'] }]))
-  const server = { name: 'orch' as const, command: '/bin/orch', args: ['mcp'] }
+    result(JSON.stringify([{ name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }]))
+  const server: McpServer = { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }
   expect(
     captureHarnessMcpFacts(
       'grok',
@@ -128,7 +129,7 @@ test('captures Grok list rows and marks unsupported harnesses manual', () => {
   ).toMatchObject({
     support: 'automatic',
     registrations: {
-      orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
+      [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
     },
   })
   expect(
@@ -140,12 +141,12 @@ test('captures Grok list rows and marks unsupported harnesses manual', () => {
       () => true,
       () => null,
     ),
-  ).toEqual({ support: 'manual', registrations: {} })
+  ).toEqual({ support: 'manual', registrations: {}, legacyRegistrations: {} })
 })
 
 test('classifies missing, different, and matching registrations', () => {
-  const server = {
-    name: 'orch' as const,
+  const server: McpServer = {
+    name: MCP_SERVER_NAME,
     command: `/bin/${PLATFORM_SLUG}`,
     args: ['mcp', 'serve'],
   }
@@ -211,23 +212,23 @@ test('linked-worktree registration refusal names the main checkout', () => {
 
 test('stable persisted registrations share the platform entry', () => {
   const [orch, ask] = stableMcpServers()
-  expect(orch).toMatchObject({ name: 'orch', args: ['mcp', 'serve'] })
+  expect(orch).toMatchObject({ name: MCP_SERVER_NAME, args: ['mcp', 'serve'] })
   expect(ask).toMatchObject({
-    name: 'orch-ask',
+    name: WORKER_MCP_SERVER_NAME,
     command: orch?.command,
     args: ['mcp', 'ask-server'],
   })
 })
 
 test('uses each harness exact user-scope add form', () => {
-  const server = { name: 'orch' as const, command: '/bin/orch', args: ['mcp'] }
+  const server: McpServer = { name: MCP_SERVER_NAME, command: '/bin/orch', args: ['mcp'] }
   expect(mcpAddArgv('claude', '/bin/claude', server)).toEqual([
     '/bin/claude',
     'mcp',
     'add',
     '--scope',
     'user',
-    'orch',
+    MCP_SERVER_NAME,
     '--',
     '/bin/orch',
     'mcp',
@@ -236,7 +237,7 @@ test('uses each harness exact user-scope add form', () => {
     '/bin/codex',
     'mcp',
     'add',
-    'orch',
+    MCP_SERVER_NAME,
     '--',
     '/bin/orch',
     'mcp',
