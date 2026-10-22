@@ -3,6 +3,28 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 
+export type BranchLanding = {
+  mergeCommit: string | null
+  pullRequestNumber: number
+}
+
+/** The latest recorded landing for this exact branch. */
+export function latestBranchLanding(
+  project: string,
+  branch: string,
+  d: Database = db(),
+): BranchLanding | null {
+  return d
+    .query<BranchLanding, [string, string]>(
+      `SELECT merge_commit AS mergeCommit, pr_number AS pullRequestNumber
+         FROM branch_landing_record
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
+        ORDER BY merged_at DESC, pr_number DESC
+        LIMIT 1`,
+    )
+    .get(project, branch)
+}
+
 /** The branch recorded for this task key, or the cursor branch when supplied. */
 export function branchForTaskKey(
   project: string,
@@ -53,16 +75,8 @@ export function pullRequestNumberForBranch(
   branch: string,
   d: Database = db(),
 ): number | null {
-  const landing = d
-    .query<{ pr_number: number }, [string, string]>(
-      `SELECT pr_number
-         FROM branch_landing_record
-        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
-        ORDER BY merged_at DESC, pr_number DESC
-        LIMIT 1`,
-    )
-    .get(project, branch)
-  if (landing) return landing.pr_number
+  const landing = latestBranchLanding(project, branch, d)
+  if (landing) return landing.pullRequestNumber
   const snapshot = d
     .query<{ pr_number: number }, [string, string]>(
       `SELECT pr_number

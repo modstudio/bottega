@@ -83,7 +83,6 @@ type CheckoutResolution = {
   headIsTipOrAncestor: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
-  headIsTrunkTipOrAncestor?: boolean
 }
 
 type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
@@ -244,21 +243,12 @@ function productionResolveCheckout(
       headCommit &&
       gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
   )
-  const trunk = projectByName(identity.project, d)?.settings.trunk?.trim()
-  const trunkTip = trunk
-    ? (gitText(cwd, ['rev-parse', '--verify', trunk]) ??
-      gitText(cwd, ['rev-parse', '--verify', `origin/${trunk}`]))
-    : null
-  const headIsTrunkTipOrAncestor = Boolean(
-    headCommit && trunkTip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, trunkTip]),
-  )
   return {
     project,
     branch,
     headIsTipOrAncestor,
     landingCommit,
     landingIsHeadOrAncestor,
-    headIsTrunkTipOrAncestor,
   }
 }
 
@@ -455,7 +445,6 @@ function requireCheckout(
     headIsTipOrAncestor: false,
     landingCommit: null,
     landingIsHeadOrAncestor: false,
-    headIsTrunkTipOrAncestor: false,
   }
   if (checkout.project !== identity.project)
     throw new Error(
