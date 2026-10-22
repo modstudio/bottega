@@ -11,7 +11,7 @@ import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../projec
 import { projectByName } from '../project/projects.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
-import { parseFiledIssue, seedAnswer } from './issue-file.ts'
+import { parseFiledIssue } from './issue-file.ts'
 import {
   eligibleFiledIssueTasks,
   type FiledIssueLoopRun,
@@ -88,13 +88,13 @@ async function task(
   return JSON.parse(await hub(['task', 'show', key, '--project', PLATFORM_SLUG, '--json']))
 }
 
-/** Only an explicit retry may reclaim review after a valid seed answer. */
-export function answeredReviewClaimable(
-  statusCategory: string | null,
-  queueMode: boolean,
-  answer: string | null,
-): boolean {
-  return !queueMode && statusCategory === 'review' && answer !== null
+/** Explicit retries may reclaim handed-back issues; the queue never does. */
+export function filedIssueClaimable(statusCategory: string | null, queueMode: boolean): boolean {
+  return (
+    statusCategory === 'open' ||
+    statusCategory === 'active' ||
+    (!queueMode && statusCategory === 'review')
+  )
 }
 
 function claimable(
@@ -103,13 +103,7 @@ function claimable(
 ): boolean {
   const issue = parseFiledIssue(shown)
   if (queueMode && issue.kind !== 'defect') return false
-  if (shown.task.status_category === 'open' || shown.task.status_category === 'active') return true
-  const project = projectByName(issue.reportingProject)
-  const seeds = project?.settings.worktree?.seeds ?? []
-  const comments = (shown.comments ?? []).flatMap((item) =>
-    typeof item.body === 'string' ? [item.body] : [],
-  )
-  return answeredReviewClaimable(shown.task.status_category, queueMode, seedAnswer(seeds, comments))
+  return filedIssueClaimable(shown.task.status_category, queueMode)
 }
 
 type ClaimResult = { claimed: boolean; failed: boolean }
@@ -128,7 +122,7 @@ async function claimAndWork(key: string, queueMode: boolean): Promise<ClaimResul
     if (!claimable(shown, queueMode)) {
       if (queueMode) return { claimed: false, failed: false }
       throw new Error(
-        `${key} is not claimable: expected a filed issue in open or stale active state, or an explicit retry after a valid seed answer`,
+        `${key} is not claimable: expected an explicit filed issue in open, active, or review state, or a queued issue in open or stale active state`,
       )
     }
     await hub(['task', 'set', key, '--project', PLATFORM_SLUG, '--status', 'active'])

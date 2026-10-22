@@ -1,9 +1,7 @@
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { resolveStateRoot, type StateEnvironment } from '../shared/state-directory.ts'
-
-export const INTERNAL_CALL_ENV = `${PLATFORM_SLUG.toUpperCase()}_INTERNAL_CALL`
 
 type LegacyCall = {
   time: string
@@ -14,58 +12,8 @@ type LegacyCall = {
   source: 'internal' | 'external'
 }
 
-const NESTED_COMMANDS: Readonly<Record<'orch' | 'hub', ReadonlySet<string>>> = {
-  orch: new Set([
-    'board',
-    'branches',
-    'config',
-    'confinement',
-    'gate',
-    'pr',
-    'question',
-    'record',
-    'release',
-    'ruling',
-    'settings',
-    'setup',
-    'test-substance',
-    'tree',
-  ]),
-  hub: new Set(['note', 'outbox', 'report', 'task']),
-}
-
-function legacyCommandTokens(oldName: 'orch' | 'hub', argv: readonly string[]): string[] {
-  if (!argv[0]) return []
-  return NESTED_COMMANDS[oldName].has(argv[0]) && argv[1] && !argv[1].startsWith('-')
-    ? argv.slice(0, 2)
-    : argv.slice(0, 1)
-}
-
 function legacyPath(env: StateEnvironment): string {
   return join(resolveStateRoot(env), 'legacy-calls.jsonl')
-}
-
-export function recordLegacyCall(
-  oldName: 'orch' | 'hub',
-  argv: readonly string[],
-  source: 'internal' | 'external',
-  env: StateEnvironment = process.env,
-): void {
-  try {
-    const path = legacyPath(env)
-    mkdirSync(resolveStateRoot(env), { recursive: true })
-    const row: LegacyCall = {
-      time: new Date().toISOString(),
-      oldName,
-      tokens: legacyCommandTokens(oldName, argv),
-      cwd: process.cwd(),
-      harnessSessionId: env.CLAUDE_CODE_SESSION_ID?.trim() || null,
-      source,
-    }
-    appendFileSync(path, `${JSON.stringify(row)}\n`)
-  } catch {
-    // Compatibility telemetry must never change the command's result.
-  }
 }
 
 export type LegacyCallCount = {

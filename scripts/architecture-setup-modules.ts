@@ -28,6 +28,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-mcp.ts',
       './setup-mcp-config.ts',
       './setup-mcp-config-migration.ts',
+      './setup-legacy-path.ts',
       './setup-planner.ts',
       './setup-registration-write.ts',
     ],
@@ -69,6 +70,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../project/projects.ts',
       './repository-facts.ts',
       './setup-facts.ts',
+      './setup-legacy-path.ts',
       './setup-mcp-config.ts',
     ],
     reason:
@@ -96,6 +98,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'node:path',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
+      './setup-legacy-path.ts',
     ],
     typeOnlyAllowed: ['./setup-planner.ts'],
     reason:
@@ -136,6 +139,19 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep setup-owned JSON name migration independent of stores, setup policy, and harness CLI execution.',
+  },
+  {
+    name: 'setup-legacy-path-boundary',
+    file: 'orchestrator/src/setup/setup-legacy-path.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../../../shared/install-root.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep leftover orch/hub PATH symlink detection independent of setup policy, stores, and harness CLI.',
   },
   {
     name: 'setup-mcp-boundary',

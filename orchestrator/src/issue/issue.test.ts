@@ -9,15 +9,36 @@ import {
 import { JOBS } from '../jobs/jobs.ts'
 import type { Project } from '../project/projects.ts'
 import {
+  diagnosisPrompt,
+  fixPrompt,
+  fixSeedRequired,
   ISSUE_DIAGNOSIS_SCHEMA,
+  issueReproductionCommand,
+  measureIssueBefore,
   parseIssueReply,
   priorIssueRecord,
   requestText,
+  resolvedSeed,
   validatedTrackerTaskKey,
 } from './issue.ts'
 import type { FiledIssue } from './issue-file.ts'
+import {
+  fixVerificationResumeLine,
+  issueFailureResumeLine,
+  issueResumeLine,
+} from './issue-resume.ts'
 
 describe('filed issue coordinator inputs', () => {
+  test('diagnosis and fix prompts define the executable reproduction contract', () => {
+    const issue = {
+      reportingProject: PLATFORM_SLUG,
+    } as FiledIssue
+    const contract =
+      'one shell command, run from the repository root of the project it names, that exits nonzero while the defect is present and zero once it is fixed'
+    expect(diagnosisPrompt(issue, '')).toContain(contract)
+    expect(fixPrompt(issue, {} as never)).toContain(contract)
+  })
+
   test('includes a UUID-addressed handoff in the prior issue record', async () => {
     const id = '01990000-0000-7000-8000-000000001214'
     const requested: string[] = []
@@ -50,6 +71,191 @@ describe('filed issue coordinator inputs', () => {
     expect(
       requestText(issue, 'Which seed?', ['none', 'full'], 'none', 'worktree', 'production'),
     ).toContain('Rejected seed: production; registered options: none | full')
+  })
+
+  test('a configured writing tree requires one of its own seeds', () => {
+    expect(fixSeedRequired(['none', 'full'], null)).toBe(true)
+    expect(fixSeedRequired(['none', 'full'], 'full')).toBe(false)
+    expect(fixSeedRequired([], null)).toBe(false)
+  })
+
+  test('fix seed answers are resolved against the target project', () => {
+    const target = {
+      settings: { worktree: { seeds: ['target-none', 'target-full'] } },
+    } as unknown as Project
+    expect(resolvedSeed(target, 'target-full environment', [])).toBe('target-full')
+    expect(resolvedSeed(target, null, ['Seed: reporting-full', 'Seed: target-none'])).toBe(
+      'target-none',
+    )
+  })
+
+  test('a fixed-branch handback ships the existing run while coordinator failure restarts', () => {
+    expect(
+      issueResumeLine('DEV-9', {
+        runNumber: 42,
+        target: 'starship',
+        branchKey: 'STAR-7',
+        branch: 'STAR-7-fix',
+      }),
+    ).toBe(
+      `Resume with: ${PLATFORM_SLUG} tree open 42, then ${PLATFORM_SLUG} workflow compose ship-task --project starship --mode merge --arg key=STAR-7 --arg branch=STAR-7-fix --arg worktree=<path tree open prints>`,
+    )
+    expect(issueResumeLine('DEV-9')).toBe(`Resume with: ${PLATFORM_SLUG} workflow fix-defect DEV-9`)
+  })
+
+  test('coordinator failure preserves a recorded fix branch when it can be reopened', () => {
+    expect(
+      issueFailureResumeLine({
+        issueKey: 'DEV-9',
+        fixRunNumber: 42,
+        failedRunNumber: null,
+        target: 'starship',
+        branchKey: 'STAR-7',
+        branch: 'STAR-7-fix',
+      }),
+    ).toContain(`${PLATFORM_SLUG} tree open 42`)
+    expect(
+      issueFailureResumeLine({
+        issueKey: 'DEV-9',
+        fixRunNumber: null,
+        failedRunNumber: null,
+        target: null,
+        branchKey: null,
+        branch: null,
+      }),
+    ).toBe(issueResumeLine('DEV-9'))
+  })
+
+  test('reproduction command prefers the fix reply and falls back only to diagnosis', () => {
+    const reply = (command: string) => ({ reproduction: { command } })
+    expect(issueReproductionCommand(reply(' bun test fix '), reply('bun test diagnosis'))).toBe(
+      'bun test fix',
+    )
+    expect(issueReproductionCommand(reply('   '), reply(' bun test diagnosis '))).toBe(
+      'bun test diagnosis',
+    )
+    expect(issueReproductionCommand(reply(''), reply('   '))).toBe('')
+  })
+
+  test('cross-project before measurement releases its owned checkout when measurement throws', async () => {
+    const released: string[] = []
+    const created: { target: Project; base: string }[] = []
+    const reporting = { name: 'reporting' } as Project
+    const target = { name: 'target' } as Project
+    await expect(
+      measureIssueBefore(
+        {
+          command: 'bun test',
+          diagnosisRun: { record_id: 'diagnosis' } as never,
+          fixRun: {
+            record_id: 'fix',
+            worktree: { path: '/fix', repoRoot: '/target', branch: 'DEV-1', base: 'base' },
+          } as never,
+          reporting,
+          target,
+          sandboxHome: '/sandbox',
+        },
+        {
+          createTree: (createdTarget, base) => {
+            created.push({ target: createdTarget, base })
+            return {
+              runId: 'before-run',
+              worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
+            }
+          },
+          measure: async () => {
+            throw new Error('measurement exploded')
+          },
+          releaseTree: async (runId) => {
+            released.push(runId)
+            return null
+          },
+        },
+      ),
+    ).rejects.toThrow('measurement exploded')
+    expect(created).toEqual([{ target, base: 'base' }])
+    expect(released).toEqual(['before-run'])
+  })
+
+  test('cross-project before measurement refuses proof when checkout release fails', async () => {
+    const created: { target: Project; base: string }[] = []
+    const reporting = { name: 'reporting' } as Project
+    const target = { name: 'target' } as Project
+    await expect(
+      measureIssueBefore(
+        {
+          command: 'bun test',
+          diagnosisRun: { record_id: 'diagnosis' } as never,
+          fixRun: {
+            record_id: 'fix',
+            worktree: { path: '/fix', repoRoot: '/target', branch: 'DEV-1', base: 'base' },
+          } as never,
+          reporting,
+          target,
+          sandboxHome: '/sandbox',
+        },
+        {
+          createTree: (createdTarget, base) => {
+            created.push({ target: createdTarget, base })
+            return {
+              runId: 'before-run',
+              worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
+            }
+          },
+          measure: async () => ({ ok: false, text: 'failed as expected', exitCode: 1 }),
+          releaseTree: async () => 'run before-run: removal refused',
+        },
+      ),
+    ).rejects.toThrow(
+      'could not release before-measurement checkout: run before-run: removal refused',
+    )
+    expect(created).toEqual([{ target, base: 'base' }])
+  })
+
+  test('same-project before measurement uses the diagnosis tree without creating a checkout', async () => {
+    const project = { name: 'reporting' } as Project
+    const measured: string[] = []
+    let createCalled = false
+    const result = await measureIssueBefore(
+      {
+        command: 'bun test',
+        diagnosisRun: { worktree: { path: '/diagnosis' } } as never,
+        fixRun: {
+          worktree: { path: '/fix', repoRoot: '/reporting', branch: 'DEV-1', base: 'base' },
+        } as never,
+        reporting: project,
+        target: project,
+        sandboxHome: '/sandbox',
+      },
+      {
+        createTree: () => {
+          createCalled = true
+          throw new Error('must not create a same-project before checkout')
+        },
+        measure: async (_command, cwd) => {
+          measured.push(cwd)
+          return { ok: false, text: 'defect reproduced', exitCode: 1 }
+        },
+      },
+    )
+
+    expect(createCalled).toBe(false)
+    expect(measured).toEqual(['/diagnosis'])
+    expect(result.exitCode).toBe(1)
+  })
+
+  test('verification resume selection preserves the fix branch only on handback', () => {
+    const input = {
+      issueKey: 'DEV-9',
+      fixRun: { number: 42, worktree: { branch: 'STAR-7-fix' } },
+      fix: { branch: 'reply-branch' },
+      target: { name: 'starship' },
+      branchKey: 'STAR-7',
+    } as unknown as Omit<Parameters<typeof fixVerificationResumeLine>[0], 'ready'>
+    expect(fixVerificationResumeLine({ ...input, ready: true })).toBeUndefined()
+    expect(fixVerificationResumeLine({ ...input, ready: false })).toBe(
+      `Resume with: ${PLATFORM_SLUG} tree open 42, then ${PLATFORM_SLUG} workflow compose ship-task --project starship --mode merge --arg key=STAR-7 --arg branch=STAR-7-fix --arg worktree=<path tree open prints>`,
+    )
   })
 
   test('the issue path consumes its chosen seed only for the writing fix run', () => {
