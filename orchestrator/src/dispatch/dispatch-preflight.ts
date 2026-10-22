@@ -10,6 +10,7 @@ import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import {
   borrowedCheckoutOf,
   gitContext,
+  gitToplevel,
   linkedWorktreePaths,
   repoRootOf,
 } from '../git/git-environment.ts'
@@ -51,28 +52,33 @@ export function resolvedFindingsLens(
 
 const warnedMainCheckouts = new Set<string>()
 
-export function shouldCheckMainCheckout(input: {
-  sourceToplevel: string
+export function sourceIsRegisteredMain(input: {
+  sourceToplevel: string | null
+  sourceRepoRoot: string | null
+  borrowedFromMain: string | null
   registeredMainPath: string
-  requireCleanMain: boolean
-  resume: boolean
 }): boolean {
-  return (
-    input.requireCleanMain && !input.resume && input.sourceToplevel === input.registeredMainPath
-  )
+  if (input.sourceToplevel === input.registeredMainPath) return true
+  if (
+    input.sourceRepoRoot === input.registeredMainPath ||
+    input.borrowedFromMain === input.registeredMainPath
+  ) {
+    return false
+  }
+  return true
 }
 
-function sourceToplevelForProject(cwd: string, registeredMainPath: string): string {
+function sourceIsMainCheckout(cwd: string, registeredMainPath: string): boolean {
   const registeredMain = realpathOrSpelled(registeredMainPath)
-  const sourceToplevel = gitContext(cwd, 'rev-parse', '--show-toplevel')
-  if (!sourceToplevel) return registeredMain
-
-  const sourceMain = repoRootOf(cwd)
-  const borrowedMain = borrowedCheckoutOf(sourceToplevel)
-  const belongsToProject = [sourceMain, borrowedMain].some(
-    (path) => path !== null && realpathOrSpelled(path) === registeredMain,
-  )
-  return belongsToProject ? realpathOrSpelled(sourceToplevel) : registeredMain
+  const sourceToplevel = gitToplevel(cwd)
+  const realpath = (path: string | null): string | null =>
+    path === null ? null : realpathOrSpelled(path)
+  return sourceIsRegisteredMain({
+    sourceToplevel: realpath(sourceToplevel),
+    sourceRepoRoot: realpath(repoRootOf(cwd)),
+    borrowedFromMain: realpath(sourceToplevel ? borrowedCheckoutOf(sourceToplevel) : null),
+    registeredMainPath: registeredMain,
+  })
 }
 
 function assertSourceMainCheckoutClean(
@@ -81,12 +87,9 @@ function assertSourceMainCheckoutClean(
   resume: boolean,
 ): void {
   if (
-    !shouldCheckMainCheckout({
-      sourceToplevel: sourceToplevelForProject(cwd, project.path),
-      registeredMainPath: realpathOrSpelled(project.path),
-      requireCleanMain: project.settings.requireCleanMain !== false,
-      resume,
-    })
+    project.settings.requireCleanMain === false ||
+    resume ||
+    !sourceIsMainCheckout(cwd, project.path)
   ) {
     return
   }

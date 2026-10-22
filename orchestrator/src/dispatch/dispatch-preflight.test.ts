@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { lensDispatchNotices } from './dispatch-commands.ts'
-import { preflight, shouldCheckMainCheckout } from './dispatch-preflight.ts'
+import { preflight, sourceIsRegisteredMain } from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
 
@@ -22,37 +22,61 @@ function git(cwd: string, ...args: string[]): void {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
-test('checks the main source so a dirty main checkout is refused', () => {
+test('the registered main checkout is the main source', () => {
   expect(
-    shouldCheckMainCheckout({
+    sourceIsRegisteredMain({
       sourceToplevel: '/projects/example',
+      sourceRepoRoot: '/projects/example',
+      borrowedFromMain: null,
       registeredMainPath: '/projects/example',
-      requireCleanMain: true,
-      resume: false,
     }),
   ).toBe(true)
 })
 
-test('does not check main dirt when the source is a linked worktree', () => {
+test('a linked worktree of the registered repository is not the main source', () => {
   expect(
-    shouldCheckMainCheckout({
+    sourceIsRegisteredMain({
       sourceToplevel: '/projects/example/.claude/worktrees/EX-1',
+      sourceRepoRoot: '/projects/example',
+      borrowedFromMain: null,
       registeredMainPath: '/projects/example',
-      requireCleanMain: true,
-      resume: false,
     }),
   ).toBe(false)
 })
 
-test('does not check the main checkout when requireCleanMain is false', () => {
+test('a clone borrowing from the registered repository is not the main source', () => {
   expect(
-    shouldCheckMainCheckout({
-      sourceToplevel: '/projects/example',
+    sourceIsRegisteredMain({
+      sourceToplevel: '/tmp/borrowed-example',
+      sourceRepoRoot: '/projects/example',
+      borrowedFromMain: '/projects/example',
       registeredMainPath: '/projects/example',
-      requireCleanMain: false,
-      resume: false,
     }),
   ).toBe(false)
+})
+
+test('a cwd outside the registered project uses its main checkout as the source', () => {
+  expect(
+    sourceIsRegisteredMain({
+      sourceToplevel: '/projects/other',
+      sourceRepoRoot: '/projects/other',
+      borrowedFromMain: null,
+      registeredMainPath: '/projects/example',
+    }),
+  ).toBe(true)
+})
+
+test('a registered main path longer than 200 characters is still the main source', () => {
+  const registeredMainPath = `/projects/${'long-segment/'.repeat(20)}example`
+  expect(registeredMainPath.length).toBeGreaterThan(200)
+  expect(
+    sourceIsRegisteredMain({
+      sourceToplevel: registeredMainPath,
+      sourceRepoRoot: registeredMainPath,
+      borrowedFromMain: null,
+      registeredMainPath,
+    }),
+  ).toBe(true)
 })
 
 test('preflight uses the recipe default from the explicit base creation will use', () => {
