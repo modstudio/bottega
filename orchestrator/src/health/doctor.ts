@@ -79,13 +79,13 @@ function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | u
   if (baseUrl && !registration) {
     lines.push(
       configuredModel
-        ? `register        ${PLATFORM_SLUG} agent show add qwen36-goose --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
+        ? `register        ${PLATFORM_SLUG} agent add qwen36-goose --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
         : 'register        ORCH_MODEL_HOST_MODEL is required before registering qwen36-goose',
     )
   }
   if (registration && contextTokens === null) {
     lines.push(
-      `context         not declared — run ${PLATFORM_SLUG} agent show set ${registration.name} --context-tokens <tokens>`,
+      `context         not declared — run ${PLATFORM_SLUG} agent set ${registration.name} --context-tokens <tokens>`,
     )
   }
   return { registration, contextTokens, lines }
@@ -103,7 +103,7 @@ function localContextDiagnosis(
   return (
     `context         ${(servedContext / 1024).toFixed(0)}K served` +
     `  MISMATCH — registry declares ${(declaredContext / 1024).toFixed(0)}K.` +
-    ` Run ${PLATFORM_SLUG} agent show set ${registration.name} --context-tokens ${servedContext} or re-serve.`
+    ` Run ${PLATFORM_SLUG} agent set ${registration.name} --context-tokens ${servedContext} or re-serve.`
   )
 }
 

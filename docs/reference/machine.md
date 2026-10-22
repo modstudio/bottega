@@ -328,7 +328,7 @@ set a sealed value from standard input
 
 **Synopsis:** `bottega machine config set <key> <value> [--space] [--machine] [--expect <rowVersion>] [--json]`
 
-set one configuration value
+set one configuration value; subscription.<harness>.monthly_usd is a user-scope monthly price in USD
 
 ### Options
 

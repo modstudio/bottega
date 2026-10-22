@@ -49,6 +49,7 @@ function addRun(
     parent?: string | null
     worktree?: string | null
     judged?: boolean
+    failureKind?: string | null
     startedAt?: string
   } = {},
 ): string {
@@ -56,8 +57,8 @@ function addRun(
     .query(
       `INSERT INTO run
         (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,
-         branch,minted_branch,launch_key,parent_run_record_id,worktree)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'prompt',?,?,?,?,?,?) RETURNING record_id AS id`,
+         branch,minted_branch,launch_key,parent_run_record_id,worktree,failure_kind)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'prompt',?,?,?,?,?,?,?) RETURNING record_id AS id`,
     )
     .get(
       newRecordId(),
@@ -72,6 +73,7 @@ function addRun(
       input.key === undefined ? 'DEV-1392' : input.key,
       input.parent ?? null,
       input.worktree ?? null,
+      input.failureKind ?? null,
     ) as { id: string }
   if (input.judged) {
     db()
@@ -94,7 +96,10 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   })
   const turn = addRun(project, { parent: root })
   const lens = addRun(project, { job: 'review-lens', judged: true, worktree: '/trees/lens' })
-  const unscored = addRun(project, { worktree: '/trees/unscored' })
+  const unscored = addRun(project, {
+    worktree: '/trees/unscored',
+    failureKind: 'unevidenced',
+  })
   const live = addRun(project, { status: 'running', worktree: '/trees/live' })
   const sibling = addRun(project, {
     branch: 'DEV-1392-c2',
@@ -194,12 +199,14 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     item: `run ${numberOf(unscored)} artifacts and scratch`,
     reason: 'run has no recorded verdict',
     reasonKind: 'unjudged-run',
-    remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)}`,
+    owner: 'other',
+    remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)} none --void --note "<why>"`,
   })
   expect(report.kept).toContainEqual({
     item: `run ${numberOf(live)} artifacts and scratch and worktree`,
     reason: 'run is live (running)',
     reasonKind: 'live-run',
+    owner: 'other',
   })
   expect(pruned).toEqual([['ship-fixture', 'DEV-1392-c3']])
   expect(report.reclaimed.processes).toEqual([
@@ -298,7 +305,12 @@ test('ship cleanup reports an unproved recorded branch with no ref as already go
 function landingTreeCleanup(input: {
   removal?: HookTreeRemovalResult
   runsFromTree?: boolean
-  pruneKept?: { branch: string; reason: BranchPruneKeptReason }[]
+  pruneKept?: {
+    branch: string
+    reason: BranchPruneKeptReason
+    holdingPath?: string | null
+  }[]
+  siblingBranch?: { branch: string; worktree: string }
 }): {
   report: ReturnType<typeof shipCleanup>
   landingTree: string
@@ -313,6 +325,14 @@ function landingTreeCleanup(input: {
     judged: true,
     worktree: landingTree,
   })
+  if (input.siblingBranch) {
+    addRun(project, {
+      branch: input.siblingBranch.branch,
+      mintedBranch: input.siblingBranch.branch,
+      judged: true,
+      worktree: input.siblingBranch.worktree,
+    })
+  }
   const removedTrees: string[] = []
   const closed: string[] = []
   const dependencies: ShipCleanupDependencies = {
@@ -325,7 +345,11 @@ function landingTreeCleanup(input: {
       closed.push(id)
       return { outcome: 'released', detail: 'released' }
     },
-    prune: () => ({ deleted: [], kept: input.pruneKept ?? [], errors: [] }),
+    prune: (_project, branch) => ({
+      deleted: [],
+      kept: (input.pruneKept ?? []).filter((item) => item.branch === branch),
+      errors: [],
+    }),
     measure: () => ({ bytes: 0, errors: [], stoppedAtLimit: false }),
     readerCloneArchive: () => null,
     runsFromTree: () => input.runsFromTree ?? false,
@@ -355,7 +379,7 @@ function landingTreeCleanup(input: {
 test('ship cleanup keeps its current landing tree and checked-out branch without failure', () => {
   const result = landingTreeCleanup({
     runsFromTree: true,
-    pruneKept: [{ branch: 'DEV-1392-c3', reason: 'checked-out' }],
+    pruneKept: [{ branch: 'DEV-1392-c3', reason: 'checked-out', holdingPath: '/trees/landing' }],
   })
   const remedy =
     `${PLATFORM_SLUG} tree remove ${result.landingTree}, then ` +
@@ -366,15 +390,47 @@ test('ship cleanup keeps its current landing tree and checked-out branch without
     item: expect.stringMatching(/^run \d+ worktree$/),
     reason: 'the command runs from this tree',
     reasonKind: 'command-tree',
+    owner: 'caller-landing-tree',
     remedy,
   })
   expect(result.report.kept).toContainEqual({
     item: 'branch DEV-1392-c3',
     reason: 'checked-out',
     reasonKind: 'safety-hold',
+    owner: 'caller-landing-tree',
     remedy,
   })
   expect(result.report.errors).toEqual([])
+})
+
+test('ship cleanup reports a sibling branch checked out in another tree as residue', () => {
+  const siblingTree = '/trees/sibling'
+  const result = landingTreeCleanup({
+    runsFromTree: true,
+    siblingBranch: { branch: 'DEV-1392-c2', worktree: siblingTree },
+    pruneKept: [
+      { branch: 'DEV-1392-c3', reason: 'checked-out', holdingPath: '/trees/landing' },
+      { branch: 'DEV-1392-c2', reason: 'checked-out', holdingPath: siblingTree },
+    ],
+  })
+
+  expect(result.report.verdict).toMatchObject({
+    clean: false,
+    reason: 'unexpected-kept-item',
+    residue: [
+      {
+        item: 'branch DEV-1392-c2',
+        reason: 'checked-out',
+        owner: 'other',
+      },
+    ],
+  })
+  expect(result.report.kept).toContainEqual(
+    expect.objectContaining({
+      item: 'branch DEV-1392-c3',
+      owner: 'caller-landing-tree',
+    }),
+  )
 })
 
 test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => {
@@ -390,6 +446,7 @@ test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => 
     item: expect.stringMatching(/^run \d+ worktree$/),
     reason: 'landing tree held by its invoking session: tree is dirty: tracked.ts, new file.ts',
     reasonKind: 'safety-hold',
+    owner: 'other',
     remedy:
       `${PLATFORM_SLUG} tree remove ${result.landingTree}, then ` +
       `${PLATFORM_SLUG} tree ship-cleanup DEV-1392-c3`,

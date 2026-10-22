@@ -13,6 +13,7 @@ import {
   resolveRunIdentifierOrNull,
 } from '../run/run-identifier.ts'
 import { runIdentityMap, runListingCommand } from '../run/run-listing.ts'
+import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { collect, duration, log, optionFlags } from './support.ts'
 
 function chainHasPendingDelivery(rootId: string): boolean {
@@ -49,7 +50,9 @@ export function register(program: Command): void {
     .action(async (id, options) => {
       const { runDetail } = await import('../state/serve.ts')
       const runId = resolveRunIdentifier(db(), id)
-      const detail = runDetail(runId, Boolean(options.receipt))
+      const detail = runDetail(runId, Boolean(options.receipt), {
+        subscriptionCost: await loadSubscriptionCostContext(),
+      })
       if (!detail) throw new Error(`no run ${runId}`)
       log(JSON.stringify(detail))
     })
@@ -82,6 +85,7 @@ export function register(program: Command): void {
                 : flags.values(name),
           }
         : flags
+      const json = resolvedFlags.has('json') || options.json === 'v1'
       await runListingCommand({ jsonV1: options.json === 'v1' }, resolvedFlags, {
         log,
         dur: duration,
@@ -98,6 +102,7 @@ export function register(program: Command): void {
         },
         processObservation: { sampleProcesses, processStartTime },
         clock: Date.now,
+        subscriptionCost: json ? await loadSubscriptionCostContext() : undefined,
       })
     })
 }

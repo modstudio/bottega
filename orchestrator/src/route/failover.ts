@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
+import type { ContinuationMessageBinding } from '../run/continuation-message.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
@@ -79,6 +80,7 @@ export type DetachSpec = {
     worktree: RetryWorktree | null
     treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
     readOnlyBase?: string
+    continuationMessage?: ContinuationMessageBinding
   }
 }
 
@@ -208,7 +210,15 @@ export function detachedRunOptions(
   }
 }
 
-export const MAX_FAILOVER_ATTEMPTS = 3
+const MAX_FAILOVER_ATTEMPTS = 3
+const PREMATURE_FINAL_MAX_FAILOVER_ATTEMPTS = 2
+
+/** A premature final gets one successor; other eligible failures keep the chain budget. */
+export function failoverAttemptLimit(failureKind: string): number {
+  return failureKind === 'premature-final'
+    ? PREMATURE_FINAL_MAX_FAILOVER_ATTEMPTS
+    : MAX_FAILOVER_ATTEMPTS
+}
 
 export function resolveSupersededTurn(database: Database, rootId: string, turn: number): number {
   return database

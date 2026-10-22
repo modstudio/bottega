@@ -19,6 +19,7 @@ import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
+import { optionalContinuationMessageBinding } from './continuation-message.ts'
 import type { ContinuationTreeDecision } from './continuation-tree-decision.ts'
 import {
   continuationReadOnlyBase,
@@ -510,6 +511,27 @@ function producedContinuationMessage(
   return produceMessage ? produceMessage() : message
 }
 
+function refuseOversizedResumePrompt(input: {
+  checkpointContext: string | null
+  agent: string
+  job: string
+  prompt: string
+  rootId: string
+  argvResumeLimit: RunControlPresentation['argvResumeLimit']
+}): void {
+  const assembledLimit = input.checkpointContext ? undefined : input.argvResumeLimit(input.agent)
+  if (assembledLimit === undefined) return
+  const assembled = Buffer.byteLength(
+    packedResumePrompt(input.job, input.prompt, input.rootId),
+    'utf8',
+  )
+  if (assembled <= assembledLimit) return
+  throw new Error(
+    `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +
+      `nothing was stored\nworking forms:\n${CONTINUE_WORKING_FORMS}`,
+  )
+}
+
 function openQuestionContinueRemedy(id: string, n: number): string {
   return `run ${id} is waiting on ${n} question(s): ${PLATFORM_SLUG} question answer ${id} ...`
 }
@@ -580,6 +602,7 @@ export async function continueRun(
   // prevent.
   if (open.n) throw new Error(openQuestionContinueRemedy(id, open.n))
   const continuationMessage = producedContinuationMessage(message, produceMessage)
+  const messageBinding = optionalContinuationMessageBinding(continuationMessage)
   const { latest, nextTurn } = continuationTurn(
     id,
     db()
@@ -678,17 +701,14 @@ export async function continueRun(
       'Continue from where you stopped and finish the spec. If you reached a ' +
         'decision that is not yours, stop and ask as before.'
   }
-  const assembledLimit = checkpointContext ? undefined : argvResumeLimit(sessionFrom!.agent)
-  if (assembledLimit !== undefined) {
-    const packed = packedResumePrompt(row.job, prompt, id)
-    const assembled = Buffer.byteLength(packed, 'utf8')
-    if (assembled > assembledLimit) {
-      throw new Error(
-        `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +
-          `nothing was stored\nworking forms:\n${CONTINUE_WORKING_FORMS}`,
-      )
-    }
-  }
+  refuseOversizedResumePrompt({
+    checkpointContext,
+    agent: sessionFrom?.agent ?? latest.agent,
+    job: row.job,
+    prompt,
+    rootId: id,
+    argvResumeLimit,
+  })
   authority = writeTransaction(() => {
     authority = reauthorizeRunMutation(authority, 'continue')
     const adopted = adoptRunMutation(authority, 'continue')
@@ -711,6 +731,7 @@ export async function continueRun(
       worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),
       treePlan: recreatedTreePlan(treePlan),
       readOnlyBase: continuationReadOnlyBase(treeDecision),
+      continuationMessage: messageBinding,
     },
   })
   recordContinuationTreeSource(childId, branchSource, treePlan)

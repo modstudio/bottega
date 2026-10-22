@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
+import { agentExecutionStatsSql, SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 import {
   HOOK_TREE_JOB,
   HOOK_TREE_NOTICE_AFTER_MS,
@@ -77,7 +77,7 @@ describe('hook-tree lifecycle decisions', () => {
       evidenceExcluded: 'hook tree lifecycle row; not agent execution',
     })
     expect(agentExecutionStatsSql('r')).toBe(
-      "r.job NOT IN ('hook-tree','landing-tree','canon-mirror')",
+      `r.job NOT IN ('${SYNTHETIC_LIFECYCLE_JOBS.join("','")}')`,
     )
   })
 })

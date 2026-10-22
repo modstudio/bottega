@@ -97,23 +97,28 @@ function recordedWorktree(runId: string): string | null {
   return row?.worktree ?? null
 }
 
-function createReadOnlyWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
-  return options.tool?.readonly_create
-    ? createReadOnlyWithTool(
-        options.tool,
-        options.cwd,
-        options.runId,
-        options.readOnlyBase,
-        options.record,
-      )
+export function createReadOnlyWorktreeForTool(input: {
+  tool: WorktreeTool | null
+  cwd: string
+  runId: string
+  readOnlyBase: string
+  record?: RecordWorktree
+  provisionTimeoutMs?: number
+}): Worktree {
+  return input.tool?.readonly_create
+    ? createReadOnlyWithTool(input.tool, input.cwd, input.runId, input.readOnlyBase, input.record)
     : createReadOnlyWorktree(
-        options.cwd,
-        options.runId,
-        options.readOnlyBase,
-        options.record,
-        options.tool?.readonly_provision,
-        options.provisionTimeoutMs,
+        input.cwd,
+        input.runId,
+        input.readOnlyBase,
+        input.record,
+        input.tool?.readonly_provision,
+        input.provisionTimeoutMs,
       )
+}
+
+function createReadOnlyWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
+  return createReadOnlyWorktreeForTool(options)
 }
 
 function createWritingWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {

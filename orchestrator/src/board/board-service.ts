@@ -34,7 +34,11 @@ import {
   recipients,
   rowIsLive,
 } from './board-store.ts'
-import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
+import {
+  renderBoardQuestion,
+  renderBoardReply,
+  renderBoardReplyDelivery,
+} from './board-thread-render.ts'
 
 export { requireRealSession } from './board-policy.ts'
 
@@ -162,11 +166,11 @@ function render(message: MessageRow, worker = false, database = db()) {
         rootTitle: root.title,
         body: message.body,
       }),
-      oneLine: renderBoardNoticeOneLine({
-        id: message.number,
-        title: root.title,
-        sender: originText(boardOrigin(message)),
-        ackRequired: false,
+      oneLine: renderBoardReplyDelivery({
+        origin: originText(boardOrigin(message)),
+        rootId: root.record_id,
+        rootTitle: root.title,
+        body: message.body,
       }),
       purpose: 'information' as const,
     }

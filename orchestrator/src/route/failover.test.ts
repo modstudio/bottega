@@ -3,6 +3,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import {
   decideFailover,
   detachedRunOptions,
+  failoverAttemptLimit,
   retryModelForAgent,
   writingFailoverRefusal,
 } from './failover.ts'
@@ -22,6 +23,19 @@ const base = {
 }
 
 describe('decideFailover', () => {
+  test('a premature final receives exactly one successor attempt', () => {
+    expect(failoverAttemptLimit('premature-final')).toBe(2)
+    expect(failoverAttemptLimit('quota')).toBe(3)
+    expect(
+      decideFailover({
+        ...base,
+        failureKind: 'premature-final',
+        failoverKinds: ['premature-final'],
+        attemptCount: 2,
+        maxAttempts: failoverAttemptLimit('premature-final'),
+      }),
+    ).toMatchObject({ kind: 'refusal' })
+  })
   test('non-failover outcome takes no action', () => {
     expect(decideFailover({ ...base, status: 'ok' })).toEqual({ kind: 'none' })
   })

@@ -113,6 +113,30 @@ test('a named non-opted-in ACP agent remains eligible for a review lens', () => 
   }
 })
 
+test('only a named ACP agent declared for fix is eligible for fix', () => {
+  const name = 'codex'
+  const original = db()
+    .query('SELECT jobs,transport,probed_at FROM agent WHERE name=?')
+    .get(name) as { jobs: string | null; transport: string; probed_at: string | null }
+  try {
+    db()
+      .query("UPDATE agent SET jobs=?,transport='acp',probed_at=? WHERE name=?")
+      .run(JSON.stringify(['fix']), new Date().toISOString(), name)
+    refreshAgents()
+
+    expect(pick('fix', name)).toEqual({ agent: name, reason: 'explicit --agent' })
+    expect(candidates('fix').find((candidate) => candidate.agent === name)).toMatchObject({
+      eligible: false,
+      why: expect.stringContaining('writing jobs require an agent named with --agent <name>'),
+    })
+  } finally {
+    db()
+      .query('UPDATE agent SET jobs=?,transport=?,probed_at=? WHERE name=?')
+      .run(original.jobs, original.transport, original.probed_at, name)
+    refreshAgents()
+  }
+})
+
 test('the registration probe gates inline and repository jobs', () => {
   const original = db()
     .query("SELECT caps, probed_at, probe_result FROM agent WHERE name = 'codex'")
@@ -135,17 +159,17 @@ test('the registration probe gates inline and repository jobs', () => {
     )
     expect(unprobedInline).toMatchObject({
       eligible: false,
-      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe codex`,
     })
     expect(unprobedRepository).toMatchObject({
       eligible: false,
-      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', undefined)
     expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
       eligible: false,
-      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', true)
@@ -187,7 +211,7 @@ test('rerunning a narrowed file-question probe clears the file-contract refusal'
       candidates('file-question').find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({
       eligible: false,
-      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     recordAgentProbe('codex', {
@@ -252,7 +276,7 @@ test('a no-agent refusal lists every exclusion in routing order with its remedy'
       .filter((candidate) => !candidate.eligible)
       .map((candidate) => `${candidate.agent}: ${candidate.why}`)
     expect(message).toBe(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
-    expect(message).toContain(`run ${PLATFORM_SLUG} agent show probe codex`)
+    expect(message).toContain(`run ${PLATFORM_SLUG} agent probe codex`)
     expect(message).toContain('disabled for routing refusal test')
   } finally {
     const restore = db().query(

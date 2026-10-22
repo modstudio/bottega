@@ -18,6 +18,7 @@ import {
   type VendorUsage,
 } from './transport.ts'
 import { cliResultEvents } from './transport-result-events.ts'
+import { type AgentBilling, usageForBilling } from './vendor-usage.ts'
 
 /** Codex reports "tokens used\\n<n>" on stderr; other agents report nothing. */
 function parseVendorTokens(blob: string): number | null {
@@ -31,6 +32,15 @@ function cliUsage(estimatedCostUsd: number | null) {
       ? EMPTY_VENDOR_USAGE
       : { ...EMPTY_VENDOR_USAGE, estimatedCostUsd, costSource: 'estimated' }
   return { costUsd: null, vendorUsage }
+}
+
+function eventForBilling(billing: AgentBilling, event: NormalizedEvent): NormalizedEvent {
+  if (event.kind !== 'usage') return event
+  const usage = usageForBilling(billing, {
+    costUsd: event.costUsd,
+    vendorUsage: EMPTY_VENDOR_USAGE,
+  })
+  return { ...event, costUsd: usage.costUsd }
 }
 
 async function readStdoutLines(
@@ -83,7 +93,7 @@ function spawnCliChild(
   )
 }
 
-async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
+async function cliLaunch(opts: TransportStartOpts) {
   const argvOpts: ArgvOpts = {
     prompt: opts.prompt,
     out: opts.outPath,
@@ -111,6 +121,11 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     ? await sandboxLaunchArgv(opts.srt.profile, bin, argv)
     : [bin, ...argv]
   const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
+  return { launchArgv, stdinPrompt }
+}
+
+async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
+  const { launchArgv, stdinPrompt } = await cliLaunch(opts)
   const p = spawnCliChild(launchArgv, opts, stdinPrompt)
 
   let cancelled = false
@@ -125,7 +140,8 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   }
 
   const stdoutTask = readStdoutLines(p.stdout!, (line) => {
-    for (const event of eventsFromVendorLine(line)) pushEvent(event)
+    for (const event of eventsFromVendorLine(line))
+      pushEvent(eventForBilling(opts.agent.billing, event))
   })
 
   const finishEvents = () => {
@@ -146,7 +162,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const reply = opts.agent.parseReply?.(stdout)
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
-        const usage = cliUsage(reply?.costUsd ?? null)
+        const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({

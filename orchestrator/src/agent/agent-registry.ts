@@ -444,7 +444,7 @@ export function removeAgent(name: string): void {
   if (count) {
     throw new Error(
       `refusing to remove agent "${name}": ${count} run row${count === 1 ? '' : 's'} name it\n` +
-        `disable it instead: ${PLATFORM_SLUG} agent show set ${name} --enabled false --reason <reason>`,
+        `disable it instead: ${PLATFORM_SLUG} agent set ${name} --enabled false --reason <reason>`,
     )
   }
   const result = writableDb().query('DELETE FROM agent WHERE name=?').run(name)

@@ -48,8 +48,13 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-types.ts', [
     '../host-load-sample.ts',
     '../review/review-vocabulary.ts',
+    '../run/run-host-capacity.ts',
   ]),
-  module('orchestrator/src/monitor/monitor-result.ts', ['./monitor-types.ts']),
+  module('orchestrator/src/monitor/monitor-result.ts', [
+    '../database/db.ts',
+    '../run/run-host-capacity.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-customer-guides.ts', [
     '../../../shared/brand.ts',
     '../doc/doc-command-check.ts',

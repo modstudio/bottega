@@ -40,6 +40,7 @@ import type {
   AcpPromptUsage,
 } from './transport-acp-types.ts'
 import { acpRunUsage } from './transport-acp-usage.ts'
+import type { AgentBilling } from './vendor-usage.ts'
 
 type AcpUpdate = {
   sessionUpdate: string
@@ -68,6 +69,7 @@ type AcpTurnInput = {
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
   usage?: AcpPromptUsage
 }
+type Billing = AgentBilling
 
 async function resolveWorkerRunId(value: string | undefined): Promise<string | null> {
   if (!value) return null
@@ -232,7 +234,10 @@ function toolCallResult(update: AcpUpdate): string | undefined {
  * A non-end_turn stop is a failure even when some agent text already arrived,
  * except elicitation which is asking.
  */
-export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
+export function normalizeAcpTurn(
+  input: AcpTurnInput,
+  billing: Billing = 'unknown',
+): TransportResult {
   const events: NormalizedEvent[] = []
   const chunks: string[] = []
   const usageUpdates: AcpMessageUsageUpdate[] = []
@@ -312,7 +317,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
     }
   }
 
-  const { tokens, costUsd, vendorUsage } = acpRunUsage(usageUpdates, input.usage ?? null)
+  const { tokens, costUsd, vendorUsage } = acpRunUsage(usageUpdates, input.usage ?? null, billing)
   if (tokens !== null) events.push({ kind: 'usage', tokens, costUsd })
 
   if (input.elicitation) {
@@ -375,6 +380,13 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
           ]
         : [],
   }
+}
+
+function normalizeAcpAgentTurn(
+  agent: TransportStartOpts['agent'],
+  input: AcpTurnInput,
+): TransportResult {
+  return normalizeAcpTurn(input, agent.billing)
 }
 
 function webStream(
@@ -548,10 +560,11 @@ function observeAcpUpdate(
   outPath: string,
   sessionId: string | null,
   pushEvent: (event: NormalizedEvent) => void,
+  billing: AgentBilling,
 ): void {
   updates.push(params)
   persistAcpUpdates(outPath, sessionId, updates)
-  const folded = normalizeAcpTurn({ sessionId, updates: [params] })
+  const folded = normalizeAcpTurn({ sessionId, updates: [params] }, billing)
   for (const event of folded.events) {
     if (event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
   }
@@ -620,7 +633,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     if (wait) wait(event)
   }
   const observeUpdate = (req: { params: unknown }) =>
-    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent)
+    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent, opts.agent.billing)
 
   const app = acp
     .client({ name: MCP_SERVER_NAME })
@@ -851,7 +864,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         let result: ReturnType<typeof normalizeAcpTurn>
         try {
           const stderr = Buffer.concat(stderrChunks).toString('utf8')
-          result = normalizeAcpTurn({
+          result = normalizeAcpAgentTurn(opts.agent, {
             sessionId,
             updates,
             stopReason,

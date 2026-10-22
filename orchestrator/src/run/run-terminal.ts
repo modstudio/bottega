@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
@@ -233,12 +234,32 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
-function checkpointAtTerminal(input: TerminalInput): boolean {
-  return shouldCheckpointAtTerminal({
+function checkpointTerminalWork(input: TerminalInput): string | null {
+  const shouldCheckpoint = shouldCheckpointAtTerminal({
     writesJob: input.writesJob,
     hasWorktree: Boolean(input.worktree),
-    launchKey: input.launchKey,
   })
+  if (!shouldCheckpoint) return null
+  const checkpoint = checkpointRun({
+    database: db(),
+    runId: input.claim.id,
+    worktree: input.worktree!.path,
+    branch: input.worktree!.branch,
+    taskKey: input.launchKey,
+    scratchDir: input.scratchDir,
+    guardEnvironment: input.gitConfigEnvironment ?? {},
+    containment: input.checkpointContainment,
+    final: true,
+  })
+  if (
+    checkpoint.created ||
+    latestCheckpoint(db(), checkpointRoot(input.opts.resume, input.claim.id))
+  ) {
+    db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(input.claim.id)
+  }
+  if (checkpoint.error)
+    console.error(`orch: run ${input.claim.id} checkpoint failed: ${checkpoint.error}`)
+  return checkpoint.created ? terminalCheckpointHeader(checkpoint.commit!) : null
 }
 
 function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | undefined): boolean {
@@ -264,9 +285,12 @@ export function questionsToInsert(
 export function shouldCheckpointAtTerminal(input: {
   writesJob: boolean
   hasWorktree: boolean
-  launchKey: string | null
 }): boolean {
-  return input.writesJob && input.hasWorktree && Boolean(input.launchKey)
+  return input.writesJob && input.hasWorktree
+}
+
+function terminalCheckpointHeader(commit: string): string {
+  return `Harness checkpoint: committed uncommitted work as ${commit}.`
 }
 
 /** Artifact copy faults retain the worker outcome while remaining visible on the run. */
@@ -425,10 +449,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     claim,
     writesJob,
     worktree,
-    launchKey,
     failureKind,
-    scratchDir,
-    gitConfigEnvironment,
     opts,
     watchedCheckouts,
     confinementFailures,
@@ -477,25 +498,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
-  const preserveAtTerminal = checkpointAtTerminal(input)
-  if (preserveAtTerminal) {
-    const checkpoint = checkpointRun({
-      database: db(),
-      runId: claim.id,
-      worktree: worktree!.path,
-      branch: worktree!.branch,
-      taskKey: launchKey!,
-      scratchDir,
-      guardEnvironment: gitConfigEnvironment ?? {},
-      containment: input.checkpointContainment,
-      final: true,
-    })
-    if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {
-      db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
-    }
-    if (checkpoint.error)
-      console.error(`orch: run ${claim.id} checkpoint failed: ${checkpoint.error}`)
-  }
+  const checkpointHeader = checkpointTerminalWork(input)
+  if (checkpointHeader)
+    mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${checkpointHeader}` : checkpointHeader
   let frozenAfter: import('../confinement/confinement.ts').FrozenCheckout[] = []
   try {
     const afterFreeze = freezeCheckouts(watchedCheckouts)
@@ -634,7 +639,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       workerEvents,
       acceptedQuestionCount: acceptedQuestions.length,
       exitCode,
-      latencyMs: Date.now() - started,
     }),
   ))
 
@@ -728,7 +732,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     latencyMs: Date.now() - started,
     vendorTokens,
     vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage),
+    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -771,7 +775,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           promptPath,
           vendorTokens,
           costUsd,
-          ...runUsageColumnValues(runUsageColumns(vendorUsage)),
+          ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
           status,
           error,

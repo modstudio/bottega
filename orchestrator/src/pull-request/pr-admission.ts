@@ -8,7 +8,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
-import { applicableReview } from '../review/review-applicability.ts'
+import type { ApplicableReview } from '../review/review-applicability.ts'
 import {
   branchRunOwnerSession,
   type ChangeGroup,
@@ -35,6 +35,7 @@ export type PullRequestChange = {
   tree: string
   group: ChangeGroup
   tier: 0 | 1 | 2 | 3
+  applicability: ApplicableReview
 }
 
 const command = (cwd: string, argv: string[], label: string): string => {
@@ -80,6 +81,7 @@ export function resolvePullRequestChange(
     tree,
     group: measured.group,
     tier: measured.tier.tier,
+    applicability: measured.applicability,
   }
 }
 
@@ -101,11 +103,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     pathSet: serializePathSet(change.group.pathSet),
     tip: change.tip,
     tier: change.tier,
-    applicableReview: applicableReview(
-      change.tier,
-      change.group.pathSet,
-      change.project.settings.review,
-    ),
+    applicableReview: change.applicability,
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
     branchReviewGroups,
@@ -201,7 +199,7 @@ export function triageRefusal(
   }
   for (const lens of decision.missingLenses) {
     lines.push(
-      `applicable lens ${lens} has not run and been judged; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+      `applicable lens ${lens} has no recorded result on this branch; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
     )
   }
   if (decision.missingSecondOpinion) {
@@ -218,7 +216,7 @@ export function triageRefusal(
     lines.push(
       `architect-read path failed: review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
     )
-  } else if (decision.earlierReviewNumber === null) {
+  } else if (decision.noCompleteReviewRound) {
     lines.push(
       `architect-read path failed: no earlier complete review round exists on ${change.branch}; cleared by: run and record the tier ${change.tier} review for ${change.branch}`,
     )

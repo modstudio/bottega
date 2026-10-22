@@ -71,7 +71,6 @@ import {
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
-import { STALE_AFTER_MS } from './run-liveness.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
@@ -639,7 +638,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
     const createCheckpoint = (final = false) => {
-      if (!writesJob || !worktree || !launchKey) return null
+      if (!writesJob || !worktree) return null
       const result = checkpointRun({
         database: db(),
         runId: claim.id,
@@ -661,7 +660,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         },
         (requestedJob.checkpointMinutes ?? DEFAULT_CHECKPOINT_MINUTES) * 60_000,
       )
-      if (worktree && launchKey) {
+      if (worktree) {
         liveCheckpoints.set(handle, {
           runId: claim.id,
           rootId: checkpointRoot(opts.resume, claim.id),
@@ -702,7 +701,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           accruedGateMs,
           gateStartedAtMs,
           nowMs,
-          ceilingMs: STALE_AFTER_MS - 1,
         },
         expire: expireWall,
         rearm: rearmWallDeadline,

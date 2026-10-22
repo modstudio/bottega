@@ -2,7 +2,7 @@
 /** Decides whether plain run and score facts form a verdict that may be recorded. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { isNotEvidenceFailure } from '../failure/failure.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 // Frozen stored identifier: persisted in run.evidence_excluded and run_exclusion.reason, then
 // compared literally by unvoid, routing backtests, record sync, and hosted supersede updates.
@@ -77,16 +77,13 @@ export type VerdictRefusal = {
 }
 
 function refuseEvidence(input: VerdictFacts): VerdictRefusal | null {
-  if (input.failureKind === 'unevidenced') {
+  if (isNotEvidenceFailure(input.failureKind)) {
     return {
       code: 'evidence',
-      message: 'unevidenced review is not evidence; void the run instead of scoring it',
-    }
-  }
-  if (input.failureKind && NOT_EVIDENCE.includes(input.failureKind as never)) {
-    return {
-      code: 'evidence',
-      message: `failure kind '${input.failureKind}' is not evidence; void the run instead of scoring it`,
+      message:
+        input.failureKind === 'unevidenced'
+          ? 'unevidenced review is not evidence; void the run instead of scoring it'
+          : `failure kind '${input.failureKind}' is not evidence; void the run instead of scoring it`,
     }
   }
   return null

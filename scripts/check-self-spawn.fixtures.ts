@@ -20,11 +20,11 @@ export const rejectedSelfSpawnFixtures = {
     Bun.spawn([process.execPath, 'orchestrator/src/cli/orch.ts'])
   `,
   'resolver mentioned after direct entry': `
-    Bun.spawn(['bun', 'hub/src/cli.ts', ...bottegaEntryArgv('hub')])
+    Bun.spawn(['bun', 'hub/src/cli.ts', ...bottegaEntryArgv('ask-server')])
   `,
 }
 
 export const acceptedSelfSpawnFixture = `
-  const command = [...bottegaEntryArgv('hub'), 'hub/src/cli.ts']
+  const command = [...bottegaEntryArgv('ask-server'), 'hub/src/cli.ts']
   Bun.spawn(command)
 `

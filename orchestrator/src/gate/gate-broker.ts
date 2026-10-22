@@ -18,7 +18,7 @@ import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
-import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   gateCheckExecutionPath,
@@ -352,7 +352,7 @@ async function spawnGateChild(input: {
   record: (chunk: Buffer | string) => void
 }) {
   const launch = await gateBrokerLaunchArgv(input.confinement, input.command)
-  return lowerRunChildPriority(
+  return setChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
       env: {
@@ -366,6 +366,7 @@ async function spawnGateChild(input: {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
+    HOST_TOOL_NICENESS,
     (message) => input.record(`warning: ${message}\n`),
   )
 }

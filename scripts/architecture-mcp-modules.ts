@@ -57,6 +57,7 @@ export const mcpModules: McpModule[] = [
     '../database/db.ts',
     '../doc/docs.ts',
     '../operator/operator-waiting.ts',
+    '../run/question-vocabulary.ts',
     '../run/ruling-file.ts',
     '../run/ruling-overturn.ts',
     '../run/question-identifier.ts',

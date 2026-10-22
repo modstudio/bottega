@@ -5,11 +5,11 @@ import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
-import { vendorProbeCommand } from '../agent/vendor-probe.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { checkCommand } from '../check/check-commands.ts'
+import { parseContinueArgs } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
@@ -52,6 +52,7 @@ import {
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
+import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
@@ -60,6 +61,7 @@ import { collect, log, productArgv, rawArgv, write, writeStdout } from './suppor
 import { registerWorkflowCommands } from './workflow.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
+const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
     .number
@@ -150,6 +152,24 @@ function epicRegisteredProjectWorkingDirectoryRefusal(): string {
 
 const describedCommand = (program: Command, name: string, description: string) =>
   program.command(name).description(description)
+
+function answerCommandDefinition(program: Command): Command {
+  return describedCommand(
+    program,
+    'answer <id> [message...]',
+    'record rulings for a worker and resume its run',
+  )
+    .allowUnknownOption(true)
+    .option('--file <value>', 'read the ruling from this file')
+    .option('--follow', 'wait for the resumed run and print its result')
+    .option('--detach', 'return after resuming the run')
+    .option('--quiet', 'suppress collection guidance and followed output')
+    .option('--record-only', 'record the ruling without resuming the run')
+    .option('--from-operator', 'attribute the ruling to the operator')
+    .option('--from-operator-q<id>', 'attribute only question <id> to the operator')
+    .option('--channel <value>', 'record the channel that supplied the ruling')
+    .option('--json', 'write the answer result as JSON')
+}
 
 function registerMachineAttentionCommands(program: Command): void {
   program
@@ -297,8 +317,19 @@ function registerAgentCommands(program: Command): void {
     .option('--max-concurrent <value>', 'limit concurrent runs for this agent')
     .option('--enabled <value>', 'enable or disable the agent')
     .option('--reason <value>', 'record why the agent is disabled')
-    .option('--json', 'write the agent listing as JSON')
     .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
+}
+
+async function epicAction(
+  key: string,
+  json: boolean,
+  presentation: { log(value: string): void },
+): Promise<void> {
+  const project = projectAt(process.cwd())
+  if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
+  await epicCommand(project.name, key, json, presentation, {
+    subscriptionCost: await loadSubscriptionCostContext(),
+  })
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
@@ -461,30 +492,16 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  describedCommand(
-    program,
-    'answer <id> [message...]',
-    'record rulings for a worker and resume its run',
+  answerCommandDefinition(program).action((id, _message, options, command) =>
+    answerCommand(
+      localRunId(id),
+      rawArgv(command).slice(2),
+      Boolean(options.recordOnly),
+      Boolean(options.json),
+      runFlags(options),
+      presentation,
+    ),
   )
-    .allowUnknownOption(true)
-    .option('--file <value>', 'read the ruling from this file')
-    .option('--follow', 'wait for the resumed run and print its result')
-    .option('--detach', 'return after resuming the run')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .option('--record-only', 'record the ruling without resuming the run')
-    .option('--from-operator', 'attribute the ruling to the operator')
-    .option('--channel <value>', 'record the channel that supplied the ruling')
-    .option('--json', 'write the answer result as JSON')
-    .action((id, _message, options, command) =>
-      answerCommand(
-        localRunId(id),
-        rawArgv(command).slice(2),
-        Boolean(options.recordOnly),
-        Boolean(options.json),
-        runFlags(options),
-        presentation,
-      ),
-    )
   describedCommand(program, 'continue <id> [message...]', 'continue a finished run as another turn')
     .allowUnknownOption(true)
     .option('--file <value>', 'read the continuation message from this file')
@@ -492,10 +509,11 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--detach', 'return after starting the continuation')
     .option('--quiet', 'suppress collection guidance and followed output')
     .option('--findings', 'include prior review findings in the continuation')
-    .action((id, _message, options, command) =>
-      continueCommand(
-        localRunId(id),
-        rawArgv(command).slice(2),
+    .action((_id, _message, options, command) => {
+      const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
+      return continueCommand(
+        localRunId(parsed.identifier),
+        parsed,
         Boolean(options.findings),
         runFlags(options),
         presentation,
@@ -506,8 +524,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
             message,
           ),
         dependencies.continueCommandDependencies,
-      ),
-    )
+      )
+    })
   const doVerb = describedCommand(
     program,
     'do <job> [prompt...]',
@@ -544,11 +562,6 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       log(formatPassingGate(result))
       presentation.setExitCode(result.gateId === null ? 1 : 0)
     })
-  program
-    .command('probe <agent>')
-    .description('clear a vendor-quota exclusion once the agent answers')
-    .allowExcessArguments(false)
-    .action((agent) => vendorProbeCommand(agent, presentation))
   describedCommand(program, 'pick <job>', 'preview the agent selected for a job')
     .option('--agent <value>', 'select this agent if it is eligible')
     .option('--avoid <value>', 'exclude this agent from the preview')
@@ -597,11 +610,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .command('epic <key>')
     .option('--json', 'write the scoreboard as JSON')
     .allowExcessArguments(false)
-    .action((key, options) => {
-      const project = projectAt(process.cwd())
-      if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
-      return epicCommand(project.name, key, Boolean(options.json), presentation)
-    })
+    .action((key, options) => epicAction(key, Boolean(options.json), presentation))
   describedCommand(program, 'jobs', 'list jobs and their capability requirements')
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
