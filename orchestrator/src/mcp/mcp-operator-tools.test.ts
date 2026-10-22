@@ -229,6 +229,42 @@ describe('operator MCP tools', () => {
     ).toEqual([{ answerer_kind: 'agent' }, { answerer_kind: 'operator' }])
   })
 
+  test('answer_questions refuses command and per-ruling operator attribution together', async () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'running',
+      session: SESSION,
+    })
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
+    const questionId = addQuestion(runId, 'Which attribution?')
+
+    const result = await withClient((client) =>
+      client.callTool({
+        name: 'answer_questions',
+        arguments: {
+          run_record_id: runId,
+          rulings: [
+            {
+              question_id: questionId,
+              ruling: 'Operator ruling.',
+              from_operator: true,
+            },
+          ],
+          from_operator: true,
+        },
+      }),
+    )
+
+    expect(result.isError).toBe(true)
+    expect((result.content as { text: string }[])[0]!.text).toContain(
+      'from_operator cannot be combined with rulings[].from_operator',
+    )
+    expect(db().query('SELECT answer FROM question WHERE number=?').get(questionId)).toEqual({
+      answer: null,
+    })
+  })
+
   test('answer_questions returns the all-open-questions refusal as a tool error', async () => {
     const runId = addRun({
       agent: 'codex',

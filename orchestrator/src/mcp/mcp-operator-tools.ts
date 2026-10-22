@@ -15,6 +15,7 @@ import { db } from '../database/db.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { rulingAttributionDecision } from '../run/question-vocabulary.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { answerRun } from '../run/run-answer.ts'
@@ -86,17 +87,26 @@ const answerRulingSchema = z
   })
   .strict()
 
-export function registerOperatorTools(server: McpServer): void {
-  server.registerTool(
-    'list_open_questions',
-    {
-      description:
-        'List open questions this session owns or may answer, plus items waiting on the operator.',
-      outputSchema: z.object(ListOpenQuestionsResultSchema.shape).strict(),
-      annotations: { readOnlyHint: true },
-    },
-    async () => structured(await listOpenQuestions()),
-  )
+function resolveAnswerRulings(
+  rulings: z.infer<typeof answerRulingSchema>[],
+  commandFromOperator: boolean,
+) {
+  return rulings.map(({ question_id, ruling, from_operator: rulingFromOperator }) => {
+    const attribution = rulingAttributionDecision(commandFromOperator, rulingFromOperator ?? false)
+    if (attribution.kind === 'conflict') {
+      throw new Error(
+        'from_operator cannot be combined with rulings[].from_operator; use the top-level field for every ruling or the per-ruling field for individual rulings',
+      )
+    }
+    return {
+      questionId: localQuestionId(question_id),
+      text: ruling,
+      fromOperator: attribution.kind === 'operator',
+    }
+  })
+}
+
+function registerAnswerQuestionsTool(server: McpServer): void {
   server.registerTool(
     'answer_questions',
     {
@@ -113,12 +123,8 @@ export function registerOperatorTools(server: McpServer): void {
       const result = await answerRun(
         localRunId(run_record_id),
         {
-          rulings: rulings.map(({ question_id, ruling, from_operator: rulingFromOperator }) => ({
-            questionId: localQuestionId(question_id),
-            text: ruling,
-            fromOperator: rulingFromOperator ?? false,
-          })),
-          fromOperator: from_operator ?? false,
+          rulings: resolveAnswerRulings(rulings, from_operator ?? false),
+          fromOperator: false,
           channel: 'mcp',
           recordOnly: record_only ?? false,
           json: true,
@@ -129,6 +135,20 @@ export function registerOperatorTools(server: McpServer): void {
       return structured(result)
     },
   )
+}
+
+export function registerOperatorTools(server: McpServer): void {
+  server.registerTool(
+    'list_open_questions',
+    {
+      description:
+        'List open questions this session owns or may answer, plus items waiting on the operator.',
+      outputSchema: z.object(ListOpenQuestionsResultSchema.shape).strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async () => structured(await listOpenQuestions()),
+  )
+  registerAnswerQuestionsTool(server)
 
   server.registerTool(
     'overturn_ruling',

@@ -11,6 +11,7 @@ import {
   parseAnswerChannelArgs,
   parseAnswerTextSources,
   parseWorkerMessageArgs,
+  questionOperatorFlag,
   readMessageText,
   readWorkerFile,
 } from '../cli/args.ts'
@@ -25,7 +26,7 @@ import {
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
-import { operatorAttributedRuling, rulingFileOfferLines } from './ruling-file-text.ts'
+import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 
@@ -104,24 +105,19 @@ export async function answerInputFromArgv(
         (operatorQuestion) => operatorQuestion.questionId === questionId,
       )
       const attribution = rulingAttributionDecision(fromOperator, perQuestion)
-      if (attribution.kind === 'refuse') throw new Error(attribution.reason)
+      if (attribution.kind === 'conflict') {
+        throw new Error(
+          `--from-operator cannot be combined with ${questionOperatorFlag(source.identifier)}; use --from-operator for every ruling or ${questionOperatorFlag('<id>')} for individual rulings`,
+        )
+      }
       return {
         questionId,
         text: cliRuling(
           source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
         ),
-        fromOperator: perQuestion,
+        fromOperator: attribution.kind === 'operator',
       }
     })
-    const ruledQuestionIds = new Set(rulings.map((ruling) => ruling.questionId))
-    const unattached = operatorQuestionIds.filter(
-      ({ questionId }) => !ruledQuestionIds.has(questionId),
-    )
-    if (unattached.length) {
-      throw new Error(
-        `${unattached.map(({ identifier }) => `--from-operator-q${identifier}`).join(', ')} must accompany the matching --q<id> ruling`,
-      )
-    }
   } else if (
     parsed.commandFile !== undefined ||
     (!parsed.positionals.length && !process.stdin.isTTY)
@@ -136,10 +132,22 @@ export async function answerInputFromArgv(
   } else {
     rulings = cliRuling(parsed.positionals.join(' '))
   }
+  const ruledQuestionIds = new Set(
+    Array.isArray(rulings) ? rulings.map((ruling) => ruling.questionId) : [],
+  )
+  const unattached = operatorQuestionIds.filter(
+    ({ questionId }) => !ruledQuestionIds.has(questionId),
+  )
+  if (unattached.length) {
+    throw new Error(
+      `${unattached.map(({ identifier }) => questionOperatorFlag(identifier)).join(', ')} must accompany the matching --q<id> ruling\n` +
+        `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  }
   return {
     rulings,
     allowPartialRecordOnly,
-    fromOperator,
+    fromOperator: Array.isArray(rulings) ? false : fromOperator,
     channel: channelArgs.channel,
     recordOnly,
     json,
@@ -157,8 +165,9 @@ export async function retryCommand(
 
 function answeredQuestions(
   runId: string,
-  rulings: AnswerRunInput['rulings'],
+  input: AnswerRunInput,
 ): { number: number; fromOperator: boolean }[] {
+  const { rulings } = input
   if (typeof rulings !== 'string') {
     const number = db().query<{ number: number }, [string]>(
       'SELECT number FROM question WHERE record_id=?',
@@ -176,7 +185,7 @@ function answeredQuestions(
           ORDER BY q.number`,
       )
       .all(runId, runId) as { number: number }[]
-  ).map((row) => ({ number: row.number, fromOperator: false }))
+  ).map((row) => ({ number: row.number, fromOperator: input.fromOperator }))
 }
 
 export async function answerCommand(
@@ -189,18 +198,13 @@ export async function answerCommand(
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers)
-  const questions = answeredQuestions(id, input.rulings)
+  const questions = answeredQuestions(id, input)
   const result = await answerRun(id, input, helpers)
   if (json) console.log(JSON.stringify(result))
   else {
     for (const line of rulingFileOfferLines({
       questionIds: questions
-        .filter((question) =>
-          operatorAttributedRuling({
-            fromOperator: input.fromOperator || question.fromOperator,
-            channel: input.channel,
-          }),
-        )
+        .filter((question) => question.fromOperator)
         .map((question) => question.number),
       operatorAttributed: true,
       json: false,

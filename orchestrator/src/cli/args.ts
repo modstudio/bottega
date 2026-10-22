@@ -32,6 +32,7 @@ function shellValue(value: string): string {
 
 export const ANSWER_WORKING_FORMS =
   `  ${PLATFORM_SLUG} question answer <id> --q<id> "<ruling>"\n` +
+  `  ${PLATFORM_SLUG} question answer <id> --q<id> "<ruling>" --from-operator-q<id>\n` +
   `  ${PLATFORM_SLUG} question answer <id> --q<id> --file <path>\n  ${PLATFORM_SLUG} question answer <id> --file <path>\n` +
   `  ${PLATFORM_SLUG} question answer <id> "<ruling>"`
 export const TELL_WORKING_FORMS =
@@ -222,10 +223,16 @@ function questionTextSource(
   return { source: { identifier: selector.identifier, text: next }, next: index + 2 }
 }
 
+const QUESTION_OPERATOR_FLAG_PREFIX = '--from-operator-q'
+
+export function questionOperatorFlag(identifier: string): string {
+  return `${QUESTION_OPERATOR_FLAG_PREFIX}${identifier}`
+}
+
 function operatorQuestionIdentifier(arg: string, enabled: boolean): string | null {
-  if (!enabled || !arg.startsWith('--from-operator-q')) return null
-  const identifier = arg.slice('--from-operator-q'.length)
-  if (!identifier) throw new Error('argument --from-operator-q<id> needs a question identifier')
+  if (!enabled || !arg.startsWith(QUESTION_OPERATOR_FLAG_PREFIX)) return null
+  const identifier = arg.slice(QUESTION_OPERATOR_FLAG_PREFIX.length)
+  if (!identifier) throw new Error(`${questionOperatorFlag('<id>')} needs a question identifier`)
   return identifier
 }
 

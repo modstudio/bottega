@@ -38,7 +38,6 @@ import {
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
   QUESTION_DELIVERY_OUTCOME_FAILED,
   rulingActor,
-  rulingAttributionDecision,
 } from './question-vocabulary.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -206,7 +205,7 @@ function answeredBy(
   fromOperator: boolean,
   callerSession: string | null,
 ): string {
-  if (operatorAuthorized) return 'operator via hub'
+  if (operatorAuthorized && fromOperator) return 'operator via hub'
   return rulingActor(fromOperator, callerSession)
 }
 
@@ -316,16 +315,12 @@ async function requireRulingAttributions(
 ): Promise<boolean> {
   if (!Array.isArray(input.rulings)) {
     await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
-    return false
+    return input.fromOperator
   }
-  let perQuestionOperator = false
   for (const ruling of input.rulings) {
-    const attribution = rulingAttributionDecision(input.fromOperator, ruling.fromOperator)
-    if (attribution.kind === 'refuse') throw new Error(attribution.reason)
-    perQuestionOperator ||= ruling.fromOperator
-    await refuseUserRuling(row.repo, row.launch_key, attribution.fromOperator)
+    await refuseUserRuling(row.repo, row.launch_key, ruling.fromOperator)
   }
-  return perQuestionOperator
+  return input.rulings.some((ruling) => ruling.fromOperator)
 }
 
 function requireAnswerRun<Row>(row: Row | null, requestedId: string): Row {
@@ -632,7 +627,7 @@ export async function answerRun(
   helpers: RunAnswerHelpers,
 ): Promise<AnswerWaitingResult> {
   const row = requireAnswerRun(answerRoot(requestedId), requestedId)
-  const perQuestionOperator = await requireRulingAttributions(row, input)
+  const hasOperatorRuling = await requireRulingAttributions(row, input)
   const id = row.record_id
   refuseEscapedChain(id)
   writableDb()
@@ -640,7 +635,7 @@ export async function answerRun(
   const authorityDecision = requireAnswerAuthority(
     requestedId,
     input.channel,
-    input.fromOperator || perQuestionOperator,
+    hasOperatorRuling,
     (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
     answerAuthority,
   )
@@ -881,7 +876,7 @@ export async function answerRun(
     answers.forEach((answer) => {
       const answeringIdentity = answeredBy(
         authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
-        input.fromOperator || answer.fromOperator,
+        answer.fromOperator,
         callerSession,
       )
       upd.run(

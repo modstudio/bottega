@@ -17,22 +17,17 @@ export function rulingActor(fromOperator: boolean, session: string | null): stri
 }
 
 export type RulingAttributionDecision =
-  | { kind: 'attribute'; fromOperator: boolean }
-  | { kind: 'refuse'; reason: string }
+  | { kind: 'agent' }
+  | { kind: 'operator' }
+  | { kind: 'conflict' }
 
 /** Decide one ruling's attribution without transport or database state. */
 export function rulingAttributionDecision(
   commandFromOperator: boolean,
   questionFromOperator: boolean,
 ): RulingAttributionDecision {
-  if (commandFromOperator && questionFromOperator) {
-    return {
-      kind: 'refuse',
-      reason:
-        '--from-operator cannot be combined with --from-operator-q<id>; use the command flag for every ruling or the per-question form',
-    }
-  }
-  return { kind: 'attribute', fromOperator: commandFromOperator || questionFromOperator }
+  if (commandFromOperator && questionFromOperator) return { kind: 'conflict' }
+  return commandFromOperator || questionFromOperator ? { kind: 'operator' } : { kind: 'agent' }
 }
 
 export function rulingStatus(
