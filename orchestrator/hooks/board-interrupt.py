@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 
 from board_hook_common import (
     board_bin,
@@ -22,6 +23,66 @@ from board_hook_common import (
 )
 
 BOARD_PRESENCE_CALL_TIMEOUT_SECONDS = 1
+
+
+def iso_utc_from_unix(seconds: float) -> str:
+    stamp = datetime.fromtimestamp(seconds, timezone.utc)
+    return stamp.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def iso_utc_from_text(value: str) -> str | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )
+
+
+def session_began_at_from_stat(stat_result) -> str | None:
+    birth = getattr(stat_result, "st_birthtime", None)
+    if isinstance(birth, (int, float)) and birth > 0:
+        return iso_utc_from_unix(birth)
+    return None
+
+
+def session_began_at_from_transcript(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    return None
+                stamp = entry.get("timestamp") if isinstance(entry, dict) else None
+                return iso_utc_from_text(stamp) if isinstance(stamp, str) else None
+    except OSError:
+        return None
+    return None
+
+
+def session_began_at(path: str | None) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        stat_result = os.stat(path)
+    except OSError:
+        return None
+    return session_began_at_from_stat(stat_result) or session_began_at_from_transcript(path)
+
+
+def presence_skip_reason(transcript_path: str | None) -> str | None:
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return "no transcript_path"
+    if session_began_at(transcript_path) is None:
+        return "no session start from transcript"
+    return None
 
 
 def presence_missing(session: str) -> bool:
@@ -42,7 +103,9 @@ def presence_missing(session: str) -> bool:
         return False
 
 
-def refresh_presence(session: str, now: float, interval: float) -> None:
+def refresh_presence(
+    session: str, now: float, interval: float, transcript_path: str | None
+) -> None:
     if not presence_missing(session):
         return
     path = marker_path("presence", session)
@@ -54,10 +117,21 @@ def refresh_presence(session: str, now: float, interval: float) -> None:
             last = float(ran_at)
     if now - last < interval:
         return
+    began_at = session_began_at(transcript_path)
+    if began_at is None:
+        write_marker(
+            path,
+            {
+                "ran_at": now,
+                "skip": presence_skip_reason(transcript_path)
+                or "no session start from transcript",
+            },
+        )
+        return
     write_marker(path, {"ran_at": now})
     try:
         subprocess.run(
-            [board_bin(), "board", "presence"],
+            [board_bin(), "board", "presence", "--began-at", began_at],
             capture_output=True,
             timeout=BOARD_PRESENCE_CALL_TIMEOUT_SECONDS,
             check=False,
@@ -178,7 +252,7 @@ def main() -> int:
         if not isinstance(session, str) or not session:
             return 0
         now = time.time()
-        refresh_presence(session, now, presence_refresh)
+        refresh_presence(session, now, presence_refresh, payload.get("transcript_path"))
         candidates, hosted_stale = cheap_state(session, refresh)
         path = marker_path("interrupt", session)
         marker = parse_marker(read_marker(path))

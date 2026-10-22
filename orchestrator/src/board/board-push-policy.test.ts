@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { boardPushDecision } from './board-push-policy.ts'
@@ -151,11 +152,11 @@ test('a report reply reaches the first later architect session of the posting pr
   expect(
     db()
       .query(
-        `SELECT reader_session,audience_at_posting FROM board_receipt
-         WHERE message_record_id=? AND delivered_at IS NOT NULL AND audience_at_posting=0`,
+        `SELECT reader_session,audience_at_posting,successor FROM board_receipt
+         WHERE message_record_id=? AND delivered_at IS NOT NULL AND successor=1`,
       )
       .all(reply.recordId),
-  ).toEqual([{ reader_session: 'later-first', audience_at_posting: 0 }])
+  ).toEqual([{ reader_session: 'later-first', audience_at_posting: 0, successor: 1 }])
 })
 
 test('a session which began before the reply does not receive it as the successor', () => {
@@ -181,4 +182,44 @@ test('a session which began before the reply does not receive it as the successo
   const reply = replyToThread(posted.recordId, 'The ruling is in.', {}, replyAt, postingCwd)
   const pending = claimPushNotices(false, { CLAUDE_CODE_SESSION_ID: 'already-running' }, clock)
   expect(pending.notices.map((notice) => notice.recordId)).not.toContain(reply.recordId)
+})
+
+test('an ordinary non-audience delivery does not block the report reply successor', () => {
+  const project = ensurePostingProject().name
+  const postedAtMs = clock - SESSION_LIVE_MS - 60_000
+  const replyAt = postedAtMs + 30_000
+  insertArchitect('ordinary-author', project, postedAtMs - 1_000, postedAtMs)
+  const posted = postNotice(
+    {
+      audience: 'session:ordinary-author',
+      title: 'Report',
+      body: 'The work is blocked.',
+      purpose: 'request',
+    },
+    { CLAUDE_CODE_SESSION_ID: 'ordinary-author' },
+    postedAtMs,
+    postingCwd,
+  )
+  db()
+    .query('UPDATE presence SET last_seen=? WHERE session_id=?')
+    .run(new Date(postedAtMs).toISOString(), 'ordinary-author')
+  const reply = replyToThread(posted.recordId, 'The ruling is in.', {}, replyAt, postingCwd)
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (message_record_id,reader_session,audience_at_posting,delivered_at,record_id)
+       VALUES (?,?,0,?,?)`,
+    )
+    .run(reply.recordId, 'late-ordinary-reader', new Date(clock).toISOString(), newRecordId())
+  insertArchitect('ordinary-later', project, replyAt + 1_000, clock)
+  const first = claimPushNotices(false, { CLAUDE_CODE_SESSION_ID: 'ordinary-later' }, clock)
+  expect(first.notices.map((notice) => notice.recordId)).toEqual([reply.recordId])
+  expect(
+    db()
+      .query(
+        `SELECT reader_session,successor FROM board_receipt
+         WHERE message_record_id=? AND successor=1`,
+      )
+      .all(reply.recordId),
+  ).toEqual([{ reader_session: 'ordinary-later', successor: 1 }])
 })

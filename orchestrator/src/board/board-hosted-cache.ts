@@ -17,13 +17,11 @@ import {
   messageCanBeReaped,
   messageIsLive,
   OPERATOR_READER,
-  type PresenceFact,
   parseAudience,
-  resolveAudience,
 } from './board-policy.ts'
 import {
   missingReaderStartWarning,
-  reportReplySuccessorDecision,
+  replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
 import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
@@ -469,34 +467,23 @@ function hostedReplySuccessorPush(
     .map((item) => item.message)
     .find((candidate) => candidate.id === rootId)
   if (!root?.authorSession || !root.origin.project) return false
-  const facts = presenceFacts(database, clock)
-  const readerFact: PresenceFact | undefined = facts.find(
-    (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
-  )
-  const authorFact: PresenceFact | undefined = facts.find(
-    (row: PresenceFact) => row.reader === root.authorSession && !row.taskAudienceOnly,
-  )
-  return reportReplySuccessorDecision({
-    rootAuthorLive: resolveAudience(
-      { kind: 'session', value: root.authorSession },
-      facts,
-      clock,
-      SESSION_LIVE_MS,
-    ).includes(root.authorSession),
-    readerIsArchitect: readerFact?.role === 'architect',
-    readerProject: readerFact?.project ?? '',
+  return replySuccessorAddressing({
+    presence: presenceFacts(database, clock),
+    reader,
+    rootAuthorSession: root.authorSession,
     rootProject: root.origin.project,
     readerIsParticipant: replyAddressesReader(message, reader, clock, database),
     successorAlreadyReceived: Boolean(
       database
         .query(
           `SELECT 1 AS ok FROM hosted_board_receipt_cache
-           WHERE message_id=? AND audience_at_posting=0 AND delivered_at IS NOT NULL`,
+           WHERE message_id=? AND successor=1 AND delivered_at IS NOT NULL`,
         )
         .get(message.id),
     ),
     readerBeganAt: boardReaderBeganAt(reader, database),
-    authorLastActivityAt: authorFact?.lastSeen ?? null,
+    now: clock,
+    liveWindowMs: SESSION_LIVE_MS,
   })
 }
 
@@ -511,9 +498,10 @@ function takeHostedReportReplySuccessor(
     database
       .query(
         `INSERT INTO hosted_board_receipt_cache
-         (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-         VALUES (?,?,0,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         (message_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
+         VALUES (?,?,0,1,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
          delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
+         successor=1,
          pending_sync=1`,
       )
       .run(message.id, reader, new Date(clock).toISOString())
@@ -705,7 +693,7 @@ export function claimCachedHostedForPush(
   })
   return {
     notices,
-    withheldOlderCount: selected.withheldOlderCount + (selected.notices.length - notices.length),
+    withheldOlderCount: selected.withheldOlderCount,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

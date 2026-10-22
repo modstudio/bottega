@@ -24,6 +24,7 @@ import { postNotice } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const interruptHook = resolve(import.meta.dir, '../../hooks/board-interrupt.py')
+const interruptHookTest = resolve(import.meta.dir, '../../hooks/test_board_interrupt.py')
 const guardHook = resolve(import.meta.dir, '../../hooks/board-ack-guard.py')
 const postingCwd = resolve(import.meta.dir, '../../..')
 const hookRoots: string[] = []
@@ -67,7 +68,7 @@ function createHookFixture(
       ? `#!/bin/sh\nprintf x >> '${invocationLog}'\nsleep 2\n`
       : behavior === 'failure'
         ? `#!/bin/sh\nprintf x >> '${invocationLog}'\nexit 1\n`
-        : `#!/bin/sh\nif [ "$2" = "presence" ]; then printf p >> '${root}/presence-calls'; exit 0; fi\nif [ "$2" = "pending" ]; then printf x >> '${invocationLog}'; printf '%s\\n' '${commandOutput}'; fi\n`,
+        : `#!/bin/sh\nif [ "$2" = "presence" ]; then printf p >> '${root}/presence-calls'; printf '%s\\n' "$*" >> '${root}/presence-args'; exit 0; fi\nif [ "$2" = "pending" ]; then printf x >> '${invocationLog}'; printf '%s\\n' '${commandOutput}'; fi\n`,
   )
   chmodSync(command, 0o700)
   return { root, database, databasePath, command, invocationLog }
@@ -84,7 +85,7 @@ function invocationCount(fixture: ReturnType<typeof createHookFixture>) {
 function setCommandOutput(fixture: ReturnType<typeof createHookFixture>, output: string) {
   writeFileSync(
     fixture.command,
-    `#!/bin/sh\nif [ "$2" = "presence" ]; then printf p >> '${fixture.root}/presence-calls'; exit 0; fi\nif [ "$2" = "pending" ]; then printf x >> '${fixture.invocationLog}'; printf '%s\\n' '${output}'; fi\n`,
+    `#!/bin/sh\nif [ "$2" = "presence" ]; then printf p >> '${fixture.root}/presence-calls'; printf '%s\\n' "$*" >> '${fixture.root}/presence-args'; exit 0; fi\nif [ "$2" = "pending" ]; then printf x >> '${fixture.invocationLog}'; printf '%s\\n' '${output}'; fi\n`,
   )
   chmodSync(fixture.command, 0o700)
 }
@@ -95,6 +96,20 @@ function presenceCallCount(fixture: ReturnType<typeof createHookFixture>) {
   } catch {
     return 0
   }
+}
+
+function presenceArgs(fixture: ReturnType<typeof createHookFixture>) {
+  try {
+    return readFileSync(join(fixture.root, 'presence-args'), 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function writeTranscript(fixture: ReturnType<typeof createHookFixture>) {
+  const path = join(fixture.root, 'transcript.jsonl')
+  writeFileSync(path, `${JSON.stringify({ timestamp: '2026-10-13T12:00:00.000Z' })}\n`)
+  return path
 }
 
 function addCandidate(fixture: ReturnType<typeof createHookFixture>, id: number) {
@@ -708,6 +723,26 @@ test('recently-injected ids do not suppress messages never delivered to the sess
   expect(result.delivery.map((notice) => notice.id)).toEqual([String(unread.number)])
 })
 
+test('board interrupt presence helpers match the canonical hook behavior', () => {
+  const result = Bun.spawnSync(['python3', interruptHookTest], { stdout: 'pipe', stderr: 'pipe' })
+  expect({
+    exitCode: result.exitCode,
+    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+  }).toEqual({ exitCode: 0, output: 'ok' })
+})
+
+test('PostToolUse does not repair presence without a session start', () => {
+  const item = createHookFixture(hookOutput)
+  item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
+  addCandidate(item, 1)
+  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
+  expect(result.exitCode).toBe(0)
+  expect(presenceCallCount(item)).toBe(0)
+  const markerRoot = join(item.root, 'board-hook-state', 'presence')
+  const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
+  expect(JSON.parse(readFileSync(marker, 'utf8')).skip).toBe('no transcript_path')
+})
+
 test('PostToolUse is silent for workers, malformed input, missing stores, and the cheap no-pending path', () => {
   const item = createHookFixture(hookOutput)
   for (const [payload, extra] of [
@@ -726,13 +761,18 @@ test('PostToolUse injects pending text', () => {
   const item = createHookFixture(hookOutput)
   item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
   addCandidate(item, 1)
-  const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
+  const result = runHook(
+    interruptHook,
+    JSON.stringify({ session_id: 'reader', transcript_path: writeTranscript(item) }),
+    item,
+  )
   expect(result.exitCode).toBe(0)
   expect(JSON.parse(result.stdout.toString()).hookSpecificOutput).toEqual({
     hookEventName: 'PostToolUse',
     additionalContext: JSON.parse(hookOutput).delivery[0].text,
   })
   expect(presenceCallCount(item)).toBe(1)
+  expect(presenceArgs(item)).toContain('--began-at')
 })
 
 test('PostToolUse fails open on command timeout', () => {
@@ -757,7 +797,10 @@ test('PostToolUse checks an unaddressed candidate only once until a new id arriv
   const item = createHookFixture('{"delivery":[],"overflow":null,"pendingAcknowledgements":[]}')
   item.database.exec('CREATE TABLE presence(session_id TEXT PRIMARY KEY)')
   addCandidate(item, 1)
-  const payload = JSON.stringify({ session_id: 'reader' })
+  const payload = JSON.stringify({
+    session_id: 'reader',
+    transcript_path: writeTranscript(item),
+  })
   runHookRepeated(interruptHook, payload, item, 2)
   expect(invocationCount(item)).toBe(1)
   expect(presenceCallCount(item)).toBe(1)

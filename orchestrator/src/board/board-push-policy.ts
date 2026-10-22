@@ -41,7 +41,9 @@ export function replySuccessorAddressing(input: {
   now: number
   liveWindowMs: number
 }): boolean {
-  const readerFact = input.presence.find((row) => row.reader === input.reader && !row.taskAudienceOnly)
+  const readerFact = input.presence.find(
+    (row) => row.reader === input.reader && !row.taskAudienceOnly,
+  )
   const authorFact = input.presence.find(
     (row) => row.reader === input.rootAuthorSession && !row.taskAudienceOnly,
   )

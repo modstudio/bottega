@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { db } from '../database/db.ts'
+import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { HostedBoardChange, HostedBoardMessage } from '../record/record-board-contract.ts'
 import { hostedBoardMessageView } from '../record/record-board-messages.ts'
@@ -27,10 +27,7 @@ import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 
 const userId = '01990000-0000-7000-8000-000000000001'
 const createdAt = '2026-10-05T12:00:00.000Z'
-const noRecordEnv = {
-  [CONFIG_HOME_ENV]: '/definitely-missing-config',
-  [HARNESS_ENV_FILE_ENV]: '',
-}
+const noRecordEnv = { [CONFIG_HOME_ENV]: '/definitely-missing-config', [HARNESS_ENV_FILE_ENV]: '' }
 
 const message = (overrides: Partial<HostedBoardMessage> = {}): HostedBoardMessage => ({
   id: newRecordId(),
@@ -73,6 +70,20 @@ const change = (value: HostedBoardMessage): HostedBoardChange => ({
   tags: [],
   receipts: [],
 })
+
+function insertArchitect(
+  session: string,
+  firstSeen: string,
+  lastSeen = firstSeen,
+  taskKey: string | null = null,
+  project = 'cache-project',
+) {
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen) VALUES (?,'claude','architect','machine',?,(SELECT record_id FROM project WHERE name=?),'/tmp',?,?,?)`,
+    )
+    .run(session, project, project, taskKey, firstSeen, lastSeen)
+}
 
 beforeEach(() => {
   db().query('DELETE FROM hosted_board_receipt_cache').run()
@@ -148,12 +159,7 @@ test('refresh pages to completion, advances with each page, and replaces an upda
 
 test('refresh records an unreachable service without throwing and exposes verification failure', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  db()
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
-    )
-    .run(createdAt, createdAt)
+  insertArchitect('cache-reader', createdAt)
   const cached = message()
   const good = {
     ...createMemoryRecordApiClient(),
@@ -195,12 +201,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
 
 test('routing narrows own-user audiences and withholds questions from worker chains', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  db()
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp','DEV-968',?,?)`,
-    )
-    .run(createdAt, '2026-10-05T12:01:00.000Z')
+  insertArchitect('cache-reader', createdAt, '2026-10-05T12:01:00.000Z', 'DEV-968')
   const own = message({ audience: 'architects' })
   const other = message({ audience: 'architects', authorUserId: newRecordId() })
   const client = {
@@ -247,12 +248,7 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_CACHE_OWNER_KEY, userId)
-  database
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp','DEV-968',?,?)`,
-    )
-    .run('2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z')
+  insertArchitect('cache-reader', '2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z', 'DEV-968')
   database
     .query(
       `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
@@ -339,12 +335,8 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  const addPresence = database.query(
-    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-     VALUES (?,'claude','architect','machine',?,(SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?,?)`,
-  )
-  addPresence.run('cache-reader', 'cache-project', 'cache-project', createdAt, createdAt)
-  addPresence.run('cache-reader-other', 'other-project', 'other-project', createdAt, createdAt)
+  insertArchitect('cache-reader', createdAt)
+  insertArchitect('cache-reader-other', createdAt, createdAt, null, 'other-project')
   const recordResponse = (authorProjectId: string | null, revision: string) =>
     hostedBoardMessageView(
       {
@@ -411,12 +403,7 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
 
 test('a local delivery stamp suppresses a repeat and its failed hosted write retries on refresh', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  db()
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
-    )
-    .run('2026-10-05T11:00:00.000Z', createdAt)
+  insertArchitect('cache-reader', '2026-10-05T11:00:00.000Z', createdAt)
   const cached = message()
   const base = {
     ...createMemoryRecordApiClient(),
@@ -932,18 +919,8 @@ test('an older snapshot applied after a newer one leaves payload, tags, receipts
 
 test('audienceAtPosting uses session first_seen and chain-root start time in both directions', () => {
   const database = db()
-  database
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('early-session','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?),
-              ('late-session','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
-    )
-    .run(
-      '2026-10-05T11:00:00.000Z',
-      createdAt,
-      '2026-10-05T13:00:00.000Z',
-      '2026-10-05T13:00:00.000Z',
-    )
+  insertArchitect('early-session', '2026-10-05T11:00:00.000Z', createdAt)
+  insertArchitect('late-session', '2026-10-05T13:00:00.000Z')
   const earlyRun = database
     .query(
       `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
@@ -971,12 +948,7 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
 test('hosted push selection withholds every older message and keeps newer messages', () => {
   const database = db()
   const beganAt = '2026-10-05T12:00:00.000Z'
-  database
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('cache-reader','claude','architect','machine','cache-project',(SELECT record_id FROM project WHERE name='cache-project'),'/tmp',NULL,?,?)`,
-    )
-    .run(beganAt, beganAt)
+  insertArchitect('cache-reader', beganAt)
   const setMeta = database.query(
     'INSERT INTO schema_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
   )
@@ -1013,4 +985,47 @@ test('hosted push selection withholds every older message and keeps newer messag
     notices: [{ id: rows[2]!.id }, { id: rows[3]!.id }],
     withheldOlderCount: 2,
   })
+})
+
+test('a hosted report reply reaches the first later architect session of the posting project', () => {
+  const clock = Date.parse('2026-10-16T12:00:00.000Z')
+  const postedAt = clock - SESSION_LIVE_MS - 60_000
+  const replyAt = postedAt + 30_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
+  insertArchitect('hosted-author', iso(postedAt - 1_000), iso(postedAt))
+  insertArchitect('hosted-later-first', iso(replyAt + 1_000), iso(clock))
+  insertArchitect('hosted-later-second', iso(replyAt + 2_000), iso(clock))
+  const root = message({
+    audience: 'session:hosted-author',
+    authorSession: 'hosted-author',
+    purpose: 'request',
+    createdAt: iso(postedAt),
+  })
+  const reply = message({
+    kind: 'reply',
+    threadRootId: root.id,
+    audience: null,
+    createdAt: iso(replyAt),
+  })
+  const put = db().query(
+    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+  )
+  put.run(root.id, root.kind, null, root.revision, JSON.stringify(root))
+  put.run(reply.id, reply.kind, root.id, reply.revision, JSON.stringify(reply))
+  expect(
+    claimCachedHostedForPush('hosted-later-first', false, clock).notices.map((n) => n.id),
+  ).toEqual([reply.id])
+  expect(
+    claimCachedHostedForPush('hosted-later-second', false, clock).notices.map((n) => n.id),
+  ).toEqual([])
+  expect(
+    db()
+      .query(
+        'SELECT reader_session,successor FROM hosted_board_receipt_cache WHERE message_id=? AND successor=1',
+      )
+      .all(reply.id),
+  ).toEqual([{ reader_session: 'hosted-later-first', successor: 1 }])
 })
