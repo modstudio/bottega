@@ -10,7 +10,7 @@
 #
 #   BLOCKED  question_is_answerable_now accepts a question; the session must act
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
-#   WAITING  runs or landings still going, or a workflow ruling was parked here
+#   WAITING  runs or landings still going
 #   CLEAR    no runs, no landings, nothing asked, and nothing stalled -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
