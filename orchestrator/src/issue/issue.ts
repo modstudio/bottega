@@ -13,17 +13,16 @@ import {
 } from '../contract/contract.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
-import { type Project, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
+import { type Project, projectByName } from '../project/projects.ts'
 import { run } from '../run/run.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability, srtInstalled } from '../sandbox/sandbox-runtime.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
-import { createReadOnlyWorktreeForTool } from '../worktree/worktree.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
-import { removeReadOnlyTree } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { createIssueBeforeTree, type IssueBeforeTree } from './issue-before-tree.ts'
 import { catchFixTreeDisposition } from './issue-catch.ts'
 import {
   boundedIssuePack,
@@ -436,17 +435,27 @@ function notMeasured(text: string): IssueMeasurement {
   return { ok: false, text, exitCode: -1 }
 }
 
-async function measureIssueBefore(input: {
-  command: string
-  diagnosisRun: RunResult
-  fixRun: RunResult
-  reporting: Project
-  target: Project
-  sandboxHome: string
-}): Promise<IssueMeasurement> {
+type MeasureIssueBeforeDependencies = {
+  createTree?: (target: Project, base: string) => IssueBeforeTree
+  measure?: typeof shell
+  releaseTree?: (runId: string) => Promise<string | null>
+}
+
+export async function measureIssueBefore(
+  input: {
+    command: string
+    diagnosisRun: RunResult
+    fixRun: RunResult
+    reporting: Project
+    target: Project
+    sandboxHome: string
+  },
+  dependencies: MeasureIssueBeforeDependencies = {},
+): Promise<IssueMeasurement> {
+  const measure = dependencies.measure ?? shell
   if (input.target.name === input.reporting.name) {
     return input.diagnosisRun.worktree
-      ? shell(input.command, input.diagnosisRun.worktree.path, {
+      ? measure(input.command, input.diagnosisRun.worktree.path, {
           project: input.reporting,
           sandboxHome: input.sandboxHome,
         })
@@ -456,27 +465,25 @@ async function measureIssueBefore(input: {
     return notMeasured('fix worktree is unavailable')
   }
 
-  const tool = resolvedWorktreeTool(input.target)
-  const beforeTree = createReadOnlyWorktreeForTool({
-    tool,
-    cwd: input.target.path,
-    runId: input.diagnosisRun.record_id,
-    readOnlyBase: input.fixRun.worktree.base,
-  })
+  const beforeTree = (dependencies.createTree ?? createIssueBeforeTree)(
+    input.target,
+    input.fixRun.worktree.base,
+  )
   let measurement: IssueMeasurement | null = null
   let measurementError: unknown = null
   try {
-    measurement = await shell(input.command, beforeTree.path, {
+    measurement = await measure(input.command, beforeTree.worktree.path, {
       project: input.target,
       sandboxHome: input.sandboxHome,
     })
   } catch (error) {
     measurementError = error
   }
-  const removed = removeReadOnlyTree(tool ?? {}, beforeTree)
-  if (!removed.removed) {
-    throw new Error(`could not release before-measurement checkout: ${removed.detail}`)
-  }
+  const releaseFailure = await (
+    dependencies.releaseTree ?? (async (runId) => release({ record_id: runId }))
+  )(beforeTree.runId)
+  if (releaseFailure)
+    throw new Error(`could not release before-measurement checkout: ${releaseFailure}`)
   if (measurementError) throw measurementError
   if (!measurement) throw new Error('before measurement returned no result')
   return measurement
@@ -536,6 +543,12 @@ async function verifyOrHandbackFix(
         })
       : notMeasured('no reproduction command')
   const gate = await runIssueGate(fixRun, scratchDir)
+  if (!gate.fixTreeSafeToRelease) {
+    throw Object.assign(new Error(gate.text), {
+      runId: fixRun.record_id,
+      retainFixTreeReason: `gate process for run ${fixRun.record_id} was not confirmed dead`,
+    })
+  }
   await comment(
     issue.key,
     `Independent measurements and gate execution ${gate.id} completed for run ${fixRun.record_id}; tier review is starting.`,
@@ -684,8 +697,16 @@ async function recordIssueFailure(
         }
       : null
   const catchFix = fixRun?.worktree ? fixRun : failedFix
+  const retainFixTreeReason =
+    cause && typeof cause === 'object' && 'retainFixTreeReason' in cause
+      ? String(cause.retainFixTreeReason)
+      : undefined
   const disposition = catchFix?.worktree
-    ? catchFixTreeDisposition(catchFix.worktree, worktreeDirty(catchFix.worktree.path).dirty)
+    ? catchFixTreeDisposition(
+        catchFix.worktree,
+        worktreeDirty(catchFix.worktree.path).dirty,
+        retainFixTreeReason,
+      )
     : catchFixTreeDisposition(null, false)
   let treeRecord = await releaseFailedDiagnosis(runId, row?.job, disposition.handoff)
   if (disposition.action === 'release' && catchFix) {

@@ -19,6 +19,36 @@ import {
   runGateAfterBaseRefresh,
   startGateBroker,
 } from './gate-broker.ts'
+import { cancelPendingGateExecution, requestGateExecution } from './gate-run.ts'
+
+test('gate request cancellation changes only an unfinished execution', () => {
+  const runId = (
+    db()
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'fixture','running')
+         RETURNING record_id AS id`,
+      )
+      .get(newRecordId(), new Date().toISOString()) as { id: string }
+  ).id
+  const pending = requestGateExecution(runId)
+  expect(cancelPendingGateExecution(pending.id, 'coordinator cancelled')).toBe(true)
+  expect(
+    db().query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE id=?').get(pending.id),
+  ).toEqual({ exit_code: -1, cancelled_reason: 'coordinator cancelled' })
+
+  const finished = requestGateExecution(runId)
+  db()
+    .query(
+      'UPDATE gate_execution SET finished_at=?,exit_code=0,timed_out=0,elapsed_ms=1 WHERE id=?',
+    )
+    .run(new Date().toISOString(), finished.id)
+  expect(cancelPendingGateExecution(finished.id, 'late cancellation')).toBe(false)
+  expect(
+    db().query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE id=?').get(finished.id),
+  ).toEqual({ exit_code: 0, cancelled_reason: null })
+})
 
 async function waitForFinishedGate(id: number): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {

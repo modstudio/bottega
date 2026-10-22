@@ -8,6 +8,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import {
   CANON_MIRROR_JOB,
   HOOK_TREE_JOB,
+  ISSUE_BEFORE_TREE_JOB,
   LANDING_TREE_JOB,
 } from '../run/synthetic-lifecycle-job.ts'
 
@@ -664,10 +665,10 @@ function claimedClaimsOnTerminalConversations(
       `SELECT resource_claim.kind, COUNT(*) count
        FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
        WHERE resource_claim.state='claimed' AND run.status IN ('ok','failed','stale','stopped')
-         AND run.job NOT IN (?,?,?)
+         AND run.job NOT IN (?,?,?,?)
        GROUP BY resource_claim.kind ORDER BY resource_claim.kind`,
     )
-    .all(HOOK_TREE_JOB, LANDING_TREE_JOB, CANON_MIRROR_JOB) as {
+    .all(HOOK_TREE_JOB, LANDING_TREE_JOB, CANON_MIRROR_JOB, ISSUE_BEFORE_TREE_JOB) as {
     kind: ResourceClaimKind
     count: number
   }[]

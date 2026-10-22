@@ -1,15 +1,21 @@
 // concern: filed-issue gate verification
 /** Runs the completed fix tree through the same host-side broker as worker run_gate. */
 
-import { newRecordId } from '../../../shared/record-id.ts'
-import { db, nowIso } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
+import { cancelPendingGateExecution, requestGateExecution } from '../gate/gate-run.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
+import { workerGitConfigEnvironment } from '../run/run-git-guard.ts'
 import { runTestWorkerEnvironment } from '../run/run-test-workers.ts'
 import type { RunResult } from '../run/run-types.ts'
 
-export type IssueGateResult = { id: number; ok: boolean; text: string }
+export type IssueGateResult = {
+  id: number
+  ok: boolean
+  text: string
+  fixTreeSafeToRelease: boolean
+}
 
 export const ISSUE_GATE_WAIT_MS = GATE_COMMAND_TIMEOUT_MS + GATE_COMMAND_TIMEOUT_MS
 
@@ -30,15 +36,6 @@ async function waitForIssueGate(finished: Promise<void>, timeoutMs: number): Pro
   }
 }
 
-function cancelIssueGate(id: number, reason: string): void {
-  db()
-    .query(
-      `UPDATE gate_execution SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=0,
-       cancelled_reason=? WHERE id=?`,
-    )
-    .run(nowIso(), reason, id)
-}
-
 type IssueGateDependencies = {
   startBroker?: IssueGateBrokerStart
   wait?: IssueGateWait
@@ -49,13 +46,14 @@ export async function runIssueGate(
   scratchDir: string,
   dependencies: IssueGateDependencies = {},
 ): Promise<IssueGateResult> {
-  if (!fixRun.worktree) return { id: -1, ok: false, text: 'fix worktree is unavailable' }
-  const inserted = db()
-    .query<{ id: number }, [string, string, string]>(
-      'INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?) RETURNING id',
-    )
-    .get(newRecordId(), fixRun.record_id, nowIso())
-  if (!inserted) throw new Error('issue coordinator gate execution was not inserted')
+  if (!fixRun.worktree)
+    return {
+      id: -1,
+      ok: false,
+      text: 'fix worktree is unavailable',
+      fixTreeSafeToRelease: true,
+    }
+  const inserted = requestGateExecution(fixRun.record_id)
 
   let finish!: () => void
   const finished = new Promise<void>((resolve) => {
@@ -67,6 +65,7 @@ export async function runIssueGate(
       runId: fixRun.record_id,
       scratchDir,
       environment: runTestWorkerEnvironment({
+        ...workerGitConfigEnvironment(fixRun.worktree, true, 'issue-worker'),
         ...trackedRecipeEnvironment(fixRun.record_id),
         ORCH_MAIN_CHECKOUT: fixRun.worktree.repoRoot,
       }),
@@ -76,27 +75,31 @@ export async function runIssueGate(
     })
   } catch (error) {
     const reason = `issue coordinator gate broker failed to start: ${String(error)}`
-    cancelIssueGate(inserted.id, reason)
-    return { id: inserted.id, ok: false, text: reason }
+    cancelPendingGateExecution(inserted.id, reason)
+    return { id: inserted.id, ok: false, text: reason, fixTreeSafeToRelease: true }
   }
   const completed = await (dependencies.wait ?? waitForIssueGate)(finished, ISSUE_GATE_WAIT_MS)
   if (!completed) {
     const reason = `issue coordinator gate did not finish within ${ISSUE_GATE_WAIT_MS}ms`
     try {
       await broker.close()
-    } catch {
-      // The bounded coordinator result remains authoritative even if broker shutdown fails.
-    } finally {
-      cancelIssueGate(inserted.id, reason)
+    } catch (error) {
+      return {
+        id: inserted.id,
+        ok: false,
+        text: `${reason}; gate process could not be reaped for run ${fixRun.record_id}: ${String(error)}`,
+        fixTreeSafeToRelease: false,
+      }
     }
-    return { id: inserted.id, ok: false, text: reason }
+    cancelPendingGateExecution(inserted.id, reason)
+    return { id: inserted.id, ok: false, text: reason, fixTreeSafeToRelease: true }
   }
   try {
     await broker.close()
   } catch (error) {
     const reason = `issue coordinator gate broker failed to close: ${String(error)}`
-    cancelIssueGate(inserted.id, reason)
-    return { id: inserted.id, ok: false, text: reason }
+    cancelPendingGateExecution(inserted.id, reason)
+    return { id: inserted.id, ok: false, text: reason, fixTreeSafeToRelease: false }
   }
   const row = db()
     .query<
@@ -114,6 +117,7 @@ export async function runIssueGate(
   return {
     id: inserted.id,
     ok,
+    fixTreeSafeToRelease: true,
     text:
       row.output_tail?.trim() ||
       row.cancelled_reason ||

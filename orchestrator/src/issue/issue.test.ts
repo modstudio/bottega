@@ -14,6 +14,7 @@ import {
   fixSeedRequired,
   ISSUE_DIAGNOSIS_SCHEMA,
   issueReproductionCommand,
+  measureIssueBefore,
   parseIssueReply,
   priorIssueRecord,
   requestText,
@@ -134,6 +135,71 @@ describe('filed issue coordinator inputs', () => {
       'bun test diagnosis',
     )
     expect(issueReproductionCommand(reply(''), reply('   '))).toBe('')
+  })
+
+  test('cross-project before measurement releases its owned checkout when measurement throws', async () => {
+    const released: string[] = []
+    const reporting = { name: 'reporting' } as Project
+    const target = { name: 'target' } as Project
+    await expect(
+      measureIssueBefore(
+        {
+          command: 'bun test',
+          diagnosisRun: { record_id: 'diagnosis' } as never,
+          fixRun: {
+            record_id: 'fix',
+            worktree: { path: '/fix', repoRoot: '/target', branch: 'DEV-1', base: 'base' },
+          } as never,
+          reporting,
+          target,
+          sandboxHome: '/sandbox',
+        },
+        {
+          createTree: () => ({
+            runId: 'before-run',
+            worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
+          }),
+          measure: async () => {
+            throw new Error('measurement exploded')
+          },
+          releaseTree: async (runId) => {
+            released.push(runId)
+            return null
+          },
+        },
+      ),
+    ).rejects.toThrow('measurement exploded')
+    expect(released).toEqual(['before-run'])
+  })
+
+  test('cross-project before measurement refuses proof when checkout release fails', async () => {
+    const reporting = { name: 'reporting' } as Project
+    const target = { name: 'target' } as Project
+    await expect(
+      measureIssueBefore(
+        {
+          command: 'bun test',
+          diagnosisRun: { record_id: 'diagnosis' } as never,
+          fixRun: {
+            record_id: 'fix',
+            worktree: { path: '/fix', repoRoot: '/target', branch: 'DEV-1', base: 'base' },
+          } as never,
+          reporting,
+          target,
+          sandboxHome: '/sandbox',
+        },
+        {
+          createTree: () => ({
+            runId: 'before-run',
+            worktree: { path: '/before', repoRoot: '/target', branch: '', base: 'base' },
+          }),
+          measure: async () => ({ ok: false, text: 'failed as expected', exitCode: 1 }),
+          releaseTree: async () => 'run before-run: removal refused',
+        },
+      ),
+    ).rejects.toThrow(
+      'could not release before-measurement checkout: run before-run: removal refused',
+    )
   })
 
   test('verification resume selection preserves the fix branch only on handback', () => {
