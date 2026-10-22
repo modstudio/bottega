@@ -22,11 +22,7 @@ type HealthClass = FailureKind | 'stale' | 'stopped'
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
 
-export function throttleBuckets(input: {
-  database: Database
-  from: string
-  runsDir?: string
-}): ThrottleBucket[] {
+export function throttleBuckets(input: { database: Database; from: string }): ThrottleBucket[] {
   const runs = input.database
     .query(
       `SELECT r.record_id FROM run r LEFT JOIN agent a ON a.name=r.agent
@@ -34,7 +30,7 @@ export function throttleBuckets(input: {
     )
     .all() as { record_id: string }[]
   const events = runs.flatMap((run) =>
-    readEventLog(runEventsPath(run.record_id, input.runsDir)).flatMap((event) =>
+    readEventLog(runEventsPath(run.record_id)).flatMap((event) =>
       event.type === 'throttled' && event.ts >= input.from
         ? [{ concurrency: event.concurrency }]
         : [],

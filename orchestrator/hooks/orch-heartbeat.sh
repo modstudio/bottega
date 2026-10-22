@@ -318,9 +318,9 @@ for line in sys.stdin:
     if waiting_for_host_capacity:
         display = "waiting for host capacity since " + host_wait_since
     elif waiting_for_capacity:
-        display = "waiting for capacity since " + str(capacity_wait_since)
+        display = str(d.get("live_status_detail"))
     elif isinstance(throttle, dict):
-        display = "throttled (%s), retry %s/%s at %s" % (throttle.get("status"), throttle.get("attempt"), throttle.get("max"), throttle.get("retry_at") or "unknown")
+        display = str(d.get("live_status_detail"))
     else:
         display = str(d.get("status")) + " " + age + idle_note
     out.append("%s/%s %s %s" % (d.get("number"), d.get("job"), d.get("agent"), display))

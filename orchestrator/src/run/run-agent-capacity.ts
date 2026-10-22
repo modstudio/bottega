@@ -3,18 +3,15 @@
 
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
-import { AgentCapacityError } from '../route/route.ts'
+import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
-import type { RunResumeOptions } from './run-resume-options.ts'
 
-export type CapacityWaitDecision = 'select' | 'wait' | 'refuse'
+export type CapacityWaitDecision = 'wait' | 'refuse'
 
 export function decideCapacityWait(input: {
-  capacityBlocked: boolean
   noWait: boolean
   waitedMs: number
 }): CapacityWaitDecision {
-  if (!input.capacityBlocked) return 'select'
   if (input.noWait || input.waitedMs >= RUN_HOST_WAIT_MAX_MS) return 'refuse'
   return 'wait'
 }
@@ -37,11 +34,10 @@ export async function waitForAgentSelection<T>(input: {
     } catch (error) {
       if (!(error instanceof AgentCapacityError)) throw error
       const decision = decideCapacityWait({
-        capacityBlocked: true,
         noWait: Boolean(input.noWait),
         waitedMs: now() - started,
       })
-      if (decision === 'refuse') throw capacityRefusal(error, Boolean(input.noWait))
+      if (decision === 'refuse') throw refusalAtWaitBound(error, Boolean(input.noWait))
       if (!announced) {
         announced = true
         input.onWait?.(new Date(now()).toISOString())
@@ -51,7 +47,7 @@ export async function waitForAgentSelection<T>(input: {
   }
 }
 
-function capacityRefusal(error: AgentCapacityError, noWait: boolean): AgentCapacityError {
+function refusalAtWaitBound(error: AgentCapacityError, noWait: boolean): AgentCapacityError {
   return noWait
     ? error
     : new AgentCapacityError(
@@ -76,22 +72,4 @@ export async function selectAgentWithCapacityEvents<T>(input: {
   if (waiting && input.runId)
     appendRunEvent(input.runId, { ts: nowIso(), type: 'capacity_wait', waiting: false })
   return selected
-}
-
-export async function initialRunSource(input: {
-  first: boolean
-  resume: RunResumeOptions | undefined
-  runId: string | undefined
-  noWait: boolean | undefined
-  pick: () => { agent: string; reason: string }
-}) {
-  if (!input.first) return { source: 'resume' as const, ...input.resume! }
-  return {
-    source: 'pick' as const,
-    ...(await selectAgentWithCapacityEvents({
-      runId: input.runId,
-      select: input.pick,
-      noWait: input.noWait,
-    })),
-  }
 }

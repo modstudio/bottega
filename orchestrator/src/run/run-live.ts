@@ -50,6 +50,7 @@ import {
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
+import { composeCodexThrottleNotice } from '../transport/codex-throttle.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -125,9 +126,7 @@ function throttleReplyError(
   replyError: string | null | undefined,
   collectedError: string | null,
 ): string | null {
-  return throttle
-    ? `Codex throttled: 429 Too Many Requests (retry ${throttle.attempt}/${throttle.max})`
-    : (replyError ?? collectedError)
+  return throttle ? composeCodexThrottleNotice(throttle) : (replyError ?? collectedError)
 }
 
 async function recordInitialDeliveries(

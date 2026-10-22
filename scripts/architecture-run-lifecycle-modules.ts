@@ -214,6 +214,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-wall-deadline.ts',
     './run-worker-brokers.ts',
     '../sandbox/sandbox.ts',
+    '../transport/codex-throttle.ts',
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
   ]),

@@ -8,6 +8,18 @@ export type CodexThrottle = {
   status: 429
 }
 
+const CODEX_THROTTLE_NOTICE = 'Codex throttled: 429 Too Many Requests'
+
+export function composeCodexThrottleNotice(
+  throttle: Pick<CodexThrottle, 'attempt' | 'max'>,
+): string {
+  return `${CODEX_THROTTLE_NOTICE} (retry ${throttle.attempt}/${throttle.max})`
+}
+
+export function isCodexThrottleNotice(value: string): boolean {
+  return new RegExp(`^${CODEX_THROTTLE_NOTICE} \\(retry \\d+/\\d+\\)$`).test(value)
+}
+
 function attemptFrom(text: string): { attempt: number; max: number } | null {
   const match = text.match(/(?:retrying sampling request\s*\(|Reconnecting\.\.\.\s+)(\d+)\/(\d+)/i)
   if (!match) return null

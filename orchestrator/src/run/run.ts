@@ -95,7 +95,7 @@ import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
-import { initialRunSource } from './run-agent-capacity.ts'
+import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
 import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
@@ -300,7 +300,6 @@ export async function run(opts: {
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
   const writesJob = Boolean(requestedJob.needs.writesRepo)
   const repoJob = Boolean(requestedJob.needs.readsRepo)
-  const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd(),
     runProjectName = opts.repo ?? repoOf(callerCwd)
@@ -388,11 +387,9 @@ export async function run(opts: {
   // restating rules the agent is already operating under. A short reminder puts
   // the original plan back in view without storing another copy on every child.
   /**
-   * The worker is TOLD about the infrastructure it has, in the project's own
-   * words.
+   * The worker is TOLD about the infrastructure it has, in the project's own words.
    *
-   * A worker that does not know it can serve its own branch on its own port
-   * verifies against whatever is already running — a different branch's bundle
+   * A worker that does not know it can serve its branch on its own port verifies against another branch's bundle
    * — and that does not fail, it PASSES against the wrong tree. Which is worse
    * than failing, and is exactly the trap these projects wrote their worktree
    * scripts to close.
@@ -505,13 +502,16 @@ export async function run(opts: {
       opts.probe,
       opts.lens,
     )
-  const source = await initialRunSource({
-    first: resume.isFirstTurn,
-    resume: opts.resume,
-    runId: opts.reserveId,
-    noWait: opts.noWaitCapacity,
-    pick: pickSource,
-  })
+  const source = resume.isFirstTurn
+    ? {
+        source: 'pick' as const,
+        ...(await selectAgentWithCapacityEvents({
+          runId: opts.reserveId,
+          select: pickSource,
+          noWait: opts.noWaitCapacity,
+        })),
+      }
+    : { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({
     ...source,
     explicitTransport: opts.transport !== undefined,
@@ -558,7 +558,7 @@ export async function run(opts: {
     mcpRequest,
     callerCwd,
     projectName: runProjectName ?? undefined,
-    forbidsRepo,
+    forbidsRepo: requestedJob.needs.readsRepo === false,
     repoJob,
     discoversMcpFromCwd: a.caps.discoversMcpFromCwd,
     agent: name,
@@ -657,7 +657,7 @@ export async function run(opts: {
     declaredDeliverables,
     timeoutMinutes,
     timeoutMs: boundMs,
-    forbidsRepo,
+    forbidsRepo: requestedJob.needs.readsRepo === false,
     reviewTarget,
     implicitReview,
     coverageBase,

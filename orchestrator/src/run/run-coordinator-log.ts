@@ -5,7 +5,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'no
 import { dirname, join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
-import { ROUTING_REFUSAL_MARKER } from '../route/routing-refusal.ts'
+import {
+  AGENT_CAPACITY_ERROR_NAME,
+  ROUTING_REFUSAL_ERROR_NAME,
+  ROUTING_REFUSAL_MARKER,
+} from '../route/routing-refusal.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 
 const COORDINATOR_ERROR_TAIL_LIMIT = 2000
@@ -13,8 +17,8 @@ const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
 
 function withoutRoutingRefusalMarker(value: string): string {
   return value
-    .replaceAll(`${ROUTING_REFUSAL_MARKER}.AgentCapacityError: `, '')
-    .replaceAll(`${ROUTING_REFUSAL_MARKER}: `, '')
+    .replaceAll(`${AGENT_CAPACITY_ERROR_NAME}: `, '')
+    .replaceAll(`${ROUTING_REFUSAL_ERROR_NAME}: `, '')
 }
 
 function routingRefusalSpan(output: string): { start: number; end: number } | null {

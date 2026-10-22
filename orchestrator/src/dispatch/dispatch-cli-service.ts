@@ -2,7 +2,7 @@
 /** Owns dispatch composition across routing, transport, and run-dispatch ports. Must not know CLI grammar. */
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
@@ -17,7 +17,7 @@ import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
-import { contractConflicts } from '../contract/contract.ts'
+import { contractConflicts, resolveReplyDialect } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { branchOf } from '../git/git-environment.ts'
@@ -40,7 +40,9 @@ import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
+import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { routedPromptBytes } from '../run/run-routing-input.ts'
 import {
   assertAcpReady,
   resolveTransportName,
@@ -349,13 +351,22 @@ async function selectBeforeDetach(
   presentation: Pick<Presentation, 'cwd' | 'error'>,
 ): Promise<{ agent: string; reason: string } | undefined> {
   if (spec.resume) return undefined
-  const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
+  const requestedJob = job(jobName)
+  const mcpRequest = effectiveMcpRequest(spec.mcp, requestedJob)
+  const replySchemaName = spec.schema
+    ? basename(spec.schema)
+    : resolveReplyDialect(requestedJob).schemaName
+  const requiresCanonSource = runEvidence(
+    jobName,
+    Boolean(requestedJob.findings),
+    spec.deliverables ?? [],
+  ).requiresCanonSource
   return waitForAgentSelection({
     select: () =>
       pick(
         jobName,
         spec.agent,
-        text.length,
+        routedPromptBytes(text, replySchemaName, requestedJob, requiresCanonSource),
         true,
         stackAt(spec.cwd ?? presentation.cwd()),
         {

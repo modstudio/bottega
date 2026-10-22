@@ -6,6 +6,7 @@ import { deriveLiveOutcome } from '../live-outcome.ts'
 import { decideOutcome } from '../outcome.ts'
 import { decideFailover } from '../route/failover.ts'
 import { candidates, isRoutingEvidence, pick } from '../route/route.ts'
+import { composeCodexThrottleNotice } from '../transport/codex-throttle.ts'
 import { firstThrottleObserver, replyFileFallbackError } from './run-live.ts'
 
 test('a missing reply file leaves a visible final-message fallback notice', () => {
@@ -55,7 +56,7 @@ test('a live first throttle closes as quota and routes away from cooling codex',
   for await (const event of transport.events()) throttle.observe(event)
   expect(cancelled).toBe(true)
 
-  const error = `Codex throttled: 429 Too Many Requests (retry ${throttle.state.first!.attempt}/${throttle.state.first!.max})`
+  const error = composeCodexThrottleNotice(throttle.state.first!)
   const derived = deriveLiveOutcome({
     writesJob: false,
     contractStatus: null,

@@ -7,6 +7,7 @@ import {
   type LiveOutcomeFacts,
 } from './live-outcome.ts'
 import { decideOutcome } from './outcome.ts'
+import { composeCodexThrottleNotice } from './transport/codex-throttle.ts'
 
 const base: LiveOutcomeFacts = {
   writesJob: true,
@@ -43,9 +44,10 @@ const outcome = (facts: Partial<LiveOutcomeFacts>) => {
 
 describe('live outcome derivation', () => {
   test('a first-throttle cancellation remains quota rather than interruption', () => {
+    const error = composeCodexThrottleNotice({ attempt: 1, max: 5 })
     expect(
       outcome({
-        replyError: 'Codex throttled: 429 Too Many Requests (retry 1/5)',
+        replyError: error,
         output: '',
         exitCode: 143,
         signal: 'SIGTERM',
@@ -53,7 +55,7 @@ describe('live outcome derivation', () => {
     ).toEqual({
       status: 'failed',
       failureKind: 'quota',
-      error: 'Codex throttled: 429 Too Many Requests (retry 1/5)',
+      error,
     })
     expect(FAILS_OVER).toContain('quota')
     expect(COOLS_DOWN).toContain('quota')

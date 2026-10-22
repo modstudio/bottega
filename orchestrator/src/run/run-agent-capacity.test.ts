@@ -2,16 +2,14 @@ import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { AgentCapacityError, pick } from '../route/route.ts'
+import { pick } from '../route/route.ts'
+import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { decideCapacityWait, waitForAgentSelection } from './run-agent-capacity.ts'
 
 test('capacity waits unless opted out and refuses at the host wait bound', () => {
-  expect(decideCapacityWait({ capacityBlocked: false, noWait: false, waitedMs: 0 })).toBe('select')
-  expect(decideCapacityWait({ capacityBlocked: true, noWait: false, waitedMs: 0 })).toBe('wait')
-  expect(decideCapacityWait({ capacityBlocked: true, noWait: true, waitedMs: 0 })).toBe('refuse')
-  expect(decideCapacityWait({ capacityBlocked: true, noWait: false, waitedMs: 15 * 60_000 })).toBe(
-    'refuse',
-  )
+  expect(decideCapacityWait({ noWait: false, waitedMs: 0 })).toBe('wait')
+  expect(decideCapacityWait({ noWait: true, waitedMs: 0 })).toBe('refuse')
+  expect(decideCapacityWait({ noWait: false, waitedMs: 15 * 60_000 })).toBe('refuse')
 })
 
 test('selection polls capacity and announces the wait once', async () => {

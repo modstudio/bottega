@@ -12,26 +12,13 @@ import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
-import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
-import { ROUTING_REFUSAL_MARKER } from './routing-refusal.ts'
+import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 
-class RoutingRefusalError extends RefusalError {
-  constructor(message: string) {
-    super(message)
-    this.name = ROUTING_REFUSAL_MARKER
-  }
-}
-
-export class AgentCapacityError extends RoutingRefusalError {
-  constructor(message: string) {
-    super(message)
-    this.name = `${ROUTING_REFUSAL_MARKER}.AgentCapacityError`
-  }
-}
+export { AgentCapacityError } from './routing-refusal.ts'
 
 export type Candidate = {
   agent: string
