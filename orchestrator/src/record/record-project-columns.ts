@@ -2,6 +2,7 @@
 /** Maps local project settings onto hosted project columns. Must not know SQL or HTTP. */
 
 import type { ProjectSettings } from '../project/project-settings.ts'
+import type { RepositoryVisibility } from '../project/project-visibility.ts'
 
 export const PROJECT_SETTINGS_NOT_IMPORTED = [
   { key: 'space', reason: "the imported row's space_id carries this value" },
@@ -16,10 +17,14 @@ export const PROJECT_SETTINGS_NOT_IMPORTED = [
     key: 'canonMirrorKey',
     reason: 'local scheduled-job identity is not carried by the hosted project row',
   },
+  {
+    key: 'visibilityRepository',
+    reason: 'the verified identity belongs to the local registered checkout origin',
+  },
 ] as const
 
 export type HostedProjectColumns = {
-  visibility: 'public' | 'private' | null
+  visibility: RepositoryVisibility | null
   keyPrefixes: string[]
   managedContext: boolean
   landingBranch: string | null
@@ -95,7 +100,7 @@ function optionalString(value: unknown, location: string): string | null {
   return value
 }
 
-function optionalVisibility(value: unknown, project: string): 'public' | 'private' | null {
+function optionalVisibility(value: unknown, project: string): RepositoryVisibility | null {
   if (value === undefined || value === null) return null
   if (value === 'public' || value === 'private') return value
   throw new Error(`project ${project} settings.visibility must be public or private`)

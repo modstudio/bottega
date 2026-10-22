@@ -75,6 +75,7 @@ import type {
 import {
   assertForgeVisibility,
   type ForgeVisibilityLookup,
+  githubForgeVisibilityLookup,
   githubRepository,
 } from './project-visibility.ts'
 
@@ -924,26 +925,11 @@ export function assertRegisterBranches(
 
 export function assertRegisterVisibility(
   project: Pick<Project, 'name' | 'path' | 'settings'>,
-  lookup: ForgeVisibilityLookup = (repository) => {
-    const result = Bun.spawnSync(['gh', 'repo', 'view', repository, '--json', 'visibility'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    return {
-      exitCode: result.exitCode,
-      stdout: result.stdout.toString(),
-      stderr: result.stderr.toString(),
-    }
-  },
-): void {
+  lookup: ForgeVisibilityLookup = githubForgeVisibilityLookup,
+): string | null {
   const declared = project.settings.visibility
-  if (!declared) return
-  const origin = Bun.spawnSync(['git', '-C', project.path, 'remote', 'get-url', 'origin'], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const repository = origin.exitCode === 0 ? githubRepository(origin.stdout.toString()) : null
+  if (!declared) return null
+  const repository = currentProjectRepository(project)
   if (!repository) {
     throw new Error(
       `${project.name}: could not resolve a GitHub owner/name from origin\n` +
@@ -951,6 +937,17 @@ export function assertRegisterVisibility(
     )
   }
   assertForgeVisibility({ project: project.name, repository, declared, lookup })
+  return repository
+}
+
+/** Current canonical GitHub owner/name read only from the registered checkout's origin. */
+export function currentProjectRepository(project: Pick<Project, 'path'>): string | null {
+  const origin = Bun.spawnSync(['git', '-C', project.path, 'remote', 'get-url', 'origin'], {
+    env: inspectionGitEnv(),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  return origin.exitCode === 0 ? githubRepository(origin.stdout.toString()) : null
 }
 
 const MAIN_CHECKOUT_INVARIANT = 'A registered main checkout stays clean; work happens in a worktree'

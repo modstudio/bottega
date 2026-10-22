@@ -478,7 +478,9 @@ function writesVisibility(settingsJson: string | undefined): boolean {
 }
 
 function verifyWrittenVisibility(settingsJson: string | undefined, candidate: Project): void {
-  if (writesVisibility(settingsJson)) assertRegisterVisibility(candidate)
+  if (!writesVisibility(settingsJson)) return
+  const repository = assertRegisterVisibility(candidate)
+  if (repository) candidate.settings.visibilityRepository = repository
 }
 
 async function persistSetProject(

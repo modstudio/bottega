@@ -71,7 +71,7 @@ import {
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick, routeProject } from '../route/route.ts'
+import { pick } from '../route/route.ts'
 import {
   type CodexMcpCatalogue,
   codexMcpSetupHeader,
@@ -516,7 +516,7 @@ export async function run(opts: {
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
         requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
-        ...routeProject(runProjectName),
+        project: runProjectName,
       },
       opts.probe,
       opts.lens,

@@ -2,6 +2,7 @@
 /** Verifies a stored repository-visibility declaration against its forge. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+export { githubRepository } from '../../../shared/github-repository.ts'
 
 export type RepositoryVisibility = 'public' | 'private'
 
@@ -11,15 +12,30 @@ export type ForgeVisibilityLookup = (repository: string) => {
   stderr: string
 }
 
-/** Canonical owner/name for HTTPS, SSH URL, and SCP-like GitHub repository addresses. */
-export function githubRepository(value: string): string | null {
-  const match =
-    /^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s:]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(
-      value.trim(),
-    )
-  return match ? `${match[1]}/${match[2]}` : null
+type GhSpawn = (argv: string[]) => {
+  exitCode: number
+  stdout: { toString(): string }
+  stderr: { toString(): string }
 }
 
+/** Forge lookup whose failure result retains the project-set remedy path. */
+export function githubForgeVisibilityLookup(
+  repository: string,
+  spawn: GhSpawn = (argv) => Bun.spawnSync(argv, { stdout: 'pipe', stderr: 'pipe' }),
+): ReturnType<ForgeVisibilityLookup> {
+  try {
+    const result = spawn(['gh', 'repo', 'view', repository, '--json', 'visibility'])
+    return {
+      exitCode: result.exitCode,
+      stdout: result.stdout.toString(),
+      stderr: result.stderr.toString(),
+    }
+  } catch (error) {
+    return { exitCode: 127, stdout: '', stderr: String(error) }
+  }
+}
+
+/** Canonical owner/name for HTTPS, SSH URL, and SCP-like GitHub repository addresses. */
 function forgeVisibility(value: string): RepositoryVisibility | null {
   try {
     const parsed = JSON.parse(value) as { visibility?: unknown }

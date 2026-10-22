@@ -12,7 +12,8 @@ import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
-import { projectByName } from '../project/projects.ts'
+import type { RepositoryVisibility } from '../project/project-visibility.ts'
+import { currentProjectRepository, projectByName } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
@@ -75,6 +76,16 @@ const RUNNING_RUNS_SQL =
  * finished after the most recent cooling failure.
  */
 export const COOLDOWN_MIN = 60
+
+/** Provider wording observed when a rate-limit response exhausts the day's allowance. */
+export function isDailyRateLimit(error: string | null | undefined): boolean {
+  const message = error?.toLowerCase() ?? ''
+  return (
+    message.includes('free-models-per-day') ||
+    /\bdaily\b.*\blimit\b/.test(message) ||
+    /\bper day\b.*\blimit\b/.test(message)
+  )
+}
 
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 export const MIN_SAMPLE = 5
@@ -568,12 +579,12 @@ export function candidates(
       db()
         .query(
           `WITH terminal AS (
-         SELECT record_id, agent, status, failure_kind,
+         SELECT record_id, agent, status, failure_kind, error,
                 julianday(started_at) + latency_ms / 86400000.0 AS finished_at
            FROM run
           WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
        ), cooling_failures AS (
-         SELECT record_id, agent, failure_kind, finished_at,
+         SELECT record_id, agent, failure_kind, error, finished_at,
                 ROW_NUMBER() OVER (
                   PARTITION BY agent ORDER BY finished_at DESC, record_id DESC
                 ) AS recency
@@ -581,17 +592,34 @@ export function candidates(
           WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
        )
        SELECT f.agent, f.failure_kind,
+              CASE WHEN f.failure_kind = 'quota' AND (
+                lower(COALESCE(f.error, '')) LIKE '%free-models-per-day%' OR
+                lower(COALESCE(f.error, '')) LIKE '%daily%limit%' OR
+                lower(COALESCE(f.error, '')) LIKE '%per day%limit%'
+              ) THEN 1 ELSE 0 END AS daily_limit,
               (julianday('now') - f.finished_at) * 1440 AS mins_ago
          FROM cooling_failures f
         WHERE f.recency = 1
-          AND (julianday('now') - f.finished_at) * 1440 < ?
+          AND (
+            (julianday('now') - f.finished_at) * 1440 < ? OR
+            (f.failure_kind = 'quota' AND date(f.finished_at) = date('now') AND (
+              lower(COALESCE(f.error, '')) LIKE '%free-models-per-day%' OR
+              lower(COALESCE(f.error, '')) LIKE '%daily%limit%' OR
+              lower(COALESCE(f.error, '')) LIKE '%per day%limit%'
+            ))
+          )
           AND NOT EXISTS (
                 SELECT 1 FROM terminal s
                  WHERE s.agent = f.agent AND s.status = 'ok'
                    AND s.finished_at > f.finished_at
               )`,
         )
-        .all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[]
+        .all(COOLDOWN_MIN) as {
+        agent: string
+        failure_kind: string
+        daily_limit: number
+        mins_ago: number
+      }[]
     ).map((r) => [r.agent, r]),
   )
 
@@ -621,7 +649,9 @@ export function candidates(
       why = `not declared for ${jobName}`
     } else if (cooling && coolingProbeAgent !== name) {
       eligible = false
-      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run '${PLATFORM_SLUG} agent probe ${name}' to clear it`
+      why =
+        `vendor ${cooling}; retry ${failure?.daily_limit ? 'after the next UTC day' : `after ${COOLDOWN_MIN}m`} ` +
+        `or run '${PLATFORM_SLUG} agent probe ${name}' to clear it`
     } else if (unavailable) {
       eligible = false
       why = unavailable
@@ -886,10 +916,6 @@ type PickAvoid = {
   noWaitCapacity?: boolean
   requiredMcp?: RequiredMcpServer
   project?: string | null
-}
-
-export function routeProject(project: string | null): Pick<PickAvoid, 'project'> {
-  return { project }
 }
 
 function evidenceForPick(
@@ -1180,11 +1206,15 @@ export function pick(
 export function meteredRouteEligibility(input: {
   billing: string
   routeMetered: boolean
+  trainsOnInputs?: boolean
   writesRepo: boolean
   name: string
   explicitlyNamedAgent?: string
 }): { eligible: boolean; why: string; mayAutoRouteNamedJob: boolean } {
-  if (input.billing !== 'metered' || input.explicitlyNamedAgent === input.name)
+  if (
+    (input.billing !== 'metered' && !input.trainsOnInputs) ||
+    input.explicitlyNamedAgent === input.name
+  )
     return {
       eligible: true,
       why: '',
@@ -1193,7 +1223,9 @@ export function meteredRouteEligibility(input: {
   if (!input.routeMetered)
     return {
       eligible: false,
-      why: 'metered billing is not opted in for automatic routing',
+      why: input.trainsOnInputs
+        ? 'a provider that may train on inputs is not opted in for automatic routing'
+        : 'metered billing is not opted in for automatic routing',
       mayAutoRouteNamedJob: false,
     }
   if (input.writesRepo)
@@ -1209,13 +1241,32 @@ export function trainingDataEligibility(input: {
   agent: string
   trainsOnInputs: boolean
   project: string | null
-  visibility: 'public' | 'private' | null
-  explicitlyNamedAgent?: string
+  visibility: RepositoryVisibility | null
+  verifiedRepository: string | null
+  currentRepository: string | null
 }): { eligible: boolean; why: string } {
-  if (!input.trainsOnInputs || (input.project !== null && input.visibility === 'public')) {
+  if (!input.trainsOnInputs) {
+    return { eligible: true, why: '' }
+  }
+  if (
+    input.project !== null &&
+    input.visibility === 'public' &&
+    input.verifiedRepository !== null &&
+    input.currentRepository === input.verifiedRepository
+  ) {
     return { eligible: true, why: '' }
   }
   const project = input.project ?? '(no project)'
+  if (input.project !== null && input.visibility === 'public') {
+    return {
+      eligible: false,
+      why:
+        `project ${project} is declared public, but its current origin ` +
+        `${input.currentRepository ?? '(unresolved)'} does not match verified repository ` +
+        `${input.verifiedRepository ?? '(unrecorded)'}; agent ${input.agent} may train on inputs; ` +
+        `cleared by: re-run ${PLATFORM_SLUG} project set ${input.project} --settings '{"visibility":"public"}', or choose another agent`,
+    }
+  }
   const declaration =
     input.project === null
       ? 'dispatch from a registered public project'
@@ -1230,12 +1281,13 @@ export function trainingDataEligibility(input: {
 
 export function agentMeteredRouteEligibility(
   jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name'>,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'trainsOnInputs'>,
   explicitlyNamedAgent?: string,
 ): ReturnType<typeof meteredRouteEligibility> {
   return meteredRouteEligibility({
     billing: agent.billing,
     routeMetered: Boolean(agent.routeMetered),
+    trainsOnInputs: Boolean(agent.trainsOnInputs),
     writesRepo: Boolean(job(jobName).needs.writesRepo),
     name: agent.name,
     explicitlyNamedAgent,
@@ -1249,12 +1301,20 @@ function routePolicyEligibility(
   projectName?: string | null,
 ) {
   const project = projectName ? projectByName(projectName) : null
+  if (agent.trainsOnInputs && projectName === undefined) {
+    return {
+      eligible: false,
+      why: 'eligible only on public projects',
+      mayAutoRouteNamedJob: false,
+    }
+  }
   const training = trainingDataEligibility({
     agent: agent.name,
     trainsOnInputs: Boolean(agent.trainsOnInputs),
     project: project?.name ?? null,
     visibility: project?.settings.visibility ?? null,
-    explicitlyNamedAgent,
+    verifiedRepository: project?.settings.visibilityRepository ?? null,
+    currentRepository: project ? currentProjectRepository(project) : null,
   })
   if (!training.eligible) return { ...training, mayAutoRouteNamedJob: false }
   const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)

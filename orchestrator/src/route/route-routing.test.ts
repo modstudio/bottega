@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { recordAgentProbe } from '../agent/agent-probe.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { RefusalError } from '../refusal-error.ts'
+import { upsertProject } from '../project/projects.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
 import {
@@ -22,7 +27,12 @@ import {
 } from './route.ts'
 
 test('training-data eligibility requires a declared public project even when named', () => {
-  const base = { agent: 'or-free', trainsOnInputs: true }
+  const base = {
+    agent: 'or-free',
+    trainsOnInputs: true,
+    verifiedRepository: 'owner/public-repo',
+    currentRepository: 'owner/public-repo',
+  }
   expect(
     trainingDataEligibility({ ...base, project: 'public-repo', visibility: 'public' }),
   ).toEqual({
@@ -32,7 +42,14 @@ test('training-data eligibility requires a declared public project even when nam
   expect(
     trainingDataEligibility({ ...base, project: 'private-repo', visibility: 'private' }),
   ).toMatchObject({ eligible: false })
-  expect(trainingDataEligibility({ ...base, project: null, visibility: null })).toMatchObject({
+  expect(
+    trainingDataEligibility({
+      ...base,
+      project: null,
+      visibility: null,
+      currentRepository: null,
+    }),
+  ).toMatchObject({
     eligible: false,
   })
   expect(
@@ -40,7 +57,6 @@ test('training-data eligibility requires a declared public project even when nam
       ...base,
       project: 'private-repo',
       visibility: 'private',
-      explicitlyNamedAgent: 'or-free',
     }),
   ).toMatchObject({ eligible: false })
   expect(
@@ -49,8 +65,23 @@ test('training-data eligibility requires a declared public project even when nam
       trainsOnInputs: false,
       project: 'private-repo',
       visibility: 'private',
+      verifiedRepository: 'owner/private-repo',
+      currentRepository: 'owner/private-repo',
     }),
   ).toEqual({ eligible: true, why: '' })
+})
+
+test('training-data eligibility rejects a public declaration recorded for another origin', () => {
+  expect(
+    trainingDataEligibility({
+      agent: 'or-free',
+      trainsOnInputs: true,
+      project: 'public-repo',
+      visibility: 'public',
+      verifiedRepository: 'owner/old',
+      currentRepository: 'owner/new',
+    }),
+  ).toMatchObject({ eligible: false })
 })
 
 test('metered route eligibility is an opt-in limited to read-only jobs unless named', () => {
@@ -75,6 +106,152 @@ test('metered route eligibility is an opt-in limited to read-only jobs unless na
     why: '',
     mayAutoRouteNamedJob: true,
   })
+})
+
+test('a training provider uses the existing route opt-in but remains nameable', () => {
+  const base = {
+    billing: 'free',
+    routeMetered: false,
+    trainsOnInputs: true,
+    writesRepo: false,
+    name: 'or-free',
+  }
+  expect(meteredRouteEligibility(base)).toMatchObject({ eligible: false })
+  expect(meteredRouteEligibility({ ...base, routeMetered: true })).toMatchObject({ eligible: true })
+  expect(meteredRouteEligibility({ ...base, explicitlyNamedAgent: 'or-free' })).toMatchObject({
+    eligible: true,
+  })
+})
+
+test('candidates wires verified project visibility and the current local origin', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-training-route-'))
+  const publicPath = join(root, 'public')
+  const privatePath = join(root, 'private')
+  Bun.spawnSync(['git', 'init', publicPath])
+  Bun.spawnSync(['git', 'init', privatePath])
+  Bun.spawnSync([
+    'git',
+    '-C',
+    publicPath,
+    'remote',
+    'add',
+    'origin',
+    'git@github.com:Owner/Public.git',
+  ])
+  Bun.spawnSync([
+    'git',
+    '-C',
+    privatePath,
+    'remote',
+    'add',
+    'origin',
+    'https://github.com/owner/private',
+  ])
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'training-public',
+    path: publicPath,
+    settings: { visibility: 'public', visibilityRepository: 'owner/public' },
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'training-private',
+    path: privatePath,
+    settings: { visibility: 'private', visibilityRepository: 'owner/private' },
+  })
+  const original = db()
+    .query("SELECT trains_on_inputs,route_metered FROM agent WHERE name='codex'")
+    .get() as { trains_on_inputs: number; route_metered: number }
+  try {
+    db().query("UPDATE agent SET trains_on_inputs=1,route_metered=0 WHERE name='codex'").run()
+    refreshAgents()
+    expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      eligible: false,
+      why: 'eligible only on public projects',
+    })
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: false })
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'codex',
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: true })
+    db().query("UPDATE agent SET route_metered=1 WHERE name='codex'").run()
+    refreshAgents()
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: true })
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'training-private',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: false })
+    Bun.spawnSync([
+      'git',
+      '-C',
+      publicPath,
+      'remote',
+      'set-url',
+      'origin',
+      'git@github.com:owner/repointed.git',
+    ])
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'codex',
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: false })
+  } finally {
+    db()
+      .query("UPDATE agent SET trains_on_inputs=?,route_metered=? WHERE name='codex'")
+      .run(original.trains_on_inputs, original.route_metered)
+    refreshAgents()
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('automatic routing excludes metered billing without opt-in while a named agent may spend it', () => {

@@ -13,7 +13,7 @@ import {
   NOT_EVIDENCE,
 } from '../failure/failure.ts'
 import { WEIGHT, weigh } from '../score/score.ts'
-import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
+import { candidates, isDailyRateLimit, isRoutingEvidence, scoreboard } from './route.ts'
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
@@ -409,6 +409,35 @@ describe('routing counts failures as evidence', () => {
     expect(c.eligible).toBe(false)
     expect(c.why).toContain('vendor quota')
     expect(c.why).toContain(`run '${PLATFORM_SLUG} agent probe codex' to clear it`)
+  })
+
+  test('a recorded daily rate limit holds until the next UTC day; a minute limit does not', () => {
+    const dailyPayload =
+      '{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-day limit reached"}}'
+    expect(isDailyRateLimit(dailyPayload)).toBe(true)
+    expect(isDailyRateLimit('{"error":{"code":429,"message":"20 requests per minute"}}')).toBe(
+      false,
+    )
+    const run = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    })
+    db().query('UPDATE run SET error=? WHERE record_id=?').run(dailyPayload, run)
+    const daily = candidates('craft').find((x) => x.agent === 'codex')!
+    expect(daily.cooling).toContain('quota')
+    expect(daily.why).toContain('next UTC day')
+
+    db()
+      .query('UPDATE run SET error=?,started_at=? WHERE record_id=?')
+      .run(
+        '{"error":{"code":429,"message":"20 requests per minute"}}',
+        new Date(Date.now() - 61 * 60_000).toISOString(),
+        run,
+      )
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
   })
 
   test('a later-id success finishing before quota failures does not mask them', () => {
