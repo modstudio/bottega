@@ -61,8 +61,7 @@ export function assertMachineHomeWriteAuthority(input: {
   })
   if (decision.action === 'allow') return
   const runningRoot = input.runningInstallationRoot
-  const remedyRoot =
-    input.registeredMainCheckout ?? input.binaryRepositoryRoot ?? runningRoot
+  const remedyRoot = input.registeredMainCheckout ?? input.binaryRepositoryRoot ?? runningRoot
   throw new Error(
     `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from the registered main checkout\n` +
       'invariant: A secondary checkout writes harness settings only under the OS temporary directory.\n' +
