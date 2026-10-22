@@ -26,6 +26,7 @@ import {
   grokAskCommandFromConfig,
   grokAskServerCommand,
   grokSandboxConfig,
+  isWritingAcpRun,
   prepareCodexHome,
   prepareGrokMcpHome,
   prepareSandboxHome,
@@ -42,6 +43,7 @@ import {
   sandboxRuntimeConfig,
   selectReadonlySandbox,
   withoutRegisteredOrchAskServer,
+  writerProfile,
 } from './sandbox.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
@@ -52,6 +54,12 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   canon: true,
   retiredAt: null,
   settings,
+})
+
+test('the writing ACP decision requires both ACP and repository writes', () => {
+  expect(isWritingAcpRun('acp', true)).toBe(true)
+  expect(isWritingAcpRun('acp', false)).toBe(false)
+  expect(isWritingAcpRun('cli', true)).toBe(false)
 })
 
 const temporaryDirectories: string[] = []
@@ -781,6 +789,47 @@ describe('readonly-lens sandbox profile', () => {
     expect(selected.profile?.network.allowUnixSockets).toEqual([])
   })
 
+  test('a writer grants only its tree and scratch, and denies its git pointer', () => {
+    const profile = writerProfile({
+      worktree: '/projects/main/.claude/worktrees/run-42',
+      runsDir: '/state/runs/run-42',
+      scratchDir: '/state/runs/run-42/scratch',
+      askAddress: '127.0.0.1:43127',
+      project: fixtureProject(),
+      agent: 'goose-openrouter',
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+    })
+
+    expect(profile.filesystem.allowWrite).toEqual([
+      '/projects/main/.claude/worktrees/run-42',
+      '/state/runs/run-42/scratch',
+    ])
+    expect(profile.filesystem.allowWrite).not.toContain('/projects/main')
+    expect(profile.filesystem.allowWrite).not.toContain('/projects/main/.git/objects')
+    expect(profile.filesystem.denyWrite).toContain('/projects/main/.claude/worktrees/run-42/.git')
+    expect(profile.network.allowedDomains).toContain('127.0.0.1:43127')
+    expect(profile.network.allowedDomains).not.toContain('127.0.0.1')
+    expect(profile.network.allowLocalBinding).toBe(false)
+  })
+
+  test('a writing ACP run cannot bypass an unavailable sandbox through the host', () => {
+    expect(() =>
+      selectReadonlySandbox({
+        agent: 'goose-openrouter',
+        readsRepo: true,
+        writesRepo: true,
+        writingAcp: true,
+        override: 'host',
+        worktree: '/runs/tree',
+        runsDir: '/runs/evidence',
+        scratchDir: '/runs/evidence/scratch',
+        askAddress: '127.0.0.1:43127',
+        project: fixtureProject(),
+      }),
+    ).toThrow('cannot bypass srt')
+  })
+
   test('an MCP Grok repository run is unconfined because srt blocks its transports', () => {
     expect(
       selectReadonlySandbox({
@@ -888,7 +937,7 @@ describe('readonly-lens sandbox profile', () => {
     ).toBe('srt')
   })
 
-  test('codex and writing jobs stay on the host seam', () => {
+  test('codex and non-ACP writing jobs stay on the host seam', () => {
     for (const input of [
       { agent: 'codex', writesRepo: false },
       { agent: 'grok', writesRepo: true },

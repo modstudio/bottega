@@ -21,6 +21,8 @@ export type StreamEvent =
       locations?: Array<{ path: string }>
     }
 
+export type ConfiguredAsk = { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string }
+
 const DEFAULT_IDLE_WARN_MS = 5 * 60_000
 const DEFAULT_PEEK_EVENTS = 5
 const PEEK_TEXT_CHARS = 120
@@ -38,6 +40,11 @@ type FocusedTestRunLogEvent = {
 }
 
 type GateLogRunLogEvent = { ts: string; type: 'gate_log'; logPath: string }
+type AskExpectedRunLogEvent = {
+  ts: string
+  type: 'ask_expected'
+  transport: 'host' | 'srt'
+} & ({ command: string[]; endpoint?: never } | { command?: never; endpoint: string })
 
 /** Run events whose structured fields name files retained at terminalisation. */
 export type ArtifactPathEvent = FocusedTestRunLogEvent | GateLogRunLogEvent
@@ -62,12 +69,7 @@ export type RunLogEvent =
     }
   | { ts: string; type: 'tool_result'; status?: string; bytes?: number }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
-  | {
-      ts: string
-      type: 'ask_expected'
-      transport: 'host' | 'srt'
-      command: string[]
-    }
+  | AskExpectedRunLogEvent
   | { ts: string; type: 'ask_started'; tools: string[] }
   | { ts: string; type: 'ask_initialized' }
   | { ts: string; type: 'ask_listed'; tools: string[] }
@@ -79,7 +81,7 @@ type PeekEventSummary =
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
   | { type: 'usage'; tokens: number }
-  | { type: 'ask_expected'; transport: 'host' | 'srt'; command: string[] }
+  | { type: 'ask_expected'; transport: 'host' | 'srt'; command?: string[]; endpoint?: string }
   | { type: 'ask_started'; tools: string[] }
   | { type: 'ask_initialized' }
   | { type: 'ask_listed'; tools: string[] }
@@ -539,7 +541,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
     return {
       type: 'ask_expected',
       transport: event.transport,
-      command: event.command,
+      ...(event.command ? { command: event.command } : {}),
+      ...(event.endpoint ? { endpoint: event.endpoint } : {}),
     }
   }
   if (event.type === 'ask_started') return { type: 'ask_started', tools: event.tools }
@@ -666,7 +669,7 @@ function formatPeekEvent(event: PeekEventSummary): string {
   }
   if (event.type === 'usage') return `  usage ${event.tokens}`
   if (event.type === 'ask_expected') {
-    return `  ask expected ${event.transport} ${event.command.join(' ')}`
+    return `  ask expected ${event.transport} ${event.command?.join(' ') ?? event.endpoint ?? ''}`
   }
   if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
   if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`

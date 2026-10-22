@@ -25,6 +25,7 @@ export const confinementModules: ConfinementModule[] = [
     '../mcp/mcp-probe.ts',
     '../no-follow-file.ts',
     '../project/projects.ts',
+    '../resources/main-stack-network.ts',
     './sandbox-runtime.ts',
     './weaker-network-isolation.ts',
   ]),

@@ -36,7 +36,7 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import { type CheckpointContainment, checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import {
   closeRunChainQuestions,
   QUESTION_CLOSE_CHAIN_TERMINAL,
@@ -178,6 +178,8 @@ export type TerminalInput = {
   failureKind: ReturnType<typeof classify> | null
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
+  writingAcp: boolean
+  checkpointContainment: CheckpointContainment
   opts: TerminalOptions
   watchedCheckouts: CheckoutToWatch[]
   confinementFailures: FreezeFailure[]
@@ -229,6 +231,14 @@ export type TerminalResult = {
   confinementEvent: ConfinementEvent | null
   preConfinement: string | null
   artifactsPersisted: boolean
+}
+
+function checkpointAtTerminal(input: TerminalInput): boolean {
+  return shouldCheckpointAtTerminal({
+    writesJob: input.writesJob,
+    hasWorktree: Boolean(input.worktree),
+    launchKey: input.launchKey,
+  })
 }
 
 function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | undefined): boolean {
@@ -467,11 +477,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
-  const preserveAtTerminal = shouldCheckpointAtTerminal({
-    writesJob,
-    hasWorktree: Boolean(worktree),
-    launchKey,
-  })
+  const preserveAtTerminal = checkpointAtTerminal(input)
   if (preserveAtTerminal) {
     const checkpoint = checkpointRun({
       database: db(),
@@ -481,13 +487,14 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       taskKey: launchKey!,
       scratchDir,
       guardEnvironment: gitConfigEnvironment ?? {},
+      containment: input.checkpointContainment,
       final: true,
     })
     if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {
       db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
     }
     if (checkpoint.error)
-      console.error(`orch: run ${claim.id} final checkpoint failed: ${checkpoint.error}`)
+      console.error(`orch: run ${claim.id} checkpoint failed: ${checkpoint.error}`)
   }
   let frozenAfter: import('../confinement/confinement.ts').FrozenCheckout[] = []
   try {
@@ -500,9 +507,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     )
     frozenAfter = afterFreeze.snapshots
   } catch (e) {
-    // A failure in the observation machinery itself cannot safely fabricate
-    // which checkout was unreadable. Keep the original outcome and make the
-    // harness fault visible; freeze failures take the binding path.
+    // An observation failure cannot name an unreadable checkout; preserve the outcome
+    // and expose the harness fault. Freeze failures take the binding path.
     console.error(`orch: could not freeze watched checkouts for run ${claim.id}: ${e}`)
   }
 

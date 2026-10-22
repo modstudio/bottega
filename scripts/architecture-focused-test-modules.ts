@@ -56,6 +56,7 @@ export const focusedTestModules: ArchitectureModule[] = [
     '../project/project-settings.ts',
     '../resources/main-stack.ts',
     '../run/run-child-priority.ts',
+    '../sandbox/sandbox.ts',
     './focused-test-decision.ts',
     './focused-test-files.ts',
     './focused-test-paths.ts',

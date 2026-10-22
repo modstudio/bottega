@@ -6,7 +6,12 @@ import { closeSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
-import { brokerGateEnvironment, GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
+import {
+  type BrokerConfinement,
+  brokerGateEnvironment,
+  decideBrokerLaunch,
+  GATE_COMMAND_TIMEOUT_MS,
+} from '../gate/gate-decision.ts'
 import { hostSlotWaitCallbacks } from '../gate/host-slot-wait.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -14,7 +19,8 @@ import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
-import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
+import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   boundedFocusedTestOutputTail,
   type FocusedTestRequest,
@@ -131,14 +137,32 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
   return parseFocusedTestRequest(JSON.parse(contents))
 }
 
-function spawnFocusedTestChild(input: {
+export async function focusedTestBrokerLaunchArgv(
+  confinement: BrokerConfinement<SandboxRuntimeConfig>,
+  command: string,
+  argv: string[],
+  launchSandbox: typeof sandboxLaunchArgv = sandboxLaunchArgv,
+): Promise<string[]> {
+  const decision = decideBrokerLaunch(confinement, command, argv)
+  return decision.kind === 'srt'
+    ? launchSandbox(decision.profile, decision.bin, decision.argv)
+    : decision.argv
+}
+
+async function spawnFocusedTestChild(input: {
   invocation: ReturnType<typeof focusedTestInvocation>
   worktree: string
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   record: (chunk: Buffer | string) => void
 }) {
-  return lowerRunChildPriority(
-    spawn(input.invocation.command, input.invocation.argv, {
+  const launch = await focusedTestBrokerLaunchArgv(
+    input.confinement,
+    input.invocation.command,
+    input.invocation.argv,
+  )
+  return setChildPriority(
+    spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
       env: {
         ...brokerGateEnvironment(
@@ -151,6 +175,7 @@ function spawnFocusedTestChild(input: {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
+    HOST_TOOL_NICENESS,
     (message) => input.record(`warning: ${message}\n`),
   )
 }
@@ -159,12 +184,13 @@ async function runFocusedTestProcess(input: {
   invocation: ReturnType<typeof focusedTestInvocation>
   worktree: string
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   state: FocusedTestProcessState
   record: (chunk: Buffer | string) => void
   stop: () => Promise<void>
 }): Promise<void> {
   const { state } = input
-  state.child = spawnFocusedTestChild(input)
+  state.child = await spawnFocusedTestChild(input)
   state.child.stdout?.on('data', input.record)
   state.child.stderr?.on('data', input.record)
   state.child.once('spawn', () => {
@@ -196,6 +222,7 @@ function startFocusedTest(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   request: FocusedTestRequest
   registerActive: (terminate: () => Promise<void>) => () => void
 }): ActiveFocusedTest {
@@ -249,6 +276,7 @@ function startFocusedTest(input: {
             invocation,
             worktree: plan.worktree,
             environment: input.environment,
+            confinement: input.confinement,
             state,
             record,
             stop,
@@ -294,6 +322,7 @@ export function startFocusedTestBroker(input: {
   runId: string
   scratchDir: string
   environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
   registerActive?: (terminate: () => Promise<void>) => () => void
 }): FocusedTestBroker {
   ensureFocusedTestDirectory(input.scratchDir)
@@ -324,6 +353,7 @@ export function startFocusedTestBroker(input: {
     if (!request) return
     const execution = startFocusedTest({
       ...input,
+      confinement: input.confinement,
       request,
       registerActive: input.registerActive ?? (() => () => {}),
     })
