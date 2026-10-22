@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
-  JOBS,
   isReadOnlyRepositoryJob,
+  JOBS,
   jobTimeoutCeilingMinutes,
   resolveJobTimeoutMs,
   resolveRecordedRunJob,

@@ -4,10 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { discardRun } from '../cleanup/cleanup.ts'
-import {
-  cleanFixture,
-  closeOutFixture,
-} from '../close/reader-scratch-close-out.fixture.ts'
+import { cleanFixture, closeOutFixture } from '../close/reader-scratch-close-out.fixture.ts'
 import { db } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { candidates } from '../route/route.ts'
@@ -347,9 +344,7 @@ test('stop then discard after a completed reader-clone release', async () => {
     expect(result.code).toBe(0)
     expect(result.out).toContain(`released worktree ${fixture.worktree}`)
     expect(
-      db()
-        .query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?')
-        .get(fixture.id),
+      db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
     ).toEqual({
       worktree: null,
       close_out_outcome: 'released',
@@ -417,9 +412,7 @@ test('stop names a branch minted by its conversation', async () => {
     `kept worktree /tmp/writer-tree and branch ${branch} for continuation`,
   )
   expect(
-    db()
-      .query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?')
-      .get(id),
+    db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(id),
   ).toEqual({ worktree: '/tmp/writer-tree', close_out_outcome: null })
 })
 
