@@ -11,15 +11,21 @@ import type { Project } from '../project/projects.ts'
 import {
   diagnosisPrompt,
   fixPrompt,
+  fixSeedRequired,
   ISSUE_DIAGNOSIS_SCHEMA,
-  issueResumeLine,
-  issueSeedRequired,
+  issueReproductionCommand,
   parseIssueReply,
   priorIssueRecord,
   requestText,
+  resolvedSeed,
   validatedTrackerTaskKey,
 } from './issue.ts'
 import type { FiledIssue } from './issue-file.ts'
+import {
+  fixVerificationResumeLine,
+  issueFailureResumeLine,
+  issueResumeLine,
+} from './issue-resume.ts'
 
 describe('filed issue coordinator inputs', () => {
   test('diagnosis and fix prompts define the executable reproduction contract', () => {
@@ -66,11 +72,20 @@ describe('filed issue coordinator inputs', () => {
     ).toContain('Rejected seed: production; registered options: none | full')
   })
 
-  test('seed selection blocks only the writing fix tree', () => {
-    expect(issueSeedRequired('diagnosis', ['none', 'full'], null)).toBe(false)
-    expect(issueSeedRequired('fix', ['none', 'full'], null)).toBe(true)
-    expect(issueSeedRequired('fix', ['none', 'full'], 'full')).toBe(false)
-    expect(issueSeedRequired('fix', [], null)).toBe(false)
+  test('a configured writing tree requires one of its own seeds', () => {
+    expect(fixSeedRequired(['none', 'full'], null)).toBe(true)
+    expect(fixSeedRequired(['none', 'full'], 'full')).toBe(false)
+    expect(fixSeedRequired([], null)).toBe(false)
+  })
+
+  test('fix seed answers are resolved against the target project', () => {
+    const target = {
+      settings: { worktree: { seeds: ['target-none', 'target-full'] } },
+    } as unknown as Project
+    expect(resolvedSeed(target, 'target-full environment', [])).toBe('target-full')
+    expect(resolvedSeed(target, null, ['Seed: reporting-full', 'Seed: target-none'])).toBe(
+      'target-none',
+    )
   })
 
   test('a fixed-branch handback ships the existing run while coordinator failure restarts', () => {
@@ -85,6 +100,54 @@ describe('filed issue coordinator inputs', () => {
       `Resume with: ${PLATFORM_SLUG} tree open 42, then ${PLATFORM_SLUG} workflow compose ship-task --project starship --mode merge --arg key=STAR-7 --arg branch=STAR-7-fix --arg worktree=<path tree open prints>`,
     )
     expect(issueResumeLine('DEV-9')).toBe(`Resume with: ${PLATFORM_SLUG} workflow fix-defect DEV-9`)
+  })
+
+  test('coordinator failure preserves a recorded fix branch when it can be reopened', () => {
+    expect(
+      issueFailureResumeLine({
+        issueKey: 'DEV-9',
+        fixRunNumber: 42,
+        failedRunNumber: null,
+        target: 'starship',
+        branchKey: 'STAR-7',
+        branch: 'STAR-7-fix',
+      }),
+    ).toContain(`${PLATFORM_SLUG} tree open 42`)
+    expect(
+      issueFailureResumeLine({
+        issueKey: 'DEV-9',
+        fixRunNumber: null,
+        failedRunNumber: null,
+        target: null,
+        branchKey: null,
+        branch: null,
+      }),
+    ).toBe(issueResumeLine('DEV-9'))
+  })
+
+  test('reproduction command prefers the fix reply and falls back only to diagnosis', () => {
+    const reply = (command: string) => ({ reproduction: { command } })
+    expect(issueReproductionCommand(reply(' bun test fix '), reply('bun test diagnosis'))).toBe(
+      'bun test fix',
+    )
+    expect(issueReproductionCommand(reply('   '), reply(' bun test diagnosis '))).toBe(
+      'bun test diagnosis',
+    )
+    expect(issueReproductionCommand(reply(''), reply('   '))).toBe('')
+  })
+
+  test('verification resume selection preserves the fix branch only on handback', () => {
+    const input = {
+      issueKey: 'DEV-9',
+      fixRun: { number: 42, worktree: { branch: 'STAR-7-fix' } },
+      fix: { branch: 'reply-branch' },
+      target: { name: 'starship' },
+      branchKey: 'STAR-7',
+    } as unknown as Omit<Parameters<typeof fixVerificationResumeLine>[0], 'ready'>
+    expect(fixVerificationResumeLine({ ...input, ready: true })).toBeUndefined()
+    expect(fixVerificationResumeLine({ ...input, ready: false })).toBe(
+      `Resume with: ${PLATFORM_SLUG} tree open 42, then ${PLATFORM_SLUG} workflow compose ship-task --project starship --mode merge --arg key=STAR-7 --arg branch=STAR-7-fix --arg worktree=<path tree open prints>`,
+    )
   })
 
   test('the issue path consumes its chosen seed only for the writing fix run', () => {

@@ -107,9 +107,10 @@ describe('filed issue command confinement', () => {
     }
     const diagnosis = { cause_location: 'orch-code', before: 'different worker prose' }
     const ready = (beforeExit: number, afterExit: number) =>
-      issueFixReady(fix, diagnosis, beforeExit, afterExit, true, true, true)
+      issueFixReady(fix, diagnosis, beforeExit, afterExit, true, true)
 
     expect(ready(1, 0)).toBe(true)
+    expect(ready(-1, 0)).toBe(false)
     expect(ready(0, 0)).toBe(false)
     expect(ready(1, 1)).toBe(false)
     expect(ready(0, 1)).toBe(false)
@@ -123,20 +124,18 @@ describe('filed issue command confinement', () => {
       after: null,
     }
     const diagnosis = { cause_location: 'orch-code', before: null }
-    expect(issueFixReady({ ...fix, status: 'asking' }, diagnosis, 1, 0, true, true, true)).toBe(
-      false,
-    )
-    expect(issueFixReady({ ...fix, outcome: null }, diagnosis, 1, 0, true, true, true)).toBe(false)
+    expect(issueFixReady({ ...fix, status: 'asking' }, diagnosis, 1, 0, true, true)).toBe(false)
+    expect(issueFixReady({ ...fix, outcome: null }, diagnosis, 1, 0, true, true)).toBe(false)
     expect(
-      issueFixReady({ ...fix, cause_location: 'project-tool' }, diagnosis, 1, 0, true, true, true),
+      issueFixReady({ ...fix, cause_location: 'project-tool' }, diagnosis, 1, 0, true, true),
     ).toBe(false)
-    expect(issueFixReady(fix, diagnosis, 1, 0, false, true, true)).toBe(false)
-    expect(issueFixReady(fix, diagnosis, 1, 0, true, false, true)).toBe(false)
-    expect(issueFixReady(fix, diagnosis, 1, 0, true, true, false)).toBe(false)
+    expect(issueFixReady(fix, diagnosis, 1, 0, false, true)).toBe(false)
+    expect(issueFixReady(fix, diagnosis, 1, 0, true, false)).toBe(false)
   })
 
   test('register proof requires the stated current value and a failing then passing command', () => {
     expect(issueRegisterChangeProven(true, 1, 0)).toBe(true)
+    expect(issueRegisterChangeProven(true, -1, 0)).toBe(false)
     expect(issueRegisterChangeProven(true, 0, 0)).toBe(false)
     expect(issueRegisterChangeProven(true, 1, 1)).toBe(false)
     expect(issueRegisterChangeProven(true, 0, 1)).toBe(false)

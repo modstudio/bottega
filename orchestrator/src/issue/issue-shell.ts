@@ -60,18 +60,16 @@ export function issueFixReady(
   diagnosis: { cause_location: string | null; before: string | null },
   beforeExit: number,
   afterExit: number,
-  plainGateOk: boolean,
-  environmentGateOk: boolean,
+  gateOk: boolean,
   reviewReady: boolean,
 ): boolean {
   return (
     fix.status === 'done' &&
     fix.outcome === 'fixed' &&
     fix.cause_location === diagnosis.cause_location &&
-    beforeExit !== 0 &&
+    beforeExit > 0 &&
     afterExit === 0 &&
-    plainGateOk &&
-    environmentGateOk &&
+    gateOk &&
     reviewReady
   )
 }
@@ -81,7 +79,7 @@ export function issueRegisterChangeProven(
   beforeExit: number,
   afterExit: number,
 ): boolean {
-  return currentMatches && beforeExit !== 0 && afterExit === 0
+  return currentMatches && beforeExit > 0 && afterExit === 0
 }
 
 export function filedIssueCommandResult(spawn: {
