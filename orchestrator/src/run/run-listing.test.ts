@@ -124,6 +124,35 @@ describe('run listing', () => {
     expect((await command({ json: true })).map(runJson).map((row) => row.record_id)).toEqual([root])
   })
 
+  test('runs --live includes an old chain whose latest turn is live before applying the limit', async () => {
+    const root = insert('asking')
+    const turn = insert('running')
+    db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
+    for (let index = 0; index < 201; index++) insert('ok')
+
+    const rows = (await command({ live: true, json: true, limit: ['1'] })).map(runJson)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      record_id: root,
+      status: 'running',
+      live_member_id: turn,
+      live_member_number: runNumber(turn),
+    })
+  })
+
+  test('runs --live returns supported live lifecycle statuses and no terminal status', async () => {
+    const live = ['running', 'asking'].map((status) => insert(status))
+    insert('ok')
+
+    expect(
+      (await command({ live: true, json: true }))
+        .map(runJson)
+        .map((row) => row.record_id)
+        .sort(),
+    ).toEqual(live.sort())
+  })
+
   test('runs JSON publishes the stalled live member', async () => {
     const observedAt = Date.parse('2026-09-22T12:30:00.000Z')
     const id = addRun({

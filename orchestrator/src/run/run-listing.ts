@@ -157,6 +157,25 @@ function applyRequestedRunFilter(
   args.push(...requested.ids, ...requested.ids)
 }
 
+function liveListingClauses(enabled: boolean): string[] {
+  return enabled
+    ? ["current_run.status IN ('queued','reserved','attached','running','asking')"]
+    : []
+}
+
+function listingLimit(value: string | undefined, json: boolean, live: boolean): number | null {
+  if (value === undefined && live) return null
+  return Number(value ?? (json ? 100000 : 20))
+}
+
+function listingLimitSql(limit: number | null): string {
+  return limit === null ? '' : ' LIMIT ?'
+}
+
+function listingLimitBindings(limit: number | null): number[] {
+  return limit === null ? [] : [limit]
+}
+
 function unscoredListingClauses(enabled: boolean, where: string[]): { cte: string; join: string } {
   if (!enabled) return { cte: '', join: '' }
   const owedWhere = UNSCORED_WHERE.replaceAll('r.', 'owed.').replaceAll('s.', 'owed_score.')
@@ -233,8 +252,8 @@ export async function runListingCommand(
   } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
-  const jsonV1 = options.jsonV1
-  const json = has('json') || jsonV1
+  const jsonV1 = options.jsonV1,
+    json = has('json') || jsonV1
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
@@ -254,8 +273,7 @@ export async function runListingCommand(
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
   const requested = resolveRequestedRunIds(values('id'))
-  const requestedIds = requested.ids
-  const unknownRecordIds = requested.unknown
+  const { ids: requestedIds, unknown: unknownRecordIds } = requested
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child
   // turn, return that conversation rather than falsely reporting an existing run id as unknown.
   applyRequestedRunFilter(requested, sinceFlag, where, args)
@@ -276,7 +294,8 @@ export async function runListingCommand(
     )`)
     args.push(sinceFlag, sinceFlag, sinceFlag, sinceFlag)
   }
-  const limit = Number(flag('limit') ?? (json ? 100000 : 20))
+  where.push(...liveListingClauses(has('live')))
+  const limit = listingLimit(flag('limit'), json, has('live'))
   let rows = db()
     .query(
       `${unscoredCte}
@@ -302,9 +321,9 @@ export async function runListingCommand(
        ${currentRunMemberJoin('r')}
        LEFT JOIN score s ON s.run_record_id = r.record_id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY r.number DESC LIMIT ?`,
+      ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
-    .all(...args, limit) as Record<string, unknown>[]
+    .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
   rows = rows.map(withRetryRecordId).flatMap((r) => {
     const chain = resolveFailover(db(), r.record_id as string)
     const final = chain.attempts.at(-1)!
