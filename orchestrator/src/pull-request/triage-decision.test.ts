@@ -191,7 +191,7 @@ describe('pull-request triage decision', () => {
     })
   })
 
-  test('DEV-1524 refuses only the safety lens missing after its tier rose across fixes', () => {
+  test('DEV-1524 admits five lenses composed across three groups after its tier rose', () => {
     const lensReview = (
       reviewId: number,
       tier: 2 | 3,
@@ -228,14 +228,7 @@ describe('pull-request triage decision', () => {
         evidence({
           tier: 3,
           applicableReview: {
-            lenses: [
-              'correctness',
-              'craft',
-              'test-quality',
-              'architecture',
-              'teardown-safety',
-              'safety',
-            ],
+            lenses: ['correctness', 'craft', 'test-quality', 'architecture', 'teardown-safety'],
           },
           reviews: [],
           branchReviewGroups: [
@@ -255,13 +248,64 @@ describe('pull-request triage decision', () => {
           ],
         }),
       ),
+    ).toMatchObject({ complete: true, snapshot: { admissionPath: 'architect_read' } })
+  })
+
+  test('a satisfied correctness second opinion plus a missing safety lens reports only safety', () => {
+    const correctness = (reviewId: number, model: string, completedAt: string) =>
+      review({
+        reviewId,
+        tier: 3,
+        completedAt,
+        lensIdentities: ['correctness'],
+        lenses: [
+          {
+            recordId: `lens-${reviewId}`,
+            runId: `run-${reviewId}`,
+            lens: 'correctness',
+            model,
+            graded: true,
+          },
+        ],
+        findings: [],
+      })
+
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          applicableReview: {
+            lenses: ['correctness', 'safety'],
+            secondOpinion: 'correctness',
+          },
+          reviews: [],
+          branchReviewGroups: [
+            branchGroup([
+              correctness(2, 'model-b', '2026-09-25T02:00:00Z'),
+              correctness(1, 'model-a', '2026-09-25T01:00:00Z'),
+            ]),
+          ],
+        }),
+      ),
     ).toMatchObject({
       complete: false,
-      missingReview: false,
       missingLenses: ['safety'],
       missingSecondOpinion: null,
-      architectReadRequired: false,
-      earlierReviewNumber: null,
+      undisposedFindings: [],
+    })
+  })
+
+  test('a completed lens with an undisposed finding reports the finding, not a missing lens', () => {
+    const incomplete = review({
+      patchId: 'patch-a',
+      completedAt: '2026-09-25T01:00:00Z',
+      findings: [{ recordId: 'finding-1', ordinal: 1, disposition: null }],
+    })
+
+    expect(decideTriage(evidence({ reviews: [incomplete] }))).toMatchObject({
+      complete: false,
+      missingLenses: [],
+      undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
     })
   })
 

@@ -218,13 +218,7 @@ export function triageRefusal(
     lines.push(
       `architect-read path failed: review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
     )
-  } else if (
-    decision.earlierReviewNumber === null &&
-    !decision.unfinishedReviewNumbers.length &&
-    !decision.undisposedFindings.length &&
-    !decision.missingLenses.length &&
-    decision.missingSecondOpinion === null
-  ) {
+  } else if (decision.noRoundRecorded) {
     lines.push(
       `architect-read path failed: no earlier complete review round exists on ${change.branch}; cleared by: run and record the tier ${change.tier} review for ${change.branch}`,
     )

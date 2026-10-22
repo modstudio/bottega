@@ -22,6 +22,7 @@ const incomplete: TriageDecision = {
   earlierReviewNumber: null,
   earlierReviewTier: null,
   finalTierRaised: false,
+  noRoundRecorded: true,
 }
 
 const change = {
