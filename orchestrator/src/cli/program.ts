@@ -29,7 +29,7 @@ import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
-import { recordSessionSeen } from '../database/db.ts'
+import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
 
 export const program = new Command()
   .name('orch')
@@ -109,7 +109,8 @@ function exitCodeFor(error: unknown): number {
  */
 
 export function recordInvocationSession(argv: string[]): void {
-  if (!isReadOnlyInvocation(argv)) recordSessionSeen()
+  if (isReadOnlyInvocation(argv)) return
+  recordSessionHostPressure()
 }
 
 export async function run(argv: string[]): Promise<number> {
