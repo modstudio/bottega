@@ -924,11 +924,17 @@ export async function run(opts: {
     workerEvents: StreamEvent[] = []
   let preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
-  let confinementFailures: FreezeFailure[] = []
+  const confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
-  const roots = acpWriter.confinementRoots(sandboxSelection.profile, name, cwd, writableRoots)
+  const roots = acpWriter.confinementRoots(
+    sandboxSelection.profile,
+    name,
+    cwd,
+    writableRoots,
+    process.env.TMPDIR,
+  )
   const callerCheckout = runProject
     ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
     : null
@@ -977,9 +983,6 @@ export async function run(opts: {
       artifactsPersisted,
       preConfinement,
       vendorTerminatedStream,
-      confinementFailures,
-      confinementEvent,
-      frozenBefore,
       askLoopback,
       mcpSetupHeader,
       workerEvents,

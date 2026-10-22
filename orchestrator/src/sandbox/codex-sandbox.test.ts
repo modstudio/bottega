@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideCodexSandbox } from './codex-sandbox.ts'
+import { codexWritableRoots, decideCodexSandbox } from './codex-sandbox.ts'
 
 describe('Codex sandbox decision', () => {
   test('workspace-write never opens network access for Docker', () => {
@@ -8,4 +8,14 @@ describe('Codex sandbox decision', () => {
       workspaceWriteNetworkAccess: false,
     })
   })
+})
+
+test('native writable roots include temporary directories once', () => {
+  expect(codexWritableRoots('/run/tree', ['/run/scratch'], '/private/tmp')).toEqual([
+    '/run/tree',
+    '/run/scratch',
+    '/tmp',
+    '/private/tmp',
+  ])
+  expect(codexWritableRoots('/run/tree', ['/tmp'], '/tmp')).toEqual(['/run/tree', '/tmp'])
 })

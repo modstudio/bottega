@@ -10,6 +10,7 @@ import {
   emptyAttribution,
 } from '../../../shared/orch-contract.ts'
 import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
+import type { CheckoutToWatch } from '../git/checkout-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
 const UNTRUSTED_INDEX_WINDOW_MS = 1000
@@ -17,9 +18,7 @@ const UNTRUSTED_RETRY_WAIT_MS = 1100
 
 export type { AttributionKind }
 
-export type FrozenCheckout = {
-  project: string
-  path: string
+export type FrozenCheckout = CheckoutToWatch & {
   status: string
   head: string | null
   expectedHead: string | null
@@ -27,8 +26,6 @@ export type FrozenCheckout = {
   untrackedHash: string | null
   headOid: string | null
   untrusted: boolean
-  caller?: boolean
-  writeExcluded?: boolean
 }
 
 type ConfinementLockHolder = {
@@ -56,14 +53,7 @@ export type ConfinementEvent = {
   after: FrozenCheckout[]
 }
 
-export type CheckoutToWatch = {
-  project: string
-  path: string
-  expectedHead?: string | null
-  caller?: boolean
-  writeExcluded?: boolean
-}
-
+export type { CheckoutToWatch } from '../git/checkout-identity.ts'
 export type FreezeFailure = CheckoutToWatch & { error: string; missing?: boolean }
 
 function checkoutIsMissing(path: string): boolean {

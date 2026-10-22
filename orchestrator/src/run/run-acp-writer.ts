@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { type AskLoopback, startAskHttpEndpoint } from '../ask/ask.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
+import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
 import { writingAcpWritableRoots } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CheckpointContainment } from './checkpoint.ts'
@@ -34,9 +35,10 @@ export function confinementRoots(
   agent: string,
   cwd: string,
   extraRoots: string[],
+  tmpDir: string | undefined,
 ): string[] | null {
   if (srtProfile) return srtProfile.filesystem.allowWrite
-  return agent === 'codex' ? [cwd, ...extraRoots, '/tmp', process.env.TMPDIR ?? '/tmp'] : null
+  return agent === 'codex' ? codexWritableRoots(cwd, extraRoots, tmpDir) : null
 }
 
 /** Pure per-run facts used by every host checkpoint path. */

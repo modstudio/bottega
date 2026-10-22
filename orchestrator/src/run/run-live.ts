@@ -10,7 +10,6 @@ import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
 import { markRunBoardNoticesDelivered } from '../board/board-delivery.ts'
-import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   isAsking,
   REPLY_FILE_NAME,
@@ -357,9 +356,6 @@ export type LiveResult = {
   artifactsPersisted: boolean
   preConfinement: string | null
   vendorTerminatedStream: string | null
-  confinementFailures: FreezeFailure[]
-  confinementEvent: ConfinementEvent | null
-  frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[]
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
   workerEvents: StreamEvent[]
@@ -502,9 +498,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let failureKind: ReturnType<typeof classify> | null = null
   const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
-  const confinementFailures: FreezeFailure[] = []
-  const confinementEvent: ConfinementEvent | null = null
-  const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = input.askLoopback
   let executionBrokers: WorkerExecutionBrokers | null = null
   let noteBroker: WorkerNoteBroker | null = null
@@ -1048,9 +1041,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     artifactsPersisted: true,
     preConfinement,
     vendorTerminatedStream,
-    confinementFailures,
-    confinementEvent,
-    frozenBefore,
     askLoopback,
     mcpSetupHeader,
     workerEvents,

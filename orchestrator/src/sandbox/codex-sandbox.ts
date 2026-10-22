@@ -18,6 +18,16 @@ export function decideCodexSandbox(): CodexSandboxRuling {
   }
 }
 
+/** Writable roots implied by the native Codex sandbox ruling and launch facts. */
+export function codexWritableRoots(
+  cwd: string,
+  extraRoots: string[],
+  tmpDir: string | undefined,
+): string[] {
+  if (decideCodexSandbox().sandbox === 'read-only') return []
+  return [...new Set([cwd, ...extraRoots, '/tmp', tmpDir ?? '/tmp'])]
+}
+
 /**
  * Whether a Codex launch uses --approve-for-me instead of -s. Mutually
  * exclusive with --sandbox; implies workspace-write. Does not select

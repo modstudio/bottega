@@ -40,10 +40,20 @@ test('trusted writers keep their shared git roots and ordinary checkpoints', () 
 
 test('recorded confinement exposes sandbox roots and leaves host workers unproved', () => {
   expect(
-    confinementRoots({ filesystem: { allowWrite: ['/run/tree'] } }, 'grok', '/run/tree', []),
+    confinementRoots(
+      { filesystem: { allowWrite: ['/run/tree'] } },
+      'grok',
+      '/run/tree',
+      [],
+      '/tmp',
+    ),
   ).toEqual(['/run/tree'])
-  expect(confinementRoots(null, 'grok', '/run/tree', [])).toBeNull()
-  expect(confinementRoots(null, 'codex', '/run/tree', ['/run/scratch'])).toContain('/run/tree')
+  expect(confinementRoots(null, 'grok', '/run/tree', [], '/tmp')).toBeNull()
+  expect(confinementRoots(null, 'codex', '/run/tree', ['/run/scratch'], '/tmp')).toEqual([
+    '/run/tree',
+    '/run/scratch',
+    '/tmp',
+  ])
 })
 
 test('a startup failure after creating the writing ACP ask endpoint closes its listener', async () => {

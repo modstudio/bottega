@@ -30,7 +30,13 @@ export type CheckoutAliases = {
   diagnostic: string | null
 }
 
-export type CheckoutToWatch = { project: string; path: string; expectedHead?: string | null }
+export type CheckoutToWatch = {
+  project: string
+  path: string
+  expectedHead?: string | null
+  caller?: boolean
+  writeExcluded?: boolean
+}
 export type CheckoutWatchFailure = CheckoutToWatch & { error: string }
 
 function checkoutRootAsAddressed(cwd: string): string | null {
@@ -138,14 +144,15 @@ export function checkoutWatchSet(
   const registered = projects().filter(
     ({ name }) => ownProject === undefined || ownProject === null || name === ownProject,
   )
-  for (const checkout of [
+  const candidates: CheckoutToWatch[] = [
     ...registered.map(({ name, path, settings }) => ({
       project: name,
       path,
       expectedHead: typeof settings.trunk === 'string' ? settings.trunk : null,
     })),
     ...additional,
-  ]) {
+  ]
+  for (const checkout of candidates) {
     let canonical: string
     try {
       canonical = realpathSync(checkout.path)
@@ -156,12 +163,22 @@ export function checkoutWatchSet(
       })
       continue
     }
-    if (canonical === active || seen.has(canonical)) continue
+    if (canonical === active) continue
+    if (seen.has(canonical)) {
+      const existing = watched.find(({ path }) => path === canonical)!
+      if (checkout.caller) {
+        existing.caller = true
+        existing.writeExcluded = checkout.writeExcluded
+      }
+      continue
+    }
     seen.add(canonical)
     watched.push({
       project: checkout.project,
       path: canonical,
       expectedHead: checkout.expectedHead ?? null,
+      caller: checkout.caller,
+      writeExcluded: checkout.writeExcluded,
     })
   }
   return { watched, failures }
