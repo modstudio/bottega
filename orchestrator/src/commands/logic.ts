@@ -151,6 +151,24 @@ function epicRegisteredProjectWorkingDirectoryRefusal(): string {
 const describedCommand = (program: Command, name: string, description: string) =>
   program.command(name).description(description)
 
+function answerCommandDefinition(program: Command): Command {
+  return describedCommand(
+    program,
+    'answer <id> [message...]',
+    'record rulings for a worker and resume its run',
+  )
+    .allowUnknownOption(true)
+    .option('--file <value>', 'read the ruling from this file')
+    .option('--follow', 'wait for the resumed run and print its result')
+    .option('--detach', 'return after resuming the run')
+    .option('--quiet', 'suppress collection guidance and followed output')
+    .option('--record-only', 'record the ruling without resuming the run')
+    .option('--from-operator', 'attribute the ruling to the operator')
+    .option('--from-operator-q<id>', 'attribute only question <id> to the operator')
+    .option('--channel <value>', 'record the channel that supplied the ruling')
+    .option('--json', 'write the answer result as JSON')
+}
+
 function registerMachineAttentionCommands(program: Command): void {
   program
     .command('provisioning')
@@ -461,30 +479,16 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  describedCommand(
-    program,
-    'answer <id> [message...]',
-    'record rulings for a worker and resume its run',
+  answerCommandDefinition(program).action((id, _message, options, command) =>
+    answerCommand(
+      localRunId(id),
+      rawArgv(command).slice(2),
+      Boolean(options.recordOnly),
+      Boolean(options.json),
+      runFlags(options),
+      presentation,
+    ),
   )
-    .allowUnknownOption(true)
-    .option('--file <value>', 'read the ruling from this file')
-    .option('--follow', 'wait for the resumed run and print its result')
-    .option('--detach', 'return after resuming the run')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .option('--record-only', 'record the ruling without resuming the run')
-    .option('--from-operator', 'attribute the ruling to the operator')
-    .option('--channel <value>', 'record the channel that supplied the ruling')
-    .option('--json', 'write the answer result as JSON')
-    .action((id, _message, options, command) =>
-      answerCommand(
-        localRunId(id),
-        rawArgv(command).slice(2),
-        Boolean(options.recordOnly),
-        Boolean(options.json),
-        runFlags(options),
-        presentation,
-      ),
-    )
   describedCommand(program, 'continue <id> [message...]', 'continue a finished run as another turn')
     .allowUnknownOption(true)
     .option('--file <value>', 'read the continuation message from this file')

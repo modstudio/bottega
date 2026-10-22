@@ -16,6 +16,20 @@ export function rulingActor(fromOperator: boolean, session: string | null): stri
     : (session ?? 'anonymous (no session id)')
 }
 
+export type RulingAttributionDecision =
+  | { kind: 'agent' }
+  | { kind: 'operator' }
+  | { kind: 'conflict' }
+
+/** Decide one ruling's attribution without transport or database state. */
+export function rulingAttributionDecision(
+  commandFromOperator: boolean,
+  questionFromOperator: boolean,
+): RulingAttributionDecision {
+  if (commandFromOperator && questionFromOperator) return { kind: 'conflict' }
+  return commandFromOperator || questionFromOperator ? { kind: 'operator' } : { kind: 'agent' }
+}
+
 export function rulingStatus(
   overturnedAt: unknown,
   answeredAt: unknown,

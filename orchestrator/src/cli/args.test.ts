@@ -147,6 +147,7 @@ describe('answer text sources', () => {
         { identifier: '264', file: 'a.txt' },
         { identifier: '265', file: 'b.txt' },
       ],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: [],
     })
@@ -159,10 +160,31 @@ describe('answer text sources', () => {
           { identifier: '264', text: 'use option A' },
           { identifier: '265', file: 'b.txt' },
         ],
+        fromOperatorIds: [],
         commandFile: undefined,
         positionals: [],
       },
     )
+  })
+
+  test('--from-operator-q<id> is parsed independently of its question ruling', () => {
+    expect(
+      parseAnswerTextSources([
+        '--q264',
+        'agent ruling',
+        '--from-operator-q265',
+        '--q265',
+        'operator ruling',
+      ]),
+    ).toEqual({
+      byId: [
+        { identifier: '264', text: 'agent ruling' },
+        { identifier: '265', text: 'operator ruling' },
+      ],
+      fromOperatorIds: ['265'],
+      commandFile: undefined,
+      positionals: [],
+    })
   })
 
   test('UUID question selectors keep text, equals, and file forms', () => {
@@ -184,6 +206,7 @@ describe('answer text sources', () => {
         { identifier: second, text: 'equals ruling' },
         { identifier: third, file: 'ruling.txt' },
       ],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: [],
     })
@@ -192,6 +215,7 @@ describe('answer text sources', () => {
   test('a command-level --file is distinct from a per-question --file', () => {
     expect(parseAnswerTextSources(['--file', 'ruling.txt'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: 'ruling.txt',
       positionals: [],
     })
@@ -200,11 +224,13 @@ describe('answer text sources', () => {
   test('a quoted dash-prefixed value is message text, not an unknown flag', () => {
     expect(parseAnswerTextSources(['--literal is intended'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: ['--literal is intended'],
     })
     expect(parseAnswerTextSources(['--q31', '--literal is intended'])).toEqual({
       byId: [{ identifier: '31', text: '--literal is intended' }],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: [],
     })
@@ -213,6 +239,7 @@ describe('answer text sources', () => {
   test('once the message starts, flag-shaped words stay in the message', () => {
     expect(parseAnswerTextSources(['use', '--quiet', 'mode'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: ['use', '--quiet', 'mode'],
     })
@@ -223,6 +250,7 @@ describe('answer text sources', () => {
     })
     expect(parseAnswerTextSources(['--follow', 'use', '--quiet', 'mode'])).toEqual({
       byId: [],
+      fromOperatorIds: [],
       commandFile: undefined,
       positionals: ['use', '--quiet', 'mode'],
     })
