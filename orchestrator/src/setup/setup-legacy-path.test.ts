@@ -71,6 +71,29 @@ test('a relative PATH entry is skipped', () => {
   expect(captureLegacyPathSymlinks(['relative-bin', './bin'])).toEqual([])
 })
 
+test('an installer leftover pointing at the sibling executable is captured and a foreign one is not', () => {
+  const root = scratch()
+  const pathDir = join(root, 'path')
+  mkdirSync(pathDir)
+  const sibling = join(pathDir, PLATFORM_SLUG)
+  writeFileSync(sibling, '#!/bin/sh\n')
+  const bare = join(pathDir, 'orch')
+  const absolute = join(pathDir, 'hub')
+  symlinkSync(PLATFORM_SLUG, bare)
+  symlinkSync(sibling, absolute)
+  const foreignDir = join(root, 'elsewhere')
+  mkdirSync(foreignDir)
+  const foreignExecutable = join(foreignDir, PLATFORM_SLUG)
+  writeFileSync(foreignExecutable, '#!/bin/sh\n')
+  const foreignNamed = join(root, 'named')
+  mkdirSync(foreignNamed)
+  symlinkSync(foreignExecutable, join(foreignNamed, 'orch'))
+  expect(captureLegacyPathSymlinks([pathDir, foreignNamed])).toEqual([
+    { path: bare, target: sibling },
+    { path: absolute, target: sibling },
+  ])
+})
+
 test('setup plan proposes removing a checkout-pointing symlink and leaves others alone', () => {
   const root = scratch()
   const tree = join(root, 'checkout')
@@ -132,6 +155,9 @@ test('setup apply removes a checkout-pointing symlink and refuses a file or fore
   )
   expect(refusedFile[0]?.status).toBe('refused')
   expect(refusedFile[0]?.message).toContain('not a removable leftover PATH symlink')
+  expect(refusedFile[0]?.message).toContain(
+    `leave it or remove it by hand if you own it, then re-run ${PLATFORM_SLUG} machine setup plan`,
+  )
   expect(existsSync(file)).toBe(true)
 
   const refusedForeign = await applySetupActions(
@@ -140,6 +166,9 @@ test('setup apply removes a checkout-pointing symlink and refuses a file or fore
   )
   expect(refusedForeign[0]?.status).toBe('refused')
   expect(refusedForeign[0]?.message).toContain('not a removable leftover PATH symlink')
+  expect(refusedForeign[0]?.message).toContain(
+    `leave it or remove it by hand if you own it, then re-run ${PLATFORM_SLUG} machine setup plan`,
+  )
   expect(existsSync(foreignLink)).toBe(true)
 })
 
@@ -165,5 +194,8 @@ test('apply refuses a link retargeted between plan and apply', async () => {
   )
   expect(refused[0]?.status).toBe('refused')
   expect(refused[0]?.message).toContain(`it now points at ${otherOrch}`)
+  expect(refused[0]?.message).toContain(
+    `re-run ${PLATFORM_SLUG} machine setup plan and apply the new plan`,
+  )
   expect(existsSync(link)).toBe(true)
 })

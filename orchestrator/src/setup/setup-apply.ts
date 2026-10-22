@@ -273,11 +273,13 @@ async function applyLegacyPathSymlinkRemoval(
   const target = removableLegacyPathTarget(action.path)
   if (target === null) {
     throw new Error(
-      `refusing to remove ${action.path}: it is not a removable leftover PATH symlink`,
+      `refusing to remove ${action.path}: it is not a removable leftover PATH symlink; leave it or remove it by hand if you own it, then re-run ${PLATFORM_SLUG} machine setup plan`,
     )
   }
   if (target !== action.target) {
-    throw new Error(`refusing to remove ${action.path}: it now points at ${target}`)
+    throw new Error(
+      `refusing to remove ${action.path}: it now points at ${target}; re-run ${PLATFORM_SLUG} machine setup plan and apply the new plan`,
+    )
   }
   await rm(action.path)
   return 'applied'

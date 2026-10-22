@@ -5,6 +5,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
+import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import type { LegacyMcpServerName } from './setup-mcp.ts'
 import {
   harnessMcpServers,
@@ -66,10 +67,6 @@ type SetupRegistrationProposal = {
   questionId: string | null
   state: 'absent' | 'same' | 'stale' | 'different' | 'unreadable'
   legacyName?: LegacyMcpServerName
-}
-export type LegacyPathSymlink = {
-  path: string
-  target: string
 }
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }

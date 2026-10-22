@@ -1,10 +1,15 @@
 // concern: setup-legacy-path
-/** Detects leftover orch/hub PATH symlinks that point at this installation's matching binary. */
+/** Detects leftover orch/hub PATH symlinks that point at any installation's matching retired binary, or at bottega in the same directory. */
 
 import { lstatSync, readlinkSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isInstallationRoot } from '../../../shared/install-root.ts'
-import type { LegacyPathSymlink } from './setup-engine.ts'
+
+export type LegacyPathSymlink = {
+  path: string
+  target: string
+}
 
 const LEGACY_PATH_COMMANDS = ['orch', 'hub'] as const
 
@@ -25,7 +30,9 @@ export function removableLegacyPathTarget(path: string): string | null {
   } catch {
     return null
   }
-  const resolved = isAbsolute(target) ? resolve(target) : resolve(dirname(path), target)
+  const directory = dirname(path)
+  const resolved = isAbsolute(target) ? resolve(target) : resolve(directory, target)
+  if (resolved === join(directory, PLATFORM_SLUG)) return resolved
   if (basename(resolved) !== name) return null
   const binDirectory = dirname(resolved)
   if (basename(binDirectory) !== 'bin') return null

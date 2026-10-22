@@ -150,11 +150,9 @@ async function composite(
 /** Route public and hidden executable commands without publishing hidden commands in usage. */
 export async function dispatchBinary(
   argv: string[],
-  invokedAs: string,
   entries: BinaryEntries,
   version: () => string,
 ): Promise<number> {
-  void invokedAs
   const input = argv
   if (input.length === 1 && input[0] === '--version') {
     console.log(version())
