@@ -5,7 +5,7 @@ import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { resumePromptByteLimit } from '../agent/agents.ts'
+import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
 import {
   resolveTaskBranch,
@@ -345,6 +345,17 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
   agent: selectAgentForTransport(transport, agent),
   agentExplicit: Boolean(agent),
 })
+const transportPinSource = (flag: string | undefined, environment: boolean) =>
+  flag !== undefined ? ('explicit' as const) : environment ? ('environment' as const) : undefined
+const transportSelection = (flag: string | undefined, selected: Agent | undefined) => {
+  const environment = Boolean(process.env.ORCH_TRANSPORT)
+  const explicit = flag !== undefined || environment
+  return {
+    transport: !explicit && selected ? selected.defaultTransport : resolveTransportName(flag),
+    transportExplicit: explicit,
+    transportPinSource: transportPinSource(flag, environment),
+  }
+}
 const detachedMcpConstraints = (
   request: McpRequest | undefined,
   spec: DetachSpec,
@@ -369,22 +380,15 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       sources: { commandFile: flag('file'), positionals: positional },
     })) ?? ''
   const resolveOptions = async (jobName: string) => {
-    const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined,
-      transportFlag = flag('transport'),
-      environmentTransport = Boolean(process.env.ORCH_TRANSPORT),
-      explicit = transportFlag !== undefined || environmentTransport,
-      transport =
-        !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
-    if (transport === 'acp') {
+    const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined
+    const transport = transportSelection(flag('transport'), selected)
+    if (transport.transport === 'acp') {
       assertAcpPolicyAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')), true)
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
-      ...selectedAgentOptions(transport, flag('agent')),
-      transport,
-      transportExplicit: explicit,
-      transportPinSource:
-        transportFlag !== undefined ? 'explicit' : environmentTransport ? 'environment' : undefined,
+      ...selectedAgentOptions(transport.transport, flag('agent')),
+      ...transport,
       ...(await routeConstraints(argv, flag('agent'))),
       mcp: parseRequestedMcp(argv),
     }

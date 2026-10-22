@@ -12,10 +12,24 @@ export type RunLaunchRuling = {
   useRequestedTransport: boolean
 }
 
-export function isRunTransportPinned(
+function isRunTransportPinned(
   facts: Pick<RunLaunchFacts, 'explicitTransport' | 'envTransport'>,
 ): boolean {
   return facts.explicitTransport || facts.envTransport
+}
+
+export function runTransportPin(
+  transport: TransportName,
+  facts: Pick<RunLaunchFacts, 'explicitTransport' | 'envTransport'>,
+) {
+  return {
+    pinnedTransport: isRunTransportPinned(facts) ? transport : undefined,
+    transportPinSource: facts.envTransport
+      ? ('environment' as const)
+      : facts.explicitTransport
+        ? ('explicit' as const)
+        : undefined,
+  }
 }
 
 export function decideRunLaunch(facts: RunLaunchFacts): RunLaunchRuling {

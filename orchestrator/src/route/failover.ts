@@ -118,7 +118,6 @@ export function detachedRunOptions(
     model,
     probe,
     transport,
-    transportPinSource,
     label,
     lens,
     seed,
@@ -142,7 +141,7 @@ export function detachedRunOptions(
     keepTree,
     resolvedTaskBranch,
   } = spec
-  const consumed: Required<Record<keyof DetachSpec, unknown>> = {
+  const consumed: Required<Record<Exclude<keyof DetachSpec, 'transportPinSource'>, unknown>> = {
     agent,
     agentExplicit: spec.agentExplicit,
     schema: spec.schema,
@@ -150,7 +149,6 @@ export function detachedRunOptions(
     model,
     probe,
     transport,
-    transportPinSource,
     label,
     lens,
     seed,
@@ -185,7 +183,6 @@ export function detachedRunOptions(
     model,
     probe,
     transport,
-    transportPinSource,
     label,
     lens,
     seed,

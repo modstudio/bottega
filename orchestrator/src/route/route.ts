@@ -914,6 +914,9 @@ function evidenceForPick(
   )
 }
 
+const mcpRouteArgs = (constraints: RouteConstraints) =>
+  [constraints.requiredMcp, constraints.pinnedTransport, constraints.transportPinSource] as const
+
 type CurrentPolicyCandidate = Pick<
   Candidate,
   'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
@@ -1019,8 +1022,6 @@ export function pick(
 ): { agent: string; reason: string } {
   const j = job(jobName)
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
-  // Named in every reason below, so a route drawn from four PHP runs is never
-  // mistaken for one drawn from thirty mixed ones.
   const evidenceCell =
     ev.level === 'lens'
       ? `lens ${ev.lens} cell`
@@ -1033,9 +1034,7 @@ export function pick(
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    // Keep candidates()' reporting view unchanged: metered billing and cooling
-    // remain routing exclusions in guide and hub. A named route may spend the
-    // former, while only an explicit probe bypasses the latter.
+    // Keep candidate reporting stable; only an explicit probe bypasses cooling.
     const namedCandidates = candidates(
       jobName,
       promptBytes,
@@ -1043,9 +1042,7 @@ export function pick(
       avoid.model,
       probe ? override : undefined,
       ev.level === 'lens' ? ev.lens : undefined,
-      avoid.requiredMcp,
-      avoid.pinnedTransport,
-      avoid.transportPinSource,
+      ...mcpRouteArgs(avoid),
       override,
     )
     const c = namedCandidates.find((x) => x.agent === override)

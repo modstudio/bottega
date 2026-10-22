@@ -40,15 +40,10 @@ import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
-  decideRequiredMcpAttachment,
-  predictNativeMcpAttachment,
-} from '../mcp/mcp-native-attachment.ts'
-import {
   canonSourceFor,
   canonSourceInstruction,
   effectiveMcpRequest,
   type McpRequest,
-  requestedMcpMode,
   requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
@@ -119,7 +114,7 @@ import {
   assertWorkerGitGuardOutsideWritableRoots,
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
-import { decideRunLaunch, isRunTransportPinned, resolveRunTransport } from './run-launch.ts'
+import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -233,8 +228,6 @@ export async function run(opts: {
   model?: string
   /** Pilot opt-in. Default `cli`. */
   transport?: TransportName
-  /** Whether the transport pin came from the CLI flag or ORCH_TRANSPORT. */
-  transportPinSource?: 'explicit' | 'environment'
   cwd?: string
   /** Internal override for callers whose execution cwd is not their canon source. */
   canonPack?: Pack
@@ -514,20 +507,11 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
-  const envTransport =
-    opts.transportPinSource === 'environment' ||
-    (opts.transportPinSource === undefined && Boolean(process.env.ORCH_TRANSPORT))
   const transportPinFacts = {
-    explicitTransport:
-      opts.transportPinSource === 'explicit' || (opts.transport !== undefined && !envTransport),
-    envTransport,
+    explicitTransport: opts.transport !== undefined,
+    envTransport: Boolean(process.env.ORCH_TRANSPORT),
   }
-  const pinnedTransport = isRunTransportPinned(transportPinFacts) ? requestedTransport : undefined
-  const transportPinSource = transportPinFacts.explicitTransport
-    ? ('explicit' as const)
-    : transportPinFacts.envTransport
-      ? ('environment' as const)
-      : undefined
+  const transportPin = runTransportPin(requestedTransport, transportPinFacts)
   const pickSource = () =>
     pick(
       opts.job,
@@ -544,8 +528,7 @@ export async function run(opts: {
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
         requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
-        pinnedTransport,
-        transportPinSource,
+        ...transportPin,
       },
       opts.probe,
       opts.lens,
@@ -578,19 +561,10 @@ export async function run(opts: {
   }
   prompt = acpWriter.bindContract(prompt, writingAcp)
   if (name === 'codex') enforceRunStartupRefusal(opts.reserveId, minimumCliVersionRefusal(a))
-  const mcpLaunchRuling = mcpAttachment.decideMcpLaunchRuling(
-    requestedMcpMode(mcpRequest),
-    decideRequiredMcpAttachment({
-      mode: requestedMcpMode(mcpRequest),
-      prediction: predictNativeMcpAttachment({
-        name: a.name,
-        harness: a.harness,
-        transport: transportName,
-      }),
-      pin: { transport: pinnedTransport, source: transportPinSource },
-    }),
-    a.caps.mcp,
-  )
+  const mcpLaunchRuling = mcpAttachment.decideMcpLaunchRuling(mcpRequest, a, transportName, {
+    transport: transportPin.pinnedTransport,
+    source: transportPin.transportPinSource,
+  })
   enforceRunStartupRefusal(opts.reserveId, mcpLaunchRuling.refusalReason)
   // Append after routing but before prompt files, hashes, or metadata are written.
   if (requestedJob.findings && resume.isFirstTurn) {

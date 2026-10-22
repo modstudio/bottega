@@ -1,5 +1,9 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { RequiredMcpAttachmentDecision } from '../mcp/mcp-native-attachment.ts'
+import {
+  decideRequiredMcpAttachment,
+  type McpTransportPinFacts,
+  predictNativeMcpAttachment,
+} from '../mcp/mcp-native-attachment.ts'
 import {
   type McpConnection,
   type McpMode,
@@ -29,11 +33,22 @@ export type McpLaunchRuling = {
 
 /** Decide native project-server availability before any stack or probe work begins. */
 export function decideMcpLaunchRuling(
-  mode: McpMode | null,
-  attachment: RequiredMcpAttachmentDecision,
-  probedAgentHasMcp: boolean,
+  request: McpRequest | undefined,
+  agent: { name: string; harness?: string; caps: { mcp: boolean } },
+  transport: 'cli' | 'acp',
+  pin: McpTransportPinFacts,
 ): McpLaunchRuling {
-  if (!mode) return { agentHasMcp: probedAgentHasMcp, refusalReason: null }
+  const mode = requestedMcpMode(request)
+  if (!mode) return { agentHasMcp: agent.caps.mcp, refusalReason: null }
+  const attachment = decideRequiredMcpAttachment({
+    mode,
+    prediction: predictNativeMcpAttachment({
+      name: agent.name,
+      harness: agent.harness,
+      transport,
+    }),
+    pin,
+  })
   return {
     agentHasMcp: attachment.confirmable,
     refusalReason: mode === 'require' ? attachment.refusalReason : null,

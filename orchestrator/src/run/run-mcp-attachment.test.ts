@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { decideRequiredMcpAttachment } from '../mcp/mcp-native-attachment.ts'
 import type { McpConnection } from '../mcp/mcp-preflight.ts'
 import {
   decideFinalMcpConnection,
@@ -28,44 +27,41 @@ describe('MCP attachment ruling', () => {
     {
       name: 'required native attachment',
       mode: 'require' as const,
-      prediction: { confirmable: true, reason: null },
+      agent: { name: 'codex', caps: { mcp: false } },
+      transport: 'cli' as const,
       probed: false,
       expected: { agentHasMcp: true, refusalReason: null },
     },
     {
       name: 'preferred unconfirmable attachment',
       mode: 'prefer' as const,
-      prediction: { confirmable: false, reason: 'not attachable' },
+      agent: { name: 'goose-agent', harness: 'goose', caps: { mcp: true } },
+      transport: 'cli' as const,
       probed: true,
       expected: { agentHasMcp: false, refusalReason: null },
     },
     {
       name: 'implicit probed capability',
-      mode: null,
-      prediction: { confirmable: false, reason: 'not attachable' },
+      mode: undefined,
+      agent: { name: 'goose-agent', harness: 'goose', caps: { mcp: true } },
+      transport: 'cli' as const,
       probed: true,
       expected: { agentHasMcp: true, refusalReason: null },
     },
-  ])('decides $name before preflight', ({ mode, prediction, probed, expected }) => {
-    const attachment = decideRequiredMcpAttachment({ mode, prediction, pin: {} })
-    expect(decideMcpLaunchRuling(mode, attachment, probed)).toEqual(expected)
+  ])('decides $name before preflight', ({ mode, agent, transport, expected }) => {
+    expect(decideMcpLaunchRuling(mode, agent, transport, {})).toEqual(expected)
   })
 
   test('required unconfirmable attachment returns the routing remedy', () => {
     expect(
-      decideMcpLaunchRuling(
-        'require',
-        decideRequiredMcpAttachment({
-          mode: 'require',
-          prediction: { confirmable: false, reason: 'not attachable' },
-          pin: { transport: 'acp', source: 'environment' },
-        }),
-        true,
-      ),
+      decideMcpLaunchRuling('require', { name: 'codex', caps: { mcp: true } }, 'acp', {
+        transport: 'acp',
+        source: 'environment',
+      }),
     ).toEqual({
       agentHasMcp: false,
       refusalReason:
-        'not attachable; unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp',
+        'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp',
     })
   })
 
