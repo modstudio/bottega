@@ -79,7 +79,7 @@ test('probe output with a 40-hex sha and a refusal line is kept verbatim', async
   initializeProbeRepository()
   const d = database()
   const output = `--base=${'a'.repeat(40)}\napplicable lens safety has no recorded result on this branch`
-  const result = await recordWorkflowProbe(['bottega', 'pr', 'create'], {
+  const result = await recordWorkflowProbe([PLATFORM_SLUG, 'pr', 'create'], {
     cwd: probeRepository,
     d,
     commit: 'abc',
@@ -88,10 +88,10 @@ test('probe output with a 40-hex sha and a refusal line is kept verbatim', async
   expect(result.withheld).toBe(false)
   expect(result.outputTail).toBe(output)
   expect(
-    (d.query('SELECT output_tail,withheld FROM probe').get() as {
+    d.query('SELECT output_tail,withheld FROM probe').get() as {
       output_tail: string
       withheld: number
-    }),
+    },
   ).toEqual({ output_tail: output, withheld: 0 })
 })
 
@@ -119,10 +119,10 @@ test('probe output withholds only the secret-shaped line and names the rule', as
   expect(result.withheld).toBe(true)
   expect(result.outputTail).toBe(tail)
   expect(
-    (d.query('SELECT output_tail,withheld FROM probe').get() as {
+    d.query('SELECT output_tail,withheld FROM probe').get() as {
       output_tail: string
       withheld: number
-    }),
+    },
   ).toEqual({ output_tail: tail, withheld: 1 })
 })
 
