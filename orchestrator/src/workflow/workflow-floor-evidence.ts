@@ -25,7 +25,9 @@ import {
   type Floor,
   isFloorKind,
   type OpenObligation,
+  githubPullRequestUrlIn,
   parseArtifactRef,
+  pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import {
@@ -848,6 +850,7 @@ function gatheredCommandEvidence(
     exit_code: number
     session_id: string | null
     created_at: string
+    output_tail: string
   },
   identity: CursorIdentity,
   cursorId: number,
@@ -868,6 +871,7 @@ function gatheredCommandEvidence(
       checkoutBranch: checkout.branch,
       headCommit: row.head_commit,
       cursorBranch: identity.branch,
+      output: row.output_tail,
     },
   }
 }
@@ -981,9 +985,12 @@ export function gatherValidatedEvidence(input: {
             exit_code: number
             session_id: string | null
             created_at: string
+            output_tail: string
           },
           [number]
-        >('SELECT command,cwd,head_commit,exit_code,session_id,created_at FROM probe WHERE id=?')
+        >(
+          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail FROM probe WHERE id=?',
+        )
         .get(parsed.id)!
       const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
       Object.assign(
@@ -998,6 +1005,10 @@ export function gatherValidatedEvidence(input: {
           checkout,
         ),
       )
+      const execUrl = pullRequestCreateArgv(recordedArgv(row.command))
+        ? githubPullRequestUrlIn(row.output_tail)
+        : undefined
+      if (execUrl) gathered.pullRequest = pullRequestEvidence(execUrl, input.identity, d, ports)
     }
   }
   if (input.evidence.task?.trim())

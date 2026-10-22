@@ -108,6 +108,7 @@ export type ValidatedEvidence = {
     checkoutBranch: string | null
     headCommit: string | null
     cursorBranch: string | null
+    output: string
   }
   artifact?: { ref: string; exists: boolean }
   pullRequest?: {
@@ -327,6 +328,17 @@ function rulingMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?:
   return question || triaged
 }
 
+type PullRequestLinkFacts = {
+  kind: 'link'
+  repository: string | null
+  projectRepository: string | null
+  state: string
+  head: string
+  base: string
+  cursorBranch: string
+  trunk: string
+}
+
 export type PullRequestEvidenceFacts =
   | {
       kind: 'exec'
@@ -337,17 +349,10 @@ export type PullRequestEvidenceFacts =
       checkoutBranch: string | null
       headCommit: string | null
       cursorBranch: string | null
+      output: string
+      link?: PullRequestLinkFacts
     }
-  | {
-      kind: 'link'
-      repository: string | null
-      projectRepository: string | null
-      state: string
-      head: string
-      base: string
-      cursorBranch: string
-      trunk: string
-    }
+  | PullRequestLinkFacts
 
 export type PullRequestEvidenceDecision = { met: true } | { met: false; condition: string }
 
@@ -355,17 +360,26 @@ function commandBasename(value: string): string {
   return value.split(/[\\/]/).at(-1) ?? ''
 }
 
+export function pullRequestCreateArgv(argv: string[] | null): argv is string[] {
+  return (
+    argv !== null &&
+    commandBasename(argv[0] ?? '') === PLATFORM_SLUG &&
+    argv[1] === 'pr' &&
+    argv[2] === 'create'
+  )
+}
+
+export function githubPullRequestUrlIn(output: string): string | undefined {
+  return /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?/i.exec(output)?.[0]
+}
+
 function decidePullRequestExec(
   facts: Extract<PullRequestEvidenceFacts, { kind: 'exec' }>,
 ): PullRequestEvidenceDecision {
-  const argv = facts.argv
-  if (
-    !argv ||
-    commandBasename(argv[0] ?? '') !== PLATFORM_SLUG ||
-    argv[1] !== 'pr' ||
-    argv[2] !== 'create'
-  )
+  if (!pullRequestCreateArgv(facts.argv))
     return { met: false, condition: `the recorded command is not ${PLATFORM_SLUG} pr create` }
+  if (facts.argv.includes('-h') || facts.argv.includes('--help'))
+    return { met: false, condition: 'the recorded command is a help invocation' }
   if (facts.exitCode !== 0)
     return { met: false, condition: `the recorded command exited ${facts.exitCode}, not 0` }
   if (!facts.sessionBound)
@@ -379,12 +393,20 @@ function decidePullRequestExec(
       condition: `the recorded command checkout branch is ${facts.checkoutBranch ?? 'unset'}, not this cursor's ${facts.cursorBranch}`,
     }
   if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
-  return { met: true }
+  if (!githubPullRequestUrlIn(facts.output))
+    return {
+      met: false,
+      condition: 'the recorded command output does not contain a GitHub pull-request URL',
+    }
+  if (!facts.link)
+    return {
+      met: false,
+      condition: 'the recorded command output pull-request URL could not be judged',
+    }
+  return decidePullRequestLink(facts.link)
 }
 
-function decidePullRequestLink(
-  facts: Extract<PullRequestEvidenceFacts, { kind: 'link' }>,
-): PullRequestEvidenceDecision {
+function decidePullRequestLink(facts: PullRequestLinkFacts): PullRequestEvidenceDecision {
   if (!facts.projectRepository)
     return { met: false, condition: 'the project origin is not a GitHub repository' }
   if (facts.repository !== facts.projectRepository)
@@ -432,6 +454,8 @@ function execPullRequestFacts(
     checkoutBranch: exec.checkoutBranch,
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
+    output: exec.output,
+    link: evidence.pullRequest ? { kind: 'link', ...evidence.pullRequest } : undefined,
   }
 }
 
