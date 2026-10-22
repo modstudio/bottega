@@ -190,6 +190,20 @@ test('variadic leaf commands are reported as not walked', () => {
   ])
 })
 
+test('a routed verb inside a variadic owner command resolves to that owner', () => {
+  const commandPrograms = programs()
+  commandPrograms.orch.command('legacy [args...]').description('legacy dispatcher')
+  const routes = [
+    { command: ['run', 'show'], owner: 'orch', argv: ['legacy', 'show'] },
+  ] satisfies CommandRoute[]
+
+  const inventory = documentationInventory(groups, routes, commandPrograms)
+  expect(inventory.notWalked).toEqual([`${PLATFORM_SLUG} run show`])
+  expect(inventory.commands).toContainEqual(
+    expect.objectContaining({ spelling: `${PLATFORM_SLUG} run show`, optionsByHelp: true }),
+  )
+})
+
 test('a stale baseline entry fails with the regenerate command', () => {
   expect(descriptionBaselineFailures([], ['run show'])).toEqual([
     `${PLATFORM_SLUG} run show: stale baseline entry; run bun scripts/check-command-descriptions.ts --write-baseline`,

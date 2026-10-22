@@ -37,8 +37,10 @@ export const pullRequestModuleSpecs = [
     allowed: [
       'bun:sqlite',
       '../project/projects.ts',
+      './review-applicability.ts',
       './review-pins.ts',
       './review-target.ts',
+      './review-tier-classifier.ts',
       './review-tier.ts',
     ],
   },
