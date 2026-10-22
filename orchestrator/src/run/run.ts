@@ -71,7 +71,7 @@ import {
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick } from '../route/route.ts'
+import { pick, routeProjectContext } from '../route/route.ts'
 import {
   type CodexMcpCatalogue,
   codexMcpSetupHeader,
@@ -518,8 +518,10 @@ export async function run(opts: {
         models: opts.distinctModels,
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
-        requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
-        project: runProjectName,
+        ...routeProjectContext(
+          runProjectName,
+          requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
+        ),
       },
       opts.probe,
       opts.lens,
@@ -901,7 +903,6 @@ export async function run(opts: {
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
-  // Keep this handle visible to signals/finally so a running row can terminate.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null

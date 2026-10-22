@@ -888,6 +888,13 @@ type PickAvoid = {
   project?: string | null
 }
 
+export function routeProjectContext(
+  project: string | null,
+  requiredMcp: RequiredMcpServer | undefined,
+): Pick<PickAvoid, 'project' | 'requiredMcp'> {
+  return { project, requiredMcp }
+}
+
 function evidenceForPick(
   jobName: string,
   promptBytes: number,
@@ -904,6 +911,12 @@ function evidenceForPick(
     avoid.requiredMcp,
     avoid.project,
   )
+}
+
+function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
+  if (ev.level === 'lens') return `lens ${ev.lens} cell`
+  if (ev.level === 'stack') return `stack ${ev.stack} cell`
+  return 'job-wide cell'
 }
 
 /** Failure-only history has already answered whether another run is worthwhile. */
@@ -1009,21 +1022,14 @@ export function pick(
   const cands = ev.cands
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
-  const evidenceCell =
-    ev.level === 'lens'
-      ? `lens ${ev.lens} cell`
-      : ev.level === 'stack'
-        ? `stack ${ev.stack} cell`
-        : 'job-wide cell'
+  const evidenceCell = evidenceCellName(ev)
   const scope = (c: Candidate) =>
-    ` in ${evidenceCell}` + (c.evidenceModel ? ` on model ${c.evidenceModel}` : '')
+    ` in ${evidenceCell}${c.evidenceModel ? ` on model ${c.evidenceModel}` : ''}`
   if (override) {
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    // Keep candidates()' reporting view unchanged: metered billing and cooling
-    // remain routing exclusions in guide and hub. A named route may spend the
-    // former, while only an explicit probe bypasses the latter.
+    // Keep candidates()' view unchanged. Naming bypasses metering; only a probe bypasses cooling.
     const namedCandidates = candidates(
       jobName,
       promptBytes,
