@@ -18,6 +18,7 @@ import {
   type VendorUsage,
 } from './transport.ts'
 import { cliResultEvents } from './transport-result-events.ts'
+import { usageForBilling } from './vendor-usage.ts'
 
 /** Codex reports "tokens used\\n<n>" on stderr; other agents report nothing. */
 function parseVendorTokens(blob: string): number | null {
@@ -146,7 +147,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const reply = opts.agent.parseReply?.(stdout)
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
-        const usage = cliUsage(reply?.costUsd ?? null)
+        const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({

@@ -4,11 +4,12 @@ import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { type TransportAgent, transportFor } from './transport.ts'
 
-test('CLI reply cost is persisted only as an estimate', async () => {
+test('subscription CLI reply cost is not persisted', async () => {
   const agent: TransportAgent = {
     name: 'subscription-cli',
     bin: process.execPath,
     defaultTransport: 'cli',
+    billing: 'subscription',
     argv: () => ['-e', 'console.log("reply")'],
     stdin: false,
     readsOut: false,
@@ -30,8 +31,8 @@ test('CLI reply cost is persisted only as an estimate', async () => {
   expect(result.vendorUsage).toEqual({
     inputTokens: null,
     outputTokens: null,
-    estimatedCostUsd: 1.25,
-    costSource: 'estimated',
+    estimatedCostUsd: null,
+    costSource: 'none',
   })
   rmSync(outPath, { force: true })
 })
