@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { applicablePostFixReview, applicableReview } from './review-applicability.ts'
+import {
+  applicablePostFixReview,
+  applicableReview,
+  applicableReviewForChange,
+} from './review-applicability.ts'
 
 describe('applicable review lenses', () => {
   const review = {
@@ -92,5 +96,25 @@ describe('applicable review lenses', () => {
       lenses: ['correctness', 'safety'],
       secondOpinion: 'safety',
     })
+  })
+
+  test('a tier-two segnavia-shaped source change excludes its test-only lens', () => {
+    const plan = applicableReviewForChange(
+      [{ path: 'packages/format/src/slots.ts', insertions: 1, deletions: 1 }],
+      {
+        lenses: [
+          { lens: 'correctness' },
+          { lens: 'craft', minTier: 2 },
+          { lens: 'test-quality', minTier: 2, paths: ['**/*.test.ts', 'scripts/verify/**'] },
+        ],
+        risk: {
+          paths: [{ pattern: '^packages/format/src/', tier: 2, reason: 'stored format' }],
+          unlisted: 1,
+        },
+      },
+    )
+
+    expect(plan.tier).toBe(2)
+    expect(plan.lenses).toEqual(['correctness', 'craft'])
   })
 })

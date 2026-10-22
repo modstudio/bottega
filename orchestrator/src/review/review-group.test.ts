@@ -147,7 +147,7 @@ test('a moved remote trunk is the shared base for review and admission despite s
       paths: ['src/change.ts'],
       message: `${base}:${tip}`,
     }),
-    tier: () => tier,
+    reviewPlan: () => ({ ...tier, lenses: ['correctness'] }),
   }
   const project = { name: 'fixture', settings: { trunk: 'main' } }
   const reviewed = measureChangeGroup('/fixture', project, 'DEV-977', 'rebased-tip', operations)
@@ -156,5 +156,6 @@ test('a moved remote trunk is the shared base for review and admission despite s
   expect(calls).toEqual(['rebased-tip:main', 'changed-tip:main'])
   expect(reviewed?.base).toBe('moved-origin-base')
   expect(reviewed?.group.patchId).toBe('reviewed-patch')
+  expect(reviewed?.applicability.lenses).toEqual(['correctness'])
   expect(changed?.group.patchId).toBe('changed-patch')
 })

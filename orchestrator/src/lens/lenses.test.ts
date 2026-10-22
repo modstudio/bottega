@@ -95,6 +95,47 @@ describe('lens catalogue', () => {
     ).toEqual({ name: 'default', version: null, source: 'generic' })
   })
 
+  test('a lens without a matching profile resolves a usable generic default', async () => {
+    await setLens({
+      id: 'specific-only',
+      title: 'Specific only',
+      question: 'Does the test prove the behavior?',
+      excludes: 'Production correctness.',
+      slots: JSON.stringify({
+        type: 'object',
+        properties: { looks_for: { type: 'string' }, commands: { type: 'string' } },
+        additionalProperties: false,
+      }),
+      enabled: true,
+      requiresExecution: false,
+      reason: 'test fixture',
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'generic-fallback',
+      path: '/tmp/generic-fallback',
+      stack: 'node',
+      settings: {},
+    })
+    expect(resolveLens('specific-only', 'generic-fallback')?.profiles).toEqual([
+      { axis: 'framework', name: 'default', version: 1, source: 'generic' },
+    ])
+    await setProfile({
+      lensId: 'specific-only',
+      axis: 'framework',
+      name: 'other-stack',
+      body: '{"looks_for":"Other stack guidance.","commands":"other test"}',
+      enabled: true,
+      reason: 'test fixture',
+    })
+    expect(resolveLens('specific-only', 'generic-fallback')).toMatchObject({
+      profiles: [{ axis: 'framework', name: 'default', version: 1, source: 'generic' }],
+      body: expect.stringContaining(
+        'Apply the lens question without framework-specific guidance: Does the test prove the behavior?',
+      ),
+    })
+  })
+
   test('an enabled stack profile wins while a disabled one falls through to generic', async () => {
     upsertProject({
       recordId: newRecordId(),
