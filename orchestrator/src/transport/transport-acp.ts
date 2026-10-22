@@ -3,7 +3,7 @@ import { readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
@@ -34,20 +34,12 @@ import {
   type TransportStartOpts,
   withTransportDeadline,
 } from './transport.ts'
+import type {
+  AcpMessageUsage,
+  AcpMessageUsageUpdate,
+  AcpPromptUsage,
+} from './transport-acp-types.ts'
 import { acpRunUsage } from './transport-acp-usage.ts'
-
-type AcpMessageUsage = {
-  inputTokens?: number | null
-  outputTokens?: number | null
-  totalTokens?: number | null
-  cost?: number | null
-  costSource?: 'provider_reported' | 'estimated' | null
-}
-
-export type AcpMessageUsageUpdate = {
-  sessionUpdate: 'message_usage'
-  usage?: AcpMessageUsage
-}
 
 type AcpUpdate = {
   sessionUpdate: string
@@ -66,13 +58,6 @@ type AcpUpdate = {
   rawInput?: unknown
   rawOutput?: unknown
 }
-export type AcpPromptUsage = {
-  inputTokens?: number
-  outputTokens?: number
-  totalTokens?: number
-  costUsd?: number
-} | null
-
 type AcpTurnInput = {
   sessionId?: string | null
   updates: unknown[]
@@ -518,7 +503,7 @@ function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   const [command, ...args] = bottegaEntryArgv('ask-server')
   return [
     {
-      name: 'orch-ask',
+      name: WORKER_MCP_SERVER_NAME,
       command: command!,
       args,
       env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'].flatMap((name) =>
@@ -545,7 +530,7 @@ function observeAcpUpdate(
 
 export function configuredAcpAsk(opts: TransportStartOpts): string[] | null {
   if (opts.agent.name === 'grok') return opts.agent.askServerCommand?.(opts.env) ?? null
-  const server = acpMcpServers(opts).find((entry) => entry.name === 'orch-ask')
+  const server = acpMcpServers(opts).find((entry) => entry.name === WORKER_MCP_SERVER_NAME)
   return server && 'command' in server ? [server.command, ...(server.args ?? [])] : null
 }
 
@@ -606,7 +591,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent)
 
   const app = acp
-    .client({ name: 'orch' })
+    .client({ name: MCP_SERVER_NAME })
     .onRequest(acp.methods.client.session.requestPermission, (req) => {
       // orch replies allow/reject here; the sandboxed child does not. Read-class
       // tools and edits confined to run scratch may run. Gap: the architect never
@@ -724,7 +709,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         // Gap: usage_update.used is session context, not CLI input+output.
         protocolVersion: acp.PROTOCOL_VERSION,
         clientCapabilities: acpClientCapabilities(opts.agent.harness ?? opts.agent.name),
-        clientInfo: { name: 'orch', version: '0.1.0' },
+        clientInfo: { name: MCP_SERVER_NAME, version: '0.1.0' },
       }),
       'initialize',
     )

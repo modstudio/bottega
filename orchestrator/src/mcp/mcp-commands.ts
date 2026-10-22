@@ -1,5 +1,6 @@
 // concern: mcp-commands
 /** Owns MCP server entry and configuration presentation. Must not know CLI grammar. */
+import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { serveDocsMcp } from './mcp.ts'
 import { mcpCompatibilityRows } from './mcp-compatibility-record.ts'
 
@@ -41,7 +42,7 @@ export async function mcpCommand(
   } else if (config)
     presentation.log(
       JSON.stringify(
-        { mcpServers: { orch: { command: binary, args: ['mcp', 'serve'] } } },
+        { mcpServers: { [MCP_SERVER_NAME]: { command: binary, args: ['mcp', 'serve'] } } },
         null,
         2,
       ),

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
@@ -10,6 +10,7 @@ import {
   type SetupNotice,
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
+import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
 
@@ -67,8 +68,8 @@ test('mentions record use when no hosted record address is configured', () => {
   })
 })
 
-const orchServer = {
-  name: 'orch' as const,
+const orchServer: McpServer = {
+  name: MCP_SERVER_NAME,
   command: '/bin/orch',
   args: ['mcp'],
 }
@@ -463,7 +464,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
   const absent = proposeSetup(
     machineWithMcp('codex', {
       support: 'automatic',
-      registrations: { orch: { status: 'absent' } },
+      registrations: { [MCP_SERVER_NAME]: { status: 'absent' } },
     }),
     [],
     [],
@@ -481,7 +482,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     machineWithMcp('codex', {
       support: 'automatic',
       registrations: {
-        orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
+        [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
       },
     }),
     [],
@@ -497,7 +498,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     machineWithMcp('codex', {
       support: 'automatic',
       registrations: {
-        orch: {
+        [MCP_SERVER_NAME]: {
           status: 'different',
           command: '/old/orch',
           args: ['mcp'],
@@ -518,11 +519,67 @@ test('plans absent, same, and different MCP registration read-backs', () => {
   )
 })
 
+test('recommends renaming legacy Claude and Codex registrations to stable registrations', () => {
+  const workerServer: McpServer = {
+    name: WORKER_MCP_SERVER_NAME,
+    command: `/bin/${PLATFORM_SLUG}`,
+    args: ['mcp', 'ask-server'],
+  }
+  const cases = [
+    {
+      harness: 'claude' as const,
+      server: orchServer,
+      legacy: {
+        status: 'registered' as const,
+        command: '/legacy/orch',
+        args: ['mcp'],
+      },
+    },
+    {
+      harness: 'codex' as const,
+      server: workerServer,
+      legacy: {
+        status: 'registered' as const,
+        command: `/bin/${PLATFORM_SLUG}`,
+        args: ['mcp', 'ask-server'],
+      },
+    },
+  ]
+
+  for (const { harness, server, legacy } of cases) {
+    const legacyName = legacyMcpServerName(server.name)
+    const plan = proposeSetup(
+      machineWithMcp(harness, {
+        support: 'automatic',
+        registrations: { [server.name]: { status: 'absent' } },
+        legacyRegistrations: { [legacyName]: legacy },
+      }),
+      [],
+      [],
+      [],
+      [],
+      [server],
+    )
+
+    expect(plan.questions).toHaveLength(1)
+    expect(plan.questions[0]).toMatchObject({
+      question: expect.stringContaining(`Rename the legacy ${legacyName}`),
+      recommendation: 'replace',
+    })
+    expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+      kind: 'register-mcp',
+      server,
+      legacyName,
+      replace: true,
+    })
+  }
+})
+
 test('recommends skipping an absent registration when the harness is signed out', () => {
   const plan = proposeSetup(
     machineWithMcp(
       'codex',
-      { support: 'automatic', registrations: { orch: { status: 'absent' } } },
+      { support: 'automatic', registrations: { [MCP_SERVER_NAME]: { status: 'absent' } } },
       'signed-out',
     ),
     [],

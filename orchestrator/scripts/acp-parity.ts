@@ -4,7 +4,7 @@
  * Run from any directory with codex and grok on PATH.
  *
  * Run the same five prompts through cli and acp transports against one paid
- * agent on this machine. The sixth row makes the ACP worker call the orch-ask
+ * agent on this machine. The sixth row makes the ACP worker call the bottega-ask
  * MCP server, answers it through the real CLI, and requires that turn to continue.
  * Prints a table: outcome, failure kind, tokens,
  * latency, bytes of raw output.
