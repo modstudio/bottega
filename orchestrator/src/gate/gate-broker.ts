@@ -3,7 +3,6 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, mkdirSync, writeSync } from 'node:fs'
-import { setPriority } from 'node:os'
 import { join } from 'node:path'
 import {
   CHECK_EXECUTION_FILE_ENV,
@@ -19,6 +18,7 @@ import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
+import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   gateCheckExecutionPath,
@@ -298,23 +298,6 @@ function gateExecutionEnvironment(
   return { ...environment, [CHECK_EXECUTION_FILE_ENV]: checkExecutionPath }
 }
 
-/** Give a host-side gate the same base niceness as an architect's gate. */
-export function setGateChildPriority<T extends { pid?: number }>(
-  child: T,
-  recordWarning?: (message: string) => void,
-  setProcessPriority: (pid: number, priority: number) => void = setPriority,
-): T {
-  try {
-    if (!child.pid) throw new Error('spawn returned no child pid')
-    setProcessPriority(child.pid, 0)
-  } catch (error) {
-    const message = `could not set gate child niceness to 0: ${String(error)}`
-    console.error(`orch: ${message}`)
-    recordWarning?.(message)
-  }
-  return child
-}
-
 function recordFinishedGate(input: {
   requestId: number
   finishedAt: string
@@ -369,7 +352,7 @@ async function spawnGateChild(input: {
   record: (chunk: Buffer | string) => void
 }) {
   const launch = await gateBrokerLaunchArgv(input.confinement, input.command)
-  return setGateChildPriority(
+  return setChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
       env: {
@@ -383,6 +366,7 @@ async function spawnGateChild(input: {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
+    HOST_TOOL_NICENESS,
     (message) => input.record(`warning: ${message}\n`),
   )
 }
