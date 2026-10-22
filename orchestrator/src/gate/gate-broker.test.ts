@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -184,6 +185,82 @@ test('records machine-readable checks emitted by a worker gate against its execu
     await broker.close()
     rmSync(root, { recursive: true, force: true })
     rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+test('broker refuses a merge in progress before the gate runs', async () => {
+  const root = mkdtempSync(join(dir, 'gate-broker-merge-in-progress-'))
+  const scratch = join(root, 'scratch')
+  mkdirSync(join(root, 'scripts'))
+  const gatePath = join(root, 'scripts', 'gate')
+  writeFileSync(gatePath, '#!/bin/sh\nprintf ran > ran\n')
+  chmodSync(gatePath, 0o755)
+  git(root, 'init', '-q')
+  git(root, 'config', 'user.email', 'fixture@example.com')
+  git(root, 'config', 'user.name', 'Fixture')
+  git(root, 'add', 'scripts/gate')
+  git(root, 'commit', '-qm', 'fixture')
+  const head = git(root, 'rev-parse', 'HEAD')
+  writeFileSync(join(root, '.git', 'MERGE_HEAD'), `${head}\n`)
+
+  const projectId = (
+    db()
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING record_id AS id`,
+      )
+      .get(
+        newRecordId(),
+        'gate-broker-merge-in-progress-fixture',
+        root,
+        'bun',
+        JSON.stringify({ gate: 'scripts/gate' }),
+      ) as { id: string }
+  ).id
+  const runId = (
+    db()
+      .query(
+        `INSERT INTO run
+          (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING record_id AS id`,
+      )
+      .get(new Date().toISOString(), 'codex', 'implement', projectId, 'sha', root, head, head) as {
+      id: string
+    }
+  ).id
+  const gateId = (
+    db()
+      .query(
+        `INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES ('${newRecordId()}',?,?) RETURNING id`,
+      )
+      .get(runId, new Date().toISOString()) as { id: number }
+  ).id
+
+  const broker = startGateBroker({
+    runId,
+    scratchDir: scratch,
+    environment: { ORCH_MAIN_CHECKOUT: root },
+    confinement: { kind: 'host' },
+    withHostSlot: async (run) => run(),
+  })
+  try {
+    await waitForFinishedGate(gateId)
+    const row = db()
+      .query(`SELECT exit_code,timed_out,head_commit,output_tail FROM gate_execution WHERE id=?`)
+      .get(gateId) as {
+      exit_code: number
+      timed_out: number
+      head_commit: string | null
+      output_tail: string
+    }
+    expect(row.exit_code).not.toBe(0)
+    expect(row.timed_out).toBe(0)
+    expect(row.head_commit).toBeNull()
+    expect(row.output_tail).toContain('a merge in progress')
+    expect(row.output_tail).toContain('finish or abort the operation')
+    expect(existsSync(join(root, 'ran'))).toBe(false)
+  } finally {
+    await broker.close()
+    rmSync(root, { recursive: true, force: true })
   }
 })
 

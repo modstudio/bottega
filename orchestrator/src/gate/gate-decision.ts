@@ -107,6 +107,74 @@ export function decideWorkerGateInput(
   }
 }
 
+export const GATE_CHECKOUT_OPERATION_MARKERS = [
+  'MERGE_HEAD',
+  'REBASE_HEAD',
+  'rebase-merge',
+  'rebase-apply',
+  'CHERRY_PICK_HEAD',
+  'REVERT_HEAD',
+] as const
+
+const CHECKOUT_OPERATION_BY_MARKER: Record<
+  (typeof GATE_CHECKOUT_OPERATION_MARKERS)[number],
+  string
+> = {
+  MERGE_HEAD: 'merge',
+  REBASE_HEAD: 'rebase',
+  'rebase-merge': 'rebase',
+  'rebase-apply': 'rebase',
+  CHERRY_PICK_HEAD: 'cherry-pick',
+  REVERT_HEAD: 'revert',
+}
+
+function uniqueCheckoutPaths(paths: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const path of paths) {
+    if (!path || seen.has(path)) continue
+    seen.add(path)
+    unique.push(path)
+  }
+  return unique
+}
+
+function checkoutOperations(presentMarkers: readonly string[]): string[] {
+  const operations: string[] = []
+  const seen = new Set<string>()
+  for (const marker of GATE_CHECKOUT_OPERATION_MARKERS) {
+    if (!presentMarkers.includes(marker)) continue
+    const operation = CHECKOUT_OPERATION_BY_MARKER[marker]
+    if (seen.has(operation)) continue
+    seen.add(operation)
+    operations.push(operation)
+  }
+  return operations
+}
+
+function formatCheckoutOperationCondition(operations: readonly string[]): string | null {
+  if (operations.length === 0) return null
+  if (operations.length === 1) return `a ${operations[0]} in progress`
+  const last = operations.at(-1)
+  return `${operations.slice(0, -1).join(', ')} and ${last} in progress`
+}
+
+/** Refuse a gate on an unfinished git operation or unmerged paths. */
+export function decideGateCheckoutRefusal(input: {
+  presentMarkers: readonly string[]
+  unmergedPaths: readonly string[]
+}): string | null {
+  const operations = checkoutOperations(input.presentMarkers)
+  const unmergedPaths = uniqueCheckoutPaths(input.unmergedPaths)
+  if (operations.length === 0 && unmergedPaths.length === 0) return null
+  const operationText = formatCheckoutOperationCondition(operations)
+  const pathsText =
+    unmergedPaths.length === 0 ? null : `unmerged paths: ${unmergedPaths.join(', ')}`
+  const condition =
+    operationText && pathsText ? `${operationText} with ${pathsText}` : (operationText ?? pathsText)
+  return `checkout has ${condition}; finish or abort the operation`
+}
+
 /** Prefer the live trunk merge-base so a rebased worker excludes trunk-only changes. */
 export function decideGateToolingDiffBase(input: {
   recordedBase: string

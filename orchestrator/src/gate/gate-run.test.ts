@@ -14,6 +14,7 @@ let priorDepth: string | undefined
 let priorSession: string | undefined
 const headCommit = 'a'.repeat(40)
 const cleanGitState = () => ({ headCommit, porcelainPaths: [] })
+const cleanCheckout = () => ({ presentMarkers: [] as const, unmergedPaths: [] as const })
 beforeEach(() => {
   priorDepth = process.env.BOTTEGA_DEPTH
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -48,6 +49,7 @@ test('a gate that dirties the tree while it runs is not attributed to HEAD', asy
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
+    checkout: cleanCheckout,
     gitState: () => ({ headCommit, porcelainPaths: ran ? [' M formatted.ts'] : [] }),
     write: () => {},
     runner: () => {
@@ -74,6 +76,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
+    checkout: cleanCheckout,
     gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
     write: (chunk) => chunks.push(chunk),
     runner: ({ write }) => {
@@ -116,6 +119,7 @@ test('inserts valid check records in the transaction with the gate row', async (
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
+    checkout: cleanCheckout,
     gitState: cleanGitState,
     write: () => {},
     runner: ({ env }) => {
@@ -173,6 +177,7 @@ test('rolls back the gate row when its check records cannot be inserted', async 
       cwd: repositoryPath,
       d,
       topLevel: () => repositoryPath,
+      checkout: cleanCheckout,
       gitState: cleanGitState,
       write: () => {},
       runner: ({ env }) => {
@@ -200,6 +205,7 @@ test('bounds the recorded tail', async () => {
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
+    checkout: cleanCheckout,
     gitState: cleanGitState,
     write: () => {},
     runner: () => ({
@@ -222,6 +228,7 @@ test('withholds secret-shaped output', async () => {
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
+    checkout: cleanCheckout,
     gitState: cleanGitState,
     write: () => {},
     runner: () => ({
@@ -262,6 +269,7 @@ test('runs and records a relative gate from the caller checkout top level', asyn
     cwd,
     d,
     topLevel: () => checkoutTopLevel,
+    checkout: cleanCheckout,
     gitState: cleanGitState,
     write: () => {},
     runner: ({ command, cwd: runnerCwd }) => {
@@ -281,6 +289,30 @@ test('runs and records a relative gate from the caller checkout top level', asyn
     cwd: checkoutTopLevel,
     resolved_command: expectedCommand,
   })
+})
+
+test('refuses a merge in progress before the gate runs', async () => {
+  const d = database()
+  await expect(
+    runArchitectGate({
+      cwd: repositoryPath,
+      d,
+      topLevel: () => repositoryPath,
+      checkout: () => ({
+        presentMarkers: ['MERGE_HEAD'],
+        unmergedPaths: ['orchestrator/hooks/orch-heartbeat.sh', 'test_heartbeat_decision.py'],
+      }),
+      gitState: () => {
+        throw new Error('should not observe git state')
+      },
+      runner: () => {
+        throw new Error('should not run')
+      },
+    }),
+  ).rejects.toThrow(
+    `${PLATFORM_SLUG} gate run: checkout has a merge in progress with unmerged paths: orchestrator/hooks/orch-heartbeat.sh, test_heartbeat_decision.py; finish or abort the operation`,
+  )
+  expect(d.query('SELECT COUNT(*) AS count FROM gate_execution').get()).toEqual({ count: 0 })
 })
 
 test('refuses when the caller checkout top level cannot be resolved', async () => {

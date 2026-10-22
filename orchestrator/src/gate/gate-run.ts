@@ -2,6 +2,8 @@
 /** Runs a project's registered gate as an architect invocation and records the finished row. */
 import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
@@ -25,7 +27,9 @@ import {
 } from './gate-check-executions.ts'
 import {
   boundedGateOutputTail,
+  decideGateCheckoutRefusal,
   decideGateHeadCommit,
+  GATE_CHECKOUT_OPERATION_MARKERS,
   GATE_OUTPUT_TAIL_BYTES,
   resolveGateCommand,
   WORKER_GATE_BASE_ENV,
@@ -49,6 +53,11 @@ export type ArchitectGateRunner = (input: {
 export type ArchitectGateGitState = (cwd: string) => {
   headCommit: string
   porcelainPaths: readonly string[]
+}
+
+export type ArchitectGateCheckout = (cwd: string) => {
+  presentMarkers: readonly string[]
+  unmergedPaths: readonly string[]
 }
 
 type ArchitectGateTopLevel = (cwd: string) => string | null
@@ -118,25 +127,68 @@ const defaultRunner: ArchitectGateRunner = ({ command, cwd, env, write }) =>
     })
   })
 
+function gitCommandError(
+  cwd: string,
+  result: { status: number | null; stderr: string },
+  action: string,
+) {
+  return `${PLATFORM_SLUG} gate run needs ${action} in ${cwd}: ${result.stderr.trim() || `git exited ${result.status}`}`
+}
+
+function uniqueUnmergedPaths(stdout: string): string[] {
+  const seen = new Set<string>()
+  const paths: string[] = []
+  for (const entry of stdout.split('\0')) {
+    if (!entry) continue
+    const tab = entry.lastIndexOf('\t')
+    const path = tab === -1 ? entry : entry.slice(tab + 1)
+    if (!path || seen.has(path)) continue
+    seen.add(path)
+    paths.push(path)
+  }
+  return paths
+}
+
+function observeGateCheckoutFacts(cwd: string): {
+  presentMarkers: string[]
+  unmergedPaths: string[]
+} {
+  const gitDir = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-dir'], {
+    cwd,
+    encoding: 'utf8',
+  })
+  if (gitDir.status !== 0) throw new Error(gitCommandError(cwd, gitDir, 'git dir'))
+  const dir = gitDir.stdout.trim()
+  const presentMarkers = GATE_CHECKOUT_OPERATION_MARKERS.filter((marker) =>
+    existsSync(join(dir, marker)),
+  )
+  const unmerged = spawnSync('git', ['ls-files', '-u', '-z'], { cwd, encoding: 'utf8' })
+  if (unmerged.status !== 0) throw new Error(gitCommandError(cwd, unmerged, 'git ls-files'))
+  return {
+    presentMarkers: [...presentMarkers],
+    unmergedPaths: uniqueUnmergedPaths(unmerged.stdout),
+  }
+}
+
+export function refuseInProgressCheckout(
+  cwd: string,
+  observe: ArchitectGateCheckout = observeGateCheckoutFacts,
+): void {
+  const refusal = decideGateCheckoutRefusal(observe(cwd))
+  if (refusal) throw new Error(`${PLATFORM_SLUG} gate run: ${refusal}`)
+}
+
 const observeGitState: ArchitectGateGitState = (cwd) => {
   const head = spawnSync('git', ['rev-parse', '--verify', 'HEAD^{commit}'], {
     cwd,
     encoding: 'utf8',
   })
-  if (head.status !== 0) {
-    throw new Error(
-      `${PLATFORM_SLUG} gate run needs HEAD in ${cwd}: ${head.stderr?.trim() || `git exited ${head.status}`}`,
-    )
-  }
+  if (head.status !== 0) throw new Error(gitCommandError(cwd, head, 'HEAD'))
   const status = spawnSync('git', ['status', '--porcelain', '-z', '--untracked-files=all'], {
     cwd,
     encoding: 'utf8',
   })
-  if (status.status !== 0) {
-    throw new Error(
-      `${PLATFORM_SLUG} gate run needs git status in ${cwd}: ${status.stderr?.trim() || `git exited ${status.status}`}`,
-    )
-  }
+  if (status.status !== 0) throw new Error(gitCommandError(cwd, status, 'git status'))
   return {
     headCommit: head.stdout.trim(),
     porcelainPaths: status.stdout.split('\0').filter(Boolean),
@@ -185,10 +237,12 @@ export async function runArchitectGate(input: {
   d?: Database
   runner?: ArchitectGateRunner
   gitState?: ArchitectGateGitState
+  checkout?: ArchitectGateCheckout
   topLevel?: ArchitectGateTopLevel
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
+  refuseInProgressCheckout(checkoutTopLevel, input.checkout ?? observeGateCheckoutFacts)
   ensureMainStackStarted({
     projectId: project.recordId,
     projectName: project.name,

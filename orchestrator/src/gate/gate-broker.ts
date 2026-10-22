@@ -42,6 +42,7 @@ import {
   resolveGateCommand,
 } from './gate-decision.ts'
 import { prepareSyntheticGateIndex } from './gate-index.ts'
+import { refuseInProgressCheckout } from './gate-run.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
@@ -430,6 +431,7 @@ function prepareGateExecution(input: {
   record: (chunk: Buffer | string) => void
 }) {
   const plan = gatePlan(input.request.run_record_id)
+  refuseInProgressCheckout(plan.worktree)
   const mainCheckout = requiredMainCheckout(input.environment, input.request.run_record_id)
   ensureMainStackStarted({
     projectId: plan.projectId,

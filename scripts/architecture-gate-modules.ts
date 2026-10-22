@@ -35,6 +35,7 @@ export const gateModules: GateModule[] = [
     './gate-check-executions.ts',
     './gate-decision.ts',
     './gate-index.ts',
+    './gate-run.ts',
     './host-slot-wait.ts',
   ]),
   module('orchestrator/src/gate/gate-index.ts', [
@@ -50,6 +51,8 @@ export const gateModules: GateModule[] = [
     '../../../shared/brand.ts',
     'bun:sqlite',
     'node:child_process',
+    'node:fs',
+    'node:path',
     '../../../shared/check-execution.ts',
     '../../../shared/record-id.ts',
     '../../../shared/git.ts',
