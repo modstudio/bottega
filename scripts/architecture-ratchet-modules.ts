@@ -15,11 +15,17 @@ export const ratchetModules = [
       '../../../shared/change-view.ts',
       '../../../shared/git.ts',
       '../../../shared/ratchet.ts',
+      '../gate/gate-decision.ts',
       '../project/projects.ts',
       './biome-adapter.ts',
       './php-report-adapters.ts',
       './ratchet-plan.ts',
+      './ratchet-visibility.ts',
     ],
+  },
+  {
+    file: 'orchestrator/src/ratchet/ratchet-visibility.ts',
+    allowed: [],
   },
   {
     file: 'orchestrator/src/ratchet/biome-adapter.ts',

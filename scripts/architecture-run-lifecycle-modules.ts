@@ -326,6 +326,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'bun:sqlite',
     'node:fs',
     '../events.ts',
+    '../focused-test/focused-test-decision.ts',
   ]),
   module('orchestrator/src/run/run-types.ts', [
     '../contract/contract.ts',
