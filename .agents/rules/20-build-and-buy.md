@@ -38,7 +38,7 @@ search.
 
 ## Review rounds are a funnel
 
-`review-tier.ts:classifyReviewTier` sets a change's tier from the higher of
+`review-tier-classifier.ts:classifyReviewTier` sets a change's tier from the higher of
 risk and cognitive size; the project's declaration selects its lenses, and
 tier `0` runs none. Check the tier before every round.
 

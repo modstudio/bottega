@@ -6,6 +6,7 @@ import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
+import { BUILT_IN_LENS_SLOTS } from './lens-built-ins.ts'
 import {
   chooseLensProfile,
   listLenses,
@@ -93,6 +94,65 @@ describe('lens catalogue', () => {
         enabledProfileNames: ['default'],
       }),
     ).toEqual({ name: 'default', version: null, source: 'generic' })
+  })
+
+  test('a lens without a matching profile resolves a usable generic default', async () => {
+    await setLens({
+      id: 'specific-only',
+      title: 'Specific only',
+      question: 'Does the test prove the behavior?',
+      excludes: 'Production correctness.',
+      slots: BUILT_IN_LENS_SLOTS,
+      enabled: true,
+      requiresExecution: false,
+      reason: 'test fixture',
+    })
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'generic-fallback',
+      path: '/tmp/generic-fallback',
+      stack: 'node',
+      settings: {},
+    })
+    expect(resolveLens('specific-only', 'generic-fallback')?.profiles).toEqual([
+      { axis: 'framework', name: 'default', version: 1, source: 'generic' },
+    ])
+    await setProfile({
+      lensId: 'specific-only',
+      axis: 'framework',
+      name: 'other-stack',
+      body: '{"framework_guidance":"Other stack guidance.","commands":"other test"}',
+      enabled: true,
+      reason: 'test fixture',
+    })
+    expect(resolveLens('specific-only', 'generic-fallback')).toMatchObject({
+      profiles: [{ axis: 'framework', name: 'default', version: 1, source: 'generic' }],
+      body: 'FRAMEWORK GUIDANCE\nNo framework-specific guidance for this stack.\n\nCOMMANDS\nNone.',
+    })
+  })
+
+  test('a generic default fills the lens declared custom slots without inventing built-in slots', async () => {
+    await setLens({
+      id: 'custom-fallback',
+      title: 'Custom fallback',
+      question: 'What does the custom lens find?',
+      excludes: 'Everything else.',
+      slots: JSON.stringify({
+        type: 'object',
+        properties: { review_focus: { type: 'string' } },
+        required: ['review_focus'],
+        additionalProperties: false,
+      }),
+      enabled: true,
+      requiresExecution: false,
+      reason: 'custom fallback fixture',
+    })
+
+    expect(resolveLens('custom-fallback', null)).toMatchObject({
+      slots: ['review_focus'],
+      profiles: [{ axis: 'framework', name: 'default', version: 1, source: 'generic' }],
+      body: 'REVIEW FOCUS\nNone.',
+    })
   })
 
   test('an enabled stack profile wins while a disabled one falls through to generic', async () => {
