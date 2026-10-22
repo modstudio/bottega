@@ -19,6 +19,7 @@ import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
+import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
@@ -216,6 +217,15 @@ function resolveTierTarget(
 
 function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+  const remoteTrackingRefExists =
+    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }).exitCode === 0
   const output = reviewTierForRange(repo, from, to, project.settings.review)
   const identity = measureChangeIdentity(repo, from, to)
   const currentRoundIdentity = identity
@@ -227,23 +237,71 @@ function reviewTierOutput(value: string, cwd: string) {
       }).identity
     : null
   const branchBudget = reviewBudgetForBranch(db(), project.name, branch, currentRoundIdentity)
+  const postFix = postFixReviewDecision({
+    facts: gatherPostFixReviewFacts({
+      database: db(),
+      repo,
+      from,
+      to,
+      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
+      project: project.name,
+      branch,
+    }),
+    tier: output.tier,
+    review: project.settings.review,
+  })
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,
     ...branchBudget,
+    roundNeeded: postFix.kind !== 'no-round-needed',
   })
+  const selected =
+    postFix.kind === 'no-round-needed' || postFix.kind === 're-lens'
+      ? postFix.applicability
+      : output
   return {
     ...output,
+    ...selected,
+    lensBases: selected.lensBases,
+    secondOpinion: selected.secondOpinion,
+    secondOpinionBasis: selected.secondOpinionBasis,
+    post_fix: postFix,
     review_budget: {
       ...reviewBudget,
       eligibleReviewCount: branchBudget.eligibleReviewCount,
       unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
     },
-    lens_profiles: output.lenses.map((id) => ({
+    lens_profiles: selected.lenses.map((id) => ({
       id,
-      basis: output.lensBases?.[id] ?? null,
+      basis: selected.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
+}
+
+function printReviewRoundStatus(
+  output: ReturnType<typeof reviewTierOutput>,
+  log: (...values: unknown[]) => void,
+): void {
+  if (output.post_fix.kind === 'no-round-needed') {
+    log('no round needed: the architect reads the fix and lands it')
+    return
+  }
+  if (output.post_fix.kind === 'reviewed-tip-unidentified') {
+    log(
+      `completed review ${output.post_fix.reviewNumber} tip could not be identified from review pins by patch identity; falling back to the full current-change review`,
+    )
+  }
+  if (output.post_fix.kind === 're-lens') {
+    log(
+      `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
+    )
+  }
+  log(
+    output.review_budget.currentChangeCounted
+      ? 'current change is already a counted round; no new round consumed'
+      : 'current change would start a new round',
+  )
 }
 
 function printReviewTier(
@@ -268,11 +326,7 @@ function printReviewTier(
   } else {
     log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
   }
-  log(
-    output.review_budget.currentChangeCounted
-      ? 'current change is already a counted round; no new round consumed'
-      : 'current change would start a new round',
-  )
+  printReviewRoundStatus(output, log)
   if (
     output.review_budget.unclassifiableReviewCount === 0 &&
     output.review_budget.wouldExceedCeiling

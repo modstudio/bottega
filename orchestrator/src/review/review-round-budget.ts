@@ -20,8 +20,9 @@ export function reviewRoundBudgetDecision(input: {
   tier: ReviewTierNumber
   roundsUsed: number
   currentChangeCounted: boolean
+  roundNeeded?: boolean
 }): ReviewRoundBudgetDecision {
-  const startsNewRound = !input.currentChangeCounted
+  const startsNewRound = (input.roundNeeded ?? true) && !input.currentChangeCounted
   return {
     roundsUsed: input.roundsUsed,
     ceiling: input.tier,

@@ -56,3 +56,28 @@ export function applicableReview(
     ...(secondOpinion.basis ? { secondOpinionBasis: secondOpinion.basis } : {}),
   }
 }
+
+/** Decide only the review dimensions selected by the paths touched in a fix. */
+export function applicablePostFixReview(
+  tier: 0 | 1 | 2 | 3,
+  changedPaths: readonly string[],
+  review: ReviewSettings | undefined,
+): ApplicableReview {
+  if (tier === 0) return { lenses: [] }
+  const declaration = review ?? BUILT_IN_REVIEW
+  const { lenses, bases: lensBases } = selectedLensRules(declaration, tier, changedPaths)
+  const secondOpinion = declaration.secondOpinion
+  if (
+    !secondOpinion ||
+    tier < (secondOpinion.minTier ?? 3) ||
+    !lenses.includes(secondOpinion.lens)
+  ) {
+    return { lenses, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
+  }
+  return {
+    lenses,
+    secondOpinion: secondOpinion.lens,
+    ...(Object.keys(lensBases).length ? { lensBases } : {}),
+    ...(secondOpinion.basis ? { secondOpinionBasis: secondOpinion.basis } : {}),
+  }
+}

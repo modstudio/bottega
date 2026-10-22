@@ -161,6 +161,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-evidence-sql.ts',
       './review-group.ts',
       './review-pins.ts',
+      './review-post-fix.ts',
       './review-round-budget.ts',
       './review-target.ts',
       './review-tier.ts',
@@ -171,6 +172,21 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     ],
     reason:
       'Keep review commands independent of runs, transports, routing by value, the CLI, and worktrees by value.',
+  },
+  {
+    name: 'review-post-fix-boundary',
+    file: 'orchestrator/src/review/review-post-fix.ts',
+    allowed: [
+      './review-applicability.ts',
+      './review-evidence-sql.ts',
+      './review-group.ts',
+      './review-pins.ts',
+      './review-tier.ts',
+      './review-yield.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts'],
+    reason:
+      'Keep post-fix re-lens selection within completed review pins and declared review policy.',
   },
   {
     name: 'review-round-budget-boundary',

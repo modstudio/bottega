@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applicableReview } from './review-applicability.ts'
+import { applicablePostFixReview, applicableReview } from './review-applicability.ts'
 
 describe('applicable review lenses', () => {
   const review = {
@@ -77,6 +77,20 @@ describe('applicable review lenses', () => {
       lensBases: { correctness: 'yield evidence' },
       secondOpinion: 'correctness',
       secondOpinionBasis: 'escaped defect evidence',
+    })
+  })
+
+  test('a post-fix second opinion applies only when its lens dimension was touched', () => {
+    const declaration = {
+      lenses: [{ lens: 'correctness' }, { lens: 'safety', paths: ['critical/**'] }],
+      secondOpinion: { lens: 'safety' },
+    }
+    expect(applicablePostFixReview(3, ['src/fix.ts'], declaration)).toEqual({
+      lenses: ['correctness'],
+    })
+    expect(applicablePostFixReview(3, ['critical/fix.ts'], declaration)).toEqual({
+      lenses: ['correctness', 'safety'],
+      secondOpinion: 'safety',
     })
   })
 })
