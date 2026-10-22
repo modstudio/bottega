@@ -1,6 +1,7 @@
 // concern: reader MCP server scope
 /** Selects the project MCP servers a reading harness reaches through the shared proxy. */
 
+import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { disabledProjectMcpServers, type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 
@@ -9,7 +10,7 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
-export const READER_PLATFORM_MCP_SERVERS = ['orch', 'orch-ask'] as const
+export const READER_PLATFORM_MCP_SERVERS = [MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME] as const
 
 /** Build the only MCP table a Grok reader's run home may expose. */
 export function grokReaderMcpServerTable(
@@ -17,10 +18,15 @@ export function grokReaderMcpServerTable(
   proxies: Record<string, ReaderProxyServer>,
 ): Record<string, unknown> {
   return {
-    ...(userServers?.orch ? { orch: userServers.orch } : {}),
+    ...(userServers?.[MCP_SERVER_NAME] ? { [MCP_SERVER_NAME]: userServers[MCP_SERVER_NAME] } : {}),
     ...Object.fromEntries(
       Object.entries(proxies)
-        .filter(([name]) => !READER_PLATFORM_MCP_SERVERS.includes(name as 'orch' | 'orch-ask'))
+        .filter(
+          ([name]) =>
+            !READER_PLATFORM_MCP_SERVERS.includes(
+              name as (typeof READER_PLATFORM_MCP_SERVERS)[number],
+            ),
+        )
         .map(([name, server]) => [name, { ...server, enabled: true }]),
     ),
   }

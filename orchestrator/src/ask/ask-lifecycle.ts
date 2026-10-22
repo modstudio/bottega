@@ -1,4 +1,4 @@
-// concern: orch-ask lifecycle evidence and its derived turn summary
+// concern: bottega-ask lifecycle evidence and its derived turn summary
 import type { JSONRPCMessage, Transport, TransportSendOptions } from '@modelcontextprotocol/server'
 import { appendRunEvent, type RunLogEvent } from '../events.ts'
 

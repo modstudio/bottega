@@ -1,8 +1,8 @@
 // concern: setup-apply
 /** Applies planned project actions in order through the project register service boundary. */
 
-import { lstat, mkdir, open, readFile, realpath, rm } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -16,6 +16,7 @@ import {
   sameMcpRegistration,
   screenedMcpField,
 } from './setup-mcp.ts'
+import { migrateMcpConfigText } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 
 type AddAction = Extract<SetupAction, { kind: 'add' }>
@@ -129,7 +130,9 @@ export function applyMcpRegistration(
   runner: SetupCommandRunner = runSetupCommand,
 ): 'applied' | 'unchanged' {
   if (!action.replace && guardRegistrationAdd(action, runner)) return 'unchanged'
-  if (action.harness === 'claude' && action.replace) removeClaudeRegistration(action, runner)
+  if (action.legacyName) removeMcpRegistration(action, action.legacyName, runner)
+  else if (action.harness === 'claude' && action.replace)
+    removeMcpRegistration(action, action.server.name, runner)
   const addArgv = mcpAddArgv(action.harness, action.bin, action.server)
   runRegistrationCommand(action.harness, addArgv, runner)
   const readback = readMcpRegistration(action.harness, action.bin, action.server.name, runner)
@@ -151,8 +154,12 @@ function guardRegistrationAdd(action: RegistrationAction, runner: SetupCommandRu
   )
 }
 
-function removeClaudeRegistration(action: RegistrationAction, runner: SetupCommandRunner): void {
-  const removeArgv = mcpRemoveArgv(action.harness, action.bin, action.server.name)
+function removeMcpRegistration(
+  action: RegistrationAction,
+  name: Parameters<typeof mcpRemoveArgv>[2],
+  runner: SetupCommandRunner,
+): void {
+  const removeArgv = mcpRemoveArgv(action.harness, action.bin, name)
   runRegistrationCommand(action.harness, removeArgv, runner)
 }
 
@@ -229,6 +236,15 @@ async function applySetupAction(
     action.kind === 'mcp-skipped'
   ) {
     return 'unchanged'
+  }
+  if (action.kind === 'migrate-mcp-config') {
+    const current = await readFile(action.path, 'utf8')
+    const migrated = migrateMcpConfigText(current, {
+      renameServerKeys: basename(action.path) !== '.claude.json',
+    })
+    if (current === migrated) return 'unchanged'
+    await writeFile(action.path, migrated, 'utf8')
+    return 'applied'
   }
   if (action.kind === 'register-mcp') return applyMcpRegistration(action, runner)
   if (action.kind === 'add') {

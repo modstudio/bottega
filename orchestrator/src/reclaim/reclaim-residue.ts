@@ -1,16 +1,18 @@
 // concern: reclaim-residue
 /** Observes and releases one explicitly named piece of monitor residue. */
-import { existsSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { settleRunEvidence } from '../evidence/unjudged-expiry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { processStartTime, projectGitCommonDir } from '../project/project-lock.ts'
-import { projectByName, projects } from '../project/projects.ts'
+import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
+import { gitLockOwnerPids, shellQuote } from '../resources/git-locks.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
@@ -22,6 +24,7 @@ import {
   removeGrokTrustHeading,
 } from '../sandbox/grok-trust.ts'
 import {
+  gitLockReleaseDecision,
   processReleaseDecision,
   type ReleaseDecision,
   refGuardReleaseDecision,
@@ -32,6 +35,7 @@ import {
 } from './reclaim-residue-policy.ts'
 
 export type ResidueKind =
+  | 'git-lock'
   | 'ref-guard'
   | 'sandbox'
   | 'retained-ref'
@@ -48,6 +52,83 @@ const denied = (decision: Extract<ReleaseDecision, { allowed: false }>) => ({
 
 function runSubject(subject: string): string {
   return subject
+}
+
+function gitLockProjects(): { name: string; gitCommonDir: string }[] {
+  return projects()
+    .filter(isProjectRepository)
+    .map((project) => ({
+      name: project.name,
+      gitCommonDir: projectGitCommonDir(project.path),
+    }))
+}
+
+type GitLockIdentity = { dev: number; ino: number; mtimeMs: number }
+
+function gitLockIdentity(path: string): GitLockIdentity | null {
+  try {
+    const stat = lstatSync(path)
+    return stat.isFile() ? { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs } : null
+  } catch {
+    return null
+  }
+}
+
+function sameGitLockIdentity(left: GitLockIdentity, right: GitLockIdentity | null): boolean {
+  return Boolean(
+    right && left.dev === right.dev && left.ino === right.ino && left.mtimeMs === right.mtimeMs,
+  )
+}
+
+function sanitizedGitLockRelativePath(path: string): string {
+  return path
+    .split(sep)
+    .join('-')
+    .replaceAll(/[^A-Za-z0-9._-]/g, '-')
+}
+
+function reclaimGitLock(subject: string, options: Options) {
+  const clock = Date.now()
+  const observedPath = isAbsolute(subject) ? canonical(subject) : subject
+  const identity = gitLockIdentity(subject)
+  const ownerPids = identity ? gitLockOwnerPids(subject) : null
+  const decision = gitLockReleaseDecision({
+    path: observedPath,
+    projects: gitLockProjects(),
+    exists: identity !== null,
+    ownerPids,
+    ageMs: identity ? Math.max(0, clock - identity.mtimeMs) : null,
+  })
+  if (!decision.allowed) return denied(decision)
+  const timestamp = new Date(clock).toISOString().replaceAll(':', '-')
+  const archive = join(
+    concernStateDirectory('orchestrator', process.env),
+    'reclaimed-git-locks',
+    decision.projectName,
+    `${timestamp}-${sanitizedGitLockRelativePath(decision.relativePath)}`,
+  )
+  if (!options.dryRun) {
+    mkdirSync(resolve(archive, '..'), { recursive: true, mode: 0o700 })
+    renameSync(subject, archive)
+    const archivedIdentity = gitLockIdentity(archive)
+    const archivedOwnerPids = archivedIdentity ? gitLockOwnerPids(archive) : null
+    if (
+      !sameGitLockIdentity(identity!, archivedIdentity) ||
+      archivedOwnerPids === null ||
+      archivedOwnerPids.length > 0
+    ) {
+      renameSync(archive, subject)
+      return {
+        ok: false,
+        action: `refused; invariant: the archived lock is the ownerless file that was classified; fix: a replacement or owner raced reclamation, retry after concurrent Git activity stops`,
+      }
+    }
+  }
+  const restore = `mv -- ${shellQuote(archive)} ${shellQuote(subject)}`
+  return {
+    ok: true,
+    action: `${options.dryRun ? 'would archive' : 'archived'} git lock ${subject} at ${archive}; restore with: ${restore}`,
+  }
 }
 
 function projectRunSubject(subject: string): { projectName: string; runId: string } {
@@ -361,6 +442,7 @@ function reclaimStaleRun(subject: string, options: Options) {
 }
 
 export function reclaimResidue(kind: ResidueKind, subject: string, options: Options = {}) {
+  if (kind === 'git-lock') return reclaimGitLock(subject, options)
   if (kind === 'ref-guard') return reclaimRefGuard(subject, options)
   if (kind === 'sandbox') return reclaimSandbox(subject, options)
   if (kind === 'retained-ref') return reclaimRetainedRef(subject, options)

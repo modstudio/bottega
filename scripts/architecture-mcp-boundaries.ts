@@ -23,7 +23,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
   boundary(
     'mcp-commands-boundary',
     'orchestrator/src/mcp/mcp-commands.ts',
-    ['./mcp.ts', './mcp-compatibility-record.ts'],
+    ['../../../shared/brand.ts', './mcp.ts', './mcp-compatibility-record.ts'],
     'Keep MCP command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
   boundary(

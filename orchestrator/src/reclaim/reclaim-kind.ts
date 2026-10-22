@@ -6,6 +6,7 @@ export const RECLAIM_KINDS = [
   'branch',
   'orphan-process',
   'orphan-docker-volume',
+  'git-lock',
   'ref-guard',
   'sandbox',
   'retained-ref',

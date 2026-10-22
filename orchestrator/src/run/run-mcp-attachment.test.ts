@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { McpConnection } from '../mcp/mcp-preflight.ts'
 import {
   decideFinalMcpConnection,
@@ -8,8 +7,9 @@ import {
   decideMcpToolProbe,
 } from './run-mcp-attachment.ts'
 
-const mcpServerName = PLATFORM_NAME.toLowerCase()
-const projectName = 'bottega'
+/** A project server; the platform's own server names are exempt from the wrong-project check. */
+const mcpServerName = 'fixture-project'
+const projectName = 'fixture-project'
 const connected: McpConnection = {
   server: mcpServerName,
   connected: true,
