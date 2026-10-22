@@ -102,6 +102,16 @@ describe('run listing', () => {
     )
   })
 
+  test('runs prints the recorded error for a premature-final failure', async () => {
+    const id = insert('failed')
+    db()
+      .query('UPDATE run SET failure_kind=?,error=?,exit_code=? WHERE record_id=?')
+      .run('premature-final', 'the agent stopped after its opening plan', 0, id)
+
+    const text = (await command({ id: [String(id)] })).join('\n')
+    expect(text).toContain('premature-final: the agent stopped after its opening plan')
+  })
+
   test('runs emits one canonical row per resume chain', async () => {
     const root = insert('asking')
     const turn = insert('running')

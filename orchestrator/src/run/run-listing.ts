@@ -21,6 +21,8 @@ import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
+const FAILURE_KINDS_WITH_LISTED_ERROR = new Set(['contract', 'unevidenced', 'premature-final'])
+
 export function runIdentityMap(): RunIdentity[] {
   return db().query<RunIdentity, []>('SELECT number, record_id FROM run ORDER BY number').all()
 }
@@ -523,7 +525,7 @@ export async function runListingCommand(
         (r.idle ? `  ${r.idle}` : ''),
     )
     if (lifecycle.detail) log(`      ${lifecycle.detail}`)
-    if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
+    if (FAILURE_KINDS_WITH_LISTED_ERROR.has(String(r.failure_kind))) {
       log(
         `      ${failureReason(
           r as {
