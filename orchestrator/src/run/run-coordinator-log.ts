@@ -17,6 +17,18 @@ function withoutRoutingRefusalMarker(value: string): string {
     .replaceAll(`${ROUTING_REFUSAL_MARKER}: `, '')
 }
 
+function routingRefusalSpan(output: string): { start: number; end: number } | null {
+  const start = output.indexOf(ROUTING_REFUSAL_MARKER)
+  if (start < 0) return null
+  const tail = output.slice(start)
+  const stackFrame = /\n[ \t]+at /.exec(tail)
+  const followingOutput = /\n[ \t]*\n(?=[ \t]*\S)/.exec(tail)
+  const boundary = [stackFrame?.index, followingOutput?.index]
+    .filter((value): value is number => value !== undefined)
+    .reduce((earliest, value) => Math.min(earliest, value), tail.length)
+  return { start, end: start + boundary }
+}
+
 function legacyCoordinatorLogNumber(name: string): string | null {
   return /^([1-9]\d*)\.coordinator\.log$/.exec(name)?.[1] ?? null
 }
@@ -84,9 +96,11 @@ export const runCoordinatorLogPath = (runRecordId: string, runsDir = RUNS_DIR): 
 
 /** Bound coordinator diagnostics only after checking the whole candidate tail for secrets. */
 export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
-  const routingRefusalAt = output.indexOf(ROUTING_REFUSAL_MARKER)
-  const outsideRoutingRefusal = routingRefusalAt >= 0 ? output.slice(0, routingRefusalAt) : output
-  const trimmed = (routingRefusalAt >= 0 ? withoutRoutingRefusalMarker(output) : output).trim()
+  const refusal = routingRefusalSpan(output)
+  const outsideRoutingRefusal = refusal
+    ? `${output.slice(0, refusal.start)}${output.slice(refusal.end)}`
+    : output
+  const trimmed = (refusal ? withoutRoutingRefusalMarker(output) : output).trim()
   if (!trimmed) return '(no output)'
   if (containsSecretShaped(outsideRoutingRefusal)) return SECRET_SHAPED_OUTPUT
   if (trimmed.length <= limit) return trimmed

@@ -31,6 +31,18 @@ describe('coordinatorErrorTail', () => {
     expect(coordinatorErrorTail(output)).toBe('[withheld: secret-shaped content]')
   })
 
+  test('withholds secret-shaped output after a marked routing refusal', () => {
+    const secret = `token=${'s'.repeat(100)}`
+    expect(
+      coordinatorErrorTail(
+        `${ROUTING_REFUSAL_MARKER}: no eligible agent\n    at pick (route.ts:1:1)\n${secret}`,
+      ),
+    ).toBe('[withheld: secret-shaped content]')
+    expect(coordinatorErrorTail(`${ROUTING_REFUSAL_MARKER}: no eligible agent\n\n${secret}`)).toBe(
+      '[withheld: secret-shaped content]',
+    )
+  })
+
   test('names an empty coordinator log', () => {
     expect(coordinatorErrorTail(' \n ')).toBe('(no output)')
   })

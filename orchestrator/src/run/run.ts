@@ -16,11 +16,9 @@ import {
   freezeCheckouts,
 } from '../confinement/confinement.ts'
 import {
-  type CanonSource,
   NO_REPO_PREAMBLE,
   READONLY_PREAMBLE,
   type realQuestions,
-  replyFileBytes,
   resolveReplyDialect,
   type WorkerReply,
   workerPreamble,
@@ -96,15 +94,9 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
-import { initialRunSource } from './run-agent-capacity.ts'
 import * as acpWriter from './run-acp-writer.ts'
-import {
-  pruneRuns,
-  RUNS_DIR,
-  readDispatchState,
-  runFilePaths,
-  runScratchDir,
-} from './run-artifacts.ts'
+import { initialRunSource } from './run-agent-capacity.ts'
+import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { callerWatch } from './run-caller-watch.ts'
@@ -137,6 +129,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
+import { routedPromptBytes } from './run-routing-input.ts'
 import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import { resolveRunBound } from './run-timeout.ts'
@@ -177,29 +170,6 @@ function workerMcpLaunchScope(input: {
     serverName: workerHome.projectMcpServerName(input.connection, project),
     allowlist: mcpConfigAllowlist(config),
   }
-}
-
-const CANON_SOURCE_PROMPT_RESERVE_BYTES =
-  Math.max(
-    ...(['live database', 'mirror', 'unknown'] as CanonSource[]).map((source) =>
-      Buffer.byteLength(canonSourceInstruction(source)),
-    ),
-  ) + 2
-
-const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
-
-function routedPromptBytes(
-  prompt: string,
-  replySchemaName: string,
-  requestedJob: { findings?: unknown },
-  requiresCanonSource: boolean,
-): number {
-  return (
-    Buffer.byteLength(prompt) +
-    replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID)) +
-    (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
-    (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0)
-  )
 }
 
 function confinementSkipLines(failures: FreezeFailure[]): string[] {

@@ -621,6 +621,20 @@ export function readEventLog(path: string): RunLogEvent[] {
   return events
 }
 
+function summarizeOperationalEvent(
+  event: Extract<RunLogEvent, { type: 'throttled' | 'capacity_wait' }>,
+): PeekEventSummary {
+  if (event.type === 'capacity_wait') return { ...event }
+  return {
+    type: 'throttled',
+    attempt: event.attempt,
+    max: event.max,
+    retryAt: event.retryAt,
+    status: event.status,
+    concurrency: event.concurrency,
+  }
+}
+
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'warning')
@@ -638,17 +652,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'tool_result')
     return { type: 'tool_result', status: event.status, bytes: event.bytes }
   if (event.type === 'usage') return { type: 'usage', tokens: event.tokens }
-  if (event.type === 'throttled') {
-    return {
-      type: 'throttled',
-      attempt: event.attempt,
-      max: event.max,
-      retryAt: event.retryAt,
-      status: event.status,
-      concurrency: event.concurrency,
-    }
-  }
-  if (event.type === 'capacity_wait') return { ...event }
+  if (event.type === 'throttled' || event.type === 'capacity_wait')
+    return summarizeOperationalEvent(event)
   if (event.type === 'ask_expected') {
     return {
       type: 'ask_expected',
@@ -657,8 +662,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
       ...(event.endpoint ? { endpoint: event.endpoint } : {}),
     }
   }
-  if (event.type === 'ask_started') return { type: 'ask_started', tools: event.tools }
-  if (event.type === 'ask_listed') return { type: 'ask_listed', tools: event.tools }
+  if (event.type === 'ask_started' || event.type === 'ask_listed')
+    return { type: event.type, tools: event.tools }
   if (event.type === 'focused_test') {
     return {
       type: 'focused_test',
