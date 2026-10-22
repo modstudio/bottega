@@ -510,16 +510,14 @@ class SettingsApplyNotice(unittest.TestCase):
         self.assertIn("canon batch refused", notice)
 
     def test_still_running_adds_no_notice(self):
-        self.assertIsNone(
-            session_brief._settings_apply_notice(None, "/state/orchestrator/settings-apply.log")
-        )
+        self.assertIsNone(session_brief._settings_apply_notice(None))
 
     def test_detached_completion_uses_logged_result(self):
         completed = self.completed(
             stdout="settings /tmp/settings.json: applied; backup /tmp/backup\n"
         )
         self.assertEqual(
-            session_brief._settings_apply_notice(completed, "/state/settings-apply.log"),
+            session_brief._settings_apply_notice(completed),
             "settings applied; they take effect in the next session",
         )
 

@@ -337,3 +337,23 @@ describe('worker settings apply refusals', () => {
     ).rejects.toThrow('refusing document store write from an orchestrator worker run')
   })
 })
+
+describe('real user home write authority', () => {
+  test('settings env import --user refuses outside the registered main checkout', async () => {
+    process.env.HOME = '/operator'
+    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
+      'refusing machine settings env import --user from installation',
+    )
+  })
+
+  test('settings render --write --user refuses outside the registered main checkout', async () => {
+    process.env.HOME = '/operator'
+    await expect(
+      settingsRenderWriteCommand(
+        flags({ user: true, write: true, yes: true }),
+        shown().port,
+        () => false,
+      ),
+    ).rejects.toThrow('refusing machine settings render --write --user from installation')
+  })
+})

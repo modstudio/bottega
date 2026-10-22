@@ -7,6 +7,7 @@ import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
+import { assertCurrentMachineHomeWriteAuthority } from '../operator/machine-home-write-authority.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
@@ -69,10 +70,13 @@ export async function settingsEnvImportCommand(
     )
   }
   if (!flags.has('user')) throw new Error('refusing settings env import: pass --user')
+  const home = claudeHomeFromEnvironment(process.env)
+  if (!flags.has('dry-run')) {
+    assertCurrentMachineHomeWriteAuthority('machine settings env import --user', [home])
+  }
   const owner = await signedInDocOwner()
   const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) throw new Error('refusing settings env import: no user settings row')
-  const home = claudeHomeFromEnvironment(process.env)
   const settingsPath = userSettingsPath(home)
   const secretsPath = userSettingsEnvPath(home)
   const imported = settingsEnvironmentFromJson(settingsPath)
@@ -170,6 +174,11 @@ export async function settingsRenderWriteCommand(
     )
   }
   const target = resolveTarget(flags)
+  if (target.kind === 'user') {
+    assertCurrentMachineHomeWriteAuthority('machine settings render --write --user', [
+      claudeHomeFromEnvironment(process.env),
+    ])
+  }
   const owner = target.kind === 'user' ? await signedInDocOwner() : null
   const row = settingsRow(target, owner)
   if (!row) throw new Error(`refusing settings render: no settings row for ${targetLabel(target)}`)

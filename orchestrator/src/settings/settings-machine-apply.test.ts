@@ -126,7 +126,7 @@ describe('settings apply', () => {
         runningFromRegisteredMainCheckout: false,
         targetHomesUnderTemporaryDirectory: false,
       }),
-    ).toEqual({ action: 'refuse-linked-worktree' })
+    ).toEqual({ action: 'refuse-not-registered-main' })
   })
 
   test('--check reports current and changed targets without writing', async () => {
@@ -366,7 +366,7 @@ describe('settings apply', () => {
     expect(pulls).toBe(0)
   })
 
-  test('a linked-worktree binary refuses real harness homes before pulling or opening writable state', async () => {
+  test('a secondary checkout refuses real harness homes before pulling', async () => {
     await expect(
       applyMachineSettings(
         { check: false },
@@ -374,10 +374,12 @@ describe('settings apply', () => {
           environment: {
             HOME: '/operator',
             CODEX_HOME: '/operator/.codex',
-            ORCH_MAIN_CHECKOUT: '/projects/main',
           },
+          local: db(),
           workerProcess: () => false,
           runningFromRegisteredMainCheckout: false,
+          registeredMainCheckout: '/projects/main',
+          binaryRepositoryRoot: '/projects/main',
           pull: async () => {
             pulls++
           },
@@ -386,6 +388,29 @@ describe('settings apply', () => {
     ).rejects.toThrow(
       `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
     )
+    expect(pulls).toBe(0)
+  })
+
+  test('a mixed temporary and real harness environment is refused before pulling', async () => {
+    await expect(
+      applyMachineSettings(
+        { check: false },
+        {
+          environment: {
+            HOME: root,
+            CODEX_HOME: '/operator/.codex',
+            GROK_HOME: join(root, '.grok'),
+          },
+          local: db(),
+          workerProcess: () => false,
+          runningFromRegisteredMainCheckout: false,
+          registeredMainCheckout: '/projects/main',
+          pull: async () => {
+            pulls++
+          },
+        },
+      ),
+    ).rejects.toThrow('real harness homes may only be written from the registered main checkout')
     expect(pulls).toBe(0)
   })
 

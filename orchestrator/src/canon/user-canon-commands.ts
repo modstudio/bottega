@@ -8,6 +8,7 @@ import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
+import { assertCurrentMachineHomeWriteAuthority } from '../operator/machine-home-write-authority.ts'
 import { projects } from '../project/projects.ts'
 import { planCanonImport } from './canon-import-policy.ts'
 import { stripUserCanonManagedMarker } from './user-canon-home.ts'
@@ -155,8 +156,14 @@ export async function userCanonHydrateCommand(
   if (flags.has('force')) {
     throw new Error(`unknown flag for ${PLATFORM_SLUG} doc canon hydrate --user: --force`)
   }
-  const owner = await signedInDocOwner()
   const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
+  if (!flags.has('check') && !flags.has('dry-run')) {
+    assertCurrentMachineHomeWriteAuthority(
+      `doc canon hydrate --user${flags.has('adopt') ? ' --adopt' : ''}`,
+      homes.map((home) => home.path),
+    )
+  }
+  const owner = await signedInDocOwner()
   const overrideStatus = userCanonHomeOverridesStatus(homes)
   if (overrideStatus) presentation.log(overrideStatus)
   const rows = listDocs({ scope: 'canon', subject: null, owner, status: 'current' })

@@ -38,7 +38,6 @@ import { initializeDefaultLocalProject } from './project-register-store.ts'
 export {
   DATABASE_RESOLUTION,
   DB_PATH,
-  linkedWorktreeMigrationAllowed,
   ROOT,
 } from './database-location.ts'
 

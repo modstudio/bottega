@@ -21,8 +21,14 @@ import {
   userCanonHomePlanDrift,
   userCanonHomesFromEnvironment,
 } from '../canon/user-canon-home-files.ts'
-import { DATABASE_RESOLUTION, db, linkedWorktreeMigrationAllowed } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { getDoc, listDocs, signedInDocOwner } from '../doc/docs.ts'
+import {
+  assertMachineHomeWriteAuthority,
+  decideMachineHomeWriteAuthority,
+  isRunningFromRegisteredMainCheckout,
+  registeredMainCheckout,
+} from '../operator/machine-home-write-authority.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { pullRecordCache } from '../record/record-cache.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -47,18 +53,7 @@ export type MachineSettingsApplyResult = {
   superseded?: SupersededProfileHook[]
 }
 
-export type MachineSettingsWriteAuthorityDecision =
-  | { action: 'allow' }
-  | { action: 'refuse-linked-worktree' }
-
-export function decideMachineSettingsWriteAuthority(facts: {
-  runningFromRegisteredMainCheckout: boolean
-  targetHomesUnderTemporaryDirectory: boolean
-}): MachineSettingsWriteAuthorityDecision {
-  return facts.runningFromRegisteredMainCheckout || facts.targetHomesUnderTemporaryDirectory
-    ? { action: 'allow' }
-    : { action: 'refuse-linked-worktree' }
-}
+export { decideMachineHomeWriteAuthority as decideMachineSettingsWriteAuthority }
 
 type Dependencies = {
   environment: NodeJS.ProcessEnv
@@ -69,7 +64,13 @@ type Dependencies = {
   runsDirectory: string
   applySettings: typeof applySettingsWrite
   applyCanon: typeof applyUserCanonHomePlans
-  runningFromRegisteredMainCheckout: boolean
+}
+
+type ApplyOverrides = Partial<Dependencies> & {
+  runningFromRegisteredMainCheckout?: boolean
+  registeredMainCheckout?: string | null
+  runningInstallationRoot?: string
+  binaryRepositoryRoot?: string | null
 }
 
 function dependencies(overrides: Partial<Dependencies>): Dependencies {
@@ -83,7 +84,6 @@ function dependencies(overrides: Partial<Dependencies>): Dependencies {
     runsDirectory: resolveRunsDirectory(process.env),
     applySettings: applySettingsWrite,
     applyCanon: applyUserCanonHomePlans,
-    runningFromRegisteredMainCheckout: !DATABASE_RESOLUTION.linkedWorktreeBinary,
     ...overrides,
   }
 }
@@ -113,11 +113,13 @@ function applyUserSettings(
       parseStoredOwnedSettings(row.body),
       readMachinePermissions(deps.environment),
     )
+    const hookStarted = performance.now()
     const productHooks = withMachineProductHooks(
       merged.settings,
       assetPath(),
       resolveOrchestratorDatabase(deps.environment),
     )
+    console.error(`TIMING profile-hook-audit ${(performance.now() - hookStarted).toFixed(2)}ms`)
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)
     const secrets = readSettingsEnv(secretsPath)
@@ -131,7 +133,9 @@ function applyUserSettings(
     }
     const environment = selectedSettingsEnvironment(secretsPath, owned.envKeys ?? [])
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
+    const writeStarted = performance.now()
     const plan = planSettingsWrite(path, rendered)
+    console.error(`TIMING settings-write ${(performance.now() - writeStarted).toFixed(2)}ms`)
     if (plan.currentText === plan.renderedText) {
       return {
         target,
@@ -178,24 +182,24 @@ function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | 
 function assertMachineSettingsWriteAuthority(
   environment: NodeJS.ProcessEnv,
   runningFromRegisteredMainCheckout: boolean,
+  facts: Pick<
+    ApplyOverrides,
+    'registeredMainCheckout' | 'runningInstallationRoot' | 'binaryRepositoryRoot'
+  >,
 ): void {
   const runsDirectory = resolveRunsDirectory(environment)
   const targetHomes = [
     claudeHomeFromEnvironment(environment),
     ...userCanonHomesFromEnvironment(environment, runsDirectory).map((home) => home.path),
   ]
-  const decision = decideMachineSettingsWriteAuthority({
+  assertMachineHomeWriteAuthority({
+    command: 'machine settings apply',
+    targetHomes,
     runningFromRegisteredMainCheckout,
-    targetHomesUnderTemporaryDirectory: targetHomes.every(linkedWorktreeMigrationAllowed),
+    registeredMainCheckout: facts.registeredMainCheckout,
+    runningInstallationRoot: facts.runningInstallationRoot,
+    binaryRepositoryRoot: facts.binaryRepositoryRoot,
   })
-  if (decision.action === 'allow') return
-  const runningRoot = assetPath()
-  const mainCheckout = environment.ORCH_MAIN_CHECKOUT ?? 'MAIN_CHECKOUT'
-  throw new Error(
-    `refusing settings apply from linked worktree ${runningRoot}: real harness homes may only be written by the registered main checkout\n` +
-      'invariant: A linked-worktree binary writes harness settings only under the OS temporary directory.\n' +
-      `cleared by: run \`${join(mainCheckout, 'bin', PLATFORM_SLUG)} machine settings apply\``,
-  )
 }
 
 function applyUserCanon(
@@ -213,7 +217,14 @@ function applyUserCanon(
       try {
         return {
           target,
-          plan: planUserCanonHome({ home, rows, files: collectUserCanonHome(home) }),
+          plan: (() => {
+            const started = performance.now()
+            const plan = planUserCanonHome({ home, rows, files: collectUserCanonHome(home) })
+            console.error(
+              `TIMING canon-render-${home.mapping.harness} ${(performance.now() - started).toFixed(2)}ms`,
+            )
+            return plan
+          })(),
         }
       } catch (error) {
         return { target, error }
@@ -280,7 +291,7 @@ function applyUserCanon(
 
 export async function applyMachineSettings(
   input: { check: boolean },
-  overrides: Partial<Dependencies> = {},
+  overrides: ApplyOverrides = {},
 ): Promise<MachineSettingsApplyResult[]> {
   const workerProcess =
     overrides.workerProcess ?? (() => isOrchWorkerProcess(process.env, process.pid))
@@ -289,13 +300,20 @@ export async function applyMachineSettings(
       `refusing settings apply from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings apply`,
     )
   }
+  const environment = overrides.environment ?? process.env
+  const local = overrides.local ?? db()
+  const mainCheckout = overrides.registeredMainCheckout ?? registeredMainCheckout(local)
+  const runningFromRegisteredMainCheckout =
+    overrides.runningFromRegisteredMainCheckout ??
+    isRunningFromRegisteredMainCheckout(overrides.runningInstallationRoot, mainCheckout)
   if (!input.check) {
-    assertMachineSettingsWriteAuthority(
-      overrides.environment ?? process.env,
-      overrides.runningFromRegisteredMainCheckout ?? !DATABASE_RESOLUTION.linkedWorktreeBinary,
-    )
+    assertMachineSettingsWriteAuthority(environment, runningFromRegisteredMainCheckout, {
+      registeredMainCheckout: mainCheckout,
+      runningInstallationRoot: overrides.runningInstallationRoot,
+      binaryRepositoryRoot: overrides.binaryRepositoryRoot,
+    })
   }
-  const deps = dependencies({ ...overrides, workerProcess })
+  const deps = dependencies({ ...overrides, environment, local, workerProcess })
   const stateDirectory = resolveStatePaths(deps.environment).orchestratorDirectory
   mkdirSync(stateDirectory, { recursive: true, mode: 0o700 })
   const lease = tryKernelLease(join(stateDirectory, 'settings-apply.lock'), true)
@@ -303,7 +321,9 @@ export async function applyMachineSettings(
     return [{ target: 'settings apply', outcome: 'skipped', changed: false }]
   }
   try {
+    const hostedStarted = performance.now()
     await applyRecordWriteAuthority({ local: () => undefined, hosted: deps.pull })
+    console.error(`TIMING hosted-record-reads ${(performance.now() - hostedStarted).toFixed(2)}ms`)
     const owner = await deps.owner()
     return [
       applyUserSettings(owner, input.check, deps),

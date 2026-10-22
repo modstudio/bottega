@@ -24,6 +24,7 @@ export type DatabaseResolution = {
   tried: string[]
   registeredPath: string | null
   repositoryRoot: string | null
+  binaryRepositoryRoot: string | null
   initializable: boolean
   linkedWorktreeBinary: boolean
   /** The default per-user store, or the explicit store when no state root can be resolved. */
@@ -146,6 +147,7 @@ export function resolveDatabase(
       tried: [path],
       registeredPath: null,
       repositoryRoot: null,
+      binaryRepositoryRoot: binaryRepository?.root ?? null,
       initializable: true,
       linkedWorktreeBinary: Boolean(binaryRepository?.linked),
       mainStorePath,
@@ -159,6 +161,7 @@ export function resolveDatabase(
     tried: [mainStorePath],
     registeredPath: null,
     repositoryRoot: repository?.root ?? null,
+    binaryRepositoryRoot: binaryRepository?.root ?? null,
     // Location is per-user, but binary identity still owns initialization.
     initializable: isAuthorizedPlatformInstallation(
       binaryRoot,
