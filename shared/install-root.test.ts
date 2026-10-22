@@ -13,6 +13,7 @@ import {
   installationVersionText,
   installRoot,
   isAuthorizedPlatformInstallation,
+  isInstallationRoot,
   readDistributionManifest,
   resolveInstallationPaths,
   resolveInstallRoot,
@@ -60,6 +61,18 @@ describe('install root resolution', () => {
     mkdirSync(nested)
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
     expect(resolveInstallRoot(nested, {})).toBe(root)
+  })
+
+  test('a directory is an installation root only as a checkout or distribution', () => {
+    const checkout = scratch()
+    writeFileSync(join(checkout, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
+    expect(isInstallationRoot(checkout)).toBeTrue()
+
+    const distribution = scratch()
+    writeFileSync(join(distribution, DIST_MANIFEST), '{}')
+    expect(isInstallationRoot(distribution)).toBeTrue()
+
+    expect(isInstallationRoot(scratch())).toBeFalse()
   })
 
   test('service paths use the resolved checkout or distribution root', () => {

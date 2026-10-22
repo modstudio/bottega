@@ -1,11 +1,11 @@
 // concern: setup-apply
 /** Applies planned project actions in order through the project register service boundary. */
 
-import { lstat, mkdir, open, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { checkoutRootContaining } from './setup-legacy-path.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
   commandFailureReason,
   mcpAddArgv,
@@ -264,22 +264,20 @@ async function applySetupAction(
 async function applyLegacyPathSymlinkRemoval(
   action: LegacySymlinkAction,
 ): Promise<'applied' | 'unchanged'> {
-  let state: Awaited<ReturnType<typeof lstat>>
   try {
-    state = await lstat(action.path)
+    await lstat(action.path)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'unchanged'
     throw error
   }
-  if (!state.isSymbolicLink()) {
-    throw new Error(`refusing to remove ${action.path}: it is not a symbolic link`)
-  }
-  const target = await readlink(action.path)
-  const resolved = isAbsolute(target) ? target : resolve(dirname(action.path), target)
-  if (!checkoutRootContaining(resolved)) {
+  const target = removableLegacyPathTarget(action.path)
+  if (target === null) {
     throw new Error(
-      `refusing to remove ${action.path}: it does not point into a ${PLATFORM_NAME} checkout`,
+      `refusing to remove ${action.path}: it is not a removable leftover PATH symlink`,
     )
+  }
+  if (target !== action.target) {
+    throw new Error(`refusing to remove ${action.path}: it now points at ${target}`)
   }
   await rm(action.path)
   return 'applied'

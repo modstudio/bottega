@@ -142,8 +142,8 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-legacy-path-boundary',
     file: 'orchestrator/src/setup/setup-legacy-path.ts',
-    allowed: ['node:fs', 'node:path', '../../../shared/brand.ts'],
-    typeOnlyAllowed: [],
+    allowed: ['node:fs', 'node:path', '../../../shared/install-root.ts'],
+    typeOnlyAllowed: ['./setup-engine.ts'],
     reason:
       'Keep leftover orch/hub PATH symlink detection independent of setup policy, stores, and harness CLI.',
   },

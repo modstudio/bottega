@@ -67,6 +67,10 @@ type SetupRegistrationProposal = {
   state: 'absent' | 'same' | 'stale' | 'different' | 'unreadable'
   legacyName?: LegacyMcpServerName
 }
+export type LegacyPathSymlink = {
+  path: string
+  target: string
+}
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
   proposals: SetupProposal[]
@@ -74,7 +78,7 @@ export type SetupPlan = {
   questions: SetupQuestion[]
   notices: SetupNotice[]
   mcpConfigMigrations?: McpConfigMigration[]
-  legacyPathSymlinks?: { path: string; target: string }[]
+  legacyPathSymlinks?: LegacyPathSymlink[]
 }
 
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`

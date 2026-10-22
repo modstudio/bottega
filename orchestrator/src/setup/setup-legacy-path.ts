@@ -1,74 +1,50 @@
 // concern: setup-legacy-path
-/** Detects leftover orch/hub PATH symlinks that point into a Bottega checkout. */
+/** Detects leftover orch/hub PATH symlinks that point at this installation's matching binary. */
 
-import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { lstatSync, readlinkSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { isInstallationRoot } from '../../../shared/install-root.ts'
+import type { LegacyPathSymlink } from './setup-engine.ts'
 
 const LEGACY_PATH_COMMANDS = ['orch', 'hub'] as const
-export type LegacyPathCommand = (typeof LEGACY_PATH_COMMANDS)[number]
-
-export type LegacyPathSymlink = {
-  path: string
-  name: LegacyPathCommand
-  target: string
-}
 
 export function pathDirectories(pathValue: string | undefined): string[] {
-  return (pathValue ?? '').split(':').filter(Boolean)
+  return (pathValue ?? '')
+    .split(':')
+    .filter((directory) => directory !== '' && isAbsolute(directory))
 }
 
-function isPlatformCheckout(directory: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {
-      name?: unknown
-    }
-    return parsed.name === PLATFORM_SLUG
-  } catch {
-    return false
-  }
-}
-
-/** Walk from a path toward filesystem root looking for a Bottega checkout. */
-export function checkoutRootContaining(path: string): string | null {
-  let directory = path
-  for (;;) {
-    if (isPlatformCheckout(directory)) return directory
-    const parent = dirname(directory)
-    if (parent === directory) return null
-    directory = parent
-  }
-}
-
-function inspectLegacyPathLink(path: string): string | null {
+/** Return the resolved target when `path` is a leftover orch or hub symlink into an installation. */
+export function removableLegacyPathTarget(path: string): string | null {
+  const name = basename(path)
+  if (name !== 'orch' && name !== 'hub') return null
+  let target: string
   try {
     if (!lstatSync(path).isSymbolicLink()) return null
-    return readlinkSync(path)
+    target = readlinkSync(path)
   } catch {
     return null
   }
+  const resolved = isAbsolute(target) ? resolve(target) : resolve(dirname(path), target)
+  if (basename(resolved) !== name) return null
+  const binDirectory = dirname(resolved)
+  if (basename(binDirectory) !== 'bin') return null
+  if (!isInstallationRoot(dirname(binDirectory))) return null
+  return resolved
 }
 
-function resolveLegacyPathTarget(directory: string, target: string): string {
-  return isAbsolute(target) ? target : resolve(directory, target)
-}
-
-export function captureLegacyPathSymlinks(
-  directories: readonly string[],
-  names: readonly LegacyPathCommand[] = LEGACY_PATH_COMMANDS,
-): LegacyPathSymlink[] {
+export function captureLegacyPathSymlinks(directories: readonly string[]): LegacyPathSymlink[] {
   const found: LegacyPathSymlink[] = []
   const seen = new Set<string>()
   for (const directory of directories) {
-    for (const name of names) {
+    if (!isAbsolute(directory)) continue
+    for (const name of LEGACY_PATH_COMMANDS) {
       const path = join(directory, name)
       if (seen.has(path)) continue
       seen.add(path)
-      const target = inspectLegacyPathLink(path)
+      const target = removableLegacyPathTarget(path)
       if (target === null) continue
-      const resolvedTarget = resolveLegacyPathTarget(directory, target)
-      if (checkoutRootContaining(resolvedTarget) === null) continue
-      found.push({ path, name, target: resolvedTarget })
+      found.push({ path, target })
     }
   }
   return found

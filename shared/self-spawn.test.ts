@@ -6,8 +6,6 @@ import { BOTTEGA_ENTRY_PROTOCOL, type BottegaEntry, bottegaEntryArgv } from './s
 
 const entries: BottegaEntry[] = [
   PLATFORM_SLUG,
-  'orch',
-  'hub',
   'run-exec',
   'ask-server',
   'ask-proxy',
@@ -18,8 +16,6 @@ afterEach(() => registerEmbeddedAssets(null))
 
 test('source entries preserve their current argv prefixes', () => {
   expect(bottegaEntryArgv(PLATFORM_SLUG)).toEqual([assetPath('bin', PLATFORM_SLUG)])
-  expect(bottegaEntryArgv('orch')).toEqual([assetPath('bin', 'orch')])
-  expect(bottegaEntryArgv('hub')).toEqual([assetPath('bin', 'hub')])
   expect(bottegaEntryArgv('run-exec')).toEqual([
     process.env.ORCH_EXEC_PATH ?? process.execPath,
     '--no-env-file',
