@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   JOBS,
+  isReadOnlyRepositoryJob,
   jobTimeoutCeilingMinutes,
   resolveJobTimeoutMs,
   resolveRecordedRunJob,
@@ -10,6 +11,14 @@ test('jobs exposes fidelity only for writing jobs', () => {
   expect(JOBS.implement!.needs.writesRepo).toBe(true)
   expect(JOBS.fix!.needs.writesRepo).toBe(true)
   expect(JOBS['review-lens']!.needs.writesRepo).not.toBe(true)
+})
+
+test('a read-only repository job reads the repo and does not write it', () => {
+  expect(isReadOnlyRepositoryJob('review-lens')).toBe(true)
+  expect(isReadOnlyRepositoryJob('understand')).toBe(true)
+  expect(isReadOnlyRepositoryJob('implement')).toBe(false)
+  expect(isReadOnlyRepositoryJob('summarize')).toBe(false)
+  expect(isReadOnlyRepositoryJob('review-lens-inline')).toBe(false)
 })
 
 test('the timeout override respects the ceiling', () => {
