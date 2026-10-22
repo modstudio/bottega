@@ -62,6 +62,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   app.use('/v1/port-catalogue', requestedSpace)
   app.use('/v1/port-catalogue/*', requestedSpace)
   app.use('/v1/settings/permission', requestedSpace)
+  app.use('/v1/settings/auto-mode', requestedSpace)
   app.use('/v1/config/*', requestedSpace)
   app.use('/v1/runs/*', requestedSpace)
   app.use('/v1/snapshots', requestedSpace)

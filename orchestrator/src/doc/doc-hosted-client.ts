@@ -19,6 +19,7 @@ type HostedDocClient = Pick<
   | 'consumeDoc'
   | 'restoreDoc'
   | 'applySettingsPermission'
+  | 'applySettingsAutoMode'
 >
 
 export async function hostedDocClient(
@@ -50,5 +51,6 @@ export async function hostedDocClient(
     consumeDoc: (id, input) => client.consumeDoc(id, input, destination),
     restoreDoc: (id, input) => client.restoreDoc(id, input, destination),
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
+    applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   }
 }

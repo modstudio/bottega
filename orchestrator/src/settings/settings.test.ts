@@ -4,6 +4,7 @@ import {
   containsSecretShaped,
   extractOwnedSettings,
   ownedSettingsEqual,
+  parseStoredOwnedSettings,
   permissionLists,
   refuseSettingsBody,
   SETTINGS_PARSE_REFUSAL,
@@ -16,19 +17,21 @@ const extra = {
   enabledPlugins: { a: true },
   permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`], deny: ['Bash(rm *)'] },
   hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+  autoMode: { allow: ['$defaults', 'Bash(docker compose *)', '$defaults'] },
   tui: { theme: 'dark' },
 }
 
 describe('extractOwnedSettings', () => {
-  test('keeps only permissions and hooks', () => {
+  test('keeps owned settings including ordered auto-mode duplicates', () => {
     expect(extractOwnedSettings(extra)).toEqual({
       permissions: extra.permissions,
       hooks: extra.hooks,
+      autoMode: extra.autoMode,
       envKeys: [],
     })
   })
 
-  test('fills missing owned keys with empty objects', () => {
+  test('leaves missing auto-mode unowned', () => {
     expect(extractOwnedSettings({ env: { A: '1' } })).toEqual({
       permissions: {},
       hooks: {},
@@ -50,6 +53,21 @@ describe('validateOwnedSettingsBody', () => {
   test('accepts exactly permissions and hooks', () => {
     const owned = extractOwnedSettings(extra)
     expect(validateOwnedSettingsBody(serializeOwnedSettings(owned))).toEqual(owned)
+  })
+
+  test('accepts auto-mode as an optional member', () => {
+    const withoutAutoMode = { permissions: {}, hooks: {}, envKeys: [] }
+    expect(validateOwnedSettingsBody(JSON.stringify(withoutAutoMode))).toEqual(withoutAutoMode)
+  })
+
+  test('refuses unknown auto-mode members and non-string lists', () => {
+    for (const autoMode of [{ extra: [] }, { allow: 'Bash(git status)' }, { allow: [1] }]) {
+      expect(() =>
+        validateOwnedSettingsBody(
+          JSON.stringify({ permissions: {}, hooks: {}, autoMode, envKeys: [] }),
+        ),
+      ).toThrow(/unknown or missing/)
+    }
   })
 
   test('accepts only sorted env names and never env values', () => {
@@ -94,6 +112,34 @@ test('ownedSettingsEqual ignores object key order', () => {
       { permissions: { allow: ['a'], deny: ['x'] }, hooks: { b: 2, a: 1 } },
     ),
   ).toBe(true)
+})
+
+test('auto-mode round trips with order and duplicates intact', () => {
+  const owned = {
+    permissions: {},
+    hooks: {},
+    autoMode: {
+      allow: ['$defaults', 'Bash(docker compose *)', '$defaults'],
+      environment: ['CI', 'CI'],
+    },
+  }
+  const parsed = validateOwnedSettingsBody(serializeOwnedSettings(owned))
+  expect(parsed.autoMode).toEqual(owned.autoMode)
+  expect(ownedSettingsEqual(parsed, owned)).toBe(true)
+})
+
+test('ownedSettingsEqual requires auto-mode ownership on both sides', () => {
+  const unowned = { permissions: {}, hooks: {} }
+  const owned = { ...unowned, autoMode: {} }
+  expect(ownedSettingsEqual(unowned, owned)).toBe(false)
+  expect(ownedSettingsEqual(owned, unowned)).toBe(false)
+})
+
+test('a stored row without auto-mode round trips without gaining ownership', () => {
+  const body = JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] })
+  const parsed = parseStoredOwnedSettings(body)
+  expect(parsed).not.toHaveProperty('autoMode')
+  expect(JSON.parse(serializeOwnedSettings(parsed))).not.toHaveProperty('autoMode')
 })
 
 function jwtSentinel() {
@@ -205,6 +251,16 @@ describe('secretShapedSettingsRefusal', () => {
       serializeOwnedSettings({ permissions: { allow: [rule] }, hooks: {} }),
     )
     expect(refusal).toContain('permissions.allow[0]')
+    expect(refusal).not.toContain(credential)
+  })
+
+  test('refuses a sentinel auto-mode rule without quoting it', () => {
+    const credential = ['ghp_', 'testtoken', '0'.repeat(28)].join('')
+    const refusal = refuseSettingsBody(
+      'settings',
+      serializeOwnedSettings({ permissions: {}, hooks: {}, autoMode: { allow: [credential] } }),
+    )
+    expect(refusal).toContain('autoMode.allow[0]')
     expect(refusal).not.toContain(credential)
   })
 

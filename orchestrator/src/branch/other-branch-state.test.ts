@@ -26,6 +26,7 @@ function decide(overrides: Partial<Parameters<typeof decideOtherBranchState>[0]>
     commitsNotOnTrunk: 1,
     patchEquivalent: null,
     pullRequestCommitCheck: null,
+    targetedPullRequests: null,
     ...overrides,
   })
 }
@@ -90,6 +91,15 @@ describe('other local branch state decision', () => {
 
   test('truncation mutation: unmatched content is unknown when PR evidence is capped', () => {
     expect(decide({ mergedPullRequestsTruncated: true })).toEqual({ state: 'unknown' })
+  })
+
+  test('targeted settlement mutation: complete narrow listings settle capped global evidence', () => {
+    expect(
+      decide({
+        mergedPullRequestsTruncated: true,
+        targetedPullRequests: { state: 'unmatched' },
+      }),
+    ).toEqual({ state: 'unlanded' })
   })
 
   test('failed-check mutation: observation failure is unknown rather than empty', () => {

@@ -74,6 +74,13 @@ test('a project-addressed document client binds every call to the declared space
       capture(destination)
       return { revision: 'rev', permissions: { allow: [], ask: [], deny: [] } }
     },
+    applySettingsAutoMode: async (_input, destination) => {
+      capture(destination)
+      return {
+        revision: 'rev',
+        autoMode: { allow: [], soft_deny: [], hard_deny: [], environment: [] },
+      }
+    },
   })
   const client = await hostedDocClient('project', 'routed-docs')
   await client.listDocs({})
@@ -135,7 +142,15 @@ test('a project-addressed document client binds every call to the declared space
     reason: 'test',
     expectedRevision: 'rev',
   })
-  expect(destinations).toEqual(Array.from({ length: 11 }, () => 'docs-space'))
+  await client.applySettingsAutoMode({
+    target: { kind: 'project', project: 'routed-docs' },
+    list: 'allow',
+    rule: 'Bash(docker compose *)',
+    operation: 'add',
+    reason: 'test',
+    expectedRevision: 'rev',
+  })
+  expect(destinations).toEqual(Array.from({ length: 12 }, () => 'docs-space'))
 })
 
 test('a retired project still supplies its declared document destination', async () => {

@@ -9,12 +9,15 @@ import {
   type BranchStateDecision,
   decideBranchState,
   findRecordedBranchLanding,
+  shouldSettleTruncatedBranch,
+  type TaskBranchPullRequestCheck,
 } from './branch-state.ts'
 import type { MergedPullRequest } from './merged-pull-request.ts'
 import {
   isTaskBranchSuperseded,
   taskBranchContainedTips,
   taskBranchIsAncestor,
+  taskBranchPullRequestCheck,
   taskBranchRunRow,
 } from './task-branch.ts'
 
@@ -58,6 +61,7 @@ function decideProof(
     containingBranch?: string | null
     laterTurnBranches?: { branch: string; state: BranchStateDecision }[]
     superseded?: boolean
+    targetedPullRequests?: TaskBranchPullRequestCheck | null
   } = {},
 ) {
   return decideBranchState({
@@ -78,14 +82,23 @@ function decideProof(
     containingBranch: proof.containingBranch ?? null,
     laterTurnBranches: proof.laterTurnBranches ?? [],
     superseded: proof.superseded ?? false,
+    targetedPullRequests: proof.targetedPullRequests ?? null,
   })
 }
 
 function containmentProofs(
   input: Input,
   rows: ReturnType<typeof observeBranchLandingProof>[],
+  targetedPullRequests: ReadonlyMap<string, TaskBranchPullRequestCheck> = new Map(),
 ): ReadonlyMap<string, string> {
-  const direct = new Map(rows.map((row) => [row.branch, decideProof(input, row)]))
+  const direct = new Map(
+    rows.map((row) => [
+      row.branch,
+      decideProof(input, row, {
+        targetedPullRequests: targetedPullRequests.get(row.branch) ?? null,
+      }),
+    ]),
+  )
   const containedTips = taskBranchContainedTips(
     rows.map((row) => row.tip),
     (ancestor, descendant) => taskBranchIsAncestor(input.project.path, ancestor, descendant),
@@ -104,6 +117,74 @@ function containmentProofs(
       ),
     })),
   )
+}
+
+type ObservedReportRow = ReturnType<typeof observeBranchLandingProof> & {
+  runIds: number[]
+  superseded: boolean
+  turns: ReadonlyMap<string, number>
+}
+
+function decideObservedRows(
+  input: Input,
+  observed: readonly ObservedReportRow[],
+  containedBy: ReadonlyMap<string, string>,
+  targetedPullRequests: ReadonlyMap<string, TaskBranchPullRequestCheck> = new Map(),
+): Map<string, BranchStateDecision> {
+  const decided = new Map<string, BranchStateDecision>()
+  for (const row of [...observed].sort(
+    (left, right) => Math.max(...right.runIds) - Math.max(...left.runIds),
+  )) {
+    const laterTurnBranches = observed.flatMap((candidate) => {
+      if (
+        candidate.branch === row.branch ||
+        ![...row.turns].some(
+          ([root, turn]) => (candidate.turns.get(root) ?? Number.NEGATIVE_INFINITY) > turn,
+        )
+      )
+        return []
+      const state = decided.get(candidate.branch)
+      return state ? [{ branch: candidate.branch, state }] : []
+    })
+    decided.set(
+      row.branch,
+      decideProof(input, row, {
+        containingBranch: containedBy.get(row.branch) ?? null,
+        laterTurnBranches,
+        superseded: row.superseded,
+        targetedPullRequests: targetedPullRequests.get(row.branch) ?? null,
+      }),
+    )
+  }
+  return decided
+}
+
+function gatherTargetedPullRequests(
+  input: Input,
+  rows: readonly ReturnType<typeof observeBranchLandingProof>[],
+  preliminaryDecided: ReadonlyMap<string, BranchStateDecision>,
+  preliminaryContainedBy: ReadonlyMap<string, string>,
+): Map<string, TaskBranchPullRequestCheck> {
+  const targeted = new Map<string, TaskBranchPullRequestCheck>()
+  for (const row of rows) {
+    const state =
+      preliminaryDecided.get(row.branch) ??
+      decideProof(input, row, {
+        containingBranch: preliminaryContainedBy.get(row.branch) ?? null,
+      })
+    if (!shouldSettleTruncatedBranch(input.truncated, state)) continue
+    targeted.set(
+      row.branch,
+      taskBranchPullRequestCheck({
+        project: input.project,
+        branch: row.branch,
+        tip: row.tip,
+        launchKey: input.key,
+        headMatch: 'exact-head-contains-tip',
+      }),
+    )
+  }
+  return targeted
 }
 
 export function branchKeyReport(input: Input): { key: string; branches: BranchReportRow[] } {
@@ -134,31 +215,17 @@ export function branchKeyReport(input: Input): { key: string; branches: BranchRe
   const taskProofs = [...new Set(keyRows.map((row) => row.branch))]
     .filter((branch) => input.branches.has(branch) && !input.byBranch.has(branch))
     .map(observe)
-  const containedBy = containmentProofs(input, [...observed, ...taskProofs])
-  const decided = new Map<string, BranchStateDecision>()
-  for (const row of [...observed].sort(
-    (left, right) => Math.max(...right.runIds) - Math.max(...left.runIds),
-  )) {
-    const laterTurnBranches = observed.flatMap((candidate) => {
-      if (
-        candidate.branch === row.branch ||
-        ![...row.turns].some(
-          ([root, turn]) => (candidate.turns.get(root) ?? Number.NEGATIVE_INFINITY) > turn,
-        )
-      )
-        return []
-      const state = decided.get(candidate.branch)
-      return state ? [{ branch: candidate.branch, state }] : []
-    })
-    decided.set(
-      row.branch,
-      decideProof(input, row, {
-        containingBranch: containedBy.get(row.branch) ?? null,
-        laterTurnBranches,
-        superseded: row.superseded,
-      }),
-    )
-  }
+  const allProofs = [...observed, ...taskProofs]
+  const preliminaryContainedBy = containmentProofs(input, allProofs)
+  const preliminaryDecided = decideObservedRows(input, observed, preliminaryContainedBy)
+  const targetedPullRequests = gatherTargetedPullRequests(
+    input,
+    allProofs,
+    preliminaryDecided,
+    preliminaryContainedBy,
+  )
+  const containedBy = containmentProofs(input, allProofs, targetedPullRequests)
+  const decided = decideObservedRows(input, observed, containedBy, targetedPullRequests)
   return {
     key: input.key,
     branches: observed

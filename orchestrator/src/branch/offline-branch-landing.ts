@@ -93,6 +93,7 @@ function classifyExistingBranch(input: {
     containingBranch: null,
     laterTurnBranches: [],
     superseded: false,
+    targetedPullRequests: null,
   })
   return {
     ...candidate,

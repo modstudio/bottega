@@ -2,6 +2,9 @@
 /** Pure settings-file parse, render, and drift. Must not know filesystems, stores, commands, or transports. */
 import { createHash } from 'node:crypto'
 import {
+  AUTO_MODE_LISTS,
+  type AutoModeList,
+  autoModeLists,
   containsSecretShaped,
   extractOwnedSettings,
   isPlainObject,
@@ -13,7 +16,7 @@ import {
   secretShapedPaths,
 } from './settings.ts'
 
-const OWNED_KEYS = ['permissions', 'hooks'] as const
+const OWNED_KEYS = ['permissions', 'hooks', 'autoMode'] as const
 const HOOK_FINGERPRINT_LENGTH = 12
 
 type SettingsMember = {
@@ -21,6 +24,10 @@ type SettingsMember = {
   nameStart: number
   valueStart: number
   valueEnd: number
+}
+
+function ownedKey(value: string): (typeof OWNED_KEYS)[number] | null {
+  return OWNED_KEYS.find((candidate) => candidate === value) ?? null
 }
 
 export type ParsedSettingsFile = {
@@ -34,6 +41,7 @@ export type ParsedSettingsFile = {
 
 export type SettingsDrift = {
   rules: Record<PermissionList, { added: string[]; removed: string[] }>
+  autoMode: Record<AutoModeList, { added: string[]; removed: string[] }>
   hooks: { added: HookDrift[]; removed: HookDrift[] }
   env: { added: string[]; removed: string[] }
 }
@@ -73,13 +81,19 @@ export function renderOwnedSettingsFile(
   let next = text
   for (const member of [...parsed.members].reverse()) {
     if (member.ownedKey === null) continue
-    const formatted = indentJson(owned[member.ownedKey], indentOf(text, member.nameStart))
+    if (member.ownedKey === 'autoMode' && owned.autoMode === undefined) continue
+    const formatted = indentJson(
+      ownedValue(owned, member.ownedKey),
+      indentOf(text, member.nameStart),
+    )
     next = `${next.slice(0, member.valueStart)}${formatted}${next.slice(member.valueEnd)}`
   }
   const present = new Set(
     parsed.members.flatMap((member) => (member.ownedKey === null ? [] : [member.ownedKey])),
   )
-  const missing = OWNED_KEYS.filter((name) => !present.has(name))
+  const missing = OWNED_KEYS.filter(
+    (name) => !present.has(name) && (name !== 'autoMode' || owned.autoMode !== undefined),
+  )
   if (missing.length > 0) {
     const updated = locateObject(next)
     next = insertOwnedKeys(
@@ -123,8 +137,21 @@ export function diffOwnedSettings(file: OwnedSettings, store: OwnedSettings): Se
   ) as SettingsDrift['rules']
   const fileHooks = hookDriftEntries(file.hooks)
   const storeHooks = hookDriftEntries(store.hooks)
+  const fileAutoMode = autoModeLists(file.autoMode)
+  const storeAutoMode = autoModeLists(store.autoMode)
   return {
     rules,
+    autoMode: Object.fromEntries(
+      AUTO_MODE_LISTS.map((name) => [
+        name,
+        store.autoMode === undefined
+          ? { added: [], removed: [] }
+          : {
+              added: subtract(fileAutoMode[name], storeAutoMode[name]),
+              removed: subtract(storeAutoMode[name], fileAutoMode[name]),
+            },
+      ]),
+    ) as SettingsDrift['autoMode'],
     hooks: {
       added: subtractHooks(fileHooks, storeHooks),
       removed: subtractHooks(storeHooks, fileHooks),
@@ -250,7 +277,7 @@ function insertOwnedKeys(
   const indent = parsed.members.length ? indentOf(text, parsed.members[0]!.nameStart) : 2
   const pad = ' '.repeat(indent)
   const inserted = missing
-    .map((name) => `${pad}"${name}": ${indentJson(owned[name], indent)}`)
+    .map((name) => `${pad}"${name}": ${indentJson(ownedValue(owned, name), indent)}`)
     .join(',\n')
   if (parsed.members.length === 0) {
     return `${text.slice(0, parsed.open + 1)}\n${inserted}\n${text.slice(parsed.close)}`
@@ -259,6 +286,10 @@ function insertOwnedKeys(
   const between = text.slice(last.valueEnd, parsed.close)
   const comma = between.includes(',') ? '' : ','
   return `${text.slice(0, last.valueEnd)}${comma}\n${inserted}${text.slice(parsed.close)}`
+}
+
+function ownedValue(owned: OwnedSettings, name: (typeof OWNED_KEYS)[number]): unknown {
+  return owned[name]
 }
 
 function locateObject(text: string): {
@@ -279,7 +310,7 @@ function locateObject(text: string): {
     const valueStart = skipWs(text, colon + 1)
     const valueEnd = skipValue(text, valueStart)
     members.push({
-      ownedKey: name.value === 'permissions' || name.value === 'hooks' ? name.value : null,
+      ownedKey: ownedKey(name.value),
       nameStart: i,
       valueStart,
       valueEnd,

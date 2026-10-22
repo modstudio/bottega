@@ -37,6 +37,7 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
+import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type {
@@ -68,10 +69,6 @@ import type {
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
-import type {
-  RecordSettingsPermissionInput,
-  RecordSettingsPermissionResult,
-} from './record-settings.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
@@ -197,7 +194,8 @@ export type {
 export type RecordApiClient = ProjectIdentityClient &
   RecordLensClient &
   RecordPortClient &
-  RecordWorkflowClient & {
+  RecordWorkflowClient &
+  RecordSettingsClient & {
     whoami(): Promise<RecordIdentity>
     sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
@@ -267,10 +265,6 @@ export type RecordApiClient = ProjectIdentityClient &
       input: RecordDocOrderInput,
       destination?: RecordRequestDestination,
     ): Promise<{ orderedIds: string[] }>
-    applySettingsPermission(
-      input: Omit<RecordSettingsPermissionInput, 'url' | 'userId' | 'spaceId' | 'spaceIds'>,
-      destination?: RecordRequestDestination,
-    ): Promise<RecordSettingsPermissionResult>
     importDoc(
       input: RecordDocImportInput,
       destination?: RecordRequestDestination,
@@ -762,6 +756,12 @@ const recordDocWriteClient = (
   reorderDocs: reorderDocsRequest,
   applySettingsPermission: (input, destination) =>
     request('/v1/settings/permission', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      ...destination,
+    }),
+  applySettingsAutoMode: (input, destination) =>
+    request('/v1/settings/auto-mode', {
       method: 'POST',
       body: JSON.stringify(input),
       ...destination,

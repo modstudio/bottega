@@ -306,6 +306,7 @@ describe('settings render --check', () => {
           allow: [`Bash(${PLATFORM_SLUG} run result *)`, `Bash(${PLATFORM_SLUG} run diff *)`],
         },
         hooks: {},
+        autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
       }),
       reason: 'seed store',
     })
@@ -319,6 +320,8 @@ describe('settings render --check', () => {
     )
     const text = shown.logs.join('\n')
     expect(text).toContain(`removed allow Bash(${PLATFORM_SLUG} run diff *)`)
+    expect(text).toContain('removed autoMode.allow $defaults')
+    expect(text).toContain('removed autoMode.allow Bash(docker compose *)')
     expect(text).toContain('added hook PreToolUse')
     expect(text).not.toContain('"matcher"')
     expect(shown.code()).toBe(1)
