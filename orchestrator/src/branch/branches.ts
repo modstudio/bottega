@@ -28,7 +28,8 @@ import {
   findRecordedBranchLanding,
   type PatchEquivalentForm,
   pullRequestCarriesKey,
-  type TargetedBranchLandingFacts,
+  shouldSettleTruncatedBranch,
+  type TaskBranchPullRequestCheck,
 } from './branch-state.ts'
 import {
   GH_MERGED_PR_LIMIT,
@@ -46,8 +47,7 @@ import {
   type OtherBranchLanding,
   taskKeyToken,
 } from './other-branch-state.ts'
-import { observeTargetedBranchLandingFacts } from './targeted-branch-proof.ts'
-import { taskBranchPatchEquivalent } from './task-branch.ts'
+import { taskBranchPatchEquivalent, taskBranchPullRequestCheck } from './task-branch.ts'
 
 type RunRow = BranchReportRun & {
   minted_branch: string | null
@@ -475,15 +475,14 @@ function otherBranchReportRow(input: OtherBranchReportInput): OtherBranchReportR
     targetedPullRequests: null,
     checkError,
   })
-  let targetedPullRequests: TargetedBranchLandingFacts | null = null
-  if (input.truncated && preliminary.state === 'unknown' && !preliminary.error) {
-    targetedPullRequests = observeTargetedBranchLandingFacts({
+  let targetedPullRequests: TaskBranchPullRequestCheck | null = null
+  if (shouldSettleTruncatedBranch(input.truncated, preliminary)) {
+    targetedPullRequests = taskBranchPullRequestCheck({
       project,
       branch,
       tip: detail.tip,
-      key: taskKeyToken(branch, project.settings.keyPrefixes ?? []) ?? 'unkeyed',
-      fetchedPullRequests: input.fetchedPullRequests,
-      headMatch: 'contains-tip',
+      launchKey: taskKeyToken(branch, project.settings.keyPrefixes ?? []) ?? 'unkeyed',
+      headMatch: 'exact-head-contains-tip',
     })
   }
   return {

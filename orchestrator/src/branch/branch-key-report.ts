@@ -9,14 +9,15 @@ import {
   type BranchStateDecision,
   decideBranchState,
   findRecordedBranchLanding,
-  type TargetedBranchLandingFacts,
+  shouldSettleTruncatedBranch,
+  type TaskBranchPullRequestCheck,
 } from './branch-state.ts'
 import type { MergedPullRequest } from './merged-pull-request.ts'
-import { observeTargetedBranchLandingFacts } from './targeted-branch-proof.ts'
 import {
   isTaskBranchSuperseded,
   taskBranchContainedTips,
   taskBranchIsAncestor,
+  taskBranchPullRequestCheck,
   taskBranchRunRow,
 } from './task-branch.ts'
 
@@ -60,7 +61,7 @@ function decideProof(
     containingBranch?: string | null
     laterTurnBranches?: { branch: string; state: BranchStateDecision }[]
     superseded?: boolean
-    targetedPullRequests?: TargetedBranchLandingFacts | null
+    targetedPullRequests?: TaskBranchPullRequestCheck | null
   } = {},
 ) {
   return decideBranchState({
@@ -88,7 +89,7 @@ function decideProof(
 function containmentProofs(
   input: Input,
   rows: ReturnType<typeof observeBranchLandingProof>[],
-  targetedPullRequests: ReadonlyMap<string, TargetedBranchLandingFacts> = new Map(),
+  targetedPullRequests: ReadonlyMap<string, TaskBranchPullRequestCheck> = new Map(),
 ): ReadonlyMap<string, string> {
   const direct = new Map(
     rows.map((row) => [
@@ -128,7 +129,7 @@ function decideObservedRows(
   input: Input,
   observed: readonly ObservedReportRow[],
   containedBy: ReadonlyMap<string, string>,
-  targetedPullRequests: ReadonlyMap<string, TargetedBranchLandingFacts> = new Map(),
+  targetedPullRequests: ReadonlyMap<string, TaskBranchPullRequestCheck> = new Map(),
 ): Map<string, BranchStateDecision> {
   const decided = new Map<string, BranchStateDecision>()
   for (const row of [...observed].sort(
@@ -163,24 +164,23 @@ function gatherTargetedPullRequests(
   rows: readonly ReturnType<typeof observeBranchLandingProof>[],
   preliminaryDecided: ReadonlyMap<string, BranchStateDecision>,
   preliminaryContainedBy: ReadonlyMap<string, string>,
-): Map<string, TargetedBranchLandingFacts> {
-  const targeted = new Map<string, TargetedBranchLandingFacts>()
-  if (!input.truncated) return targeted
+): Map<string, TaskBranchPullRequestCheck> {
+  const targeted = new Map<string, TaskBranchPullRequestCheck>()
   for (const row of rows) {
     const state =
       preliminaryDecided.get(row.branch) ??
       decideProof(input, row, {
         containingBranch: preliminaryContainedBy.get(row.branch) ?? null,
       })
-    if (state.state !== 'unknown' || state.error) continue
+    if (!shouldSettleTruncatedBranch(input.truncated, state)) continue
     targeted.set(
       row.branch,
-      observeTargetedBranchLandingFacts({
+      taskBranchPullRequestCheck({
         project: input.project,
         branch: row.branch,
         tip: row.tip,
-        key: input.key,
-        fetchedPullRequests: input.fetchedPullRequests,
+        launchKey: input.key,
+        headMatch: 'exact-head-contains-tip',
       }),
     )
   }

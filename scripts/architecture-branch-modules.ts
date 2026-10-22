@@ -17,7 +17,6 @@ export const branchModuleSpecs = [
       './branch-state.ts',
       './merged-pull-request.ts',
       './other-branch-state.ts',
-      './targeted-branch-proof.ts',
       './task-branch.ts',
     ],
   },
@@ -46,16 +45,6 @@ export const branchModuleSpecs = [
       './branch-state.ts',
       './merged-pull-request.ts',
       './task-branch.ts',
-      './targeted-branch-proof.ts',
-    ],
-  },
-  {
-    file: 'orchestrator/src/branch/targeted-branch-proof.ts',
-    allowed: [
-      '../project/projects.ts',
-      './branch-landing-match.ts',
-      './branch-state.ts',
-      './merged-pull-request.ts',
     ],
   },
   {

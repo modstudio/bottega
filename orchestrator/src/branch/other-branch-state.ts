@@ -5,7 +5,7 @@ import {
   decideUnmatchedBranchLanding,
   type PatchEquivalentForm,
   type ProtectedBranchKind,
-  type TargetedBranchLandingFacts,
+  type TaskBranchPullRequestCheck,
 } from './branch-state.ts'
 import type {
   MergedPullRequest,
@@ -54,7 +54,7 @@ export function decideOtherBranchState(input: {
   commitsNotOnTrunk: number
   patchEquivalent: PatchEquivalentForm | null
   pullRequestCommitCheck: PullRequestCommitCheck
-  targetedPullRequests: TargetedBranchLandingFacts | null
+  targetedPullRequests: TaskBranchPullRequestCheck | null
   checkError?: string
 }): OtherBranchLanding {
   if (isHeldBranch(input.branch)) return { state: 'held' }

@@ -97,12 +97,7 @@ describe('other local branch state decision', () => {
     expect(
       decide({
         mergedPullRequestsTruncated: true,
-        targetedPullRequests: {
-          matchingPullRequest: null,
-          pullRequestCommitCheck: null,
-          branchListingTruncated: false,
-          commitListingTruncated: false,
-        },
+        targetedPullRequests: { state: 'unmatched' },
       }),
     ).toEqual({ state: 'unlanded' })
   })
