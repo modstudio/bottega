@@ -5,7 +5,10 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
-import { reportedCostForRun } from '../run/run-subscription-cost.ts'
+import {
+  type SubscriptionCostContext,
+  withReportedCost,
+} from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 export type EpicChild = { key: string; title?: string; status?: string | null }
 type NotRecorded = { metric: string; needed: string }
@@ -201,29 +204,12 @@ function addStrandingReasons(
 const reviewRoundKey = (review: ReviewRow) =>
   review.patch_id ?? review.head_commit ?? `review:${review.record_id}`
 
-function epicRunCosts(
-  taskRuns: RunRow[],
-  facts: ReturnType<typeof subscriptionCostFacts>,
-  prices: Readonly<Record<string, number | null>>,
-) {
+function epicRunCosts(taskRuns: RunRow[], subscriptionCost: SubscriptionCostContext) {
   const priced = taskRuns
-    .map((run) =>
-      reportedCostForRun(
-        {
-          agent: run.agent,
-          startedAt: run.started_at,
-          vendorTokens: run.vendor_tokens,
-          vendorCostUsd: run.vendor_cost_usd,
-          vendorEstimatedCostUsd: run.vendor_estimated_cost_usd,
-          vendorCostSource: run.vendor_cost_source,
-        },
-        facts,
-        prices,
-      ),
-    )
-    .filter((cost) => cost.usd !== null)
+    .map((run) => withReportedCost(run, subscriptionCost))
+    .filter((row) => row.cost_usd !== null)
   return {
-    vendorCostUsd: priced.length ? priced.reduce((sum, cost) => sum + cost.usd!, 0) : null,
+    vendorCostUsd: priced.length ? priced.reduce((sum, row) => sum + row.cost_usd!, 0) : null,
     unreportedCost: taskRuns.length - priced.length,
   }
 }
@@ -241,12 +227,15 @@ export function epicScoreboard(
   children: EpicChild[],
   database: Database = db(),
   clock = Date.now(),
-  subscriptionPrices: Readonly<Record<string, number | null>> = {},
+  options: { subscriptionCost?: SubscriptionCostContext } = {},
 ): EpicScoreboard {
   const keys = children.map((child) => child.key.toUpperCase())
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
   const { runs, landings, reviews } = epicEvidence(database)
-  const costFacts = subscriptionCostFacts(database)
+  const subscriptionCost = options.subscriptionCost ?? {
+    facts: subscriptionCostFacts(database),
+    prices: {},
+  }
   const subjects = commitSubjects(database)
   const subjectKey = (projectId: string | null, commit: string | null) =>
     keyInBranch(projectId && commit ? (subjects.get(projectId)?.get(commit) ?? null) : null, keys)
@@ -270,7 +259,7 @@ export function epicScoreboard(
     for (const run of taskRuns) byJob[run.job] = (byJob[run.job] ?? 0) + 1
     const timing = durationMetrics(taskRuns, clock)
     const tokenRows = taskRuns.filter((run) => run.vendor_tokens !== null)
-    const costs = epicRunCosts(taskRuns, costFacts, subscriptionPrices)
+    const costs = epicRunCosts(taskRuns, subscriptionCost)
     const refused = taskLandings.filter((landing) => landing.status === 'refused')
     const refusedByCause: Record<string, number> = {}
     for (const landing of refused) {

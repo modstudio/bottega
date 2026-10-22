@@ -1,7 +1,7 @@
 // concern: run usage columns
 /** Maps transport usage into the four columns persisted on a run. */
-import type { VendorUsage } from '../transport/vendor-usage.ts'
-import { SUBSCRIPTION_STORED_SOURCE } from './run-subscription-cost.ts'
+import type { Agent } from '../agent/agents.ts'
+import { SUBSCRIPTION_STORED_SOURCE, type VendorUsage } from '../transport/vendor-usage.ts'
 
 export type RunUsageColumns = {
   vendorInputTokens: number | null
@@ -10,7 +10,10 @@ export type RunUsageColumns = {
   vendorCostSource: string | null
 }
 
-export function runUsageColumns(usage: VendorUsage, billing?: string | null): RunUsageColumns {
+export function runUsageColumns(
+  usage: VendorUsage,
+  billing?: Agent['billing'] | null,
+): RunUsageColumns {
   if (billing === 'subscription') {
     return {
       vendorInputTokens: usage.inputTokens,

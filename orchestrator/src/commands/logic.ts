@@ -52,7 +52,7 @@ import {
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
-import { loadSubscriptionPrices } from '../run/run-subscription-prices.ts'
+import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
@@ -327,7 +327,9 @@ async function epicAction(
 ): Promise<void> {
   const project = projectAt(process.cwd())
   if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
-  await epicCommand(project.name, key, json, presentation, await loadSubscriptionPrices())
+  await epicCommand(project.name, key, json, presentation, {
+    subscriptionCost: await loadSubscriptionCostContext(),
+  })
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {

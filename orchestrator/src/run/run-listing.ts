@@ -19,7 +19,10 @@ import type {
 } from './question-vocabulary.ts'
 import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
-import { reportedCostForRun } from './run-subscription-cost.ts'
+import {
+  type SubscriptionCostContext,
+  withReportedCost,
+} from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
@@ -78,41 +81,19 @@ type RunListingPresentation = {
     processStartTime(pid: number): string | null
   }
   clock(): number
-  subscriptionPrices?: Readonly<Record<string, number | null>>
-}
-
-function withReportedCost(
-  row: Record<string, unknown>,
-  facts: ReturnType<typeof subscriptionCostFacts>,
-  prices: Readonly<Record<string, number | null>>,
-) {
-  const cost = reportedCostForRun(
-    {
-      agent: String(row.agent ?? ''),
-      startedAt: String(row.started_at ?? ''),
-      vendorTokens: (row.vendor_tokens as number | null) ?? null,
-      vendorCostUsd: (row.vendor_cost_usd as number | null) ?? null,
-      vendorEstimatedCostUsd: (row.vendor_estimated_cost_usd as number | null) ?? null,
-      vendorCostSource: (row.vendor_cost_source as string | null) ?? null,
-    },
-    facts,
-    prices,
-  )
-  return { ...row, cost_usd: cost.usd, cost_source: cost.source }
+  subscriptionCost?: SubscriptionCostContext
 }
 
 function listedRunWithCost(
   listed: Record<string, unknown>,
   turns: unknown,
-  facts: ReturnType<typeof subscriptionCostFacts> | null,
-  prices: Readonly<Record<string, number | null>>,
+  subscriptionCost: SubscriptionCostContext,
 ) {
-  const pricedTurns =
-    Array.isArray(turns) && facts
-      ? turns.map((turn) => withReportedCost(turn as Record<string, unknown>, facts, prices))
-      : turns
+  const pricedTurns = Array.isArray(turns)
+    ? turns.map((turn) => withReportedCost(turn as Record<string, unknown>, subscriptionCost))
+    : turns
   const row = pricedTurns ? { ...listed, turns: pricedTurns } : listed
-  return facts ? withReportedCost(row, facts, prices) : row
+  return withReportedCost(row, subscriptionCost)
 }
 
 function listingHumanCurrent(finalRecordId: string, json: boolean) {
@@ -192,8 +173,7 @@ function listingQuestions(recordId: string, json: boolean) {
 function listingConversation(
   r: Record<string, unknown>,
   json: boolean,
-  costFacts: ReturnType<typeof subscriptionCostFacts> | null,
-  prices: Readonly<Record<string, number | null>>,
+  subscriptionCost: SubscriptionCostContext,
   chainIsStranded: (id: string) => boolean,
   strandedRecovery: (id: string) => string,
 ): Record<string, unknown>[] {
@@ -215,7 +195,7 @@ function listingConversation(
         }
       : {}),
   }
-  return [listedRunWithCost(listed, listingTurns(recordId, json), costFacts, prices)]
+  return [listedRunWithCost(listed, listingTurns(recordId, json), subscriptionCost)]
 }
 
 function processSamplesForRows(
@@ -368,12 +348,11 @@ export async function runListingCommand(
     thinOutputWarning,
     processObservation,
     clock,
-    subscriptionPrices = {},
+    subscriptionCost = { facts: subscriptionCostFacts(), prices: {} },
   } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const json = has('json') || options.jsonV1
-  const costFacts = subscriptionCostFacts()
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
@@ -450,8 +429,7 @@ export async function runListingCommand(
       listingConversation(
         r,
         json,
-        costFacts,
-        subscriptionPrices,
+        subscriptionCost,
         chainIsStranded,
         strandedRecovery,
       ),

@@ -28,13 +28,10 @@ import {
 } from '../config/config-service.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
-import {
-  SUBSCRIPTION_PRICE_HARNESSES,
-  subscriptionMonthlyUsdKey,
-} from '../run/run-subscription-cost.ts'
+import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
 import { log, rawArgv } from './support.ts'
 
-const SUBSCRIPTION_PRICE_HELP = `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd.\nExamples:\n${SUBSCRIPTION_PRICE_HARNESSES.map((harness) => `  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey(harness)} <usd>`).join('\n')}\n`
+const SUBSCRIPTION_PRICE_HELP = `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd, for example ${subscriptionMonthlyUsdKey('codex')} and ${subscriptionMonthlyUsdKey('grok')}.\nExamples:\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('codex')} <usd>\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('grok')} <usd>\n`
 
 function registerConfigSet(config: Command): void {
   config
