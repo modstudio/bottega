@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -157,15 +157,23 @@ function planBranchDisposal(input: {
     throw new Error('branch disposal requires an attributed architect or operator session')
   const project = projectByName(projectName)
   if (!project) throw new Error(`unknown project ${projectName}`)
+  const ref = observeGitRef(project.path, `refs/heads/${branch}`)
+  if (ref.outcome === 'failed') throw new Error(ref.detail)
+  if (ref.outcome === 'absent') throw new Error(`branch ${branch} has no ref; nothing to dispose`)
   const projectReport = branchesReport({ project: projectName, branch }).projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const keyGroup = projectReport.keys.find((group) =>
     group.branches.some((row) => row.branch === branch),
   )
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
+  const runMinted =
+    db()
+      .query('SELECT 1 present FROM run WHERE project_record_id=? AND minted_branch=? LIMIT 1')
+      .get(project.recordId, branch) !== null
   const taskStatus = observeTaskStatus(keyGroup?.key ?? null, projectName)
   const decision = decideBranchDisposal({
-    runMinted: row !== undefined,
+    runMinted,
+    refExists: true,
     liveRun: row?.liveRun ?? false,
     checkedOut: row?.checkedOut ?? false,
     taskStatus: disposalTaskState(taskStatus),
