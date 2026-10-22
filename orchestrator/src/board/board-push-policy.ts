@@ -6,18 +6,6 @@ import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
 export type BoardReaderStart = string | null | 'unbounded'
 
-export function lateDeliveryDecision(input: {
-  purpose: BoardPurpose
-  inAudience: boolean
-  expired: boolean
-  hasReceipt: boolean
-  sessionBeganBeforePost: boolean
-}): 'deliver' | 'skip' {
-  if (!input.inAudience || input.expired || input.hasReceipt || !input.sessionBeganBeforePost)
-    return 'skip'
-  return input.purpose === 'request' || input.purpose === 'standing' ? 'deliver' : 'skip'
-}
-
 export function reportReplySuccessorDecision(input: {
   rootAuthorLive: boolean
   readerIsArchitect: boolean
@@ -25,6 +13,8 @@ export function reportReplySuccessorDecision(input: {
   rootProject: string | null
   readerIsParticipant: boolean
   successorAlreadyReceived: boolean
+  readerBeganAt: string | null
+  authorLastActivityAt: number | null
 }): boolean {
   return (
     !input.rootAuthorLive &&
@@ -32,7 +22,10 @@ export function reportReplySuccessorDecision(input: {
     !input.successorAlreadyReceived &&
     input.readerIsArchitect &&
     input.rootProject !== null &&
-    input.readerProject === input.rootProject
+    input.readerProject === input.rootProject &&
+    input.readerBeganAt !== null &&
+    input.authorLastActivityAt !== null &&
+    Date.parse(input.readerBeganAt) > input.authorLastActivityAt
   )
 }
 
@@ -52,8 +45,17 @@ function acknowledgementPushDecision(input: {
   return 'acknowledgement'
 }
 
-function sessionBeganBeforePost(readerBeganAt: BoardReaderStart, postedAt: string): boolean {
-  return readerBeganAt !== null && readerBeganAt !== 'unbounded' && readerBeganAt <= postedAt
+function olderThanReader(
+  readerBeganAt: BoardReaderStart,
+  postedAt: string,
+  purpose?: BoardPurpose,
+): boolean {
+  return (
+    readerBeganAt !== null &&
+    readerBeganAt !== 'unbounded' &&
+    purpose !== 'standing' &&
+    postedAt < readerBeganAt
+  )
 }
 
 export function boardPushDecision(input: {
@@ -64,13 +66,9 @@ export function boardPushDecision(input: {
   purpose?: BoardPurpose
   readerBeganAt: BoardReaderStart
   clock: number
-  inAudience?: boolean
-  hasReceipt?: boolean
   reportReplySuccessor?: boolean
 }): BoardPushDecision {
-  if (input.hasReceipt || input.inAudience === false) return 'withheld'
   if (input.expiresAt !== null && Date.parse(input.expiresAt) <= input.clock) return 'withheld'
-  if (input.reportReplySuccessor) return 'ordinary'
   if (input.acknowledgementRequired)
     return acknowledgementPushDecision({
       acknowledgementDeadline: input.acknowledgementDeadline,
@@ -78,23 +76,8 @@ export function boardPushDecision(input: {
       postedAt: input.postedAt,
       clock: input.clock,
     })
-  if (
-    lateDeliveryDecision({
-      purpose: input.purpose ?? 'information',
-      inAudience: true,
-      expired: false,
-      hasReceipt: false,
-      sessionBeganBeforePost: sessionBeganBeforePost(input.readerBeganAt, input.postedAt),
-    }) === 'deliver'
-  )
-    return 'ordinary'
-  if (
-    input.readerBeganAt !== null &&
-    input.readerBeganAt !== 'unbounded' &&
-    input.purpose !== 'standing' &&
-    input.postedAt < input.readerBeganAt
-  )
-    return 'withheld'
+  if (olderThanReader(input.readerBeganAt, input.postedAt, input.purpose))
+    return input.reportReplySuccessor ? 'ordinary' : 'withheld'
   return 'ordinary'
 }
 

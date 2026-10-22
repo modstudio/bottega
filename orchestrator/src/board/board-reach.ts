@@ -37,7 +37,7 @@ export type BoardReachRow = {
   postingTiming: 'before-session' | 'after-session'
   concern: BoardReachConcern
   recordedAt: string
-  late: boolean
+  audienceAtPosting: boolean
 }
 
 export type BoardReachRecordingInput = {
@@ -300,7 +300,7 @@ export function countBoardReach(rows: BoardReachRow[]) {
     pushesNotConcerned: rows.filter((row) => row.concern === 'not-concerned').length,
     pushesUnqualified: rows.filter((row) => row.concern === 'unqualified').length,
     pushesOlderThanSession: rows.filter((row) => row.postingTiming === 'before-session').length,
-    lateDeliveries: rows.filter((row) => row.late).length,
+    audienceAtPostingZero: rows.filter((row) => row.audienceAtPosting === false).length,
     stopsBlockedWithoutAcknowledgement: rows.filter(
       (row) => row.blockedStop && !row.acknowledgementRequired,
     ).length,
@@ -360,7 +360,7 @@ const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
   postingTiming: row.posting_timing as 'before-session' | 'after-session',
   concern: row.concern as BoardReachConcern,
   recordedAt: String(row.recorded_at),
-  late: row.audience_at_posting === 0,
+  audienceAtPosting: row.audience_at_posting === 1,
 })
 
 export function boardReachReport(
@@ -428,7 +428,7 @@ export function renderBoardReach(report: ReturnType<typeof boardReachReport>): s
     `Pushes not concerning the reader's project: ${totals.pushesNotConcerned}`,
     `Pushes of unqualified messages: ${totals.pushesUnqualified}`,
     `Pushes older than the session: ${totals.pushesOlderThanSession}`,
-    `Late deliveries: ${totals.lateDeliveries}`,
+    `Pushes with audience_at_posting 0: ${totals.audienceAtPostingZero}`,
     `Stops blocked without acknowledgement required: ${totals.stopsBlockedWithoutAcknowledgement}`,
   ]
   if (totals.worstMessages.length) {

@@ -17,7 +17,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
-import { BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
+import { BOARD_PRESENCE_REFRESH_SECONDS, BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES } from './board-render.ts'
 import { postNotice } from './board-service.ts'
@@ -122,6 +122,7 @@ function runHook(
       BOARD_PUSH_REFRESH_SECONDS: String(BOARD_PUSH_REFRESH_SECONDS),
       BOARD_PUSH_REMIND_SECONDS: '300',
       BOARD_PUSH_RETRY_SECONDS: '15',
+      BOARD_PRESENCE_REFRESH_SECONDS: String(BOARD_PRESENCE_REFRESH_SECONDS),
       BOARD_ACK_STOP_BLOCKS: '3',
       BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
       ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
@@ -200,6 +201,7 @@ function runHookRepeatedResult(
         BOARD_PUSH_REFRESH_SECONDS: String(BOARD_PUSH_REFRESH_SECONDS),
         BOARD_PUSH_REMIND_SECONDS: '300',
         BOARD_PUSH_RETRY_SECONDS: '15',
+        BOARD_PRESENCE_REFRESH_SECONDS: String(BOARD_PRESENCE_REFRESH_SECONDS),
         BOARD_ACK_STOP_BLOCKS: '3',
         BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
         ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),

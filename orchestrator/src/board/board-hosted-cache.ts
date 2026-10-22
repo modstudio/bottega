@@ -473,6 +473,9 @@ function hostedReplySuccessorPush(
   const readerFact = facts.find(
     (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
   )
+  const authorFact = facts.find(
+    (row: PresenceFact) => row.reader === root.authorSession && !row.taskAudienceOnly,
+  )
   return reportReplySuccessorDecision({
     rootAuthorLive: resolveAudience(
       { kind: 'session', value: root.authorSession },
@@ -492,7 +495,30 @@ function hostedReplySuccessorPush(
         )
         .get(message.id),
     ),
+    readerBeganAt: boardReaderBeganAt(reader, database),
+    authorLastActivityAt: authorFact?.lastSeen ?? null,
   })
+}
+
+function takeHostedReportReplySuccessor(
+  message: HostedBoardMessage,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  return writeTransaction(() => {
+    if (!hostedReplySuccessorPush(message, reader, clock, database)) return false
+    database
+      .query(
+        `INSERT INTO hosted_board_receipt_cache
+         (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+         VALUES (?,?,0,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
+         pending_sync=1`,
+      )
+      .run(message.id, reader, new Date(clock).toISOString())
+    return true
+  }, database)
 }
 
 export function cachedMessageAddressed(
@@ -663,7 +689,7 @@ export function claimCachedHostedForPush(
   reader: string,
   all = false,
   clock = Date.now(),
-  database: Database = db(),
+  database: Database = writableDb(),
 ): { notices: HostedCacheNotice[]; withheldOlderCount: number; warning: string | null } {
   const beganAt =
     reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
@@ -672,8 +698,14 @@ export function claimCachedHostedForPush(
     claimCachedHosted(reader, all, clock, database),
     clock,
   )
+  const notices = selected.notices.filter((notice) => {
+    if (!notice.reportReplySuccessor) return true
+    const row = cachedRows(database).find((item) => item.message.id === notice.id)
+    return row !== undefined && takeHostedReportReplySuccessor(row.message, reader, clock, database)
+  })
   return {
-    ...selected,
+    notices,
+    withheldOlderCount: selected.withheldOlderCount + (selected.notices.length - notices.length),
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

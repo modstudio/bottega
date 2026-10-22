@@ -21,7 +21,6 @@ from board_hook_common import (
     write_marker,
 )
 
-BOARD_PRESENCE_REFRESH_SECONDS = 15
 BOARD_PRESENCE_CALL_TIMEOUT_SECONDS = 1
 
 
@@ -175,15 +174,11 @@ def main() -> int:
         refresh = int(os.environ["BOARD_PUSH_REFRESH_SECONDS"])
         remind = int(os.environ["BOARD_PUSH_REMIND_SECONDS"])
         retry = int(os.environ["BOARD_PUSH_RETRY_SECONDS"])
+        presence_refresh = int(os.environ["BOARD_PRESENCE_REFRESH_SECONDS"])
         if not isinstance(session, str) or not session:
             return 0
         now = time.time()
-        interval = int(
-            os.environ.get(
-                "BOARD_PRESENCE_REFRESH_SECONDS", BOARD_PRESENCE_REFRESH_SECONDS
-            )
-        )
-        refresh_presence(session, now, interval)
+        refresh_presence(session, now, presence_refresh)
         candidates, hosted_stale = cheap_state(session, refresh)
         path = marker_path("interrupt", session)
         marker = parse_marker(read_marker(path))

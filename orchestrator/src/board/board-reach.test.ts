@@ -34,7 +34,7 @@ const row = ({
   postingTiming: 'after-session',
   concern: 'concerned',
   recordedAt: '2026-10-13T12:01:00.000Z',
-  late: false,
+  audienceAtPosting: true,
   ...input,
 })
 
@@ -81,7 +81,7 @@ test('counts project concern, unqualified and older pushes, and stop acknowledge
     pushesNotConcerned: 1,
     pushesUnqualified: 1,
     pushesOlderThanSession: 1,
-    lateDeliveries: 0,
+    audienceAtPostingZero: 0,
     stopsBlockedWithoutAcknowledgement: 1,
     worstMessages: [
       {
@@ -141,7 +141,7 @@ test('an empty reach window has no pushes or worst messages', () => {
     pushesNotConcerned: 0,
     pushesUnqualified: 0,
     pushesOlderThanSession: 0,
-    lateDeliveries: 0,
+    audienceAtPostingZero: 0,
     stopsBlockedWithoutAcknowledgement: 0,
     worstMessages: [],
   })
@@ -387,7 +387,7 @@ test('an emission retry records once while a later reminder records twice', asyn
   expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 2 })
 })
 
-test('reach reports late deliveries separately', async () => {
+test('reach reports pushes with audience_at_posting 0 separately', async () => {
   const clock = Date.parse('2026-10-13T16:00:00.000Z')
   const session = 'late-join-reader'
   const posted = postNotice(
@@ -414,9 +414,11 @@ test('reach reports late deliveries separately', async () => {
     clock: clock + 1,
   })
   const report = boardReachReport(1, clock + 2, db())
-  expect(report.totals.lateDeliveries).toBe(1)
-  expect(report.rows.find((row) => row.messageId === String(posted.recordId))?.late).toBe(true)
-  expect(renderBoardReach(report)).toContain('Late deliveries: 1')
+  expect(report.totals.audienceAtPostingZero).toBe(1)
+  expect(report.rows.find((row) => row.messageId === String(posted.recordId))?.audienceAtPosting).toBe(
+    false,
+  )
+  expect(renderBoardReach(report)).toContain('Pushes with audience_at_posting 0: 1')
 })
 
 test('reach retention leaves recent rows and failures in place', () => {

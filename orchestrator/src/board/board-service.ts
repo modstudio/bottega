@@ -156,6 +156,9 @@ function replySuccessorPush(
   const readerFact = facts.find(
     (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
   )
+  const authorFact = facts.find(
+    (row: PresenceFact) => row.reader === root.author_session && !row.taskAudienceOnly,
+  )
   return reportReplySuccessorDecision({
     rootAuthorLive: resolveAudience(
       { kind: 'session', value: root.author_session },
@@ -175,7 +178,29 @@ function replySuccessorPush(
         )
         .get(reply.record_id),
     ),
+    readerBeganAt: boardReaderBeganAt(reader, database),
+    authorLastActivityAt: authorFact?.lastSeen ?? null,
   })
+}
+
+function takeReportReplySuccessor(
+  reply: MessageRow,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  return writeTransaction(() => {
+    if (!replySuccessorPush(reply, reader, clock, database)) return false
+    database
+      .query(
+        `INSERT INTO board_receipt
+         (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+         VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
+         delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
+      )
+      .run(reply.record_id, reader, new Date(clock).toISOString(), newRecordId())
+    return true
+  }, database)
 }
 
 export function deliverableTo(
@@ -395,7 +420,7 @@ export function claimPushNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-  database = db(),
+  database: Database = writableDb(),
 ): {
   notices: ReturnType<typeof claimNotices>
   withheldOlderCount: number
@@ -405,8 +430,14 @@ export function claimPushNotices(
   const beganAt =
     reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
   const selected = selectPushNotices(beganAt, claimNotices(all, env, clock, database), clock)
+  const notices = selected.notices.filter((notice) => {
+    if (!notice.reportReplySuccessor) return true
+    const row = messageRows(database).find((item) => item.record_id === notice.recordId)
+    return row !== undefined && takeReportReplySuccessor(row, reader, clock, database)
+  })
   return {
-    ...selected,
+    notices,
+    withheldOlderCount: selected.withheldOlderCount + (selected.notices.length - notices.length),
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }
