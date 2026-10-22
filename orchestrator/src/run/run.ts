@@ -194,6 +194,13 @@ function confinementSkipLines(failures: FreezeFailure[]): string[] {
   )
 }
 
+function assertConfiguredGitGuard(
+  environment: ReturnType<typeof workerGitConfigEnvironment>,
+  writableRoots: string[],
+): void {
+  if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
+}
+
 export async function run(opts: {
   job: string
   prompt: string
@@ -692,9 +699,7 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   mcpConnection = claimedMcpConnection
   usingMcp = claimedUsingMcp
-  // A reader clone keeps all writable Git metadata inside its own tree. Its
-  // hooks live outside that root so the worker cannot disable the push guard.
-  // Writers remain linked worktrees and retain their existing shared roots.
+  // Reader Git metadata stays in-tree; writers receive only their guarded shared roots.
   const writerGitWriteRoots = provisionWriterSharedGitRoots(worktree, repoJob && writesJob)
   const writableRoots = [scratchDir, ...writerGitWriteRoots]
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
@@ -702,9 +707,7 @@ export async function run(opts: {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
     ...workerHome.codexPrivateTempEnvironment(harnessName, repoJob, scratchDir),
   }
-  if (gitConfigEnvironment) {
-    assertWorkerGitGuardOutsideWritableRoots(gitConfigEnvironment, writableRoots)
-  }
+  assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
   const mcpLaunch = workerMcpLaunchScope({
     agent: a,
@@ -715,22 +718,14 @@ export async function run(opts: {
     cwd,
     connection: mcpConnection,
   })
-  const codexMcpScope = mcpLaunch.codex
-  const grokReaderServers = mcpLaunch.grok
   const mcpServerName = mcpLaunch.serverName
-  const mcpAllowlist = mcpLaunch.allowlist
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   let sandboxEnvironment: Record<string, string>
   let mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
   let hasRunScopedHome: boolean
   try {
-    const writingAcpAsk = prepareWritingAcpAsk({
-      transport: transportName,
-      writesRepo: writesJob,
-      runId: claim.id,
-      token: runToken,
-    })
+    const writingAcpAsk = prepareWritingAcpAsk(transportName, writesJob, claim.id, runToken)
     askLoopback = writingAcpAsk.loopback
     sandboxSelection = selectReadonlySandbox({
       agent: name,
@@ -744,10 +739,9 @@ export async function run(opts: {
       path: process.env.PATH,
       baseUrl: a.baseUrl,
       mcp: Boolean(mcpMode),
-      mcpAllowlist: mcpMode ? mcpAllowlist : [],
-      writingAcp: writingAcpAsk.writingAcp,
+      mcpAllowlist: mcpMode ? mcpLaunch.allowlist : [],
       writerGitWriteRoots,
-      askAddress: writingAcpAsk.address,
+      ...writingAcpAsk.sandbox,
     })
     const home = await workerHome.prepareWorkerHomeLaunch({
       agent: a,
@@ -759,8 +753,8 @@ export async function run(opts: {
       environment: { ...(gitConfigEnvironment ?? {}), ...(await resolveEndpointApiKeyEnv(a)) },
       grokEnvironment: grokMcpEnvironment,
       includeStore: repoJob,
-      codexMcpScope,
-      grokReaderServers,
+      codexMcpScope: mcpLaunch.codex,
+      grokReaderServers: mcpLaunch.grok,
     })
     ;({
       codexMcpCatalogues,
@@ -779,7 +773,7 @@ export async function run(opts: {
     }
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
-  mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
+  mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, mcpLaunch.codex, codexMcpCatalogues)
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
     : reason
@@ -948,9 +942,7 @@ export async function run(opts: {
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let workerEvents: StreamEvent[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
-  // Start after orch's own worktree and hook setup, immediately before the
-  // vendor process. The interval establishes when a change happened, not who
-  // wrote it: an architect or concurrent landing can change a watched checkout.
+  // Freeze after setup; the interval says when a watched checkout changed, not who changed it.
   const callerProject = projectAt(callerCwd)
   const callerCheckout = callerProject
     ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
@@ -1036,7 +1028,7 @@ export async function run(opts: {
       writes,
       usingMcp,
       mcpServerName,
-      codexMcpScope,
+      codexMcpScope: mcpLaunch.codex,
       mcpTrustGranted,
       writableRoots,
       gitConfigEnvironment,
