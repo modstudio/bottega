@@ -62,6 +62,11 @@ import {
 } from './project-hosted-write.ts'
 import { validateProjectInjectionSettings } from './project-injection.ts'
 import {
+  assertForgeVisibility,
+  type ForgeVisibilityLookup,
+  githubRepository,
+} from './project-visibility.ts'
+import {
   PROJECT_REFERENCES,
   type ProjectReferenceCounts,
   projectReferenceCounts,
@@ -655,6 +660,12 @@ function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
   return problems
 }
 
+function visibilityProblems(visibility: ProjectSettings['visibility']): string[] {
+  return visibility === undefined || visibility === 'public' || visibility === 'private'
+    ? []
+    : ['visibility must be public or private']
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   projectPath?: string,
@@ -681,6 +692,7 @@ export function validateProjectSettings(
     ...mainStackProblems(settings.mainStack),
     ...reviewLensProblems(settings.review, context.enabledLensIds, context.enabledLensSpaceId),
     ...mcpSettingsProblems(settings.mcp),
+    ...visibilityProblems(settings.visibility),
     ...focusedTestsProblems(settings.focusedTests),
   ]
 
@@ -909,6 +921,37 @@ export function assertRegisterBranches(
     `${project.name}: ${check.problems.join('; ')}\n` +
       'invariant: the register landing branch agrees with the main checkout and its integration-branch canon',
   )
+}
+
+export function assertRegisterVisibility(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+  lookup: ForgeVisibilityLookup = (repository) => {
+    const result = Bun.spawnSync(['gh', 'repo', 'view', repository, '--json', 'visibility'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    return {
+      exitCode: result.exitCode,
+      stdout: result.stdout.toString(),
+      stderr: result.stderr.toString(),
+    }
+  },
+): void {
+  const declared = project.settings.visibility
+  if (!declared) return
+  const origin = Bun.spawnSync(['git', '-C', project.path, 'remote', 'get-url', 'origin'], {
+    env: inspectionGitEnv(),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const repository = origin.exitCode === 0 ? githubRepository(origin.stdout.toString()) : null
+  if (!repository) {
+    throw new Error(
+      `${project.name}: could not resolve a GitHub owner/name from origin\n` +
+        'cleared by: configure a GitHub origin, or leave repository visibility undeclared',
+    )
+  }
+  assertForgeVisibility({ project: project.name, repository, declared, lookup })
 }
 
 const MAIN_CHECKOUT_INVARIANT = 'A registered main checkout stays clean; work happens in a worktree'

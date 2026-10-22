@@ -38,6 +38,7 @@ import {
   ACP_FIXTURE_GROK,
   ACP_FIXTURE_MALFORMED,
   ACP_FIXTURE_REFUSAL,
+  ACP_FIXTURE_RATE_LIMIT,
   ACP_FIXTURE_SCHEMA,
   ACP_FIXTURE_STRUCTURED_OK,
   ACP_FIXTURE_TIMEOUT,
@@ -551,6 +552,12 @@ describe('ACP event fixtures normalize to orchestrator outcomes', () => {
     expect(refused.status).toBe('failed')
     expect(failureKindFromStop(refused.stopReason, refused.error)).toBe('content_refusal')
     expect(refused.error).toBe(stopErrorMessage('refusal'))
+  })
+
+  test('a recorded Goose provider 429 is a quota failure, not quality evidence', () => {
+    const limited = normalizeAcpTurn(ACP_FIXTURE_RATE_LIMIT)
+    expect(limited.status).toBe('failed')
+    expect(limited.failureKind).toBe('quota')
   })
 
   test('partial text does not rescue a non-end_turn stop', () => {

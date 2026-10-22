@@ -32,6 +32,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'boolean flag', [
     'agent.enabled',
     'agent.route_metered',
+    'agent.trains_on_inputs',
     'board_message.ack_required',
     'board_reach_delivery.blocked_stop',
     'board_reach_delivery.acknowledgement_required',

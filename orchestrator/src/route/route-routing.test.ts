@@ -18,7 +18,40 @@ import {
   pick,
   promptSizeBucket,
   scoreboard,
+  trainingDataEligibility,
 } from './route.ts'
+
+test('training-data eligibility requires a declared public project even when named', () => {
+  const base = { agent: 'or-free', trainsOnInputs: true }
+  expect(
+    trainingDataEligibility({ ...base, project: 'public-repo', visibility: 'public' }),
+  ).toEqual({
+    eligible: true,
+    why: '',
+  })
+  expect(
+    trainingDataEligibility({ ...base, project: 'private-repo', visibility: 'private' }),
+  ).toMatchObject({ eligible: false })
+  expect(trainingDataEligibility({ ...base, project: null, visibility: null })).toMatchObject({
+    eligible: false,
+  })
+  expect(
+    trainingDataEligibility({
+      ...base,
+      project: 'private-repo',
+      visibility: 'private',
+      explicitlyNamedAgent: 'or-free',
+    }),
+  ).toMatchObject({ eligible: false })
+  expect(
+    trainingDataEligibility({
+      agent: 'private-provider',
+      trainsOnInputs: false,
+      project: 'private-repo',
+      visibility: 'private',
+    }),
+  ).toEqual({ eligible: true, why: '' })
+})
 
 test('metered route eligibility is an opt-in limited to read-only jobs unless named', () => {
   const base = { billing: 'metered', routeMetered: false, writesRepo: false, name: 'metered' }

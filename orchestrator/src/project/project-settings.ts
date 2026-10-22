@@ -106,6 +106,8 @@ export type WorktreeTool = {
 }
 
 export type ProjectSettings = {
+  /** Repository visibility established against the forge when declared. */
+  visibility?: 'public' | 'private'
   /** Main-checkout stack consumers that require start-on-demand. */
   mainStack?: { consumers: MainStackConsumer[]; requiredServices?: string[] }
   /** Local opt-ins for semantic search corpora. */

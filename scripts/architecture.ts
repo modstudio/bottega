@@ -108,6 +108,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/project/project-visibility.ts', ['../../../shared/brand.ts']),
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubImportModules.map((spec) => module(spec.file, [...spec.allowed])),

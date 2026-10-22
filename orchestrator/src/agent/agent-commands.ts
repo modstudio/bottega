@@ -49,6 +49,7 @@ function mutation(argv: string[]): AgentMutation {
   const enabled = booleanFlag('enabled', flag('enabled'))
   const billing = flag('billing')
   const routeMetered = booleanFlag('route-metered', flag('route-metered'))
+  const trainsOnInputs = booleanFlag('trains-on-inputs', flag('trains-on-inputs'))
   const context = flag('context-tokens'),
     jobs = flag('jobs'),
     prefer = flag('prefer'),
@@ -62,6 +63,7 @@ function mutation(argv: string[]): AgentMutation {
     ...(argv.includes('--clear-api-key-secret') ? { apiKeySecret: null } : {}),
     ...(billing ? { billing: billing as AgentMutation['billing'] } : {}),
     ...(routeMetered !== undefined ? { routeMetered } : {}),
+    ...(trainsOnInputs !== undefined ? { trainsOnInputs } : {}),
     ...(context ? { contextTokens: Number(context) } : {}),
     ...(enabled !== undefined ? { enabled } : {}),
     ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),
@@ -160,6 +162,7 @@ function listedRow(row: ReturnType<typeof agentRows>[number]) {
     preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
     maxConcurrent: row.max_concurrent,
     routeMetered: Boolean(row.route_metered),
+    trainsOnInputs: Boolean(row.trains_on_inputs),
     probedAt: row.probed_at,
     probeResult: probe,
     legacy: !['codex', 'grok', 'opencode', 'goose', 'claude-code'].includes(row.harness),

@@ -19,6 +19,7 @@ export const PROJECT_SETTINGS_NOT_IMPORTED = [
 ] as const
 
 export type HostedProjectColumns = {
+  visibility: 'public' | 'private' | null
   keyPrefixes: string[]
   managedContext: boolean
   landingBranch: string | null
@@ -52,6 +53,7 @@ type HostedSettingKey = Exclude<
 >
 
 export const PROJECT_SETTING_COLUMNS = {
+  visibility: 'visibility',
   color: 'color',
   colorDark: 'colorDark',
   docs: 'docs',
@@ -91,6 +93,12 @@ function optionalString(value: unknown, location: string): string | null {
   if (value === undefined || value === null) return null
   if (typeof value !== 'string') throw new Error(`${location} must be a string`)
   return value
+}
+
+function optionalVisibility(value: unknown, project: string): 'public' | 'private' | null {
+  if (value === undefined || value === null) return null
+  if (value === 'public' || value === 'private') return value
+  throw new Error(`project ${project} settings.visibility must be public or private`)
 }
 
 function optionalStringArray(
@@ -145,6 +153,7 @@ export function hostedProjectColumns(
     throw new Error(`project ${project} has unmapped settings keys: ${unknown.sort().join(', ')}`)
   }
   return {
+    [PROJECT_SETTING_COLUMNS.visibility]: optionalVisibility(settings.visibility, project),
     [PROJECT_SETTING_COLUMNS.keyPrefixes]:
       optionalStringArray(settings, 'keyPrefixes', project) ?? [],
     [PROJECT_SETTING_COLUMNS.managedContext]: settings.managedContext === true,

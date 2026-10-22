@@ -22,6 +22,7 @@ import { persistLocalProjectSet } from './project-rename.ts'
 import {
   assertProjectRename,
   assertRegisterBranches,
+  assertRegisterVisibility,
   isProjectRepository,
   type Project,
   type ProjectSettings,
@@ -55,6 +56,7 @@ function listedProjectJson(project: Project) {
   const { recordId, retiredAt, ...rest } = project
   return {
     ...rest,
+    visibility: project.settings.visibility ?? null,
     record_id: recordId,
     repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
@@ -201,6 +203,7 @@ export async function addProject(
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
+  assertRegisterVisibility(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
   const recordId =
     decision.kind === 'adopt' ? decision.recordId : await writeHostedProject(candidate)
@@ -464,6 +467,20 @@ function writesKeyPrefixes(settingsJson: string | undefined): boolean {
   }
 }
 
+function writesVisibility(settingsJson: string | undefined): boolean {
+  if (!settingsJson) return false
+  try {
+    const patch = JSON.parse(settingsJson)
+    return Boolean(patch && typeof patch === 'object' && Object.hasOwn(patch, 'visibility'))
+  } catch {
+    return false
+  }
+}
+
+function verifyWrittenVisibility(settingsJson: string | undefined, candidate: Project): void {
+  if (writesVisibility(settingsJson)) assertRegisterVisibility(candidate)
+}
+
 async function persistSetProject(
   currentName: string,
   nextName: string,
@@ -532,6 +549,7 @@ async function setProjectCommand(
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
+  verifyWrittenVisibility(flags.flag('settings'), candidate)
   const previousTrunk = typeof project.settings.trunk === 'string' ? project.settings.trunk : null
   const destination = await hostedProjectDestination(candidate.name, candidate.settings)
   await refuseHostedProjectSpaceChange(project, candidate.settings, destination)

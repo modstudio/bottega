@@ -47,6 +47,8 @@ export type Agent = {
   maxConcurrent?: number | null
   /** Whether automatic routing may spend this metered agent on read-only jobs. */
   routeMetered?: boolean
+  /** Whether the provider may train on prompts and repository inputs. */
+  trainsOnInputs?: boolean
   bin: string
   /** Exact bottega-ask command this harness registration configures, if any. */
   askServerCommand?(environment: Record<string, string>): string[] | null

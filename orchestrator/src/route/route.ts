@@ -12,6 +12,7 @@ import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
+import { projectByName } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
@@ -428,6 +429,7 @@ export function candidates(
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
   explicitlyNamedAgent?: string,
+  projectName?: string | null,
 ): Candidate[] {
   const j = job(jobName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
@@ -606,7 +608,7 @@ export function candidates(
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
-    const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent)
+    const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent, projectName)
     let eligible = true,
       why = policy.why
     const unavailable = unavailableReason(name)
@@ -771,6 +773,7 @@ export function evidenceFor(
   modelOverride?: string,
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
+  projectName?: string | null,
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'
@@ -793,6 +796,8 @@ export function evidenceFor(
     undefined,
     undefined,
     requiredMcp,
+    undefined,
+    projectName,
   )
   if (requested) {
     const scoped =
@@ -805,6 +810,8 @@ export function evidenceFor(
             undefined,
             requested.value,
             requiredMcp,
+            undefined,
+            projectName,
           )
         : candidates(
             jobName,
@@ -814,6 +821,8 @@ export function evidenceFor(
             undefined,
             undefined,
             requiredMcp,
+            undefined,
+            projectName,
           )
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
@@ -869,6 +878,33 @@ type CurrentPolicyCandidate = Pick<
   Candidate,
   'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
 > & { precision?: number | null }
+
+type PickAvoid = {
+  agents?: string[]
+  models?: string[]
+  model?: string
+  noWaitCapacity?: boolean
+  requiredMcp?: RequiredMcpServer
+  project?: string | null
+}
+
+function evidenceForPick(
+  jobName: string,
+  promptBytes: number,
+  stack: string | null | undefined,
+  avoid: PickAvoid,
+  lens: string | undefined,
+) {
+  return evidenceFor(
+    jobName,
+    promptBytes,
+    stack,
+    avoid.model,
+    lens,
+    avoid.requiredMcp,
+    avoid.project,
+  )
+}
 
 /** Failure-only history has already answered whether another run is worthwhile. */
 function worthExploring(c: CurrentPolicyCandidate): boolean {
@@ -961,13 +997,7 @@ export function pick(
   explore = true,
   stack?: string | null,
   /** Agents and effective models a fan-out has already used. */
-  avoid: {
-    agents?: string[]
-    models?: string[]
-    model?: string
-    noWaitCapacity?: boolean
-    requiredMcp?: RequiredMcpServer
-  } = {},
+  avoid: PickAvoid = {},
   /** An explicit calibration probe may test whether its named agent recovered. */
   probe = false,
   /** Stable findings viewpoint used for reviewer-precision calibration. */
@@ -975,7 +1005,7 @@ export function pick(
   rng: () => number = Math.random,
 ): { agent: string; reason: string } {
   const j = job(jobName)
-  const ev = evidenceFor(jobName, promptBytes, stack, avoid.model, lens, avoid.requiredMcp)
+  const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
   const cands = ev.cands
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
@@ -1003,6 +1033,7 @@ export function pick(
       ev.level === 'lens' ? ev.lens : undefined,
       avoid.requiredMcp,
       override,
+      avoid.project,
     )
     const c = namedCandidates.find((x) => x.agent === override)
     if (!c) throw new Error(`unknown agent "${override}"`)
@@ -1171,6 +1202,29 @@ export function meteredRouteEligibility(input: {
   return { eligible: true, why: '', mayAutoRouteNamedJob: true }
 }
 
+export function trainingDataEligibility(input: {
+  agent: string
+  trainsOnInputs: boolean
+  project: string | null
+  visibility: 'public' | 'private' | null
+  explicitlyNamedAgent?: string
+}): { eligible: boolean; why: string } {
+  if (!input.trainsOnInputs || (input.project !== null && input.visibility === 'public')) {
+    return { eligible: true, why: '' }
+  }
+  const project = input.project ?? '(no project)'
+  const declaration =
+    input.project === null
+      ? 'dispatch from a registered public project'
+      : `declare it public with ${PLATFORM_SLUG} project set ${input.project} --settings '{"visibility":"public"}'`
+  return {
+    eligible: false,
+    why:
+      `project ${project} is not declared public and agent ${input.agent} may train on inputs; ` +
+      `cleared by: ${declaration} (the declaration is verified against the forge), or choose another agent`,
+  }
+}
+
 export function agentMeteredRouteEligibility(
   jobName: string,
   agent: Pick<Agent, 'billing' | 'routeMetered' | 'name'>,
@@ -1187,9 +1241,19 @@ export function agentMeteredRouteEligibility(
 
 function routePolicyEligibility(
   jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport'>,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport' | 'trainsOnInputs'>,
   explicitlyNamedAgent: string | undefined,
+  projectName?: string | null,
 ) {
+  const project = projectName ? projectByName(projectName) : null
+  const training = trainingDataEligibility({
+    agent: agent.name,
+    trainsOnInputs: Boolean(agent.trainsOnInputs),
+    project: project?.name ?? null,
+    visibility: project?.settings.visibility ?? null,
+    explicitlyNamedAgent,
+  })
+  if (!training.eligible) return { ...training, mayAutoRouteNamedJob: false }
   const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)
   if (!metered.eligible) return metered
   const transportWhy =

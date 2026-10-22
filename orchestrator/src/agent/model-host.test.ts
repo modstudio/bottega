@@ -34,6 +34,7 @@ const row = (overrides: Partial<AgentRow> = {}): AgentRow => ({
   preferred_jobs: null,
   max_concurrent: null,
   route_metered: 0,
+  trains_on_inputs: 0,
   ...overrides,
 })
 

@@ -519,6 +519,7 @@ export async function run(opts: {
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
         requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
+        project: runProjectName,
       },
       opts.probe,
       opts.lens,
@@ -901,7 +902,6 @@ export async function run(opts: {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
   // Keep this handle visible to signals/finally so a running row can terminate.
-  // A full Subprocess would widen the narrowed `p` streams.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
