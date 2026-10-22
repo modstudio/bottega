@@ -25,10 +25,7 @@ import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeBranch, removeFor, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { branchDeletableBy } from './branch-deletion-provenance.ts'
-import {
-  alreadyReleasedWorktreeLine,
-  discardWorktreeAbsence,
-} from './discard-worktree-absence.ts'
+import { alreadyReleasedWorktreeLine, discardWorktreeAbsence } from './discard-worktree-absence.ts'
 
 export type CleanupPresentation = {
   log: (...values: unknown[]) => void
@@ -437,6 +434,27 @@ function assertDiscardTreeOwnership(row: CleanupRow, repoRoot: string, force: bo
   }
 }
 
+function releaseSharedWorktreePointer(
+  row: CleanupRow,
+  sharers: WorktreeSharerRow[],
+  auditAuthority: RootAuthority | undefined,
+  options: CleanupOptions,
+): never {
+  writeTransaction(() => {
+    if (auditAuthority) {
+      auditAuthority = reauthorizeRunMutation(auditAuthority, 'discard')
+      auditAuthority = adoptRunMutation(auditAuthority, 'discard')
+      auditRunMutation(auditAuthority, 'discard', options.auditReason)
+    }
+    clearConversationWorktree(row.record_id, row.worktree)
+  })
+  const claim = new SharedWorktreeClaimError(row.worktree, sharers)
+  claim.message +=
+    `\nthis conversation's pointer on ${row.worktree} was released; ` +
+    'the tree will be collectable once the remaining pointers are released'
+  throw claim
+}
+
 export function discardWorktree(
   row: CleanupRow,
   verb: 'discarded' | 'abandoned',
@@ -449,21 +467,7 @@ export function discardWorktree(
   withCleanupLock(repoRoot, `${row.record_id}`, row.worktree, () => {
     assertDiscardTreeOwnership(row, repoRoot, force)
     const sharers = otherConversationWorktreeSharers(db(), row)
-    if (sharers.length) {
-      writeTransaction(() => {
-        if (auditAuthority) {
-          auditAuthority = reauthorizeRunMutation(auditAuthority, 'discard')
-          auditAuthority = adoptRunMutation(auditAuthority, 'discard')
-          auditRunMutation(auditAuthority, 'discard', options.auditReason)
-        }
-        clearConversationWorktree(row.record_id, row.worktree)
-      })
-      const claim = new SharedWorktreeClaimError(row.worktree, sharers)
-      claim.message +=
-        `\nthis conversation's pointer on ${row.worktree} was released; ` +
-        'the tree will be collectable once the remaining pointers are released'
-      throw claim
-    }
+    if (sharers.length) releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
 
     const minted = mintedBranchForCleanup(row)
     const ownersBefore = evidenceOwningBranchOwners(row, repoRoot)
@@ -626,9 +630,140 @@ function discardReclaimable(options: CleanupOptions): boolean {
   return options.force || options.evalOwnedScratch === true
 }
 
+function logOrRefuseMissingWorktree(
+  id: string,
+  closeOutOutcome: string | null,
+  presentation: CleanupPresentation,
+): void {
+  if (discardWorktreeAbsence(closeOutOutcome) === 'already-released') {
+    presentation.log(alreadyReleasedWorktreeLine(id))
+    return
+  }
+  throw new Error(`run ${id} has no worktree to discard`)
+}
+
+function discardKeptBranchLocked(
+  row: {
+    record_id: string
+    repo: string | null
+    branch_kept: string
+  },
+  repoRoot: string,
+  authority: RootAuthority,
+  options: CleanupOptions,
+): void {
+  const provenanceRefusal = branchDeletionProvenanceRefusal(row.record_id, row.branch_kept)
+  if (provenanceRefusal) {
+    writeTransaction(() => {
+      authority = reauthorizeRunMutation(authority, 'discard')
+      authority = adoptRunMutation(authority, 'discard')
+      db()
+        .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE record_id=?')
+        .run(authority.rootId)
+      settleClaims(db(), {
+        rootRunId: authority.rootId,
+        kind: 'branch',
+        state: 'released',
+        settledAt: new Date().toISOString(),
+        detail: `left refs/heads/${row.branch_kept}; branch was not minted by this conversation`,
+        allocationKey: `refs/heads/${row.branch_kept}`,
+      })
+      auditRunMutation(authority, 'discard', options.auditReason)
+    })
+    options.presentation.log(provenanceRefusal)
+    return
+  }
+  const ownerRow = { record_id: row.record_id, repo: row.repo, branch: row.branch_kept }
+  const ownersBefore = evidenceOwningBranchOwners(ownerRow, repoRoot)
+  if (ownersBefore.length) {
+    throw new Error(
+      `branch ${row.branch_kept} is still evidence owned by run ${ownersBefore[0]!.record_id}; ` +
+        'it was left in place',
+    )
+  }
+  authority = adoptRunMutation(authority, 'discard')
+  const snapshot = branchTip(repoRoot, row.branch_kept)
+  const removed = removeBranch(repoRoot, row.branch_kept, snapshot)
+  const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot, snapshot)
+  const outcome = verifyBranchOwnershipAfterCleanup(
+    row.record_id,
+    repoRoot,
+    row.branch_kept,
+    snapshot,
+    ownersBefore,
+    ownersAfter,
+  )
+  if (outcome.refusal) throw new Error(outcome.refusal)
+  if (outcome.warning) options.presentation.error(outcome.warning)
+  if (removed) {
+    writeTransaction(() => {
+      authority = reauthorizeRunMutation(authority, 'discard')
+      authority = adoptRunMutation(authority, 'discard')
+      db()
+        .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE record_id=?')
+        .run(authority.rootId)
+      settleClaims(db(), {
+        rootRunId: authority.rootId,
+        kind: 'branch',
+        state: 'released',
+        settledAt: new Date().toISOString(),
+        detail: `deleted refs/heads/${row.branch_kept}`,
+        allocationKey: `refs/heads/${row.branch_kept}`,
+      })
+      auditRunMutation(authority, 'discard', options.auditReason)
+    })
+  }
+  options.presentation.log(
+    removed
+      ? `deleted branch ${row.branch_kept}`
+      : `branch ${row.branch_kept} cleanup skipped: branch does not exist`,
+  )
+}
+
+function discardKeptBranch(
+  id: string,
+  row: {
+    record_id: string
+    repo: string | null
+    cwd?: string | null
+    branch_kept: string
+  },
+  authority: RootAuthority,
+  options: CleanupOptions,
+): void {
+  const repoRoot = cleanupRepoRoot(row)
+  if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
+  withCleanupLock(repoRoot, `discard kept branch for run ${id}`, null, () => {
+    discardKeptBranchLocked(row, repoRoot, authority, options)
+  })
+}
+
+function discardWhenWorktreeAbsent(
+  id: string,
+  row: {
+    record_id: string
+    repo: string | null
+    cwd?: string | null
+    worktree: string | null
+    branch_kept: string | null
+    close_out_outcome: string | null
+  },
+  force: boolean,
+  authority: RootAuthority,
+  options: CleanupOptions,
+): boolean {
+  if (row.worktree) return false
+  if (!force || !row.branch_kept) {
+    logOrRefuseMissingWorktree(id, row.close_out_outcome, options.presentation)
+    return true
+  }
+  discardKeptBranch(id, { ...row, branch_kept: row.branch_kept }, authority, options)
+  return true
+}
+
 export async function discardRun(id: string, options: CleanupOptions): Promise<void> {
   const force = discardReclaimable(options)
-  let authority = authorizeRunMutation(id, 'discard')
+  const authority = authorizeRunMutation(id, 'discard')
   const rootRow = db()
     .query(
       `SELECT record_id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit,
@@ -700,88 +835,6 @@ export async function discardRun(id: string, options: CleanupOptions): Promise<v
     base_commit: rootRow.base_commit ?? artifact?.base_commit ?? null,
     worktree_source: rootRow.worktree_source ?? artifact?.worktree_source ?? null,
   }
-  if (!row.worktree) {
-    if (!force || !row.branch_kept) {
-      if (discardWorktreeAbsence(row.close_out_outcome) === 'already-released') {
-        options.presentation.log(alreadyReleasedWorktreeLine(id))
-        return
-      }
-      throw new Error(`run ${id} has no worktree to discard`)
-    }
-    const repoRoot = cleanupRepoRoot(row)
-    if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
-    withCleanupLock(repoRoot, `discard kept branch for run ${id}`, null, () => {
-      const provenanceRefusal = branchDeletionProvenanceRefusal(row.record_id, row.branch_kept)
-      if (provenanceRefusal) {
-        writeTransaction(() => {
-          authority = reauthorizeRunMutation(authority, 'discard')
-          authority = adoptRunMutation(authority, 'discard')
-          db()
-            .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE record_id=?')
-            .run(authority.rootId)
-          settleClaims(db(), {
-            rootRunId: authority.rootId,
-            kind: 'branch',
-            state: 'released',
-            settledAt: new Date().toISOString(),
-            detail: `left refs/heads/${row.branch_kept}; branch was not minted by this conversation`,
-            allocationKey: `refs/heads/${row.branch_kept}`,
-          })
-          auditRunMutation(authority, 'discard', options.auditReason)
-        })
-        options.presentation.log(provenanceRefusal)
-        return
-      }
-      const ownerRow = { record_id: row.record_id, repo: row.repo, branch: row.branch_kept }
-      const ownersBefore = evidenceOwningBranchOwners(ownerRow, repoRoot)
-      if (ownersBefore.length) {
-        throw new Error(
-          `branch ${row.branch_kept} is still evidence owned by run ${ownersBefore[0]!.record_id}; ` +
-            'it was left in place',
-        )
-      }
-      authority = adoptRunMutation(authority, 'discard')
-      const snapshot = branchTip(repoRoot, row.branch_kept!)
-      // The snapshot is the tip cleanup classified when it decided to delete.
-      const removed = removeBranch(repoRoot, row.branch_kept!, snapshot)
-      const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot, snapshot)
-      const outcome = verifyBranchOwnershipAfterCleanup(
-        row.record_id,
-        repoRoot,
-        row.branch_kept!,
-        snapshot,
-        ownersBefore,
-        ownersAfter,
-      )
-      if (outcome.refusal) throw new Error(outcome.refusal)
-      if (outcome.warning) options.presentation.error(outcome.warning)
-      if (removed) {
-        writeTransaction(() => {
-          authority = reauthorizeRunMutation(authority, 'discard')
-          authority = adoptRunMutation(authority, 'discard')
-          db()
-            .query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE record_id=?')
-            .run(authority.rootId)
-          settleClaims(db(), {
-            rootRunId: authority.rootId,
-            kind: 'branch',
-            state: 'released',
-            settledAt: new Date().toISOString(),
-            detail: `deleted refs/heads/${row.branch_kept}`,
-            allocationKey: `refs/heads/${row.branch_kept}`,
-          })
-          auditRunMutation(authority, 'discard', options.auditReason)
-        })
-      }
-      options.presentation.log(
-        removed
-          ? `deleted branch ${row.branch_kept}`
-          : `branch ${row.branch_kept} cleanup skipped: branch does not exist`,
-      )
-    })
-    return
-  }
-
+  if (discardWhenWorktreeAbsent(id, row, force, authority, options)) return
   await discardWorktree(row as CleanupRow, 'discarded', force, authority, options)
-  return
 }

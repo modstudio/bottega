@@ -2,12 +2,12 @@ import { expect, test } from 'bun:test'
 import { stoppedWorktreeDisposition, stoppedWorktreeLine } from './stopped-worktree-decision.ts'
 
 test('stop releases a read-only job tree and keeps a writing job tree', () => {
-  expect(
-    stoppedWorktreeDisposition({ readOnlyJob: true, worktree: '/tmp/reader-clone' }),
-  ).toBe('release')
-  expect(
-    stoppedWorktreeDisposition({ readOnlyJob: false, worktree: '/tmp/writer-tree' }),
-  ).toBe('keep')
+  expect(stoppedWorktreeDisposition({ readOnlyJob: true, worktree: '/tmp/reader-clone' })).toBe(
+    'release',
+  )
+  expect(stoppedWorktreeDisposition({ readOnlyJob: false, worktree: '/tmp/writer-tree' })).toBe(
+    'keep',
+  )
   expect(stoppedWorktreeDisposition({ readOnlyJob: true, worktree: null })).toBe('none')
   expect(stoppedWorktreeDisposition({ readOnlyJob: false, worktree: null })).toBe('none')
 })
