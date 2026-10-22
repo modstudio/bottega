@@ -73,6 +73,8 @@ function selectedLensRules(
   const bases: Record<string, string> = {}
   for (const entry of declaration.lenses) {
     if (tier < (entry.minTier ?? 1)) continue
+    if (declaration.unscopedLenses === 'skip' && entry.lens !== 'correctness' && !entry.paths)
+      continue
     if (entry.paths && !declaredGlobsMatch(changedPaths, entry.paths)) continue
     if (lenses.includes(entry.lens)) continue
     lenses.push(entry.lens)
@@ -99,6 +101,13 @@ export function applicableReview(
   const { lenses: selected, bases: lensBases } = selectedLensRules(declaration, tier, changedPaths)
   const secondOpinion = declaration.secondOpinion
   if (!secondOpinion || tier < (secondOpinion.minTier ?? 3)) {
+    return { lenses: selected, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
+  }
+  if (
+    declaration.unscopedLenses === 'skip' &&
+    secondOpinion.lens !== 'correctness' &&
+    !selected.includes(secondOpinion.lens)
+  ) {
     return { lenses: selected, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
   }
   if (!selected.includes(secondOpinion.lens)) selected.push(secondOpinion.lens)

@@ -45,6 +45,33 @@ describe('applicable review lenses', () => {
     ).toEqual(['correctness', 'craft', 'safety'])
   })
 
+  test('skip omits unscoped lenses except correctness', () => {
+    expect(
+      applicableReview(2, ['src/change.ts'], {
+        lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
+        unscopedLenses: 'skip',
+      }).lenses,
+    ).toEqual(['correctness'])
+  })
+
+  test('all preserves unscoped lens selection', () => {
+    expect(
+      applicableReview(2, ['src/change.ts'], {
+        lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
+        unscopedLenses: 'all',
+      }).lenses,
+    ).toEqual(['correctness', 'craft'])
+  })
+
+  test('post-fix selection applies the unscoped lens switch', () => {
+    expect(
+      applicablePostFixReview(2, ['src/change.ts'], {
+        lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
+        unscopedLenses: 'skip',
+      }).lenses,
+    ).toEqual(['correctness'])
+  })
+
   test('selects a declared second opinion at its minimum tier', () => {
     expect(applicableReview(3, ['orchestrator/src/review/review-tier.ts'], review)).toEqual({
       lenses: ['correctness', 'craft'],
