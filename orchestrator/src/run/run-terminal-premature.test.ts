@@ -45,6 +45,46 @@ describe('premature final terminal integration', () => {
     ).toEqual({ status: 'failed', failureKind: 'premature-final', error: refusal.error })
   })
 
+  test('classifies run 16785 ok-status final-message fallback with no changes', () => {
+    const fallbackRefusal = terminalPrematureFinalRefusal({
+      readerReply: null,
+      parsedReview: null,
+      contract: {
+        status: 'done',
+        summary:
+          'Started DEV-1546: reading the full spec, task, and current question-answer parsing…',
+        files_changed: null,
+        change_guide: null,
+        questions: null,
+        deviations: null,
+        blockers: null,
+        tests: null,
+      } satisfies WorkerReply,
+      measuredFiles: [],
+      workerEvents: [],
+      acceptedQuestionCount: 0,
+      exitCode: 0,
+    })
+
+    expect(fallbackRefusal?.failureKind).toBe('premature-final')
+    expect(
+      applyPrematureFinalFailure(
+        {
+          status: 'ok',
+          failureKind: null,
+          error: 'reply.json missing; used final-message fallback',
+        },
+        fallbackRefusal,
+      ),
+    ).toEqual({
+      status: 'failed',
+      failureKind: 'premature-final',
+      error:
+        'premature final: the agent ended its turn with opening narration and no work ' +
+        '(Started DEV-1546: reading the full spec, task, and current question-answer parsing……)',
+    })
+  })
+
   test('does not classify a done writer when its diff was not measured', () => {
     expect(
       terminalPrematureFinalRefusal({
