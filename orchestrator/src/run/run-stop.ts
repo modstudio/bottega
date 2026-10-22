@@ -11,10 +11,8 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from '../cleanup/cleanup.ts'
-import { discardWorktreeAbsence } from '../cleanup/discard-worktree-absence.ts'
-import { closeOutRun } from '../close/close-out.ts'
+import { releaseStoppedReaderClone } from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -87,38 +85,8 @@ function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
   return 'found no Docker containers to reclaim'
 }
 
-function recordedReaderCloneRelease(rootId: string): boolean {
-  const recorded = db()
-    .query<{ worktree: string | null; close_out_outcome: string | null }, [string]>(
-      'SELECT worktree, close_out_outcome FROM run WHERE record_id=?',
-    )
-    .get(rootId)
-  return Boolean(
-    recorded &&
-      !recorded.worktree &&
-      discardWorktreeAbsence(recorded.close_out_outcome) === 'already-released',
-  )
-}
-
 function stopCoordinatorExtraPids(pid: number | null): number[] {
   return pid && pid !== process.pid ? [pid] : []
-}
-
-function releaseStoppedReadOnlyTree(
-  row: StopRow,
-  cleanupRow: { record_id: string; job: string; worktree: string | null },
-): boolean {
-  if (!cleanupRow.worktree || !isReadOnlyRepositoryJob(cleanupRow.job)) return false
-  if (recordedReaderCloneRelease(cleanupRow.record_id)) return true
-  try {
-    closeOutRun(cleanupRow.record_id, {
-      intent: 'terminal',
-      extraPids: stopCoordinatorExtraPids(row.pid),
-    })
-  } catch {
-    return recordedReaderCloneRelease(cleanupRow.record_id)
-  }
-  return recordedReaderCloneRelease(cleanupRow.record_id)
 }
 
 function logStoppedRun(
@@ -302,7 +270,8 @@ export async function stopRun(
     row,
     cleanupRow,
     dockerTeardown,
-    releaseStoppedReadOnlyTree(row, cleanupRow),
+    releaseStoppedReaderClone(cleanupRow.record_id, stopCoordinatorExtraPids(row.pid)) ===
+      'released',
   )
 }
 

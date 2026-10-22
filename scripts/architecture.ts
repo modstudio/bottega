@@ -212,6 +212,12 @@ export const modules: ArchitectureModule[] = [
     './reader-scratch-release.ts',
   ]),
   module('orchestrator/src/close/reader-scratch-release.ts', []),
+  module('orchestrator/src/close/close-out-stop-release.ts', [
+    '../cleanup/discard-worktree-absence.ts',
+    '../database/db.ts',
+    '../jobs/jobs.ts',
+    './close-out.ts',
+  ]),
   module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', [
     'node:fs',
     '../branch/branches.ts',
