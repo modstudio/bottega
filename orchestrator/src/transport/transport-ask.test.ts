@@ -55,6 +55,19 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
     expect(configuredAcpAsk(opts(BUILTIN_AGENTS.codex!, {}))).toBeNull()
   })
 
+  test('a writing ACP session registers the token-authenticated HTTP endpoint', () => {
+    expect(
+      configuredAcpAsk({
+        ...opts(BUILTIN_AGENTS.codex!, {
+          ORCH_RUN_ID: '42',
+          ORCH_RUN_TOKEN: 'token',
+          ORCH_ASK_URL: 'http://127.0.0.1:43127/mcp',
+        }),
+        write: true,
+      }),
+    ).toEqual(['http://127.0.0.1:43127/mcp'])
+  })
+
   test('ACP preserves Grok per-run-home registration instead of adding a session server', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-grok-acp-ask-'))
     try {

@@ -95,6 +95,7 @@ import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
+import { prepareWritingAcpAsk } from './run-acp-writer.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -694,10 +695,8 @@ export async function run(opts: {
   // A reader clone keeps all writable Git metadata inside its own tree. Its
   // hooks live outside that root so the worker cannot disable the push guard.
   // Writers remain linked worktrees and retain their existing shared roots.
-  const writableRoots = [
-    scratchDir,
-    ...provisionWriterSharedGitRoots(worktree, repoJob && writesJob),
-  ]
+  const writerGitWriteRoots = provisionWriterSharedGitRoots(worktree, repoJob && writesJob)
+  const writableRoots = [scratchDir, ...writerGitWriteRoots]
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
@@ -706,6 +705,7 @@ export async function run(opts: {
   if (gitConfigEnvironment) {
     assertWorkerGitGuardOutsideWritableRoots(gitConfigEnvironment, writableRoots)
   }
+  let askLoopback: AskLoopback | null = null
   const mcpLaunch = workerMcpLaunchScope({
     agent: a,
     transport: transportName,
@@ -725,6 +725,13 @@ export async function run(opts: {
   let codexMcpCatalogues: CodexMcpCatalogue[]
   let hasRunScopedHome: boolean
   try {
+    const writingAcpAsk = prepareWritingAcpAsk({
+      transport: transportName,
+      writesRepo: writesJob,
+      runId: claim.id,
+      token: runToken,
+    })
+    askLoopback = writingAcpAsk.loopback
     sandboxSelection = selectReadonlySandbox({
       agent: name,
       readsRepo: repoJob,
@@ -738,6 +745,9 @@ export async function run(opts: {
       baseUrl: a.baseUrl,
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpAllowlist : [],
+      writingAcp: writingAcpAsk.writingAcp,
+      writerGitWriteRoots,
+      askAddress: writingAcpAsk.address,
     })
     const home = await workerHome.prepareWorkerHomeLaunch({
       agent: a,
@@ -759,6 +769,7 @@ export async function run(opts: {
       sandboxEnvironment,
     } = home)
   } catch (e) {
+    await askLoopback?.close()
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
     try {
@@ -935,7 +946,6 @@ export async function run(opts: {
   let confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  let askLoopback: AskLoopback | null = null
   let workerEvents: StreamEvent[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   // Start after orch's own worktree and hook setup, immediately before the
@@ -1044,6 +1054,7 @@ export async function run(opts: {
       resolvedDialect,
       mcpSetupHeader,
       initialBoardNoticeIds: initialBoard.noticeIds,
+      askLoopback,
     }))
   } finally {
     const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)

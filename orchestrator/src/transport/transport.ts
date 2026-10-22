@@ -26,6 +26,7 @@ const ACP_PILOT_JOBS = [
 ] as const
 
 const NAMED_ACP_JOBS = ['review-lens', 'review-lens-inline'] as const
+const EXPLICIT_ACP_WRITING_JOBS = ['fix', 'implement'] as const
 
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
@@ -326,7 +327,8 @@ function acpJobAllowed(
   return (
     isAcpPilotJob(jobName) ||
     ((agentExplicit || mayAutoRouteNamedJob) &&
-      (NAMED_ACP_JOBS as readonly string[]).includes(jobName))
+      (NAMED_ACP_JOBS as readonly string[]).includes(jobName)) ||
+    (agentExplicit && (EXPLICIT_ACP_WRITING_JOBS as readonly string[]).includes(jobName))
   )
 }
 
@@ -375,11 +377,11 @@ export function assertAcpAllowed(
   if (acpJobAllowed(jobName, agentExplicit, mayAutoRouteNamedJob)) return
   if (job(jobName).needs.writesRepo) {
     throw new Error(
-      `ACP transport is a ${ACP_PILOT_TASK} pilot and is not available for writing jobs`,
+      `ACP transport is a ${ACP_PILOT_TASK} pilot; writing jobs require an agent named with --agent <name>`,
     )
   }
   throw new Error(
-    `ACP transport is a ${ACP_PILOT_TASK} pilot; routed jobs: ${ACP_PILOT_JOBS.join(', ')}; ${NAMED_ACP_JOBS.join(' and ')} require an agent named with --agent`,
+    `ACP transport is a ${ACP_PILOT_TASK} pilot; routed jobs: ${ACP_PILOT_JOBS.join(', ')}; ${[...NAMED_ACP_JOBS, ...EXPLICIT_ACP_WRITING_JOBS].join(', ')} require an agent named with --agent`,
   )
 }
 

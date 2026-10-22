@@ -246,6 +246,16 @@ async function startAfterHostCapacity(input: {
 
 const warnForRun = (runId: string) => (message: string) => recordRunWarning(runId, message)
 
+async function runAskLoopback(
+  existing: AskLoopback | null,
+  sandbox: SandboxSelection['sandbox'],
+  runId: string,
+  token: string,
+): Promise<AskLoopback | null> {
+  if (existing || sandbox !== 'srt') return existing
+  return startAskLoopback(runId, token)
+}
+
 export type LiveInput = {
   repoJob: boolean
   name: string
@@ -289,6 +299,7 @@ export type LiveInput = {
   resolvedDialect: ReplyDialect
   mcpSetupHeader: string | null
   initialBoardNoticeIds: Array<number | string>
+  askLoopback: AskLoopback | null
 }
 
 export type LiveResult = {
@@ -464,7 +475,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   const confinementFailures: FreezeFailure[] = []
   const confinementEvent: ConfinementEvent | null = null
   const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  let askLoopback: AskLoopback | null = null
+  let askLoopback: AskLoopback | null = input.askLoopback
   let executionBrokers: WorkerExecutionBrokers | null = null
   let noteBroker: WorkerNoteBroker | null = null
   let workerEvents: StreamEvent[] = []
@@ -488,9 +499,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         .run(inputTree, headCommit, changedPaths ? JSON.stringify(changedPaths) : null, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
-    if (sandboxSelection.sandbox === 'srt') {
-      askLoopback = await startAskLoopback(claim.id, runToken)
-    }
+    askLoopback = await runAskLoopback(askLoopback, sandboxSelection.sandbox, claim.id, runToken)
     executionBrokers = startWorkerExecutionBrokers({
       repoJob,
       writesRepo: writesJob,
