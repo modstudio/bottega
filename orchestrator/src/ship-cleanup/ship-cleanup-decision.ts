@@ -26,12 +26,22 @@ export type ShipCleanupRunFact = {
   worktree: string | null
 }
 
+type ShipCleanupKeptOwner = 'caller-landing-tree' | 'other'
+
+export type ShipCleanupKeptItem = {
+  item: string
+  reason: string
+  reasonKind: ShipCleanupKeptReasonKind
+  owner: ShipCleanupKeptOwner
+  remedy?: string
+}
+
 export type ShipCleanupResidueReport = {
-  kept: readonly { item: string; reason: string; reasonKind: ShipCleanupKeptReasonKind }[]
+  kept: readonly ShipCleanupKeptItem[]
   errors: readonly unknown[]
 }
 
-export type ShipCleanupKeptReasonKind =
+type ShipCleanupKeptReasonKind =
   | 'command-tree'
   | 'live-run'
   | 'unjudged-run'
@@ -40,19 +50,19 @@ export type ShipCleanupKeptReasonKind =
   | 'cleanup-failure'
 
 export type ShipCleanupVerdict =
-  | { clean: true }
-  | { clean: false; reason: 'errors' | 'unexpected-kept-item' }
+  | { clean: true; residue: readonly ShipCleanupKeptItem[] }
+  | {
+      clean: false
+      reason: 'errors' | 'unexpected-kept-item'
+      residue: readonly ShipCleanupKeptItem[]
+    }
 
-/** Judge whether cleanup left residue, optionally allowing its one caller-owned landing tree. */
-export function decideShipCleanupVerdict(
-  report: ShipCleanupResidueReport,
-  allowCommandTree: boolean,
-): ShipCleanupVerdict {
-  if (report.errors.length > 0) return { clean: false, reason: 'errors' }
-  if (report.kept.length === 0) return { clean: true }
-  if (allowCommandTree && report.kept.length === 1 && report.kept[0]!.reasonKind === 'command-tree')
-    return { clean: true }
-  return { clean: false, reason: 'unexpected-kept-item' }
+/** Judge residue independently of items owned by the caller's landing tree. */
+export function decideShipCleanupVerdict(report: ShipCleanupResidueReport): ShipCleanupVerdict {
+  const residue = report.kept.filter((item) => item.owner === 'other')
+  if (report.errors.length > 0) return { clean: false, reason: 'errors', residue }
+  if (residue.length === 0) return { clean: true, residue }
+  return { clean: false, reason: 'unexpected-kept-item', residue }
 }
 
 /** Select proved task branches and report every unproved run-minted sibling. */

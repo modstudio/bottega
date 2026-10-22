@@ -131,21 +131,46 @@ describe('ship cleanup decision', () => {
   })
 })
 
-test('cleanup verdict permits only the command tree during merge cleanup', () => {
-  expect(decideShipCleanupVerdict({ kept: [], errors: [] }, false)).toEqual({ clean: true })
-  const selfHold = {
+test('cleanup verdict excludes only items owned by the caller landing tree', () => {
+  expect(decideShipCleanupVerdict({ kept: [], errors: [] })).toEqual({ clean: true, residue: [] })
+  const selfTree = {
     item: 'run 7 worktree',
-    reason: 'copy can change without policy coupling',
+    reason: 'the command runs from this tree',
     reasonKind: 'command-tree' as const,
+    owner: 'caller-landing-tree' as const,
   }
-  expect(decideShipCleanupVerdict({ kept: [selfHold], errors: [] }, true)).toEqual({ clean: true })
-  expect(decideShipCleanupVerdict({ kept: [selfHold], errors: [] }, false)).toEqual({
+  const selfBranch = {
+    item: 'branch DEV-1392-c3',
+    reason: 'checked-out',
+    reasonKind: 'safety-hold' as const,
+    owner: 'caller-landing-tree' as const,
+  }
+  const foreignTree = {
+    item: 'run 8 worktree',
+    reason: 'held by another session',
+    reasonKind: 'safety-hold' as const,
+    owner: 'other' as const,
+  }
+  expect(decideShipCleanupVerdict({ kept: [selfTree, selfBranch], errors: [] })).toEqual({
+    clean: true,
+    residue: [],
+  })
+  expect(decideShipCleanupVerdict({ kept: [foreignTree], errors: [] })).toEqual({
     clean: false,
     reason: 'unexpected-kept-item',
+    residue: [foreignTree],
   })
-  expect(decideShipCleanupVerdict({ kept: [], errors: [{}] }, true)).toEqual({
+  expect(
+    decideShipCleanupVerdict({ kept: [selfTree, foreignTree, selfBranch], errors: [] }),
+  ).toEqual({
+    clean: false,
+    reason: 'unexpected-kept-item',
+    residue: [foreignTree],
+  })
+  expect(decideShipCleanupVerdict({ kept: [], errors: [{}] })).toEqual({
     clean: false,
     reason: 'errors',
+    residue: [],
   })
 })
 

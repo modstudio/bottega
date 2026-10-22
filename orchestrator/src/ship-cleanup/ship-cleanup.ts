@@ -40,7 +40,7 @@ import {
   decideShipCleanup,
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
-  type ShipCleanupKeptReasonKind,
+  type ShipCleanupKeptItem,
   type ShipCleanupRunDecision,
   type ShipCleanupRunFact,
 } from './ship-cleanup-decision.ts'
@@ -68,7 +68,7 @@ export type ShipCleanupReport = {
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
   reclaimed: { processes: string[]; compose: string[] }
   gone: string[]
-  kept: { item: string; reason: string; reasonKind: ShipCleanupKeptReasonKind; remedy?: string }[]
+  kept: ShipCleanupKeptItem[]
   errors: { item: string; detail: string; retry: string }[]
   verdict: import('./ship-cleanup-decision.ts').ShipCleanupVerdict
 }
@@ -189,7 +189,7 @@ function emptyReport(project: string, branch: string): ShipCleanupReport {
     gone: [],
     kept: [],
     errors: [],
-    verdict: { clean: true },
+    verdict: { clean: true, residue: [] },
   }
 }
 
@@ -227,6 +227,7 @@ function reportKeptRuns(
         (decision.worktreeAction === 'keep' && decision.worktree ? ' and worktree' : ''),
       reason: decision.reason,
       reasonKind: decision.worktreeAction === 'keep' ? 'live-run' : 'unjudged-run',
+      owner: 'other',
       ...(decision.remedy
         ? {
             remedy: renderUnjudgedRunRemedy(decision.remedy, decision.rootNumber),
@@ -288,6 +289,7 @@ function closeBranchWorktree(
       item: `run ${row.number} worktree`,
       reason: result.detail,
       reasonKind: 'cleanup-failure',
+      owner: 'other',
     })
     report.errors.push({
       item: `run ${row.number} worktree`,
@@ -318,6 +320,7 @@ function releaseLandingTree(
       item: `run ${row.number} worktree`,
       reason: 'the command runs from this tree',
       reasonKind: 'command-tree',
+      owner: 'caller-landing-tree',
       remedy,
     })
     return remedy
@@ -333,6 +336,7 @@ function releaseLandingTree(
       item: `run ${row.number} worktree`,
       reason: result.reason,
       reasonKind: 'safety-hold',
+      owner: 'other',
       remedy,
     })
     return remedy
@@ -355,7 +359,11 @@ function reclaimRemovedTreeLeftovers(
     const processResult = adapter.reclaimProcesses(trees.map(({ path }) => path))
     report.reclaimed.processes.push(...processResult.reclaimed)
     report.kept.push(
-      ...processResult.kept.map((item) => ({ ...item, reasonKind: 'safety-hold' as const })),
+      ...processResult.kept.map((item) => ({
+        ...item,
+        reasonKind: 'safety-hold' as const,
+        owner: 'other' as const,
+      })),
     )
     report.errors.push(
       ...processResult.errors.map((detail) => ({
@@ -375,7 +383,11 @@ function reclaimRemovedTreeLeftovers(
     const composeResult = adapter.reclaimCompose(trees)
     report.reclaimed.compose.push(...composeResult.removed)
     report.kept.push(
-      ...composeResult.kept.map((item) => ({ ...item, reasonKind: 'safety-hold' as const })),
+      ...composeResult.kept.map((item) => ({
+        ...item,
+        reasonKind: 'safety-hold' as const,
+        owner: 'other' as const,
+      })),
     )
     report.errors.push(
       ...composeResult.errors.map((detail) => ({
@@ -462,6 +474,10 @@ function pruneMergedBranches(
           item: `branch ${item.branch}`,
           reason: item.reason,
           reasonKind: 'safety-hold' as const,
+          owner:
+            item.reason === 'checked-out' && landingTreeRemedy
+              ? ('caller-landing-tree' as const)
+              : ('other' as const),
           ...(item.reason === 'checked-out' && landingTreeRemedy
             ? { remedy: landingTreeRemedy }
             : {}),
@@ -635,11 +651,12 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
       item: `branch ${item.branch}`,
       reason: item.reason,
       reasonKind: 'landing-not-proved' as const,
+      owner: 'other' as const,
     })),
   )
   report.gone.push(...taskBranches.gone)
   pruneMergedBranches(taskBranches.delete, report, adapter, keptLandingTrees)
-  report.verdict = decideShipCleanupVerdict(report, true)
+  report.verdict = decideShipCleanupVerdict(report)
   return report
 }
 
@@ -652,7 +669,12 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   for (const item of report.reclaimed.processes) lines.push(`reclaimed process: ${item}`)
   for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
   for (const branch of report.gone) lines.push(`already gone: ${branch}`)
-  for (const item of report.kept) {
+  for (const item of report.kept.filter((item) => item.owner === 'caller-landing-tree')) {
+    lines.push(
+      `information: kept ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,
+    )
+  }
+  for (const item of report.verdict.residue) {
     lines.push(
       `kept: ${item.item}: ${item.reason}${item.remedy ? `; cleared by: ${item.remedy}` : ''}`,
     )
@@ -660,6 +682,6 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   for (const error of report.errors) {
     lines.push(`failed: ${error.item}: ${error.detail}; retry: ${error.retry}`)
   }
-  if (!report.kept.length && !report.errors.length) lines.push('kept: none')
+  if (!report.verdict.residue.length && !report.errors.length) lines.push('kept: none')
   return lines.join('\n')
 }
