@@ -342,8 +342,12 @@ function validateCommandEvidence(
   errors: string[],
 ): void {
   const slug = String(item.slug ?? '')
-  if (item.commandEvidence !== undefined && item.commandEvidence !== 'gate')
-    errors.push(`step "${slug}" commandEvidence must be "gate"`)
+  if (
+    item.commandEvidence !== undefined &&
+    item.commandEvidence !== 'gate' &&
+    item.commandEvidence !== 'pull-request'
+  )
+    errors.push(`step "${slug}" commandEvidence must be "gate" or "pull-request"`)
   if (
     item.commandEvidence === 'gate' &&
     !floor.includes('command-exit') &&
@@ -351,11 +355,22 @@ function validateCommandEvidence(
   )
     errors.push(`step "${slug}" commandEvidence requires a command-exit floor`)
   if (
-    item.commandEvidence === 'gate' &&
+    item.commandEvidence === 'pull-request' &&
+    !floor.includes('command-exit') &&
+    !floor.includes('recorded-artifact') &&
+    !floor.some(isFloorPlaceholder)
+  )
+    errors.push(
+      `step "${slug}" pull-request commandEvidence requires a command-exit or recorded-artifact floor`,
+    )
+  if (
+    item.commandEvidence !== undefined &&
     Array.isArray(item.deferrable) &&
     item.deferrable.includes('command-exit')
   )
-    errors.push(`step "${slug}" cannot defer command-exit when commandEvidence is "gate"`)
+    errors.push(
+      `step "${slug}" cannot defer command-exit when commandEvidence is "${String(item.commandEvidence)}"`,
+    )
 }
 
 const isFloorPlaceholder = (value: string): value is `{{${string}}}` =>

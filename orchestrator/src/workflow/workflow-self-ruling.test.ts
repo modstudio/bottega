@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { Floor } from './workflow-floor.ts'
+import { type Floor, flagForFloor } from './workflow-floor.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
 
 const ruling = (operatorRuling = false): Floor => ({
@@ -29,7 +29,7 @@ test('an operator-ruling floor refuses an agent self-ruling', () => {
 test('an operator-ruling floor with another alternative names that floor and omits a self-ruling close', () => {
   const artifact: Floor = { ...ruling(), kind: 'recorded-artifact' }
   expect(selfRulingRefusal('auto', [artifact, ruling(true)], 'all criteria met')).toBe(
-    `self-ruling is refused because this step's ruling floor requires an operator ruling; close with no ruling using --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id>>; an operator ruling is needed only when that other evidence does not close the step — use \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule\` instead, with \`--from-operator\` where the operator rules`,
+    `self-ruling is refused because this step's ruling floor requires an operator ruling; close with no ruling using ${flagForFloor('recorded-artifact')}; an operator ruling is needed only when that other evidence does not close the step — use \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule\` instead, with \`--from-operator\` where the operator rules`,
   )
 })
 
