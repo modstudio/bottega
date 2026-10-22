@@ -19,14 +19,13 @@
  * escalates every decision it was not given; the architect rules, reads the
  * diff, and judges it on whether it built what it was asked to build.
  *
+ * The product has one executable, `bottega`.
+ *
  * ## What must NOT be renamed
  *
  * Some strings contain a name and are not the brand. They are protocol — frozen
  * the moment something outside this repository depended on them:
  *
- * - **`orch` and `hub`**, the per-concern binaries. A concern's tool is named
- *   for the concern, not for the platform, and both are wired into shell PATH,
- *   muscle memory, and the deny message of a hook that runs in every session.
  * - **`ORCH_*` environment variables**, read from a developer's own shell and
  *   from launchd plists that this repo does not own.
  * - **`orch.db` and `hub.db`**, which are files on disk with history in them.

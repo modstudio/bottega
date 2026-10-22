@@ -13,6 +13,7 @@ import {
   mainCheckoutOf,
   scrubbedGitEnv,
   borrowedCheckoutOf as sharedBorrowedCheckoutOf,
+  gitToplevel as sharedGitToplevel,
 } from '../../../shared/git.ts'
 
 /**
@@ -191,6 +192,42 @@ export type TemporaryIndexGit = {
   gitRaw(args: string[]): string
 }
 
+export type PreparedTemporaryGitIndex = TemporaryIndexGit & {
+  environment: { GIT_INDEX_FILE: string }
+  remove(): void
+}
+
+/** Seed an explicitly located disposable index for use by a long-lived child process. */
+export function prepareTemporaryGitIndex(input: {
+  cwd: string
+  seedTree: string
+  indexPath: string
+  stageWorkingTree?: boolean
+  failureContext?: string
+}): PreparedTemporaryGitIndex {
+  rmSync(input.indexPath, { force: true })
+  rmSync(`${input.indexPath}.lock`, { force: true })
+  const gitEnvironment: Record<string, string> = {}
+  for (const [name, value] of Object.entries(targetGitEnvironment(input.cwd))) {
+    if (value !== undefined) gitEnvironment[name] = value
+  }
+  gitEnvironment.GIT_INDEX_FILE = input.indexPath
+  git(['read-tree', input.seedTree], input.cwd, gitEnvironment, input.failureContext)
+  if (input.stageWorkingTree) {
+    git(['add', '-A', '--'], input.cwd, gitEnvironment, input.failureContext)
+  }
+  return {
+    environment: { GIT_INDEX_FILE: input.indexPath },
+    git: (args) => git(args, input.cwd, gitEnvironment, input.failureContext),
+    gitOk: (args) => gitOk(args, input.cwd, gitEnvironment),
+    gitRaw: (args) => gitRaw(args, input.cwd, gitEnvironment),
+    remove: () => {
+      rmSync(input.indexPath, { force: true })
+      rmSync(`${input.indexPath}.lock`, { force: true })
+    },
+  }
+}
+
 /** Run git against a seeded disposable index and remove it after every outcome. */
 export function withTemporaryGitIndex<T>(
   cwd: string,
@@ -199,16 +236,16 @@ export function withTemporaryGitIndex<T>(
 ): T {
   const temporary = join(tmpdir(), `orch-index-${process.pid}-${randomUUID()}`)
   mkdirSync(temporary, { recursive: true })
-  const env = { ...targetGitEnvironment(cwd), GIT_INDEX_FILE: join(temporary, 'index') }
-  const bound = {
-    git: (args: string[]) => git(args, cwd, env, failureContext),
-    gitOk: (args: string[]) => gitOk(args, cwd, env),
-    gitRaw: (args: string[]) => gitRaw(args, cwd, env),
-  }
+  const prepared = prepareTemporaryGitIndex({
+    cwd,
+    seedTree: 'HEAD',
+    indexPath: join(temporary, 'index'),
+    failureContext,
+  })
   try {
-    bound.git(['read-tree', 'HEAD'])
-    return action(bound)
+    return action(prepared)
   } finally {
+    prepared.remove()
     rmSync(temporary, { recursive: true, force: true })
   }
 }
@@ -318,6 +355,11 @@ function gitBytes(args: string[], cwd: string): Buffer {
  */
 export function repoRootOf(cwd: string): string | null {
   return mainCheckoutOf(cwd, targetGitEnvironment(cwd))
+}
+
+/** Absolute, untruncated toplevel of this checkout, or null when git cannot answer. */
+export function gitToplevel(cwd: string): string | null {
+  return sharedGitToplevel(cwd)
 }
 
 /** Whether git interprets this revision expression relative to a worktree's own HEAD. */

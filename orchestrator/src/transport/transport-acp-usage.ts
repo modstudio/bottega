@@ -1,7 +1,9 @@
 // concern: ACP metered usage
 /** Folds run-local goose message usage without knowing transport lifecycle or persistence. */
-import type { VendorCostSource, VendorUsage } from './transport.ts'
+
 import type { AcpMessageUsageUpdate, AcpPromptUsage } from './transport-acp-types.ts'
+import type { AgentBilling, VendorCostSource, VendorUsage } from './vendor-usage.ts'
+import { usageForBilling } from './vendor-usage.ts'
 
 type MessageTotals = {
   inputTokens: number
@@ -48,7 +50,11 @@ function costSource(totals: MessageTotals, promptCost: number | null): VendorCos
   return totals.providerCostMessages === 0 ? 'estimated' : 'partial'
 }
 
-export function acpRunUsage(updates: AcpMessageUsageUpdate[], prompt: AcpPromptUsage) {
+export function acpRunUsage(
+  updates: AcpMessageUsageUpdate[],
+  prompt: AcpPromptUsage,
+  billing: AgentBilling,
+) {
   const messages = messageTotals(updates)
   const promptInput = typeof prompt?.inputTokens === 'number' ? prompt.inputTokens : null
   const promptOutput = typeof prompt?.outputTokens === 'number' ? prompt.outputTokens : null
@@ -74,5 +80,5 @@ export function acpRunUsage(updates: AcpMessageUsageUpdate[], prompt: AcpPromptU
     estimatedCostUsd,
     costSource: source,
   }
-  return { tokens, costUsd: billedCostUsd, vendorUsage }
+  return { tokens, ...usageForBilling(billing, { costUsd: billedCostUsd, vendorUsage }) }
 }

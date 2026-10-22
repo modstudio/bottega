@@ -463,7 +463,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/question-open.ts',
     ],
     'Keep failover independent of execution transports, contracts, and worktrees.',
-    ['../run/run-types.ts'],
+    ['../run/continuation-message.ts', '../run/run-types.ts'],
   ),
   boundary(
     'failure-commands-boundary',
@@ -547,6 +547,7 @@ export const importBoundaries: ImportBoundary[] = [
       './caller-classification.ts',
       './database/db.ts',
       './evidence/unjudged-expiry.ts',
+      './failure/failure.ts',
       './score/duel.ts',
       './jobs/jobs.ts',
       './record/machine-identity.ts',

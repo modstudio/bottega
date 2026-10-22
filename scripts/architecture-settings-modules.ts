@@ -51,6 +51,7 @@ export const settingsModules: SettingsModule[] = [
     '../config/config-service.ts',
     '../config/secret-run.ts',
     '../run/run-process.ts',
+    '../run/run-subscription-cost.ts',
     './support.ts',
   ]),
   module('orchestrator/src/commands/settings.ts', [

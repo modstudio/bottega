@@ -2,9 +2,11 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { scopeGrokReaderMcpHome } from './grok-reader-mcp-home.ts'
 import { grokAskCommandFromConfig, grokAskServerCommand } from './sandbox.ts'
+
+const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
 
 test('Grok reader home replaces project routes with credential-free proxies', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-grok-reader-home-'))
@@ -22,11 +24,11 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
     )
     const proxies = {
       project: {
-        command: '/bin/orch',
+        command: FRONT_DOOR,
         args: ['mcp-reader-proxy', 'fixture', 'project', '/run/tree'],
       },
       secondary: {
-        command: '/bin/orch',
+        command: FRONT_DOOR,
         args: ['mcp-reader-proxy', 'fixture', 'secondary', '/run/tree'],
       },
     }
@@ -46,8 +48,8 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
     expect(written.match(/^disabled_mcp_servers\s*=/gm)).toEqual(['disabled_mcp_servers ='])
     expect(written).not.toContain('credential')
     expect(written).not.toContain('same-project-under-another-name')
-    expect(written).toContain('project = { command = "/bin/orch"')
-    expect(written).toContain('secondary = { command = "/bin/orch"')
+    expect(written).toContain(`project = { command = ${JSON.stringify(FRONT_DOOR)}`)
+    expect(written).toContain(`secondary = { command = ${JSON.stringify(FRONT_DOOR)}`)
     expect(written).toContain('args = [ "mcp-reader-proxy", "fixture", "project", "/run/tree" ]')
     expect(written).toContain(`${MCP_SERVER_NAME} = { command = "orch" }`)
     expect(grokAskCommandFromConfig(written)).toEqual(grokAskServerCommand('host'))

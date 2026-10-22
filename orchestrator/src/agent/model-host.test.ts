@@ -56,7 +56,7 @@ test('a missing context window refuses with the command that supplies it', () =>
   })
   refreshAgents()
   expect(unavailableReason('missing-window')).toBe(
-    `no declared context window; run ${PLATFORM_SLUG} agent show set missing-window --context-tokens <tokens>`,
+    `no declared context window; run ${PLATFORM_SLUG} agent set missing-window --context-tokens <tokens>`,
   )
   removeAgent('missing-window')
 })

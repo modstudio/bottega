@@ -4,7 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { probeAgent } from './agent-probe.ts'
+import { probeAgent, recordSuccessfulRegistrationProbe } from './agent-probe.ts'
 import {
   AGENTS,
   type AgentMutation,
@@ -24,6 +24,37 @@ import {
 } from './model-host.ts'
 
 type Presentation = { log(value: string): void; setExitCode(code: number): void }
+type AgentCommandVerb = 'add' | 'set' | 'remove' | 'probe' | 'show'
+type AgentCommandHandler = (
+  name: string,
+  argv: string[],
+  presentation: Presentation,
+  dependencies: AgentCommandDependencies,
+) => void | Promise<void>
+type AgentCommandDependencies = { probeAgent: typeof probeAgent }
+
+const agentCommandDependencies: AgentCommandDependencies = { probeAgent }
+
+const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
+  add: addCommand,
+  set: (name, argv, presentation) => {
+    presentation.log(JSON.stringify(setAgent(name, mutation(argv))))
+  },
+  remove: (name, _argv, presentation) => {
+    removeAgent(name)
+    presentation.log(`removed ${name}`)
+  },
+  probe: (name, _argv, presentation, dependencies) =>
+    probeCommand(name, presentation, dependencies),
+  show: (name, _argv, presentation) => showCommand(name, presentation),
+}
+
+export const AGENT_COMMAND_VERBS = Object.keys(AGENT_COMMAND_HANDLERS) as AgentCommandVerb[]
+
+function isAgentCommandVerb(value: string | undefined): value is AgentCommandVerb {
+  return AGENT_COMMAND_VERBS.some((verb) => verb === value)
+}
+
 const parseJobs = (value: string | undefined) =>
   value === undefined
     ? undefined
@@ -71,22 +102,23 @@ function mutation(argv: string[]): AgentMutation {
   }
 }
 
-export async function agentCommand(argv: string[], presentation: Presentation): Promise<void> {
+export async function agentCommand(
+  argv: string[],
+  presentation: Presentation,
+  dependencies: AgentCommandDependencies = agentCommandDependencies,
+): Promise<void> {
   const sub = argv[1],
     name = argv[2]
-  if (sub === 'add') return addCommand(name!, argv, presentation)
-  if (sub === 'set') {
-    presentation.log(JSON.stringify(setAgent(name!, mutation(argv))))
-    return
+  if (!isAgentCommandVerb(sub)) {
+    throw new Error(
+      `unknown agent command "${sub ?? ''}"; valid commands: ${AGENT_COMMAND_VERBS.join(', ')}`,
+    )
   }
-  if (sub === 'remove') {
-    removeAgent(name!)
-    presentation.log(`removed ${name}`)
-    return
-  }
-  if (sub === 'probe') return probeCommand(name!, presentation)
-  if (sub === 'show') return showCommand(name!, presentation)
-  if (sub === 'list') listCommand(argv.includes('--json'), presentation)
+  if (!name)
+    throw new Error(
+      `an agent name is required\nusage: ${PLATFORM_SLUG} agent ${sub} <name> [options]`,
+    )
+  await AGENT_COMMAND_HANDLERS[sub](name, argv, presentation, dependencies)
 }
 
 function addCommand(name: string, argv: string[], presentation: Presentation): void {
@@ -102,8 +134,16 @@ function addCommand(name: string, argv: string[], presentation: Presentation): v
   presentation.log(JSON.stringify(addAgent(name, input)))
 }
 
-async function probeCommand(name: string, presentation: Presentation): Promise<void> {
-  const result = await probeAgent(name)
+async function probeCommand(
+  name: string,
+  presentation: Presentation,
+  dependencies: AgentCommandDependencies,
+): Promise<void> {
+  const result = await dependencies.probeAgent(name, {
+    path: process.env.PATH,
+    environment: process.env,
+  })
+  if (result.ok) recordSuccessfulRegistrationProbe(name)
   presentation.log(JSON.stringify(result, null, 2))
   if (!result.ok) presentation.setExitCode(1)
 }
@@ -130,57 +170,6 @@ function showCommand(name: string, presentation: Presentation): void {
   )
 }
 
-function listedRow(row: ReturnType<typeof agentRows>[number]) {
-  const caps = JSON.parse(row.caps),
-    probe = row.probe_result ? JSON.parse(row.probe_result) : null
-  const eligibility =
-    probe?.ok === false
-      ? 'ineligible: registration probe failed'
-      : !Object.hasOwn(caps, 'contextTokens')
-        ? 'ineligible: no declared or probed context window'
-        : !row.probed_at
-          ? 'inline only: unprobed and ineligible for repository jobs'
-          : row.enabled
-            ? 'eligible by registration'
-            : `ineligible: disabled — ${row.disabled_reason}`
-  return {
-    name: row.name,
-    harness: row.harness,
-    backend: row.backend,
-    model: row.model,
-    baseUrl: row.base_url,
-    apiKeySecret: row.api_key_secret,
-    transport: row.transport,
-    caps,
-    billing: row.billing,
-    operatedBy: row.operated_by,
-    enabled: Boolean(row.enabled),
-    disabledReason: row.disabled_reason,
-    jobs: row.jobs ? JSON.parse(row.jobs) : null,
-    preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
-    maxConcurrent: row.max_concurrent,
-    routeMetered: Boolean(row.route_metered),
-    probedAt: row.probed_at,
-    probeResult: probe,
-    legacy: !['codex', 'grok', 'opencode', 'goose', 'claude-code'].includes(row.harness),
-    limitation:
-      row.name === 'qwen36-goose' && Number(caps.contextTokens ?? 0) < 147_456
-        ? 'understand requires the endpoint served at 147456 tokens or more'
-        : null,
-    eligibility,
-  }
-}
-
-function listCommand(json: boolean, presentation: Presentation): void {
-  const rows = agentRows().map(listedRow)
-  if (json) presentation.log(JSON.stringify(rows))
-  else
-    for (const row of rows)
-      presentation.log(
-        `${row.name.padEnd(12)} ${row.enabled ? 'enabled ' : 'disabled'} ${row.harness}/${row.backend ?? '-'} ${row.model}${row.legacy ? ' [legacy]' : ''} — ${row.eligibility}; jobs ${row.jobs?.join(',') ?? 'any'}; prefer ${row.preferredJobs.join(',') || '-'}; cap ${row.maxConcurrent ?? 'none'}${row.limitation ? `; ${row.limitation}` : ''}`,
-      )
-}
-
 export function agentReadinessPresentation(facts: {
   name: string
   enabled: boolean
@@ -193,7 +182,7 @@ export function agentReadinessPresentation(facts: {
   if (!facts.enabled) return `disabled — ${facts.disabledReason}`
   if (!facts.executableFound) return 'not installed'
   if (!facts.probedAt)
-    return `installed but not probed — ${PLATFORM_SLUG} agent show probe ${facts.name}`
+    return `installed but not probed — ${PLATFORM_SLUG} agent probe ${facts.name}`
   if (!facts.available) return `unavailable — ${facts.unavailableReason}`
   return 'ready'
 }

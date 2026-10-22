@@ -5,11 +5,10 @@ import type { FailureKind } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
-import type { VendorUsage } from './vendor-usage.ts'
+import type { AgentBilling, VendorUsage } from './vendor-usage.ts'
 
 export {
   EMPTY_VENDOR_USAGE,
-  type VendorCostSource,
   type VendorUsage,
 } from './vendor-usage.ts'
 
@@ -31,6 +30,11 @@ const EXPLICIT_ACP_WRITING_JOBS = ['fix', 'implement'] as const
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
 export type TransportName = 'cli' | 'acp'
+
+export type TransportPin = {
+  pinnedTransport?: TransportName
+  transportPinSource?: 'explicit' | 'environment'
+}
 
 /**
  * How much of the machine an agent may use.
@@ -110,6 +114,7 @@ export type TransportAgent = {
   baseUrl?: string | null
   bin: string
   defaultTransport: TransportName
+  billing: AgentBilling
   /** Exact bottega-ask command this agent definition configures, if any. */
   askServerCommand?(environment: Record<string, string>): string[] | null
   argv(opts: ArgvOpts): string[]
@@ -344,6 +349,26 @@ export function resolveTransportName(
   throw new Error(`unknown transport "${raw}"; expected cli or acp`)
 }
 
+/** Classify the effective transport pin with the same precedence as transport resolution. */
+export function classifyTransportPin(
+  explicit?: string | null,
+  env = process.env.ORCH_TRANSPORT,
+): TransportPin {
+  if (explicit !== undefined && explicit !== null) {
+    return {
+      pinnedTransport: resolveTransportName(explicit, undefined),
+      transportPinSource: 'explicit',
+    }
+  }
+  if (env) {
+    return {
+      pinnedTransport: resolveTransportName(undefined, env),
+      transportPinSource: 'environment',
+    }
+  }
+  return {}
+}
+
 /** ACP pins to codex when the caller did not name an agent. */
 export function selectAgentForTransport(
   transport: TransportName,
@@ -398,6 +423,7 @@ export function transportPinIneligibility(
   agentName: string,
   registered: TransportAgent,
   transport: TransportName,
+  agentExplicit = false,
   mayAutoRouteNamedJob = false,
 ): string | null {
   if (transport === 'cli') {
@@ -406,7 +432,7 @@ export function transportPinIneligibility(
       : `agent ${agentName} uses ${registered.defaultTransport}, not pinned cli transport`
   }
   try {
-    assertAcpAllowed(jobName, agentName, registered, false, mayAutoRouteNamedJob)
+    assertAcpAllowed(jobName, agentName, registered, agentExplicit, mayAutoRouteNamedJob)
     return null
   } catch (error) {
     return String((error as Error).message ?? error)

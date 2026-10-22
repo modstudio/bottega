@@ -20,10 +20,8 @@ import { fileURLToPath } from 'node:url'
  * string. Those are what make a rename a hunt. So comment lines are skipped and
  * code lines are not.
  *
- * The frozen exceptions are named in `shared/brand.ts` and honored here: `orch`
- * and `hub` are per-concern binaries rather than the platform's name, and are
- * wired into PATH, launchd, and a hook that runs in every session on this
- * machine. Renaming one of those is a migration with a rollout.
+ * The frozen exceptions are named in `shared/brand.ts` and honored here.
+ * Renaming one of those is a migration with a rollout.
  */
 import { Glob } from 'bun'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
@@ -45,8 +43,6 @@ const ALLOWED = new Set([
   // The checkout-free installer must name the private repository before it can load brand code.
   'install.sh',
   'bin/bottega',
-  'bin/orch',
-  'bin/hub',
   // This policy test intentionally uses a project whose name happens to match the platform slug.
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -11,6 +11,7 @@ import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
+import { continuationMessageBinding } from './continuation-message.ts'
 import {
   type ChainTurn,
   continuationTurn,
@@ -246,13 +247,67 @@ describe('run continuation', () => {
 
     const resumed = await continueRun(root, 'vendor-session message', limit)
     const artifact = db()
-      .query('SELECT prompt_path FROM run WHERE record_id=?')
+      .query('SELECT prompt_path,continuation_message_sha FROM run WHERE record_id=?')
       .get(resumed.childId) as {
       prompt_path: string
+      continuation_message_sha: string
     }
 
     trackResidue(artifact.prompt_path)
     expect(readFileSync(artifact.prompt_path, 'utf8')).toBe('vendor-session message')
+    expect(artifact.continuation_message_sha).toBe(
+      continuationMessageBinding('vendor-session message').sha256,
+    )
+  })
+
+  test('checkpoint continuation launched through continueRun ends with the message', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      session: 'orch-test-session',
+      repo: 'continuation-fixture',
+    })
+    const repository = trackResidue(join(dir, `continue-checkpoint-${root}`))
+    mkdirSync(repository)
+    for (const argv of [
+      ['init', '-q'],
+      ['config', 'user.email', 'fixture@example.test'],
+      ['config', 'user.name', 'Fixture'],
+    ]) {
+      expect(Bun.spawnSync(['git', ...argv], { cwd: repository }).exitCode).toBe(0)
+    }
+    writeFileSync(join(repository, 'tracked.txt'), 'root\n')
+    expect(Bun.spawnSync(['git', 'add', 'tracked.txt'], { cwd: repository }).exitCode).toBe(0)
+    expect(Bun.spawnSync(['git', 'commit', '-qm', 'fixture'], { cwd: repository }).exitCode).toBe(0)
+    expect(
+      Bun.spawnSync(['git', 'branch', 'DEV-1570-checkpoint'], { cwd: repository }).exitCode,
+    ).toBe(0)
+    upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: repository })
+    const originalPrompt = trackResidue(join(dir, `continue-checkpoint-${root}.prompt.txt`))
+    writeFileSync(originalPrompt, 'ORIGINAL SPEC')
+    db()
+      .query(
+        `UPDATE run SET cwd=?,worktree=?,branch=?,prompt_path=?,vendor_session=NULL
+         WHERE record_id=?`,
+      )
+      .run(
+        repository,
+        join(repository, 'released-worktree'),
+        'DEV-1570-checkpoint',
+        originalPrompt,
+        root,
+      )
+
+    const message = 'Apply the architect review exactly.\n'
+    const resumed = await continueRun(root, message, limit)
+    const artifact = db()
+      .query('SELECT prompt_path FROM run WHERE record_id=?')
+      .get(resumed.childId) as { prompt_path: string }
+    trackResidue(artifact.prompt_path)
+    const prompt = readFileSync(artifact.prompt_path, 'utf8')
+    expect(prompt).toStartWith('CHECKPOINT RESUME\n')
+    expect(prompt.endsWith(message)).toBe(true)
   })
 
   test('a released reader with an unavailable base refuses before creating a turn', async () => {
@@ -264,6 +319,46 @@ describe('run continuation', () => {
     await expect(continueRun(root, 'deliver queued messages', limit)).rejects.toThrow(
       'read-only base commit missing-reader-base is unavailable',
     )
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
+      {
+        n: 0,
+      },
+    )
+  })
+
+  test('a provision refusal leaves a stopped root stopped and creates no child turn', async () => {
+    const root = insert('stopped', 'implement')
+    const projectPath = trackResidue(join(dir, `continue-provision-${root}`))
+    mkdirSync(projectPath)
+    const initialized = Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })
+    if (initialized.exitCode !== 0) {
+      throw new Error(initialized.stderr.toString().trim() || 'git init failed')
+    }
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'continuation-fixture',
+      path: projectPath,
+      settings: { worktree: { seeds: ['minimal'] } },
+    })
+    db()
+      .query(
+        `UPDATE run SET vendor_session=?,cwd=?,worktree=?,branch=?,branch_kept_tip=? WHERE record_id=?`,
+      )
+      .run(
+        'vendor-session',
+        projectPath,
+        join(projectPath, 'released-tree'),
+        'DEV-1560-continue',
+        'abc123def',
+        root,
+      )
+
+    await expect(continueRun(root, 'continue after stop', limit)).rejects.toThrow(
+      /cannot be continued: it must recreate its worktree and has no recorded launch seed/,
+    )
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
+      status: 'stopped',
+    })
     expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
       {
         n: 0,
