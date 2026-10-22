@@ -19,6 +19,7 @@ import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
+import { requireContinuationProvision } from './continuation-provision-service.ts'
 import type { ContinuationTreeDecision } from './continuation-tree-decision.ts'
 import {
   continuationReadOnlyBase,
@@ -431,6 +432,27 @@ function effectiveCheckpointContext(
   return `CHECKPOINT RESUME\nResume from retained work at ${plan.tip}.`
 }
 
+function continuationLaunch(
+  inherited: ResumeLaunchOptions,
+  id: string,
+  treeDecision: ContinuationTreeDecision,
+  writesRepo: boolean,
+  project: Project | null,
+): ResumeLaunchOptions {
+  return {
+    ...inherited,
+    seed: requireContinuationProvision({
+      rootId: id,
+      reuseIntactTree:
+        treeDecision.action === 'inherit-present-tree' ||
+        treeDecision.action === 'no-tree-required',
+      recordedSeed: inherited.seed,
+      writesRepo,
+      project,
+    }).seed,
+  }
+}
+
 function inheritedResumeWorktree(
   decision: ContinuationTreeDecision,
   plan: ResumeTreePlan | null,
@@ -639,7 +661,6 @@ export async function continueRun(
         `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
     )
   }
-  const readerBase = latest.base_commit ?? row.base_commit
   const treeDecision = requireContinuationTree({
     rootId: id,
     projectName: row.repo,
@@ -649,7 +670,7 @@ export async function continueRun(
     recordedTreeMatches,
     recordedWorktree: latest.worktree,
     writerTreeRecoverable: Boolean(treePlan),
-    baseCommit: readerBase,
+    baseCommit: latest.base_commit ?? row.base_commit,
   })
   let prompt: string
   if (checkpointContext) {
@@ -699,7 +720,7 @@ export async function continueRun(
   const childId = await detach(row.job, prompt, {
     cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
-    ...inheritedLaunch,
+    ...continuationLaunch(inheritedLaunch, id, treeDecision, Boolean(jobNeeds.writesRepo), project),
     transport: chainTransport(id) ?? undefined,
     resume: {
       kind: continuationResumeKind(Boolean(checkpointContext)),
