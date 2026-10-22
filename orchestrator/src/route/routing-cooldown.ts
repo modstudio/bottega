@@ -20,6 +20,7 @@ export function coolingFailures(d: Database, cooldownMinutes: number): Map<strin
                 julianday(started_at) + latency_ms / 86400000.0 AS finished_at
            FROM run
           WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
+            AND job NOT LIKE 'agent-probe-%'
        ), cooling_failures AS (
          SELECT record_id, agent, failure_kind, finished_at,
                 ROW_NUMBER() OVER (

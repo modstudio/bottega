@@ -417,6 +417,34 @@ describe('routing counts failures as evidence', () => {
     expect(c.why).toContain(`run '${PLATFORM_SLUG} agent probe codex' to clear it`)
   })
 
+  test('probe sub-turns do not affect cooldown while a successful registration probe clears it', () => {
+    const base = Date.now() - 10 * 60_000
+    addRun({
+      agent: 'codex',
+      job: 'agent-probe-child',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(base).toISOString(),
+    })
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+
+    addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(base + 60_000).toISOString(),
+    })
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toContain('quota')
+
+    addRun({
+      agent: 'codex',
+      job: 'agent-probe',
+      startedAt: new Date(base + 2 * 60_000).toISOString(),
+    })
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+  })
+
   test('daily quota cools only through its UTC day while minute quota uses the ordinary cooldown', () => {
     const run = addRun({
       agent: 'codex',
