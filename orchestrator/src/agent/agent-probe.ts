@@ -4,11 +4,12 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { projectAt } from '../project/projects.ts'
 import { nextRunNumber } from '../run/run-number.ts'
+import { runProbeTurn } from './agent-probe-turn.ts'
 import {
   agentRows,
   HARNESSES,
@@ -17,8 +18,8 @@ import {
   refreshAgents,
   rowAgent,
 } from './agent-registry.ts'
+import { probeAgentWrites, writingProbePorts } from './agent-writing-probe.ts'
 import type { Caps } from './capabilities.ts'
-import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
 import { localReachable } from './model-host.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
@@ -46,63 +47,6 @@ export function registrationProbeRequirements(declaredJobs: string[] | null): {
     needs.mcp = true
   }
   return needs
-}
-
-function insertProbeRun(input: {
-  started: number
-  name: string
-  id: string
-  scratch: string
-  prompt: string
-  model?: string
-  transport: string
-}): { record_id: string } {
-  return writableDb()
-    .query(
-      `INSERT INTO run (record_id,number,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
-    )
-    .get(
-      newRecordId(),
-      nextRunNumber(writableDb()),
-      new Date(input.started).toISOString(),
-      input.name,
-      `agent-probe-${input.id}`,
-      join(input.scratch, 'repo'),
-      createHash('sha256').update(input.prompt).digest('hex'),
-      Buffer.byteLength(input.prompt),
-      input.prompt.slice(0, 240),
-      1,
-      'running',
-      input.model ?? null,
-      input.transport,
-    ) as { record_id: string }
-}
-
-async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
-  try {
-    for await (const _event of events) {
-      /* consuming the stream lets transports finish their event lifecycle */
-    }
-  } catch {
-    /* event observation never replaces the probe outcome */
-  }
-}
-
-async function probeEnvironment(
-  agent: ReturnType<typeof rowAgent>,
-  scratch: string,
-): Promise<Record<string, string>> {
-  return {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
-    ),
-    ...(agent.env?.() ?? {}),
-    ...(await resolveEndpointApiKeyEnv(agent)),
-    ORCH_SCRATCH: scratch,
-  }
 }
 
 function namesProbeFile(value: string): boolean {
@@ -152,6 +96,7 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
     ...(result.schema.ok !== null ? { schema: result.schema.ok } : {}),
     ...(result.mcp?.verifiable != null ? { mcp: result.mcp.verifiable } : {}),
     ...(result.file?.ok != null ? { replyFile: result.file.ok } : {}),
+    writesRepo: result.writing?.ok === true,
     ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
   }
   writableDb()
@@ -201,7 +146,12 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   if (!row) throw new Error(`unknown agent "${name}"`)
   const priorCaps = JSON.parse(row.caps) as Caps
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
-  if (previous?.ok === true && previous?.file?.ok === true && priorCaps.replyFile === true)
+  if (
+    previous?.ok === true &&
+    previous?.file?.ok === true &&
+    priorCaps.replyFile === true &&
+    (row.transport === 'cli' || previous?.writing?.ok === true)
+  )
     return previous as RegistrationProbeResult
   if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
@@ -221,87 +171,19 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       properties: { status: { type: 'string', enum: ['ok'] } },
     }),
   )
-  const { transportFor, valueMatchesStrictSchema, withTransportDeadline } = await import(
-    '../transport/transport.ts'
-  )
+  const { transportFor, valueMatchesStrictSchema } = await import('../transport/transport.ts')
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)
   const transport = transportFor(agent.defaultTransport)
-  const runOne = async (id: string, prompt: string, schema?: string, mcp = false) => {
-    const started = Date.now()
-    const inserted = insertProbeRun({
-      started,
-      name,
-      id,
-      scratch,
-      prompt,
-      model: agent.model,
-      transport: agent.defaultTransport,
-    })
-    try {
-      const handle = await transport.start({
-        agent,
-        cwd: join(scratch, 'repo'),
-        prompt,
-        outPath: join(scratch, `${id}.out`),
-        schemaPath: schema,
-        model: agent.model,
-        modelExplicit: true,
-        startedAt: Date.now(),
-        write: true,
-        sandbox: 'workspace-write',
-        writableRoots: [scratch],
-        mcp,
-        env: await probeEnvironment(agent, scratch),
-      })
-      const draining = drainTransportEvents(handle.events())
-      try {
-        const outcome = await withTransportDeadline({
-          operation: (async () => {
-            await transport.prompt(handle, prompt)
-            return handle.collect()
-          })(),
-          operationName: `${agent.harness} agent probe prompt and collection; inspect harness logs and rerun ${PLATFORM_SLUG} agent probe ${name}`,
-          timeoutMs: agent.timeoutMs,
-          onTimeout: () => transport.cancel(handle),
-        })
-        await draining
-        writableDb()
-          .query(
-            `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=? WHERE record_id=?`,
-          )
-          .run(
-            outcome.status === 'ok' ? 'ok' : 'failed',
-            Date.now() - started,
-            outcome.status === 'ok' ? 0 : 1,
-            Buffer.byteLength(outcome.output),
-            outcome.status === 'ok' ? null : outcome.output,
-            inserted.record_id,
-          )
-        return outcome
-      } finally {
-        try {
-          handle.kill(9)
-        } catch {
-          /* exited */
-        }
-        void draining
-      }
-    } catch (error) {
-      const detail = String((error as Error).message ?? error)
-      writableDb()
-        .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?`)
-        .run(Date.now() - started, detail, inserted.record_id)
-      return {
-        status: 'failed' as const,
-        output: detail,
-        parsed: null,
-        events: [] as import('../transport/transport.ts').NormalizedEvent[],
-      }
-    }
-  }
+  const runOne = (
+    id: string,
+    prompt: string,
+    schema?: string,
+    mcp = false,
+    writing?: import('./agent-writing-probe.ts').WritingProbeConfinement,
+  ) => runProbeTurn({ name, scratch, agent, transport, id, prompt, schema, mcp, writing })
   const reply = await runOne('reply', 'Reply with exactly: ok')
   const tool = needs.tool
     ? await runOne(
@@ -335,6 +217,18 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
           output: 'skipped: not required for declared jobs',
           events: [] as import('../transport/transport.ts').NormalizedEvent[],
         }
+  const writing = await probeAgentWrites(
+    {
+      transport: row.transport,
+      scratch,
+      project: projectAt(process.cwd()),
+      agent,
+      path: process.env.PATH,
+    },
+    writingProbePorts(({ cwd, prompt, profile, launch }) =>
+      runOne('writing', prompt, undefined, false, { cwd, profile, launch }),
+    ),
+  )
   const parsedSchema = (() => {
     try {
       return JSON.parse(structured.parsed?.text ?? structured.output)
@@ -378,6 +272,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
           reply: replyOk,
           ...(job?.needs.readsRepo ? { tool: toolOk } : {}),
           ...(job?.needs.writesRepo || job?.findings ? { schema: schemaOk } : {}),
+          ...(job?.needs.writesRepo ? { writing: writing.ok } : {}),
           ...(job?.needs.mcp ? { mcp: mcpVerifiable } : {}),
         },
       ]
@@ -401,6 +296,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     schema: { ok: schemaOk, output: structured.output },
     file: { ok: fileOk, output: fileOutput },
     mcp: { verifiable: mcpVerifiable, output: mcpRun.output },
+    writing,
     jobs: perJob,
     contextTokens,
     contextSource,
