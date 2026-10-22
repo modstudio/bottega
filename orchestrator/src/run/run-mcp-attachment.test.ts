@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { requiredMcpIneligibility } from '../mcp/mcp-native-attachment.ts'
 import type { McpConnection } from '../mcp/mcp-preflight.ts'
 import {
   decideFinalMcpConnection,
   decideMcpAttachment,
+  decideMcpLaunchRuling,
   decideMcpMirrorMismatch,
   decideMcpToolProbe,
 } from './run-mcp-attachment.ts'
@@ -20,8 +22,74 @@ const disconnected: McpConnection = {
   connected: false,
   error: 'connection refused',
 }
+const required = {
+  projectId: 'project-id',
+  project: projectName,
+  server: mcpServerName,
+  mode: 'require' as const,
+}
 
 describe('MCP attachment ruling', () => {
+  test.each([
+    {
+      name: 'required native attachment',
+      mode: 'require' as const,
+      required,
+      agent: { name: 'codex', defaultTransport: 'cli' as const, caps: { mcp: false } },
+      expected: { agentHasMcp: true, refusalReason: null },
+    },
+    {
+      name: 'preferred unconfirmable attachment',
+      mode: 'prefer' as const,
+      required: { ...required, mode: 'prefer' as const },
+      agent: {
+        name: 'goose-agent',
+        harness: 'goose',
+        defaultTransport: 'cli' as const,
+        caps: { mcp: true },
+      },
+      expected: { agentHasMcp: false, refusalReason: null },
+    },
+    {
+      name: 'implicit probed capability',
+      mode: undefined,
+      required: undefined,
+      agent: {
+        name: 'goose-agent',
+        harness: 'goose',
+        defaultTransport: 'cli' as const,
+        caps: { mcp: true },
+      },
+      expected: { agentHasMcp: true, refusalReason: null },
+    },
+  ])('decides $name before preflight', ({ mode, required, agent, expected }) => {
+    expect(decideMcpLaunchRuling(mode, required, agent, {})).toEqual(expected)
+  })
+
+  test('required unconfirmable attachment returns the routing remedy', () => {
+    expect(
+      decideMcpLaunchRuling(
+        'require',
+        required,
+        { name: 'codex', defaultTransport: 'cli', caps: { mcp: true } },
+        { pinnedTransport: 'acp', transportPinSource: 'environment' },
+      ),
+    ).toEqual({
+      agentHasMcp: false,
+      refusalReason:
+        'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp',
+    })
+  })
+
+  test('routing and launch both treat an unresolved project server as no requirement', () => {
+    const agent = { name: 'codex', defaultTransport: 'acp' as const, caps: { mcp: false } }
+    expect(requiredMcpIneligibility(agent, undefined)).toBeNull()
+    expect(decideMcpLaunchRuling('require', undefined, agent, {})).toEqual({
+      agentHasMcp: true,
+      refusalReason: null,
+    })
+  })
+
   test('a refused required attachment returns the existing refusal reason', () => {
     expect(
       decideMcpAttachment({

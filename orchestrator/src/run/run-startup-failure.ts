@@ -63,6 +63,15 @@ export function recordRunStartupFailure(
   })
 }
 
+export function enforceRunStartupRefusal(
+  reserveId: string | undefined,
+  refusalReason: string | null,
+): void {
+  if (!refusalReason) return
+  recordRunStartupFailure(reserveId, refusalReason)
+  throw new Error(refusalReason)
+}
+
 export function recordNeverStartedRunFailure(input: {
   recordId: string
   error: unknown
