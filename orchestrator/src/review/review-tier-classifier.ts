@@ -53,7 +53,7 @@ export function isReviewProductPath(path: string, kind: FileKind = categorizeFil
   return kind === 'product' && !isOrdinaryConfig(path) && !isReviewExcluded(path)
 }
 
-type FileRisk = { tier: 0 | 1 | 2 | 3; reason: string; basis: string | null }
+type FileRisk = { tier: 0 | 1 | 2 | 3; reason: string; basis: string | null; firm: boolean }
 
 function fileRisk(
   path: string,
@@ -70,7 +70,12 @@ function fileRisk(
   if (isTestOrFixture(path)) return null
   const match = riskPaths?.find((entry) => entry.pattern.test(path))
   if (match)
-    return { tier: match.tier, reason: `${path} (${match.reason})`, basis: match.basis ?? null }
+    return {
+      tier: match.tier,
+      reason: `${path} (${match.reason})`,
+      basis: match.basis ?? null,
+      firm: match.firm === true,
+    }
   if (isReviewExcluded(path)) return null
   const kind = categorizeFile(path)
   if (kind !== 'product' || isOrdinaryConfig(path)) return null
@@ -79,7 +84,7 @@ function fileRisk(
     declaredUnlisted === undefined
       ? 'fail-closed default risk 2 applied'
       : `project unlisted risk ${declaredUnlisted} applied`
-  return { tier, reason: `unlisted product path ${path} (${applied})`, basis: null }
+  return { tier, reason: `unlisted product path ${path} (${applied})`, basis: null, firm: false }
 }
 
 const compileRiskPaths = (
@@ -93,7 +98,7 @@ const compileRiskPaths = (
 function classifyRisk(
   files: readonly ReviewTierFile[],
   riskMap: ReviewRiskMap | undefined,
-): { risk: 0 | 1 | 2 | 3; reason: string; basis: string | null } {
+): { risk: 0 | 1 | 2 | 3; reason: string; basis: string | null; firm: boolean } {
   const riskPaths = compileRiskPaths(riskMap)
   let risk: 0 | 1 | 2 | 3 = 0
   let reason =
@@ -102,22 +107,40 @@ function classifyRisk(
       : 'risk 0: only documentation, tests, fixtures, or configuration paths'
   let classified = false
   let basis: string | null = null
+  let firm = false
   for (const file of files) {
     const candidate = fileRisk(file.path, riskPaths, riskMap?.unlisted)
-    if (!candidate || (classified && candidate.tier <= risk)) continue
-    risk = candidate.tier
-    reason = `risk ${candidate.tier}: ${candidate.reason}`
-    basis = candidate.basis
-    classified = true
+    if (!candidate) continue
+    if (!classified || candidate.tier > risk) {
+      risk = candidate.tier
+      reason = `risk ${candidate.tier}: ${candidate.reason}`
+      basis = candidate.basis
+      firm = candidate.firm
+      classified = true
+      continue
+    }
+    if (candidate.tier === risk) firm = firm || candidate.firm
   }
-  return { risk, reason, basis }
+  return { risk, reason, basis, firm }
+}
+
+/** Combined review tier: size-0 lowers path risk by one unless a firm path sits at that risk. */
+export function combineReviewTier(input: {
+  risk: 0 | 1 | 2 | 3
+  size: 0 | 1 | 2 | 3
+  firm: boolean
+}): { tier: 0 | 1 | 2 | 3; lowered: boolean } {
+  if (input.size === 0 && input.risk > 0 && !input.firm) {
+    return { tier: (input.risk - 1) as 0 | 1 | 2 | 3, lowered: true }
+  }
+  return { tier: Math.max(input.risk, input.size) as 0 | 1 | 2 | 3, lowered: false }
 }
 
 export function classifyReviewTier(input: {
   files: ReviewTierFile[]
   risk?: ReviewRiskMap
 }): ReviewTier {
-  const { risk, reason: riskReason, basis: riskBasis } = classifyRisk(input.files, input.risk)
+  const { risk, reason: riskReason, basis: riskBasis, firm } = classifyRisk(input.files, input.risk)
 
   const productFiles = input.files.filter((file) => isReviewProductPath(file.path))
   const countedFiles = input.files.filter((file) => !isReviewExcluded(file.path))
@@ -129,7 +152,11 @@ export function classifyReviewTier(input: {
     size = (size + 1) as 1 | 2 | 3
     reasons[1] = `size ${size}: ${productLines} product lines across ${productFiles.length} product files (more than 8 raises size one tier)`
   }
-  return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons, riskBasis }
+  const combined = combineReviewTier({ risk, size, firm })
+  if (combined.lowered) {
+    reasons.push(`tier ${combined.tier}: size 0 lowered risk ${risk} by one`)
+  }
+  return { tier: combined.tier, risk, size, reasons, riskBasis }
 }
 
 /** Paths whose declared surface risk independently requires tier-three review. */

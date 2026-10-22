@@ -144,7 +144,15 @@ describe('project workflow injection', () => {
             secondOpinion: { lens: 'craft', basis: 'escaped defect evidence' },
             unscopedLenses: 'skip',
             risk: {
-              paths: [{ pattern: '^shared/', tier: 3, reason: 'shared schema', basis: 'incident' }],
+              paths: [
+                {
+                  pattern: '^shared/',
+                  tier: 3,
+                  reason: 'shared schema',
+                  basis: 'incident',
+                  firm: true,
+                },
+              ],
               unlisted: 1,
             },
           },
@@ -221,6 +229,17 @@ describe('project workflow injection', () => {
     expect(invalidRiskPattern).toContain('review.risk.paths.0.pattern')
     expect(invalidRiskPattern).toContain('does not compile')
     expect(invalidRiskPattern).toContain('replace it with a valid regular expression')
+    expect(
+      validateProjectSettings({
+        review: {
+          lenses: [],
+          risk: {
+            paths: [{ pattern: '^shared/', tier: 3, reason: 'shared schema', firm: false }],
+            unlisted: 1,
+          },
+        },
+      } as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([expect.stringContaining('review.risk.paths.0.firm')])
   })
 
   test('refuses unknown and repeated PHP policy rules with the register remedy', () => {
