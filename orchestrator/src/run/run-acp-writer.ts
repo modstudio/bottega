@@ -31,13 +31,13 @@ export function writableRoots(
 
 /** Pure per-run facts used by every host checkpoint path. */
 export function checkpointContainment(
-  worktree: Worktree | null,
+  gitDir: string | null,
   writingAcp: boolean,
   runDir: string,
 ): CheckpointContainment {
-  return writingAcp && worktree
+  return writingAcp && gitDir
     ? {
-        gitDir: worktreeGitDir(worktree.path),
+        gitDir,
         hooksDir: join(runDir, 'checkpoint-hooks'),
         disableHooks: true,
       }
@@ -55,7 +55,8 @@ export function prepareCheckpoint(
   writingAcp: boolean,
   runDir: string,
 ): CheckpointContainment {
-  return prepareCheckpointContainment(checkpointContainment(worktree, writingAcp, runDir))
+  const gitDir = writingAcp && worktree ? worktreeGitDir(worktree.path) : null
+  return prepareCheckpointContainment(checkpointContainment(gitDir, writingAcp, runDir))
 }
 
 export function lifecycleFacts(

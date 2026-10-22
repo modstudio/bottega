@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { startAskHttpEndpoint } from '../ask/ask.ts'
-import { worktreeGitDir } from '../git/git-environment.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   bindContract,
@@ -19,8 +18,8 @@ const tree: Worktree = {
 
 test('writing ACP pure decisions expose only worker-owned writes and host checkpoint facts', () => {
   expect(writableRoots(tree, true, true, '/run/scratch')).toEqual([tree.path, '/run/scratch'])
-  expect(checkpointContainment(tree, true, '/run/private')).toEqual({
-    gitDir: worktreeGitDir(tree.path),
+  expect(checkpointContainment('/repo/.git/worktrees/run', true, '/run/private')).toEqual({
+    gitDir: '/repo/.git/worktrees/run',
     hooksDir: '/run/private/checkpoint-hooks',
     disableHooks: true,
   })
@@ -31,7 +30,7 @@ test('writing ACP pure decisions expose only worker-owned writes and host checkp
 })
 
 test('trusted writers keep their shared git roots and ordinary checkpoints', () => {
-  expect(checkpointContainment(tree, false, '/run/private')).toEqual({
+  expect(checkpointContainment(null, false, '/run/private')).toEqual({
     gitDir: null,
     hooksDir: null,
     disableHooks: false,
