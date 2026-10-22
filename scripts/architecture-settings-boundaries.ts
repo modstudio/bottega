@@ -135,6 +135,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     file: `${source}settings-machine-apply.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/git.ts',
       'bun:sqlite',
       'node:fs',
       'node:path',

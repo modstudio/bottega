@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { mainCheckoutOf } from '../../../shared/git.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import {
@@ -175,10 +176,11 @@ function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | 
 function assertMachineSettingsWriteAuthority(
   environment: NodeJS.ProcessEnv,
   runningFromRegisteredMainCheckout: boolean,
-  facts: Pick<
-    ApplyOverrides,
-    'registeredMainCheckout' | 'runningInstallationRoot' | 'binaryRepositoryRoot'
-  >,
+  facts: {
+    registeredMainCheckout: string | null
+    runningInstallationRoot: string
+    binaryRepositoryRoot: string | null
+  },
 ): void {
   const runsDirectory = resolveRunsDirectory(environment)
   const targetHomes = [
@@ -289,14 +291,17 @@ export async function applyMachineSettings(
   const environment = overrides.environment ?? process.env
   const local = overrides.local ?? db()
   const mainCheckout = overrides.registeredMainCheckout ?? registeredMainCheckout(local)
+  const runningInstallationRoot = overrides.runningInstallationRoot ?? assetPath()
+  const binaryRepositoryRoot =
+    overrides.binaryRepositoryRoot ?? mainCheckoutOf(runningInstallationRoot)
   const runningFromRegisteredMainCheckout =
     overrides.runningFromRegisteredMainCheckout ??
-    isRunningFromRegisteredMainCheckout(overrides.runningInstallationRoot, mainCheckout)
+    isRunningFromRegisteredMainCheckout(runningInstallationRoot, mainCheckout)
   if (!input.check) {
     assertMachineSettingsWriteAuthority(environment, runningFromRegisteredMainCheckout, {
       registeredMainCheckout: mainCheckout,
-      runningInstallationRoot: overrides.runningInstallationRoot,
-      binaryRepositoryRoot: overrides.binaryRepositoryRoot,
+      runningInstallationRoot,
+      binaryRepositoryRoot,
     })
   }
   const deps = dependencies({ ...overrides, environment, local, workerProcess })

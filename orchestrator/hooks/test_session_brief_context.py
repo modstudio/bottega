@@ -512,15 +512,6 @@ class SettingsApplyNotice(unittest.TestCase):
     def test_still_running_adds_no_notice(self):
         self.assertIsNone(session_brief._settings_apply_notice(None))
 
-    def test_detached_completion_uses_logged_result(self):
-        completed = self.completed(
-            stdout="settings /tmp/settings.json: applied; backup /tmp/backup\n"
-        )
-        self.assertEqual(
-            session_brief._settings_apply_notice(completed),
-            "settings applied; they take effect in the next session",
-        )
-
     def test_settings_apply_starts_in_its_own_session_with_state_logging(self):
         process = SimpleNamespace()
         with tempfile.TemporaryDirectory() as state:

@@ -76,6 +76,7 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/settings/settings-machine-apply.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/git.ts',
     'bun:sqlite',
     'fs',
     'path',

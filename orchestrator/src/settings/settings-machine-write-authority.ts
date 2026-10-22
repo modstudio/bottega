@@ -31,8 +31,8 @@ export function registeredMainCheckout(database: Database = db()): string | null
 }
 
 export function isRunningFromRegisteredMainCheckout(
-  runningInstallationRoot = assetPath(),
-  mainCheckout = registeredMainCheckout(),
+  runningInstallationRoot: string,
+  mainCheckout: string | null,
 ): boolean {
   return (
     mainCheckout !== null &&
@@ -52,20 +52,17 @@ export function assertMachineHomeWriteAuthority(input: {
   targetHomes: readonly string[]
   runningFromRegisteredMainCheckout: boolean
   registeredMainCheckout?: string | null
-  runningInstallationRoot?: string
-  binaryRepositoryRoot?: string | null
+  runningInstallationRoot: string
+  binaryRepositoryRoot: string | null
 }): void {
   const decision = decideMachineHomeWriteAuthority({
     runningFromRegisteredMainCheckout: input.runningFromRegisteredMainCheckout,
     targetHomesUnderTemporaryDirectory: machineHomesUnderTemporaryDirectory(input.targetHomes),
   })
   if (decision.action === 'allow') return
-  const runningRoot = input.runningInstallationRoot ?? assetPath()
+  const runningRoot = input.runningInstallationRoot
   const remedyRoot =
-    input.registeredMainCheckout ??
-    input.binaryRepositoryRoot ??
-    mainCheckoutOf(runningRoot) ??
-    runningRoot
+    input.registeredMainCheckout ?? input.binaryRepositoryRoot ?? runningRoot
   throw new Error(
     `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from the registered main checkout\n` +
       'invariant: A secondary checkout writes harness settings only under the OS temporary directory.\n' +

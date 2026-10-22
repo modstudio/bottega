@@ -254,11 +254,19 @@ export function settingsRestoreCommand(
   flags: Flags,
   backup: string,
   presentation: Presentation,
+  workerProcess = () => isOrchWorkerProcess(process.env, process.pid),
 ): void {
+  if (workerProcess()) {
+    throw new Error(
+      `refusing settings restore from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings restore`,
+    )
+  }
   if (!flags.has('user') || flags.has('project')) {
     throw new Error('refusing settings restore: pass --user <backup>')
   }
-  const target = userSettingsPath(claudeHomeFromEnvironment(process.env))
+  const home = claudeHomeFromEnvironment(process.env)
+  assertCurrentMachineHomeWriteAuthority('machine settings restore --user', [home])
+  const target = userSettingsPath(home)
   restoreSettingsBackup(target, backup, process.env, flags.has('force'))
   presentation.log(`restored ${target} from ${backup}`)
 }

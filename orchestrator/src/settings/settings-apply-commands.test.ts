@@ -19,6 +19,7 @@ import {
   settingsAdoptCommand,
   settingsEnvImportCommand,
   settingsRenderWriteCommand,
+  settingsRestoreCommand,
 } from './settings-apply-commands.ts'
 import { settingsRenderCheckCommand } from './settings-commands.ts'
 
@@ -317,6 +318,14 @@ describe('worker settings apply refusals', () => {
     )
   })
 
+  test('settings restore refuses a worker caller', () => {
+    expect(() =>
+      settingsRestoreCommand(flags({ user: true }), '/tmp/settings-backup', shown().port),
+    ).toThrow(
+      `refusing settings restore from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings restore`,
+    )
+  })
+
   test('settings adopt allows an architect caller and refuses a worker caller', async () => {
     delete process.env.ORCH_RUN_ID
     await seedUser()
@@ -355,5 +364,17 @@ describe('real user home write authority', () => {
         () => false,
       ),
     ).rejects.toThrow('refusing machine settings render --write --user from installation')
+  })
+
+  test('settings restore --user refuses outside the registered main checkout before writing', () => {
+    process.env.HOME = '/operator'
+    expect(() =>
+      settingsRestoreCommand(
+        flags({ user: true }),
+        '/tmp/settings-backup-that-does-not-exist',
+        shown().port,
+        () => false,
+      ),
+    ).toThrow('refusing machine settings restore --user from installation')
   })
 })
