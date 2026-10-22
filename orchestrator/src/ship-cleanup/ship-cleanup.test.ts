@@ -49,6 +49,7 @@ function addRun(
     parent?: string | null
     worktree?: string | null
     judged?: boolean
+    failureKind?: string | null
     startedAt?: string
   } = {},
 ): string {
@@ -56,8 +57,8 @@ function addRun(
     .query(
       `INSERT INTO run
         (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,
-         branch,minted_branch,launch_key,parent_run_record_id,worktree)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'prompt',?,?,?,?,?,?) RETURNING record_id AS id`,
+         branch,minted_branch,launch_key,parent_run_record_id,worktree,failure_kind)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'prompt',?,?,?,?,?,?,?) RETURNING record_id AS id`,
     )
     .get(
       newRecordId(),
@@ -72,6 +73,7 @@ function addRun(
       input.key === undefined ? 'DEV-1392' : input.key,
       input.parent ?? null,
       input.worktree ?? null,
+      input.failureKind ?? null,
     ) as { id: string }
   if (input.judged) {
     db()
@@ -94,7 +96,10 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   })
   const turn = addRun(project, { parent: root })
   const lens = addRun(project, { job: 'review-lens', judged: true, worktree: '/trees/lens' })
-  const unscored = addRun(project, { worktree: '/trees/unscored' })
+  const unscored = addRun(project, {
+    worktree: '/trees/unscored',
+    failureKind: 'unevidenced',
+  })
   const live = addRun(project, { status: 'running', worktree: '/trees/live' })
   const sibling = addRun(project, {
     branch: 'DEV-1392-c2',
@@ -194,7 +199,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     item: `run ${numberOf(unscored)} artifacts and scratch`,
     reason: 'run has no recorded verdict',
     reasonKind: 'unjudged-run',
-    remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)}`,
+    remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)} none --void --note "<why>"`,
   })
   expect(report.kept).toContainEqual({
     item: `run ${numberOf(live)} artifacts and scratch and worktree`,
