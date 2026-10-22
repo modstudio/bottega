@@ -1,7 +1,12 @@
 // concern: branch-state
 /** Pure policy for local branches that were not minted by an orchestrator run. */
 
-import type { PatchEquivalentForm, ProtectedBranchKind } from './branch-state.ts'
+import {
+  decideUnmatchedBranchLanding,
+  type PatchEquivalentForm,
+  type ProtectedBranchKind,
+  type TaskBranchPullRequestCheck,
+} from './branch-state.ts'
 import type {
   MergedPullRequest,
   PullRequestCommitCheck,
@@ -49,6 +54,7 @@ export function decideOtherBranchState(input: {
   commitsNotOnTrunk: number
   patchEquivalent: PatchEquivalentForm | null
   pullRequestCommitCheck: PullRequestCommitCheck
+  targetedPullRequests: TaskBranchPullRequestCheck | null
   checkError?: string
 }): OtherBranchLanding {
   if (isHeldBranch(input.branch)) return { state: 'held' }
@@ -82,8 +88,7 @@ export function decideOtherBranchState(input: {
       ? input.pullRequestCommitCheck.error
       : undefined
   if (error) return { state: 'unknown', error }
-  if (input.mergedPullRequestsTruncated) return { state: 'unknown' }
-  return { state: 'unlanded' }
+  return decideUnmatchedBranchLanding(input.mergedPullRequestsTruncated, input.targetedPullRequests)
 }
 
 type OtherPruneEligibility =

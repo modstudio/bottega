@@ -1,4 +1,25 @@
 export const branchModuleSpecs = [
+  {
+    file: 'orchestrator/src/branch/branches.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../project/project-lock.ts',
+      '../project/projects.ts',
+      './branch-base-claim.ts',
+      './branch-key-report.ts',
+      './branch-landing-match.ts',
+      './branch-landing-records.ts',
+      './branch-landing-service.ts',
+      './branch-ref-guard.ts',
+      './branch-settlement.ts',
+      './branch-state.ts',
+      './merged-pull-request.ts',
+      './other-branch-state.ts',
+      './task-branch.ts',
+    ],
+  },
   { file: 'orchestrator/src/branch/branch-containment.ts', allowed: [] },
   {
     file: 'orchestrator/src/branch/branch-ref-guard.ts',

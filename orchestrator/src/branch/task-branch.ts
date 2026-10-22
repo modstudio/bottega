@@ -13,7 +13,11 @@ import { projectAt, projects } from '../project/projects.ts'
 import { reviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { type PatchEquivalentForm, pullRequestCarriesKey } from './branch-state.ts'
+import {
+  type PatchEquivalentForm,
+  pullRequestCarriesKey,
+  type TaskBranchPullRequestCheck,
+} from './branch-state.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
   type GitHubPullRequest,
@@ -89,12 +93,6 @@ type TaskBranchWorktreeOwnerRow = {
   job: string
   status: string
 }
-
-export type TaskBranchPullRequestCheck =
-  | { state: 'landed'; landedBy: 'name' | 'pr-commits'; number: number }
-  | { state: 'closed-unmerged'; number: number }
-  | { state: 'unmatched' }
-  | { state: 'unknown'; reason: string }
 
 export type TaskBranchLandingDecision =
   | { action: 'skip'; number?: number }
@@ -179,7 +177,15 @@ export function decideTaskBranchPullRequestCheck(input: {
     return { state: 'unknown', reason: input.nameCheck.error }
   }
   if (input.nameCheck && 'pullRequest' in input.nameCheck && input.nameCheck.containsTip) {
-    return { state: 'landed', landedBy: 'name', number: input.nameCheck.pullRequest.number }
+    const pullRequest = input.nameCheck.pullRequest
+    if (pullRequest.state === 'MERGED' && pullRequest.mergedAt !== null) {
+      return {
+        state: 'landed',
+        landedBy: 'name',
+        number: pullRequest.number,
+        pullRequest: { ...pullRequest, state: 'MERGED', mergedAt: pullRequest.mergedAt },
+      }
+    }
   }
   if (input.commitCheck && 'error' in input.commitCheck) {
     return { state: 'unknown', reason: input.commitCheck.error }
@@ -210,25 +216,21 @@ export function decideTaskBranchPullRequestCheck(input: {
   return { state: 'unmatched' }
 }
 
-/** Observe whether a merged pull request contains one task branch's content. */
-function taskBranchPullRequestCheck(input: {
+/** Observe whether a merged exact-head pull request contains one task branch's content. */
+export function taskBranchPullRequestCheck(input: {
   project: Project
   launchKey: string
   branch: string
   tip: string
+  headMatch: 'exact-head-contains-tip'
 }): TaskBranchPullRequestCheck {
   let nameListing: ReturnType<typeof targetedTaskBranchPullRequests>
-  let commitListing: PullRequestListing<MergedPullRequest>
   try {
     nameListing = targetedTaskBranchPullRequests(input.project, input.branch)
-    commitListing = targetedMergedPullRequests(input.project, { search: input.launchKey })
   } catch (error) {
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
   }
   const namePullRequests = nameListing.pullRequests
-  const commitPullRequests = commitListing.pullRequests.sort((left, right) =>
-    (right.mergedAt ?? '').localeCompare(left.mergedAt ?? ''),
-  )
   const fetched = new Map<number, string | null>()
   const nameCheck = pullRequestNameCheck(
     input.project,
@@ -240,11 +242,23 @@ function taskBranchPullRequestCheck(input: {
   if ((nameCheck && 'error' in nameCheck) || nameCheck?.containsTip) {
     return decideTaskBranchPullRequestCheck({
       nameListing,
-      commitListing,
+      commitListing: { pullRequests: [], truncated: false },
       nameCheck,
       commitCheck: null,
     })
   }
+  let commitListing: PullRequestListing<MergedPullRequest>
+  try {
+    commitListing =
+      input.launchKey === 'unkeyed'
+        ? { pullRequests: [], truncated: false }
+        : targetedMergedPullRequests(input.project, { search: input.launchKey })
+  } catch (error) {
+    return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
+  }
+  const commitPullRequests = commitListing.pullRequests.sort((left, right) =>
+    (right.mergedAt ?? '').localeCompare(left.mergedAt ?? ''),
+  )
   const commitCheck = pullRequestCommitCheck(
     input.project,
     commitPullRequests.filter((pullRequest) => pullRequestCarriesKey(pullRequest, input.launchKey)),
@@ -281,7 +295,10 @@ export function taskBranchAlreadyLanded(input: {
     branch: input.branch,
     tip: input.tip,
     localCheck,
-    pullRequestCheck: taskBranchPullRequestCheck(input),
+    pullRequestCheck: taskBranchPullRequestCheck({
+      ...input,
+      headMatch: 'exact-head-contains-tip',
+    }),
   })
   if (landing.action === 'refuse') {
     throw new TaskBranchLandingRefusalError(landing, input.trunk)
