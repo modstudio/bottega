@@ -18,6 +18,7 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
   type ArtifactRef,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -92,11 +93,9 @@ export function classifyCheckoutEvidence(input: {
   headIsTipOrAncestor: boolean
   landingCommit: string | null
   landingIsHeadOrAncestor: boolean
-  headIsTrunkTipOrAncestor: boolean
 }): CheckoutEvidenceLocation {
   if (input.headIsTipOrAncestor) return 'branch'
-  if (input.landingCommit && input.landingIsHeadOrAncestor && input.headIsTrunkTipOrAncestor)
-    return 'post-landing'
+  if (input.landingCommit && input.landingIsHeadOrAncestor) return 'post-landing'
   return 'outside-change'
 }
 
@@ -220,19 +219,6 @@ function cwdProject(cwd: string, identity: CursorIdentity, d: Database): string 
   return null
 }
 
-function recordedLandingCommit(project: string, branch: string | null, d: Database): string | null {
-  if (!branch) return null
-  return (
-    d
-      .query<{ merge_commit: string | null }, [string, string]>(
-        `SELECT merge_commit FROM branch_landing_record
-          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
-          ORDER BY merged_at DESC, pr_number DESC LIMIT 1`,
-      )
-      .get(project, branch)?.merge_commit ?? null
-  )
-}
-
 function productionResolveCheckout(
   cwd: string,
   headCommit: string | null,
@@ -250,7 +236,9 @@ function productionResolveCheckout(
   const headIsTipOrAncestor = Boolean(
     headCommit && tip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, tip]),
   )
-  const landingCommit = recordedLandingCommit(identity.project, expectedBranch, d)
+  const landingCommit = headIsTipOrAncestor
+    ? null
+    : checkoutLandingCommit(identity.project, expectedBranch, d)
   const landingIsHeadOrAncestor = Boolean(
     landingCommit &&
       headCommit &&
@@ -477,7 +465,6 @@ function requireCheckout(
     headIsTipOrAncestor: checkout.headIsTipOrAncestor,
     landingCommit: checkout.landingCommit ?? null,
     landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
-    headIsTrunkTipOrAncestor: checkout.headIsTrunkTipOrAncestor ?? false,
   })
   if (
     requireOnBranch &&
