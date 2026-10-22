@@ -108,7 +108,7 @@ test('broker tooling compares a rebased worker to the live merge-base, not its r
   )
 })
 
-test('broker execution finalizes normal and cancelled runs without losing lifecycle evidence', () => {
+test('broker execution finalizes normal, timed-out, and cancelled gates with lifecycle evidence', () => {
   expect(
     decideGateExecutionFinalization({
       exitCode: 0,
@@ -122,6 +122,20 @@ test('broker execution finalizes normal and cancelled runs without losing lifecy
     timedOut: false,
     cancelledReason: null,
     artifactPath: '/artifacts/gate-7.log',
+  })
+  expect(
+    decideGateExecutionFinalization({
+      exitCode: -1,
+      timedOut: true,
+      cancelledReason: null,
+      logCreated: true,
+      artifactPath: '/artifacts/gate-timeout.log',
+    }),
+  ).toEqual({
+    exitCode: -1,
+    timedOut: true,
+    cancelledReason: null,
+    artifactPath: '/artifacts/gate-timeout.log',
   })
   expect(
     decideGateExecutionFinalization({
