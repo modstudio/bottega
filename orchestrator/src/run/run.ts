@@ -187,6 +187,17 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
 
 const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
 
+function routeMcp(
+  request: McpRequest | undefined,
+  cwd: string,
+  project: string | null,
+  opts: { transport?: TransportName },
+  transport: TransportName,
+) {
+  const pinned = opts.transport !== undefined || Boolean(process.env.ORCH_TRANSPORT)
+  return requiredMcpServer(request, cwd, project ?? undefined, pinned ? transport : undefined)
+}
+
 function confinementSkipLines(failures: FreezeFailure[]): string[] {
   return failures.map(
     (failure) =>
@@ -518,7 +529,7 @@ export async function run(opts: {
         models: opts.distinctModels,
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
-        requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
+        requiredMcp: routeMcp(mcpRequest, callerCwd, runProjectName, opts, requestedTransport),
       },
       opts.probe,
       opts.lens,

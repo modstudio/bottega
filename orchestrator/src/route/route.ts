@@ -10,7 +10,11 @@ import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
+import {
+  decideMcpGrammarRuling,
+  type RequiredMcpServer,
+  requiredMcpIneligibility,
+} from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
@@ -92,16 +96,20 @@ export const EVIDENCE_WINDOW = 40
 export const PROMPT_SIZE_BOUNDARY = 16 * 1024
 
 function mcpCandidateIneligibility(
-  pattern: string | undefined,
+  agent: Pick<Agent, 'caps' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
 ): string | null {
-  if (!requiredMcp || !pattern) return null
+  const requiredWhy = requiredMcpIneligibility(
+    { mcp: agent.caps.mcp, defaultTransport: agent.defaultTransport },
+    requiredMcp,
+  )
+  if (requiredWhy || !requiredMcp || !agent.mcpToolNamePattern) return requiredWhy
   const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
   return decideMcpGrammarRuling({
     mode: requiredMcp.mode,
     server: requiredMcp.server,
     listedTools: listing?.listedTools,
-    pattern,
+    pattern: agent.mcpToolNamePattern,
   }).routingIneligibility
 }
 
@@ -605,7 +613,7 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
+    const mcpWhy = mcpCandidateIneligibility(a, requiredMcp)
     const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent)
     let eligible = true,
       why = policy.why

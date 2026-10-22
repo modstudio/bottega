@@ -178,6 +178,7 @@ function selectFailoverSuccessor(input: {
           mcpRequestFromStored(input.mcp, input.mcpError),
           input.launchCwd ?? input.callerCwd,
           input.repo ?? undefined,
+          input.pinnedTransport ?? undefined,
         ),
       },
       false,

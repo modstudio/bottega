@@ -22,7 +22,12 @@ import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
+import {
+  effectiveMcpRequest,
+  type McpRequest,
+  parseRequestedMcp,
+  requiredMcpServer,
+} from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
@@ -340,6 +345,8 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
   agent: selectAgentForTransport(transport, agent),
   agentExplicit: Boolean(agent),
 })
+const detachedMcpRequirement = (request: McpRequest | undefined, spec: DetachSpec, cwd: string) =>
+  requiredMcpServer(request, spec.cwd ?? cwd, spec.repo, spec.transport)
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
@@ -386,7 +393,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
           agents: spec.avoid,
           models: spec.distinctModels,
           model: spec.model,
-          requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
+          requiredMcp: detachedMcpRequirement(mcpRequest, spec, presentation.cwd()),
         },
         spec.probe,
         spec.lens,

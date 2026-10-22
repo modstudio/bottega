@@ -10,6 +10,7 @@ export type RequiredMcpServer = {
   project: string
   server: string
   mode: McpCompatibilityMode
+  transport?: 'cli' | 'acp'
 }
 
 export type McpCompatibility = {
@@ -51,6 +52,19 @@ export type McpGrammarRuling = {
   routingIneligibility: string | null
   refusal: string | null
   failedConnection: string | null
+}
+
+export function requiredMcpIneligibility(
+  agent: { mcp: boolean; defaultTransport: 'cli' | 'acp' },
+  required: RequiredMcpServer | undefined,
+): string | null {
+  if (required?.mode !== 'require') return null
+  if (!agent.mcp) return 'probed capabilities report mcp=false'
+  const transport = required.transport ?? agent.defaultTransport
+  if (transport !== 'acp') return null
+  return agent.defaultTransport === 'acp'
+    ? 'read-only ACP sandbox selection uses srt, which blocks MCP transports'
+    : 'pinned read-only ACP transport cannot attach the required project MCP server'
 }
 
 /** Apply request mode to one observed tool-name compatibility result. */
