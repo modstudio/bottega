@@ -18,6 +18,7 @@ import { resolveLens } from '../lens/lenses.ts'
 import {
   assertMainCheckoutClean,
   assertRegisterBranches,
+  type Project,
   projectAt,
   projectByName,
   resolvedWorktreeTool,
@@ -49,6 +50,49 @@ export function resolvedFindingsLens(
 }
 
 const warnedMainCheckouts = new Set<string>()
+
+export function shouldCheckMainCheckout(input: {
+  sourceToplevel: string
+  registeredMainPath: string
+  requireCleanMain: boolean
+  resume: boolean
+}): boolean {
+  return (
+    input.requireCleanMain && !input.resume && input.sourceToplevel === input.registeredMainPath
+  )
+}
+
+function sourceToplevelForProject(cwd: string, registeredMainPath: string): string {
+  const registeredMain = realpathOrSpelled(registeredMainPath)
+  const sourceToplevel = gitContext(cwd, 'rev-parse', '--show-toplevel')
+  if (!sourceToplevel) return registeredMain
+
+  const sourceMain = repoRootOf(cwd)
+  const borrowedMain = borrowedCheckoutOf(sourceToplevel)
+  const belongsToProject = [sourceMain, borrowedMain].some(
+    (path) => path !== null && realpathOrSpelled(path) === registeredMain,
+  )
+  return belongsToProject ? realpathOrSpelled(sourceToplevel) : registeredMain
+}
+
+function assertSourceMainCheckoutClean(
+  cwd: string,
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+  resume: boolean,
+): void {
+  if (
+    !shouldCheckMainCheckout({
+      sourceToplevel: sourceToplevelForProject(cwd, project.path),
+      registeredMainPath: realpathOrSpelled(project.path),
+      requireCleanMain: project.settings.requireCleanMain !== false,
+      resume,
+    })
+  ) {
+    return
+  }
+  const warning = assertMainCheckoutClean(project)
+  if (warning) warnMainCheckoutUntracked(project.path, warning)
+}
 
 function assertImplicitReviewTarget(input: {
   jobName: string
@@ -138,13 +182,8 @@ export function preflight(
         'Answer the question with the tools you have, or hand it back to the caller.',
     )
   }
-  if (!reusesWorktree) {
-    const named = repo?.trim() ? projectByName(repo) : projectAt(cwd)
-    if (named) {
-      const warning = assertMainCheckoutClean(named)
-      if (warning) warnMainCheckoutUntracked(named.path, warning)
-    }
-  }
+  const named = repo?.trim() ? projectByName(repo) : projectAt(cwd)
+  if (named) assertSourceMainCheckoutClean(cwd, named, reusesWorktree)
   const j = job(jobName)
   resolveReviewTarget(jobName, cwd, reviewRef, carry)
   const writesJob = Boolean(j.needs.writesRepo)

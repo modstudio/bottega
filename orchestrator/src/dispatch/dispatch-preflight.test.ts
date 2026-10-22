@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { lensDispatchNotices } from './dispatch-commands.ts'
-import { preflight } from './dispatch-preflight.ts'
+import { preflight, shouldCheckMainCheckout } from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
 
@@ -21,6 +21,39 @@ function git(cwd: string, ...args: string[]): void {
   const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
+
+test('checks the main source so a dirty main checkout is refused', () => {
+  expect(
+    shouldCheckMainCheckout({
+      sourceToplevel: '/projects/example',
+      registeredMainPath: '/projects/example',
+      requireCleanMain: true,
+      resume: false,
+    }),
+  ).toBe(true)
+})
+
+test('does not check main dirt when the source is a linked worktree', () => {
+  expect(
+    shouldCheckMainCheckout({
+      sourceToplevel: '/projects/example/.claude/worktrees/EX-1',
+      registeredMainPath: '/projects/example',
+      requireCleanMain: true,
+      resume: false,
+    }),
+  ).toBe(false)
+})
+
+test('does not check the main checkout when requireCleanMain is false', () => {
+  expect(
+    shouldCheckMainCheckout({
+      sourceToplevel: '/projects/example',
+      registeredMainPath: '/projects/example',
+      requireCleanMain: false,
+      resume: false,
+    }),
+  ).toBe(false)
+})
 
 test('preflight uses the recipe default from the explicit base creation will use', () => {
   const path = mkdtempSync(join(tmpdir(), 'orch-seed-base-'))
