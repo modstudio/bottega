@@ -197,10 +197,11 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
     earlierReviewTier: null,
     finalTierRaised: false,
   })
-  expect(message).toContain('applicable lens craft has not run and been judged')
+  expect(message).toContain('applicable lens craft has no recorded result on this branch')
   expect(message).toContain(
     `${PLATFORM_SLUG} run start review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft`,
   )
+  expect(message).not.toContain('no earlier complete review round')
 })
 
 test('a creditable composed round refusal names only the architect read', () => {
