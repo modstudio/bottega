@@ -116,6 +116,10 @@ export function resolvePullRequestChange(
         pathSet: serializedPathSet,
       }),
       postFix,
+      pathScopedLenses:
+        project.settings.review?.lenses
+          .filter(({ paths }) => paths !== undefined)
+          .map(({ lens }) => lens) ?? [],
     }),
   }
 }

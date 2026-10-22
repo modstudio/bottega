@@ -56,6 +56,7 @@ function roundApplicabilityForTierOutput(input: {
   project: string
   branch: string
   postFix: ReturnType<typeof postFixReviewDecision>
+  pathScopedLenses: readonly string[]
 }): ApplicableReview {
   const relevant = declaredApplicability(input.output)
   if (!input.identity) return relevant
@@ -74,6 +75,7 @@ function roundApplicabilityForTierOutput(input: {
       },
     ),
     postFix: input.postFix,
+    pathScopedLenses: input.pathScopedLenses,
   })
 }
 
@@ -294,6 +296,10 @@ function reviewTierOutput(value: string, cwd: string) {
     project: project.name,
     branch,
     postFix,
+    pathScopedLenses:
+      project.settings.review?.lenses
+        .filter(({ paths }) => paths !== undefined)
+        .map(({ lens }) => lens) ?? [],
   })
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,

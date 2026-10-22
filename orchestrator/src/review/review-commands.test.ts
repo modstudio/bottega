@@ -324,7 +324,7 @@ test('review tier re-lenses only the tier-three path touched by the fix after a 
 
     expect(output.some((line) => line.includes('tier-3 paths touched since review'))).toBeTrue()
     expect(output.some((line) => line.includes('critical/fix.ts'))).toBeTrue()
-    expect(output.some((line) => line.startsWith('lens correctness'))).toBeTrue()
+    expect(output.some((line) => line.startsWith('lens correctness'))).toBeFalse()
     expect(output.some((line) => line.startsWith('lens safety'))).toBeTrue()
     expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
 

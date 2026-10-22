@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { TriageReviewRow } from './review-group.ts'
-import { roundLensFacts, roundLensPlan } from './review-round-lens-plan.ts'
+import { applicableRoundLensPlan, roundLensFacts, roundLensPlan } from './review-round-lens-plan.ts'
 
 describe('round lens plan', () => {
   test('an initial round lists every relevant lens', () => {
@@ -34,6 +34,73 @@ describe('round lens plan', () => {
         newlyTouchedLenses: [],
       }),
     ).toEqual(['craft'])
+  })
+
+  test('a later round treats only path-scoped lenses as newly touched', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: {
+          lenses: [
+            'correctness',
+            'craft',
+            'test-quality',
+            'architecture',
+            'migration-safety',
+            'safety',
+          ],
+        },
+        facts: {
+          completedLenses: [
+            'correctness',
+            'craft',
+            'test-quality',
+            'architecture',
+            'migration-safety',
+            'safety',
+          ],
+          latestAcceptedOrModifiedLenses: ['correctness', 'craft', 'test-quality'],
+        },
+        postFix: {
+          kind: 're-lens',
+          reviewNumber: 2,
+          reviewedTip: 'reviewed-tip',
+          tierThreePaths: ['orchestrator/src/review/review-round-lens-plan.ts'],
+          applicability: {
+            lenses: [
+              'correctness',
+              'craft',
+              'test-quality',
+              'architecture',
+              'migration-safety',
+              'safety',
+            ],
+          },
+        },
+        pathScopedLenses: ['migration-safety', 'safety'],
+      }),
+    ).toEqual({
+      lenses: ['correctness', 'craft', 'test-quality', 'migration-safety', 'safety'],
+    })
+  })
+
+  test('an unscoped lens that never completed is still listed', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness', 'architecture', 'safety'] },
+        facts: {
+          completedLenses: ['correctness', 'safety'],
+          latestAcceptedOrModifiedLenses: [],
+        },
+        postFix: {
+          kind: 're-lens',
+          reviewNumber: 2,
+          reviewedTip: 'reviewed-tip',
+          tierThreePaths: ['orchestrator/src/review/review-round-lens-plan.ts'],
+          applicability: { lenses: ['correctness', 'architecture', 'safety'] },
+        },
+        pathScopedLenses: ['safety'],
+      }),
+    ).toEqual({ lenses: ['architecture', 'safety'] })
   })
 
   test('facts use the latest prior round and attribute accepted and modified findings by lens', () => {
