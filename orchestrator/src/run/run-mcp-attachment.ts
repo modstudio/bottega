@@ -1,5 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { NativeMcpAttachmentPrediction } from '../mcp/mcp-compatibility.ts'
+import type { RequiredMcpAttachmentDecision } from '../mcp/mcp-native-attachment.ts'
 import {
   type McpConnection,
   type McpMode,
@@ -30,15 +30,14 @@ export type McpLaunchRuling = {
 /** Decide native project-server availability before any stack or probe work begins. */
 export function decideMcpLaunchRuling(
   mode: McpMode | null,
-  prediction: NativeMcpAttachmentPrediction,
+  attachment: RequiredMcpAttachmentDecision,
   probedAgentHasMcp: boolean,
 ): McpLaunchRuling {
   if (!mode) return { agentHasMcp: probedAgentHasMcp, refusalReason: null }
-  const refusalReason =
-    mode === 'require' && prediction.reason
-      ? `${prediction.reason}; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp`
-      : null
-  return { agentHasMcp: prediction.confirmable, refusalReason }
+  return {
+    agentHasMcp: attachment.confirmable,
+    refusalReason: mode === 'require' ? attachment.refusalReason : null,
+  }
 }
 
 /** Decide attachment only after the caller has performed any required probe. */

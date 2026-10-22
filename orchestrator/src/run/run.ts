@@ -39,7 +39,10 @@ import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
-import { predictNativeMcpAttachment } from '../mcp/mcp-compatibility.ts'
+import {
+  decideRequiredMcpAttachment,
+  predictNativeMcpAttachment,
+} from '../mcp/mcp-native-attachment.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -230,6 +233,8 @@ export async function run(opts: {
   model?: string
   /** Pilot opt-in. Default `cli`. */
   transport?: TransportName
+  /** Whether the transport pin came from the CLI flag or ORCH_TRANSPORT. */
+  transportPinSource?: 'explicit' | 'environment'
   cwd?: string
   /** Internal override for callers whose execution cwd is not their canon source. */
   canonPack?: Pack
@@ -509,11 +514,20 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
+  const envTransport =
+    opts.transportPinSource === 'environment' ||
+    (opts.transportPinSource === undefined && Boolean(process.env.ORCH_TRANSPORT))
   const transportPinFacts = {
-    explicitTransport: opts.transport !== undefined,
-    envTransport: Boolean(process.env.ORCH_TRANSPORT),
+    explicitTransport:
+      opts.transportPinSource === 'explicit' || (opts.transport !== undefined && !envTransport),
+    envTransport,
   }
   const pinnedTransport = isRunTransportPinned(transportPinFacts) ? requestedTransport : undefined
+  const transportPinSource = transportPinFacts.explicitTransport
+    ? ('explicit' as const)
+    : transportPinFacts.envTransport
+      ? ('environment' as const)
+      : undefined
   const pickSource = () =>
     pick(
       opts.job,
@@ -531,6 +545,7 @@ export async function run(opts: {
         noWaitCapacity: opts.noWaitCapacity,
         requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
         pinnedTransport,
+        transportPinSource,
       },
       opts.probe,
       opts.lens,
@@ -565,7 +580,15 @@ export async function run(opts: {
   if (name === 'codex') enforceRunStartupRefusal(opts.reserveId, minimumCliVersionRefusal(a))
   const mcpLaunchRuling = mcpAttachment.decideMcpLaunchRuling(
     requestedMcpMode(mcpRequest),
-    predictNativeMcpAttachment({ name: a.name, harness: a.harness, transport: transportName }),
+    decideRequiredMcpAttachment({
+      mode: requestedMcpMode(mcpRequest),
+      prediction: predictNativeMcpAttachment({
+        name: a.name,
+        harness: a.harness,
+        transport: transportName,
+      }),
+      pin: { transport: pinnedTransport, source: transportPinSource },
+    }),
     a.caps.mcp,
   )
   enforceRunStartupRefusal(opts.reserveId, mcpLaunchRuling.refusalReason)

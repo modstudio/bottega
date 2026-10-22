@@ -10,12 +10,12 @@ import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import {
-  decideMcpGrammarRuling,
-  type RequiredMcpServer,
-  requiredMcpIneligibility,
-} from '../mcp/mcp-compatibility.ts'
+import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
+import {
+  type McpTransportPinFacts,
+  requiredMcpIneligibility,
+} from '../mcp/mcp-native-attachment.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
@@ -75,6 +75,7 @@ type RouteConstraints = {
   noWaitCapacity?: boolean
   requiredMcp?: RequiredMcpServer
   pinnedTransport?: 'cli' | 'acp'
+  transportPinSource?: McpTransportPinFacts['source']
 }
 
 const RUNNING_RUNS_SQL =
@@ -108,8 +109,12 @@ function mcpCandidateIneligibility(
   agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
   pinnedTransport?: 'cli' | 'acp',
+  transportPinSource?: McpTransportPinFacts['source'],
 ): string | null {
-  const requiredWhy = requiredMcpIneligibility(agent, requiredMcp, pinnedTransport)
+  const requiredWhy = requiredMcpIneligibility(agent, requiredMcp, {
+    transport: pinnedTransport,
+    source: transportPinSource,
+  })
   if (requiredWhy || !requiredMcp || !agent.mcpToolNamePattern) return requiredWhy
   const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
   return decideMcpGrammarRuling({
@@ -443,6 +448,7 @@ export function candidates(
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
   pinnedTransport?: 'cli' | 'acp',
+  transportPinSource?: McpTransportPinFacts['source'],
   explicitlyNamedAgent?: string,
 ): Candidate[] {
   const j = job(jobName)
@@ -621,7 +627,7 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    const mcpWhy = mcpCandidateIneligibility(a, requiredMcp, pinnedTransport)
+    const mcpWhy = mcpCandidateIneligibility(a, requiredMcp, pinnedTransport, transportPinSource)
     const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent, pinnedTransport)
     let eligible = true,
       why = policy.why
@@ -788,6 +794,7 @@ export function evidenceFor(
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
   pinnedTransport?: 'cli' | 'acp',
+  transportPinSource?: McpTransportPinFacts['source'],
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'
@@ -811,6 +818,7 @@ export function evidenceFor(
     undefined,
     requiredMcp,
     pinnedTransport,
+    transportPinSource,
   )
   if (requested) {
     const scoped =
@@ -824,6 +832,7 @@ export function evidenceFor(
             requested.value,
             requiredMcp,
             pinnedTransport,
+            transportPinSource,
           )
         : candidates(
             jobName,
@@ -834,6 +843,7 @@ export function evidenceFor(
             undefined,
             requiredMcp,
             pinnedTransport,
+            transportPinSource,
           )
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
@@ -900,6 +910,7 @@ function evidenceForPick(
     lens,
     constraints.requiredMcp,
     constraints.pinnedTransport,
+    constraints.transportPinSource,
   )
 }
 
@@ -1034,6 +1045,7 @@ export function pick(
       ev.level === 'lens' ? ev.lens : undefined,
       avoid.requiredMcp,
       avoid.pinnedTransport,
+      avoid.transportPinSource,
       override,
     )
     const c = namedCandidates.find((x) => x.agent === override)

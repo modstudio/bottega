@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { decideRequiredMcpAttachment } from '../mcp/mcp-native-attachment.ts'
 import type { McpConnection } from '../mcp/mcp-preflight.ts'
 import {
   decideFinalMcpConnection,
@@ -46,16 +47,25 @@ describe('MCP attachment ruling', () => {
       expected: { agentHasMcp: true, refusalReason: null },
     },
   ])('decides $name before preflight', ({ mode, prediction, probed, expected }) => {
-    expect(decideMcpLaunchRuling(mode, prediction, probed)).toEqual(expected)
+    const attachment = decideRequiredMcpAttachment({ mode, prediction, pin: {} })
+    expect(decideMcpLaunchRuling(mode, attachment, probed)).toEqual(expected)
   })
 
   test('required unconfirmable attachment returns the routing remedy', () => {
     expect(
-      decideMcpLaunchRuling('require', { confirmable: false, reason: 'not attachable' }, true),
+      decideMcpLaunchRuling(
+        'require',
+        decideRequiredMcpAttachment({
+          mode: 'require',
+          prediction: { confirmable: false, reason: 'not attachable' },
+          pin: { transport: 'acp', source: 'environment' },
+        }),
+        true,
+      ),
     ).toEqual({
       agentHasMcp: false,
       refusalReason:
-        'not attachable; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp',
+        'not attachable; unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp',
     })
   })
 

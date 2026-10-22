@@ -125,6 +125,7 @@ type DispatchOptions = {
   agentExplicit: boolean
   transport: TransportName
   transportExplicit: boolean
+  transportPinSource?: 'explicit' | 'environment'
   avoid: string[]
   distinctModels: string[]
   mcp: McpRequest | undefined
@@ -370,8 +371,16 @@ export async function dispatchCommand(
     throw new Error('--porcelain cannot be combined with --follow')
   }
   const requested = job(jobName)
-  const { agent, agentExplicit, transport, transportExplicit, avoid, distinctModels, mcp } =
-    await resolveDispatchOptions(jobName)
+  const {
+    agent,
+    agentExplicit,
+    transport,
+    transportExplicit,
+    transportPinSource,
+    avoid,
+    distinctModels,
+    mcp,
+  } = await resolveDispatchOptions(jobName)
   const requestedCwd = flag('cwd')
   if (requestedCwd && !existsSync(requestedCwd))
     throw new Error(`--cwd does not exist: ${requestedCwd}`)
@@ -525,7 +534,7 @@ export async function dispatchCommand(
       base,
       avoid,
       distinctModels,
-      ...(transportExplicit ? { transport } : {}),
+      ...(transportExplicit ? { transport, transportPinSource } : {}),
       noFailover: has('no-failover'),
       noWaitCapacity: has('no-wait-capacity'),
       carry: has('carry'),
@@ -586,7 +595,7 @@ export async function dispatchCommand(
     base,
     avoid,
     distinctModels,
-    ...(transportExplicit ? { transport } : {}),
+    ...(transportExplicit ? { transport, transportPinSource } : {}),
     noFailover: has('no-failover'),
     carry: has('carry'),
     review: reviewRef,

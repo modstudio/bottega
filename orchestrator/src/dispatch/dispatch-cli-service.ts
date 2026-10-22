@@ -352,6 +352,7 @@ const detachedMcpConstraints = (
 ) => ({
   requiredMcp: requiredMcpServer(request, spec.cwd ?? cwd, spec.repo),
   pinnedTransport: spec.transport,
+  transportPinSource: spec.transportPinSource,
 })
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
@@ -370,7 +371,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   const resolveOptions = async (jobName: string) => {
     const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined,
       transportFlag = flag('transport'),
-      explicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT),
+      environmentTransport = Boolean(process.env.ORCH_TRANSPORT),
+      explicit = transportFlag !== undefined || environmentTransport,
       transport =
         !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
     if (transport === 'acp') {
@@ -381,6 +383,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       ...selectedAgentOptions(transport, flag('agent')),
       transport,
       transportExplicit: explicit,
+      transportPinSource:
+        transportFlag !== undefined ? 'explicit' : environmentTransport ? 'environment' : undefined,
       ...(await routeConstraints(argv, flag('agent'))),
       mcp: parseRequestedMcp(argv),
     }

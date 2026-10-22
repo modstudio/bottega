@@ -53,50 +53,6 @@ export type McpGrammarRuling = {
   failedConnection: string | null
 }
 
-export type NativeMcpAttachmentPrediction = {
-  confirmable: boolean
-  reason: string | null
-}
-
-/** Predict the native project-server launch path, independently of a capability probe. */
-export function predictNativeMcpAttachment(input: {
-  name: string
-  harness?: string
-  transport: 'cli' | 'acp'
-}): NativeMcpAttachmentPrediction {
-  if (input.transport === 'acp') {
-    return {
-      confirmable: false,
-      reason:
-        'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers',
-    }
-  }
-  const harness = input.harness ?? input.name
-  if (input.name === 'codex' || harness === 'grok') {
-    return { confirmable: true, reason: null }
-  }
-  return {
-    confirmable: false,
-    reason: `native project MCP attachment is unconfirmable for ${harness} CLI`,
-  }
-}
-
-export function requiredMcpIneligibility(
-  agent: { name: string; harness?: string; defaultTransport: 'cli' | 'acp' },
-  required: RequiredMcpServer | undefined,
-  pinnedTransport?: 'cli' | 'acp',
-): string | null {
-  if (required?.mode !== 'require') return null
-  const prediction = predictNativeMcpAttachment({
-    name: agent.name,
-    harness: agent.harness,
-    transport: pinnedTransport ?? agent.defaultTransport,
-  })
-  return prediction.reason
-    ? `${prediction.reason}; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp`
-    : null
-}
-
 /** Apply request mode to one observed tool-name compatibility result. */
 export function decideMcpGrammarRuling(input: {
   mode: McpCompatibilityMode

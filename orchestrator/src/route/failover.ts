@@ -44,6 +44,7 @@ export type DetachSpec = {
   model?: string
   probe?: boolean
   transport?: TransportName
+  transportPinSource?: 'explicit' | 'environment'
   label?: string
   lens?: string
   seed?: string
@@ -117,6 +118,7 @@ export function detachedRunOptions(
     model,
     probe,
     transport,
+    transportPinSource,
     label,
     lens,
     seed,
@@ -148,6 +150,7 @@ export function detachedRunOptions(
     model,
     probe,
     transport,
+    transportPinSource,
     label,
     lens,
     seed,
@@ -182,6 +185,7 @@ export function detachedRunOptions(
     model,
     probe,
     transport,
+    transportPinSource,
     label,
     lens,
     seed,
