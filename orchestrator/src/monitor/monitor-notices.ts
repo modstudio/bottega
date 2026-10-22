@@ -40,10 +40,9 @@ function deliveredDetail(row: {
   return `detected (${age}${status}${project}); inspect the ${target} deliberately.`
 }
 
-function deliveredLabel(row: { subject: string; run_number: number | null }): string {
-  return row.subject.startsWith('run:') && row.run_number !== null
-    ? `run ${row.run_number}`
-    : row.subject
+/** A notice names a run by its local number; any other subject, or an unresolved run, by its subject. */
+function noticeLabel(subject: string, runNumber: number | null = null): string {
+  return subject.startsWith('run:') && runNumber !== null ? `run ${runNumber}` : subject
 }
 
 function landingNoticeDetail(row: {
@@ -199,7 +198,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
       noticeId: `condition:${row.id}` as const,
       kind: row.kind,
       subject: row.subject,
-      label: deliveredLabel(row),
+      label: noticeLabel(row.subject, row.run_number),
       since: row.condition_since,
       ageMs: row.age_ms,
       detail: deliveredDetail(row),
@@ -230,7 +229,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
         noticeId: `landing:${row.record_id}`,
         kind: `landing-${row.status.replaceAll('_', '-')}`,
         subject: `landing:${row.record_id}`,
-        label: `landing:${row.record_id}`,
+        label: noticeLabel(`landing:${row.record_id}`),
         since: row.finished_at ?? row.started_at,
         ageMs: null,
         detail: landingNoticeDetail(row),
@@ -261,7 +260,7 @@ export async function claimMonitorNoticesWithHosted(
           noticeId: `board:${notice.id}`,
           kind: 'board-notice',
           subject: `board:${notice.id}`,
-          label: `board:${notice.id}`,
+          label: noticeLabel(`board:${notice.id}`),
           since: null,
           ageMs: null,
           detail: notice.text,

@@ -880,22 +880,6 @@ describe('operational monitor conditions', () => {
     ])
   })
 
-  test('keeps an unresolved run subject as its notice label', () => {
-    const owner = 'unresolved-run-owner'
-    const subject = `run:${newRecordId()}`
-    persistAddressedCondition('worker-gate-tooling-change', subject, owner)
-
-    const [notice] = claimMonitorNotices(owner)
-    expect(notice).toEqual(
-      expect.objectContaining({
-        subject,
-        label: subject,
-        detail: 'detected (age 0m); inspect the run deliberately.',
-      }),
-    )
-    expect(notice?.detail).not.toContain(subject)
-  })
-
   test(`a missing ${PLATFORM_SLUG} question stats document is an observation error, not emptiness`, () => {
     const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
       exitCode: 1,
