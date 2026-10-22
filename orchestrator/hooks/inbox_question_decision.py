@@ -49,8 +49,7 @@ def question_is_answerable_now(item):
     """Whether this session must act on this inbox question now.
 
     Run questions and workflow-ruling questions share the inbox `can_answer`
-    field. The heartbeat must not re-derive answerability from workflow
-    session ownership.
+    field.
     """
     return item.can_answer
 

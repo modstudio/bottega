@@ -131,7 +131,15 @@ esac
     def test_own_workflow_question_is_blocked(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56",
-            [{"kind": "workflow", "question_id": 8, "session_id": "own", "can_answer": True}],
+            [
+                {"kind": "workflow", "question_id": 8, "session_id": "own", "can_answer": True},
+                {
+                    "kind": "workflow",
+                    "question_id": 1936,
+                    "session_id": "eaabda0a",
+                    "can_answer": False,
+                },
+            ],
             0,
             0,
             0,
