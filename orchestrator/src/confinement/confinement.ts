@@ -444,7 +444,7 @@ export type CheckoutRemovalAttribution = {
   removalRun: string | null
 }
 
-export function checkoutRemovalAttribution(
+function checkoutRemovalAttribution(
   database: Database,
   checkout: string,
   startedAt: string,
