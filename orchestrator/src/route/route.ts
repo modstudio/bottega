@@ -13,7 +13,7 @@ import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
 import type { RepositoryVisibility } from '../project/project-settings.ts'
-import { currentProjectRepository, projectByName } from '../project/projects.ts'
+import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
@@ -428,8 +428,14 @@ export function candidates(
   requiredMcp?: RequiredMcpServer,
   explicitlyNamedAgent?: string,
   projectName?: string | null,
+  repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ): Candidate[] {
   const j = job(jobName)
+  let currentRepository: string | null | undefined
+  const readCurrentRepository = (project: Pick<Project, 'path'>): string | null => {
+    if (currentRepository === undefined) currentRepository = repositoryReader(project)
+    return currentRepository
+  }
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
   // let "reply with ok" vouch for an agent on real work.
   //
@@ -576,7 +582,13 @@ export function candidates(
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
-    const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent, projectName)
+    const policy = routePolicyEligibility(
+      jobName,
+      a,
+      explicitlyNamedAgent,
+      projectName,
+      readCurrentRepository,
+    )
     let eligible = true,
       why = policy.why
     const unavailable = unavailableReason(name)
@@ -1249,6 +1261,7 @@ function routePolicyEligibility(
   agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport' | 'trainsOnInputs'>,
   explicitlyNamedAgent: string | undefined,
   projectName?: string | null,
+  repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ) {
   const project = projectName ? projectByName(projectName) : null
   if (agent.trainsOnInputs && projectName === undefined) {
@@ -1264,7 +1277,10 @@ function routePolicyEligibility(
     project: project?.name ?? null,
     visibility: project?.settings.visibility ?? null,
     verifiedRepository: project?.settings.visibilityRepository ?? null,
-    currentRepository: project ? currentProjectRepository(project) : null,
+    currentRepository:
+      agent.trainsOnInputs && project?.settings.visibility === 'public'
+        ? repositoryReader(project)
+        : null,
   })
   if (!training.eligible) return { ...training, mayAutoRouteNamedJob: false }
   const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)

@@ -254,6 +254,33 @@ test('candidates wires verified project visibility and the current local origin'
   }
 })
 
+test('non-training candidates do not read the project origin', () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'non-training-public',
+    path: process.cwd(),
+    settings: { visibility: 'public', visibilityRepository: 'owner/public' },
+  })
+  let reads = 0
+  candidates(
+    'summarize',
+    0,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    'non-training-public',
+    () => {
+      reads += 1
+      return 'owner/public'
+    },
+  )
+
+  expect(reads).toBe(0)
+})
+
 test('automatic routing excludes metered billing without opt-in while a named agent may spend it', () => {
   const original = db().query("SELECT billing FROM agent WHERE name='codex'").get() as {
     billing: string
