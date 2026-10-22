@@ -21,6 +21,11 @@ export const reviewModuleSpecs = [
     typeOnlyAllowed: ['./review-applicability.ts', './review-group.ts', './review-post-fix.ts'],
   },
   {
+    file: 'orchestrator/src/review/review-round-lens-service.ts',
+    allowed: ['./review-applicability.ts', './review-group.ts', './review-round-lens-plan.ts'],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', './review-post-fix.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-yield.ts',
     allowed: [
       'bun:sqlite',
@@ -177,6 +182,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-post-fix.ts',
       './review-round-budget.ts',
       './review-round-lens-plan.ts',
+      './review-round-lens-service.ts',
       './review-target.ts',
       './review-tier.ts',
       './review-tier-service.ts',
@@ -209,6 +215,13 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     allowed: [],
     typeOnlyAllowed: ['./review-applicability.ts', './review-group.ts', './review-post-fix.ts'],
     reason: 'Keep round lens selection independent of stores, repositories, processes, and clocks.',
+  },
+  {
+    name: 'review-round-lens-service-boundary',
+    file: 'orchestrator/src/review/review-round-lens-service.ts',
+    allowed: ['./review-applicability.ts', './review-group.ts', './review-round-lens-plan.ts'],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', './review-post-fix.ts'],
+    reason: 'Keep round lens fact gathering in one review service around the pure plan.',
   },
   {
     name: 'review-round-budget-boundary',

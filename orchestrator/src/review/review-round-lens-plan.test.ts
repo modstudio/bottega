@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { TriageReviewRow } from './review-group.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { reviewsForTriage } from './review-group.ts'
 import { applicableRoundLensPlan, roundLensFacts, roundLensPlan } from './review-round-lens-plan.ts'
 
 describe('round lens plan', () => {
@@ -144,44 +146,60 @@ describe('round lens plan', () => {
   })
 
   test('facts use the latest prior round and attribute accepted and modified findings by lens', () => {
-    const row = (
-      reviewNumber: number,
-      patchId: string,
-      lens: string,
-      disposition: string | null,
-    ): TriageReviewRow => ({
-      reviewRecordId: `review-${reviewNumber}-${lens}`,
-      reviewNumber,
-      recordedAt: `2026-10-2${reviewNumber}T00:00:00Z`,
-      completedAt: `2026-10-2${reviewNumber}T01:00:00Z`,
-      tier: 3,
-      patchId,
-      pathSet: '["a.ts"]',
-      lensIdentities: [lens],
-      lenses: [{ recordId: `lens-${reviewNumber}-${lens}`, lens, graded: true }],
-      findings: [
-        {
-          recordId: `finding-${reviewNumber}-${lens}`,
-          ordinal: 1,
-          disposition,
-          lens,
-        },
-      ],
-    })
-    expect(
-      roundLensFacts(
-        [
-          row(5, 'current', 'correctness', 'accepted'),
-          row(4, 'latest', 'correctness', 'accepted'),
-          row(4, 'latest', 'craft', 'modified'),
-          row(4, 'latest', 'architecture', 'rejected'),
-          row(3, 'older', 'safety', 'accepted'),
-        ],
-        { patchId: 'current', pathSet: '["a.ts"]' },
-      ),
-    ).toEqual({
-      completedLenses: ['correctness', 'craft', 'architecture', 'safety'],
+    const database = migratedTestDatabase()
+    const projectRecordId = newRecordId()
+    const reviewRecordId = newRecordId()
+    database
+      .query(
+        "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+      )
+      .run(projectRecordId)
+    database
+      .query(
+        `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+         VALUES (?,4,'2026-10-20T00:00:00Z','2026-10-20T01:00:00Z',3,'latest','["a.ts"]')`,
+      )
+      .run(reviewRecordId)
+    const addLensFinding = (lens: string, disposition: string, ordinal: number) => {
+      const runRecordId = newRecordId()
+      const lensRecordId = newRecordId()
+      database
+        .query(
+          `INSERT INTO run
+             (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','review-lens','sha',1,'head','ok','fixture',?,'DEV-1563')`,
+        )
+        .run(runRecordId, projectRecordId)
+      database
+        .query(
+          `INSERT INTO review_lens
+             (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,
+              reproduced,coverage,limits,overlap)
+           VALUES (?,?,?,?,'codex','model','[]','["a.ts"]','[]','[]','all','adequate','absent','none')`,
+        )
+        .run(lensRecordId, reviewRecordId, runRecordId, lens)
+      database
+        .query(
+          `INSERT INTO review_finding
+             (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition)
+           VALUES (?,?,?,?,'medium','a.ts:1','evidence','correction',?)`,
+        )
+        .run(newRecordId(), reviewRecordId, lensRecordId, ordinal, disposition)
+    }
+    addLensFinding('correctness', 'accepted', 1)
+    addLensFinding('craft', 'modified', 2)
+    addLensFinding('architecture', 'rejected', 3)
+
+    const branchReviews = reviewsForTriage(database, {
+      project: 'fixture',
+      branch: 'DEV-1563',
+      patchId: 'current',
+      pathSet: ['a.ts'],
+    }).branchReviews
+    expect(roundLensFacts(branchReviews, { patchId: 'current', pathSet: '["a.ts"]' })).toEqual({
+      completedLenses: ['correctness', 'craft', 'architecture'],
       latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
     })
+    database.close()
   })
 })

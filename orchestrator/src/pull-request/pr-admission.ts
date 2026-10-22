@@ -18,8 +18,8 @@ import {
   type TriageReviewRow,
 } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
-import { applicableRoundLensPlan, roundLensFacts } from '../review/review-round-lens-plan.ts'
-import { reviewTrunkRef } from '../review/review-target.ts'
+import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
+import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -78,16 +78,17 @@ export function resolvePullRequestChange(
   const tree = runGit(cwd, ['rev-parse', '--verify', `${tip}^{tree}`])
   const measured = measureChangeGroup(cwd, project, branch, tip)
   if (!measured) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
-  const serializedPathSet = serializePathSet(measured.group.pathSet)
-  const branchReviews = reviewsForTriage(database, measured.group).branchReviews
   const trunk = project.settings.trunk!.trim()
-  const remoteTrackingRefExists =
-    Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`], {
-      cwd,
-      env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).exitCode === 0
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
+    trunk,
+    (args) =>
+      Bun.spawnSync(['git', ...args], {
+        cwd,
+        env: targetGitEnvironment(cwd),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }).exitCode === 0,
+  )
   const postFix = postFixReviewDecision({
     facts: gatherPostFixReviewFacts({
       database,
@@ -109,17 +110,12 @@ export function resolvePullRequestChange(
     group: measured.group,
     tier: measured.tier.tier,
     applicability: measured.applicability,
-    roundApplicability: applicableRoundLensPlan({
+    roundApplicability: roundApplicabilityForChange({
+      database,
+      group: measured.group,
       relevant: measured.applicability,
-      facts: roundLensFacts(branchReviews, {
-        patchId: measured.group.patchId,
-        pathSet: serializedPathSet,
-      }),
       postFix,
-      pathScopedLenses:
-        project.settings.review?.lenses
-          .filter(({ paths }) => paths !== undefined)
-          .map(({ lens }) => lens) ?? [],
+      review: project.settings.review,
     }),
   }
 }

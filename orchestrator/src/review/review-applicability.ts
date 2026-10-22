@@ -61,6 +61,13 @@ function selectedLensRules(
   return { lenses, bases }
 }
 
+/** Lenses whose declaration can select them from newly touched paths. */
+export function pathScopedLenses(review: ReviewSettings | undefined): string[] {
+  return (review ?? BUILT_IN_REVIEW).lenses
+    .filter(({ paths }) => paths !== undefined)
+    .map(({ lens }) => lens)
+}
+
 /** Decide the review opinions that apply, preserving lens declaration order. */
 export function applicableReview(
   tier: 0 | 1 | 2 | 3,

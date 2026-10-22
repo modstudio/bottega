@@ -17,12 +17,12 @@ import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
-import { reviewsForTriage, serializePathSet } from './review-group.ts'
+import { serializePathSet } from './review-group.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
-import { applicableRoundLensPlan, roundLensFacts } from './review-round-lens-plan.ts'
+import { roundApplicabilityForChange } from './review-round-lens-service.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
@@ -56,26 +56,21 @@ function roundApplicabilityForTierOutput(input: {
   project: string
   branch: string
   postFix: ReturnType<typeof postFixReviewDecision>
-  pathScopedLenses: readonly string[]
+  review: Parameters<typeof reviewTierForRange>[3]
 }): ApplicableReview {
   const relevant = declaredApplicability(input.output)
   if (!input.identity) return relevant
-  return applicableRoundLensPlan({
+  return roundApplicabilityForChange({
+    database: db(),
+    group: {
+      project: input.project,
+      branch: input.branch,
+      patchId: input.identity.patchId,
+      pathSet: input.identity.paths,
+    },
     relevant,
-    facts: roundLensFacts(
-      reviewsForTriage(db(), {
-        project: input.project,
-        branch: input.branch,
-        patchId: input.identity.patchId,
-        pathSet: input.identity.paths,
-      }).branchReviews,
-      {
-        patchId: input.identity.patchId,
-        pathSet: serializePathSet(input.identity.paths),
-      },
-    ),
     postFix: input.postFix,
-    pathScopedLenses: input.pathScopedLenses,
+    review: input.review,
   })
 }
 
@@ -296,10 +291,7 @@ function reviewTierOutput(value: string, cwd: string) {
     project: project.name,
     branch,
     postFix,
-    pathScopedLenses:
-      project.settings.review?.lenses
-        .filter(({ paths }) => paths !== undefined)
-        .map(({ lens }) => lens) ?? [],
+    review: project.settings.review,
   })
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,

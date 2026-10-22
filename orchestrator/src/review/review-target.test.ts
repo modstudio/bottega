@@ -13,6 +13,7 @@ import {
   implicitReviewBranchFrom,
   implicitReviewRefusal,
   reviewArtifactBlock,
+  reviewRemoteTrunkRefExists,
   reviewTrunkRef,
 } from './review-target.ts'
 
@@ -45,6 +46,15 @@ describe('review target', () => {
 
   test('falls back to the local trunk when no remote-tracking ref exists', () => {
     expect(reviewTrunkRef(false, 'main')).toBe('main')
+  })
+
+  test('probes the configured remote-tracking trunk ref', () => {
+    expect(
+      reviewRemoteTrunkRefExists('main', (args) => {
+        expect(args).toEqual(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main'])
+        return true
+      }),
+    ).toBeTrue()
   })
 
   test('refuses a ref whose commit is its trunk merge base', () => {
