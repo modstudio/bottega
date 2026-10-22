@@ -12,15 +12,17 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
+import type { ApplicableReview } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
-import { serializePathSet } from './review-group.ts'
+import { reviewsForTriage, serializePathSet } from './review-group.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
+import { applicableRoundLensPlan, roundLensFacts } from './review-round-lens-plan.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
@@ -38,6 +40,42 @@ type ReviewFlags = { has(name: string): boolean; flag(name: string): string | un
 type ReviewPresentation = { log(...values: unknown[]): void }
 const TIER_RUN_SQL =
   'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
+
+function declaredApplicability(output: ReturnType<typeof reviewTierForRange>): ApplicableReview {
+  return {
+    lenses: output.lenses,
+    ...(output.secondOpinion ? { secondOpinion: output.secondOpinion } : {}),
+    ...(output.lensBases ? { lensBases: output.lensBases } : {}),
+    ...(output.secondOpinionBasis ? { secondOpinionBasis: output.secondOpinionBasis } : {}),
+  }
+}
+
+function roundApplicabilityForTierOutput(input: {
+  output: ReturnType<typeof reviewTierForRange>
+  identity: ReturnType<typeof measureChangeIdentity>
+  project: string
+  branch: string
+  postFix: ReturnType<typeof postFixReviewDecision>
+}): ApplicableReview {
+  const relevant = declaredApplicability(input.output)
+  if (!input.identity) return relevant
+  return applicableRoundLensPlan({
+    relevant,
+    facts: roundLensFacts(
+      reviewsForTriage(db(), {
+        project: input.project,
+        branch: input.branch,
+        patchId: input.identity.patchId,
+        pathSet: input.identity.paths,
+      }).branchReviews,
+      {
+        patchId: input.identity.patchId,
+        pathSet: serializePathSet(input.identity.paths),
+      },
+    ),
+    postFix: input.postFix,
+  })
+}
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
@@ -250,6 +288,13 @@ function reviewTierOutput(value: string, cwd: string) {
     tier: output.tier,
     review: project.settings.review,
   })
+  const roundApplicability = roundApplicabilityForTierOutput({
+    output,
+    identity,
+    project: project.name,
+    branch,
+    postFix,
+  })
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,
     ...branchBudget,
@@ -257,15 +302,19 @@ function reviewTierOutput(value: string, cwd: string) {
   })
   return {
     ...output,
+    lenses: roundApplicability.lenses,
+    secondOpinion: roundApplicability.secondOpinion,
+    lensBases: roundApplicability.lensBases,
+    secondOpinionBasis: roundApplicability.secondOpinionBasis,
     post_fix: postFix,
     review_budget: {
       ...reviewBudget,
       eligibleReviewCount: branchBudget.eligibleReviewCount,
       unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
     },
-    lens_profiles: output.lenses.map((id) => ({
+    lens_profiles: roundApplicability.lenses.map((id) => ({
       id,
-      basis: output.lensBases?.[id] ?? null,
+      basis: roundApplicability.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
