@@ -66,6 +66,21 @@ jobs:
           CI: "1"
         run: $SUITE_COMMAND --only=orchestrator --shard=${{ matrix.shard }}/${ORCHESTRATOR_SHARD_COUNT}
 
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Typecheck
+        env:
+          CI: "1"
+        run: $SUITE_COMMAND --only=cli
+
   hub:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -183,7 +198,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [secrets, static, orchestrator, hub, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, root]
+    needs: [secrets, static, cli, orchestrator, hub, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, root]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

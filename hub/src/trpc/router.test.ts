@@ -9,7 +9,7 @@ beforeAll(resetFixtureStore)
 /**
  * bun:test `mock.module` must intercept `hub/src/orch.ts` before the doc router
  * loads it. appRouter is imported only after the mock; project.list does not
- * touch orch and needs no mock.
+ * touch orchestrator and needs no mock.
  */
 const docList = mock(async (_filters?: unknown) => [] as unknown[])
 const docGet = mock(
@@ -294,7 +294,7 @@ describe('board router', () => {
 })
 
 describe('insight.health', () => {
-  test('renders its response from the stubbed orch client', async () => {
+  test('renders its response from the stubbed orchestrator client', async () => {
     const response = await caller.insight.health({
       hours: 168,
       filters: { agent: '', project: '' },
@@ -638,7 +638,7 @@ describe('doc router', () => {
     expect(docSubjects).toHaveBeenCalled()
   })
 
-  test("orch errors surface as BAD_REQUEST with orch's message", async () => {
+  test("orchestrator errors surface as BAD_REQUEST with orchestrator's message", async () => {
     docGet.mockRejectedValueOnce(
       new Error(`${PLATFORM_SLUG} doc exited 1: invalid slug; use 1-64 lowercase`),
     )
@@ -666,7 +666,7 @@ describe('project writes', () => {
     settings: {},
   }
 
-  test('add forwards its validated input to the injected orch function', async () => {
+  test('add forwards its validated input to the injected orchestrator function', async () => {
     let received: unknown
     const router = createProjectRouter({
       add: async (input) => {
@@ -704,7 +704,7 @@ describe('project writes', () => {
     expect(received).toEqual([row.name, { settings: { tracker: null }, canon: true }])
   })
 
-  test('remove forwards the name and surfaces orch errors as BAD_REQUEST', async () => {
+  test('remove forwards the name and surfaces orchestrator errors as BAD_REQUEST', async () => {
     let received: string | undefined
     const router = createProjectRouter({
       add: async () => row,
@@ -988,7 +988,7 @@ describe('managed context', () => {
     expect(settingsPermission).not.toHaveBeenCalled()
   })
 
-  test('passes one validated permission edit to orch without an owner id', async () => {
+  test('passes one validated permission edit to orchestrator without an owner id', async () => {
     const input = {
       target: { user: true as const },
       list: 'allow' as const,

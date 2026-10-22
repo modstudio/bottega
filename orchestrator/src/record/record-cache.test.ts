@@ -9,6 +9,7 @@ import {
 import { db } from '../database/db.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
@@ -896,7 +897,7 @@ describe('record cache pull', () => {
         3,
         'ask',
         'ok',
-        `voided with orch score --void`,
+        VOID_EXCLUSION_REASON,
       )
     if (scored) {
       db()

@@ -226,7 +226,7 @@ function toolCallResult(update: AcpUpdate): string | undefined {
 }
 
 /**
- * Fold ACP session updates into orch's existing run facts: text, tokens,
+ * Fold ACP session updates into orchestrator's existing run facts: text, tokens,
  * session id, stop reason, and a terminal outcome. The store never sees ACP.
  *
  * A non-end_turn stop is a failure even when some agent text already arrived,
@@ -370,7 +370,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
         ? [
             {
               question: input.elicitation.message,
-              why: 'ACP elicitation/create mapped to the orch ask channel',
+              why: 'ACP elicitation/create mapped to the orchestrator ask channel',
             },
           ]
         : [],
@@ -437,7 +437,7 @@ function opencodeConfigContent(baseUrl: string, model: string, apiKey: string): 
     provider: {
       'orch-local': {
         npm: '@ai-sdk/openai-compatible',
-        name: 'orch local backend',
+        name: 'orchestrator local backend',
         options: { baseURL: baseUrl, apiKey },
         models: { [model]: { name: model } },
       },
@@ -593,7 +593,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const app = acp
     .client({ name: MCP_SERVER_NAME })
     .onRequest(acp.methods.client.session.requestPermission, (req) => {
-      // orch replies allow/reject here; the sandboxed child does not. Read-class
+      // orchestrator replies allow/reject here; the sandboxed child does not. Read-class
       // tools and edits confined to run scratch may run. Gap: the architect never
       // sees the prompt — the decision is the pilot policy, not a ruling.
       const title = req.params.toolCall.title ?? 'tool'
@@ -658,7 +658,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
             elicitationFallback =
               'ACP elicitation received no ruling before the ask-channel timeout'
           } else {
-            elicitationFallback = 'ACP elicitation had no authenticated orch run identity'
+            elicitationFallback = 'ACP elicitation had no authenticated orchestrator run identity'
           }
         } else {
           elicitationFallback = 'ACP elicitation schema was not exactly one string-compatible field'
@@ -669,7 +669,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       return { action: 'cancel' as const }
     })
     .onRequest(acp.methods.client.fs.readTextFile, (req) => {
-      // The orch process, not the sandboxed child, serves this read. Confine
+      // The orchestrator process, not the sandboxed child, serves this read. Confine
       // to the run worktree by realpath prefix; anything outside is refused.
       const confined = confineFsPath(req.params.path, opts.cwd)
       const content = readTextFile(confined, req.params.line, req.params.limit)
@@ -721,7 +721,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     if (opts.session) {
       const loaded = await handshake(
         ctx.request(acp.methods.agent.session.load, {
-          // orch resumes the vendor conversation; the prompt is the ruling.
+          // orchestrator resumes the vendor conversation; the prompt is the ruling.
           cwd: opts.cwd,
           sessionId: opts.session,
           mcpServers,
@@ -739,7 +739,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     } else {
       const created = await handshake(
         ctx.request(acp.methods.agent.session.new, {
-          // orch opens a read-only session with its per-run ruling channel.
+          // orchestrator opens a read-only session with its per-run ruling channel.
           cwd: opts.cwd,
           mcpServers,
           ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
@@ -802,7 +802,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       }
       updates.length = 0
       const promptWork = ctx.request(acp.methods.agent.session.prompt, {
-        // orch sends the bound prompt as text blocks; schema is also inlined.
+        // orchestrator sends the bound prompt as text blocks; schema is also inlined.
         sessionId,
         prompt: blocks,
       })
@@ -847,7 +847,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           /* already closed */
         }
         // Both paid adapters are long-lived stdio servers. A completed prompt is
-        // the end of this orch run, so do not leave the adapter (or Grok's
+        // the end of this orchestrator run, so do not leave the adapter (or Grok's
         // per-run leader) alive after its result has been collected.
         void terminateProcessGroup(child.pid ?? 0, { direct: child })
         if (leaderSocket) rmSync(leaderSocket, { force: true })
@@ -865,7 +865,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       }
     },
     async cancel() {
-      // orch tells the agent to stop; harness cancel is a timeout, matching run.ts.
+      // orchestrator tells the agent to stop; harness cancel is a timeout, matching run.ts.
       cancelled = true
       if (ctx && sessionId) {
         try {

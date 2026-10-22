@@ -248,7 +248,7 @@ export async function applyMachineSettings(
     overrides.workerProcess ?? (() => isOrchWorkerProcess(process.env, process.pid))
   if (workerProcess()) {
     throw new Error(
-      `refusing settings apply from an orch worker run; an operator must run ${PLATFORM_SLUG} machine settings apply`,
+      `refusing settings apply from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings apply`,
     )
   }
   const deps = dependencies({ ...overrides, workerProcess })

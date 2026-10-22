@@ -7,7 +7,7 @@ The Worker and the hub are released together, hub first. The hub build that know
 origins must be live before the Worker sends it public traffic; a Worker deployed ahead of
 it would show visitors the app's own sign-in behavior at the public address.
 
-1. Deploy the hub with `orch release bottega --rung hosted-hub`, which passes both origins to the build.
+1. Deploy the hub with `bottega release run bottega --rung hosted-hub`, which passes both origins to the build.
 2. Check the app origin: a signed-out visit to its root lands on the public origin.
 3. Deploy the Worker from the repository root after authenticating Wrangler:
 

@@ -154,11 +154,18 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/cli.ts',
-    allowed: ['./cli-program.ts', './db.ts', './outbox.ts'],
+    allowed: [
+      '../../shared/commander-public-path.ts',
+      './cli-program.ts',
+      './db.ts',
+      './outbox.ts',
+    ],
   },
   {
     file: 'hub/src/cli-program.ts',
     allowed: [
+      '../../shared/brand.ts',
+      '../../shared/commander-public-path.ts',
       'commander',
       '../../shared/install-root.ts',
       './cli-command.ts',

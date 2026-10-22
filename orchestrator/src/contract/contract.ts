@@ -317,7 +317,7 @@ export type IssueWorkerReply = WorkerReply & {
  *
  * Shared by both review contracts so a reader never has to translate two
  * provenance dialects. `unknown` is deliberately distinct from either source:
- * some clients expose no diagnostic and orch must not invent one for them.
+ * some clients expose no diagnostic and orchestrator must not invent one for them.
  */
 const CANON_SOURCE_SCHEMA = {
   type: 'string',

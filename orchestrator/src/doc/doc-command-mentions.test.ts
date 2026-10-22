@@ -53,7 +53,7 @@ describe('customer guide command mentions', () => {
     ['numeric argument after a group', `\`${PLATFORM_SLUG} score 42 full right\``, []],
     ['heading containing a known command', `# Run \`${PLATFORM_SLUG} task show\``, []],
     ['table cell containing a known command', `| command | \`${PLATFORM_SLUG} task show\` |`, []],
-    ['retired orch mention', '`orch doc get guide`', [{ mention: 'orch doc get guide' }]],
+    ['retired orchestrator mention', '`orch doc get guide`', [{ mention: 'orch doc get guide' }]],
     ['retired hub mention', '`hub task list`', [{ mention: 'hub task list' }]],
     ['prose containing the word', `Run ${PLATFORM_SLUG} to inspect the commands.`, []],
   ])('%s', (_name, body, expected) => {

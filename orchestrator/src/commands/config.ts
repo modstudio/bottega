@@ -53,7 +53,7 @@ export function assertConfigWriteAllowed(
   const normalized = value === undefined ? { key, value } : shipToWrite(key, value)
   if (key.startsWith('autonomy.') && isOrchWorkerProcess(env, pid, inventory)) {
     throw new Error(
-      `refusing autonomy config write from an orch worker run; an operator must run ${PLATFORM_SLUG} machine config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
+      `refusing autonomy config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
     )
   }
   if (value !== undefined && isShipToConfigKey(key) && storedShipToLevel(value) === undefined)

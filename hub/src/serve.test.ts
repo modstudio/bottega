@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   fixtureRecordId,
   ingestRunFixtures,
@@ -116,7 +117,7 @@ describe('run ingest', () => {
       id: 9821,
       status: 'ok',
       delivery: 'none',
-      evidence_excluded: `voided with orch score --void`,
+      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
     })
     const state = {
       live: [],
@@ -146,7 +147,7 @@ describe('run ingest', () => {
         expect.objectContaining({
           id: 9821,
           delivery: 'none',
-          evidence_excluded: `voided with orch score --void`,
+          evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
         }),
       ])
     } finally {

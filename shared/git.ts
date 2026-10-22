@@ -59,7 +59,7 @@ function localEnvVarNames(): string[] {
   }
 }
 
-/** Drop repository-location variables git lists, plus orch ref-guard routing. */
+/** Drop repository-location variables git lists, plus orchestrator ref-guard routing. */
 export function scrubbedGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = { ...base }
   for (const name of localEnvVarNames()) delete env[name]

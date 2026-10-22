@@ -7,7 +7,7 @@ export function grokTrustStorePath(env: NodeJS.ProcessEnv = process.env): string
 }
 
 /**
- * Observation only. Grok owns this file; orch neither parses nor edits it.
+ * Observation only. Grok owns this file; orchestrator neither parses nor edits it.
  * A heading is the text of a line beginning with `[folders.`, without its line
  * terminator, so every other byte in the vendor store remains irrelevant.
  */

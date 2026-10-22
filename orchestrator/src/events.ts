@@ -501,7 +501,7 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
   return []
 }
 
-/** Lift one vendor JSONL line into orch's live event stream. Unknown shapes are ignored. */
+/** Lift one vendor JSONL line into orchestrator's live event stream. Unknown shapes are ignored. */
 export function eventsFromVendorLine(line: string): StreamEvent[] {
   const trimmed = line.trim()
   if (!trimmed.startsWith('{')) return []

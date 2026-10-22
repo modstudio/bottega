@@ -16,14 +16,14 @@ commit.
 
 ## How a change moves
 
-1. `hub task new` creates the task and its key.
-2. Write the specification as the prompt or file for `orch do`.
-3. `orch do` dispatches the work into a disposable worktree.
-4. `orch inbox` shows a worker's question, and `orch answer` records the ruling.
-5. `orch diff` shows the worker's actual changes; `--since-read` limits a fix round to changes after the latest recorded architect read.
-6. `orch do review-lens` dispatches a review when required.
-7. `orch score` records the result and its fidelity to the specification.
-8. `orch pr create` opens the reviewed change for admission.
+1. `bottega task new` creates the task and its key.
+2. Write the specification as the prompt or file for `bottega run start`.
+3. `bottega run start` dispatches the work into a disposable worktree.
+4. `bottega question inbox` shows a worker's question, and `bottega question answer` records the ruling.
+5. `bottega run diff` shows the worker's actual changes; `--since-read` limits a fix round to changes after the latest recorded architect read.
+6. `bottega run start review-lens` dispatches a review when required.
+7. `bottega score` records the result and its fidelity to the specification.
+8. `bottega pr create` opens the reviewed change for admission.
 
 ## What it commits to
 
@@ -114,9 +114,9 @@ shared by every contributor.
 
 Work is tracked in hub, and every task carries a `DEV-` key:
 
-    ./bin/hub task list --project bottega
-    ./bin/hub task new --project bottega --title "..."
+    ./bin/bottega task list --project bottega
+    ./bin/bottega task new --project bottega --title "..."
 
-Branches and commit subjects cite the key. A writing run requires `orch do
+Branches and commit subjects cite the key. A writing run requires `bottega run start
 --key` when its project's branch template contains the key; this repository's
 branch template does.

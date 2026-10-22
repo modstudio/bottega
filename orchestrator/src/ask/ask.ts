@@ -516,7 +516,7 @@ function registerRunGateTool(input: {
     {
       description:
         "Run this project's registered gate in the run worktree through the supervising orchestrator. " +
-        'The command, directory, and environment are fixed by orch and take no worker input.',
+        'The command, directory, and environment are fixed by orchestrator and take no worker input.',
       inputSchema: z.object({}),
     },
     async (_arguments, context) => {

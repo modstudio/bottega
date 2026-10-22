@@ -41,12 +41,7 @@ import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { treeReseedCommand } from '../recipe/tree-reseed.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
-import {
-  fixDefectCommand,
-  noteCommand,
-  searchCommand,
-  stateCommand,
-} from '../record/record-commands.ts'
+import { fixDefectCommand, searchCommand, stateCommand } from '../record/record-commands.ts'
 import { continuationFindingsForRun } from '../review/review-continuation-findings.ts'
 import {
   REVIEW_COVERAGE,
@@ -386,19 +381,6 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       fixDefectCommand(
         key,
         { waiting: Boolean(options.waiting), json: Boolean(options.json), cwd: options.cwd },
-        presentation,
-      ),
-    )
-  program
-    .command('note <text>')
-    .option('--project <name>')
-    .option('--same-as <value>')
-    .option('--new')
-    .allowExcessArguments(false)
-    .action((text, options) =>
-      noteCommand(
-        text,
-        { project: options.project, sameAs: options.sameAs, new: Boolean(options.new) },
         presentation,
       ),
     )

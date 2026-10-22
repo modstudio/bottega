@@ -615,7 +615,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     //
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
-    // Idle is silence of the VENDOR, not of orch's own setup. last_event_at
+    // Idle is silence of the VENDOR, not of orchestrator's own setup. last_event_at
     // and the reclaimed-wall clock both start here so a slow worktree cut
     // cannot burn either budget.
     const vendorStartedAt = Date.now()

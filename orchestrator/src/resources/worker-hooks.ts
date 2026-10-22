@@ -99,7 +99,8 @@ is_scratch_path "$current_common" ||
 exit 0
 `
 }
-const workerHookMarker = (name: WorkerHookName) => `# orch worker ${name} hook\n`
+const workerHookMarker = (name: WorkerHookName) => `# ${PLATFORM_SLUG} worker ${name} hook\n`
+const legacyWorkerHookMarker = (name: WorkerHookName) => `# orch worker ${name} hook\n`
 
 function pathEntryExists(path: string): boolean {
   try {
@@ -134,7 +135,11 @@ export function recognizeWorkerHook(
   currentContent: string,
 ): WorkerHookRecognition {
   if (installedContent === currentContent) return 'current'
-  if (installedContent.startsWith(`#!/bin/sh\n${workerHookMarker(name)}`)) {
+  if (
+    [workerHookMarker(name), legacyWorkerHookMarker(name)].some((marker) =>
+      installedContent.startsWith(`#!/bin/sh\n${marker}`),
+    )
+  ) {
     return 'orch-generated'
   }
   if (name === 'pre-push') {

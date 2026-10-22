@@ -1,7 +1,7 @@
 # Hosted report delivery
 
 This hourly scheduled Machine prunes hosted change-log entries older than thirty days and
-runs the same report-delivery pass as a person running `bun run --cwd hub report-deliver`.
+runs the same report-delivery pass as a person running `bun run --cwd hub/ report-deliver`.
 Report delivery discovers only subscription scheduling metadata across spaces; every
 subscription, membership, measure, and send-ledger read or write is performed with that
 space bound under record row-level security. Pruning runs through the guarded record

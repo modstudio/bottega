@@ -241,7 +241,7 @@ export async function run(opts: {
   /**
    * How much database the worker's worktree gets, where the project asks.
    *
-   * The ARCHITECT'S call, not the worker's, and not orch's. It depends on what
+   * The ARCHITECT'S call, not the worker's, and not orchestrator's. It depends on what
    * the task touches — docs need none, a migration needs every table, a report
    * needs the tables it reads — which is a fact about the design rather than
    * about the code, and the worker has not seen the design.
@@ -954,7 +954,7 @@ export async function run(opts: {
   let askLoopback: AskLoopback | null = null
   let workerEvents: StreamEvent[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
-  // Start after orch's own worktree and hook setup, immediately before the
+  // Start after orchestrator's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
   // wrote it: an architect or concurrent landing can change a watched checkout.
   const callerProject = projectAt(callerCwd)

@@ -91,7 +91,7 @@ export function observeLandingTreeRelease(row: LandingTreeReleaseRow): LandingTr
             trunkTip,
             branchTip,
             mergeBase,
-            commitMessage: `orch landing tree ${row.branch}`,
+            commitMessage: `orchestrator landing tree ${row.branch}`,
           }),
         )
     return landingTreeReleaseDecision(decisionFacts, true, landed)

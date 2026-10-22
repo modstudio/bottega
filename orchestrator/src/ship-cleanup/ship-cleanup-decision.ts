@@ -56,8 +56,14 @@ export function decideShipCleanupVerdict(
 export function decideTaskBranchesToPrune(
   taskKey: string,
   runs: readonly Pick<ShipCleanupRunFact, 'launchKey' | 'mintedBranch'>[],
+  localBranches: ReadonlySet<string>,
   landingEvidence: ReadonlyMap<string, BranchStateDecision>,
-): { prune: string[]; keep: { branch: string; reason: 'landing not proved' }[] } {
+): {
+  delete: string[]
+  landingProof: string[]
+  keep: { branch: string; reason: 'landing not proved' }[]
+  gone: string[]
+} {
   const branches = [
     ...new Set(
       runs.flatMap((run) =>
@@ -65,11 +71,17 @@ export function decideTaskBranchesToPrune(
       ),
     ),
   ].sort()
+  const existing = branches.filter((branch) => localBranches.has(branch))
+  const landed = branches.filter((branch) => landingEvidence.get(branch)?.state === 'landed')
   return {
-    prune: branches.filter((branch) => landingEvidence.get(branch)?.state === 'landed'),
-    keep: branches
+    delete: landed.filter((branch) => localBranches.has(branch)),
+    landingProof: landed,
+    keep: existing
       .filter((branch) => landingEvidence.get(branch)?.state !== 'landed')
       .map((branch) => ({ branch, reason: 'landing not proved' })),
+    gone: branches.filter(
+      (branch) => !localBranches.has(branch) && landingEvidence.get(branch)?.state !== 'landed',
+    ),
   }
 }
 

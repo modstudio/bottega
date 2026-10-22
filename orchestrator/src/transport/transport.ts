@@ -72,7 +72,7 @@ export type ArgvOpts = {
   projectServers?: Record<string, { command?: string; args?: string[]; cwd?: string; url?: string }>
   /** HOME inherited by the vendor process. */
   home?: string
-  /** Grok-only scoped trust for the disposable cwd orch created. */
+  /** Grok-only scoped trust for the disposable cwd orchestrator created. */
   trustCwd?: string
   model?: string
   /** Open the sandbox for editing. True for every job that reads a repository. */
@@ -547,7 +547,7 @@ export function stopErrorMessage(stopReason: string): string {
 }
 
 /**
- * Fold a finished turn into orch's three terminal states.
+ * Fold a finished turn into orchestrator's three terminal states.
  *
  * A non-end_turn stop is a failure even when the agent already streamed
  * some text — except elicitation, which is asking.
@@ -647,7 +647,7 @@ export function resolveFsPath(path: string, relativeRoot?: string): string {
 }
 
 /**
- * The orch process, not the sandboxed child, serves fs/read_text_file.
+ * The orchestrator process, not the sandboxed child, serves fs/read_text_file.
  * Reads are confined to the run worktree by realpath prefix.
  */
 export function confineFsPath(path: string, root: string, method = 'readTextFile'): string {

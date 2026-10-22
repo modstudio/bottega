@@ -4,6 +4,7 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { state } from '../state/serve.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { calibrationLine, reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import {
   completeReview,
@@ -215,9 +216,7 @@ describe('review discipline', () => {
       score(runId, 'full', 'right')
       if (voided) {
         db()
-          .query(
-            `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`,
-          )
+          .query(`UPDATE run SET evidence_excluded='${VOID_EXCLUSION_REASON}' WHERE record_id=?`)
           .run(runId)
       }
       return runId

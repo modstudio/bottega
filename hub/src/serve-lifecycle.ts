@@ -189,7 +189,7 @@ function listeningProcessIds(port: number): number[] | null {
   }
 }
 
-/** Ask whether this checkout's hub process is still serving on the port. */
+/** Ask whether this checkout's dashboard process is still serving on the port. */
 export async function checkServeDown(
   port: number,
   checkout = process.cwd(),

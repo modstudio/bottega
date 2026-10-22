@@ -19,7 +19,7 @@ export function decideTaskClose(
   if (!classification.available) {
     return {
       action: 'refuse',
-      reason: `branch classification unavailable: ${classification.reason}; restore orch and git access, then retry`,
+      reason: `branch classification unavailable: ${classification.reason}; restore orchestrator and git access, then retry`,
     }
   }
   if (classification.unlanded.length === 0) return { action: 'close', comment: null }

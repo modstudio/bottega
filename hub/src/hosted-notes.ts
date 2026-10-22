@@ -279,7 +279,7 @@ export async function selectPromotionTask(
     const task = await find(existingKey)
     if (requireExisting && task?.source !== 'local')
       throw new Error(
-        `no hub task ${existingKey.toUpperCase()} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
+        `no local task ${existingKey.toUpperCase()} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
       )
     return { key: existingKey.toUpperCase(), task }
   }

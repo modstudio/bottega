@@ -459,7 +459,7 @@ describe('worker port import refusal', () => {
     plan.refs = []
     plan.doctrine = []
     await expect(applyImport(plan)).rejects.toThrow(
-      'refusing document store write from an orch worker run',
+      'refusing document store write from an orchestrator worker run',
     )
     expect(getDoc('global', null, 'port-category-map')).toBeNull()
 
@@ -469,7 +469,7 @@ describe('worker port import refusal', () => {
 
     process.env.ORCH_RUN_ID = 'port-import-worker'
     await expect(applyImport(planImport(source, projects()), { replace: true })).rejects.toThrow(
-      'refusing document store write from an orch worker run',
+      'refusing document store write from an orchestrator worker run',
     )
   })
 })
