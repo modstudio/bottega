@@ -415,9 +415,9 @@ test('reach reports pushes with audience_at_posting 0 separately', async () => {
   })
   const report = boardReachReport(1, clock + 2, db())
   expect(report.totals.audienceAtPostingZero).toBe(1)
-  expect(report.rows.find((row) => row.messageId === String(posted.recordId))?.audienceAtPosting).toBe(
-    false,
-  )
+  expect(
+    report.rows.find((row) => row.messageId === String(posted.recordId))?.audienceAtPosting,
+  ).toBe(false)
   expect(renderBoardReach(report)).toContain('Pushes with audience_at_posting 0: 1')
 })
 

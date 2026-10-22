@@ -153,10 +153,10 @@ function replySuccessorPush(
   )
   if (!root?.author_session || !root.author_project) return false
   const facts = presenceFacts(database, clock)
-  const readerFact = facts.find(
+  const readerFact: PresenceFact | undefined = facts.find(
     (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
   )
-  const authorFact = facts.find(
+  const authorFact: PresenceFact | undefined = facts.find(
     (row: PresenceFact) => row.reader === root.author_session && !row.taskAudienceOnly,
   )
   return reportReplySuccessorDecision({

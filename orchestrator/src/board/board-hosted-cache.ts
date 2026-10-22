@@ -470,10 +470,10 @@ function hostedReplySuccessorPush(
     .find((candidate) => candidate.id === rootId)
   if (!root?.authorSession || !root.origin.project) return false
   const facts = presenceFacts(database, clock)
-  const readerFact = facts.find(
+  const readerFact: PresenceFact | undefined = facts.find(
     (row: PresenceFact) => row.reader === reader && !row.taskAudienceOnly,
   )
-  const authorFact = facts.find(
+  const authorFact: PresenceFact | undefined = facts.find(
     (row: PresenceFact) => row.reader === root.authorSession && !row.taskAudienceOnly,
   )
   return reportReplySuccessorDecision({
