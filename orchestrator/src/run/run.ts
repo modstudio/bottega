@@ -12,6 +12,7 @@ import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
 import {
   type ConfinementEvent,
+  callerCheckoutWatch,
   type FreezeFailure,
   freezeCheckouts,
 } from '../confinement/confinement.ts'
@@ -919,29 +920,25 @@ export async function run(opts: {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  let artifactsPersisted = true
+  let artifactsPersisted = true,
+    workerEvents: StreamEvent[] = []
   let preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
   let confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  let workerEvents: StreamEvent[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
-  // Freeze after setup; the interval says when a watched checkout changed, not who changed it.
-  const callerProject = projectAt(callerCwd)
-  const callerCheckout = callerProject
+  const roots = acpWriter.confinementRoots(sandboxSelection.profile, name, cwd, writableRoots)
+  const callerCheckout = runProject
     ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
     : null
   const candidates = checkoutWatchSet(
-    callerWatch(callerCheckout, isolatedCwd, callerProject),
+    callerCheckoutWatch(callerWatch(callerCheckout, isolatedCwd, runProject), roots),
     worktree?.path,
     runProjectName,
   )
   const beforeFreeze = freezeCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
-  // A detached child's stderr reaches nobody, so the skip also rides the output
-  // header that `bottega run result` prints (lens run 2290): the register is stale and
-  // the project unwatched on every later run until somebody reads this.
   const skipLines = confinementSkipLines(skipped)
   for (const line of skipLines) console.error(line)
   if (skipLines.length) {

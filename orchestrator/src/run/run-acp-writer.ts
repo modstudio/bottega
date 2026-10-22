@@ -29,6 +29,16 @@ export function writableRoots(
   return [scratchDir, ...provisionWriterSharedGitRoots(worktree, writesRepo && !writingAcp)]
 }
 
+export function confinementRoots(
+  srtProfile: { filesystem: { allowWrite: string[] } } | null,
+  agent: string,
+  cwd: string,
+  extraRoots: string[],
+): string[] | null {
+  if (srtProfile) return srtProfile.filesystem.allowWrite
+  return agent === 'codex' ? [cwd, ...extraRoots, '/tmp', process.env.TMPDIR ?? '/tmp'] : null
+}
+
 /** Pure per-run facts used by every host checkpoint path. */
 export function checkpointContainment(
   gitDir: string | null,

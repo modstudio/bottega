@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import {
   type AttributionKind,
   AttributionKindSchema,
@@ -44,6 +44,8 @@ export type ConfinementEvent = {
   lockHolder: ConfinementLockHolder | null
   landingSession: string | null
   landingId: string | null
+  removalSession?: string | null
+  removalRun?: string | null
   divergentPaths: string[]
   overlappingPaths: string[]
   chainRoot: string | null
@@ -52,9 +54,24 @@ export type ConfinementEvent = {
   after: FrozenCheckout[]
 }
 
-export type CheckoutToWatch = { project: string; path: string; expectedHead?: string | null }
+export type CheckoutToWatch = {
+  project: string
+  path: string
+  expectedHead?: string | null
+  caller?: boolean
+  writeExcluded?: boolean
+}
 
-export type FreezeFailure = CheckoutToWatch & { error: string }
+export type FreezeFailure = CheckoutToWatch & { error: string; missing?: boolean }
+
+function checkoutIsMissing(path: string): boolean {
+  try {
+    statSync(path)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+  }
+}
 
 function git(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr: string } {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -179,10 +196,39 @@ export function freezeCheckouts(
       failures.push({
         ...checkout,
         error: error instanceof Error ? error.message : String(error),
+        missing: checkoutIsMissing(checkout.path),
       })
     }
   }
   return { snapshots, failures }
+}
+
+const pathIsAtOrBelow = (path: string, root: string): boolean => {
+  const offset = relative(resolve(root), resolve(path))
+  return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset))
+}
+
+const pathsOverlap = (left: string, right: string): boolean =>
+  pathIsAtOrBelow(left, right) || pathIsAtOrBelow(right, left)
+
+export function callerCheckoutWatch(
+  watched: CheckoutToWatch[],
+  writableRoots: string[] | null,
+): CheckoutToWatch[] {
+  return watched.map((checkout) => ({
+    ...checkout,
+    caller: true,
+    writeExcluded: Boolean(
+      writableRoots && !writableRoots.some((root) => pathsOverlap(checkout.path, root)),
+    ),
+  }))
+}
+
+export function classifyRemovedCallerCheckout(
+  failure: FreezeFailure,
+): 'removed' | 'unverified' | null {
+  if (!failure.missing || !failure.caller) return null
+  return failure.writeExcluded ? 'removed' : 'unverified'
 }
 
 const CONFINEMENT_LOCK_LSOF_TIMEOUT_MS = 10_000
@@ -331,6 +377,7 @@ export function classifyDivergence(input: {
   const divergentPaths: string[] = []
   const overlappingPaths: string[] = []
   const strength: Record<ConfinementClass, number> = {
+    removed: 0,
     non_overlapping: 1,
     edit_commit_cycle: 2,
     overlapping: 3,
@@ -391,10 +438,135 @@ export function classifyDivergence(input: {
   }
 }
 
+export type CheckoutRemovalAttribution = {
+  attribution: Extract<AttributionKind, 'tree_removal' | 'unattributed'>
+  removalSession: string | null
+  removalRun: string | null
+}
+
+export function checkoutRemovalAttribution(
+  database: Database,
+  checkout: string,
+  startedAt: string,
+): CheckoutRemovalAttribution {
+  const removal = database
+    .query(
+      `SELECT resource_claim.root_run_record_id removal_run, run.session_id removal_session
+       FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
+       WHERE resource_claim.kind='worktree' AND resource_claim.allocation_key=?
+         AND resource_claim.state IN ('released','absent')
+         AND datetime(resource_claim.settled_at) >= datetime(?)
+       ORDER BY resource_claim.settled_at DESC, resource_claim.id DESC LIMIT 1`,
+    )
+    .get(checkout, startedAt) as {
+    removal_run: string
+    removal_session: string | null
+  } | null
+  return {
+    attribution: removal ? 'tree_removal' : 'unattributed',
+    removalSession: removal?.removal_session ?? null,
+    removalRun: removal?.removal_run ?? null,
+  }
+}
+
+export function removedCallerCheckoutError(
+  path: string,
+  removal: CheckoutRemovalAttribution,
+): string {
+  const attribution =
+    removal.attribution === 'tree_removal'
+      ? `; removal attributed to session ${removal.removalSession ?? 'unknown'} (run ${removal.removalRun ?? 'unknown'})`
+      : ''
+  return `caller checkout ${path} was removed during the run and this run could have written it; confinement cannot be verified${attribution}`
+}
+
+export function freezeAfterCheckouts(input: {
+  watched: CheckoutToWatch[]
+  before: FrozenCheckout[]
+  database: Database
+  startedAt: string
+}): {
+  snapshots: FrozenCheckout[]
+  failures: FreezeFailure[]
+  removedCaller: FrozenCheckout | null
+} {
+  const after = freezeCheckouts(input.watched)
+  const failures: FreezeFailure[] = []
+  let removedCaller: FrozenCheckout | null = null
+  for (const failure of after.failures) {
+    const classification = classifyRemovedCallerCheckout(failure)
+    if (classification === 'removed') {
+      removedCaller = input.before.find((snapshot) => snapshot.path === failure.path) ?? null
+      continue
+    }
+    failures.push({
+      ...failure,
+      error:
+        classification === 'unverified'
+          ? removedCallerCheckoutError(
+              failure.path,
+              checkoutRemovalAttribution(input.database, failure.path, input.startedAt),
+            )
+          : `after snapshot: ${failure.error}`,
+    })
+  }
+  return { snapshots: after.snapshots, failures, removedCaller }
+}
+
+export function removedCheckoutEvent(input: {
+  database: Database
+  checkout: FrozenCheckout
+  freeze: FrozenCheckout[]
+  after: FrozenCheckout[]
+  chainRoot: string | null
+  startedAt: string
+}): ConfinementEvent {
+  const removal = checkoutRemovalAttribution(input.database, input.checkout.path, input.startedAt)
+  return {
+    classification: 'removed',
+    checkout: input.checkout.path,
+    attribution: removal.attribution,
+    lockHolderObservation: 'complete',
+    lockHolder: null,
+    landingSession: null,
+    landingId: null,
+    removalSession: removal.removalSession,
+    removalRun: removal.removalRun,
+    divergentPaths: [],
+    overlappingPaths: [],
+    chainRoot: input.chainRoot,
+    tripTip: null,
+    freeze: input.freeze,
+    after: input.after,
+  }
+}
+
+export function classifyCheckoutChanges(input: {
+  before: FrozenCheckout[]
+  after: FrozenCheckout[]
+  removedCaller: FrozenCheckout | null
+  ownDiffPaths: string[]
+  chainRoot: string | null
+  database: Database
+  startedAt: string
+}): ConfinementEvent | null {
+  const divergence = classifyDivergence(input)
+  return divergence || !input.removedCaller
+    ? divergence
+    : removedCheckoutEvent({
+        database: input.database,
+        checkout: input.removedCaller,
+        freeze: input.before,
+        after: input.after,
+        chainRoot: input.chainRoot,
+        startedAt: input.startedAt,
+      })
+}
+
 export function divergenceAttributionLabel(
   event: Pick<
     ConfinementEvent,
-    'attribution' | 'lockHolderObservation' | 'lockHolder' | 'landingSession'
+    'attribution' | 'lockHolderObservation' | 'lockHolder' | 'landingSession' | 'removalSession'
   >,
 ): string {
   return event.attribution === 'lock_holder'
@@ -403,9 +575,11 @@ export function divergenceAttributionLabel(
         (event.lockHolder?.command ? ` (${event.lockHolder.command})` : '')
     : event.attribution === 'landing'
       ? `landing session ${event.landingSession ?? 'unknown'}`
-      : event.lockHolderObservation === 'unknown'
-        ? 'unattributed (lock holder unknown)'
-        : 'unattributed'
+      : event.attribution === 'tree_removal'
+        ? `tree removal session ${event.removalSession ?? 'unknown'}`
+        : event.lockHolderObservation === 'unknown'
+          ? 'unattributed (lock holder unknown)'
+          : 'unattributed'
 }
 
 export function overlappingError(event: ConfinementEvent): string {

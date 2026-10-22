@@ -13,10 +13,10 @@ import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
   type ConfinementEvent,
-  classifyDivergence,
+  classifyCheckoutChanges,
   type FreezeFailure,
   type FrozenCheckout,
-  freezeCheckouts,
+  freezeAfterCheckouts,
   overlappingError,
 } from '../confinement/confinement.ts'
 import type { ReaderReply, ReviewReply, realQuestions, WorkerReply } from '../contract/contract.ts'
@@ -266,6 +266,21 @@ function checkpointTerminalWork(input: TerminalInput): string | null {
   return checkpoint.created ? terminalCheckpointHeader(checkpoint.commit!) : null
 }
 
+function terminalAfterCheckouts(
+  watched: CheckoutToWatch[],
+  before: FrozenCheckout[],
+  database: Database,
+  startedAt: string,
+  runId: string,
+): ReturnType<typeof freezeAfterCheckouts> {
+  try {
+    return freezeAfterCheckouts({ watched, before, database, startedAt })
+  } catch (error) {
+    console.error(`orch: could not freeze watched checkouts for run ${runId}: ${error}`)
+    return { snapshots: [], failures: [], removedCaller: null }
+  }
+}
+
 function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | undefined): boolean {
   return server !== ownMcpServer && server !== MCP_SERVER_NAME && server !== WORKER_MCP_SERVER_NAME
 }
@@ -505,21 +520,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const checkpointHeader = checkpointTerminalWork(input)
   if (checkpointHeader)
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${checkpointHeader}` : checkpointHeader
-  let frozenAfter: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  try {
-    const afterFreeze = freezeCheckouts(watchedCheckouts)
-    confinementFailures.push(
-      ...afterFreeze.failures.map((failure) => ({
-        ...failure,
-        error: `after snapshot: ${failure.error}`,
-      })),
-    )
-    frozenAfter = afterFreeze.snapshots
-  } catch (e) {
-    // An observation failure cannot name an unreadable checkout; preserve the outcome
-    // and expose the harness fault. Freeze failures take the binding path.
-    console.error(`orch: could not freeze watched checkouts for run ${claim.id}: ${e}`)
-  }
+  const startedAt = db()
+    .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
+    .get(claim.id) as { started_at: string; head_commit: string | null } | null
+  const frozenAfter = terminalAfterCheckouts(
+    watchedCheckouts,
+    frozenBefore,
+    db(),
+    startedAt?.started_at ?? new Date(started).toISOString(),
+    claim.id,
+  )
+  confinementFailures.push(...frozenAfter.failures)
 
   // The directory contains no input and is useful only while the vendor is
   // alive. Remove it after readSession has had the chance to derive any
@@ -558,13 +569,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     measurementScope: provisionedMcpConfig,
   })
 
-  if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
-    const startedAt = db()
-      .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
-      .get(claim.id) as { started_at: string; head_commit: string | null } | null
-    confinementEvent = classifyDivergence({
+  if (frozenBefore.length && !confinementFailures.length) {
+    confinementEvent = classifyCheckoutChanges({
       before: frozenBefore,
-      after: frozenAfter,
+      after: frozenAfter.snapshots,
+      removedCaller: frozenAfter.removedCaller,
       ownDiffPaths: changes?.files ?? [],
       chainRoot: startedAt?.head_commit ?? null,
       database: db(),
