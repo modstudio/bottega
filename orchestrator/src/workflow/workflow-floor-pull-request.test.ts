@@ -154,7 +154,9 @@ test('a pr-create exec from another session is refused on every pull-request flo
   })
   expect(artifactOnly.action).toBe('refuse')
   if (artifactOnly.action === 'refuse')
-    expect(artifactOnly.message).toContain('the recorded command is not bound to this cursor session')
+    expect(artifactOnly.message).toContain(
+      'the recorded command is not bound to this cursor session',
+    )
 })
 
 test('a withheld pr-create exec names the pull-request link remedy', () => {

@@ -404,8 +404,7 @@ function decidePullRequestExec(
       condition: `the recorded command checkout branch is ${facts.checkoutBranch ?? 'unset'}, not this cursor's ${facts.cursorBranch}`,
     }
   if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
-  if (execOutputWithheld(facts))
-    return { met: false, condition: WITHHELD_PULL_REQUEST_CONDITION }
+  if (execOutputWithheld(facts)) return { met: false, condition: WITHHELD_PULL_REQUEST_CONDITION }
   if (!githubPullRequestUrlIn(facts.output))
     return {
       met: false,
