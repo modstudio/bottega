@@ -2,14 +2,14 @@
 /** Pure native project-server attachment policy for routing and launch. */
 import type { McpCompatibilityMode, RequiredMcpServer } from './mcp-compatibility.ts'
 
-export type NativeMcpAttachmentPrediction = {
+type NativeMcpAttachmentPrediction = {
   confirmable: boolean
   reason: string | null
 }
 
 export type McpTransportPinFacts = {
-  transport?: 'cli' | 'acp'
-  source?: 'explicit' | 'environment'
+  pinnedTransport?: 'cli' | 'acp'
+  transportPinSource?: 'explicit' | 'environment'
 }
 
 export type RequiredMcpAttachmentDecision = {
@@ -19,7 +19,7 @@ export type RequiredMcpAttachmentDecision = {
 }
 
 /** Predict the native project-server launch path, independently of a capability probe. */
-export function predictNativeMcpAttachment(input: {
+function predictNativeMcpAttachment(input: {
   name: string
   harness?: string
   transport: 'cli' | 'acp'
@@ -42,29 +42,46 @@ export function predictNativeMcpAttachment(input: {
 }
 
 function requiredMcpRemedy(pin: McpTransportPinFacts): string {
-  if (pin.transport !== 'acp') {
+  if (pin.pinnedTransport !== 'acp') {
     return 're-dispatch on an agent that attaches natively (--agent codex) or drop --mcp'
   }
-  return pin.source === 'environment'
+  return pin.transportPinSource === 'environment'
     ? 'unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp'
     : 're-dispatch with --transport cli or drop --mcp'
 }
 
 /** Make the one required-attachment decision shared by routing and launch. */
-export function decideRequiredMcpAttachment(input: {
-  mode: McpCompatibilityMode | null | undefined
-  prediction: NativeMcpAttachmentPrediction
-  pin: McpTransportPinFacts
-}): RequiredMcpAttachmentDecision {
+function attachmentDecision(
+  mode: McpCompatibilityMode | null | undefined,
+  prediction: NativeMcpAttachmentPrediction,
+  pin: McpTransportPinFacts,
+): RequiredMcpAttachmentDecision {
   const reason =
-    input.mode === 'require' && input.prediction.reason
-      ? `${input.prediction.reason}; ${requiredMcpRemedy(input.pin)}`
+    mode === 'require' && prediction.reason
+      ? `${prediction.reason}; ${requiredMcpRemedy(pin)}`
       : null
   return {
-    confirmable: input.prediction.confirmable,
+    confirmable: prediction.confirmable,
     routingIneligibility: reason,
     refusalReason: reason,
   }
+}
+
+/** Bind a resolved project-server requirement to one agent and effective transport pin. */
+export function decideRequiredMcpAttachment(
+  agent: { name: string; harness?: string; defaultTransport: 'cli' | 'acp' },
+  required: RequiredMcpServer | undefined,
+  pin: McpTransportPinFacts = {},
+): RequiredMcpAttachmentDecision {
+  if (!required) {
+    return { confirmable: true, routingIneligibility: null, refusalReason: null }
+  }
+  const transport = pin.pinnedTransport ?? agent.defaultTransport
+  return attachmentDecision(
+    required.mode,
+    predictNativeMcpAttachment({ name: agent.name, harness: agent.harness, transport }),
+    pin,
+  )
 }
 
 export function requiredMcpIneligibility(
@@ -72,14 +89,5 @@ export function requiredMcpIneligibility(
   required: RequiredMcpServer | undefined,
   pin: McpTransportPinFacts = {},
 ): string | null {
-  const transport = pin.transport ?? agent.defaultTransport
-  return decideRequiredMcpAttachment({
-    mode: required?.mode,
-    prediction: predictNativeMcpAttachment({
-      name: agent.name,
-      harness: agent.harness,
-      transport,
-    }),
-    pin,
-  }).routingIneligibility
+  return decideRequiredMcpAttachment(agent, required, pin).routingIneligibility
 }

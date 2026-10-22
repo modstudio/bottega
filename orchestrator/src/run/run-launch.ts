@@ -18,18 +18,8 @@ function isRunTransportPinned(
   return facts.explicitTransport || facts.envTransport
 }
 
-export function runTransportPin(
-  transport: TransportName,
-  facts: Pick<RunLaunchFacts, 'explicitTransport' | 'envTransport'>,
-) {
-  return {
-    pinnedTransport: isRunTransportPinned(facts) ? transport : undefined,
-    transportPinSource: facts.envTransport
-      ? ('environment' as const)
-      : facts.explicitTransport
-        ? ('explicit' as const)
-        : undefined,
-  }
+export function runTransportPin(explicit?: string | null, environment?: string) {
+  return classifyTransportPin(explicit, environment)
 }
 
 export function decideRunLaunch(facts: RunLaunchFacts): RunLaunchRuling {
@@ -61,4 +51,8 @@ export function resolveRunTransport(opts: {
 }
 
 import { chainTransport } from '../route/failover.ts'
-import { resolveTransportName, type TransportName } from '../transport/transport.ts'
+import {
+  classifyTransportPin,
+  resolveTransportName,
+  type TransportName,
+} from '../transport/transport.ts'

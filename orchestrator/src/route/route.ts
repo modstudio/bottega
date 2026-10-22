@@ -75,7 +75,7 @@ type RouteConstraints = {
   noWaitCapacity?: boolean
   requiredMcp?: RequiredMcpServer
   pinnedTransport?: 'cli' | 'acp'
-  transportPinSource?: McpTransportPinFacts['source']
+  transportPinSource?: McpTransportPinFacts['transportPinSource']
 }
 
 const RUNNING_RUNS_SQL =
@@ -109,11 +109,11 @@ function mcpCandidateIneligibility(
   agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
   pinnedTransport?: 'cli' | 'acp',
-  transportPinSource?: McpTransportPinFacts['source'],
+  transportPinSource?: McpTransportPinFacts['transportPinSource'],
 ): string | null {
   const requiredWhy = requiredMcpIneligibility(agent, requiredMcp, {
-    transport: pinnedTransport,
-    source: transportPinSource,
+    pinnedTransport,
+    transportPinSource,
   })
   if (requiredWhy || !requiredMcp || !agent.mcpToolNamePattern) return requiredWhy
   const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
@@ -448,7 +448,7 @@ export function candidates(
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
   pinnedTransport?: 'cli' | 'acp',
-  transportPinSource?: McpTransportPinFacts['source'],
+  transportPinSource?: McpTransportPinFacts['transportPinSource'],
   explicitlyNamedAgent?: string,
 ): Candidate[] {
   const j = job(jobName)
@@ -794,7 +794,7 @@ export function evidenceFor(
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
   pinnedTransport?: 'cli' | 'acp',
-  transportPinSource?: McpTransportPinFacts['source'],
+  transportPinSource?: McpTransportPinFacts['transportPinSource'],
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'

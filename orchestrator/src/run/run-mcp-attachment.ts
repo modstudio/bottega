@@ -1,8 +1,8 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import {
   decideRequiredMcpAttachment,
   type McpTransportPinFacts,
-  predictNativeMcpAttachment,
 } from '../mcp/mcp-native-attachment.ts'
 import {
   type McpConnection,
@@ -34,21 +34,18 @@ export type McpLaunchRuling = {
 /** Decide native project-server availability before any stack or probe work begins. */
 export function decideMcpLaunchRuling(
   request: McpRequest | undefined,
-  agent: { name: string; harness?: string; caps: { mcp: boolean } },
-  transport: 'cli' | 'acp',
+  required: RequiredMcpServer | undefined,
+  agent: {
+    name: string
+    harness?: string
+    defaultTransport: 'cli' | 'acp'
+    caps: { mcp: boolean }
+  },
   pin: McpTransportPinFacts,
 ): McpLaunchRuling {
   const mode = requestedMcpMode(request)
   if (!mode) return { agentHasMcp: agent.caps.mcp, refusalReason: null }
-  const attachment = decideRequiredMcpAttachment({
-    mode,
-    prediction: predictNativeMcpAttachment({
-      name: agent.name,
-      harness: agent.harness,
-      transport,
-    }),
-    pin,
-  })
+  const attachment = decideRequiredMcpAttachment(agent, required, pin)
   return {
     agentHasMcp: attachment.confirmable,
     refusalReason: mode === 'require' ? attachment.refusalReason : null,

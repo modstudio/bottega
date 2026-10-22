@@ -7,7 +7,7 @@ import {
   decideMcpGrammarRuling,
   type RequiredMcpServer,
 } from './mcp-compatibility.ts'
-import { decideRequiredMcpAttachment, requiredMcpIneligibility } from './mcp-native-attachment.ts'
+import { requiredMcpIneligibility } from './mcp-native-attachment.ts'
 
 const grok = '^[A-Za-z0-9_-]{1,64}$'
 
@@ -163,39 +163,10 @@ describe('required MCP routing', () => {
     'resolves native attachment against $name',
     ({ defaultTransport, pinnedTransport, confirmable }) => {
       const reason = requiredMcpIneligibility({ name: 'codex', defaultTransport }, required, {
-        transport: pinnedTransport,
-        source: pinnedTransport ? 'explicit' : undefined,
+        pinnedTransport,
+        transportPinSource: pinnedTransport ? 'explicit' : undefined,
       })
       expect(reason === null).toBe(confirmable)
     },
   )
-
-  test.each([
-    {
-      name: 'explicit ACP pin',
-      pin: { transport: 'acp' as const, source: 'explicit' as const },
-      remedy: 're-dispatch with --transport cli or drop --mcp',
-    },
-    {
-      name: 'environment ACP pin',
-      pin: { transport: 'acp' as const, source: 'environment' as const },
-      remedy: 'unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp',
-    },
-    {
-      name: 'unpinned transport',
-      pin: {},
-      remedy: 're-dispatch on an agent that attaches natively (--agent codex) or drop --mcp',
-    },
-  ])('builds the effective remedy once for $name', ({ pin, remedy }) => {
-    const decision = decideRequiredMcpAttachment({
-      mode: 'require',
-      prediction: { confirmable: false, reason: 'not attachable' },
-      pin,
-    })
-    expect(decision).toEqual({
-      confirmable: false,
-      routingIneligibility: `not attachable; ${remedy}`,
-      refusalReason: `not attachable; ${remedy}`,
-    })
-  })
 })

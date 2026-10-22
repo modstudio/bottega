@@ -47,6 +47,7 @@ import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   assertAcpReady,
+  classifyTransportPin,
   resolveTransportName,
   selectAgentForTransport,
   type TransportName,
@@ -345,15 +346,19 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
   agent: selectAgentForTransport(transport, agent),
   agentExplicit: Boolean(agent),
 })
-const transportPinSource = (flag: string | undefined, environment: boolean) =>
-  flag !== undefined ? ('explicit' as const) : environment ? ('environment' as const) : undefined
-const transportSelection = (flag: string | undefined, selected: Agent | undefined) => {
-  const environment = Boolean(process.env.ORCH_TRANSPORT)
-  const explicit = flag !== undefined || environment
+export const transportSelection = (
+  flag: string | undefined,
+  selected: Agent | undefined,
+  environment = process.env.ORCH_TRANSPORT,
+) => {
+  const pin = classifyTransportPin(flag, environment)
   return {
-    transport: !explicit && selected ? selected.defaultTransport : resolveTransportName(flag),
-    transportExplicit: explicit,
-    transportPinSource: transportPinSource(flag, environment),
+    transport:
+      pin.pinnedTransport ??
+      selected?.defaultTransport ??
+      resolveTransportName(undefined, undefined),
+    transportExplicit: Boolean(pin.pinnedTransport),
+    transportPinSource: pin.transportPinSource,
   }
 }
 const detachedMcpConstraints = (

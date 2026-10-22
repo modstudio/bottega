@@ -507,11 +507,12 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
-  const transportPinFacts = {
-    explicitTransport: opts.transport !== undefined,
-    envTransport: Boolean(process.env.ORCH_TRANSPORT),
-  }
-  const transportPin = runTransportPin(requestedTransport, transportPinFacts)
+  const transportPin = runTransportPin(opts.transport, process.env.ORCH_TRANSPORT),
+    transportPinFacts = {
+      explicitTransport: transportPin.transportPinSource === 'explicit',
+      envTransport: transportPin.transportPinSource === 'environment',
+    },
+    requiredMcp = requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined)
   const pickSource = () =>
     pick(
       opts.job,
@@ -527,7 +528,7 @@ export async function run(opts: {
         models: opts.distinctModels,
         model: opts.model,
         noWaitCapacity: opts.noWaitCapacity,
-        requiredMcp: requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined),
+        requiredMcp,
         ...transportPin,
       },
       opts.probe,
@@ -561,10 +562,8 @@ export async function run(opts: {
   }
   prompt = acpWriter.bindContract(prompt, writingAcp)
   if (name === 'codex') enforceRunStartupRefusal(opts.reserveId, minimumCliVersionRefusal(a))
-  const mcpLaunchRuling = mcpAttachment.decideMcpLaunchRuling(mcpRequest, a, transportName, {
-    transport: transportPin.pinnedTransport,
-    source: transportPin.transportPinSource,
-  })
+  const { decideMcpLaunchRuling } = mcpAttachment
+  const mcpLaunchRuling = decideMcpLaunchRuling(mcpRequest, requiredMcp, a, transportPin)
   enforceRunStartupRefusal(opts.reserveId, mcpLaunchRuling.refusalReason)
   // Append after routing but before prompt files, hashes, or metadata are written.
   if (requestedJob.findings && resume.isFirstTurn) {
