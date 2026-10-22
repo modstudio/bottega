@@ -84,8 +84,20 @@ export async function main(argv: string[]): Promise<number> {
     const { detachedRunOptions } = await import('../route/failover.ts')
     const spec = JSON.parse(specJson ?? '{}') as import('../route/failover.ts').DetachSpec
     const prompt = readFileSync(promptPath, 'utf8')
-    const { assertContinuationPromptCarriesMessage } = await import('./continuation-message.ts')
-    assertContinuationPromptCarriesMessage(prompt, spec.resume?.continuationMessage)
+    const persisted = new Database(process.env.ORCH_DB!, { readonly: true })
+    const continuation = persisted
+      .query('SELECT continuation_message_sha FROM run WHERE record_id=?')
+      .get(id) as { continuation_message_sha: string | null } | null
+    persisted.close()
+    if (!continuation) throw new Error(`run ${id} disappeared before coordinator launch`)
+    const { assertContinuationPromptCarriesPersistedMessage } = await import(
+      './continuation-message.ts'
+    )
+    assertContinuationPromptCarriesPersistedMessage(
+      prompt,
+      continuation.continuation_message_sha,
+      spec.resume?.continuationMessage,
+    )
     await run(detachedRunOptions(jobName, prompt, id, spec))
     return 0
   } catch (e) {

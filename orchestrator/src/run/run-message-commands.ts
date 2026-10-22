@@ -8,9 +8,9 @@ import {
   ANSWER_WORKING_FORMS,
   assertWorkerText,
   CONTINUE_WORKING_FORMS,
+  type ContinueArgs,
   parseAnswerChannelArgs,
   parseAnswerTextSources,
-  parseWorkerMessageArgs,
   questionOperatorFlag,
   readMessageText,
   readWorkerFile,
@@ -216,7 +216,7 @@ export async function answerCommand(
 
 export async function continueCommand(
   id: string,
-  argv: string[],
+  parsed: ContinueArgs,
   includeFindings: boolean,
   flags: Flags,
   presentation: Presentation,
@@ -230,40 +230,17 @@ export async function continueCommand(
     agent: string
     parent_run_record_id: string | null
   } | null
-  const sources = parseWorkerMessageArgs(argv, {
-    booleans: ['--follow', '--detach', '--quiet', '--findings'],
-    usage: `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`,
-  })
-  if (includeFindings && sources.positionals.includes('--findings')) {
-    throw new Error(
-      '--findings must appear before the message\n' +
-        `working form: ${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`,
-    )
-  }
-  const misplacedFile = sources.positionals.find(
-    (value) => value === '--file' || value.startsWith('--file='),
-  )
-  if (misplacedFile) {
-    const first = sources.positionals[0]
-    throw new Error(
-      `${misplacedFile} appeared after continuation message parsing began at ${JSON.stringify(first)}; ` +
-        'the file was not read and no turn was launched\n' +
-        `working form: ${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`,
-    )
-  }
   const message = await readMessageText({
     missing: 'no message: pass it as an argument, via --file, or on stdin',
     exclusive: 'pass the message either positionally or with --file, not both',
-    optional: true,
-    sources,
+    sources: parsed.sources,
   })
-  if (message !== undefined)
-    assertWorkerText(
-      message,
-      'message',
-      CONTINUE_WORKING_FORMS,
-      chain ? argvResumeLimit(chain.agent) : undefined,
-    )
+  assertWorkerText(
+    message!,
+    'message',
+    CONTINUE_WORKING_FORMS,
+    chain ? argvResumeLimit(chain.agent) : undefined,
+  )
   const resumed = await dependencies.continueRun(
     id,
     message,

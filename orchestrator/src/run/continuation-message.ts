@@ -21,7 +21,7 @@ export function optionalContinuationMessageBinding(
   return message === undefined ? undefined : continuationMessageBinding(message)
 }
 
-export function continuationPromptCarriesMessage(
+function continuationPromptCarriesMessage(
   prompt: string,
   binding: ContinuationMessageBinding,
 ): boolean {
@@ -31,7 +31,7 @@ export function continuationPromptCarriesMessage(
   return createHash('sha256').update(messageBytes).digest('hex') === binding.sha256
 }
 
-export function assertContinuationPromptCarriesMessage(
+function assertContinuationPromptCarriesMessage(
   prompt: string,
   binding: ContinuationMessageBinding | undefined,
 ): void {
@@ -39,4 +39,18 @@ export function assertContinuationPromptCarriesMessage(
   throw new Error(
     'continuation prompt does not contain the recorded continuation message verbatim; refusing before launch',
   )
+}
+
+export function assertContinuationPromptCarriesPersistedMessage(
+  prompt: string,
+  persistedSha256: string | null,
+  binding: ContinuationMessageBinding | undefined,
+): void {
+  if (persistedSha256 === null && binding === undefined) return
+  if (persistedSha256 !== binding?.sha256) {
+    throw new Error(
+      'continuation message binding does not match the hash persisted on the turn; refusing before launch',
+    )
+  }
+  assertContinuationPromptCarriesMessage(prompt, binding)
 }

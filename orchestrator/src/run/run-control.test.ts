@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -258,6 +258,56 @@ describe('run continuation', () => {
     expect(artifact.continuation_message_sha).toBe(
       continuationMessageBinding('vendor-session message').sha256,
     )
+  })
+
+  test('checkpoint continuation launched through continueRun ends with the message', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      session: 'orch-test-session',
+      repo: 'continuation-fixture',
+    })
+    const repository = trackResidue(join(dir, `continue-checkpoint-${root}`))
+    mkdirSync(repository)
+    for (const argv of [
+      ['init', '-q'],
+      ['config', 'user.email', 'fixture@example.test'],
+      ['config', 'user.name', 'Fixture'],
+    ]) {
+      expect(Bun.spawnSync(['git', ...argv], { cwd: repository }).exitCode).toBe(0)
+    }
+    writeFileSync(join(repository, 'tracked.txt'), 'root\n')
+    expect(Bun.spawnSync(['git', 'add', 'tracked.txt'], { cwd: repository }).exitCode).toBe(0)
+    expect(Bun.spawnSync(['git', 'commit', '-qm', 'fixture'], { cwd: repository }).exitCode).toBe(0)
+    expect(
+      Bun.spawnSync(['git', 'branch', 'DEV-1570-checkpoint'], { cwd: repository }).exitCode,
+    ).toBe(0)
+    upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: repository })
+    const originalPrompt = trackResidue(join(dir, `continue-checkpoint-${root}.prompt.txt`))
+    writeFileSync(originalPrompt, 'ORIGINAL SPEC')
+    db()
+      .query(
+        `UPDATE run SET cwd=?,worktree=?,branch=?,prompt_path=?,vendor_session=NULL
+         WHERE record_id=?`,
+      )
+      .run(
+        repository,
+        join(repository, 'released-worktree'),
+        'DEV-1570-checkpoint',
+        originalPrompt,
+        root,
+      )
+
+    const message = 'Apply the architect review exactly.\n'
+    const resumed = await continueRun(root, message, limit)
+    const artifact = db()
+      .query('SELECT prompt_path FROM run WHERE record_id=?')
+      .get(resumed.childId) as { prompt_path: string }
+    trackResidue(artifact.prompt_path)
+    const prompt = readFileSync(artifact.prompt_path, 'utf8')
+    expect(prompt).toStartWith('CHECKPOINT RESUME\n')
+    expect(prompt.endsWith(message)).toBe(true)
   })
 
   test('a released reader with an unavailable base refuses before creating a turn', async () => {
