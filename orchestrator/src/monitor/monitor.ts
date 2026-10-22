@@ -7,9 +7,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { boardEscalations } from '../board/board-service.ts'
-import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
+import { storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { sampleHostLoad } from '../host-load-sample.ts'
+import { sampleHostPressure } from '../host-pressure/host-pressure-service.ts'
 import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
 import {
@@ -39,8 +40,10 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { missingPrunableWorktrees } from '../worktree/worktree-porcelain.ts'
 import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
+import { hostPressureObservation, persistedHostPressureDetail } from './host-pressure-conditions.ts'
 import { branchInventoryDecision } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
+import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import {
   abandonedBootstrapConditions,
   age,
@@ -70,6 +73,7 @@ import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
+import { finishMonitorResult as finish } from './monitor-result.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import type {
@@ -98,14 +102,24 @@ const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   failed: 'terminal-close-out-failed',
 } as const satisfies Record<'held' | 'failed', MonitorNoticeKind>
 
-async function initialMonitorObservations(clock: number): Promise<{
+async function initialMonitorObservations(
+  database: ReturnType<typeof writableDb>,
+  clock: number,
+): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
+  hostPressure: MonitorResult['hostPressure']
 }> {
   const diskPressure = await diskPressureObservation(clock)
+  const hostPressure = hostPressureObservation(database, clock)
   return {
-    conditions: [...staleCustomerGuideCommandConditions(), ...diskPressure.conditions],
+    conditions: [
+      ...hostPressure.conditions,
+      ...staleCustomerGuideCommandConditions(),
+      ...diskPressure.conditions,
+    ],
     errors: diskPressure.errors,
+    hostPressure: hostPressure.report,
   }
 }
 
@@ -344,6 +358,7 @@ function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: stri
 
 function sampleMonitorHostLoad(database: ReturnType<typeof writableDb>, invocation: number) {
   const sample = sampleHostLoad(database)
+  sampleHostPressure(database, sample)
   database
     .query('UPDATE monitor_invocation SET host_load=? WHERE id=?')
     .run(JSON.stringify(sample), invocation)
@@ -559,6 +574,11 @@ function persistMonitorConditions(
               delivered_at: string
             } | null)
           : null
+        condition.detail = persistedHostPressureDetail(
+          database,
+          condition,
+          prior?.delivered_at ?? null,
+        )
         insert.run(
           newRecordId(),
           invocation,
@@ -597,17 +617,9 @@ export async function monitor(
 ): Promise<MonitorResult> {
   const startedAt = new Date(clock).toISOString()
   const { database, invocation } = startMonitorInvocation(trigger, startedAt)
-  const hostLoad = sampleMonitorHostLoad(database, invocation)
-  const { conditions, errors } = await initialMonitorObservations(clock)
-  const canonRows = allInjectChecks()
-  const canon = {
-    findings: canonRows.reduce(
-      (n, row) => n + row.findings.filter((finding) => finding.kind !== 'unchecked').length,
-      0,
-    ),
-    docs: canonRows.filter((row) => row.findings.some((finding) => finding.kind !== 'unchecked'))
-      .length,
-  }
+  const load = sampleMonitorHostLoad(database, invocation)
+  const { conditions, errors, hostPressure } = await initialMonitorObservations(database, clock)
+  const canon = monitorCanonSummary()
   type ConditionInput =
     | (Omit<AddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
     | (Omit<UnaddressedMonitorCondition, 'ageMs'> & { ageMs?: number | null })
@@ -984,13 +996,18 @@ export async function monitor(
     }
   }
 
-  const finishedAt = completeMonitorInvocation(
-    database,
+  const finished = completeMonitorInvocation(database, invocation, conditions.length, errors.length)
+  return finish(
     invocation,
-    conditions.length,
-    errors.length,
+    startedAt,
+    finished,
+    trigger,
+    conditions,
+    errors,
+    canon,
+    load,
+    hostPressure,
   )
-  return { id: invocation, startedAt, finishedAt, trigger, conditions, errors, canon, hostLoad }
 }
 
 export function monitorHistory(limit = 20): MonitorHistoryRow[] {

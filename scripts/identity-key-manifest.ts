@@ -9,6 +9,7 @@ const manifest = (store: KeyStore, reason: string, columns: readonly string[]): 
   columns.map((column) => ({ store, column, reason }))
 
 const INTEGER_VALUES: readonly ManifestColumn[] = [
+  ...manifest('orchestrator', 'host capacity measurement', ['host_pressure_sample.ncpu']),
   ...manifest('orchestrator', 'display snapshot of a project name', [
     'board_claim.project',
     'board_message.author_project',
@@ -299,6 +300,7 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'board_reach_recording', reason: 'singleton reach cursor' },
   { store: 'orchestrator', table: 'schema_meta', reason: 'schema metadata keyed by setting name' },
   { store: 'orchestrator', table: 'session_seen', reason: 'replaceable session liveness cache' },
+  { store: 'orchestrator', table: 'host_pressure_sample', reason: 'bounded machine sample cache' },
   { store: 'orchestrator', table: 'presence', reason: 'replaceable session presence cache' },
   { store: 'orchestrator', table: 'main_stack_activity', reason: 'replaceable activity cache' },
   { store: 'hub', table: 'hub_migrations', reason: 'migration journal bookkeeping' },
@@ -552,6 +554,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'duel.loser_run_record_id',
     'duel.winner_run_record_id',
     'gate_execution.record_id',
+    'host_pressure_sample.record_id',
     'gate_execution.run_record_id',
     'hosted_board_message_cache.id',
     'hosted_board_message_cache.thread_root_id',
