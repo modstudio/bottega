@@ -167,6 +167,14 @@ function listingQuestions(recordId: string, json: boolean) {
   }))
 }
 
+function listingCostContext(
+  json: boolean,
+  subscriptionCost: SubscriptionCostContext | undefined,
+): SubscriptionCostContext | undefined {
+  if (!json) return undefined
+  return subscriptionCost ?? { facts: subscriptionCostFacts(), prices: {} }
+}
+
 function listingConversation(
   r: Record<string, unknown>,
   json: boolean,
@@ -351,9 +359,7 @@ export async function runListingCommand(
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const json = has('json') || options.jsonV1
-  const costContext = json
-    ? (subscriptionCost ?? { facts: subscriptionCostFacts(), prices: {} })
-    : undefined
+  const costContext = listingCostContext(json, subscriptionCost)
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
@@ -426,9 +432,7 @@ export async function runListingCommand(
     .all(...args, limit) as Record<string, unknown>[]
   rows = rows
     .map(withRetryRecordId)
-    .flatMap((r) =>
-      listingConversation(r, json, costContext, chainIsStranded, strandedRecovery),
-    )
+    .flatMap((r) => listingConversation(r, json, costContext, chainIsStranded, strandedRecovery))
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes
   // it). Omission and non-existence are different facts for machine callers.

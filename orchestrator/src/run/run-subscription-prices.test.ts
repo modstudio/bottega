@@ -1,9 +1,6 @@
 import { expect, test } from 'bun:test'
 import { ConfigClientError } from '../../../shared/config-client.ts'
-import {
-  loadSubscriptionPrices,
-  subscriptionPriceReadWarning,
-} from './run-subscription-prices.ts'
+import { loadSubscriptionPrices, subscriptionPriceReadWarning } from './run-subscription-prices.ts'
 
 test('a 404 price read is unpriced', async () => {
   const loaded = await loadSubscriptionPrices(['codex', 'grok'], async (key) => {
