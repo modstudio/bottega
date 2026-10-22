@@ -11,6 +11,15 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
+from score_reminder_decision import (
+    HeldTreeFacts,
+    cursor_is_in_flight,
+    decide_held_tree,
+    parse_held_run_report,
+)
+
+OPEN_PR_TIMEOUT_SECONDS = 3
+
 GLOBAL_BUDGET_SECONDS = 20
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -23,6 +32,112 @@ DB = os.environ.get("ORCH_DB") or subprocess.check_output(
 def bottega_bin():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     return os.path.join(root, "bin", "bottega")
+
+
+def lookup_run_branch(con, run_id):
+    row = con.execute("SELECT branch FROM run WHERE record_id=?", (run_id,)).fetchone()
+    if row:
+        return row[0]
+    if run_id.isdigit():
+        row = con.execute("SELECT branch FROM run WHERE number=?", (int(run_id),)).fetchone()
+        if row:
+            return row[0]
+    return None
+
+
+def lookup_ship_task_cursor(con, session_ids, branch):
+    if not branch or not session_ids:
+        return None
+    try:
+        return con.execute(
+            """SELECT id, step_slug, workflow_slug
+                 FROM workflow_cursor
+                WHERE session_id IN ({})
+                  AND workflow_slug = 'ship-task'
+                  AND state IN ('running','awaiting-ruling')
+                  AND json_extract(args, '$.branch') = ?
+                ORDER BY id LIMIT 1""".format(",".join("?" for _ in session_ids)),
+            (*session_ids, branch),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+
+
+def lookup_open_pr(worktree, branch, timeout):
+    if not branch or timeout <= 0:
+        return None
+    cwd = worktree if os.path.isdir(worktree) else None
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--state",
+                "open",
+                "--json",
+                "number",
+                "--limit",
+                "1",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=min(OPEN_PR_TIMEOUT_SECONDS, timeout),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        rows = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        return None
+    number = rows[0].get("number")
+    if not isinstance(number, int) or number <= 0:
+        return None
+    return f"#{number}"
+
+
+def classify_cleanup_holds(con, reports, session_ids, remaining_budget):
+    in_flight_lines = []
+    blocking_holds = []
+    for report in reports:
+        parsed = parse_held_run_report(report)
+        if parsed is None:
+            blocking_holds.append(report)
+            continue
+        run_id, path = parsed
+        branch = lookup_run_branch(con, run_id)
+        cursor = lookup_ship_task_cursor(con, session_ids, branch)
+        cursor_id, cursor_step, cursor_workflow = (
+            (cursor[0], cursor[1], cursor[2]) if cursor else (None, None, None)
+        )
+        cursor_live = cursor is not None
+        open_pr = None
+        if not cursor_is_in_flight(cursor_workflow, cursor_step, cursor_live):
+            open_pr = lookup_open_pr(path, branch, remaining_budget())
+        decision = decide_held_tree(
+            HeldTreeFacts(
+                path=path,
+                branch=branch,
+                cursor_id=cursor_id,
+                cursor_step=cursor_step,
+                cursor_workflow=cursor_workflow,
+                cursor_live=cursor_live,
+                open_pr=open_pr,
+            ),
+            session_close_out=False,
+        )
+        if decision.block:
+            blocking_holds.append(report)
+        else:
+            in_flight_lines.append(decision.in_flight_line)
+    return in_flight_lines, blocking_holds
 
 
 def main() -> int:
@@ -204,6 +319,10 @@ def main() -> int:
     for report in cleanup_kept:
         print(report, file=sys.stderr)
 
+    in_flight_lines, blocking_holds = classify_cleanup_holds(
+        con, cleanup_holds, session_ids, remaining_budget
+    )
+
     notes = []
     try:
         note_args = [bottega_bin(), "note", "list"]
@@ -221,7 +340,9 @@ def main() -> int:
     except Exception:
         notes = []
 
-    if not rows and not pairs and not notes and not cleanup_holds:
+    if not rows and not pairs and not notes and not blocking_holds:
+        if in_flight_lines:
+            print(json.dumps({"systemMessage": "\n".join(in_flight_lines)}))
         return 0
 
     # A writing job takes a THIRD axis, and printing the two-axis form for one
@@ -298,11 +419,15 @@ def main() -> int:
                 f"    bottega note keep {note_label} | bottega note drop {note_label} --reason \"...\" | "
                 f"bottega note promote {note_label}"
             )
-    if cleanup_holds:
+    if blocking_holds:
         if lines:
             lines.append("")
-        lines.append(f"{len(cleanup_holds)} worktree{'s' if len(cleanup_holds) > 1 else ''} hold irreplaceable or explicitly retained work:")
-        lines.extend(f"  {hold}" for hold in cleanup_holds)
+        lines.append(f"{len(blocking_holds)} worktree{'s' if len(blocking_holds) > 1 else ''} hold irreplaceable or explicitly retained work:")
+        lines.extend(f"  {hold}" for hold in blocking_holds)
+    if in_flight_lines:
+        if lines:
+            lines.append("")
+        lines.extend(in_flight_lines)
     if rows:
         needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _ in rows)
         intro = (
@@ -316,7 +441,7 @@ def main() -> int:
     elif notes:
         intro = f"{len(notes)} note{'s' if len(notes) > 1 else ''} filed in this session:"
     else:
-        intro = f"{len(cleanup_holds)} worktree{'s' if len(cleanup_holds) > 1 else ''} must be resolved before this session ends:"
+        intro = f"{len(blocking_holds)} worktree{'s' if len(blocking_holds) > 1 else ''} must be resolved before this session ends:"
     guidance = ""
     if rows:
         guidance += (
