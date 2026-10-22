@@ -7,7 +7,53 @@ import {
   landingTreeHoldDecision,
   landingTreeOpeningRefusal,
   landingTreeReleaseDecision,
+  landingTreeRunAdoptionDecision,
 } from './landing-tree.ts'
+
+describe('landing-tree run adoption', () => {
+  const linked = {
+    openedOwner: 'operator:machine-id',
+    openedLaunchKey: 'DEV-1528',
+    openedIssueKey: null,
+    candidateOwner: 'operator:machine-id',
+    candidateLaunchKey: 'DEV-1528',
+    candidateIssueKey: null,
+  }
+
+  test('adopts runs from the same operator owner and launch key', () => {
+    expect(landingTreeRunAdoptionDecision(linked)).toBe(true)
+  })
+
+  test('does not adopt a different launch key or owner', () => {
+    expect(landingTreeRunAdoptionDecision({ ...linked, candidateLaunchKey: 'DEV-OTHER' })).toBe(
+      false,
+    )
+    expect(
+      landingTreeRunAdoptionDecision({ ...linked, candidateOwner: 'operator:other-machine' }),
+    ).toBe(false)
+  })
+
+  test('does not adopt from a session owner', () => {
+    expect(
+      landingTreeRunAdoptionDecision({
+        ...linked,
+        openedOwner: 'architect-session',
+        candidateOwner: 'architect-session',
+      }),
+    ).toBe(false)
+  })
+
+  test('adopts a different launch key through the recorded coordinator issue link', () => {
+    expect(
+      landingTreeRunAdoptionDecision({
+        ...linked,
+        openedLaunchKey: 'OTHER-42',
+        openedIssueKey: 'DEV-1528',
+        candidateIssueKey: 'DEV-1528',
+      }),
+    ).toBe(true)
+  })
+})
 
 describe('landing-tree decisions', () => {
   test('keeps a clean existing landing tree without holding close-out', () => {

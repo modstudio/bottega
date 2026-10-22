@@ -21,6 +21,7 @@ import {
   type RecordedRunPointerFacts,
   type RecordedRunPostInventoryFacts,
   type RecordedRunPreInventoryFacts,
+  ownerIsGone,
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
@@ -238,6 +239,30 @@ describe('unjudged owner expiry', () => {
         windowMs,
       }),
     ).toBe(false)
+  })
+
+  test('expires an operator-owned run by run activity despite recent operator activity', () => {
+    const facts = {
+      ownerSessionId: 'operator:machine-id',
+      ownerLastSeenAt: now - 60_000,
+      runLastActivityAt: now - windowMs - 1,
+      now,
+      windowMs,
+    }
+    expect(ownerIsGone(facts)).toBe(true)
+    expect(shouldExpireUnjudgedOwner(facts)).toBe(true)
+  })
+
+  test('keeps an operator-owned run whose run activity is inside the window', () => {
+    const facts = {
+      ownerSessionId: 'operator:machine-id',
+      ownerLastSeenAt: now - windowMs * 2,
+      runLastActivityAt: now - windowMs + 1,
+      now,
+      windowMs,
+    }
+    expect(ownerIsGone(facts)).toBe(false)
+    expect(shouldExpireUnjudgedOwner(facts)).toBe(false)
   })
 })
 

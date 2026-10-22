@@ -1,6 +1,7 @@
 // concern: cleanup-sweep-decisions
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isOperatorSession } from '../../../shared/caller-classification.ts'
 export const UNJUDGED_OWNER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
 
 export type ConversationProjectMember = {
@@ -90,7 +91,9 @@ export type UnjudgedOwnerFacts = {
 
 export function ownerIsGone(facts: UnjudgedOwnerFacts): boolean {
   if (facts.ownerSessionId === null) return true
-  const ownerLastActivity = Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)
+  const ownerLastActivity = isOperatorSession(facts.ownerSessionId)
+    ? facts.runLastActivityAt
+    : Math.max(facts.ownerLastSeenAt ?? -Infinity, facts.runLastActivityAt)
   return facts.now - ownerLastActivity > facts.windowMs
 }
 

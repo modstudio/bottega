@@ -296,8 +296,19 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/landing-tree/landing-tree.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/caller-classification.ts',
     '../run/synthetic-lifecycle-job.ts',
     '../worktree/worktree-template.ts',
+  ]),
+  module('orchestrator/src/landing-tree/run-adoption.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../issue/issue-queue.ts',
+    '../record/machine-identity.ts',
+    '../run/run-authority.ts',
+    '../run/run-mutation-owner.ts',
+    '../run/run-outbox.ts',
+    './landing-tree.ts',
   ]),
   module('orchestrator/src/landing-tree/release-observation.ts', [
     '../branch/task-branch.ts',
@@ -705,6 +716,7 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-seed.ts',
     '../worktree/worktree-types.ts',
     './landing-tree.ts',
+    './run-adoption.ts',
   ]),
   module('orchestrator/src/workflow/workflow-step-sequences.ts', [
     './step-catalogue-definition.ts',

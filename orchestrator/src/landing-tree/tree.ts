@@ -33,6 +33,7 @@ import {
   landingTreeCommandCapability,
   landingTreeOpeningRefusal,
 } from './landing-tree.ts'
+import { adoptCoordinatorRunsForLanding } from './run-adoption.ts'
 
 type RunRow = {
   record_id: string
@@ -47,6 +48,9 @@ type RunRow = {
   launch_cwd: string | null
   launch_key: string | null
   launch_seed: string | null
+  session_id: string | null
+  job: string
+  label: string | null
 }
 
 export function landingTreeSeedRequest(input: {
@@ -68,7 +72,7 @@ export function landingTreeSeedRequest(input: {
 
 export function landingTreeSourceRun(runId: string): { root: RunRow; latest: RunRow } {
   const columns = `record_id,parent_run_record_id,repo,project_record_id,cwd,worktree,branch,
-    branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed`
+    branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed,session_id,job,label`
   const selected = db()
     .query(`SELECT ${columns} FROM run WHERE record_id=?`)
     .get(runId) as RunRow | null
@@ -185,6 +189,7 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
     )
   }
   writableDb()
+  adoptCoordinatorRunsForLanding(root)
   const startedAt = nowIso()
   const prompt = `landing tree for run ${runId}`
   const inserted = db()
