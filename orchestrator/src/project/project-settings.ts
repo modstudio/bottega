@@ -1,8 +1,8 @@
 // concern: project-settings
 /** Owns the project settings shape. Must not know stores, SQL, or HTTP. */
 
-import type { TrackerSettings } from '../../../shared/trackers.ts'
 import type { RepositoryVisibility } from '../../../shared/repository-visibility.ts'
+import type { TrackerSettings } from '../../../shared/trackers.ts'
 import type { MechanicalCheckEntry } from '../enforcement/mechanical-check-declaration.ts'
 import type { FocusedTestRunner } from '../focused-test/focused-test-decision.ts'
 import type { Recipe } from '../recipe/recipe.ts'

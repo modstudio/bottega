@@ -26,8 +26,6 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { githubRepository } from '../../../shared/github-repository.ts'
-import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import {
   gitToplevel,
   inspectCheckout,
@@ -36,7 +34,9 @@ import {
   type SequenceKind,
   type SequenceState,
 } from '../../../shared/git.ts'
+import { githubRepository } from '../../../shared/github-repository.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
+import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
@@ -68,11 +68,11 @@ import {
   type ProjectReferenceCounts,
   projectReferenceCounts,
 } from './project-reference-counts.ts'
-import {
-  type MainStackConsumer,
-  type ProjectSettings,
-  type StoredProjectSettings,
-  type WorktreeTool,
+import type {
+  MainStackConsumer,
+  ProjectSettings,
+  StoredProjectSettings,
+  WorktreeTool,
 } from './project-settings.ts'
 import {
   assertForgeVisibility,

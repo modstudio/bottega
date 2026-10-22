@@ -3,8 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  repositoryVisibility,
   type RepositoryVisibility,
+  repositoryVisibility,
 } from '../../../shared/repository-visibility.ts'
 
 export type ForgeVisibilityLookup = (repository: string) => {

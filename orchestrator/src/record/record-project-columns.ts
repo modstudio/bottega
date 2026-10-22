@@ -2,8 +2,8 @@
 /** Maps local project settings onto hosted project columns. Must not know SQL or HTTP. */
 
 import {
-  repositoryVisibility,
   type RepositoryVisibility,
+  repositoryVisibility,
 } from '../../../shared/repository-visibility.ts'
 import type { ProjectSettings } from '../project/project-settings.ts'
 
