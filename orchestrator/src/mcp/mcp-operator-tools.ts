@@ -78,6 +78,14 @@ const rulingFileStores: RulingFileStores = {
   fileNote,
 }
 
+const answerRulingSchema = z
+  .object({
+    question_id: identifier,
+    ruling: z.string().trim().min(1),
+    from_operator: z.boolean().optional(),
+  })
+  .strict()
+
 export function registerOperatorTools(server: McpServer): void {
   server.registerTool(
     'list_open_questions',
@@ -95,16 +103,7 @@ export function registerOperatorTools(server: McpServer): void {
       description: 'Answer every open question on a run and resume it detached by default.',
       inputSchema: z.object({
         run_record_id: identifier,
-        rulings: z
-          .array(
-            z
-              .object({
-                question_id: identifier,
-                ruling: z.string().trim().min(1),
-              })
-              .strict(),
-          )
-          .min(1),
+        rulings: z.array(answerRulingSchema).min(1),
         from_operator: z.boolean().optional(),
         record_only: z.boolean().optional(),
       }),
@@ -114,9 +113,10 @@ export function registerOperatorTools(server: McpServer): void {
       const result = await answerRun(
         localRunId(run_record_id),
         {
-          rulings: rulings.map(({ question_id, ruling }) => ({
+          rulings: rulings.map(({ question_id, ruling, from_operator: rulingFromOperator }) => ({
             questionId: localQuestionId(question_id),
             text: ruling,
+            fromOperator: rulingFromOperator ?? false,
           })),
           fromOperator: from_operator ?? false,
           channel: 'mcp',

@@ -38,6 +38,7 @@ import {
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
   QUESTION_DELIVERY_OUTCOME_FAILED,
   rulingActor,
+  rulingAttributionDecision,
 } from './question-vocabulary.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -121,7 +122,7 @@ function answerResult(
 }
 
 export type AnswerRunInput = {
-  rulings: string | { questionId: string; text: string }[]
+  rulings: string | { questionId: string; text: string; fromOperator: boolean }[]
   allowPartialRecordOnly?: boolean
   fromOperator: boolean
   channel: AnswerChannel
@@ -138,16 +139,27 @@ type OpenQuestion = {
   owner_status: string
   owner_pid: number | null
 }
-type AnsweredQuestion = { number: number; record_id: string; question: string; answer: string }
+type AnsweredQuestion = {
+  number: number
+  record_id: string
+  question: string
+  answer: string
+  fromOperator: boolean
+}
 
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
 
-function answeredQuestion(question: OpenQuestion, answer: string): AnsweredQuestion {
+function answeredQuestion(
+  question: OpenQuestion,
+  answer: string,
+  fromOperator: boolean,
+): AnsweredQuestion {
   return {
     number: question.number,
     record_id: question.record_id,
     question: question.question,
     answer,
+    fromOperator,
   }
 }
 
@@ -296,6 +308,24 @@ async function refuseUserRuling(
   const rulings = await resolveAnswerRulings(project, launchKey)
   const refusal = answerRulingRefusal(rulings, fromOperator)
   if (refusal) throw new Error(refusal)
+}
+
+async function requireRulingAttributions(
+  row: Pick<AnswerRootRow, 'repo' | 'launch_key'>,
+  input: AnswerRunInput,
+): Promise<boolean> {
+  if (!Array.isArray(input.rulings)) {
+    await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
+    return false
+  }
+  let perQuestionOperator = false
+  for (const ruling of input.rulings) {
+    const attribution = rulingAttributionDecision(input.fromOperator, ruling.fromOperator)
+    if (attribution.kind === 'refuse') throw new Error(attribution.reason)
+    perQuestionOperator ||= ruling.fromOperator
+    await refuseUserRuling(row.repo, row.launch_key, attribution.fromOperator)
+  }
+  return perQuestionOperator
 }
 
 function requireAnswerRun<Row>(row: Row | null, requestedId: string): Row {
@@ -602,7 +632,7 @@ export async function answerRun(
   helpers: RunAnswerHelpers,
 ): Promise<AnswerWaitingResult> {
   const row = requireAnswerRun(answerRoot(requestedId), requestedId)
-  await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
+  const perQuestionOperator = await requireRulingAttributions(row, input)
   const id = row.record_id
   refuseEscapedChain(id)
   writableDb()
@@ -610,7 +640,7 @@ export async function answerRun(
   const authorityDecision = requireAnswerAuthority(
     requestedId,
     input.channel,
-    input.fromOperator,
+    input.fromOperator || perQuestionOperator,
     (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
     answerAuthority,
   )
@@ -778,7 +808,7 @@ export async function answerRun(
     for (const q of open) {
       const ruling = input.rulings.find((item) => item.questionId === q.record_id)
       if (!ruling) continue
-      answers.push(answeredQuestion(q, rulingFrom(ruling.text)))
+      answers.push(answeredQuestion(q, rulingFrom(ruling.text), ruling.fromOperator))
     }
   } else {
     if (!input.rulings) {
@@ -788,7 +818,7 @@ export async function answerRun(
           'or pass a ruling via --file or stdin.',
       )
     } else {
-      answers.push(answeredQuestion(open[0]!, rulingFrom(input.rulings)))
+      answers.push(answeredQuestion(open[0]!, rulingFrom(input.rulings), input.fromOperator))
     }
   }
   const incomplete = incompleteRulingsRefusal(open.length, answers.length, input, ownersLive)
@@ -843,17 +873,17 @@ export async function answerRun(
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE record_id=?`,
   )
-  const answeringIdentity = answeredBy(
-    authorityDecision.kind === 'allow-as-operator',
-    input.fromOperator,
-    callerSession,
-  )
   writeTransaction(() => {
     if (authorityDecision.kind === 'allow-as-owner') {
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
     answers.forEach((answer) => {
+      const answeringIdentity = answeredBy(
+        authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
+        input.fromOperator || answer.fromOperator,
+        callerSession,
+      )
       upd.run(
         answer.answer,
         now,

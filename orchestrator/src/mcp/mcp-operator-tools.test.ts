@@ -197,6 +197,38 @@ describe('operator MCP tools', () => {
     })
   })
 
+  test('answer_questions accepts per-ruling operator attribution', async () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'running',
+      session: SESSION,
+    })
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
+    const agent = addQuestion(runId, 'Agent question?')
+    const operator = addQuestion(runId, 'Operator question?')
+
+    const result = await withClient((client) =>
+      client.callTool({
+        name: 'answer_questions',
+        arguments: {
+          run_record_id: runId,
+          rulings: [
+            { question_id: agent, ruling: 'Agent ruling.' },
+            { question_id: operator, ruling: 'Operator ruling.', from_operator: true },
+          ],
+        },
+      }),
+    )
+
+    expect(result.isError).not.toBe(true)
+    expect(
+      db()
+        .query('SELECT answerer_kind FROM question WHERE run_record_id=? ORDER BY number')
+        .all(runId),
+    ).toEqual([{ answerer_kind: 'agent' }, { answerer_kind: 'operator' }])
+  })
+
   test('answer_questions returns the all-open-questions refusal as a tool error', async () => {
     const runId = addRun({
       agent: 'codex',

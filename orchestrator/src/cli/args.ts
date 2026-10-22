@@ -175,6 +175,7 @@ type QuestionSelector = { identifier: string; text?: string }
 
 export type AnswerTextSources = {
   byId: QuestionTextSource[]
+  fromOperatorIds?: string[]
   commandFile: string | undefined
   positionals: string[]
 }
@@ -200,6 +201,32 @@ function questionSelector(arg: string): QuestionSelector | null {
   if (equals) return { identifier: equals[1]!, text: equals[2]! }
   const flagged = arg.match(/^--q(.+)$/)
   return flagged ? { identifier: flagged[1]! } : null
+}
+
+function questionTextSource(
+  args: string[],
+  index: number,
+  selector: QuestionSelector,
+  booleans: Set<string>,
+  usage: string,
+): { source: QuestionTextSource; next: number } {
+  if ('text' in selector) return { source: selector, next: index + 1 }
+  const next = args[index + 1]
+  if (next === '--file' || next?.startsWith('--file=')) {
+    const taken = takeFilePath(args, index + 1, usage)
+    return { source: { identifier: selector.identifier, file: taken.path }, next: taken.next }
+  }
+  if (next === undefined || booleans.has(next)) {
+    throw new Error(`argument ${args[index]} needs a value\nworking form: ${usage}`)
+  }
+  return { source: { identifier: selector.identifier, text: next }, next: index + 2 }
+}
+
+function operatorQuestionIdentifier(arg: string, enabled: boolean): string | null {
+  if (!enabled || !arg.startsWith('--from-operator-q')) return null
+  const identifier = arg.slice('--from-operator-q'.length)
+  if (!identifier) throw new Error('argument --from-operator-q<id> needs a question identifier')
+  return identifier
 }
 
 /**
@@ -241,7 +268,12 @@ export function parseAnswerChannelArgs(args: string[]): {
 
 export function parseWorkerMessageArgs(
   args: string[],
-  options: { booleans?: Iterable<string>; questions?: boolean; usage?: string } = {},
+  options: {
+    booleans?: Iterable<string>
+    questions?: boolean
+    questionOperatorFlags?: boolean
+    usage?: string
+  } = {},
 ): AnswerTextSources {
   const usage =
     options.usage ??
@@ -249,6 +281,7 @@ export function parseWorkerMessageArgs(
   const booleans = new Set(options.booleans ?? [])
   const questions = options.questions ?? false
   const byId: QuestionTextSource[] = []
+  const fromOperatorIds: string[] = []
   let commandFile: string | undefined
   const positionals: string[] = []
   let messageStarted = false
@@ -258,24 +291,19 @@ export function parseWorkerMessageArgs(
       positionals.push(arg)
       continue
     }
+    const operatorIdentifier = operatorQuestionIdentifier(
+      arg,
+      options.questionOperatorFlags ?? false,
+    )
+    if (operatorIdentifier !== null) {
+      fromOperatorIds.push(operatorIdentifier)
+      continue
+    }
     const selector = questions && !booleans.has(arg) ? questionSelector(arg) : null
     if (selector) {
-      if ('text' in selector) {
-        byId.push(selector)
-        continue
-      }
-      const next = args[i + 1]
-      if (next === '--file' || next?.startsWith('--file=')) {
-        const taken = takeFilePath(args, i + 1, usage)
-        byId.push({ identifier: selector.identifier, file: taken.path })
-        i = taken.next - 1
-        continue
-      }
-      if (next === undefined || booleans.has(next)) {
-        throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
-      }
-      byId.push({ identifier: selector.identifier, text: next })
-      i++
+      const taken = questionTextSource(args, i, selector, booleans, usage)
+      byId.push(taken.source)
+      i = taken.next - 1
       continue
     }
     if (arg === '--file' || arg.startsWith('--file=')) {
@@ -288,11 +316,20 @@ export function parseWorkerMessageArgs(
     messageStarted = true
     positionals.push(arg)
   }
-  return { byId, commandFile, positionals }
+  return {
+    byId,
+    ...(options.questionOperatorFlags ? { fromOperatorIds } : {}),
+    commandFile,
+    positionals,
+  }
 }
 
 export function parseAnswerTextSources(args: string[]): AnswerTextSources {
-  return parseWorkerMessageArgs(args, { booleans: ANSWER_BOOLEANS, questions: true })
+  return parseWorkerMessageArgs(args, {
+    booleans: ANSWER_BOOLEANS,
+    questions: true,
+    questionOperatorFlags: true,
+  })
 }
 
 /** Match the bare question selector shared by thin command surfaces; the caller resolves the identifier. */

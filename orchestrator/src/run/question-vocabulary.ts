@@ -16,6 +16,25 @@ export function rulingActor(fromOperator: boolean, session: string | null): stri
     : (session ?? 'anonymous (no session id)')
 }
 
+export type RulingAttributionDecision =
+  | { kind: 'attribute'; fromOperator: boolean }
+  | { kind: 'refuse'; reason: string }
+
+/** Decide one ruling's attribution without transport or database state. */
+export function rulingAttributionDecision(
+  commandFromOperator: boolean,
+  questionFromOperator: boolean,
+): RulingAttributionDecision {
+  if (commandFromOperator && questionFromOperator) {
+    return {
+      kind: 'refuse',
+      reason:
+        '--from-operator cannot be combined with --from-operator-q<id>; use the command flag for every ruling or the per-question form',
+    }
+  }
+  return { kind: 'attribute', fromOperator: commandFromOperator || questionFromOperator }
+}
+
 export function rulingStatus(
   overturnedAt: unknown,
   answeredAt: unknown,
