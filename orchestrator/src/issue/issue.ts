@@ -43,6 +43,7 @@ import { runIssueFixReviews } from './issue-review-run.ts'
 import {
   filedIssueCommandPlan,
   issueFixReady,
+  issueRegisterChangeProven,
   issueRunAsked,
   runFiledIssueCommand,
   workerGateEnvironment,
@@ -912,11 +913,7 @@ export async function workIssue(key: string): Promise<void> {
               text: `proposal could not be applied to copied register: ${applied.text}`,
               exitCode: -1,
             }
-      const proven =
-        currentMatches &&
-        before.text === diagnosis.before &&
-        after.text === diagnosis.after &&
-        before.text !== after.text
+      const proven = issueRegisterChangeProven(currentMatches, before.exitCode, after.exitCode)
       const body = outcomeDocument(
         issue,
         { ...diagnosis, outcome: proven ? 'fixed' : null },

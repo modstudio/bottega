@@ -76,6 +76,14 @@ export function issueFixReady(
   )
 }
 
+export function issueRegisterChangeProven(
+  currentMatches: boolean,
+  beforeExit: number,
+  afterExit: number,
+): boolean {
+  return currentMatches && beforeExit !== 0 && afterExit === 0
+}
+
 export function filedIssueCommandResult(spawn: {
   exitCode: number | null
   stdout: { toString(): string }

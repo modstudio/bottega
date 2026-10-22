@@ -13,6 +13,7 @@ import {
   filedIssueCommandPlan,
   filedIssueCommandResult,
   issueFixReady,
+  issueRegisterChangeProven,
   issueRunAsked,
   workerGateEnvironment,
 } from './issue-shell.ts'
@@ -132,6 +133,14 @@ describe('filed issue command confinement', () => {
     expect(issueFixReady(fix, diagnosis, 1, 0, false, true, true)).toBe(false)
     expect(issueFixReady(fix, diagnosis, 1, 0, true, false, true)).toBe(false)
     expect(issueFixReady(fix, diagnosis, 1, 0, true, true, false)).toBe(false)
+  })
+
+  test('register proof requires the stated current value and a failing then passing command', () => {
+    expect(issueRegisterChangeProven(true, 1, 0)).toBe(true)
+    expect(issueRegisterChangeProven(true, 0, 0)).toBe(false)
+    expect(issueRegisterChangeProven(true, 1, 1)).toBe(false)
+    expect(issueRegisterChangeProven(true, 0, 1)).toBe(false)
+    expect(issueRegisterChangeProven(false, 1, 0)).toBe(false)
   })
 
   test('a timed-out command is a failed result naming the limit', () => {
