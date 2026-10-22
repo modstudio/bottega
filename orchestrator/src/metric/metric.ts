@@ -1,18 +1,116 @@
 import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
+import type { Readable } from 'node:stream'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, nowIso, writableDb } from '../database/db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
-import {
-  METRIC_COLLECTION_DEADLINE_MS,
-  MetricCollectionDeadline,
-  type MetricCollectionOptions,
-  type MetricTranscriptSource,
-  readTranscriptLines,
-} from './metric-collection.ts'
+
+// A one-day collection over 34 current transcripts took 33m 7s on the
+// production state. Two hours leaves substantial room for the normal 30-day
+// pass while still turning an overnight stall into a loud, bounded failure.
+export const METRIC_COLLECTION_DEADLINE_MS = 2 * 60 * 60 * 1000
+
+export type MetricTranscriptSource = {
+  file: string
+  modifiedAt: Date
+  open(): Readable
+}
+
+type MetricCollectionOptions<Activity> = {
+  deadlineMs?: number
+  transcripts?: MetricTranscriptSource[]
+  activity?: Map<string, Activity>
+}
+
+class MetricCollectionDeadline {
+  readonly signal: AbortSignal
+  private readonly controller = new AbortController()
+  private readonly expiresAt: number
+  private readonly timer: ReturnType<typeof setTimeout>
+  private currentFile: string | null = null
+  private lastFile: string | null = null
+
+  constructor(readonly milliseconds: number) {
+    this.signal = this.controller.signal
+    this.expiresAt = Date.now() + milliseconds
+    this.timer = setTimeout(() => this.abort(), milliseconds)
+  }
+
+  beginFile(file: string): void {
+    this.currentFile = file
+    this.lastFile = file
+    this.checkpoint()
+  }
+
+  endFile(): void {
+    this.currentFile = null
+  }
+
+  checkpoint(): void {
+    if (!this.signal.aborted && Date.now() >= this.expiresAt) this.abort()
+    if (this.signal.aborted) throw this.signal.reason
+  }
+
+  remainingMilliseconds(): number {
+    this.checkpoint()
+    return Math.max(1, this.expiresAt - Date.now())
+  }
+
+  finish(): void {
+    clearTimeout(this.timer)
+  }
+
+  private abort(): void {
+    const context = this.currentFile
+      ? `while reading transcript ${this.currentFile}`
+      : this.lastFile
+        ? `after reading transcript ${this.lastFile}`
+        : 'before a transcript was opened'
+    this.controller.abort(
+      new Error(`metric collection deadline of ${this.milliseconds}ms exceeded ${context}`),
+    )
+  }
+}
+
+async function releaseStream(stream: Readable): Promise<void> {
+  if (stream.closed) return
+  await new Promise<void>((resolve) => {
+    stream.once('close', resolve)
+    stream.destroy()
+  })
+}
+
+async function readTranscriptLines(
+  source: MetricTranscriptSource,
+  deadline: MetricCollectionDeadline,
+  consume: (line: string) => void,
+): Promise<void> {
+  deadline.beginFile(source.file)
+  const stream = source.open()
+  const lines = createInterface({ input: stream, crlfDelay: Infinity })
+  const abort = () => {
+    lines.close()
+    stream.destroy()
+  }
+  deadline.signal.addEventListener('abort', abort, { once: true })
+  try {
+    for await (const line of lines) {
+      deadline.checkpoint()
+      consume(line)
+      deadline.checkpoint()
+    }
+    deadline.checkpoint()
+  } finally {
+    deadline.signal.removeEventListener('abort', abort)
+    lines.close()
+    await releaseStream(stream)
+    deadline.endFile()
+  }
+}
 
 const targetGitEnvironment = (repo: string) =>
   (
@@ -142,7 +240,6 @@ async function claudeTokensByDay(
     }
   >()
   for (const source of sources) {
-    const { file } = source
     // Skip files untouched since the window opened — the cheap 90% of the work.
     if (metricCalendarDay(source.modifiedAt) < since) continue
     await readTranscriptLines(source, deadline, (line) => {
@@ -193,9 +290,7 @@ function transcriptSources(): MetricTranscriptSource[] {
   for (const file of configuredTranscripts(transcriptRoot)) {
     try {
       sources.push({ file, modifiedAt: statSync(file).mtime, open: () => createReadStream(file) })
-    } catch {
-      continue
-    }
+    } catch {}
   }
   return sources
 }
@@ -325,7 +420,7 @@ export async function collect(windowDays = 30, options: MetricCollectionOptions<
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
     )
     const allDays = new Set([...tok.keys(), ...act.keys()])
-    const write = d.transaction(() => {
+    writeTransaction(() => {
       for (const day of allDays) {
         deadline.checkpoint()
         const t = tok.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
@@ -352,8 +447,7 @@ export async function collect(windowDays = 30, options: MetricCollectionOptions<
       // Keep the final deadline check inside the transaction: if synchronous
       // insertion consumes the remaining budget, throwing here rolls it back.
       deadline.checkpoint()
-    })
-    write()
+    }, d)
     return allDays.size
   } finally {
     deadline.finish()

@@ -3,8 +3,7 @@ import { Readable } from 'node:stream'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { writeProjectRegisterRow } from '../database/project-register-store.ts'
-import type { MetricTranscriptSource } from './metric-collection.ts'
-import { collect, metricCalendarDay } from './metric.ts'
+import { collect, type MetricTranscriptSource, metricCalendarDay } from './metric.ts'
 
 function timestampWithLocalDay(iso: string, year: number, month: number, day: number): Date {
   const value = new Date(iso)
@@ -105,7 +104,10 @@ describe('metric collection transcript lifecycle', () => {
       canon: true,
     })
     const timeouts: number[] = []
-    spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: { timeout?: number }) => {
+    spyOn(Bun, 'spawnSync').mockImplementation(((
+      args: string[],
+      options?: { timeout?: number },
+    ) => {
       expect(args.slice(0, 4)).toEqual(['git', '-C', '/fixtures/slow-history', 'log'])
       timeouts.push(options?.timeout ?? 0)
       const finish = Date.now() + 20
