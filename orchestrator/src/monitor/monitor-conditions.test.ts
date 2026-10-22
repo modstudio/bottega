@@ -864,12 +864,17 @@ describe('operational monitor conditions', () => {
   test('claims an addressed worker gate tooling change as an append-only notice', () => {
     const owner = 'worker-gate-tooling-owner'
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: owner })
+    const runNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(runId) as { number: number }
+    ).number
     persistAddressedCondition('worker-gate-tooling-change', `run:${runId}`, owner)
 
     expect(claimMonitorNotices(owner)).toEqual([
       expect.objectContaining({
         kind: 'worker-gate-tooling-change',
         subject: `run:${runId}`,
+        label: `run ${runNumber}`,
+        detail: 'detected (age 0m, status ok); inspect the run deliberately.',
         ownerSession: owner,
       }),
     ])

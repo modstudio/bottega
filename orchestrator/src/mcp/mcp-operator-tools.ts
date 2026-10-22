@@ -15,6 +15,7 @@ import { db } from '../database/db.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { rulingAttributionDecision } from '../run/question-vocabulary.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { answerRun } from '../run/run-answer.ts'
@@ -78,6 +79,64 @@ const rulingFileStores: RulingFileStores = {
   fileNote,
 }
 
+const answerRulingSchema = z
+  .object({
+    question_id: identifier,
+    ruling: z.string().trim().min(1),
+    from_operator: z.boolean().optional(),
+  })
+  .strict()
+
+function resolveAnswerRulings(
+  rulings: z.infer<typeof answerRulingSchema>[],
+  commandFromOperator: boolean,
+) {
+  return rulings.map(({ question_id, ruling, from_operator: rulingFromOperator }) => {
+    const attribution = rulingAttributionDecision(commandFromOperator, rulingFromOperator ?? false)
+    if (attribution.kind === 'conflict') {
+      throw new Error(
+        'from_operator cannot be combined with rulings[].from_operator; use the top-level field for every ruling or the per-ruling field for individual rulings',
+      )
+    }
+    return {
+      questionId: localQuestionId(question_id),
+      text: ruling,
+      fromOperator: attribution.kind === 'operator',
+    }
+  })
+}
+
+function registerAnswerQuestionsTool(server: McpServer): void {
+  server.registerTool(
+    'answer_questions',
+    {
+      description: 'Answer every open question on a run and resume it detached by default.',
+      inputSchema: z.object({
+        run_record_id: identifier,
+        rulings: z.array(answerRulingSchema).min(1),
+        from_operator: z.boolean().optional(),
+        record_only: z.boolean().optional(),
+      }),
+      outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
+    },
+    async ({ run_record_id, rulings, from_operator, record_only }) => {
+      const result = await answerRun(
+        localRunId(run_record_id),
+        {
+          rulings: resolveAnswerRulings(rulings, from_operator ?? false),
+          fromOperator: false,
+          channel: 'mcp',
+          recordOnly: record_only ?? false,
+          json: true,
+          flags: { detach: true, follow: false, quiet: true },
+        },
+        answerRunHelpers(presentation),
+      )
+      return structured(result)
+    },
+  )
+}
+
 export function registerOperatorTools(server: McpServer): void {
   server.registerTool(
     'list_open_questions',
@@ -89,46 +148,7 @@ export function registerOperatorTools(server: McpServer): void {
     },
     async () => structured(await listOpenQuestions()),
   )
-  server.registerTool(
-    'answer_questions',
-    {
-      description: 'Answer every open question on a run and resume it detached by default.',
-      inputSchema: z.object({
-        run_record_id: identifier,
-        rulings: z
-          .array(
-            z
-              .object({
-                question_id: identifier,
-                ruling: z.string().trim().min(1),
-              })
-              .strict(),
-          )
-          .min(1),
-        from_operator: z.boolean().optional(),
-        record_only: z.boolean().optional(),
-      }),
-      outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
-    },
-    async ({ run_record_id, rulings, from_operator, record_only }) => {
-      const result = await answerRun(
-        localRunId(run_record_id),
-        {
-          rulings: rulings.map(({ question_id, ruling }) => ({
-            questionId: localQuestionId(question_id),
-            text: ruling,
-          })),
-          fromOperator: from_operator ?? false,
-          channel: 'mcp',
-          recordOnly: record_only ?? false,
-          json: true,
-          flags: { detach: true, follow: false, quiet: true },
-        },
-        answerRunHelpers(presentation),
-      )
-      return structured(result)
-    },
-  )
+  registerAnswerQuestionsTool(server)
 
   server.registerTool(
     'overturn_ruling',
