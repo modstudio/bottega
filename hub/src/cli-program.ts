@@ -1,6 +1,12 @@
 // concern: cli
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { type Command, CommanderError } from 'commander'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import {
+  applyPublicCommandPath,
+  type PublicCommandInvocation,
+  publicCommandUsage,
+} from '../../shared/commander-public-path.ts'
 import { installationVersionText } from '../../shared/install-root.ts'
 import { HubCommand } from './cli-command.ts'
 import { registerCoreCommands } from './core-cli.ts'
@@ -12,13 +18,16 @@ import { registerTaskCommands } from './task-cli.ts'
 
 export function createHubProgram(): HubCommand {
   const command = new HubCommand()
-    .name('hub')
+    .name(PLATFORM_SLUG)
     .description("every project's tasks in flight, what each cost, and scheduled reports")
     .option('--verbose', '')
     .exitOverride()
     .allowUnknownOption(false)
     .allowExcessArguments(false)
     .showSuggestionAfterError()
+    .configureHelp({
+      commandUsage: publicCommandUsage,
+    })
     .addHelpText(
       'after',
       "\nEngaged time is the UNION of every agent's working spans: a session waiting on a\n" +
@@ -49,21 +58,26 @@ function literalHelp(argv: string[]): string[] {
   return argv
 }
 
-export async function run(command: Command, argv: string[]): Promise<number> {
+export async function run(
+  command: Command,
+  argv: string[],
+  invocation?: PublicCommandInvocation,
+): Promise<number> {
   if (argv.length === 1 && argv[0] === '--version') {
     console.log(installationVersionText(import.meta.dir, process.env))
     return 0
   }
   HubCommand.beginParse()
+  applyPublicCommandPath(command, argv, invocation)
   try {
     const input = literalHelp(argv.length ? argv : ['--help'])
-    await command.parseAsync(['bun', 'hub', ...input])
+    await command.parseAsync(['bun', PLATFORM_SLUG, ...input])
     return Number(process.exitCode ?? 0)
   } catch (error) {
     if (!(error instanceof CommanderError))
       console.error(error instanceof Error ? error.message : String(error))
     return exitCodeFor(error)
   } finally {
-    if (argv.includes('--verbose')) console.error(`hub ${argv[0]} done at ${nowIso()}`)
+    if (argv.includes('--verbose')) console.error(`${PLATFORM_SLUG} ${argv[0]} done at ${nowIso()}`)
   }
 }

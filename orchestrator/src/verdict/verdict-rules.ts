@@ -4,8 +4,13 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
-// Stored in run.evidence_excluded and compared literally by unvoid; it names the old command on purpose.
+// Frozen stored identifier: persisted in run.evidence_excluded and run_exclusion.reason, then
+// compared literally by unvoid, routing backtests, record sync, and hosted supersede updates.
 export const VOID_EXCLUSION_REASON = 'voided with orch score --void'
+
+const UNVOID_REQUIREMENT =
+  `only ${PLATFORM_SLUG} score --unvoid can clear an exclusion created by ` +
+  `${PLATFORM_SLUG} score --void`
 
 export function refuseChildTurnVoid(
   requestedId: string,
@@ -22,7 +27,7 @@ export function refuseChildTurnVoid(
 
 export function refuseUnvoid(evidenceExcluded: string | null): string | null {
   if (evidenceExcluded === VOID_EXCLUSION_REASON) return null
-  return `unvoid requires '${VOID_EXCLUSION_REASON}'; actual exclusion is ${evidenceExcluded === null ? 'none' : `'${evidenceExcluded}'`}`
+  return `${UNVOID_REQUIREMENT}; actual exclusion is ${evidenceExcluded === null ? 'none' : `'${evidenceExcluded}'`}`
 }
 
 export function refuseHostedUnvoid(
@@ -37,7 +42,7 @@ export function refuseHostedUnvoid(
   if (runEvidenceExcluded === null) return activeRefusal
   if (activeExclusionReason === null) return runRefusal
   return (
-    `unvoid requires '${VOID_EXCLUSION_REASON}'; active exclusion is '${activeExclusionReason}' ` +
+    `${UNVOID_REQUIREMENT}; active exclusion is '${activeExclusionReason}' ` +
     `and run evidence_excluded is '${runEvidenceExcluded}'; ` +
     'the other exclusion must be cleared by the command that owns it'
   )

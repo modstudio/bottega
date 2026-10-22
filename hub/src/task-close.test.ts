@@ -46,7 +46,7 @@ describe('task close decision', () => {
     expect(decideTaskClose({ available: false, reason: 'git failed' })).toEqual({
       action: 'refuse',
       reason:
-        'branch classification unavailable: git failed; restore orch and git access, then retry',
+        'branch classification unavailable: git failed; restore orchestrator and git access, then retry',
     })
   })
 })
@@ -69,10 +69,10 @@ describe('task close claim release', () => {
     const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
       close: async () => closedTask,
       releaseClaims: async () => {
-        throw new Error('orch unavailable')
+        throw new Error('orchestrator unavailable')
       },
     })
-    expect(result.claimReleaseError?.message).toBe('orch unavailable')
+    expect(result.claimReleaseError?.message).toBe('orchestrator unavailable')
   })
 
   test('returns the closed task when claim release fails', async () => {

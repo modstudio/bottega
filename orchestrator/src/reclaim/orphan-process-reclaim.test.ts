@@ -40,6 +40,7 @@ const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
   pid: 42,
   ppid: 1,
   pgid: 42,
+  cpu: 0,
   command: 'vite',
   ageSeconds: 120,
   startTime: 'start',

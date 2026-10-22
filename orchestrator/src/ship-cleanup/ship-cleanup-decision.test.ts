@@ -139,27 +139,54 @@ test('task branch pruning accepts squash, recorded PR head, and containment proo
       },
     ],
   ] as const)
-  expect(decideTaskBranchesToPrune('DEV-1392', runs, evidence)).toEqual({
-    prune: ['DEV-1392-a', 'DEV-1392-b'],
+  const localBranches = new Set(['DEV-1392-a', 'DEV-1392-b'])
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, localBranches, evidence)).toEqual({
+    delete: ['DEV-1392-a', 'DEV-1392-b'],
+    landingProof: ['DEV-1392-a', 'DEV-1392-b'],
     keep: [],
+    gone: [],
   })
-  expect(decideTaskBranchesToPrune('DEV-1392', runs, new Map())).toEqual({
-    prune: [],
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, localBranches, new Map())).toEqual({
+    delete: [],
+    landingProof: [],
     keep: [
       { branch: 'DEV-1392-a', reason: 'landing not proved' },
       { branch: 'DEV-1392-b', reason: 'landing not proved' },
     ],
+    gone: [],
   })
   expect(
     decideTaskBranchesToPrune(
       'DEV-1392',
       runs,
+      localBranches,
       new Map([
         ['DEV-1392-a', { state: 'landed', landedBy: { type: 'contained', branch: 'DEV-1392-b' } }],
       ]),
     ),
   ).toEqual({
-    prune: ['DEV-1392-a'],
+    delete: ['DEV-1392-a'],
+    landingProof: ['DEV-1392-a'],
     keep: [{ branch: 'DEV-1392-b', reason: 'landing not proved' }],
+    gone: [],
   })
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, new Set(), new Map())).toEqual({
+    delete: [],
+    landingProof: [],
+    keep: [],
+    gone: ['DEV-1392-a', 'DEV-1392-b'],
+  })
+  expect(decideTaskBranchesToPrune('DEV-1392', runs, new Set(), evidence)).toEqual({
+    delete: [],
+    landingProof: ['DEV-1392-a', 'DEV-1392-b'],
+    keep: [],
+    gone: [],
+  })
+  const goneLanded = decideTaskBranchesToPrune('DEV-1392', [runs[0]!], new Set(), evidence)
+  const goneLandedRun = { ...runs[0]!, branch: 'DEV-1392-a' }
+  expect(
+    decideShipCleanup('DEV-1392', new Set(goneLanded.landingProof), '2026-10-18T01:00:00Z', [
+      goneLandedRun,
+    ])[0],
+  ).toMatchObject({ scope: 'chain', artifacts: 'remove', worktreeAction: 'close' })
 })

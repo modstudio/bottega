@@ -21,7 +21,7 @@ import {
 const LOGIN_TOKEN_EXPIRY_MS = 5 * 60 * 1000
 const SESSION_EXPIRY_MS = 12 * 60 * 60 * 1000
 const SESSION_COOKIE = 'hub_session'
-export const LOCAL_LOGIN_MESSAGE = `Local hub session required; run \`${PLATFORM_SLUG} dashboard login\`.`
+export const LOCAL_LOGIN_MESSAGE = `Local dashboard session required; run \`${PLATFORM_SLUG} dashboard login\`.`
 
 type Clock = () => number
 type RandomId = () => string

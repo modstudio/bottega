@@ -31,7 +31,7 @@ describe('orchestrator procedure cache', () => {
     )
   })
 
-  test('no procedure call reaches orch inside a TTL window', async () => {
+  test('no procedure call reaches orchestrator inside a TTL window', async () => {
     let now = 10_000
     let spawns = 0
     const cache = new TtlCache(30_000, () => now)
@@ -76,10 +76,10 @@ describe('orchestrator procedure cache', () => {
     expect(await cache.get('runs', () => 1)).toBe(1)
 
     now = 30_000
-    const failing = (): Promise<number> => Promise.reject(new Error('orch unreachable'))
+    const failing = (): Promise<number> => Promise.reject(new Error('orchestrator unreachable'))
     expect(await cache.get('runs', failing)).toBe(1)
     await settle()
-    await expect(cache.get('runs', failing)).rejects.toThrow('orch unreachable')
+    await expect(cache.get('runs', failing)).rejects.toThrow('orchestrator unreachable')
   })
 
   test('a load that started before a clear never replaces what was loaded after it', async () => {

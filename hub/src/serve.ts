@@ -57,7 +57,7 @@ export class TtlCache {
   /**
    * The cached value while it is fresh. Once it expires the caller still gets
    * the last value at once and one background load replaces it, so a poll that
-   * lands just after expiry never waits for a slow orch read. A key with no
+   * lands just after expiry never waits for a slow orchestrator read. A key with no
    * value waits for its load, and a failed load drops the key so the next call
    * waits and sees the failure rather than a value that has stopped updating.
    */
@@ -105,7 +105,7 @@ export function cachedOrchResponse<T>(key: string, load: () => Promise<T> | T): 
   return orchCache.get(key, load)
 }
 
-/** Test isolation for suites that replace the orch client or its backing rows. */
+/** Test isolation for suites that replace the orchestrator client or its backing rows. */
 export function clearOrchCache(): void {
   orchCache.clear()
 }
@@ -135,7 +135,7 @@ export function handleTrpcRequest(
       }
       return createContext(options)
     },
-    // A write can change anything an orch read returned, so the next read starts fresh.
+    // A write can change anything an orchestrator read returned, so the next read starts fresh.
     responseMeta({ type }) {
       if (type === 'mutation') orchCache.clear()
       return {}
@@ -143,7 +143,7 @@ export function handleTrpcRequest(
   })
 }
 
-/** The shared hub.db strip on an orch procedure follows the orch clock too. */
+/** The shared hub.db strip on an orchestrator procedure follows the orchestrator clock too. */
 export function cachedStrip(hours: number) {
   return orchCache.get(`strip:${hours}`, () => strip(hours))
 }

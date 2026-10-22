@@ -55,7 +55,7 @@ test('machine permission writes retain the worker refusal', () => {
       { operation: 'add', list: 'allow', rule: 'Bash(git status)' },
       { ORCH_RUN_ID: 'worker' },
     ),
-  ).toThrow('refusing machine permission write from an orch worker run')
+  ).toThrow('refusing machine permission write from an orchestrator worker run')
 })
 
 test('machine permission listing presents JSON and one line per rule', () => {

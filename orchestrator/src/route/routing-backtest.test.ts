@@ -3,6 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { betaContribution, candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick } from './route.ts'
 import {
   ROUTING_BACKTEST_SEEDS,
@@ -255,7 +256,7 @@ describe('routing backtest statistics', () => {
       )
       .run(newRecordId(), id)
     db()
-      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE record_id=?`)
+      .query(`UPDATE run SET evidence_excluded='${VOID_EXCLUSION_REASON}' WHERE record_id=?`)
       .run(id)
     expect(routingBacktest('fix', 2).jobs).toEqual([])
     expect(routingBacktest('fix', 2, { includeVoided: true }).jobs[0]!.runs).toBe(1)

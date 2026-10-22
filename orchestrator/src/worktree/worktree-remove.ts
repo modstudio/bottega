@@ -260,7 +260,7 @@ function removeWithTool(
     }
   }
 
-  // The marker is the proof that orch made and owns this disposable checkout.
+  // The marker is the proof that orchestrator made and owns this disposable checkout.
   // A project's removal guard can therefore be forced only when the operator
   // explicitly asked and this exact proof is still present. Names and branch
   // templates also recognize old trees for sweep, but are deliberately not
@@ -293,11 +293,11 @@ function removeWithTool(
     removed: false,
     resourceTeardownFailed: true,
     detail:
-      `${w.path} was NOT removed — the project's own tool refused, and orch will not ` +
+      `${w.path} was NOT removed — the project's own tool refused, and orchestrator will not ` +
       `force past that:\n${r.out.slice(-600) || `exit code from ${tool.remove}`}\n\n` +
       `Those refusals guard uncommitted work and unmerged branches. Inspect and resolve ` +
       `the protected work with the project's own tooling, then run ${PLATFORM_SLUG} run discard again. ` +
-      `--force will not override a project tool's refusal unless the tree carries orch's ` +
+      `--force will not override a project tool's refusal unless the tree carries orchestrator's ` +
       `${ORCH_RUN_MARKER} ownership marker.`,
   }
 }

@@ -316,7 +316,7 @@ function unattributedComposeNetworks(
   })
 }
 
-/** Inventory only resources created for orch run worktrees. Never mutates Docker. */
+/** Inventory only resources created for orchestrator run worktrees. Never mutates Docker. */
 export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInventory {
   const rows: DockerResource[] = []
   const unattributable: UnattributableDockerResource[] = []

@@ -240,7 +240,7 @@ function registerServeCommands(program: Command): void {
 function registerMaintenanceCommands(program: Command): void {
   program
     .command('reconcile')
-    .description('close open intervals whose orch runs are terminal using exact run ids')
+    .description('close open intervals whose orchestrator runs are terminal using exact run ids')
     .option('--dry-run', 'report interval closures without writing them')
     .action(async (options: { dryRun?: boolean }) => {
       requireDatabase()

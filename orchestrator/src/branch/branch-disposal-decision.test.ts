@@ -3,6 +3,7 @@ import { decideBranchDisposal, disposalTaskState } from './branch-disposal-decis
 
 const facts = (overrides: Partial<Parameters<typeof decideBranchDisposal>[0]> = {}) => ({
   runMinted: true,
+  refExists: true,
   liveRun: false,
   checkedOut: false,
   taskStatus: 'closed',
@@ -13,6 +14,14 @@ const facts = (overrides: Partial<Parameters<typeof decideBranchDisposal>[0]> = 
 })
 
 test('branch disposal refuses every protected condition', () => {
+  expect(decideBranchDisposal(facts({ refExists: false }))).toEqual({
+    eligible: false,
+    reason: 'missing-ref',
+  })
+  expect(decideBranchDisposal(facts({ runMinted: false, refExists: false }))).toEqual({
+    eligible: false,
+    reason: 'missing-ref',
+  })
   expect(decideBranchDisposal(facts({ runMinted: false }))).toEqual({
     eligible: false,
     reason: 'not-run-minted',

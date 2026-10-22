@@ -40,14 +40,18 @@ describe('verdict rules', () => {
     expect(refuseChildTurnVoid('5988', '5931', false)).toBeNull()
   })
 
-  test(`unvoid allows only the ${PLATFORM_SLUG} score --void exclusion reason`, () => {
+  test('unvoid accepts the frozen stored exclusion reason and names public commands in refusals', () => {
+    expect(VOID_EXCLUSION_REASON).toBe(['voided with', 'orch', 'score --void'].join(' '))
     expect(refuseUnvoid(VOID_EXCLUSION_REASON)).toBeNull()
     for (const reason of [
       'blocked by its tree: database unavailable',
       'shared an output file with other runs',
       'unjudged: owner gone',
     ]) {
-      expect(refuseUnvoid(reason)).toContain(`actual exclusion is '${reason}'`)
+      const refusal = refuseUnvoid(reason)
+      expect(refusal).toContain(`${PLATFORM_SLUG} score --void`)
+      expect(refusal).toContain(`${PLATFORM_SLUG} score --unvoid`)
+      expect(refusal).toContain(`actual exclusion is '${reason}'`)
     }
   })
 
@@ -70,7 +74,7 @@ describe('verdict rules', () => {
     'hosted unvoid keeps the single-exclusion refusal for active exclusion %p and run exclusion %p',
     (activeExclusionReason, runEvidenceExcluded) => {
       expect(refuseHostedUnvoid(activeExclusionReason, runEvidenceExcluded)).toBe(
-        `unvoid requires '${VOID_EXCLUSION_REASON}'; actual exclusion is 'blocked by its tree: database unavailable'`,
+        `only ${PLATFORM_SLUG} score --unvoid can clear an exclusion created by ${PLATFORM_SLUG} score --void; actual exclusion is 'blocked by its tree: database unavailable'`,
       )
     },
   )

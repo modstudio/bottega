@@ -491,7 +491,7 @@ select the active hosted record space
 
 **Synopsis:** `bottega record sync [--backfill] [--since <ISO>] [--only <runs|transcripts|git|tasks>]`
 
-synchronize the orchestrator and hub records
+synchronize both concern records
 
 ### Options
 

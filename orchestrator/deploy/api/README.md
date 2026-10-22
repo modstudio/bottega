@@ -14,13 +14,13 @@ fly secrets set -a bottega-api \
   SES_SECRET_ACCESS_KEY='<secret-access-key>' \
   SES_REGION='us-east-2' \
   SES_FROM_ADDRESS='<display name and verified sender address>'
-orch release bottega --rung hosted-api
+bottega release run bottega --rung hosted-api
 fly ips allocate-v4 --shared -a bottega-api
 fly ips allocate-v6 -a bottega-api
 fly certs add api.bottega.run -a bottega-api
 ```
 
-The app is deployed with `orch release bottega --rung hosted-api`; the deploy script refuses a
+The app is deployed with `bottega release run bottega --rung hosted-api`; the deploy script refuses a
 direct call. The deploy script takes `ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one
 variable from the operator's env file when the environment lacks it. It gives the value to the
 migration only, never to Fly, then migrates the record and confirms that applied migrations
@@ -50,11 +50,11 @@ migration-owner connection. The migrations ship no designation row. A space-only
 does not exist; each designation names one project in its space:
 
 ```sh
-orch record public-doc designate <public-space-slug> <public-project-name>
+bottega record public-doc designate <public-space-slug> <public-project-name>
 ```
 
-Use `orch record public-doc list` to inspect designations. Run
-`orch record public-doc clear <public-space-slug> <public-project-name>` to remove one.
+Use `bottega record public-doc list` to inspect designations. Run
+`bottega record public-doc clear <public-space-slug> <public-project-name>` to remove one.
 
 For browser clients, set `RECORD_API_ALLOWED_ORIGINS` to a comma-separated list of exact
 origins. This enables credentialed CORS for those origins and also configures Better Auth's
@@ -71,7 +71,7 @@ Record sign-up is invitation-only. A record space owner creates the required pen
 before the invitee signs up:
 
 ```sh
-orch record space invite --email <email>
+bottega record space invite --email <email>
 ```
 
 At the DNS provider, create an `A` record for `api.bottega.run` with the shared IPv4 address printed by `fly ips allocate-v4`, and an `AAAA` record with the IPv6 address printed by `fly ips allocate-v6`. Check certificate and DNS validation with `fly certs check api.bottega.run -a bottega-api`.

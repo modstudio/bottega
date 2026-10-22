@@ -105,6 +105,7 @@ const cleanupReport = (
   freed: { artifacts: 0, scratch: 0, worktrees: 0 },
   removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
   reclaimed: { processes: [], compose: [] },
+  gone: [],
   kept: overrides.kept ?? [],
   errors: overrides.errors ?? [],
   verdict:

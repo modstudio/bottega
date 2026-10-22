@@ -67,7 +67,7 @@ export function automaticOrphanReclaimDecision(
   if (!orphan.cwdVerified)
     return { reclaim: false, reason: 'cwd process birth could not be verified' }
   if (platformProcess(orphan.command))
-    return { reclaim: false, reason: `${PLATFORM_SLUG}/orch lifecycle process` }
+    return { reclaim: false, reason: `${PLATFORM_SLUG}/orchestrator lifecycle process` }
   if (liveWorktrees.has(orphan.missingTree))
     return { reclaim: false, reason: 'tree belongs to a live run' }
   if (!removedByCurrentCleanup && orphan.ageSeconds * 1000 < ORPHAN_PROCESS_AUTO_RECLAIM_MIN_AGE_MS)

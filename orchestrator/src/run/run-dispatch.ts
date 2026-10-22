@@ -289,7 +289,7 @@ export async function detach(
        * at spawn time, so an edit anywhere in the graph kills every run launched
        * during it — the child dies on import, before it can fill in the row this
        * function already claimed. Three of another session's runs were lost that
-       * way this morning and reported only as "orch was dropping runs".
+       * way this morning and reported only as "orchestrator was dropping runs".
        *
        * `program.ts` imports the full command graph, so no `try` inside it can catch
        * that. `exec.ts` imports almost nothing and pulls the rest in inside a

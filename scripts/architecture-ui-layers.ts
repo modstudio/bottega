@@ -1,5 +1,5 @@
 /**
- * The hub dashboard's component layers, lowest first. A folder under
+ * The dashboard's component layers, lowest first. A folder under
  * `hub/ui/src/` belongs to exactly one layer and may import only its own
  * layer or a lower one. `behavior` holds hooks and pure helpers with no markup;
  * `primitives` are single controls; `overlays` open above the page; `patterns`

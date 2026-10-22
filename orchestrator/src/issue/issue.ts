@@ -133,7 +133,7 @@ export const ISSUE_DIAGNOSIS_SCHEMA = {
   },
 } as const
 
-/** A task key created on orch's behalf must meet the same project rule as --key. */
+/** A task key created on orchestrator's behalf must meet the same project rule as --key. */
 export function validatedTrackerTaskKey(
   value: string,
   project: Project,
