@@ -56,7 +56,7 @@ bottega doc list --scope machine
 ```
 
 `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` must be available to
-non-interactive shells, because that is how `orch` runs.
+non-interactive shells, because that is how `bottega` runs.
 
 ## Docker preflight
 

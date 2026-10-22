@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
-  answeredReviewClaimable,
+  filedIssueClaimable,
   filedIssueStateForProject,
   unscoredFiledIssueLoopRuns,
 } from './issue-dispatch.ts'
@@ -40,10 +40,14 @@ test('project-scoped filed issue state belongs wholly to the platform project', 
 })
 
 describe('filed-issue claiming', () => {
-  test('explicit-key mode accepts review with a valid seed answer but queue mode does not', () => {
-    expect(answeredReviewClaimable('review', false, 'full')).toBeTrue()
-    expect(answeredReviewClaimable('review', true, 'full')).toBeFalse()
-    expect(answeredReviewClaimable('review', false, null)).toBeFalse()
+  test('explicit mode accepts open, active, and review while queue mode excludes review', () => {
+    expect(filedIssueClaimable('open', false)).toBeTrue()
+    expect(filedIssueClaimable('active', false)).toBeTrue()
+    expect(filedIssueClaimable('review', false)).toBeTrue()
+    expect(filedIssueClaimable('open', true)).toBeTrue()
+    expect(filedIssueClaimable('active', true)).toBeTrue()
+    expect(filedIssueClaimable('review', true)).toBeFalse()
+    expect(filedIssueClaimable('closed', false)).toBeFalse()
   })
 })
 

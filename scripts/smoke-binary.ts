@@ -8,7 +8,6 @@ import {
   realpathSync,
   rmSync,
   statSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { createServer } from 'node:net'
@@ -105,7 +104,7 @@ async function freePort(): Promise<number> {
 
 async function smokeDashboard(executable: string, stateHome: string): Promise<void> {
   const port = await freePort()
-  const args = ['hub', 'serve', '--port', String(port)]
+  const args = ['dashboard', 'start', '--port', String(port)]
   const rendered = [executable, ...args].join(' ')
   const child = Bun.spawn([executable, ...args], {
     env: smokeEnvironment(stateHome),
@@ -142,7 +141,7 @@ async function smokeDashboard(executable: string, stateHome: string): Promise<vo
     }
     console.log(`$ ${rendered}`)
     console.log(`GET / ${response.status}; GET ${assetPath} ${asset.status} ${contentType}`)
-    await smoke(executable, ['hub', 'serve-stop', '--port', String(port)], stateHome)
+    await smoke(executable, ['dashboard', 'stop', '--port', String(port)], stateHome)
     const exitCode = await Promise.race([
       child.exited,
       Bun.sleep(5_000).then(() => {
@@ -193,16 +192,8 @@ try {
   recordApiUrl = `http://127.0.0.1:${recordApi.port}`
   const binary = await buildHostBinary('v0.1.0', output)
   console.log(`binary size ${statSync(binary).size} bytes`)
-  const orch = join(output, 'orch')
-  const hub = join(output, 'hub')
-  symlinkSync(binary, orch)
-  symlinkSync(binary, hub)
   await smoke(binary, ['--version'], stateHome)
-  await smoke(binary, ['orch', '--version'], stateHome)
-  await smoke(binary, ['hub', '--version'], stateHome)
   await smoke(binary, ['--help'], stateHome)
-  await smoke(binary, ['orch', '--help'], stateHome)
-  await smoke(binary, ['hub', '--help'], stateHome, `hub — every project's tasks in flight`)
   await smoke(
     binary,
     [...BOTTEGA_ENTRY_PROTOCOL['schema-check'].compiledArguments],
@@ -211,15 +202,14 @@ try {
   )
   if (existsSync(stateHome))
     throw new Error('help, version, and schema-check commands created the state directory')
-  await smoke(orch, ['jobs'], stateHome, 'implement')
-  await smoke(binary, ['orch', 'jobs'], stateHome)
-  const agentList = await smoke(binary, ['orch', 'agent', 'list'], stateHome)
+  await smoke(binary, ['agent', 'jobs'], stateHome, 'implement')
+  const agentList = await smoke(binary, ['agent', 'show', 'list'], stateHome)
   for (const builtIn of ['codex', 'grok']) {
     if (!agentList.split('\n').some((line) => line.startsWith(`${builtIn} `))) {
       throw new Error(`${PLATFORM_SLUG} agent show list did not show built-in agent ${builtIn}`)
     }
   }
-  await smoke(binary, ['hub', 'task', 'list'], stateHome)
+  await smoke(binary, ['task', 'list'], stateHome)
   if (!existsSync(join(stateHome, 'orchestrator', 'orch.db'))) {
     throw new Error(`${PLATFORM_SLUG} agent jobs did not create the orchestrator store`)
   }
@@ -228,13 +218,13 @@ try {
   }
   await smoke(
     binary,
-    ['hub', 'task', 'new', '--project', 'tasks', '--title', 'smoke'],
+    ['task', 'new', '--project', 'tasks', '--title', 'smoke'],
     stateHome,
     'TASK-1',
   )
-  await smoke(binary, ['hub', 'task', 'list', '--project', 'tasks'], stateHome, 'TASK-1')
+  await smoke(binary, ['task', 'list', '--project', 'tasks'], stateHome, 'TASK-1')
   const setupFacts = JSON.parse(
-    await smoke(binary, ['orch', 'setup', 'facts', '--json'], stateHome),
+    await smoke(binary, ['machine', 'setup', 'facts', '--json'], stateHome),
   ) as { os?: unknown }
   if (!setupFacts.os)
     throw new Error(`${PLATFORM_SLUG} machine setup facts --json returned no os field`)
@@ -247,12 +237,12 @@ try {
   await run(['git', 'add', 'README.md'], setupRepository)
   await run(['git', 'commit', '-m', 'DEV-1015 setup smoke fixture'], setupRepository)
   const setupPlan = JSON.parse(
-    await smoke(binary, ['orch', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
+    await smoke(binary, ['machine', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
   ) as { diff?: { kind?: string }[] }
   if (setupPlan.diff?.filter((action) => action.kind === 'add').length !== 1) {
     throw new Error(`${PLATFORM_SLUG} machine setup plan did not return exactly one add proposal`)
   }
-  await smoke(binary, ['orch', 'setup', 'apply', '--in', setupRepository, '--yes'], stateHome)
+  await smoke(binary, ['machine', 'setup', 'apply', '--in', setupRepository, '--yes'], stateHome)
   const mcpInvocations = readFileSync(mcpRecord, 'utf8').split('\n')
   const addInvocations = mcpInvocations.filter((line) => line.includes('\tmcp\tadd\t'))
   if (
@@ -288,7 +278,7 @@ try {
     )
   }
   const setupProjects = JSON.parse(
-    await smoke(binary, ['orch', 'project', 'list', '--json'], stateHome),
+    await smoke(binary, ['project', 'list', '--json'], stateHome),
   ) as { path?: string; settings?: { keyPrefixes?: string[] } }[]
   const setupProject = setupProjects.find(
     (project) => project.path === realpathSync(setupRepository),
@@ -297,7 +287,7 @@ try {
     throw new Error(`${PLATFORM_SLUG} machine setup apply did not register a key prefix`)
   }
   const secondSetupPlan = JSON.parse(
-    await smoke(binary, ['orch', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
+    await smoke(binary, ['machine', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
   ) as { questions?: unknown[] }
   if (secondSetupPlan.questions?.length !== 0) {
     throw new Error(
@@ -307,7 +297,7 @@ try {
   const secondSetup = JSON.parse(
     await smoke(
       binary,
-      ['orch', 'setup', 'apply', '--in', setupRepository, '--yes', '--json'],
+      ['machine', 'setup', 'apply', '--in', setupRepository, '--yes', '--json'],
       stateHome,
     ),
   ) as { actions?: { status?: string }[] }
@@ -328,16 +318,16 @@ try {
   } finally {
     orchestrator.close()
   }
-  await smoke(binary, ['hub', 'collect', '--only', 'runs'], stateHome, 'collected in')
+  await smoke(binary, ['record', 'pull', '--only', 'runs'], stateHome, 'collected in')
   await smoke(
     binary,
-    ['orch', 'reclaim', 'fixture-questions', '--dry-run'],
+    ['machine', 'reclaim', 'fixture-questions', '--dry-run'],
     stateHome,
     'no orphan fixture questions found',
   )
   await smoke(
     binary,
-    ['orch', 'doc', 'search', 'compiled-child-smoke'],
+    ['doc', 'search', 'compiled-child-smoke'],
     stateHome,
     'embedding endpoint could not be established',
     1,
@@ -381,7 +371,7 @@ try {
   }
   await smoke(
     binary,
-    ['orch', 'workflow', 'probe', '--', 'git', 'status', '--short'],
+    ['workflow', 'probe', '--', 'git', 'status', '--short'],
     stateHome,
     undefined,
     0,
@@ -390,8 +380,8 @@ try {
   await smoke(
     binary,
     [
-      'orch',
-      'do',
+      'run',
+      'start',
       'implement',
       '--agent',
       'codex',

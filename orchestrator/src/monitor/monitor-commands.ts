@@ -200,7 +200,7 @@ async function showNotices(
   if (json) await presentation.write(`${JSON.stringify(delivery)}\n`)
   else {
     for (const condition of delivery.notices)
-      presentation.log(`MONITOR ${condition.kind} ${condition.subject}: ${condition.detail}`)
+      presentation.log(`MONITOR ${condition.kind} ${condition.label}: ${condition.detail}`)
     if (delivery.warning) presentation.log(delivery.warning)
   }
 }

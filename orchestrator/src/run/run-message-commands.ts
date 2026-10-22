@@ -11,6 +11,7 @@ import {
   parseAnswerChannelArgs,
   parseAnswerTextSources,
   parseWorkerMessageArgs,
+  questionOperatorFlag,
   readMessageText,
   readWorkerFile,
 } from '../cli/args.ts'
@@ -24,7 +25,8 @@ import {
 } from '../review/review-vocabulary.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { questionOpenSql } from './question-open.ts'
-import { operatorAttributedRuling, rulingFileOfferLines } from './ruling-file-text.ts'
+import { rulingAttributionDecision } from './question-vocabulary.ts'
+import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
 
@@ -77,6 +79,11 @@ export async function answerInputFromArgv(
 ): Promise<AnswerRunInput> {
   const channelArgs = parseAnswerChannelArgs(argv)
   const parsed = parseAnswerTextSources(channelArgs.argv)
+  const fromOperator = channelArgs.argv.includes('--from-operator')
+  const operatorQuestionIds = (parsed.fromOperatorIds ?? []).map((identifier) => ({
+    identifier,
+    questionId: resolveQuestionIdentifier(db(), identifier),
+  }))
   let rulings: AnswerRunInput['rulings']
   let allowPartialRecordOnly = false
   const cliRuling = (text: string) => {
@@ -93,11 +100,22 @@ export async function answerInputFromArgv(
     rulings = parsed.byId.map((source) => {
       const parsedIdentifier = parseQuestionIdentifier(source.identifier)
       if (parsedIdentifier.kind === 'record-id') allowPartialRecordOnly = true
+      const questionId = resolveQuestionIdentifier(db(), source.identifier)
+      const perQuestion = operatorQuestionIds.some(
+        (operatorQuestion) => operatorQuestion.questionId === questionId,
+      )
+      const attribution = rulingAttributionDecision(fromOperator, perQuestion)
+      if (attribution.kind === 'conflict') {
+        throw new Error(
+          `--from-operator cannot be combined with ${questionOperatorFlag(source.identifier)}; use --from-operator for every ruling or ${questionOperatorFlag('<id>')} for individual rulings`,
+        )
+      }
       return {
-        questionId: resolveQuestionIdentifier(db(), source.identifier),
+        questionId,
         text: cliRuling(
           source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
         ),
+        fromOperator: attribution.kind === 'operator',
       }
     })
   } else if (
@@ -114,10 +132,22 @@ export async function answerInputFromArgv(
   } else {
     rulings = cliRuling(parsed.positionals.join(' '))
   }
+  const ruledQuestionIds = new Set(
+    Array.isArray(rulings) ? rulings.map((ruling) => ruling.questionId) : [],
+  )
+  const unattached = operatorQuestionIds.filter(
+    ({ questionId }) => !ruledQuestionIds.has(questionId),
+  )
+  if (unattached.length) {
+    throw new Error(
+      `${unattached.map(({ identifier }) => questionOperatorFlag(identifier)).join(', ')} must accompany the matching --q<id> ruling\n` +
+        `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  }
   return {
     rulings,
     allowPartialRecordOnly,
-    fromOperator: channelArgs.argv.includes('--from-operator'),
+    fromOperator: Array.isArray(rulings) ? false : fromOperator,
     channel: channelArgs.channel,
     recordOnly,
     json,
@@ -133,12 +163,19 @@ export async function retryCommand(
   await retryRun(id, options, answerRunHelpers(presentation))
 }
 
-function answeredQuestionIds(runId: string, rulings: AnswerRunInput['rulings']): number[] {
+function answeredQuestions(
+  runId: string,
+  input: AnswerRunInput,
+): { number: number; fromOperator: boolean }[] {
+  const { rulings } = input
   if (typeof rulings !== 'string') {
     const number = db().query<{ number: number }, [string]>(
       'SELECT number FROM question WHERE record_id=?',
     )
-    return rulings.map((ruling) => number.get(ruling.questionId)!.number)
+    return rulings.map((ruling) => ({
+      number: number.get(ruling.questionId)!.number,
+      fromOperator: ruling.fromOperator,
+    }))
   }
   return (
     db()
@@ -148,7 +185,7 @@ function answeredQuestionIds(runId: string, rulings: AnswerRunInput['rulings']):
           ORDER BY q.number`,
       )
       .all(runId, runId) as { number: number }[]
-  ).map((row) => row.number)
+  ).map((row) => ({ number: row.number, fromOperator: input.fromOperator }))
 }
 
 export async function answerCommand(
@@ -161,16 +198,15 @@ export async function answerCommand(
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers)
-  const questionIds = answeredQuestionIds(id, input.rulings)
+  const questions = answeredQuestions(id, input)
   const result = await answerRun(id, input, helpers)
   if (json) console.log(JSON.stringify(result))
   else {
     for (const line of rulingFileOfferLines({
-      questionIds,
-      operatorAttributed: operatorAttributedRuling({
-        fromOperator: input.fromOperator,
-        channel: input.channel,
-      }),
+      questionIds: questions
+        .filter((question) => question.fromOperator)
+        .map((question) => question.number),
+      operatorAttributed: true,
       json: false,
     })) {
       console.log(line)
