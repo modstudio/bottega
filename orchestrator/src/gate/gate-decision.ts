@@ -80,10 +80,17 @@ export function decideGateHeadCommit(input: {
   return input.headCommit && input.porcelainPaths.length === 0 ? input.headCommit : null
 }
 
-export function workerGateInputRefusal(input: GateInput | undefined): string | null {
-  return input === 'committed'
-    ? 'worker gate refused: this project declares gateInput committed, which cannot judge uncommitted worker changes without moving HEAD; commit the change yourself, then run the project gate outside run_gate'
-    : null
+export function decideWorkerGateInput(
+  input: GateInput | undefined,
+  hasUncommittedTrackedChanges: boolean,
+): { kind: 'committed' } | { kind: 'synthetic-index' } | { kind: 'refused'; reason: string } {
+  if (input !== 'committed') return { kind: 'synthetic-index' }
+  if (!hasUncommittedTrackedChanges) return { kind: 'committed' }
+  return {
+    kind: 'refused',
+    reason:
+      'worker gate refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_gate again',
+  }
 }
 
 /** Prefer the live trunk merge-base so a rebased worker excludes trunk-only changes. */

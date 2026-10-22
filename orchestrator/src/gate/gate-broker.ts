@@ -34,10 +34,10 @@ import {
   decideGateExecutionFinalization,
   decideGateHeadCommit,
   decideGateToolingDiffBase,
+  decideWorkerGateInput,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
   resolveGateCommand,
-  workerGateInputRefusal,
 } from './gate-decision.ts'
 import { prepareSyntheticGateIndex, removeSyntheticGateIndex } from './gate-index.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
@@ -435,26 +435,15 @@ function prepareGateExecution(input: {
     consumer: 'gate',
   })
   const command = resolveGateCommand(plan.command, plan.worktree)
-  const refusal = workerGateInputRefusal(plan.gateInput)
-  if (refusal) throw new Error(refusal)
   const toolingPaths = changedGateTooling(plan, input.record)
-  const headCommit = decideGateHeadCommit({
-    headCommit:
-      gitPaths(plan.worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])[0]?.trim() ?? '',
-    porcelainPaths: gitPaths(plan.worktree, [
-      'status',
-      '--porcelain',
-      '-z',
-      '--untracked-files=all',
-    ]),
-  })
   db()
-    .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=?,head_commit=? WHERE id=?')
-    .run(JSON.stringify(toolingPaths), command, headCommit, input.request.id)
+    .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=? WHERE id=?')
+    .run(JSON.stringify(toolingPaths), command, input.request.id)
   return {
     command,
     worktree: plan.worktree,
     baseCommit: plan.baseCommit,
+    gateInput: plan.gateInput,
     refreshInput: { mainCheckout, landingBranch: plan.trunk },
   }
 }
@@ -482,6 +471,50 @@ async function runPreparedGate(input: {
         .run(refresh.elapsedMs, refresh.message, input.requestId)
     },
     runGate: async () => {
+      const trackedPorcelainPaths = gitPaths(input.prepared.worktree, [
+        'status',
+        '--porcelain',
+        '-z',
+        '--untracked-files=no',
+      ])
+      const gateInput = decideWorkerGateInput(
+        input.prepared.gateInput,
+        trackedPorcelainPaths.length > 0,
+      )
+      if (gateInput.kind === 'refused') throw new Error(gateInput.reason)
+      const porcelainPaths =
+        gateInput.kind === 'committed'
+          ? trackedPorcelainPaths
+          : gitPaths(input.prepared.worktree, [
+              'status',
+              '--porcelain',
+              '-z',
+              '--untracked-files=all',
+            ])
+      const headCommit = decideGateHeadCommit({
+        headCommit:
+          gitPaths(input.prepared.worktree, [
+            'rev-parse',
+            '--verify',
+            'HEAD^{commit}',
+          ])[0]?.trim() ?? '',
+        porcelainPaths,
+      })
+      db()
+        .query('UPDATE gate_execution SET head_commit=? WHERE id=?')
+        .run(headCommit, input.requestId)
+      if (gateInput.kind === 'committed') {
+        await runGateProcess({
+          command: input.prepared.command,
+          worktree: input.prepared.worktree,
+          environment: input.environment,
+          confinement: input.confinement,
+          state: input.state,
+          record: input.record,
+          stop: input.stop,
+        })
+        return
+      }
       const gateGitEnvironment = prepareSyntheticGateIndex({
         worktree: input.prepared.worktree,
         baseCommit: input.prepared.baseCommit,

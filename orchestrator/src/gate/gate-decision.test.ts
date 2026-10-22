@@ -12,6 +12,7 @@ import {
   decideGateRequest,
   decideGateToolingDiffBase,
   decideGateWait,
+  decideWorkerGateInput,
   formatGateRequestDecision,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
@@ -20,14 +21,16 @@ import {
   RUN_GATE_WAIT_MS,
   resolveGateCommand,
   shapeGateResult,
-  workerGateInputRefusal,
 } from './gate-decision.ts'
 
-test('committed worker gates refuse while compatible and undeclared gates use the synthetic view', () => {
-  expect(workerGateInputRefusal('committed')).toContain('cannot judge uncommitted worker changes')
-  expect(workerGateInputRefusal('staged')).toBeNull()
-  expect(workerGateInputRefusal('worktree')).toBeNull()
-  expect(workerGateInputRefusal(undefined)).toBeNull()
+test('worker gate input follows the declared git view without hiding tracked changes', () => {
+  expect(decideWorkerGateInput('committed', false)).toEqual({ kind: 'committed' })
+  expect(decideWorkerGateInput('committed', true)).toEqual({
+    kind: 'refused',
+    reason:
+      'worker gate refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_gate again',
+  })
+  expect(decideWorkerGateInput('staged', true)).toEqual({ kind: 'synthetic-index' })
 })
 
 test('both writing ACP broker command shapes retain the real writer profile', () => {
