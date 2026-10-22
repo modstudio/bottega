@@ -21,7 +21,11 @@ import {
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
-import { callerIdentity, sessionId } from '../database/db.ts'
+import { callerIdentity, db, sessionId } from '../database/db.ts'
+import {
+  type RunHostCapacityQueue,
+  runHostCapacityQueue,
+} from '../run/run-host-capacity.ts'
 import {
   displayConditions,
   formatMonitorPass,
@@ -38,9 +42,18 @@ import {
   type StoreWriteLockReport,
   storeWriteLockReport,
 } from './monitor-store-write-lock.ts'
-import type { MonitorHostPressure, MonitorNotice } from './monitor-types.ts'
+import type { MonitorHostLoad, MonitorHostPressure, MonitorNotice } from './monitor-types.ts'
 
 const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
+
+export function formatHostLoadLine(
+  hostLoad: MonitorHostLoad,
+  queue: RunHostCapacityQueue,
+): string {
+  const held = queue.heldOn.join('+') || 'none'
+  const behind = queue.waiting > 1 ? `; ${queue.waiting - 1} queued behind` : ''
+  return `host: load ${hostLoad.loadavg.toFixed(2)}/${hostLoad.ncpu} cpu; pressure ${hostLoad.pressure}; swap ${Math.round(hostLoad.swapUsed / 1024 / 1024)}/${Math.round(hostLoad.swapTotal / 1024 / 1024)} MiB; ${hostLoad.liveRuns} live run(s); ${hostLoad.waitingRequests} broker request(s) waiting, oldest ${hostLoad.oldestWaitMs}ms; ${queue.waiting} run(s) waiting for host capacity, oldest ${queue.oldestWaitMs}ms, held on ${held}${behind}`
+}
 
 export function formatHostPressureLine(report: MonitorHostPressure): string {
   if (!report.available)
@@ -250,11 +263,12 @@ async function monitorResultOrReport(
 async function runMonitor(options: Options, presentation: Presentation): Promise<void> {
   const result = await monitorResultOrReport(options, presentation)
   if (!result) return
-  if (options.json) await presentation.write(`${JSON.stringify(result)}\n`)
+  const queue = runHostCapacityQueue(db())
+  if (options.json) await presentation.write(`${JSON.stringify({ ...result, runHostCapacity: queue })}\n`)
   else {
     const failing = failingCanonEvalSlugs(),
       lines = [
-        `host: load ${result.hostLoad.loadavg.toFixed(2)}/${result.hostLoad.ncpu} cpu; pressure ${result.hostLoad.pressure}; swap ${Math.round(result.hostLoad.swapUsed / 1024 / 1024)}/${Math.round(result.hostLoad.swapTotal / 1024 / 1024)} MiB; ${result.hostLoad.liveRuns} live run(s); ${result.hostLoad.waitingRequests} broker request(s) waiting, oldest ${result.hostLoad.oldestWaitMs}ms`,
+        formatHostLoadLine(result.hostLoad, queue),
         formatHostPressureLine(result.hostPressure),
         `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
       ]

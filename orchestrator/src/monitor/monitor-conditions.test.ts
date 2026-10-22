@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -110,6 +111,46 @@ describe('idle run classification', () => {
 
   test('a quiet running row without a recorded pid retains idle behavior', () => {
     expect(idleRunCondition({ ...row, pidAlive: null }, clock, 5 * 60_000)).toMatchObject({
+      kind: 'idle',
+      subject: 'run:73',
+      ageMs: 6 * 60_000,
+    })
+  })
+
+  test('a fresh host wait is not reported', () => {
+    expect(
+      idleRunCondition(
+        {
+          ...row,
+          pidAlive: null,
+          host_wait_since: new Date(clock - 1_000).toISOString(),
+        },
+        clock,
+        5 * 60_000,
+      ),
+    ).toBeNull()
+  })
+
+  test('an over-bound host wait is stuck-host-wait', () => {
+    const since = new Date(
+      clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1,
+    ).toISOString()
+    expect(
+      idleRunCondition({ ...row, pidAlive: null, pid: null, host_wait_since: since }, clock, 5 * 60_000),
+    ).toMatchObject({
+      kind: 'stuck-host-wait',
+      subject: 'run:73',
+      since,
+      ageMs: RUN_HOST_WAIT_MAX_MS + RUN_HOST_WAIT_POLL_MS + 1,
+      detail: expect.stringContaining('coordinator pid none'),
+      action: expect.stringContaining('run stop 73 if it is dead'),
+    })
+  })
+
+  test('an admitted run with no events past the idle threshold is idle', () => {
+    expect(
+      idleRunCondition({ ...row, pidAlive: true, host_wait_since: null }, clock, 5 * 60_000),
+    ).toMatchObject({
       kind: 'idle',
       subject: 'run:73',
       ageMs: 6 * 60_000,

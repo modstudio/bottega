@@ -118,11 +118,22 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
       deadRunningProcessConditions().map((condition) => condition.subject),
     )
   }
-  if (kinds.has('idle')) {
-    record(
-      'idle',
-      idleRunConditions().map((condition) => condition.subject),
-    )
+  if (kinds.has('idle') || kinds.has('stuck-host-wait')) {
+    const detected = idleRunConditions()
+    if (kinds.has('idle')) {
+      record(
+        'idle',
+        detected.filter((condition) => condition.kind === 'idle').map((condition) => condition.subject),
+      )
+    }
+    if (kinds.has('stuck-host-wait')) {
+      record(
+        'stuck-host-wait',
+        detected
+          .filter((condition) => condition.kind === 'stuck-host-wait')
+          .map((condition) => condition.subject),
+      )
+    }
   }
   recordStalledRunSubjects(kinds, record)
   if (kinds.has('task-waiting-on-ruling')) {

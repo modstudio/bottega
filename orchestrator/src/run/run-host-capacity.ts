@@ -97,6 +97,45 @@ function capacityDecision(input: {
   })
 }
 
+export type RunHostCapacityQueue = {
+  waiting: number
+  oldestWaitMs: number
+  heldOn: HostHoldCondition[]
+}
+
+/** Read-only snapshot of runs waiting on host capacity, using the same admission facts as the wait loop. */
+export function runHostCapacityQueue(
+  database: Database,
+  now = Date.now(),
+  deps: {
+    env?: NodeJS.ProcessEnv
+    platform?: NodeJS.Platform
+    measure?: typeof measureHostLoad
+  } = {},
+): RunHostCapacityQueue {
+  const waiters = database
+    .query(
+      `SELECT record_id, host_wait_since FROM run
+        WHERE status='running' AND host_wait_since IS NOT NULL
+        ORDER BY host_wait_since ASC, record_id ASC`,
+    )
+    .all() as { record_id: string; host_wait_since: string }[]
+  if (!waiters.length) return { waiting: 0, oldestWaitMs: 0, heldOn: [] }
+  const head = waiters[0]!
+  const started = Date.parse(head.host_wait_since)
+  const oldestWaitMs = Number.isFinite(started) ? Math.max(0, now - started) : 0
+  const decision = capacityDecision({
+    database,
+    runId: head.record_id,
+    at: now,
+    started: Number.isFinite(started) ? started : now,
+    env: deps.env ?? process.env,
+    platform: deps.platform ?? process.platform,
+    measure: deps.measure ?? measureHostLoad,
+  })
+  return { waiting: waiters.length, oldestWaitMs, heldOn: decision.heldOn }
+}
+
 function waitCause(
   heldOn: HostHoldCondition[],
   outcome: RunHostCapacityWait['outcome'],

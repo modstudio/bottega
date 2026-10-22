@@ -39,6 +39,7 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'outbox-retired-parent': 'revalidated',
   'stale-run': 'append-only',
   'stalled-run': 'revalidated',
+  'stuck-host-wait': 'revalidated',
   'task-waiting-on-ruling': 'revalidated',
   'terminal-close-out-failed': 'revalidated',
   'terminal-close-out-held': 'revalidated',
