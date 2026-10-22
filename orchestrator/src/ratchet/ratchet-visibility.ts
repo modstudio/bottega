@@ -8,6 +8,7 @@ export function ratchetVisibility(input: {
   if (input.comparisonPaths.length === 0 || input.visiblePaths.length > 0) return { visible: true }
   return {
     visible: false,
-    reason: 'ratchet could not see the working-tree change against its comparison base',
+    reason:
+      'ratchet could not see the working-tree change against its comparison base; stage or commit the change the ratchet should see, then run the gate again',
   }
 }

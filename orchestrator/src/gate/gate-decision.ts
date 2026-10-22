@@ -2,8 +2,21 @@
 /** Pure eligibility, concurrency, and result presentation for a registered worker gate. */
 
 import { isAbsolute, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-type GateInput = 'staged' | 'worktree' | 'committed'
+export const GATE_INPUTS = ['staged', 'worktree', 'committed'] as const
+export type GateInput = (typeof GATE_INPUTS)[number]
+
+export function parseGateInput(
+  value: unknown,
+  projectName = 'this project',
+): GateInput | undefined {
+  if (value === undefined) return undefined
+  if ((GATE_INPUTS as readonly unknown[]).includes(value)) return value as GateInput
+  throw new Error(
+    `worker gate refused: project ${JSON.stringify(projectName)} has invalid gateInput ${JSON.stringify(value)}; correct it with ${PLATFORM_SLUG} project set`,
+  )
+}
 export type BrokerConfinement<Profile = unknown> =
   | { kind: 'host' }
   | { kind: 'srt'; profile: Profile }

@@ -37,9 +37,11 @@ import {
   decideWorkerGateInput,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
+  type GateInput,
+  parseGateInput,
   resolveGateCommand,
 } from './gate-decision.ts'
-import { prepareSyntheticGateIndex, removeSyntheticGateIndex } from './gate-index.ts'
+import { prepareSyntheticGateIndex } from './gate-index.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
@@ -96,7 +98,7 @@ function gatePlan(runId: string): {
   mainStackRequiredServices: string[] | undefined
   projectId: string
   projectName: string
-  gateInput: 'staged' | 'worktree' | 'committed' | undefined
+  gateInput: GateInput | undefined
 } {
   const row = db()
     .query(
@@ -134,12 +136,7 @@ function gatePlan(runId: string): {
     mainStackRequiredServices: settings.mainStack?.requiredServices,
     projectId: row.project_record_id,
     projectName: row.project_name,
-    gateInput:
-      settings.gateInput === 'staged' ||
-      settings.gateInput === 'worktree' ||
-      settings.gateInput === 'committed'
-        ? settings.gateInput
-        : undefined,
+    gateInput: parseGateInput(settings.gateInput, row.project_name),
   }
 }
 
@@ -515,7 +512,7 @@ async function runPreparedGate(input: {
         })
         return
       }
-      const gateGitEnvironment = prepareSyntheticGateIndex({
+      const gateIndex = prepareSyntheticGateIndex({
         worktree: input.prepared.worktree,
         baseCommit: input.prepared.baseCommit,
         indexPath: input.indexPath,
@@ -524,14 +521,14 @@ async function runPreparedGate(input: {
         await runGateProcess({
           command: input.prepared.command,
           worktree: input.prepared.worktree,
-          environment: { ...input.environment, ...gateGitEnvironment },
+          environment: { ...input.environment, ...gateIndex.environment },
           confinement: input.confinement,
           state: input.state,
           record: input.record,
           stop: input.stop,
         })
       } finally {
-        removeSyntheticGateIndex(input.indexPath)
+        gateIndex.remove()
       }
     },
   })

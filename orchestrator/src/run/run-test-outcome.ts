@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { UNIT_TEST_CHECK_CATEGORY } from '../../../shared/check-execution.ts'
 import { runEventsPath } from '../events.ts'
+import { hasFocusedTestRunner } from '../focused-test/focused-test-decision.ts'
 
 export type TestExecutionObservation = { executed: true; passed: boolean }
 export type TestOutcomeClaim = { ran?: boolean; passed?: boolean | null } | null
@@ -90,6 +91,6 @@ export function observedTestOutcome(
     focused: focusedTestObservations(runId),
     gate: gateTestObservations(database, runId),
     claim,
-    focusedRunnerRegistered: settings.focusedTests !== undefined,
+    focusedRunnerRegistered: hasFocusedTestRunner(settings.focusedTests),
   })
 }

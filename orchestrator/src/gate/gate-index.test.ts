@@ -2,9 +2,9 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { prepareSyntheticGateIndex, removeSyntheticGateIndex } from './gate-index.ts'
+import { prepareSyntheticGateIndex } from './gate-index.ts'
 
-function git(root: string, args: string[], env?: Record<string, string>): string {
+function git(root: string, args: string[], env?: NodeJS.ProcessEnv): string {
   const result = Bun.spawnSync(['git', '-C', root, ...args], {
     env: { ...process.env, ...env },
     stdout: 'pipe',
@@ -18,6 +18,7 @@ test('the synthetic index stages the whole current tree without touching the rea
   const root = mkdtempSync(join(tmpdir(), 'orch-gate-index-'))
   const indexDirectory = mkdtempSync(join(tmpdir(), 'orch-gate-index-state-'))
   const indexPath = join(indexDirectory, 'synthetic.index')
+  let removeIndex: (() => void) | undefined
   try {
     git(root, ['init', '-q'])
     git(root, ['config', 'user.email', 'fixture@example.com'])
@@ -30,16 +31,16 @@ test('the synthetic index stages the whole current tree without touching the rea
     writeFileSync(join(root, 'untracked.txt'), 'new\n')
     const realIndexBefore = git(root, ['write-tree'])
 
-    const environment = prepareSyntheticGateIndex({ worktree: root, baseCommit: base, indexPath })
+    const prepared = prepareSyntheticGateIndex({ worktree: root, baseCommit: base, indexPath })
+    removeIndex = prepared.remove
 
-    expect(git(root, ['diff', '--cached', '--name-only', base], environment).split('\n')).toEqual([
-      'tracked.txt',
-      'untracked.txt',
-    ])
+    expect(
+      git(root, ['diff', '--cached', '--name-only', base], prepared.environment).split('\n'),
+    ).toEqual(['tracked.txt', 'untracked.txt'])
     expect(git(root, ['write-tree'])).toBe(realIndexBefore)
     expect(git(root, ['rev-parse', 'HEAD'])).toBe(base)
   } finally {
-    removeSyntheticGateIndex(indexPath)
+    removeIndex?.()
     rmSync(root, { recursive: true, force: true })
     rmSync(indexDirectory, { recursive: true, force: true })
   }

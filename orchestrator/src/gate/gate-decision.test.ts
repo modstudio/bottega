@@ -18,10 +18,20 @@ import {
   GATE_COMMAND_TIMEOUT_MS,
   GATE_OUTPUT_TAIL_BYTES,
   isGateToolingPath,
+  parseGateInput,
   RUN_GATE_WAIT_MS,
   resolveGateCommand,
   shapeGateResult,
 } from './gate-decision.ts'
+
+test('gate input parsing keeps absence distinct from an invalid stored value', () => {
+  expect(parseGateInput(undefined)).toBeUndefined()
+  expect(parseGateInput('worktree')).toBe('worktree')
+  expect(() => parseGateInput('mystery', 'fixture-project')).toThrow(
+    'worker gate refused: project "fixture-project" has invalid gateInput "mystery"',
+  )
+  expect(() => parseGateInput('mystery', 'fixture-project')).toThrow('project set')
+})
 
 test('worker gate input follows the declared git view without hiding tracked changes', () => {
   expect(decideWorkerGateInput('committed', false)).toEqual({ kind: 'committed' })
