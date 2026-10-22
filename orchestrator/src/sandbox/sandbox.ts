@@ -35,6 +35,7 @@ import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
+import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -332,6 +333,11 @@ export function isWritingAcpRun(transport: 'cli' | 'acp', writesRepo: boolean): 
   return transport === 'acp' && writesRepo
 }
 
+/** The complete filesystem write grant for one untrusted ACP writer. */
+export function writingAcpWritableRoots(worktree: string, scratchDir: string): string[] {
+  return [resolve(worktree), resolve(scratchDir)]
+}
+
 /** Read-only visibility with writes limited to one writing run's owned paths. */
 export function writerProfile(input: {
   worktree: string
@@ -347,6 +353,8 @@ export function writerProfile(input: {
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)
+  const allowWrite = writingAcpWritableRoots(worktree, scratchDir)
+  const gateAddresses = mainStackGateAddresses(input.project)
   const profile = readonlyLensProfile({
     ...input,
     worktree,
@@ -360,29 +368,14 @@ export function writerProfile(input: {
       allowedDomains: [
         ...profile.network.allowedDomains.filter((entry) => !broadLoopback.has(entry)),
         input.askAddress,
+        ...gateAddresses,
       ],
       allowLocalBinding: false,
     },
     filesystem: {
       ...profile.filesystem,
-      allowWrite: [worktree, scratchDir],
+      allowWrite,
       denyWrite: [...profile.filesystem.denyWrite, join(worktree, '.git')],
-    },
-  }
-}
-
-/** Run writer-authored checks with the writer filesystem boundary and no network. */
-export function writerBrokerProfile(
-  profile: SandboxRuntimeConfig,
-  needsProjectNetwork = false,
-): SandboxRuntimeConfig {
-  return {
-    ...profile,
-    network: {
-      allowedDomains: needsProjectNetwork ? [...LOOPBACK_DOMAINS] : [],
-      deniedDomains: [],
-      allowUnixSockets: [],
-      allowLocalBinding: needsProjectNetwork,
     },
   }
 }

@@ -8,6 +8,41 @@ const BYTE_CAP = 2 * 1024
 type TraceValue = string | number | boolean | null
 type TraceFields = Record<string, TraceValue | TraceValue[]>
 
+function redactString(value: string, secrets: readonly string[]): string {
+  let redacted = value
+  for (const secret of secrets) {
+    if (secret) redacted = redacted.replaceAll(secret, '*'.repeat(secret.length))
+  }
+  return redacted
+}
+
+function redactFields(fields: TraceFields, secrets: readonly string[]): TraceFields {
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, value]) => [
+      key,
+      Array.isArray(value)
+        ? value.map((entry) => (typeof entry === 'string' ? redactString(entry, secrets) : entry))
+        : typeof value === 'string'
+          ? redactString(value, secrets)
+          : value,
+    ]),
+  )
+}
+
+function redactBytes(bytes: Buffer, secrets: readonly string[]): Buffer {
+  const redacted = Buffer.from(bytes)
+  for (const secret of secrets) {
+    if (!secret) continue
+    const needle = Buffer.from(secret)
+    let offset = redacted.indexOf(needle)
+    while (offset >= 0) {
+      redacted.fill('*'.charCodeAt(0), offset, offset + needle.length)
+      offset = redacted.indexOf(needle, offset + needle.length)
+    }
+  }
+  return redacted
+}
+
 export type AcpTrace = {
   marker(event: string, fields?: TraceFields): void
   bytes(direction: 'stdin' | 'stdout', chunk: string | Uint8Array, encoding?: BufferEncoding): void
@@ -22,6 +57,7 @@ export function createAcpTrace(
   argv: string[],
   cwd: string,
   sandboxApplied: boolean,
+  secrets: readonly string[] = [],
 ): AcpTrace | null {
   if (!directory) return null
   mkdirSync(directory, { recursive: true })
@@ -29,14 +65,14 @@ export function createAcpTrace(
   const marker = (event: string, fields: TraceFields = {}) => {
     appendFileSync(
       path,
-      `${JSON.stringify({ t_ns: process.hrtime.bigint().toString(), event, ...fields })}\n`,
+      `${JSON.stringify({ t_ns: process.hrtime.bigint().toString(), event, ...redactFields(fields, secrets) })}\n`,
     )
   }
   const trace: AcpTrace = {
     marker,
     bytes(direction, chunk, encoding) {
       const bytes = typeof chunk === 'string' ? Buffer.from(chunk, encoding) : Buffer.from(chunk)
-      const captured = bytes.subarray(0, BYTE_CAP)
+      const captured = redactBytes(bytes.subarray(0, BYTE_CAP), secrets)
       marker('bytes', {
         direction,
         length: bytes.length,

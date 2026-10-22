@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { decideBrokerLaunch } from '../gate/gate-decision.ts'
-import { type SandboxRuntimeConfig, writerBrokerProfile } from '../sandbox/sandbox.ts'
+import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
+import { focusedTestBrokerLaunchArgv } from './focused-test-broker.ts'
 
-test('a writing ACP focused-test launch retains its writer profile', () => {
+test('a writing ACP focused-test broker launches with the run writer profile unchanged', async () => {
   const writer: SandboxRuntimeConfig = {
     network: {
       allowedDomains: ['127.0.0.1:43127'],
@@ -17,11 +17,18 @@ test('a writing ACP focused-test launch retains its writer profile', () => {
       denyWrite: ['/tree/.git'],
     },
   }
-  const profile = writerBrokerProfile(writer)
-  expect(decideBrokerLaunch({ kind: 'srt', profile }, 'bun', ['test', 'one.test.ts'])).toEqual({
-    kind: 'srt',
-    profile,
-    bin: 'bun',
-    argv: ['test', 'one.test.ts'],
-  })
+  const profiles: SandboxRuntimeConfig[] = []
+  expect(
+    await focusedTestBrokerLaunchArgv(
+      { kind: 'srt', profile: writer },
+      'bun',
+      ['test', 'one.test.ts'],
+      async (profile, bin, argv) => {
+        profiles.push(profile)
+        return ['srt', bin, ...argv]
+      },
+    ),
+  ).toEqual(['srt', 'bun', 'test', 'one.test.ts'])
+  expect(profiles).toEqual([writer])
+  expect(profiles[0]!.network).toBe(writer.network)
 })

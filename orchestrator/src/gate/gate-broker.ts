@@ -333,13 +333,14 @@ function recordFinishedGate(input: {
   }, database)
 }
 
-async function gateBrokerLaunchArgv(
+export async function gateBrokerLaunchArgv(
   confinement: BrokerConfinement<SandboxRuntimeConfig>,
   command: string,
+  launchSandbox: typeof sandboxLaunchArgv = sandboxLaunchArgv,
 ): Promise<string[]> {
   const decision = decideBrokerLaunch(confinement, 'sh', ['-c', command])
   return decision.kind === 'srt'
-    ? sandboxLaunchArgv(decision.profile, decision.bin, decision.argv)
+    ? launchSandbox(decision.profile, decision.bin, decision.argv)
     : decision.argv
 }
 

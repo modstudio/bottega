@@ -43,7 +43,6 @@ import {
   sandboxRuntimeConfig,
   selectReadonlySandbox,
   withoutRegisteredOrchAskServer,
-  writerBrokerProfile,
   writerProfile,
 } from './sandbox.ts'
 
@@ -812,17 +811,6 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.network.allowedDomains).toContain('127.0.0.1:43127')
     expect(profile.network.allowedDomains).not.toContain('127.0.0.1')
     expect(profile.network.allowLocalBinding).toBe(false)
-
-    const broker = writerBrokerProfile(profile)
-    expect(broker.filesystem).toEqual(profile.filesystem)
-    expect(broker.network.allowedDomains).toEqual([])
-    expect(broker.network.allowLocalBinding).toBe(false)
-    expect(writerBrokerProfile(profile, true).network).toEqual({
-      allowedDomains: ['localhost', '127.0.0.1', '[::1]'],
-      deniedDomains: [],
-      allowUnixSockets: [],
-      allowLocalBinding: true,
-    })
   })
 
   test('a writing ACP run cannot bypass an unavailable sandbox through the host', () => {

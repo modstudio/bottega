@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { type AskLoopback, startAskHttpEndpoint } from '../ask/ask.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
+import { writingAcpWritableRoots } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CheckpointContainment } from './checkpoint.ts'
 import { provisionWriterSharedGitRoots } from './run-git-guard.ts'
@@ -21,7 +22,10 @@ export function writableRoots(
   writingAcp: boolean,
   scratchDir: string,
 ): string[] {
-  if (writingAcp) return [...(worktree ? [worktree.path] : []), scratchDir]
+  if (writingAcp) {
+    if (!worktree) throw new Error('writing ACP confinement requires a run worktree')
+    return writingAcpWritableRoots(worktree.path, scratchDir)
+  }
   return [scratchDir, ...provisionWriterSharedGitRoots(worktree, writesRepo && !writingAcp)]
 }
 
@@ -57,9 +61,9 @@ export function prepareCheckpoint(
 export function lifecycleFacts(
   writingAcp: boolean,
   checkpointContainment: CheckpointContainment,
-  brokerNeedsNetwork: boolean,
+  _legacyBrokerNeedsNetwork: boolean,
 ) {
-  return { writingAcp, checkpointContainment, brokerNeedsNetwork }
+  return { writingAcp, checkpointContainment }
 }
 
 export function prepareWritingAcpAsk(

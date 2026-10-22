@@ -479,6 +479,25 @@ function acpLaunchArgv(
   return sandboxLaunchArgv(profile, bin, agentArgv)
 }
 
+function openAcpTrace(
+  opts: TransportStartOpts,
+  child: ReturnType<typeof spawnAcpChild>,
+  bin: string,
+  agentArgv: string[],
+  profile: SandboxRuntimeConfig | null,
+): AcpTrace | null {
+  return createAcpTrace(
+    opts.env.ORCH_ACP_TRACE,
+    opts.env.ORCH_RUN_ID ?? 'unknown-run',
+    child.pid ?? 0,
+    bin,
+    agentArgv,
+    opts.cwd,
+    profile !== null,
+    [opts.env.ORCH_RUN_TOKEN ?? ''],
+  )
+}
+
 function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput['usage'] {
   const meta = isRecord(response._meta) ? response._meta : null
   const nested = meta && isRecord(meta.usage) ? meta.usage : null
@@ -576,15 +595,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
   const launch = await acpLaunchArgv(opts, profile, bin, agentArgv)
   const child = spawnAcpChild(launch, opts)
-  const trace = createAcpTrace(
-    opts.env.ORCH_ACP_TRACE,
-    opts.env.ORCH_RUN_ID ?? 'unknown-run',
-    child.pid ?? 0,
-    bin,
-    agentArgv,
-    opts.cwd,
-    profile !== null,
-  )
+  const trace = openAcpTrace(opts, child, bin, agentArgv, profile)
   installAcpChildTrace(trace, child)
   const stderrChunks: Buffer[] = []
   child.stderr?.on('data', (chunk: Buffer) => {

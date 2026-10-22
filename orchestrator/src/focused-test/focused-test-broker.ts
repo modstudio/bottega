@@ -137,14 +137,15 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
   return parseFocusedTestRequest(JSON.parse(contents))
 }
 
-async function focusedTestBrokerLaunchArgv(
+export async function focusedTestBrokerLaunchArgv(
   confinement: BrokerConfinement<SandboxRuntimeConfig>,
   command: string,
   argv: string[],
+  launchSandbox: typeof sandboxLaunchArgv = sandboxLaunchArgv,
 ): Promise<string[]> {
   const decision = decideBrokerLaunch(confinement, command, argv)
   return decision.kind === 'srt'
-    ? sandboxLaunchArgv(decision.profile, decision.bin, decision.argv)
+    ? launchSandbox(decision.profile, decision.bin, decision.argv)
     : decision.argv
 }
 

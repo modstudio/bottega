@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type SandboxRuntimeConfig, writerBrokerProfile } from '../sandbox/sandbox.ts'
+import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import {
   boundedGateOutputTail,
   brokerGateEnvironment,
@@ -37,16 +37,19 @@ test('both writing ACP broker command shapes retain the real writer profile', ()
       denyWrite: ['/tree/.git'],
     },
   }
-  const profile = writerBrokerProfile(writer)
-  expect(decideBrokerLaunch({ kind: 'srt', profile }, 'sh', ['-c', 'bun run check'])).toEqual({
+  expect(
+    decideBrokerLaunch({ kind: 'srt', profile: writer }, 'sh', ['-c', 'bun run check']),
+  ).toEqual({
     kind: 'srt',
-    profile,
+    profile: writer,
     bin: 'sh',
     argv: ['-c', 'bun run check'],
   })
-  expect(decideBrokerLaunch({ kind: 'srt', profile }, 'bun', ['test', 'one.test.ts'])).toEqual({
+  expect(
+    decideBrokerLaunch({ kind: 'srt', profile: writer }, 'bun', ['test', 'one.test.ts']),
+  ).toEqual({
     kind: 'srt',
-    profile,
+    profile: writer,
     bin: 'bun',
     argv: ['test', 'one.test.ts'],
   })

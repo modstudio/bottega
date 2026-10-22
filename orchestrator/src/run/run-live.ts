@@ -49,7 +49,7 @@ import {
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
-import { type SandboxSelection, writerBrokerProfile } from '../sandbox/sandbox.ts'
+import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -155,13 +155,12 @@ function recordConfiguredAsk(input: {
 }
 
 function brokerConfinement(
-  input: Pick<LiveInput, 'writingAcp' | 'brokerNeedsNetwork'>,
+  input: Pick<LiveInput, 'writingAcp'>,
   profile: SandboxSelection['profile'],
 ): BrokerConfinement {
   if (!input.writingAcp) return { kind: 'host' }
   if (!profile) throw new Error('writing ACP broker confinement requires an srt profile')
-  const brokerProfile = writerBrokerProfile(profile, input.brokerNeedsNetwork)
-  return { kind: 'srt', profile: brokerProfile }
+  return { kind: 'srt', profile }
 }
 
 function endpointAsk(loopback: AskLoopback | null) {
@@ -328,7 +327,6 @@ export type LiveInput = {
   askLoopback: AskLoopback | null
   writingAcp: boolean
   checkpointContainment: CheckpointContainment
-  brokerNeedsNetwork: boolean
 }
 
 export type LiveResult = {
