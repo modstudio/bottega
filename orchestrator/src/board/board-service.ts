@@ -12,8 +12,8 @@ import {
   messageCanBeReaped,
   needsAckEscalation,
   OPERATOR_READER,
-  parseAudience,
   type PresenceFact,
+  parseAudience,
   requireRealSession,
   resolveAudience,
 } from './board-policy.ts'

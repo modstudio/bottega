@@ -74,9 +74,9 @@ test('a session whose presence is stale but whose session_seen is fresh is a rea
   db()
     .query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
     .run('stale-presence', new Date(900).toISOString())
-  expect(
-    resolveAudience(parseAudience('architects'), presenceFacts(db(), now), now, 200),
-  ).toEqual(['stale-presence'])
+  expect(resolveAudience(parseAudience('architects'), presenceFacts(db(), now), now, 200)).toEqual([
+    'stale-presence',
+  ])
 })
 
 test('audiences resolve at delivery, including a late joiner', () => {

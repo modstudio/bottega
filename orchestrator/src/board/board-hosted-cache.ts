@@ -17,8 +17,8 @@ import {
   messageCanBeReaped,
   messageIsLive,
   OPERATOR_READER,
-  parseAudience,
   type PresenceFact,
+  parseAudience,
   resolveAudience,
 } from './board-policy.ts'
 import {

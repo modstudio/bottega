@@ -188,7 +188,9 @@ test('board hook commands preserve their environment and timeout', () => {
     expect(hook.command).toContain(`BOARD_PUSH_REFRESH_SECONDS=${BOARD_PUSH_REFRESH_SECONDS}`)
     expect(hook.command).toContain(`BOARD_PUSH_REMIND_SECONDS=${BOARD_PUSH_REMIND_SECONDS}`)
     expect(hook.command).toContain(`BOARD_PUSH_RETRY_SECONDS=${BOARD_PUSH_RETRY_SECONDS}`)
-    expect(hook.command).toContain(`BOARD_PRESENCE_REFRESH_SECONDS=${BOARD_PRESENCE_REFRESH_SECONDS}`)
+    expect(hook.command).toContain(
+      `BOARD_PRESENCE_REFRESH_SECONDS=${BOARD_PRESENCE_REFRESH_SECONDS}`,
+    )
     expect(hook.command).toContain(`BOARD_ACK_STOP_BLOCKS=${BOARD_ACK_STOP_BLOCKS}`)
     expect(hook.command).toContain(
       `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,

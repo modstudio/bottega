@@ -42,7 +42,10 @@ function acknowledgementPushDecision(input: {
   postedAt: string
   clock: number
 }): BoardPushDecision {
-  if (input.acknowledgementDeadline !== null && Date.parse(input.acknowledgementDeadline) <= input.clock)
+  if (
+    input.acknowledgementDeadline !== null &&
+    Date.parse(input.acknowledgementDeadline) <= input.clock
+  )
     return 'withheld'
   if (input.readerBeganAt === null) return 'withheld'
   if (input.readerBeganAt !== 'unbounded' && input.readerBeganAt > input.postedAt) return 'withheld'
