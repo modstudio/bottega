@@ -6,9 +6,9 @@ import {
   persistedRunArtifactPath,
   rewriteScratchDirPaths,
   runArtifactsDir,
-  runOwnedPaths,
   runScratchDir,
 } from './artifact-paths.ts'
+import { runOwnedPaths } from './run-owned-paths.ts'
 
 test('one owned-path layout names run scratch, harness state, home, and host hooks', () => {
   expect(runOwnedPaths('turn', 'root', '/runs')).toEqual({
