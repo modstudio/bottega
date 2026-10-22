@@ -7,6 +7,7 @@ from typing import NamedTuple
 
 class InboxQuestionDecision(NamedTuple):
     answerable_now: int
+    parked_here: int
     state_key: str
 
 
@@ -46,12 +47,13 @@ def parse_inbox_questions(items):
 
 
 def question_is_answerable_now(item):
-    """Whether this session must act on this inbox question now.
-
-    Run questions and workflow-ruling questions share the inbox `can_answer`
-    field.
-    """
-    return item.can_answer
+    """Whether this session must act on this inbox question now."""
+    if item.kind != "workflow":
+        return item.can_answer
+    # A workflow owned by this session reached the inbox because this session
+    # deliberately parked it with `workflow await`. It is not a worker waiting
+    # for an answer from the session that dispatched it.
+    return item.can_answer and item.workflow_session_id is None
 
 
 def decide_inbox_questions(items):
@@ -60,10 +62,20 @@ def decide_inbox_questions(items):
 
 def decide_parsed_inbox_questions(items):
     answerable = set()
+    parked = set()
     for item in items:
+        identity = (item.kind, item.question_id)
         if question_is_answerable_now(item):
-            answerable.add((item.kind, item.question_id))
+            answerable.add(identity)
+        elif (
+            item.kind == "workflow"
+            and item.can_answer
+            and item.workflow_session_id is not None
+        ):
+            parked.add(identity)
     state_key = ",".join(
-        f"{kind}:{question_id}:answerable" for kind, question_id in sorted(answerable)
+        f"{kind}:{question_id}:{state}"
+        for state, identities in (("answerable", answerable), ("parked", parked))
+        for kind, question_id in sorted(identities)
     )
-    return InboxQuestionDecision(len(answerable), state_key)
+    return InboxQuestionDecision(len(answerable), len(parked), state_key)

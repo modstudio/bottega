@@ -128,7 +128,22 @@ esac
         )
         self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
 
-    def test_own_workflow_question_is_blocked(self):
+    def test_own_parked_workflow_question_is_waiting(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56",
+            [{"kind": "workflow", "question_id": 8, "session_id": "own", "can_answer": True}],
+            0,
+            0,
+            0,
+            "",
+            "",
+        )
+        self.assertFalse(decision.should_exit)
+        self.assertIn("WAITING", decision.lines[0])
+        self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
+        self.assertNotIn("BLOCKED", decision.lines[0])
+
+    def test_own_parked_workflow_question_ignores_a_foreign_ruling(self):
         decision = heartbeat_decision.heartbeat_decision(
             "12:34:56",
             [
@@ -147,7 +162,9 @@ esac
             "",
         )
         self.assertFalse(decision.should_exit)
-        self.assertIn("BLOCKED - 1 question(s)", decision.lines[0])
+        self.assertIn("WAITING", decision.lines[0])
+        self.assertIn("1 parked workflow ruling(s)", decision.lines[0])
+        self.assertNotIn("BLOCKED", decision.lines[0])
 
     def test_foreign_workflow_question_is_not_blocked(self):
         decision = heartbeat_decision.heartbeat_decision(

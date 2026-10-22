@@ -105,7 +105,7 @@ def heartbeat_decision(
         state = HeartbeatState.BLOCKED
     elif stalled_count > 0:
         state = HeartbeatState.STALLED
-    elif run_count > 0 or landing_count > 0:
+    elif run_count > 0 or landing_count > 0 or inbox_decision.parked_here > 0:
         state = HeartbeatState.WAITING
     else:
         state = HeartbeatState.CLEAR
@@ -118,9 +118,14 @@ def heartbeat_decision(
     if state in (HeartbeatState.STALLED, HeartbeatState.BLOCKED_STALLED):
         lines.append(f"[{timestamp}] STALLED - {stalled_count} run(s): {stalled_detail}")
     elif state == HeartbeatState.WAITING:
+        parked = (
+            f" and {inbox_decision.parked_here} parked workflow ruling(s)"
+            if inbox_decision.parked_here
+            else ""
+        )
         detail = f": {waiting_detail}" if waiting_detail else ""
         lines.append(
-            f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s), "
+            f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s){parked}, "
             f"nothing needed from you{detail}"
         )
     return HeartbeatDecision(lines=lines, should_exit=state == HeartbeatState.CLEAR)

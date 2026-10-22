@@ -328,7 +328,7 @@ class InboxQuestions(unittest.TestCase):
             json.dumps({"cwd_registered": True, "project": "bottega", "rows": rows})
         )
 
-    def test_own_workflow_question_is_waiting_on_your_ruling(self):
+    def test_own_parked_workflow_question_is_not_waiting_on_your_ruling(self):
         self.assertEqual(
             self.counts([
                 {
@@ -340,7 +340,7 @@ class InboxQuestions(unittest.TestCase):
                     "ownership_notice": None,
                 }
             ]),
-            (1, 0, 0, 0),
+            (0, 0, 0, 0),
         )
 
     def test_foreign_workflow_questions_are_counted_by_distinct_question_id(self):
@@ -398,7 +398,7 @@ class InboxQuestions(unittest.TestCase):
                     "ownership_notice": "owned by session session-2",
                 },
             ]),
-            (2, 1, 1, 1),
+            (1, 1, 1, 1),
         )
 
     def test_malformed_run_question_invalidates_the_inbox(self):
