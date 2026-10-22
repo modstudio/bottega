@@ -561,6 +561,7 @@ export const importBoundaries: ImportBoundary[] = [
       './run/run-outbox.ts',
       './run/synthetic-lifecycle-job.ts',
       './score/score.ts',
+      './score/score-missing.ts',
       './score/score-outbox.ts',
       './verdict/verdict-rules.ts',
     ],

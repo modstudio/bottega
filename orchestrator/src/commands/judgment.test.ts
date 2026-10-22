@@ -1,13 +1,16 @@
-import { expect, test } from 'bun:test'
+import { beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
-import { DISPOSITIONS } from '../review/review-triage.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { judgeRun, scoreRun } from '../judgment.ts'
+import { DISPOSITIONS, recordReview } from '../review/review-triage.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import {
   register,
@@ -18,6 +21,11 @@ import {
 } from './judgment.ts'
 
 const trackResidue = trackedTestResidue()
+
+beforeEach(() => {
+  process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+  delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+})
 
 const flags = (values: Record<string, string>) =>
   ({
@@ -132,4 +140,88 @@ test('voiding a findings run takes the score path, and the score path refuses di
   expect(() => scorePathForJob('review-lens', given('scorer', 'finding'))).toThrow(
     '--finding applies only',
   )
+})
+
+const scoreFlags = (input: Record<string, string | string[] | boolean> = {}) => ({
+  has: (name: string) =>
+    input[name] === true || typeof input[name] === 'string' || Array.isArray(input[name]),
+  flag: (name: string) =>
+    typeof input[name] === 'string'
+      ? (input[name] as string)
+      : Array.isArray(input[name])
+        ? (input[name] as string[])[0]
+        : undefined,
+  values: (name: string) =>
+    Array.isArray(input[name])
+      ? (input[name] as string[])
+      : typeof input[name] === 'string'
+        ? [input[name] as string]
+        : [],
+})
+const silent = {
+  log: (..._values: unknown[]) => {},
+  error: (..._values: unknown[]) => {},
+  pairHint: (partner: { id: string }) => `pair ${partner.id}`,
+}
+
+test('a review-lens run scored with only delivery names every remaining required flag once', async () => {
+  const id = addRun({
+    agent: 'codex',
+    job: 'review-lens',
+    status: 'ok',
+    session: 'orch-test-session',
+  })
+  db().query("UPDATE run SET lens='correctness',model='m' WHERE record_id=?").run(id)
+  recordReview(id, reviewReply(2, 'high'), db())
+  await expect(
+    judgeRun(
+      id,
+      scoreFlags(),
+      { words: ['full'], note: null, auditReason: null, notEvidence: NOT_EVIDENCE },
+      silent,
+    ),
+  ).rejects.toThrow(
+    new RegExp(
+      `${PLATFORM_SLUG} score ${id} is missing:[\\s\\S]*` +
+        'quality <wrong\\|mixed\\|right>[\\s\\S]*' +
+        '--reproduced none \\| some \\| all[\\s\\S]*' +
+        '--coverage empty \\| partial \\| adequate[\\s\\S]*' +
+        '--limits named \\| absent[\\s\\S]*' +
+        '--overlap unique \\| shared \\| none \\| alone[\\s\\S]*' +
+        `--finding 1=[\\s\\S]*--finding 2=[\\s\\S]*` +
+        `${PLATFORM_SLUG} score ${id} full right --reproduced all --coverage adequate --limits named --overlap unique --finding 1=accepted:high --finding 2=accepted:high`,
+    ),
+  )
+  expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+})
+
+test('an implement run scored with only full names quality and fidelity together', async () => {
+  const id = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'orch-test-session',
+  })
+  await expect(
+    scoreRun(
+      id,
+      scoreFlags(),
+      {
+        words: ['full'],
+        note: null,
+        auditReason: null,
+        notEvidence: NOT_EVIDENCE,
+        dashboardAuthorized: false,
+      },
+      silent,
+    ),
+  ).rejects.toThrow(
+    new RegExp(
+      `${PLATFORM_SLUG} score ${id} is missing:[\\s\\S]*` +
+        'quality <wrong\\|mixed\\|right>[\\s\\S]*' +
+        'fidelity <drifted\\|partial\\|faithful>[\\s\\S]*' +
+        `${PLATFORM_SLUG} score ${id} full right faithful`,
+    ),
+  )
+  expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
 })
