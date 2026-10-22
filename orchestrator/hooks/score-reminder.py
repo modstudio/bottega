@@ -34,14 +34,27 @@ def bottega_bin():
     return os.path.join(root, "bin", "bottega")
 
 
-def lookup_run_branch(con, run_id):
-    row = con.execute("SELECT branch FROM run WHERE record_id=?", (run_id,)).fetchone()
+def lookup_run_row(con, run_id):
+    row = con.execute(
+        "SELECT branch, repo, worktree FROM run WHERE record_id=?",
+        (run_id,),
+    ).fetchone()
     if row:
-        return row[0]
+        return row
     if run_id.isdigit():
-        row = con.execute("SELECT branch FROM run WHERE number=?", (int(run_id),)).fetchone()
+        row = con.execute(
+            "SELECT branch, repo, worktree FROM run WHERE number=?",
+            (int(run_id),),
+        ).fetchone()
         if row:
-            return row[0]
+            return row
+    return None
+
+
+def first_existing_dir(*paths):
+    for path in paths:
+        if path and os.path.isdir(path):
+            return path
     return None
 
 
@@ -63,10 +76,9 @@ def lookup_ship_task_cursor(con, session_ids, branch):
         return None
 
 
-def lookup_open_pr(worktree, branch, timeout):
-    if not branch or timeout <= 0:
+def lookup_open_pr(cwd, branch, timeout):
+    if not branch or not cwd or timeout <= 0:
         return None
-    cwd = worktree if os.path.isdir(worktree) else None
     try:
         result = subprocess.run(
             [
@@ -112,7 +124,8 @@ def classify_cleanup_holds(con, reports, session_ids, remaining_budget):
             blocking_holds.append(report)
             continue
         run_id, path = parsed
-        branch = lookup_run_branch(con, run_id)
+        row = lookup_run_row(con, run_id)
+        branch, repo, recorded_tree = row if row else (None, None, None)
         cursor = lookup_ship_task_cursor(con, session_ids, branch)
         cursor_id, cursor_step, cursor_workflow = (
             (cursor[0], cursor[1], cursor[2]) if cursor else (None, None, None)
@@ -120,7 +133,11 @@ def classify_cleanup_holds(con, reports, session_ids, remaining_budget):
         cursor_live = cursor is not None
         open_pr = None
         if not cursor_is_in_flight(cursor_workflow, cursor_step, cursor_live):
-            open_pr = lookup_open_pr(path, branch, remaining_budget())
+            open_pr = lookup_open_pr(
+                first_existing_dir(path, recorded_tree, repo),
+                branch,
+                remaining_budget(),
+            )
         decision = decide_held_tree(
             HeldTreeFacts(
                 path=path,
