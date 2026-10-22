@@ -5,6 +5,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
+import type { LegacyMcpServerName } from './setup-mcp.ts'
 import {
   harnessMcpServers,
   legacyMcpServerName,
@@ -13,9 +14,8 @@ import {
   manualMcpInstructions,
   sameMcpRegistration,
 } from './setup-mcp.ts'
-import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
-import type { LegacyMcpServerName } from './setup-mcp.ts'
+import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 export type SetupQuestion = {
   id: string

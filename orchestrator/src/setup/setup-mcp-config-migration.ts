@@ -3,7 +3,7 @@
 
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
-import { migrateMcpConfig, type McpConfigMigration } from './setup-mcp-config.ts'
+import { type McpConfigMigration, migrateMcpConfig } from './setup-mcp-config.ts'
 export type McpConfigMigrationNotice = { path: string; error: string }
 type Candidate = { path: string; projectPath: string | null }
 
