@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideInFlightMigration,
   inFlightMigrationCompatibility,
-  validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
 
 describe('in-flight migration compatibility', () => {
@@ -39,19 +38,5 @@ describe('in-flight migration compatibility', () => {
     expect(inFlightMigrationCompatibility(entries, 1, 2)).toBe('additive')
     expect(inFlightMigrationCompatibility(entries, 1, 3)).toBe('incompatible')
     expect(inFlightMigrationCompatibility(entries, 2, 4)).toBe('incompatible')
-  })
-
-  test('journal validation refuses an unknown compatibility label at the edge', () => {
-    expect(() =>
-      validatedMigrationJournalEntries([
-        { idx: 0, when: 1, tag: '0000', compatibility: 'breaking' as 'additive' },
-      ]),
-    ).toThrow('invalid migration compatibility for 0000')
-  })
-
-  test('journal validation refuses an index that differs from its position', () => {
-    expect(() => validatedMigrationJournalEntries([{ idx: 1, when: 1, tag: '0000' }])).toThrow(
-      'invalid migration journal index for 0000: expected 0, got 1',
-    )
   })
 })

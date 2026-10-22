@@ -18,7 +18,7 @@ type CompatibleRunRow = {
   host_wait_since: string | null
 }
 
-/** Uses only run columns that exist on one side of the run UUID-key migration. */
+/** Reads only run columns available at the store's current migration version. */
 export function migrationInFlightRuns(
   database: Database,
   now = Date.now(),
@@ -28,18 +28,19 @@ export function migrationInFlightRuns(
       (column) => column.name,
     ),
   )
-  const compatibleColumn = (name: 'id' | 'number'): string =>
+  const compatibleColumn = (name: 'id' | 'number' | 'record_id' | 'host_wait_since'): string =>
     available.has(name) ? name : `NULL AS ${name}`
   const rows = database
     .query(
       `SELECT ${compatibleColumn('id')}, ${compatibleColumn('number')},
-              record_id, status, host_wait_since FROM run
+              ${compatibleColumn('record_id')}, status, ${compatibleColumn('host_wait_since')}
+       FROM run
        WHERE status IN ('running','asking')`,
     )
     .all() as CompatibleRunRow[]
   return rows
     .map((row) => ({
-      name: row.number ? `#${row.number}` : (row.record_id ?? `#${row.id}`),
+      name: row.record_id ?? (row.number ? `#${row.number}` : `#${row.id}`),
       status: row.status,
       waiting: isFreshRunHostWait(row.status, row.host_wait_since, now),
     }))

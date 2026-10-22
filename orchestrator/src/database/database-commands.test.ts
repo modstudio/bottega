@@ -106,11 +106,62 @@ test('migrate reports live and host-waiting runs before its first migration', as
 
   await migrateCommand({ log: (line) => lines.push(line) }, scenario.value)
 
-  expect(lines.slice(0, 4)).toEqual([
-    'runs in flight before migration: 3',
-    '  #99001: waiting for host capacity',
-    '  #99002: asking',
-    '  #99003: running',
+  expect(lines[0]).toBe('runs in flight before migration: 3')
+  expect(lines.slice(1, 4)).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining(': waiting for host capacity'),
+      expect.stringContaining(': asking'),
+      expect.stringContaining(': running'),
+    ]),
+  )
+})
+
+async function reportFromStoreBefore(
+  beforeMigration: string,
+  insert: (database: Database) => void,
+): Promise<string[]> {
+  const database = new Database(':memory:')
+  try {
+    applyMigrationsBefore(database, beforeMigration)
+    insert(database)
+    const lines: string[] = []
+    const scenario = actions(async () => undefined, true)
+    scenario.value.inFlightRuns = async () => migrationInFlightRuns(database)
+    await migrateCommand({ log: (line) => lines.push(line) }, scenario.value)
+    return lines
+  } finally {
+    database.close()
+  }
+}
+
+test('migrate reports a live run from a store before run record ids', async () => {
+  const lines = await reportFromStoreBefore('0029_run_record_outbox', (database) => {
+    database
+      .query(
+        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES (datetime('now'),'codex','migration-fixture','sha',0,'','running')`,
+      )
+      .run()
+  })
+
+  expect(lines.slice(0, 2)).toEqual(['runs in flight before migration: 1', '  #1: running'])
+})
+
+test('migrate reports a live run from a store before host wait tracking', async () => {
+  const recordId = '01990000-0000-7000-8000-000000001576'
+  const lines = await reportFromStoreBefore('0139_run_host_wait', (database) => {
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES (?,1576,datetime('now'),'codex','migration-fixture','sha',0,'','running')`,
+      )
+      .run(recordId)
+  })
+
+  expect(lines.slice(0, 2)).toEqual([
+    'runs in flight before migration: 1',
+    `  ${recordId}: running`,
   ])
 })
 

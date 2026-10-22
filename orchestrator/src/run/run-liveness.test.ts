@@ -367,9 +367,9 @@ describe('reapStale', () => {
     })
   })
 
-  test('a reaped coordinator records its preserved migration cause', () => {
+  test('a reaped coordinator whose agent started records its preserved migration cause', () => {
     const id = addRun({ agent: 'codex', job: 'craft', status: 'running' })
-    db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE record_id=?').run(4_194_304, id)
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4_194_304, 4_194_305, id)
     const cause =
       "store migrated from version 145 to 146 past this process's version; restart this process, and re-dispatch any run it was coordinating"
     recordCoordinatorCause(id, cause)

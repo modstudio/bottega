@@ -7,8 +7,3 @@ import { recordCoordinatorCause } from './run-coordinator-log.ts'
 export function enableRunSchemaReload(runId?: string): void {
   enableSchemaReload(() => {}, runId ? (cause) => recordCoordinatorCause(runId, cause) : undefined)
 }
-
-export function claimedOutputAfterSchemaReload(runId: string, outputPath: string): string {
-  enableRunSchemaReload(runId)
-  return outputPath
-}

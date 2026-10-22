@@ -36,6 +36,8 @@ import {
 } from '../database/migrations.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { upsertProject } from '../project/projects.ts'
+import { recordedCoordinatorCause } from '../run/run-coordinator-log.ts'
+import { enableRunSchemaReload } from '../run/run-migration-compatibility.ts'
 import {
   BRACE_EXPANSION_LIMIT,
   braceExpansionUpperBound,
@@ -457,6 +459,25 @@ describe('schema coexistence', () => {
       `store migrated from version ${prior} to ${next} past this process's version; restart this process, and re-dispatch any run it was coordinating`,
     )
     expect(held.query('SELECT 1').get()).toEqual({ '1': 1 })
+  })
+
+  test('run reload records the named refusal when an unmarked migration advances', () => {
+    const next = journalVersionAfter('0131_lens_port_uuid_key')
+    const prior = next - 1
+    const runId = newRecordId()
+    closeDatabaseForFixture()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${prior}`)
+    db()
+    enableRunSchemaReload(runId)
+    other.exec(`PRAGMA user_version = ${next}`)
+    other.close()
+
+    const reason =
+      `store migrated from version ${prior} to ${next} past this process's version; ` +
+      `restart this process, and re-dispatch any run it was coordinating`
+    expect(() => db()).toThrow(reason)
+    expect(recordedCoordinatorCause(runId)).toBe(reason)
   })
 })
 
