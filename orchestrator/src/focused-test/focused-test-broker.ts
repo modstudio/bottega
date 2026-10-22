@@ -19,7 +19,7 @@ import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
-import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   boundedFocusedTestOutputTail,
@@ -161,7 +161,7 @@ async function spawnFocusedTestChild(input: {
     input.invocation.command,
     input.invocation.argv,
   )
-  return lowerRunChildPriority(
+  return setChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
       env: {
@@ -175,6 +175,7 @@ async function spawnFocusedTestChild(input: {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
+    HOST_TOOL_NICENESS,
     (message) => input.record(`warning: ${message}\n`),
   )
 }
