@@ -40,16 +40,13 @@ import {
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 
-export {
-  DATABASE_RESOLUTION,
-  DB_PATH,
-  ROOT,
-} from './database-location.ts'
+export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
+let schemaReloadRefusal: ((reason: string) => void) | null = null
 type OpenHook = (database: Database) => void
 export type OpenHooks = {
   afterWritableOpen?: OpenHook[]
@@ -194,11 +191,16 @@ export function closeDatabaseForFixture(): void {
   connectionWritable = null
   openedUserVersion = null
   schemaReload = null
+  schemaReloadRefusal = null
 }
 
 /** Long-lived processes (bottega mcp serve) reload instead of refusing a write after a migrate. */
-export function enableSchemaReload(onReload: (from: number, to: number) => void): void {
+export function enableSchemaReload(
+  onReload: (from: number, to: number) => void,
+  onRefusal?: (reason: string) => void,
+): void {
   schemaReload = onReload
+  schemaReloadRefusal = onRefusal ?? null
 }
 
 function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
@@ -214,7 +216,10 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
       storeVersion: actual,
       migrationCompatibility: inFlightMigrationCompatibility(migrationJournal(), from, actual),
     })
-    if (decision.action === 'fail') throw new Error(decision.reason)
+    if (decision.action === 'fail') {
+      schemaReloadRefusal?.(decision.reason)
+      throw new Error(decision.reason)
+    }
     openedUserVersion = actual
     schemaReload(from, actual)
     return d
@@ -387,7 +392,10 @@ export function createDatabasePrivately<T>(
 ): { published: boolean; result: T } {
   mkdirSync(dirname(path), { recursive: true })
   const temporary = `${path}.create-${process.pid}-${randomUUID()}.tmp`
-  let database: Database | null = new Database(temporary, { readwrite: true, create: true })
+  let database: Database | null = new Database(temporary, {
+    readwrite: true,
+    create: true,
+  })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     const result = initialize(database)
@@ -412,7 +420,9 @@ export function createDatabasePrivately<T>(
 
 /** Seed the project register once from paths already recorded in run history. */
 function seedProjects(d: Database): void {
-  const { n } = d.query('SELECT COUNT(*) AS n FROM project').get() as { n: number }
+  const { n } = d.query('SELECT COUNT(*) AS n FROM project').get() as {
+    n: number
+  }
   if (n > 0) return
   const rows = d
     .query(

@@ -4,6 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
+import {
+  type MigrationInFlightRun,
+  migrationInFlightRuns,
+} from '../run/migration-in-flight-runs.ts'
 import { reconcileRun } from '../run/run-artifacts.ts'
 import { existingDatabaseMigrationRefusal } from './database-location.ts'
 import { backfillSpecSha, DB_PATH, migrateDatabase, withDatabaseForMigrationStep } from './db.ts'
@@ -19,7 +23,10 @@ export type DatabaseCommandPresentation = { log(value: string): void }
 type MigrateCommandActions = {
   assertAuthority?(): void
   inFlightRuns(): Promise<MigrationInFlightRun[]>
-  migrate(input?: { beforeMigration?: string }): { path: string; versions: string[] }
+  migrate(input?: { beforeMigration?: string }): {
+    path: string
+    versions: string[]
+  }
   migrateCutover?(): {
     path: string
     versions: string[]
@@ -34,34 +41,6 @@ const PROJECT_IDENTITY_CONTRACT_MIGRATION = '0115_project_identity_contract'
 const RUN_FILESYSTEM_IDENTITY_CUTOVER = '0121_run_filesystem_identity_cutover'
 
 type MigrateCommandOptions = { authorityRefusal?: () => string | null }
-
-export type MigrationInFlightRun = {
-  name: string
-  status: 'running' | 'asking'
-  waiting: boolean
-}
-
-/** Reads the union of live and host-waiting runs without requiring the latest run columns. */
-export function migrationInFlightRuns(database: Database): MigrationInFlightRun[] {
-  type CompatibleRunRow = {
-    id?: number
-    number?: number
-    record_id?: string
-    status: 'running' | 'asking'
-    host_wait_since?: string | null
-  }
-  return (
-    database
-      .query("SELECT * FROM run WHERE status IN ('running','asking')")
-      .all() as CompatibleRunRow[]
-  )
-    .map((row) => ({
-      name: row.number ? `#${row.number}` : (row.record_id ?? `#${row.id}`),
-      status: row.status,
-      waiting: Boolean(row.host_wait_since),
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name))
-}
 
 /** Runs only from the migration runner while its BEGIN IMMEDIATE lock is held. */
 export function applyRunFilesystemIdentityCutover(
@@ -124,9 +103,14 @@ export async function migrateCommand(
     ? { path: '', versions: [] }
     : actions.migrate({ beforeMigration: PROJECT_IDENTITY_CONTRACT_MIGRATION })
   if (!alreadyContracted) await actions.fill()
-  const beforeCutover = actions.migrate({ beforeMigration: RUN_FILESYSTEM_IDENTITY_CUTOVER })
-  const after: { path: string; versions: string[]; files?: RunFilesystemMigrationReport } =
-    actions.migrateCutover?.() ?? actions.migrate()
+  const beforeCutover = actions.migrate({
+    beforeMigration: RUN_FILESYSTEM_IDENTITY_CUTOVER,
+  })
+  const after: {
+    path: string
+    versions: string[]
+    files?: RunFilesystemMigrationReport
+  } = actions.migrateCutover?.() ?? actions.migrate()
   const files = after.files
   if (files) {
     presentation.log(

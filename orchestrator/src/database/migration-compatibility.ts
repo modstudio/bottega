@@ -7,7 +7,7 @@ export type MigrationJournalEntry = {
   idx: number
   when: number
   tag: string
-  compatibility?: InFlightMigrationCompatibility
+  compatibility?: 'additive'
 }
 
 export type InFlightMigrationDecision =
@@ -28,36 +28,35 @@ export function decideInFlightMigration(input: {
   }
   return {
     action: 'fail',
-    reason: `store migrated to version ${input.storeVersion} while this run was in flight; re-dispatch it`,
+    reason:
+      `store migrated from version ${input.processJournalVersion} to ${input.storeVersion} past this process's version; ` +
+      `restart this process, and re-dispatch any run it was coordinating`,
   }
 }
 
-export function validatedMigrationJournalEntries(
-  entries: MigrationJournalEntry[],
-): MigrationJournalEntry[] {
-  for (const entry of entries) {
+export function validatedMigrationJournalEntries(entries: unknown[]): MigrationJournalEntry[] {
+  for (const [position, value] of entries.entries()) {
+    const entry = value as Partial<MigrationJournalEntry>
+    if (entry.idx !== position) {
+      throw new Error(
+        `invalid migration journal index for ${entry.tag ?? `entry ${position}`}: expected ${position}, got ${String(entry.idx)}`,
+      )
+    }
     if (entry.compatibility !== undefined && entry.compatibility !== 'additive') {
       throw new Error(`invalid migration compatibility for ${entry.tag}`)
     }
   }
-  return entries
+  return entries as MigrationJournalEntry[]
 }
 
 /** An unmarked or unavailable entry makes the whole in-flight range incompatible. */
 export function inFlightMigrationCompatibility(
-  entries: Array<{ idx: number; when: number; tag: string }>,
+  entries: MigrationJournalEntry[],
   processJournalVersion: number,
   storeVersion: number,
 ): InFlightMigrationCompatibility {
   if (storeVersion <= processJournalVersion) return 'incompatible'
-  let changed: MigrationJournalEntry[]
-  try {
-    changed = validatedMigrationJournalEntries(
-      entries.slice(processJournalVersion, storeVersion) as MigrationJournalEntry[],
-    )
-  } catch {
-    return 'incompatible'
-  }
+  const changed = entries.slice(processJournalVersion, storeVersion)
   if (
     changed.length !== storeVersion - processJournalVersion ||
     changed.some((entry) => entry.compatibility !== 'additive')

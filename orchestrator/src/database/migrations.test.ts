@@ -9,6 +9,8 @@ import {
   expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
+  splitMigrationSource,
+  stripSqlComments,
 } from './migrations.ts'
 import { migratedTestDatabase, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
@@ -18,6 +20,48 @@ function applyOneMigration(database: import('bun:sqlite').Database, tag: string)
   const next = journal[index + 1]
   return next ? applyMigrationsBefore(database, next.tag) : applyMigrations(database)
 }
+
+function additiveStatementRefusal(statement: string): string | null {
+  const normalized = stripSqlComments(statement).trim().replace(/\s+/g, ' ')
+  if (!normalized) return null
+  if (/^CREATE\s+TABLE\b/i.test(normalized)) return null
+  if (/^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(normalized)) return null
+  if (/^ALTER\s+TABLE\b[\s\S]*\bADD(?:\s+COLUMN)?\b/i.test(normalized)) {
+    if (!/\bNOT\s+NULL\b/i.test(normalized) || /\bDEFAULT\b/i.test(normalized)) return null
+  }
+  return normalized
+}
+
+function sqlStatements(source: string): string[] {
+  const statements: string[] = []
+  let start = 0
+  let inString = false
+  for (let index = 0; index < source.length; index++) {
+    if (source[index] === "'") {
+      if (inString && source[index + 1] === "'") index++
+      else inString = !inString
+    } else if (source[index] === ';' && !inString) {
+      statements.push(source.slice(start, index))
+      start = index + 1
+    }
+  }
+  statements.push(source.slice(start))
+  return statements
+}
+
+test('every additive journal marker describes purely additive SQL', () => {
+  for (const entry of migrationJournal()) {
+    if (entry.compatibility !== 'additive') continue
+    const ddl = splitMigrationSource(
+      readFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), 'utf8'),
+    ).ddl
+    for (const statement of sqlStatements(ddl)) {
+      const offending = additiveStatementRefusal(statement)
+      if (offending)
+        throw new Error(`additive migration ${entry.tag} has non-additive SQL: ${offending}`)
+    }
+  }
+})
 
 test('embedded migrations produce the disk journal and schema hash', () => {
   const diskJournal = migrationJournal()
@@ -71,7 +115,13 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
     expect(rows.map((row) => row.name)).toEqual(['agy', 'codex', 'grok', 'qwen-local'])
     expect(rows.every((row) => row.probed_at === null && row.probe_result === null)).toBe(true)
     expect(rows.every((row) => Object.hasOwn(JSON.parse(row.caps), 'readsRepo'))).toBe(true)
-    expect(rows.map(({ name, billing, operated_by }) => ({ name, billing, operated_by }))).toEqual([
+    expect(
+      rows.map(({ name, billing, operated_by }) => ({
+        name,
+        billing,
+        operated_by,
+      })),
+    ).toEqual([
       { name: 'agy', billing: 'free', operated_by: 'vendor' },
       { name: 'codex', billing: 'subscription', operated_by: 'vendor' },
       { name: 'grok', billing: 'subscription', operated_by: 'vendor' },

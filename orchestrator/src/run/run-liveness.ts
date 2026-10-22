@@ -18,7 +18,7 @@ import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
-import { coordinatorSetupError } from './run-coordinator-log.ts'
+import { coordinatorSetupError, recordedCoordinatorCause } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
@@ -264,17 +264,25 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
   ) {
     return 'setup-death'
   }
-  return runAlive({ status: 'running', lease: leaseState, pidAlive: coordinatorPidAlive })
+  return runAlive({
+    status: 'running',
+    lease: leaseState,
+    pidAlive: coordinatorPidAlive,
+  })
     ? 'alive'
     : 'dead'
 }
 
 function coordinatorSetupDeathError(rows: RunningRow[], id: string): string {
-  return coordinatorSetupError(rows.find((candidate) => candidate.record_id === id)!.record_id)
+  const recordId = rows.find((candidate) => candidate.record_id === id)!.record_id
+  return recordedCoordinatorCause(recordId) ?? coordinatorSetupError(recordId)
 }
 
 function setupDeathObservation(rows: RunningRow[], recordId: string): ObservedDeadRun {
-  return { record_id: recordId, reason: coordinatorSetupDeathError(rows, recordId) }
+  return {
+    record_id: recordId,
+    reason: coordinatorSetupDeathError(rows, recordId),
+  }
 }
 
 function finalizeReapedRuns(

@@ -25,7 +25,8 @@ describe('in-flight migration compatibility', () => {
       }),
     ).toEqual({
       action: 'fail',
-      reason: 'store migrated to version 147 while this run was in flight; re-dispatch it',
+      reason:
+        "store migrated from version 145 to 147 past this process's version; restart this process, and re-dispatch any run it was coordinating",
     })
   })
 
@@ -46,5 +47,11 @@ describe('in-flight migration compatibility', () => {
         { idx: 0, when: 1, tag: '0000', compatibility: 'breaking' as 'additive' },
       ]),
     ).toThrow('invalid migration compatibility for 0000')
+  })
+
+  test('journal validation refuses an index that differs from its position', () => {
+    expect(() =>
+      validatedMigrationJournalEntries([{ idx: 1, when: 1, tag: '0000' }]),
+    ).toThrow('invalid migration journal index for 0000: expected 0, got 1')
   })
 })
