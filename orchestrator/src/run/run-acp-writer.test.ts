@@ -20,7 +20,7 @@ test('writing ACP pure decisions expose only worker-owned writes and host checkp
   expect(runRoots(tree, true, true, '/run/scratch', '/runs/sandbox-root')).toEqual([
     tree.path,
     '/run/scratch',
-    '/runs/sandbox-root',
+    '/runs/sandbox-root/harness',
   ])
   expect(checkpointContainment('/repo/.git/worktrees/run', true, '/run/private')).toEqual({
     gitDir: '/repo/.git/worktrees/run',

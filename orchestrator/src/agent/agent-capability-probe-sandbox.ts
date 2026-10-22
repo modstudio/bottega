@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
 import type { Project } from '../project/projects.ts'
+import { runOwnedPaths } from '../run-owned-paths.ts'
 import {
   resetSandbox,
   type SandboxRuntimeConfig,
@@ -16,6 +17,8 @@ export type CapabilityProbeConfinement = {
   cwd: string
   scratchDir: string
   runtimeDir: string
+  harnessStateDir: string
+  workerHomeDir: string
   profile: SandboxRuntimeConfig
 }
 type CapabilityProbeAskListener = { address: string; close(): void | Promise<void> }
@@ -79,20 +82,22 @@ export async function withCapabilityProbeSandbox<T>(
   operation: (confinement: CapabilityProbeConfinement) => Promise<T>,
 ): Promise<T> {
   const worktree = join(input.scratch, 'writing-worktree')
-  const scratchDir = join(input.scratch, 'writing-run', 'scratch')
-  const runtimeDir = join(input.scratch, 'sandbox-registration-probe')
+  const paths = runOwnedPaths('registration-probe', 'registration-probe', input.scratch)
+  const { scratchDir, runtimeDir, harnessStateDir, workerHomeDir, checkpointHooksDir } = paths
   let askListener: CapabilityProbeAskListener | null = null
   try {
     ports.createWorktree(worktree)
     mkdirSync(scratchDir, { recursive: true })
-    mkdirSync(runtimeDir, { recursive: true })
+    mkdirSync(harnessStateDir, { recursive: true })
+    mkdirSync(workerHomeDir, { recursive: true })
+    mkdirSync(checkpointHooksDir, { recursive: true })
     askListener = ports.openAskListener()
     const selection = selectReadonlySandbox({
       agent: input.agent.name,
       readsRepo: true,
       writesRepo: true,
       worktree,
-      runsDir: runtimeDir,
+      runtimeDir,
       scratchDir,
       project: probeProject(worktree),
       path: input.path,
@@ -106,6 +111,8 @@ export async function withCapabilityProbeSandbox<T>(
       cwd: worktree,
       scratchDir,
       runtimeDir,
+      harnessStateDir,
+      workerHomeDir,
       profile: selection.profile,
     })
   } finally {

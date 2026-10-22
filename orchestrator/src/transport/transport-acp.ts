@@ -7,6 +7,7 @@ import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../..
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { runHarnessStateDir } from '../run-owned-paths.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { establishAcpSession } from './acp-session.ts'
@@ -482,7 +483,7 @@ export function acpEnvironment(opts: TransportStartOpts): Record<string, string>
     )
   }
   if (opts.agent.harness === 'goose') {
-    const stateDir = opts.srt?.runtimeDir ?? dirname(opts.outPath)
+    const stateDir = opts.srt ? runHarnessStateDir(opts.srt.runtimeDir) : dirname(opts.outPath)
     env.XDG_STATE_HOME = stateDir
     env.XDG_DATA_HOME = stateDir
     env.XDG_CONFIG_HOME = stateDir

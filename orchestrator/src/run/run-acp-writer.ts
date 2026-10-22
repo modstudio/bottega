@@ -1,9 +1,9 @@
 // concern: writing-ACP git contract, writable roots, checkpoint containment, and host ask endpoint
 
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { type AskLoopback, startAskHttpEndpoint } from '../ask/ask.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
+import { runCheckpointHooksDir } from '../run-owned-paths.ts'
 import { writingAcpWritableRoots } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CheckpointContainment } from './checkpoint.ts'
@@ -39,7 +39,7 @@ export function checkpointContainment(
   return writingAcp && gitDir
     ? {
         gitDir,
-        hooksDir: join(runDir, 'checkpoint-hooks'),
+        hooksDir: runCheckpointHooksDir(runDir),
         disableHooks: true,
       }
     : { gitDir: null, hooksDir: null, disableHooks: false }

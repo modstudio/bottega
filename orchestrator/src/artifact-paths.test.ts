@@ -6,8 +6,19 @@ import {
   persistedRunArtifactPath,
   rewriteScratchDirPaths,
   runArtifactsDir,
+  runOwnedPaths,
   runScratchDir,
 } from './artifact-paths.ts'
+
+test('one owned-path layout names run scratch, harness state, home, and host hooks', () => {
+  expect(runOwnedPaths('turn', 'root', '/runs')).toEqual({
+    scratchDir: '/runs/turn/scratch',
+    runtimeDir: '/runs/sandbox-root',
+    harnessStateDir: '/runs/sandbox-root/harness',
+    workerHomeDir: '/runs/sandbox-root/home',
+    checkpointHooksDir: '/runs/sandbox-root/checkpoint-hooks',
+  })
+})
 
 test('path containment accepts only the directory itself and slash descendants', () => {
   expect(isPathAtOrBelow('/runs/42/artifacts', '/runs/42/artifacts')).toBe(true)

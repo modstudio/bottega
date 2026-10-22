@@ -427,9 +427,16 @@ test('harness aliases prepare the Codex and Grok chain homes', () => {
       environment,
       'srt',
     )
+    const goose = prepareSandboxHome(
+      workerHarnessName({ name: 'registered-goose', harness: 'goose' }),
+      join(fixture, 'goose-run'),
+      environment,
+      'srt',
+    )
     expect(codex.CODEX_HOME).toBe(join(fixture, 'codex-run', 'codex'))
     expect(grok.GROK_HOME).toBe(join(fixture, 'grok-run'))
     expect(grok.HOME).toBe(join(fixture, 'grok-run', 'home'))
+    expect(goose.HOME).toBe(join(fixture, 'goose-run', 'home'))
   } finally {
     rmSync(fixture, { recursive: true, force: true })
   }
@@ -594,7 +601,7 @@ describe('readonly-lens sandbox profile', () => {
     })
     const profile = readonlyLensProfile({
       worktree: '/runs/tree',
-      runsDir: '/runs/evidence',
+      runtimeDir: '/runs/evidence',
       project,
       agent: 'grok',
       baseUrl: 'https://openrouter.ai/api/v1',
@@ -650,7 +657,7 @@ describe('readonly-lens sandbox profile', () => {
 
     const input = {
       worktree: '/runs/tree',
-      runsDir: '/runs/evidence',
+      runtimeDir: '/runs/evidence',
       agent: 'grok',
       project: fixtureProject(),
       path: '/usr/bin',
@@ -666,7 +673,7 @@ describe('readonly-lens sandbox profile', () => {
     const claudeConfig = join(homedir(), '.claude.json')
     const profile = readonlyLensProfile({
       worktree: '/runs/tree',
-      runsDir: '/runs/evidence',
+      runtimeDir: '/runs/evidence',
       agent: 'grok',
       project: fixtureProject({ secretPaths: [claudeConfig] }),
       path: '/usr/bin',
@@ -679,7 +686,7 @@ describe('readonly-lens sandbox profile', () => {
   test('a denied parent removes an allowed linked dependency child', () => {
     const profile = readonlyLensProfile({
       worktree: '/runs/tree',
-      runsDir: '/runs/evidence',
+      runtimeDir: '/runs/evidence',
       agent: 'grok',
       project: fixtureProject({ secretPaths: ['/projects/fixture/dependencies'] }),
       path: '/usr/bin',
@@ -694,7 +701,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(() =>
       readonlyLensProfile({
         worktree: '/runs/tree',
-        runsDir: '/runs/evidence',
+        runtimeDir: '/runs/evidence',
         agent: 'grok',
         project: fixtureProject({ secretPaths: ['/runs/tree/private/token'] }),
         path: '/usr/bin',
@@ -707,7 +714,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(() =>
       readonlyLensProfile({
         worktree: '/runs/tree',
-        runsDir: '/runs/evidence',
+        runtimeDir: '/runs/evidence',
         agent: 'grok',
         project: fixtureProject({ secretPaths: ['/runs/evidence/private/token'] }),
         path: '/usr/bin',
@@ -719,7 +726,7 @@ describe('readonly-lens sandbox profile', () => {
   test('maps every profile rule to the sandbox-runtime config', () => {
     const profile = readonlyLensProfile({
       worktree: '/runs/tree',
-      runsDir: '/runs/evidence',
+      runtimeDir: '/runs/evidence',
       agent: 'grok',
       project: fixtureProject(),
       path: '/usr/bin',
@@ -745,7 +752,7 @@ describe('readonly-lens sandbox profile', () => {
       readsRepo: true,
       writesRepo: false,
       worktree: '/runs/tree',
-      runsDir: '/runs/evidence',
+      runtimeDir: '/runs/evidence',
       project: fixtureProject(),
       path: '/usr/bin',
       baseUrl: 'https://openrouter.ai/api/v1',
@@ -765,7 +772,7 @@ describe('readonly-lens sandbox profile', () => {
       readsRepo: true,
       writesRepo: false,
       worktree: '/runs/tree',
-      runsDir: '/runs/evidence',
+      runtimeDir: '/runs/evidence',
       project: fixtureProject(),
       path: '/usr/bin',
       environment: {
@@ -789,10 +796,10 @@ describe('readonly-lens sandbox profile', () => {
     expect(selected.profile?.network.allowUnixSockets).toEqual([])
   })
 
-  test('a writer grants only its tree, scratch, and runtime state, and denies its git pointer', () => {
+  test('a writer grants only its tree, scratch, and harness state, and denies host state', () => {
     const profile = writerProfile({
       worktree: '/projects/main/.claude/worktrees/run-42',
-      runsDir: '/state/runs/sandbox-root',
+      runtimeDir: '/state/runs/sandbox-root',
       scratchDir: '/state/runs/run-42/scratch',
       askAddress: '127.0.0.1:43127',
       project: fixtureProject(),
@@ -804,8 +811,10 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWrite).toEqual([
       '/projects/main/.claude/worktrees/run-42',
       '/state/runs/run-42/scratch',
-      '/state/runs/sandbox-root',
+      '/state/runs/sandbox-root/harness',
     ])
+    expect(profile.filesystem.allowWrite).not.toContain('/state/runs/sandbox-root')
+    expect(profile.filesystem.allowWrite).not.toContain('/state/runs/sandbox-root/checkpoint-hooks')
     expect(profile.filesystem.allowWrite).not.toContain('/state/runs')
     expect(profile.filesystem.allowWrite).not.toContain('/state/runs/run-41')
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main')
@@ -825,7 +834,7 @@ describe('readonly-lens sandbox profile', () => {
         writingAcp: true,
         override: 'host',
         worktree: '/runs/tree',
-        runsDir: '/runs/evidence',
+        runtimeDir: '/runs/evidence',
         scratchDir: '/runs/evidence/scratch',
         askAddress: '127.0.0.1:43127',
         project: fixtureProject(),
@@ -841,7 +850,7 @@ describe('readonly-lens sandbox profile', () => {
         writesRepo: false,
         mcp: true,
         worktree: '/runs/tree',
-        runsDir: '/runs/evidence',
+        runtimeDir: '/runs/evidence',
         project: fixtureProject(),
       }),
     ).toEqual({
@@ -859,7 +868,7 @@ describe('readonly-lens sandbox profile', () => {
         writesRepo: false,
         ...mcp,
         worktree: '/runs/tree',
-        runsDir: '/runs/evidence',
+        runtimeDir: '/runs/evidence',
         project: fixtureProject(),
         path: '/usr/bin',
       }),
@@ -877,7 +886,7 @@ describe('readonly-lens sandbox profile', () => {
       readsRepo: false,
       writesRepo: false,
       worktree: '/runs/isolates/42',
-      runsDir: '/runs/sandbox-42',
+      runtimeDir: '/runs/sandbox-42',
       scratchDir: '/runs/42/scratch',
       project: fixtureProject(),
       path: '/usr/bin',
@@ -896,7 +905,7 @@ describe('readonly-lens sandbox profile', () => {
       agent: 'grok',
       writesRepo: false,
       worktree: '/runs/isolates/42',
-      runsDir: '/runs/sandbox-42',
+      runtimeDir: '/runs/sandbox-42',
       project: fixtureProject(),
       override: 'host',
       mcp: true,
@@ -924,7 +933,7 @@ describe('readonly-lens sandbox profile', () => {
         readsRepo: false,
         writesRepo: false,
         worktree: null,
-        runsDir: '/runs/sandbox-42',
+        runtimeDir: '/runs/sandbox-42',
         project: fixtureProject(),
       }),
     ).toThrow('no-repo sandbox refusal: the sandbox root is missing')
@@ -934,7 +943,7 @@ describe('readonly-lens sandbox profile', () => {
         readsRepo: false,
         writesRepo: false,
         worktree: '/runs/isolates/42',
-        runsDir: '/runs/sandbox-42',
+        runtimeDir: '/runs/sandbox-42',
         project: null,
       }).sandbox,
     ).toBe('srt')
@@ -950,7 +959,7 @@ describe('readonly-lens sandbox profile', () => {
           ...input,
           readsRepo: true,
           worktree: '/runs/tree',
-          runsDir: '/runs/evidence',
+          runtimeDir: '/runs/evidence',
           project: fixtureProject(),
         }),
       ).toEqual({ sandbox: 'host', profile: null, reason: null })
@@ -967,7 +976,7 @@ describe('readonly-lens sandbox profile', () => {
           agent: 'grok',
           readsRepo: true,
           writesRepo: false,
-          runsDir: '/runs/evidence',
+          runtimeDir: '/runs/evidence',
           ...input,
         }),
       ).toEqual({ sandbox: 'host', profile: null, reason: null })

@@ -71,9 +71,10 @@ test('a CLI agent does not run the resume check', async () => {
   expect(called).toBe(false)
 })
 
-test('the ACP resume probe uses one real-run-shaped runtime directory across both turns', async () => {
+test('the ACP resume probe runs both turns inside one real-run-shaped sandbox lifecycle', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agent-resume-probe-test-'))
   try {
+    let sandboxEntries = 0
     const runtimeDirs: string[] = []
     const result = await probeAgentResumesInSandbox(
       {
@@ -84,6 +85,7 @@ test('the ACP resume probe uses one real-run-shaped runtime directory across bot
       },
       {
         createWorktree(path) {
+          sandboxEntries++
           mkdirSync(path)
         },
         removeWorktree() {},
@@ -93,7 +95,8 @@ test('the ACP resume probe uses one real-run-shaped runtime directory across bot
       'resume-token',
       async (turn, confinement) => {
         runtimeDirs.push(confinement.runtimeDir)
-        expect(confinement.scratchDir).toBe(join(root, 'writing-run', 'scratch'))
+        expect(confinement.scratchDir).toBe(join(root, 'registration-probe', 'scratch'))
+        expect(confinement.workerHomeDir).toBe(join(confinement.runtimeDir, 'home'))
         return turn.session
           ? {
               status: 'ok',
@@ -111,6 +114,7 @@ test('the ACP resume probe uses one real-run-shaped runtime directory across bot
     )
 
     expect(result.ok).toBe(true)
+    expect(sandboxEntries).toBe(1)
     expect(runtimeDirs).toEqual([
       join(root, 'sandbox-registration-probe'),
       join(root, 'sandbox-registration-probe'),

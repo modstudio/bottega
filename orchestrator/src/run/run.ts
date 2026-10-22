@@ -630,8 +630,8 @@ export async function run(opts: {
     mcpSetupHeader,
     mcpTrustGranted,
     grokMcpEnvironment,
-    sandboxRunDir: runtimeDir,
-    sandboxRunDirExisted,
+    runtimeDir,
+    runtimeDirExisted,
     cwd,
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
@@ -713,7 +713,7 @@ export async function run(opts: {
         readsRepo: repoJob,
         writesRepo: writesJob,
         worktree: worktree?.path ?? isolatedCwd,
-        runsDir: runtimeDir,
+        runtimeDir,
         scratchDir,
         project: runProject,
         override: process.env.ORCH_SANDBOX,
@@ -744,7 +744,7 @@ export async function run(opts: {
         sandboxEnvironment,
       } = home)
     } catch (e) {
-      removeNewSandboxHomeAfterFailure(runtimeDir, sandboxRunDirExisted)
+      removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
       try {
         recordRunStartupFailure(claim.id, e, started)
@@ -1009,7 +1009,7 @@ export async function run(opts: {
       mcpTrustGranted,
       writableRoots,
       gitConfigEnvironment,
-      sandboxRunDir: runtimeDir,
+      runtimeDir,
       recipeEnvironment,
       launchEnvironment: mcpEnvironment,
       scratchDir,

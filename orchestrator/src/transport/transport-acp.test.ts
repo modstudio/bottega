@@ -90,7 +90,7 @@ test.each([
   })
 })
 
-test('goose points every XDG state directory at the confined runtime directory', () => {
+test('goose points every XDG state directory at the confined harness state', () => {
   const environment = acpEnvironment({
     agent: { ...AGENTS.codex!, harness: 'goose' },
     cwd: '/tmp/worktree',
@@ -110,9 +110,9 @@ test('goose points every XDG state directory at the confined runtime directory',
     XDG_DATA_HOME: environment.XDG_DATA_HOME,
     XDG_CONFIG_HOME: environment.XDG_CONFIG_HOME,
   }).toEqual({
-    XDG_STATE_HOME: '/tmp/runs/sandbox-root',
-    XDG_DATA_HOME: '/tmp/runs/sandbox-root',
-    XDG_CONFIG_HOME: '/tmp/runs/sandbox-root',
+    XDG_STATE_HOME: '/tmp/runs/sandbox-root/harness',
+    XDG_DATA_HOME: '/tmp/runs/sandbox-root/harness',
+    XDG_CONFIG_HOME: '/tmp/runs/sandbox-root/harness',
   })
 })
 
