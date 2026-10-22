@@ -10,12 +10,7 @@ import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
-import {
-  type ConfinementEvent,
-  callerCheckoutWatch,
-  type FreezeFailure,
-  freezeCheckouts,
-} from '../confinement/confinement.ts'
+import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   type CanonSource,
   NO_REPO_PREAMBLE,
@@ -37,8 +32,6 @@ import {
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
-import { checkoutWatchSet } from '../git/checkout-identity.ts'
-import { gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
@@ -59,10 +52,7 @@ import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
-import {
-  checkoutRemovalAttribution,
-  recordSandboxDirectoryClaim,
-} from '../resources/resource-claims.ts'
+import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
@@ -110,9 +100,9 @@ import {
 } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
-import { callerWatch } from './run-caller-watch.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
@@ -213,18 +203,6 @@ function assertConfiguredGitGuard(
 function completeStartup(): true {
   bindSignals()
   return true
-}
-
-function freezeCallerCheckouts(
-  watched: import('../git/checkout-identity.ts').CheckoutToWatch[],
-  callerCheckout: string | null,
-  roots: string[] | null,
-) {
-  return freezeCheckouts(watched, { callerWatch: callerCheckoutWatch(callerCheckout, roots) })
-}
-
-function callerRemovalAtRunEnd(callerCheckout: string | null, started: number) {
-  return checkoutRemovalAttribution(db(), callerCheckout ?? '', new Date(started).toISOString())
 }
 
 export async function run(opts: {
@@ -941,23 +919,19 @@ export async function run(opts: {
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
-  const roots = acpWriter.confinementRoots(
-    sandboxSelection.profile,
-    name,
+  const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
+    srtProfile: sandboxSelection.profile,
+    agent: name,
     cwd,
     writableRoots,
-    process.env.TMPDIR,
-    codexSandbox.sandbox,
-  )
-  const callerCheckout = runProject
-    ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
-    : null
-  const candidates = checkoutWatchSet(
-    callerWatch(callerCheckout, isolatedCwd, runProject),
-    worktree?.path,
+    tmpDir: process.env.TMPDIR,
+    codexSandbox: codexSandbox.sandbox,
+    callerCwd,
+    isolatedCwd,
+    runProject,
+    activeWorktree: worktree?.path,
     runProjectName,
-  )
-  const beforeFreeze = freezeCallerCheckouts(candidates.watched, callerCheckout, roots)
+  })
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   const skipLines = confinementSkipLines(skipped)
   for (const line of skipLines) console.error(line)
@@ -1074,7 +1048,7 @@ export async function run(opts: {
         watchedCheckouts,
         confinementFailures,
         frozenBefore,
-        callerRemoval: callerRemovalAtRunEnd(callerCheckout, started),
+        callerRemoval: runConfinement.callerRemovalAtRunEnd(db(), callerCheckout, started),
         removeIsolatedCwd,
         changes,
         provisionedMcpConfig,

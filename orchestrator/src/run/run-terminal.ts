@@ -11,8 +11,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
-  type CheckoutToWatch,
   type CheckoutRemovalAttribution,
+  type CheckoutToWatch,
   type ConfinementEvent,
   classifyCheckoutChanges,
   type FreezeFailure,
@@ -466,6 +466,17 @@ function insertBlockerRows(runId: string, rows: BlockerRow[], at: string): void 
   for (const r of rows) q.run(newRecordId(), runId, at, r.what, r.why, r.impact, r.source, r.kind)
 }
 
+function terminalConfinement(input: TerminalInput) {
+  const after = terminalAfterCheckouts(
+    input.watchedCheckouts,
+    input.frozenBefore,
+    input.claim.id,
+    input.callerRemoval,
+  )
+  input.confinementFailures.push(...after.failures)
+  return { after, before: input.frozenBefore, failures: input.confinementFailures }
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -478,10 +489,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     worktree,
     failureKind,
     opts,
-    watchedCheckouts,
-    confinementFailures,
-    frozenBefore,
-    callerRemoval,
     removeIsolatedCwd,
     changes,
     provisionedMcpConfig,
@@ -532,18 +539,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const startedAt = db()
     .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
     .get(claim.id) as { started_at: string; head_commit: string | null } | null
-  const frozenAfter = terminalAfterCheckouts(
-    watchedCheckouts,
-    frozenBefore,
-    claim.id,
-    callerRemoval,
-  )
-  confinementFailures.push(...frozenAfter.failures)
-  // The directory contains no input and is useful only while the vendor is
-  // alive. Remove it after readSession has had the chance to derive any
-  // vendor-owned transcript location from cwd.
+  const confinement = terminalConfinement(input)
+  // Remove the input-free directory after readSession can derive any transcript location from cwd.
   removeIsolatedCwd?.()
-
   /**
    * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.
    *
@@ -576,16 +574,16 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     measurementScope: provisionedMcpConfig,
   })
 
-  if (frozenBefore.length && !confinementFailures.length) {
+  if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
-      before: frozenBefore,
-      after: frozenAfter.snapshots,
-      removedCaller: frozenAfter.removedCaller,
+      before: confinement.before,
+      after: confinement.after.snapshots,
+      removedCaller: confinement.after.removedCaller,
       ownDiffPaths: changes?.files ?? [],
       chainRoot: startedAt?.head_commit ?? null,
       database: db(),
       startedAt: startedAt?.started_at ?? new Date(started).toISOString(),
-      removal: frozenAfter.removal,
+      removal: confinement.after.removal,
     })
   }
 
@@ -713,8 +711,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const confinementPrecedence = applyConfinementPrecedence({
     outcome: { status, failureKind, error },
     preConfinement,
-    confinementUnverifiedError: confinementFailures.length
-      ? confinementUnverifiedError(confinementFailures)
+    confinementUnverifiedError: confinement.failures.length
+      ? confinementUnverifiedError(confinement.failures)
       : null,
     overlappingError:
       confinementEvent?.classification === 'overlapping'
@@ -936,7 +934,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     const event = confinementEvent
     tryWriteContention({
       resourceKind: 'main_checkout',
-      resourceKey: event?.checkout ?? confinementFailures[0]?.path ?? callerCwd,
+      resourceKey: event?.checkout ?? confinement.failures[0]?.path ?? callerCwd,
       eventKind: 'invalidation',
       cause: error,
       runId: claim.id,

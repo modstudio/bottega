@@ -67,7 +67,7 @@ test('run carries its before-snapshots into terminal confinement classification'
       acceptedQuestions: [],
       status: 'failed',
       error: 'fixture terminal outcome',
-      failureKind: 'agent',
+      failureKind: 'other',
       artifactsPersisted: true,
       preConfinement: null,
       vendorTerminatedStream: null,
