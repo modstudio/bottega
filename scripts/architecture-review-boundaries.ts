@@ -55,6 +55,7 @@ export const reviewModuleSpecs = [
   {
     file: 'orchestrator/src/review/review-scope-proposal-command.ts',
     allowed: [
+      '../../../shared/file-kind.ts',
       'bun:sqlite',
       'node:fs',
       '../database/database-location.ts',
@@ -110,6 +111,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-scope-proposal-command-boundary',
     file: 'orchestrator/src/review/review-scope-proposal-command.ts',
     allowed: [
+      '../../../shared/file-kind.ts',
       'bun:sqlite',
       'node:fs',
       '../database/database-location.ts',

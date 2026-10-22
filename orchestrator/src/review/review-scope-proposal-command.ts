@@ -3,6 +3,7 @@
 
 import { Database } from 'bun:sqlite'
 import { readdirSync } from 'node:fs'
+import { categorizeFile } from '../../../shared/file-kind.ts'
 import { DB_PATH } from '../database/database-location.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
@@ -47,6 +48,15 @@ function pathSet(value: string | null): string[] | null {
   }
 }
 
+function productPaths(paths: readonly string[] | null): string[] | null {
+  return (
+    paths?.filter((path) => {
+      const kind = categorizeFile(path)
+      return kind !== 'test' && kind !== 'docs' && kind !== 'generated'
+    }) ?? null
+  )
+}
+
 function topLevelDirectories(path: string): string[] {
   try {
     return readdirSync(path, { withFileTypes: true })
@@ -78,10 +88,12 @@ function reviewScopeProposal(database: Database): ReturnType<typeof proposeRevie
   const byProject = new Map<string, Map<string, ReviewScopeRun>>()
   for (const row of evidence) {
     const runs = byProject.get(row.project) ?? new Map<string, ReviewScopeRun>()
+    const paths = pathSet(row.path_set)
     const run = runs.get(row.lens_id) ?? {
       id: row.lens_id,
       lens: row.lens,
-      paths: pathSet(row.path_set),
+      paths,
+      productPaths: productPaths(paths),
       complete: row.completed_at !== null,
       findings: [],
     }

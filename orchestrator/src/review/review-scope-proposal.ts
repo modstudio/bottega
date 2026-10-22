@@ -14,6 +14,7 @@ export type ReviewScopeRun = {
   id: string
   lens: string
   paths: string[] | null
+  productPaths: string[] | null
   complete: boolean
   findings: YieldFinding[]
 }
@@ -27,7 +28,7 @@ export type ReviewScopeProject = {
 
 type ReviewScopeLensProposal = {
   lens: string
-  disposition: 'propose' | 'keep-unscoped'
+  disposition: 'always-relevant' | 'propose' | 'keep-unscoped'
   globs: string[]
   acceptedMediumPlus: { kept: number; total: number; share: number | null }
   runs: { skipped: number; total: number; share: number | null; unrecorded: number }
@@ -44,18 +45,19 @@ export type ReviewScopeProposalReport = {
 }
 
 const attribution =
-  "A finding counts as kept when its review's recorded paths match the proposed globs, not by the finding's own location."
+  "A finding counts as kept when its review's recorded product paths match the proposed globs, not by the finding's own location."
 
 function candidates(project: ReviewScopeProject): string[] {
+  const productPaths = project.runs.flatMap((run) => run.productPaths ?? [])
   const globs = [
     ...project.topLevelDirectories.map((directory) => `${directory}/**`),
     ...project.review.lenses.flatMap((entry) => entry.paths ?? []),
   ]
-  return [...new Set(globs)].sort()
+  return [...new Set(globs)].filter((glob) => declaredGlobsMatch(productPaths, [glob])).sort()
 }
 
 function matches(run: ReviewScopeRun, globs: readonly string[]): boolean {
-  return run.paths !== null && declaredGlobsMatch(run.paths, globs)
+  return run.productPaths !== null && declaredGlobsMatch(run.productPaths, globs)
 }
 
 function hitCount(runs: readonly ReviewScopeRun[], globs: readonly string[]): number {
@@ -142,9 +144,27 @@ function proposalForLens(
     (total, run) => total + run.findings.filter((finding) => isMediumPlusHit(finding)).length,
     0,
   )
+  const recordedRuns = runs.filter((run) => run.paths !== null)
+  if (lens === 'correctness') {
+    return {
+      lens,
+      disposition: 'always-relevant',
+      globs: [],
+      acceptedMediumPlus: {
+        kept: totalHits,
+        total: totalHits,
+        share: totalHits ? 1 : null,
+      },
+      runs: {
+        skipped: 0,
+        total: recordedRuns.length,
+        share: recordedRuns.length ? 0 : null,
+        unrecorded: runs.length - recordedRuns.length,
+      },
+    }
+  }
   const globs = totalHits ? proposedGlobs(evidenceRuns, available, totalHits) : []
   const kept = globs.length ? hitCount(evidenceRuns, globs) : 0
-  const recordedRuns = runs.filter((run) => run.paths !== null)
   const skipped = globs.length ? recordedRuns.length - matchingRunCount(recordedRuns, globs) : 0
   const keptShare = totalHits ? kept / totalHits : null
   const useful = keptShare !== null && keptShare >= MINIMUM_KEPT_SHARE && skipped > 0
@@ -171,7 +191,12 @@ export function renderReviewScopeProposalHuman(report: ReviewScopeProposalReport
     lines.push('', project.project)
     if (!project.lenses.length) lines.push('  (no unscoped lenses)')
     for (const lens of project.lenses) {
-      const scope = lens.disposition === 'propose' ? lens.globs.join(', ') : 'keep unscoped'
+      const scope =
+        lens.disposition === 'always-relevant'
+          ? 'always relevant (not scoped)'
+          : lens.disposition === 'propose'
+            ? lens.globs.join(', ')
+            : 'keep unscoped'
       lines.push(
         `  ${lens.lens}: ${scope}; keeps ${lens.acceptedMediumPlus.kept}/${lens.acceptedMediumPlus.total} ` +
           `medium+ accepted findings (${percent(lens.acceptedMediumPlus.share)}); skips ` +
