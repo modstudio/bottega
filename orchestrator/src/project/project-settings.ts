@@ -18,7 +18,7 @@ import type {
 } from './project-injection.ts'
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
-export type GateInput = 'staged' | 'worktree' | 'committed'
+type GateInput = 'staged' | 'worktree' | 'committed'
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
