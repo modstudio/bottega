@@ -12,7 +12,7 @@ import { projectAt, projects } from '../project/projects.ts'
 // A one-day collection over 34 current transcripts took 33m 7s on the
 // production state. Two hours leaves substantial room for the normal 30-day
 // pass while still turning an overnight stall into a loud, bounded failure.
-export const METRIC_COLLECTION_DEADLINE_MS = 2 * 60 * 60 * 1000
+const METRIC_COLLECTION_DEADLINE_MS = 2 * 60 * 60 * 1000
 
 export type MetricTranscriptSource = {
   file: string
@@ -28,13 +28,15 @@ type MetricCollectionOptions<Activity> = {
 
 class MetricCollectionDeadline {
   readonly signal: AbortSignal
+  readonly milliseconds: number
   private readonly controller = new AbortController()
   private readonly expiresAt: number
   private readonly timer: ReturnType<typeof setTimeout>
   private currentFile: string | null = null
   private lastFile: string | null = null
 
-  constructor(readonly milliseconds: number) {
+  constructor(milliseconds: number) {
+    this.milliseconds = milliseconds
     this.signal = this.controller.signal
     this.expiresAt = Date.now() + milliseconds
     this.timer = setTimeout(() => this.abort(), milliseconds)

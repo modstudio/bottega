@@ -123,7 +123,7 @@ describe('metric collection transcript lifecycle', () => {
         exitedDueToTimeout: true,
         resourceUsage: {},
       }
-    }) as typeof Bun.spawnSync)
+    }) as unknown as typeof Bun.spawnSync)
 
     await expect(collect(30, { deadlineMs: 10, transcripts: [transcript] })).rejects.toThrow(
       `metric collection deadline of 10ms exceeded after reading transcript ${file}`,
