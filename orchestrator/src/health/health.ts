@@ -133,7 +133,6 @@ export function harnessHealth(
   const dayKeys = Array.from({ length: days }, (_, offset) =>
     new Date(firstDay.getTime() + offset * 86_400_000).toISOString().slice(0, 10),
   )
-
   const classes = HEALTH_CLASSES.map((kind): HealthClassRow => {
     const matching = runs.filter((row) => classOf(row) === kind)
     const totalTimeMs = matching.reduce((sum, row) => sum + Math.max(0, row.latency_ms ?? 0), 0)
@@ -178,7 +177,6 @@ export function harnessHealth(
     }
   })
 
-  const falseVerdicts = falseVerdictRows(database, runs)
   const landingRefusals = (
     database
       .query(
@@ -296,7 +294,7 @@ export function harnessHealth(
     from,
     throttles: throttleBuckets({ database, from }),
     classes: classesWithAttribution,
-    falseVerdicts,
+    falseVerdicts: falseVerdictRows(database, runs),
     landingRefusals,
     mcpProbeFailures,
     mcpUnprobed,

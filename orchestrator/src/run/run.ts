@@ -214,7 +214,6 @@ export async function run(opts: {
   agent?: string
   /** True only when the caller selected the agent rather than routing it. */
   agentExplicit?: boolean
-  /** Pre-detach routing result; retained without turning it into a caller pin. */
   routedAgent?: { agent: string; reason: string }
   schemaPath?: string
   mcp?: McpRequest
@@ -319,9 +318,8 @@ export async function run(opts: {
   const repoJob = Boolean(requestedJob.needs.readsRepo)
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
-  const callerCwd = opts.cwd ?? process.cwd()
-  const runProjectName = opts.repo ?? repoOf(callerCwd)
-  const registeredWorktreeTool = toolFor(callerCwd)
+  const callerCwd = opts.cwd ?? process.cwd(),
+    runProjectName = opts.repo ?? repoOf(callerCwd)
   const seed = preflight(
     opts.job,
     callerCwd,
@@ -429,14 +427,13 @@ export async function run(opts: {
    * does know are stated on its behalf.
    */
   const infra = runInfrastructurePrompt({
-    tool: registeredWorktreeTool,
+    tool: toolFor(callerCwd),
     callerCwd,
     readsRepo: repoJob,
     writesRepo: writesJob,
     readOnlyBase,
   })
-  const originalPrompt = opts.prompt
-  const resolvedDialect = resolveReplyDialect(requestedJob)
+  const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
   const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
@@ -543,7 +540,6 @@ export async function run(opts: {
   const a = requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const { agent: name, reason } = launch
-  const harnessName = workerHarnessName(a)
   const codexSandbox = decideCodexSandbox()
   let boundMs: number
   try {
@@ -720,7 +716,7 @@ export async function run(opts: {
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
-    ...workerHome.codexPrivateTempEnvironment(harnessName, repoJob, scratchDir),
+    ...workerHome.codexPrivateTempEnvironment(workerHarnessName(a), repoJob, scratchDir),
   }
   if (gitConfigEnvironment) {
     assertWorkerGitGuardOutsideWritableRoots(gitConfigEnvironment, writableRoots)

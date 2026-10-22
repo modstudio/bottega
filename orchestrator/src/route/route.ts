@@ -19,9 +19,7 @@ import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
 import { ROUTING_REFUSAL_MARKER } from './routing-refusal.ts'
 
-export { ROUTING_REFUSAL_MARKER } from './routing-refusal.ts'
-
-export class RoutingRefusalError extends RefusalError {
+class RoutingRefusalError extends RefusalError {
   constructor(message: string) {
     super(message)
     this.name = ROUTING_REFUSAL_MARKER
@@ -79,12 +77,13 @@ export type Candidate = {
   preferred: boolean
   maxConcurrent: number | null
   runningRunIds: string[]
+  routedReason?: string
 }
 
 const RUNNING_RUNS_SQL =
   "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
 
-export function runningRunIdsForAgent(agent: string): string[] {
+function runningRunIdsForAgent(agent: string): string[] {
   return (db().query(RUNNING_RUNS_SQL).all(agent) as { record_id: string }[]).map(
     (row) => row.record_id,
   )
@@ -914,6 +913,15 @@ function capacityRefusal(
   )
 }
 
+function routeSurfaceSelection(
+  candidates: readonly Candidate[],
+  routed: { agent: string; reason: string } | undefined,
+): Candidate[] {
+  if (!routed) return [...candidates]
+  const candidate = candidates.find((item) => item.agent === routed.agent)
+  return candidate ? [{ ...candidate, routedReason: routed.reason }] : [...candidates]
+}
+
 /**
  * The incumbent ranking policy, independent of where its evidence came from.
  *
@@ -1080,11 +1088,7 @@ export function pick(
     )
   }
   eligible = constrained
-  const routedCandidate = avoid.routed
-    ? eligible.find((candidate) => candidate.agent === avoid.routed?.agent)
-    : undefined
-  if (routedCandidate && avoid.routed)
-    return { agent: routedCandidate.agent, reason: avoid.routed.reason }
+  eligible = routeSurfaceSelection(eligible, avoid.routed)
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,
@@ -1143,7 +1147,8 @@ export function pick(
   if (selected.mode === 'only') {
     return {
       agent: chosen.agent,
-      reason: withConstraint(`${policy}; only eligible agent in ${evidenceCell}`),
+      reason:
+        chosen.routedReason ?? withConstraint(`${policy}; only eligible agent in ${evidenceCell}`),
     }
   }
   const pct =

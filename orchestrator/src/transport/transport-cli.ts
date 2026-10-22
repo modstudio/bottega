@@ -147,14 +147,16 @@ function agentArgv(opts: TransportStartOpts): string[] {
     : opts.agent.argv(argv)
 }
 
+const stdinPrompt = (opts: TransportStartOpts) =>
+  opts.agent.stdin && !opts.resume ? opts.prompt : undefined
+
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const argv = agentArgv(opts)
   const bin = opts.bin ?? opts.agent.bin
   const launchArgv = opts.srt
     ? await sandboxLaunchArgv(opts.srt.profile, bin, argv)
     : [bin, ...argv]
-  const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
-  const p = spawnCliChild(launchArgv, opts, stdinPrompt)
+  const p = spawnCliChild(launchArgv, opts, stdinPrompt(opts))
 
   let cancelled = false
   let collected: Promise<TransportResult> | null = null

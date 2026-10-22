@@ -224,7 +224,7 @@ export type LiveOperationalStatus = {
   } | null
 }
 
-export function formatLiveOperationalStatus(
+function formatLiveOperationalStatus(
   status: Omit<LiveOperationalStatus, 'live_status_detail'>,
 ): string | null {
   if (status.waiting_for_capacity)

@@ -424,6 +424,14 @@ function recordedRunStatus(runId: string): string | null {
   )
 }
 
+function teeLiveTransport(
+  input: LiveInput,
+  handle: TransportHandle,
+  observe: (event: StreamEvent) => void,
+) {
+  return teeTransportEvents(handle.events(), input.claim.id, input.throttleConcurrency, observe)
+}
+
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -806,12 +814,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
     const throttle = firstThrottleObserver(() => void t.cancel(handle))
-    const teeing = teeTransportEvents(
-      handle.events(),
-      claim.id,
-      input.throttleConcurrency,
-      throttle.observe,
-    )
+    const teeing = teeLiveTransport(input, handle, throttle.observe)
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,

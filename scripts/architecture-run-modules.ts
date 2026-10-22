@@ -16,6 +16,10 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/route/routing-refusal.ts',
+    allowed: [],
+  },
+  {
     file: 'orchestrator/src/run/run-bootstrap.ts',
     allowed: ['./run-alive.ts'],
   },

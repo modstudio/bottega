@@ -107,6 +107,11 @@ export function chainTransport(rootId: string): TransportName | null {
   return row?.transport === 'cli' || row?.transport === 'acp' ? row.transport : null
 }
 
+const detachRouting = (spec: DetachSpec) => ({
+  agentExplicit: spec.agentExplicit,
+  routedAgent: spec.routedAgent,
+})
+
 export function detachedRunOptions(
   jobName: string,
   prompt: string,
@@ -115,7 +120,6 @@ export function detachedRunOptions(
 ) {
   const {
     agent,
-    routedAgent,
     mcp,
     model,
     probe,
@@ -145,8 +149,7 @@ export function detachedRunOptions(
   } = spec
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent,
-    agentExplicit: spec.agentExplicit,
-    routedAgent,
+    ...detachRouting(spec),
     schema: spec.schema,
     mcp,
     model,
@@ -180,8 +183,7 @@ export function detachedRunOptions(
     prompt,
     reserveId,
     agent,
-    agentExplicit: consumed.agentExplicit as boolean | undefined,
-    routedAgent,
+    ...detachRouting(consumed as DetachSpec),
     schemaPath: spec.schema,
     mcp,
     model,
