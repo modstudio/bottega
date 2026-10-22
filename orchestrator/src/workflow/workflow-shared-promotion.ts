@@ -19,47 +19,6 @@ export type WorkflowPromotionEvent = {
 
 export const SHARED_WORKFLOW_PROMOTION_REASON = 'shared promotion:'
 
-type SharedWorkflowPromotionInput<Row extends WorkflowPromotionVersion> = {
-  slug: string
-  targetVersion: number
-  sourceSpace: string
-  seedAuthor: string
-  targetSpaces: readonly (string | null)[]
-  versions: readonly Row[]
-  events: readonly WorkflowPromotionEvent[]
-  draftVersion(spaceId: string | null, version: Row): Promise<number>
-  promoteSpace(spaceId: string | null): Promise<void>
-}
-
-export async function promoteSharedWorkflowSpaces<Row extends WorkflowPromotionVersion>(
-  input: SharedWorkflowPromotionInput<Row>,
-): Promise<WorkflowPromotionSpaceDecision> {
-  const decision = sharedWorkflowPromotionSpaces(
-    input.versions,
-    input.targetVersion,
-    input.seedAuthor,
-    input.events,
-    input.targetSpaces,
-  )
-  const source = input.versions.filter(
-    (row) => row.spaceId === input.sourceSpace && row.n <= input.targetVersion,
-  )
-  for (const spaceId of decision.changed) {
-    const present = new Set(
-      input.versions.filter((row) => row.spaceId === spaceId).map((row) => row.n),
-    )
-    for (const version of source.filter((row) => !present.has(row.n))) {
-      const written = await input.draftVersion(spaceId, version)
-      if (written !== version.n)
-        throw new Error(
-          `refusing shared workflow promotion for "${input.slug}": space ${spaceId ?? 'local'} wrote version ${written} while copying version ${version.n}; refresh and retry`,
-        )
-    }
-    await input.promoteSpace(spaceId)
-  }
-  return decision
-}
-
 export type WorkflowPromotionSpaceDecision = {
   changed: (string | null)[]
   overrides: string[]

@@ -31,7 +31,10 @@ import {
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
-import * as sharedPromotionStore from './workflow-shared-promotion-store.ts'
+import {
+  promoteHostedWorkflowSpace,
+  promoteSharedWorkflow,
+} from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowModeSteps,
@@ -540,16 +543,17 @@ export function promoteWorkflow(
       if (!reasonValue?.trim()) throw new Error('reason is required')
       const spaceId = await hostedSpace(d)
       const target = selectedWorkflow(slug, n, d, spaceId)
+      const promotionPorts = {
+        preflight: (definition: WorkflowDefinition, targetSpace: string) =>
+          workflowPromotionPreflight(slug, definition, d, targetSpace),
+        author: () => writeAuthor(authorValue),
+      }
       if (target.author !== BUILT_IN_WORKFLOW_AUTHOR) {
-        await sharedPromotionStore.promoteHostedWorkflowSpace(slug, n, reasonValue, spaceId, d, {
-          preflight: (definition, targetSpace) =>
-            workflowPromotionPreflight(slug, definition, d, targetSpace),
-          author: () => writeAuthor(authorValue),
-        })
+        await promoteHostedWorkflowSpace(slug, n, reasonValue, spaceId, d, promotionPorts)
         return workflowPromotionReport(n, { changed: [spaceId], overrides: [], pinned: [] })
       }
 
-      const decision = await sharedPromotionStore.promoteSharedWorkflow(
+      const decision = await promoteSharedWorkflow(
         slug,
         n,
         reasonValue,
@@ -557,6 +561,7 @@ export function promoteWorkflow(
         BUILT_IN_WORKFLOW_AUTHOR,
         d,
         {
+          ...promotionPorts,
           draftLocal: (version) =>
             writeDraftLocal(
               slug,
@@ -566,12 +571,7 @@ export function promoteWorkflow(
               'import',
               d,
             ).n,
-          promoteLocal: (reason) => {
-            promoteWorkflowLocal(slug, n, reason, authorValue, d)
-          },
-          preflight: (definition, targetSpace) =>
-            workflowPromotionPreflight(slug, definition, d, targetSpace),
-          author: () => writeAuthor(authorValue),
+          promoteLocal: (reason) => promoteWorkflowLocal(slug, n, reason, authorValue, d),
         },
       )
       return workflowPromotionReport(n, decision)

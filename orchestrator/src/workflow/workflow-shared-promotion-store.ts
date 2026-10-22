@@ -14,8 +14,8 @@ import {
 } from '../record/record-workflow-contract.ts'
 import type { WorkflowDefinition } from './workflow-definition.ts'
 import {
-  promoteSharedWorkflowSpaces,
   SHARED_WORKFLOW_PROMOTION_REASON,
+  sharedWorkflowPromotionSpaces,
   type WorkflowPromotionEvent,
   type WorkflowPromotionSpaceDecision,
   type WorkflowPromotionVersion,
@@ -38,6 +38,47 @@ type HostedSpaceSnapshot = {
   rows: Map<RecordWorkflowTable, HostedRow[]>
   versions: StoredPromotionVersion[]
   events: WorkflowPromotionEvent[]
+}
+
+type SharedWorkflowPromotionInput<Row extends WorkflowPromotionVersion> = {
+  slug: string
+  targetVersion: number
+  sourceSpace: string
+  seedAuthor: string
+  targetSpaces: readonly (string | null)[]
+  versions: readonly Row[]
+  events: readonly WorkflowPromotionEvent[]
+  draftVersion(spaceId: string | null, version: Row): Promise<number>
+  promoteSpace(spaceId: string | null): Promise<void>
+}
+
+async function promoteSharedWorkflowSpaces<Row extends WorkflowPromotionVersion>(
+  input: SharedWorkflowPromotionInput<Row>,
+): Promise<WorkflowPromotionSpaceDecision> {
+  const decision = sharedWorkflowPromotionSpaces(
+    input.versions,
+    input.targetVersion,
+    input.seedAuthor,
+    input.events,
+    input.targetSpaces,
+  )
+  const source = input.versions.filter(
+    (row) => row.spaceId === input.sourceSpace && row.n <= input.targetVersion,
+  )
+  for (const spaceId of decision.changed) {
+    const present = new Set(
+      input.versions.filter((row) => row.spaceId === spaceId).map((row) => row.n),
+    )
+    for (const version of source.filter((row) => !present.has(row.n))) {
+      const written = await input.draftVersion(spaceId, version)
+      if (written !== version.n)
+        throw new Error(
+          `refusing shared workflow promotion for "${input.slug}": space ${spaceId ?? 'local'} wrote version ${written} while copying version ${version.n}; refresh and retry`,
+        )
+    }
+    await input.promoteSpace(spaceId)
+  }
+  return decision
 }
 
 const storedVersions = (slug: string, d: Database): StoredPromotionVersion[] =>
@@ -140,7 +181,8 @@ export async function promoteHostedWorkflowSpace(
     .query<{ definition: string }, [string, string, number]>(
       `SELECT v.definition FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.n=?`,
     )
-    .get(slug, spaceId, n)!
+    .get(slug, spaceId, n)
+  if (!target) throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${spaceId}`)
   ports.preflight(JSON.parse(target.definition) as WorkflowDefinition, spaceId)
   const current = d
     .query<{ n: number }, [string, string]>(
