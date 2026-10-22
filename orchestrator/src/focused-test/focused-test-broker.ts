@@ -284,6 +284,7 @@ function startFocusedTest(input: {
       timedOut: state.timedOut,
       elapsedMs,
       logName,
+      logPath,
     })
   })().finally(unregister)
   return { completion, cancel: stop }

@@ -4,6 +4,10 @@ import { nowIso, tryWriteContention } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { formatGateWait, type GateWaitState } from '../gate-load.ts'
 
+export function recordGateLogEvent(runId: string, timestamp: string, logPath: string): void {
+  appendRunEvent(runId, { ts: timestamp, type: 'gate_log', logPath })
+}
+
 /** One presentation and contention record for every broker host-capacity wait. */
 export function hostSlotWaitCallbacks(input: {
   runId: string

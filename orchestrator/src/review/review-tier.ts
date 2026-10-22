@@ -121,14 +121,19 @@ function fileRisk(
   return { tier, reason: `unlisted product path ${path} (${applied})`, basis: null }
 }
 
+const compileRiskPaths = (
+  riskMap: ReviewRiskMap | undefined,
+): CompiledReviewRiskPath[] | undefined =>
+  riskMap?.paths.map((entry) => ({
+    ...entry,
+    pattern: new RegExp(entry.pattern),
+  }))
+
 function classifyRisk(
   files: readonly ReviewTierFile[],
   riskMap: ReviewRiskMap | undefined,
 ): { risk: 0 | 1 | 2 | 3; reason: string; basis: string | null } {
-  const riskPaths = riskMap?.paths.map((entry) => ({
-    ...entry,
-    pattern: new RegExp(entry.pattern),
-  }))
+  const riskPaths = compileRiskPaths(riskMap)
   let risk: 0 | 1 | 2 | 3 = 0
   let reason =
     files.length === 0
@@ -169,6 +174,17 @@ export function classifyReviewTier(input: {
     reasons[1] = `size ${size}: ${productLines} product lines across ${productFiles.length} product files (more than 8 raises size one tier)`
   }
   return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons, riskBasis }
+}
+
+/** Paths whose declared surface risk independently requires tier-three review. */
+export function tierThreeRiskPaths(
+  files: readonly ReviewTierFile[],
+  riskMap: ReviewRiskMap | undefined,
+): string[] {
+  const riskPaths = compileRiskPaths(riskMap)
+  return files
+    .filter((file) => fileRisk(file.path, riskPaths, riskMap?.unlisted)?.tier === 3)
+    .map(({ path }) => path)
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {

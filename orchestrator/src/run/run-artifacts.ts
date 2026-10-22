@@ -5,6 +5,7 @@
  * contracts, transports, reviews, or worktree isolation.
  */
 import {
+  appendFileSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -29,10 +30,13 @@ import {
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
+import { type ArtifactPathEvent, recordRunWarning, runEventsPath } from '../events.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
+  type ArtifactPathSource,
+  type ArtifactReaderReply,
   decideRunArtifactRetention,
   namedRunArtifactPaths,
   type RunArtifactListingEntry,
@@ -54,6 +58,80 @@ import { type RunUsageColumns, runUsageColumnValues } from './run-usage-columns.
  */
 export { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 export { namedRunArtifactPaths }
+
+function artifactPathEvent(event: unknown): event is ArtifactPathEvent {
+  if (!event || typeof event !== 'object') return false
+  const candidate = event as { type?: unknown; logPath?: unknown }
+  return (
+    (candidate.type === 'focused_test' || candidate.type === 'gate_log') &&
+    typeof candidate.logPath === 'string' &&
+    candidate.logPath.trim().length > 0
+  )
+}
+
+function parseArtifactEvents(contents: string): {
+  events: ArtifactPathEvent[]
+  malformedLines: number
+} {
+  const events: unknown[] = []
+  let malformedLines = 0
+  for (const line of contents.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      events.push(JSON.parse(line))
+    } catch {
+      malformedLines += 1
+    }
+  }
+  return { events: events.filter(artifactPathEvent), malformedLines }
+}
+
+function recordMalformedEventWarning(
+  id: string,
+  path: string,
+  contents: string,
+  malformedLines: number,
+): void {
+  if (!contents.endsWith('\n')) {
+    try {
+      appendFileSync(path, '\n')
+    } catch {
+      /* recordRunWarning below remains best-effort and terminalisation stays total */
+    }
+  }
+  const noun = malformedLines === 1 ? 'line was' : 'lines were'
+  const pronoun = malformedLines === 1 ? 'it' : 'them'
+  recordRunWarning(
+    id,
+    `${malformedLines} malformed event log ${noun} skipped; named artifact logs from ${pronoun} may not have been retained`,
+  )
+}
+
+function terminalArtifactEvents(id: string): ArtifactPathEvent[] {
+  const path = runEventsPath(id)
+  if (!existsSync(path)) return []
+
+  let contents: string
+  try {
+    contents = readFileSync(path, 'utf8')
+  } catch {
+    recordRunWarning(id, 'named artifact logs may not have been retained: event log unavailable')
+    return []
+  }
+
+  const parsed = parseArtifactEvents(contents)
+  if (parsed.malformedLines > 0)
+    recordMalformedEventWarning(id, path, contents, parsed.malformedLines)
+  return parsed.events
+}
+
+/** Total terminal read of the structured event fields that name retained artifacts. */
+export function terminalRunArtifactPaths(
+  id: string,
+  reply: ArtifactReaderReply | null,
+): ArtifactPathSource[] {
+  return namedRunArtifactPaths(reply, terminalArtifactEvents(id))
+}
 
 /**
  * Where prompt and output files live. By default they sit beside the resolved
@@ -404,7 +482,7 @@ type ArtifactCollectionInput = {
   id: string
   scratch: string
   artifacts: string
-  namedPaths: string[]
+  namedPaths: ArtifactPathSource[]
   worktreePath: string | null
   diff?: string
 }
@@ -424,24 +502,24 @@ function collectNamedCandidates(
 
 function collectNamedCandidate(
   input: ArtifactCollectionInput,
-  named: string,
+  named: ArtifactPathSource,
   listed: Map<string, ListedArtifact>,
   namedLogical: string[],
 ): string | null {
-  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named, input.worktreePath)
+  const artifact = namedArtifactPlan(input.id, RUNS_DIR, named.path, input.worktreePath)
   const logical = relative(input.artifacts, artifact.destination) || '.'
   if (namedLogical.includes(logical)) return null
   namedLogical.push(logical)
   if (logical === '.') return null
   try {
-    const source = isPathAtOrBelow(named, input.scratch) ? named : artifact.source
+    const source = isPathAtOrBelow(named.path, input.scratch) ? named.path : artifact.source
     if (!existsSync(source)) throw new Error('source does not exist')
     if (!artifact.alreadyInPlace && !isPathAtOrBelow(source, input.scratch)) {
       listArtifacts(source, logical, listed)
     }
     return null
   } catch (error) {
-    return `could not copy named file ${artifact.source} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
+    return `could not copy named file ${named.path} from ${named.field} to ${artifact.destination}: ${error instanceof Error ? error.message : String(error)}`
   }
 }
 
@@ -505,7 +583,7 @@ function publishRetainedArtifacts(input: {
 
 export function persistRunArtifacts(
   id: string,
-  namedPaths: string[] | null,
+  namedPaths: ArtifactPathSource[] | null,
   worktree: { path: string } | null,
   changes: { diff?: string } | null,
 ): void {
