@@ -29,6 +29,7 @@ export const gateModules: GateModule[] = [
     '../resources/main-stack.ts',
     '../run/run-artifacts.ts',
     '../run/run-child-priority.ts',
+    '../sandbox/sandbox.ts',
     './gate-check-executions.ts',
     './gate-decision.ts',
     './host-slot-wait.ts',

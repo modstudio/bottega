@@ -35,6 +35,7 @@ import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
+import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -304,9 +305,7 @@ export function readonlyLensProfile(input: {
           ...new Set([
             ...vendorDomains,
             ...endpointHost(input.baseUrl),
-            'localhost',
-            '127.0.0.1',
-            '[::1]',
+            ...LOOPBACK_DOMAINS,
             ...(input.mcpAllowlist ?? []),
           ]),
         ],
@@ -326,6 +325,59 @@ export function readonlyLensProfile(input: {
     },
     environment,
   )
+}
+
+const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '[::1]'] as const
+
+export function isWritingAcpRun(transport: 'cli' | 'acp', writesRepo: boolean): boolean {
+  return transport === 'acp' && writesRepo
+}
+
+/** The complete filesystem write grant for one untrusted ACP writer. */
+export function writingAcpWritableRoots(worktree: string, scratchDir: string): string[] {
+  return [resolve(worktree), resolve(scratchDir)]
+}
+
+/** Read-only visibility with writes limited to one writing run's owned paths. */
+export function writerProfile(input: {
+  worktree: string
+  runsDir: string
+  scratchDir: string
+  askAddress: string
+  project: Project
+  agent: string
+  path?: string
+  baseUrl?: string | null
+  nodeModuleLinks?: string[]
+  environment?: ConfigEnvironment
+}): SandboxRuntimeConfig {
+  const worktree = resolve(input.worktree)
+  const scratchDir = resolve(input.scratchDir)
+  const allowWrite = writingAcpWritableRoots(worktree, scratchDir)
+  const gateAddresses = mainStackGateAddresses(input.project)
+  const profile = readonlyLensProfile({
+    ...input,
+    worktree,
+    scratchDir,
+  })
+  const broadLoopback = new Set<string>(LOOPBACK_DOMAINS)
+  return {
+    ...profile,
+    network: {
+      ...profile.network,
+      allowedDomains: [
+        ...profile.network.allowedDomains.filter((entry) => !broadLoopback.has(entry)),
+        input.askAddress,
+        ...gateAddresses,
+      ],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      ...profile.filesystem,
+      allowWrite,
+      denyWrite: [...profile.filesystem.denyWrite, join(worktree, '.git')],
+    },
+  }
 }
 
 /** Write-deny everywhere except a throwaway directory; no network; no secret paths. */
@@ -389,6 +441,15 @@ export function isReadonlySandboxCandidate(input: {
   return input.agent !== 'codex' && !input.writesRepo
 }
 
+function isSandboxCandidate(input: {
+  agent: string
+  readsRepo: boolean
+  writesRepo: boolean
+  writingAcp?: boolean
+}): boolean {
+  return isReadonlySandboxCandidate(input) || (input.writesRepo && input.writingAcp === true)
+}
+
 export type ReadonlySandboxKind = {
   sandbox: RunSandbox
   reason: string | null
@@ -404,9 +465,19 @@ export function selectReadonlySandboxKind(input: {
   projectPresent: boolean
   override?: string
   mcp?: boolean
+  writingAcp?: boolean
 }): ReadonlySandboxKind {
-  if (!isReadonlySandboxCandidate(input)) {
+  if (!isSandboxCandidate(input)) {
     return { sandbox: 'host', reason: null, missingRoot: false }
+  }
+  if (input.writingAcp) {
+    if (!input.worktreePresent || !input.projectPresent) {
+      return { sandbox: 'srt', reason: null, missingRoot: true }
+    }
+    if (input.override === 'host') {
+      throw new Error('writing ACP sandbox refusal: ORCH_SANDBOX=host cannot bypass srt')
+    }
+    return { sandbox: 'srt', reason: null, missingRoot: false }
   }
   // Preserve the repository seam exactly: an unregistered or not-yet-cut
   // readonly checkout was already a host run. No-repo jobs have no such
@@ -450,6 +521,8 @@ export function selectReadonlySandbox(input: {
   mcp?: boolean
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
+  writingAcp?: boolean
+  askAddress?: string
 }): SandboxSelection {
   const kind = selectReadonlySandboxKind({
     agent: input.agent,
@@ -459,10 +532,11 @@ export function selectReadonlySandbox(input: {
     projectPresent: Boolean(input.project),
     override: input.override,
     mcp: input.mcp,
+    writingAcp: input.writingAcp,
   })
   if (kind.missingRoot) {
     throw new Error(
-      `${input.readsRepo ? 'readonly repository' : 'no-repo'} sandbox refusal: ` +
+      `${input.writesRepo ? 'writing ACP' : input.readsRepo ? 'readonly repository' : 'no-repo'} sandbox refusal: ` +
         'the sandbox root is missing',
     )
   }
@@ -470,6 +544,28 @@ export function selectReadonlySandbox(input: {
     return { sandbox: kind.sandbox, profile: null, reason: kind.reason }
   }
   const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
+  if (input.writingAcp) {
+    if (!input.scratchDir || !input.project || !input.askAddress) {
+      throw new Error(
+        'writing ACP sandbox refusal: worktree, scratch, project, and ask endpoint are required',
+      )
+    }
+    return {
+      sandbox: 'srt',
+      reason: isolation.enabled ? isolation.reason : kind.reason,
+      profile: writerProfile({
+        worktree: input.worktree!,
+        runsDir: input.runsDir,
+        scratchDir: input.scratchDir,
+        askAddress: input.askAddress,
+        project: input.project,
+        agent: input.agent,
+        path: input.path,
+        baseUrl: input.baseUrl,
+        environment: input.environment,
+      }),
+    }
+  }
   return {
     sandbox: 'srt',
     reason: isolation.enabled ? isolation.reason : kind.reason,

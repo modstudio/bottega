@@ -30,7 +30,7 @@
  */
 
 import { createConnection, createServer, type Socket } from 'node:net'
-import { McpServer } from '@modelcontextprotocol/server'
+import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server'
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
@@ -795,7 +795,50 @@ export function createAskMcpServer(
   return server
 }
 
-export type AskLoopback = { url: string; close(): Promise<void> }
+export type AskLoopback = {
+  kind: 'endpoint' | 'stdio-loopback'
+  url: string
+  close(): Promise<void>
+}
+
+/** Build the authenticated streamable-HTTP seam without opening a socket. */
+export function createAskHttpHandler(
+  runId: string,
+  token: string,
+): (request: Request) => Promise<Response> {
+  return async (request) => {
+    if (!token || request.headers.get('authorization') !== `Bearer ${token}`) {
+      return new Response('Unauthorized', { status: 401 })
+    }
+    const askServer = createAskMcpServer(runId, token)
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    })
+    await askServer.connect(observeAskTransport(transport, runId))
+    try {
+      return await transport.handleRequest(request)
+    } finally {
+      await askServer.close()
+    }
+  }
+}
+
+/** Start a token-authenticated streamable-HTTP MCP endpoint on one loopback port. */
+export function startAskHttpEndpoint(runId: string, token: string): AskLoopback {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: createAskHttpHandler(runId, token),
+  })
+  return {
+    kind: 'endpoint',
+    url: `http://127.0.0.1:${server.port}/mcp`,
+    close: async () => {
+      await server.stop(true)
+    },
+  }
+}
 
 /**
  * Start the database-owning side of bottega-ask outside a worker's process sandbox.
@@ -827,6 +870,7 @@ export async function startAskLoopback(runId: string, token: string): Promise<As
     throw new Error(`${WORKER_MCP_SERVER_NAME} loopback did not receive a TCP port`)
   }
   return {
+    kind: 'stdio-loopback',
     url: `tcp://127.0.0.1:${address.port}`,
     close: () =>
       new Promise<void>((resolve) => {

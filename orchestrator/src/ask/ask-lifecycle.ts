@@ -1,6 +1,6 @@
 // concern: bottega-ask lifecycle evidence and its derived turn summary
 import type { JSONRPCMessage, Transport, TransportSendOptions } from '@modelcontextprotocol/server'
-import { appendRunEvent, type RunLogEvent } from '../events.ts'
+import { appendRunEvent, type ConfiguredAsk, type RunLogEvent } from '../events.ts'
 
 export type AskLifecycle = {
   started(tools: string[]): void
@@ -18,13 +18,15 @@ export function askLifecycle(runId: string): AskLifecycle {
 export function recordAskExpected(
   runId: string,
   transport: 'host' | 'srt',
-  command: string[],
+  configured: ConfiguredAsk,
 ): void {
   appendRunEvent(runId, {
     ts: new Date().toISOString(),
     type: 'ask_expected',
     transport,
-    command,
+    ...(configured.kind === 'command'
+      ? { command: configured.argv }
+      : { endpoint: configured.url }),
   })
 }
 
@@ -98,6 +100,7 @@ export type AskServerSummary = {
   listed: Seen
   transport: 'host' | 'srt' | null
   command: string[] | null
+  endpoint: string | null
   registered_tools: string[] | null
   listed_tools: string[] | null
   failure: string | null
@@ -118,7 +121,8 @@ export function summarizeAskServer(
     initialized: status(Boolean(events?.some((event) => event.type === 'ask_initialized'))),
     listed: status(Boolean(listed)),
     transport: expected?.type === 'ask_expected' ? expected.transport : null,
-    command: expected?.type === 'ask_expected' ? expected.command : null,
+    command: expected?.type === 'ask_expected' ? (expected.command ?? null) : null,
+    endpoint: expected?.type === 'ask_expected' ? (expected.endpoint ?? null) : null,
     registered_tools: started?.type === 'ask_started' ? started.tools : null,
     listed_tools: listed?.type === 'ask_listed' ? listed.tools : null,
     failure,

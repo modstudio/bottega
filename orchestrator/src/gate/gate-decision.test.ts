@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import {
   boundedGateOutputTail,
   brokerGateEnvironment,
   changedGateToolingPaths,
+  decideBrokerLaunch,
   decideGateCancellation,
   decideGateEligibility,
   decideGateExecutionFinalization,
@@ -19,6 +21,39 @@ import {
   resolveGateCommand,
   shapeGateResult,
 } from './gate-decision.ts'
+
+test('both writing ACP broker command shapes retain the real writer profile', () => {
+  const writer: SandboxRuntimeConfig = {
+    network: {
+      allowedDomains: ['127.0.0.1:43127'],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      denyRead: [],
+      allowWithinDeny: [],
+      allowWrite: ['/tree', '/scratch'],
+      denyWrite: ['/tree/.git'],
+    },
+  }
+  expect(
+    decideBrokerLaunch({ kind: 'srt', profile: writer }, 'sh', ['-c', 'bun run check']),
+  ).toEqual({
+    kind: 'srt',
+    profile: writer,
+    bin: 'sh',
+    argv: ['-c', 'bun run check'],
+  })
+  expect(
+    decideBrokerLaunch({ kind: 'srt', profile: writer }, 'bun', ['test', 'one.test.ts']),
+  ).toEqual({
+    kind: 'srt',
+    profile: writer,
+    bin: 'bun',
+    argv: ['test', 'one.test.ts'],
+  })
+})
 
 test('broker gate environment adds host paths without exposing secrets and applies overlay last', () => {
   expect(

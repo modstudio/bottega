@@ -4,6 +4,7 @@
  * child-env, worker-home, and resolver decisions dispatch uses. Must not probe
  * homes, sockets, or secret values.
  */
+
 import { type CodexSandboxRuling, decideCodexSandbox } from './codex-sandbox.ts'
 import {
   RECORD_CONNECTION_ENV_NAMES,
@@ -12,6 +13,7 @@ import {
 } from './record-connection-env.ts'
 import {
   isReadonlySandboxCandidate,
+  isWritingAcpRun,
   READONLY_LENS_ALLOW_LOCAL_BINDING,
   type RunSandbox,
   readonlyLensDeniesLoginKeychain,
@@ -31,6 +33,7 @@ export type ConfinementReportAgent = {
   readsRepo: boolean
   writesRepo: boolean
   mcp: boolean
+  transport?: 'cli' | 'acp'
 }
 
 type ConfinementAccess = {
@@ -142,9 +145,11 @@ function shapeRefusal(
 function confinementReason(
   agent: string,
   writesRepo: boolean,
+  writingAcp: boolean,
   kind: { sandbox: 'host' | 'srt'; reason: string | null },
 ): string {
   if (kind.reason) return kind.reason
+  if (writingAcp && kind.sandbox === 'srt') return 'writing ACP sandbox'
   if (kind.sandbox === 'srt') return 'readonly sandbox candidate'
   if (!isReadonlySandboxCandidate({ agent, readsRepo: true, writesRepo })) {
     return 'writing jobs are not readonly-sandbox candidates'
@@ -222,13 +227,17 @@ function namedSecretAccess(): NamedSecretAccess {
 function okConfinement(
   agent: ConfinementReportAgent,
   writesRepo: boolean,
+  writingAcp: boolean,
   kind: { sandbox: RunSandbox; reason: string | null },
 ): ConfinementReportOkRow['confinement'] {
   if (agent.name === 'codex') {
     const ruling = decideCodexSandbox()
     return { sandbox: ruling.sandbox, reason: 'codex native sandbox' }
   }
-  return { sandbox: kind.sandbox, reason: confinementReason(agent.name, writesRepo, kind) }
+  return {
+    sandbox: kind.sandbox,
+    reason: confinementReason(agent.name, writesRepo, writingAcp, kind),
+  }
 }
 
 function reportRow(
@@ -242,6 +251,7 @@ function reportRow(
     return { agent: agent.name, job, mcp, status: 'refused', refusal }
   }
   const writesRepo = job === 'writing'
+  const writingAcp = isWritingAcpRun(agent.transport ?? 'cli', writesRepo)
   const kind = selectReadonlySandboxKind({
     agent: agent.name,
     readsRepo: true,
@@ -250,6 +260,7 @@ function reportRow(
     projectPresent: true,
     override: input.sandboxOverride,
     mcp,
+    writingAcp,
   })
   const outer = kind.sandbox
   return {
@@ -258,7 +269,7 @@ function reportRow(
     mcp,
     status: 'ok',
     refusal: null,
-    confinement: okConfinement(agent, writesRepo, kind),
+    confinement: okConfinement(agent, writesRepo, writingAcp, kind),
     withheldForwarded: withheldClassNamesForwardedFrom(input.parentEnvNames),
     envFile: envFileAccess(outer, agent.harness, agent.name, input.srtDenyRead, input.envFilePaths),
     keychain: keychainAccess(outer, agent.name, input.srtDenyRead, input.keychainPaths),

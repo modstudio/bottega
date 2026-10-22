@@ -220,6 +220,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-worker-brokers.ts', [
     '../focused-test/focused-test-broker.ts',
     '../gate/gate-broker.ts',
+    '../gate/gate-decision.ts',
+    '../sandbox/sandbox.ts',
     '../worktree/worktree-types.ts',
     './run-process.ts',
     './run-test-workers.ts',

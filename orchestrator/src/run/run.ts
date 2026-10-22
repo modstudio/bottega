@@ -38,7 +38,7 @@ import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
-import { job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
+import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -79,6 +79,7 @@ import {
 } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
 import {
+  isWritingAcpRun,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxLaunchArgv,
@@ -96,6 +97,7 @@ import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import { initialRunSource } from './run-agent-capacity.ts'
+import * as acpWriter from './run-acp-writer.ts'
 import {
   pruneRuns,
   RUNS_DIR,
@@ -111,7 +113,6 @@ import { closeRun } from './run-close.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
-  provisionWriterSharedGitRoots,
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
@@ -138,6 +139,7 @@ import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
 import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
+import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
 import { renderTaskRulings } from './task-rulings.ts'
@@ -206,6 +208,18 @@ function confinementSkipLines(failures: FreezeFailure[]): string[] {
       `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
       `fix the register with ${PLATFORM_SLUG} project set`,
   )
+}
+
+function assertConfiguredGitGuard(
+  environment: ReturnType<typeof workerGitConfigEnvironment>,
+  writableRoots: string[],
+): void {
+  if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
+}
+
+function completeStartup(): true {
+  bindSignals()
+  return true
 }
 
 export async function run(opts: {
@@ -363,13 +377,9 @@ export async function run(opts: {
       resumeParent: opts.resume?.parent,
       launchBase: opts.launchBase,
     })
-  // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
-  // that makes it one. `available()` had only ever checked that an endpoint was
-  // CONFIGURED, which stayed true while the local model host was powered off
-  // — so routing kept handing it `file-question`, its best job, and kept
-  // recording the failures against the model. One probe here costs 2ms when the
-  // endpoint is healthy, and when it is not it replaces a run that was going to
-  // fail anyway.
+  // Reachability is routing input, not a run outcome. Configuration alone stays
+  // true while a model host is off, causing jobs and failures to be misrouted.
+  // This cheap probe replaces a run that would fail anyway.
   //
   // Awaited before pick() and cached so a fan-out probes once rather than per run.
   const health = await ensureLocalHealth()
@@ -539,22 +549,10 @@ export async function run(opts: {
   })
   const a = requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
+  const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
   const codexSandbox = decideCodexSandbox()
-  let boundMs: number
-  try {
-    // A durable historical row can name an agent that is no longer registered.
-    // Preserve the reserved resume row long enough for the existing harness
-    // failure path to record that fact; timeout validation must not erase it.
-    boundMs = resolveJobTimeoutMs(
-      requestedJob,
-      a?.timeoutMs ?? requestedJob.timeoutCeilingMs ?? 20 * 60_000,
-      timeoutMinutes,
-    )
-  } catch (e) {
-    recordRunStartupFailure(opts.reserveId, e)
-    throw e
-  }
+  const boundMs = resolveRunBound(requestedJob, a, timeoutMinutes, opts.reserveId)
   if (resume.isFirstTurn) {
     const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
     const split = prompt.lastIndexOf('\n---\n')
@@ -570,6 +568,7 @@ export async function run(opts: {
       throw e
     }
   }
+  prompt = acpWriter.bindContract(prompt, writingAcp)
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
@@ -577,9 +576,7 @@ export async function run(opts: {
       throw new Error(versionRefusal)
     }
   }
-  // Route first because the cell keys on the agent ACTUALLY selected. The
-  // suffix reserve above keeps argv eligibility honest; append before any
-  // prompt file, hash, or database prompt metadata is written.
+  // Append after routing but before prompt files, hashes, or metadata are written.
   if (requestedJob.findings && resume.isFirstTurn) {
     const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
     if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES) {
@@ -704,23 +701,18 @@ export async function run(opts: {
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
-  mcpConnection = claimedMcpConnection
-  usingMcp = claimedUsingMcp
-  // A reader clone keeps all writable Git metadata inside its own tree. Its
-  // hooks live outside that root so the worker cannot disable the push guard.
-  // Writers remain linked worktrees and retain their existing shared roots.
-  const writableRoots = [
-    scratchDir,
-    ...provisionWriterSharedGitRoots(worktree, repoJob && writesJob),
-  ]
+  ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
+  const runProject = projectAt(callerCwd)
+  const writableRoots = acpWriter.writableRoots(worktree, writesJob, writingAcp, scratchDir)
+  const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, sandboxRunDir)
+  const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
     ...workerHome.codexPrivateTempEnvironment(workerHarnessName(a), repoJob, scratchDir),
   }
-  if (gitConfigEnvironment) {
-    assertWorkerGitGuardOutsideWritableRoots(gitConfigEnvironment, writableRoots)
-  }
+  assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
+  let askLoopback: AskLoopback | null = null
   const mcpLaunch = workerMcpLaunchScope({
     agent: a,
     transport: transportName,
@@ -730,200 +722,201 @@ export async function run(opts: {
     cwd,
     connection: mcpConnection,
   })
-  const codexMcpScope = mcpLaunch.codex
-  const grokReaderServers = mcpLaunch.grok
   const mcpServerName = mcpLaunch.serverName
-  const mcpAllowlist = mcpLaunch.allowlist
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   let sandboxEnvironment: Record<string, string>
   let mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
-  let hasRunScopedHome: boolean
+  let hasRunScopedHome: boolean,
+    startupComplete = false
   try {
-    sandboxSelection = selectReadonlySandbox({
-      agent: name,
-      readsRepo: repoJob,
-      writesRepo: writesJob,
-      worktree: worktree?.path ?? isolatedCwd,
-      runsDir: sandboxRunDir,
-      scratchDir,
-      project: projectAt(callerCwd),
-      override: process.env.ORCH_SANDBOX,
-      path: process.env.PATH,
-      baseUrl: a.baseUrl,
-      mcp: Boolean(mcpMode),
-      mcpAllowlist: mcpMode ? mcpAllowlist : [],
-    })
-    const home = await workerHome.prepareWorkerHomeLaunch({
-      agent: a,
-      sandbox: sandboxSelection.sandbox,
-      runDir: sandboxRunDir,
-      runNumber: claim.number,
-      runRecordId: claim.recordId,
-      runToken,
-      environment: { ...(gitConfigEnvironment ?? {}), ...(await resolveEndpointApiKeyEnv(a)) },
-      grokEnvironment: grokMcpEnvironment,
-      includeStore: repoJob,
-      codexMcpScope,
-      grokReaderServers,
-    })
-    ;({
-      codexMcpCatalogues,
-      environment: mcpEnvironment,
-      hasRunScopedHome,
-      sandboxEnvironment,
-    } = home)
-  } catch (e) {
-    removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
-    const why = String((e as Error)?.message ?? e)
     try {
-      recordRunStartupFailure(claim.id, e, started)
-    } finally {
-      teardownTerminalRunResources(db(), claim.id)
-    }
-    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
-  }
-  mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, codexMcpScope, codexMcpCatalogues)
-  const sandboxRouteReason = sandboxSelection.reason
-    ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
-    : reason
-  writeTransaction(() => {
-    db()
-      .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
-      .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
-    if (hasRunScopedHome) {
-      const rootRunId = rootRunRecordId(claim.id)
-      recordSandboxDirectoryClaim(db(), {
-        rootRunId,
-        runId: claim.id,
-        projectId: runProjectId,
-        path: sandboxRunDir,
-        claimedAt: nowIso(),
+      const writingAcpAsk = acpWriter.prepareWritingAcpAsk(writingAcp, claim.id, runToken)
+      askLoopback = writingAcpAsk.loopback
+      sandboxSelection = selectReadonlySandbox({
+        agent: name,
+        readsRepo: repoJob,
+        writesRepo: writesJob,
+        worktree: worktree?.path ?? isolatedCwd,
+        runsDir: sandboxRunDir,
+        scratchDir,
+        project: runProject,
+        override: process.env.ORCH_SANDBOX,
+        path: process.env.PATH,
+        baseUrl: a.baseUrl,
+        mcp: Boolean(mcpMode),
+        mcpAllowlist: mcpMode ? mcpLaunch.allowlist : [],
+        writingAcp,
+        ...writingAcpAsk.sandbox,
       })
-    }
-  })
-  if (sandboxSelection.reason) {
-    const header = `${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
-    mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
-    console.error(`orch: run ${claim.id} ${header}`)
-  }
-  if (mcpMode && mcpServerName) {
-    const probeConfig = mcpLaunch.config[mcpServerName]
-    if (probeConfig?.url || probeConfig?.command) {
+      const home = await workerHome.prepareWorkerHomeLaunch({
+        agent: a,
+        sandbox: sandboxSelection.sandbox,
+        runDir: sandboxRunDir,
+        runNumber: claim.number,
+        runRecordId: claim.recordId,
+        runToken,
+        environment: { ...(gitConfigEnvironment ?? {}), ...(await resolveEndpointApiKeyEnv(a)) },
+        grokEnvironment: grokMcpEnvironment,
+        includeStore: repoJob,
+        codexMcpScope: mcpLaunch.codex,
+        grokReaderServers: mcpLaunch.grok,
+      })
+      ;({
+        codexMcpCatalogues,
+        environment: mcpEnvironment,
+        hasRunScopedHome,
+        sandboxEnvironment,
+      } = home)
+    } catch (e) {
+      removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
+      const why = String((e as Error)?.message ?? e)
       try {
-        const projectSettings = projectAt(callerCwd)?.settings as
-          | { mcp?: { probe_tool?: string } }
-          | undefined
-        const probeTool = projectSettings?.mcp?.probe_tool ?? null
-        const wrap = sandboxSelection.profile
-          ? (bin: string, args: string[]) => sandboxLaunchArgv(sandboxSelection.profile!, bin, args)
-          : undefined
-        const probe = await probeMcpServer({
-          server: mcpServerName,
-          config: probeConfig,
-          cwd,
-          env: mcpEnvironment,
-          probeTool,
-          wrap,
-        })
-        // The probe runs only when the required server is in .mcp.json, so the
-        // wrong-project question is already answered; the doctor path asks it.
-        const probeRuling = mcpAttachment.decideMcpToolProbe(
-          probe,
-          mcpServerName,
-          mcpMode,
-          name,
-          projectAt(callerCwd)?.name ?? null,
-        )
-        db()
-          .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE record_id=?')
-          .run(
-            storedMcpProbe(probe),
-            probeRuling.callEvidence.connected,
-            probeRuling.callEvidence.error,
-            claim.id,
-          )
-        const grammarFailure = await enforceRunMcpGrammar({
-          server: mcpServerName,
-          mode: mcpMode,
-          probe,
-          pattern: a.mcpToolNamePattern,
+        recordRunStartupFailure(claim.id, e, started)
+      } finally {
+        teardownTerminalRunResources(db(), claim.id)
+      }
+      throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+    }
+    mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, mcpLaunch.codex, codexMcpCatalogues)
+    const sandboxRouteReason = sandboxSelection.reason
+      ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
+      : reason
+    writeTransaction(() => {
+      db()
+        .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
+        .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
+      if (hasRunScopedHome) {
+        const rootRunId = rootRunRecordId(claim.id)
+        recordSandboxDirectoryClaim(db(), {
+          rootRunId,
           runId: claim.id,
-          started,
-          resetSandbox,
-        })
-        probeRuling.failedConnection = grammarFailure ?? probeRuling.failedConnection
-        if (probeRuling.refusalReason) {
-          await refuseUnstartedRun({
-            runId: claim.id,
-            started,
-            why: probeRuling.refusalReason,
-            resetSandbox,
-          })
-        }
-        if (probeRuling.failedConnection) {
-          mcpConnection = probeRuling.failedConnection
-          db()
-            .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE record_id=?`)
-            .run(mcpConnection.error, claim.id)
-          usingMcp = false
-        }
-      } catch (error) {
-        if ((error as { runId?: string }).runId === claim.id) throw error
-        const why = String((error as Error)?.message ?? error)
-        try {
-          recordRunStartupFailure(claim.id, error, started)
-        } finally {
-          try {
-            await resetSandbox()
-          } finally {
-            teardownTerminalRunResources(db(), claim.id)
-          }
-        }
-        throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
-          runId: claim.id,
+          projectId: runProjectId,
+          path: sandboxRunDir,
+          claimedAt: nowIso(),
         })
       }
-    } else {
-      const namesSeen = namesSeenAt(cwd)
-      const mismatch = mcpAttachment.decideMcpMirrorMismatch(mcpServerName, namesSeen, mcpMode)
-      if (mismatch) {
-        mcpConnection = mismatch.connection
-        db()
-          .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE record_id=?')
-          .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
-        if (mismatch.refusalReason) {
-          const why = mismatch.refusalReason
+    })
+    if (sandboxSelection.reason) {
+      const header = `${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
+      mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
+      console.error(`orch: run ${claim.id} ${header}`)
+    }
+    if (mcpMode && mcpServerName) {
+      const probeConfig = mcpLaunch.config[mcpServerName]
+      if (probeConfig?.url || probeConfig?.command) {
+        try {
+          const projectSettings = projectAt(callerCwd)?.settings as
+            | { mcp?: { probe_tool?: string } }
+            | undefined
+          const probeTool = projectSettings?.mcp?.probe_tool ?? null
+          const wrap = sandboxSelection.profile
+            ? (bin: string, args: string[]) =>
+                sandboxLaunchArgv(sandboxSelection.profile!, bin, args)
+            : undefined
+          const probe = await probeMcpServer({
+            server: mcpServerName,
+            config: probeConfig,
+            cwd,
+            env: mcpEnvironment,
+            probeTool,
+            wrap,
+          })
+          // The probe runs only when the required server is in .mcp.json, so the
+          // wrong-project question is already answered; the doctor path asks it.
+          const probeRuling = mcpAttachment.decideMcpToolProbe(
+            probe,
+            mcpServerName,
+            mcpMode,
+            name,
+            projectAt(callerCwd)?.name ?? null,
+          )
+          db()
+            .query('UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE record_id=?')
+            .run(
+              storedMcpProbe(probe),
+              probeRuling.callEvidence.connected,
+              probeRuling.callEvidence.error,
+              claim.id,
+            )
+          const grammarFailure = await enforceRunMcpGrammar({
+            server: mcpServerName,
+            mode: mcpMode,
+            probe,
+            pattern: a.mcpToolNamePattern,
+            runId: claim.id,
+            started,
+            resetSandbox,
+          })
+          probeRuling.failedConnection = grammarFailure ?? probeRuling.failedConnection
+          if (probeRuling.refusalReason) {
+            await refuseUnstartedRun({
+              runId: claim.id,
+              started,
+              why: probeRuling.refusalReason,
+              resetSandbox,
+            })
+          }
+          if (probeRuling.failedConnection) {
+            mcpConnection = probeRuling.failedConnection
+            db()
+              .query(`UPDATE run SET mcp_connected=0, mcp_error=? WHERE record_id=?`)
+              .run(mcpConnection.error, claim.id)
+            usingMcp = false
+          }
+        } catch (error) {
+          if ((error as { runId?: string }).runId === claim.id) throw error
+          const why = String((error as Error)?.message ?? error)
           try {
-            recordRunStartupFailure(claim.id, why, started)
+            recordRunStartupFailure(claim.id, error, started)
           } finally {
-            teardownTerminalRunResources(db(), claim.id)
+            try {
+              await resetSandbox()
+            } finally {
+              teardownTerminalRunResources(db(), claim.id)
+            }
           }
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
             runId: claim.id,
           })
         }
-        mcpConnection = mismatch.continuedConnection
-        usingMcp = false
-        db()
-          .query('UPDATE run SET mcp_error=? WHERE record_id=?')
-          .run(mcpConnection.error, claim.id)
+      } else {
+        const namesSeen = namesSeenAt(cwd)
+        const mismatch = mcpAttachment.decideMcpMirrorMismatch(mcpServerName, namesSeen, mcpMode)
+        if (mismatch) {
+          mcpConnection = mismatch.connection
+          db()
+            .query('UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE record_id=?')
+            .run(mismatch.connection.error, storedMcpProbe(mismatch.recorded), claim.id)
+          if (mismatch.refusalReason) {
+            const why = mismatch.refusalReason
+            try {
+              recordRunStartupFailure(claim.id, why, started)
+            } finally {
+              teardownTerminalRunResources(db(), claim.id)
+            }
+            throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), {
+              runId: claim.id,
+            })
+          }
+          mcpConnection = mismatch.continuedConnection
+          usingMcp = false
+          db()
+            .query('UPDATE run SET mcp_error=? WHERE record_id=?')
+            .run(mcpConnection.error, claim.id)
+        }
       }
     }
+    if (requiresCanonSource) {
+      prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
+      persistBoundPrompt(promptPath, prompt, claim.id)
+    }
+    startupComplete = completeStartup()
+  } finally {
+    await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
-
-  if (requiresCanonSource) {
-    prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
-    persistBoundPrompt(promptPath, prompt, claim.id)
-  }
-
-  bindSignals()
-  // Declared out here because the `finally` has to be able to write a terminal
-  // row whatever happened inside: the row is already claiming to be running, and
-  // the one thing worse than a failed run is one that never says it stopped.
-  // Only the handle the signal path and the finally need. Typing it as the full
-  // Subprocess would widen stdout/stderr back to "pipe or fd or nothing", which
-  // is what the narrowed `p` inside the try exists to avoid.
+  // Keep this handle visible to signals/finally so a running row can terminate.
+  // A full Subprocess would widen the narrowed `p` streams.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
@@ -950,12 +943,9 @@ export async function run(opts: {
   let confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  let askLoopback: AskLoopback | null = null
   let workerEvents: StreamEvent[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
-  // Start after orchestrator's own worktree and hook setup, immediately before the
-  // vendor process. The interval establishes when a change happened, not who
-  // wrote it: an architect or concurrent landing can change a watched checkout.
+  // Freeze after setup; the interval says when a watched checkout changed, not who changed it.
   const callerProject = projectAt(callerCwd)
   const callerCheckout = callerProject
     ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
@@ -983,7 +973,6 @@ export async function run(opts: {
     path,
     expectedHead: expectedHead ?? undefined,
   }))
-
   try {
     runLease = requiredRunLease(claim.id, (cause) => {
       error = String((cause as Error).message ?? cause)
@@ -1041,7 +1030,7 @@ export async function run(opts: {
       writes,
       usingMcp,
       mcpServerName,
-      codexMcpScope,
+      codexMcpScope: mcpLaunch.codex,
       mcpTrustGranted,
       writableRoots,
       gitConfigEnvironment,
@@ -1060,6 +1049,8 @@ export async function run(opts: {
       mcpSetupHeader,
       initialBoardNoticeIds: initialBoard.noticeIds,
       throttleConcurrency: () => runningRunCountForAgent('codex'),
+      askLoopback,
+      ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
     }))
   } finally {
     const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
@@ -1087,6 +1078,7 @@ export async function run(opts: {
         failureKind,
         scratchDir,
         gitConfigEnvironment,
+        ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
         opts,
         watchedCheckouts,
         confinementFailures,

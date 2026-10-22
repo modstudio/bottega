@@ -2,6 +2,23 @@
 /** Pure eligibility, concurrency, and result presentation for a registered worker gate. */
 
 import { isAbsolute, resolve } from 'node:path'
+export type BrokerConfinement<Profile = unknown> =
+  | { kind: 'host' }
+  | { kind: 'srt'; profile: Profile }
+
+export type BrokerLaunchDecision<Profile = unknown> =
+  | { kind: 'host'; argv: string[] }
+  | { kind: 'srt'; profile: Profile; bin: string; argv: string[] }
+
+export function decideBrokerLaunch<Profile>(
+  confinement: BrokerConfinement<Profile>,
+  bin: string,
+  argv: string[],
+): BrokerLaunchDecision<Profile> {
+  return confinement.kind === 'srt'
+    ? { kind: 'srt', profile: confinement.profile, bin, argv }
+    : { kind: 'host', argv: [bin, ...argv] }
+}
 
 export const GATE_OUTPUT_TAIL_BYTES = 16 * 1024
 export const GATE_COMMAND_TIMEOUT_MS = 20 * 60_000

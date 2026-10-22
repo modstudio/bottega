@@ -23,7 +23,10 @@ function opts(agent: TransportStartOpts['agent'], env: Record<string, string>): 
 describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
   test('CLI reports Codex from its scope definition and none for an unregistered agent', () => {
     const codex = BUILTIN_AGENTS.codex!
-    expect(configuredCliAsk(opts(codex, {}))).toEqual(bottegaEntryArgv('ask-server'))
+    expect(configuredCliAsk(opts(codex, {}))).toEqual({
+      kind: 'command',
+      argv: bottegaEntryArgv('ask-server'),
+    })
     expect(
       configuredCliAsk(opts({ ...codex, name: 'without-ask', askServerCommand: undefined }, {})),
     ).toBeNull()
@@ -37,11 +40,10 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
         join(root, 'config.toml'),
         `[mcp_servers.${WORKER_MCP_SERVER_NAME}]\ncommand = "/stale/bun"\nargs = ["/stale/orch", "ask-server"]\n`,
       )
-      expect(configuredCliAsk(opts(BUILTIN_AGENTS.grok!, { GROK_HOME: root }))).toEqual([
-        '/stale/bun',
-        '/stale/orch',
-        'ask-server',
-      ])
+      expect(configuredCliAsk(opts(BUILTIN_AGENTS.grok!, { GROK_HOME: root }))).toEqual({
+        kind: 'command',
+        argv: ['/stale/bun', '/stale/orch', 'ask-server'],
+      })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -51,8 +53,22 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
     const command = configuredAcpAsk(
       opts(BUILTIN_AGENTS.codex!, { ORCH_RUN_ID: '42', ORCH_RUN_TOKEN: 'token' }),
     )
-    expect(command).toEqual(bottegaEntryArgv('ask-server'))
+    expect(command).toEqual({ kind: 'command', argv: bottegaEntryArgv('ask-server') })
     expect(configuredAcpAsk(opts(BUILTIN_AGENTS.codex!, {}))).toBeNull()
+  })
+
+  test('a writing ACP session registers the token-authenticated HTTP endpoint', () => {
+    expect(
+      configuredAcpAsk({
+        ...opts(BUILTIN_AGENTS.codex!, {
+          ORCH_RUN_ID: '42',
+          ORCH_RUN_TOKEN: 'token',
+          ORCH_ASK_URL: 'http://127.0.0.1:43127/mcp',
+        }),
+        writingAcp: true,
+        ask: { kind: 'endpoint', url: 'http://127.0.0.1:43127/mcp' },
+      }),
+    ).toEqual({ kind: 'endpoint', url: 'http://127.0.0.1:43127/mcp' })
   })
 
   test('ACP preserves Grok per-run-home registration instead of adding a session server', () => {
@@ -70,7 +86,7 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
             ORCH_RUN_TOKEN: 'token',
           }),
         ),
-      ).toEqual(['/old/bun', '/old/orch', 'ask-server'])
+      ).toEqual({ kind: 'command', argv: ['/old/bun', '/old/orch', 'ask-server'] })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

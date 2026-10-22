@@ -16,6 +16,12 @@ import { appendRunEvent } from '../events.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { renderCheckpointResumeContext } from './checkpoint-resume-context.ts'
 
+export type CheckpointContainment = {
+  gitDir: string | null
+  hooksDir: string | null
+  disableHooks: boolean
+}
+
 /**
  * A checkpoint is a delta folded into the next authored commit at landing.
  * Bytes captured while the worker is mid-write are corrected by the next
@@ -55,8 +61,17 @@ function git(
   cwd: string,
   args: string[],
   guardEnvironment: NodeJS.ProcessEnv,
+  containment: CheckpointContainment,
 ): { ok: boolean; out: string; error: string } {
-  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+  const repository = containment.disableHooks
+    ? [
+        `--git-dir=${containment.gitDir!}`,
+        `--work-tree=${cwd}`,
+        '-c',
+        `core.hooksPath=${containment.hooksDir!}`,
+      ]
+    : ['-C', cwd]
+  const p = Bun.spawnSync(['git', ...repository, ...args], {
     env: { ...targetGitEnvironment(cwd), ...guardEnvironment },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -85,6 +100,7 @@ export function checkpointRun(input: {
   taskKey: string
   scratchDir: string
   guardEnvironment: NodeJS.ProcessEnv
+  containment: CheckpointContainment
   final?: boolean
 }): CheckpointResult {
   const previous = input.database
@@ -96,16 +112,28 @@ export function checkpointRun(input: {
     appendRunEvent(input.runId, { ts: nowIso(), type: 'text', text: `checkpoint failed: ${error}` })
     return { created: false, commit: null, checkpointNo, taskPointer, error }
   }
-  const dirty = git(input.worktree, ['status', '--porcelain'], input.guardEnvironment)
+  if (
+    input.containment.disableHooks &&
+    (!input.containment.gitDir || !input.containment.hooksDir)
+  ) {
+    return refusal('checkpoint refused: writing ACP run has incomplete checkpoint containment')
+  }
+  const dirty = git(
+    input.worktree,
+    ['status', '--porcelain'],
+    input.guardEnvironment,
+    input.containment,
+  )
   if (!dirty.ok) return refusal(dirty.error)
   if (!dirty.out) return { created: false, commit: null, checkpointNo, taskPointer, error: null }
-  const staged = git(input.worktree, ['add', '-A'], input.guardEnvironment)
+  const staged = git(input.worktree, ['add', '-A'], input.guardEnvironment, input.containment)
   if (!staged.ok) return refusal(staged.error)
   // Adjacent to commit so the checked branch is the ref the commit will move.
   const currentBranch = git(
     input.worktree,
     ['symbolic-ref', '--short', 'HEAD'],
     input.guardEnvironment,
+    input.containment,
   )
   if (!currentBranch.ok || currentBranch.out !== input.branch) {
     return refusal(
@@ -113,9 +141,19 @@ export function checkpointRun(input: {
     )
   }
   const subject = `${input.taskKey} checkpoint run ${input.runId} #${checkpointNo}`
-  const committed = git(input.worktree, ['commit', '-m', subject], input.guardEnvironment)
+  const committed = git(
+    input.worktree,
+    ['commit', ...(input.containment.disableHooks ? ['--no-verify'] : []), '-m', subject],
+    input.guardEnvironment,
+    input.containment,
+  )
   if (!committed.ok) return refusal(committed.error)
-  const commit = git(input.worktree, ['rev-parse', 'HEAD'], input.guardEnvironment)
+  const commit = git(
+    input.worktree,
+    ['rev-parse', 'HEAD'],
+    input.guardEnvironment,
+    input.containment,
+  )
   if (!commit.ok) return refusal(commit.error)
   input.database
     .query(
@@ -225,7 +263,16 @@ export function checkpointResumeContext(
     )
   }
   const recentLog = worktree
-    ? git(worktree, ['log', '--oneline', '--decorate=no', '--max-count=8'], {}).out
+    ? git(
+        worktree,
+        ['log', '--oneline', '--decorate=no', '--max-count=8'],
+        {},
+        {
+          gitDir: null,
+          hooksDir: null,
+          disableHooks: false,
+        },
+      ).out
     : ''
   return renderCheckpointResumeContext({ startCommit, branch, checkpoint, recentLog })
 }
