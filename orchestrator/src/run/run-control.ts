@@ -451,6 +451,37 @@ function continuationLaunch(
   }
 }
 
+function continuationPrompt(
+  id: string,
+  jobName: string,
+  checkpointContext: string | null,
+  continuationMessage: string | undefined,
+): string {
+  if (!checkpointContext) {
+    return (
+      continuationMessage ??
+      'Continue from where you stopped and finish the spec. If you reached a ' +
+        'decision that is not yours, stop and ask as before.'
+    )
+  }
+  const rootPrompt = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(id) as {
+    prompt_path: string | null
+  }
+  if (!rootPrompt.prompt_path || !existsSync(rootPrompt.prompt_path)) {
+    throw new Error(`run ${id} checkpoint cannot continue: its original prompt file is unavailable`)
+  }
+  return renderCheckpointContinuationPrompt({
+    checkpointContext,
+    originalSpec: readFileSync(rootPrompt.prompt_path, 'utf8'),
+    continuationInstructions: continuationInstructionsForFreshRetry(
+      Boolean(job(jobName).needs.writesRepo),
+      id,
+      id,
+    ),
+    message: continuationMessage,
+  })
+}
+
 function inheritedResumeWorktree(
   decision: ContinuationTreeDecision,
   plan: ResumeTreePlan | null,
@@ -670,38 +701,17 @@ export async function continueRun(
     writerTreeRecoverable: Boolean(treePlan),
     baseCommit: latest.base_commit ?? row.base_commit,
   })
-  const launch = continuationLaunch(inheritedLaunch, id, treeDecision, Boolean(jobNeeds.writesRepo), project)
-  let prompt: string
-  if (checkpointContext) {
-    const rootPrompt = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(id) as {
-      prompt_path: string | null
-    }
-    if (!rootPrompt.prompt_path || !existsSync(rootPrompt.prompt_path)) {
-      throw new Error(
-        `run ${id} checkpoint cannot continue: its original prompt file is unavailable`,
-      )
-    }
-    const continuationInstructions = continuationInstructionsForFreshRetry(
-      Boolean(job(row.job).needs.writesRepo),
-      id,
-      id,
-    )
-    prompt = renderCheckpointContinuationPrompt({
-      checkpointContext,
-      originalSpec: readFileSync(rootPrompt.prompt_path, 'utf8'),
-      continuationInstructions,
-      message: continuationMessage,
-    })
-  } else {
-    prompt =
-      continuationMessage ??
-      'Continue from where you stopped and finish the spec. If you reached a ' +
-        'decision that is not yours, stop and ask as before.'
-  }
+  const launch = continuationLaunch(
+    inheritedLaunch,
+    id,
+    treeDecision,
+    Boolean(jobNeeds.writesRepo),
+    project,
+  )
+  const prompt = continuationPrompt(id, row.job, checkpointContext, continuationMessage)
   const assembledLimit = checkpointContext ? undefined : argvResumeLimit(sessionFrom!.agent)
   if (assembledLimit !== undefined) {
-    const packed = packedResumePrompt(row.job, prompt, id)
-    const assembled = Buffer.byteLength(packed, 'utf8')
+    const assembled = Buffer.byteLength(packedResumePrompt(row.job, prompt, id), 'utf8')
     if (assembled > assembledLimit) {
       throw new Error(
         `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +

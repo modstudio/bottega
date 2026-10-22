@@ -304,9 +304,11 @@ describe('run continuation', () => {
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'stopped',
     })
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual({
-      n: 0,
-    })
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
+      {
+        n: 0,
+      },
+    )
   })
 
   test('a repository-free continuation needs neither a project nor a reader base', async () => {
