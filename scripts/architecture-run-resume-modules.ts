@@ -38,6 +38,8 @@ export const runResumeModuleSpecs = [
       '../project/projects.ts',
       '../worktree/worktree-seed.ts',
       './continuation-provision-decision.ts',
+      './continuation-tree-decision.ts',
+      './continuation-tree-service.ts',
     ],
   },
   {

@@ -443,9 +443,7 @@ function continuationLaunch(
     ...inherited,
     seed: requireContinuationProvision({
       rootId: id,
-      reuseIntactTree:
-        treeDecision.action === 'inherit-present-tree' ||
-        treeDecision.action === 'no-tree-required',
+      treeDecision,
       recordedSeed: inherited.seed,
       writesRepo,
       project,
@@ -672,6 +670,7 @@ export async function continueRun(
     writerTreeRecoverable: Boolean(treePlan),
     baseCommit: latest.base_commit ?? row.base_commit,
   })
+  const launch = continuationLaunch(inheritedLaunch, id, treeDecision, Boolean(jobNeeds.writesRepo), project)
   let prompt: string
   if (checkpointContext) {
     const rootPrompt = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(id) as {
@@ -720,7 +719,7 @@ export async function continueRun(
   const childId = await detach(row.job, prompt, {
     cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
-    ...continuationLaunch(inheritedLaunch, id, treeDecision, Boolean(jobNeeds.writesRepo), project),
+    ...launch,
     transport: chainTransport(id) ?? undefined,
     resume: {
       kind: continuationResumeKind(Boolean(checkpointContext)),

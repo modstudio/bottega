@@ -5,8 +5,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import { projectSeedPreflight } from '../worktree/worktree-seed.ts'
 import { continuationProvisioningDecision } from './continuation-provision-decision.ts'
+import type { ContinuationTreeDecision } from './continuation-tree-decision.ts'
+import { continuationReusesIntactTree } from './continuation-tree-service.ts'
 
-export function continuationProvisionRefusal(rootId: string, seedRefusal: string): string {
+function continuationProvisionRefusal(rootId: string, seedRefusal: string): string {
   return (
     `run ${rootId} cannot be continued: it must recreate its worktree and has no recorded launch seed\n` +
     `${seedRefusal}\n` +
@@ -16,7 +18,7 @@ export function continuationProvisionRefusal(rootId: string, seedRefusal: string
 
 export function requireContinuationProvision(input: {
   rootId: string
-  reuseIntactTree: boolean
+  treeDecision: ContinuationTreeDecision
   recordedSeed: string | undefined
   writesRepo: boolean
   project: Project | null
@@ -29,7 +31,7 @@ export function requireContinuationProvision(input: {
     tool: resolvedWorktreeTool(input.project),
   })
   const decision = continuationProvisioningDecision({
-    reuseIntactTree: input.reuseIntactTree,
+    reuseIntactTree: continuationReusesIntactTree(input.treeDecision),
     seed,
   })
   if (decision.action === 'refuse') {
