@@ -9,7 +9,6 @@ import {
   CODEX_ORCH_ENV_VARS,
   CODEX_REASONING_EFFORT,
   codexMcpSetupHeader,
-  codexProjectServers,
   codexProjectServersFromSelection,
   codexScopeArgs,
   codexWithheldTools,
@@ -86,34 +85,6 @@ test(`MCP Codex receives only ${WORKER_MCP_SERVER_NAME}, ${MCP_SERVER_NAME}, and
   expect(argv).toContain(
     `mcp_servers.starship={command=${JSON.stringify(join(home, '.claude/mcp/mcp-run'))},args=["starship"]}`,
   )
-})
-
-test('project MCP scope selects allowed credential-free launch definitions', () => {
-  const cwd = '/project'
-  const scope = codexProjectServers(
-    {
-      relative: { name: 'relative', command: 'scripts/mcp/server', args: ['serve'] },
-      bare: { name: 'bare', command: 'npx' },
-      remote: { name: 'remote', url: 'https://mcp.example.test' },
-      secretHeader: {
-        name: 'secretHeader',
-        url: 'https://secret.test',
-        headers: { Authorization: 'token' },
-      },
-      secretEnv: { name: 'secretEnv', command: 'node', env: { TOKEN: '${TOKEN}' } },
-      excluded: { name: 'excluded', command: 'bash' },
-    },
-    ['relative', 'bare', 'remote', 'secretHeader', 'secretEnv'],
-    cwd,
-  )
-  expect(scope).toEqual({
-    servers: {
-      relative: { command: join(cwd, 'scripts/mcp/server'), args: ['serve'], cwd },
-      bare: { command: 'npx', args: [], cwd },
-      remote: { url: 'https://mcp.example.test' },
-    },
-    withheld: ['secretHeader', 'secretEnv'],
-  })
 })
 
 test('project server overlay takes the place of the mcp-run definition for the same name', () => {

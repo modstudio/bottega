@@ -150,8 +150,7 @@ describe('required MCP routing', () => {
     ).toBeNull()
 
     // A job whose needs include MCP still excludes an agent without the probed
-    // capability. mcp-query is outside the ACP pilot allowlist, so the row that
-    // reaches this branch is the CLI one the suite already registers.
+    // capability, on whichever transport the register gives that agent.
     const rows = db().query('SELECT name,caps,transport FROM agent').all() as AgentRow[]
     try {
       for (const row of rows) {

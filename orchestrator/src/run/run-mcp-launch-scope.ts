@@ -23,6 +23,29 @@ function launchProjectSelection(
   return selectProjectMcpServers(codexMcpMode(usingMcp, writesJob), config, project, cwd)
 }
 
+/**
+ * Read the tree and the register once, then decide one launch's project MCP
+ * selection. Every caller shares this one read-and-decide path.
+ */
+function launchSelectionFacts(input: {
+  usingMcp: boolean
+  writesJob: boolean
+  callerCwd: string
+  cwd: string
+}): {
+  config: Record<string, McpServerConfig>
+  project: Project | null
+  selection: ProjectMcpSelection | null
+} {
+  const config = readMcpConfig(input.cwd)
+  const project = projectAt(input.callerCwd)
+  return {
+    config,
+    project,
+    selection: launchProjectSelection(input.usingMcp, input.writesJob, config, project, input.cwd),
+  }
+}
+
 /** Decide one launch's project MCP selection alone, reading the tree and the register itself. */
 export function workerMcpLaunchSelection(input: {
   usingMcp: boolean
@@ -30,13 +53,7 @@ export function workerMcpLaunchSelection(input: {
   callerCwd: string
   cwd: string
 }): ProjectMcpSelection | null {
-  return launchProjectSelection(
-    input.usingMcp,
-    input.writesJob,
-    readMcpConfig(input.cwd),
-    projectAt(input.callerCwd),
-    input.cwd,
-  )
+  return launchSelectionFacts(input).selection
 }
 
 /**
@@ -77,15 +94,7 @@ export function workerMcpLaunchScope(input: {
   cwd: string
   connection: { server: string } | null
 }) {
-  const config = readMcpConfig(input.cwd)
-  const project = projectAt(input.callerCwd)
-  const projectSelection = launchProjectSelection(
-    input.usingMcp,
-    input.writesJob,
-    config,
-    project,
-    input.cwd,
-  )
+  const { config, project, selection: projectSelection } = launchSelectionFacts(input)
   return {
     config,
     codex: codexProjectServersFromSelection(projectSelection, input.agent.name, input.transport),

@@ -1,14 +1,11 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ProjectMcpSelection, selectProjectMcpServers } from '../sandbox/project-mcp-scope.ts'
 import type { TransportStartOpts } from './transport.ts'
 import { acpMcpServers } from './transport-acp.ts'
-import { acpProjectMcpServers } from './transport-acp-mcp.ts'
-
-const PROXY_COMMAND = `/checkout/bin/${PLATFORM_SLUG}`
 
 const opts = (over: Partial<TransportStartOpts>): TransportStartOpts => ({
-  agent: { name: 'goose' } as TransportStartOpts['agent'],
+  agent: { name: 'or-deepseek-v41-flash', harness: 'goose' } as TransportStartOpts['agent'],
   cwd: '/worktree',
   env: { BOTTEGA_RUN_ID: 'run-1', BOTTEGA_RUN_TOKEN: 'token-1' },
   prompt: 'p',
@@ -47,17 +44,6 @@ test('the worker channel comes first, then the selected project servers in both 
     url: 'https://example.test/mcp',
     headers: [],
   })
-})
-
-test('a reading run renders the reader proxy as a stdio entry', () => {
-  const servers = acpProjectMcpServers({
-    kind: 'reader',
-    servers: { local: { command: PROXY_COMMAND, args: ['mcp', 'reader-proxy'] } },
-    withheld: [],
-  })
-  expect(servers).toEqual([
-    { name: 'local', command: PROXY_COMMAND, args: ['mcp', 'reader-proxy'], env: [] },
-  ])
 })
 
 test('no run identity plus a selection gives the project servers and no worker channel', () => {

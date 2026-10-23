@@ -21,21 +21,22 @@ export function mintStdioPingServer(dir: string, toolErrorText?: string): string
     `
 let buf = Buffer.alloc(0)
 const reply = (id, result) => {
-  const body = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, result }))
-  process.stdout.write('Content-Length: ' + body.length + '\\r\\n\\r\\n')
-  process.stdout.write(body)
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n')
 }
 process.stdin.on('data', (chunk) => {
   buf = Buffer.concat([buf, chunk])
   while (true) {
-    const text = buf.toString('utf8')
-    const match = /^Content-Length:\\s*(\\d+)\\r\\n\\r\\n/.exec(text)
-    if (!match) return
-    const offset = match[0].length
-    const length = Number(match[1])
-    if (buf.length < offset + length) return
-    const message = JSON.parse(buf.subarray(offset, offset + length).toString('utf8'))
-    buf = buf.subarray(offset + length)
+    const newline = buf.indexOf(0x0a)
+    if (newline < 0) return
+    const line = buf.subarray(0, newline).toString('utf8').trim()
+    buf = buf.subarray(newline + 1)
+    if (!line) continue
+    let message
+    try {
+      message = JSON.parse(line)
+    } catch {
+      continue
+    }
     if (message.method === 'initialize') reply(message.id, { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'minted' } })
     else if (message.method === 'tools/list') reply(message.id, { tools: [{ name: 'ping', inputSchema: { type: 'object' } }] })
     else if (message.method === 'tools/call') reply(message.id, ${
@@ -219,39 +220,52 @@ export function wrongProjectReason(required: string, namesSeen: string[]): strin
   return extra.length ? `wrong project: saw ${extra.join(', ')} and not ${required}` : null
 }
 
+/** MCP stdio framing is one JSON message per line; a reply never carries headers. */
 function encodeMessage(payload: unknown): Buffer {
-  const body = Buffer.from(JSON.stringify(payload))
-  return Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`), body])
+  return Buffer.from(`${JSON.stringify(payload)}\n`)
 }
 
-function decodeMessages(buffer: Buffer): unknown[] {
+function parsedOrSkipped(text: string): unknown[] {
+  if (!text) return []
+  try {
+    return [JSON.parse(text)]
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Take one framed message off the front of the buffer: a Content-Length frame,
+ * or one line cut by bytes. Null when a Content-Length frame is incomplete.
+ */
+function nextFrame(rest: Buffer): { messages: unknown[]; rest: Buffer } | null {
+  const match = /^Content-Length:\s*(\d+)\r\n\r\n/i.exec(rest.toString('utf8'))
+  if (match) {
+    const offset = match[0].length
+    const end = offset + Number(match[1])
+    if (rest.length < end) return null
+    return {
+      messages: parsedOrSkipped(rest.subarray(offset, end).toString('utf8')),
+      rest: rest.subarray(end),
+    }
+  }
+  const newline = rest.indexOf(0x0a)
+  const lineEnd = newline < 0 ? rest.length : newline
+  return {
+    messages: parsedOrSkipped(rest.subarray(0, lineEnd).toString('utf8').trim()),
+    rest: newline < 0 ? Buffer.alloc(0) : rest.subarray(newline + 1),
+  }
+}
+
+/** Parse newline-delimited replies, still tolerating the Content-Length framing. */
+export function decodeMessages(buffer: Buffer): unknown[] {
   const messages: unknown[] = []
   let rest = buffer
   while (rest.length) {
-    const header = rest.toString('utf8')
-    const match = /^Content-Length:\s*(\d+)\r\n\r\n/i.exec(header)
-    if (match) {
-      const offset = match[0].length
-      const length = Number(match[1])
-      if (rest.length < offset + length) break
-      const body = rest.subarray(offset, offset + length).toString('utf8')
-      try {
-        messages.push(JSON.parse(body))
-      } catch {
-        /* skip malformed */
-      }
-      rest = rest.subarray(offset + length)
-      continue
-    }
-    const line = header.split('\n')[0] ?? ''
-    if (!line.trim()) break
-    try {
-      messages.push(JSON.parse(line.trim()))
-    } catch {
-      /* skip */
-    }
-    const consumed = Buffer.from(line + (header.startsWith(line + '\n') ? '\n' : '')).length
-    rest = rest.subarray(Math.max(consumed, 1))
+    const frame = nextFrame(rest)
+    if (!frame) break
+    messages.push(...frame.messages)
+    rest = frame.rest
   }
   return messages
 }

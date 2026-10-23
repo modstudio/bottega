@@ -81,6 +81,13 @@ test('MCP off attaches no project server at all', () => {
   expect(selectProjectMcpServers(false, CONFIG, PROJECT, '/project')).toBeNull()
 })
 
+test('withheld names are reported in the harness that loses them, and not when none are', () => {
+  expect(projectMcpWithheldLine('goose', [])).toBeNull()
+  expect(projectMcpWithheldLine('goose', ['a', 'b'])).toBe(
+    'MCP scope: goose withheld a, b (inline env/headers or no launch definition)',
+  )
+})
+
 test('the withheld line merges into a setup header and adds none of its own', () => {
   expect(mergeMcpSetupHeader(null, null)).toBeNull()
   expect(mergeMcpSetupHeader('existing', null)).toBe('existing')
@@ -89,12 +96,5 @@ test('the withheld line merges into a setup header and adds none of its own', ()
   )
   expect(mergeMcpSetupHeader('existing', 'MCP scope: goose withheld a')).toBe(
     'existing\nMCP scope: goose withheld a',
-  )
-})
-
-test('withheld names are reported in the harness that loses them, and not when none are', () => {
-  expect(projectMcpWithheldLine('goose', [])).toBeNull()
-  expect(projectMcpWithheldLine('goose', ['a', 'b'])).toBe(
-    'MCP scope: goose withheld a, b (inline env/headers or no launch definition)',
   )
 })

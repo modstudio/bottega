@@ -24,6 +24,7 @@ const ACP_PILOT_JOBS = [
   'canon-lookup',
   'verify-claim',
   'summarize',
+  'mcp-query',
 ] as const
 
 const NAMED_ACP_JOBS = ['review-lens', 'review-lens-inline'] as const

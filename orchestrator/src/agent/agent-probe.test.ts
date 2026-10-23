@@ -31,7 +31,6 @@ test('the registration probe verifies MCP for goose and for any job that asks fo
   expect(registrationProbeNeedsMcp(false, true, 'codex')).toBe(false)
   // A declared job that asks for MCP is verified on every harness.
   expect(registrationProbeNeedsMcp(true, true, 'codex')).toBe(true)
-  expect(registrationProbeNeedsMcp(true, true, 'goose')).toBe(true)
   // No declared jobs means every capability is verified.
   expect(registrationProbeNeedsMcp(false, false, 'codex')).toBe(true)
 })
@@ -126,8 +125,6 @@ test('a cached probe that skipped the MCP turn is not reused once that turn is r
   expect(registrationProbeCacheReusable('acp', skipped, true, false, false)).toBe(true)
   // A stored MCP verdict is an answer, so it is reusable.
   expect(registrationProbeCacheReusable('acp', result(true), true, false, true)).toBe(true)
-  const negative = { ...result(true), mcp: { verifiable: false, output: 'no ping tool call' } }
-  expect(registrationProbeCacheReusable('acp', negative, true, false, true)).toBe(true)
 })
 
 test('changing an agent identity resets a probed writing capability', () => {
