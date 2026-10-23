@@ -15,10 +15,13 @@ import {
 import type { StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition } from './workflow-definition.ts'
 import {
+  preflightSharedWorkflowTargets,
   SHARED_WORKFLOW_PROMOTION_REASON,
+  sharedPromotionRefusal,
+  sharedPromotionTarget,
   sharedWorkflowPromotionDisposition,
   sharedWorkflowPromotionSpaces,
-  type WorkflowCatalogueBlock,
+  sharedWorkflowReachableSpaces,
   type WorkflowPromotionSpaceDecision,
   type WorkflowPromotionVersion,
 } from './workflow-shared-promotion.ts'
@@ -43,7 +46,11 @@ type PromotionPorts = {
 export type CataloguePromotionPorts = {
   draftLocal(version: StoredPromotionVersion): number
   promoteLocal(version: number, reason: string): void
-  preflight(definition: StepCatalogueDefinition, spaceId: string | null): void
+  preflight(
+    definition: StepCatalogueDefinition,
+    spaceId: string | null,
+    replacement?: { slug: string; definition: WorkflowDefinition },
+  ): void
   author(): string
 }
 
@@ -211,6 +218,7 @@ async function applySharedCataloguePromotion(
   versions: readonly StoredPromotionVersion[],
   d: Database,
   ports: CataloguePromotionPorts,
+  replacement?: { slug: string; definition: WorkflowDefinition },
 ): Promise<WorkflowPromotionSpaceDecision> {
   const decision = sharedWorkflowPromotionSpaces(versions, n, sourceSpace, targetSpaces)
   const sourceTarget = versions.find(
@@ -220,14 +228,12 @@ async function applySharedCataloguePromotion(
     throw new Error(`step catalogue has no version ${n} in hosted space ${sourceSpace}`)
   for (const spaceId of decision.changed) {
     const disposition = sharedWorkflowPromotionDisposition(spaceId, versions, sourceSpace)
-    const target = `space ${spaceId ?? 'local'} catalogue ${disposition} planned version ${n}`
+    const target = sharedPromotionTarget(spaceId, disposition, n)
     try {
-      ports.preflight(JSON.parse(sourceTarget.definition), spaceId)
+      ports.preflight(JSON.parse(sourceTarget.definition), spaceId, replacement)
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
-      throw new Error(
-        `refusing shared workflow promotion for "shared step catalogue": ${target} cannot carry the workflow: ${reason}`,
-      )
+      throw sharedPromotionRefusal('shared step catalogue', target, reason)
     }
   }
   return promoteSharedWorkflowSpaces({
@@ -317,54 +323,6 @@ async function promoteHostedWorkflowSpace(
   await applyWorkflowWriteResponse(d, 'workflow', result)
 }
 
-function preflightSharedWorkflowTargets(input: {
-  slug: string
-  definition: WorkflowDefinition
-  sourceSpace: string
-  spaces: readonly (string | null)[]
-  catalogueVersions: readonly StoredPromotionVersion[]
-  sourceCatalogue: StoredPromotionVersion
-  ports: Pick<PromotionPorts, 'preflight' | 'missingCatalogueRefusal'>
-}): WorkflowCatalogueBlock[] {
-  const blocked: WorkflowCatalogueBlock[] = []
-  for (const spaceId of input.spaces) {
-    const disposition = sharedWorkflowPromotionDisposition(
-      spaceId,
-      input.catalogueVersions,
-      input.sourceSpace,
-    )
-    const catalogue =
-      disposition === 'follower'
-        ? input.sourceCatalogue
-        : input.catalogueVersions.find(
-            (version) => version.spaceId === spaceId && version.status === 'production',
-          )
-    const target = `space ${spaceId ?? 'local'} catalogue ${disposition} planned version ${catalogue?.n ?? 'none'}`
-    if (!catalogue)
-      throw new Error(
-        `refusing shared workflow promotion for "${input.slug}": ${target} cannot carry the workflow: ${input.ports.missingCatalogueRefusal}`,
-      )
-    try {
-      input.ports.preflight(input.definition, spaceId, JSON.parse(catalogue.definition))
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      if (disposition !== 'follower') {
-        blocked.push({
-          space: spaceId ?? 'local',
-          disposition,
-          plannedVersion: catalogue.n,
-          reason,
-        })
-        continue
-      }
-      throw new Error(
-        `refusing shared workflow promotion for "${input.slug}": ${target} cannot carry the workflow: ${reason}`,
-      )
-    }
-  }
-  return blocked
-}
-
 export async function promoteSharedWorkflow(
   slug: string,
   n: number,
@@ -394,32 +352,39 @@ export async function promoteSharedWorkflow(
   )
   if (!workflowTarget)
     throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${sourceSpace}`)
+  const workflowDefinition = JSON.parse(workflowTarget.definition) as WorkflowDefinition
   const blockedByCatalogue = preflightSharedWorkflowTargets({
     slug,
-    definition: JSON.parse(workflowTarget.definition) as WorkflowDefinition,
+    definition: workflowDefinition,
     sourceSpace,
     spaces: workflowDecision.changed,
     catalogueVersions,
     sourceCatalogue,
-    ports,
+    missingCatalogueRefusal: ports.missingCatalogueRefusal,
+    preflight: ports.preflight,
   })
+  const blockedSpaces = blockedByCatalogue.map((blocked) => blocked.spaceId)
+  const catalogueTargetSpaces = sharedWorkflowReachableSpaces(
+    workflowDecision.changed,
+    blockedSpaces,
+  )
+  const workflowTargetSpaces = sharedWorkflowReachableSpaces(targetSpaces, blockedSpaces)
   await applySharedCataloguePromotion(
     sourceCatalogue.n,
     sharedReason,
     sourceSpace,
-    targetSpaces,
+    catalogueTargetSpaces,
     catalogueVersions,
     d,
     ports.catalogue,
+    { slug, definition: workflowDefinition },
   )
   const promoted = await promoteSharedWorkflowSpaces({
     slug,
     targetVersion: n,
     sourceSpace,
     versions,
-    targetSpaces: targetSpaces.filter(
-      (spaceId) => !blockedByCatalogue.some((blocked) => blocked.space === (spaceId ?? 'local')),
-    ),
+    targetSpaces: workflowTargetSpaces,
     draftVersion: (spaceId, version) =>
       spaceId === null
         ? Promise.resolve(ports.draftLocal(version))
@@ -442,5 +407,15 @@ export async function promoteSharedWorkflow(
       }
     },
   })
-  return { ...promoted, ...(blockedByCatalogue.length ? { blockedByCatalogue } : {}) }
+  return {
+    ...promoted,
+    ...(blockedByCatalogue.length
+      ? {
+          blockedByCatalogue: blockedByCatalogue.map(({ spaceId, ...blocked }) => ({
+            ...blocked,
+            space: spaceId ?? 'local',
+          })),
+        }
+      : {}),
+  }
 }
