@@ -74,7 +74,7 @@ describe('Hub question UUID migration', () => {
         applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES, [
           { number: 91, record_id: recordId },
         ]),
-      ).toEqual(['0036_question_uuid_key'])
+      ).toEqual(['0036_question_uuid_key', '0038_foreign_key_leading_indexes'])
       expect(d.query('SELECT record_id,number FROM question').get()).toEqual({
         record_id: recordId,
         number: 91,

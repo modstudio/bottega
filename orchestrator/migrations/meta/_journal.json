@@ -1150,6 +1150,14 @@
       "tag": "0151_run_running_agent",
       "compatibility": "additive",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "6",
+      "when": 1793577600015,
+      "tag": "0152_foreign_key_leading_indexes",
+      "compatibility": "additive",
+      "breakpoints": true
     }
   ]
 }

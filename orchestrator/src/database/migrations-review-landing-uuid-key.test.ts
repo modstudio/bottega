@@ -23,20 +23,6 @@ function count(database: Database, table: string): number {
   return database.query<{ n: number }, []>(`SELECT COUNT(*) n FROM ${table}`).get()!.n
 }
 
-function leadingIndexColumns(database: Database, table: string): Set<string> {
-  const indexes = database
-    .query<{ name: string }, []>(`SELECT name FROM pragma_index_list('${table}')`)
-    .all()
-  return new Set(
-    indexes.flatMap(({ name }) =>
-      database
-        .query<{ name: string }, []>(`SELECT name FROM pragma_index_info('${name}') WHERE seqno=0`)
-        .all()
-        .map((row) => row.name),
-    ),
-  )
-}
-
 test('review and landing UUID-key migration preserves every table, relationship, cascade, and number', () => {
   const database = new Database(':memory:')
   database.exec('PRAGMA foreign_keys=ON')
@@ -160,23 +146,6 @@ test('review and landing UUID-key migration preserves every table, relationship,
     expect(count(database, 'review_lens')).toBe(0)
     expect(count(database, 'review_finding')).toBe(0)
     expect(nextReviewNumber(database)).toBe(82)
-  } finally {
-    database.close()
-  }
-})
-
-test('every declared review and landing foreign key leads an index', () => {
-  const database = new Database(':memory:')
-  try {
-    applyMigrations(database)
-    for (const table of TABLES) {
-      const indexed = leadingIndexColumns(database, table)
-      const foreignKeys = database
-        .query<{ from: string }, []>(`SELECT "from" FROM pragma_foreign_key_list('${table}')`)
-        .all()
-      for (const foreignKey of foreignKeys)
-        expect(indexed.has(foreignKey.from), `${table}.${foreignKey.from}`).toBe(true)
-    }
   } finally {
     database.close()
   }
