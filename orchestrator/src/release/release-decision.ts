@@ -65,6 +65,29 @@ export type CheckoutFacts = {
 
 export type Decision = { ok: true } | { ok: false; message: string }
 
+export type TrunkFreshnessDecision =
+  | { ok: true; overrideReason: string | null }
+  | { ok: false; message: string }
+
+/** Require a production branch to contain the landing branch unless the operator records why not. */
+export function trunkFreshnessDecision(facts: {
+  trunk: string
+  rungBranch: string
+  candidate: string
+  commitsBehind: number
+  overrideReason?: string
+}): TrunkFreshnessDecision {
+  if (facts.rungBranch === facts.trunk || facts.commitsBehind === 0) {
+    return { ok: true, overrideReason: null }
+  }
+  const reason = facts.overrideReason?.trim()
+  if (reason) return { ok: true, overrideReason: reason }
+  return {
+    ok: false,
+    message: `release refused: ${facts.trunk} has ${facts.commitsBehind} commits not in ${facts.rungBranch} (candidate ${facts.candidate}); promote ${facts.trunk} into ${facts.rungBranch} through the project's promotion pull request, then retry, or pass --behind-trunk with a reason to deploy ${facts.rungBranch} as it is`,
+  }
+}
+
 /** Require the checkout's reported version to be the version named by the release tag. */
 export function releaseTagVersionDecision(reportedVersion: string, tag: string): Decision {
   const taggedVersion = releaseTagVersion(tag)

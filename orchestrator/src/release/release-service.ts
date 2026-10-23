@@ -28,6 +28,7 @@ import {
   releaseTagVersionDecision,
   rollbackReasonDecision,
   selectReleaseRung,
+  trunkFreshnessDecision,
 } from './release-decision.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
 
@@ -65,6 +66,10 @@ export type ReleaseLedgerRow = {
   project: string
   rung: string
   candidate_commit: string
+  trunk: string | null
+  trunk_tip: string | null
+  commits_behind_trunk: number | null
+  behind_trunk_reason: string | null
   live_commit_before: string | null
   rollback: number
   rollback_reason: string | null
@@ -184,28 +189,94 @@ function unregisteredReleaseProjectRemedy(projectName: string): string {
   return `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`
 }
 
-export function releaseProject(
-  projectName: string,
-  requestedRung: string | undefined,
-  rollbackReason: string | undefined,
-) {
-  const reasonDecision = rollbackReasonDecision(
-    rollbackReason !== undefined && containsSecretShaped(rollbackReason),
-  )
-  if (!reasonDecision.ok) throw new Error(reasonDecision.message)
+function validateBehindTrunkReason(reason: string | undefined): void {
+  if (reason !== undefined && containsSecretShaped(reason))
+    throw new Error(
+      'behind-trunk reason contains secret-shaped text; restate the reason without the credential, then retry',
+    )
+}
+
+function releaseTarget(projectName: string, requestedRung: string | undefined) {
   const project = projectByName(projectName)
   if (!project) throw new Error(unregisteredReleaseProjectRemedy(projectName))
   const release = project.settings.release
   if (!release)
     throw new Error(`project ${projectName} has no release settings; set release.rungs, then retry`)
+  const trunk = project.settings.trunk?.trim()
+  if (!trunk)
+    throw new Error(
+      `project ${projectName} has no landing branch in settings.trunk; set settings.trunk, then retry`,
+    )
   const selected = selectReleaseRung(release.rungs, requestedRung)
   if ('refusal' in selected) throw new Error(selected.refusal)
   if (!selected.deploy)
     throw new Error(
       `release rung ${selected.name} has no deploy command; it deploys through the project's CI on push and is outside ${PLATFORM_SLUG} release run phase 1`,
     )
-  const deploy = selected.deploy
+  return { project, selected, deploy: selected.deploy, trunk }
+}
 
+function releaseTrunkFacts(
+  path: string,
+  trunk: string,
+  rungBranch: string,
+  candidate: string,
+  overrideReason: string | undefined,
+) {
+  const trunkTip = git(['rev-parse', `origin/${trunk}`], path)
+  const commitsBehindTrunk =
+    rungBranch === trunk
+      ? 0
+      : Number(git(['rev-list', '--count', `${candidate}..origin/${trunk}`], path))
+  const decision = trunkFreshnessDecision({
+    trunk,
+    rungBranch,
+    candidate,
+    commitsBehind: commitsBehindTrunk,
+    overrideReason,
+  })
+  if (!decision.ok) throw new Error(decision.message)
+  return { trunk, trunkTip, commitsBehindTrunk, behindTrunkReason: decision.overrideReason }
+}
+
+function postDeployFacts(
+  exitCode: number,
+  liveCommand: string | undefined,
+  path: string,
+  rung: string,
+  candidate: string,
+) {
+  if (exitCode !== 0 || !liveCommand)
+    return { liveAfter: null, liveMatchesCandidate: null, warning: null }
+  try {
+    const liveAfter = releaseLiveCommit(liveCommand, path, 'post-deploy live', rung)
+    const checked = postDeployLiveDecision(candidate, liveAfter)
+    return {
+      liveAfter,
+      liveMatchesCandidate: checked.matches,
+      warning: checked.warning === null ? null : capturedReleaseText(checked.warning),
+    }
+  } catch (error) {
+    return {
+      liveAfter: null,
+      liveMatchesCandidate: null,
+      warning: capturedReleaseText(error instanceof Error ? error.message : String(error)),
+    }
+  }
+}
+
+export function releaseProject(
+  projectName: string,
+  requestedRung: string | undefined,
+  rollbackReason: string | undefined,
+  behindTrunkReason: string | undefined,
+) {
+  const reasonDecision = rollbackReasonDecision(
+    rollbackReason !== undefined && containsSecretShaped(rollbackReason),
+  )
+  if (!reasonDecision.ok) throw new Error(reasonDecision.message)
+  validateBehindTrunkReason(behindTrunkReason)
+  const { project, selected, deploy, trunk } = releaseTarget(projectName, requestedRung)
   const lock = releaseLockDecision(projectLockState(project.path, 'release').holder)
   if (!lock.ok) throw new Error(lock.message)
   return withReleaseLock(
@@ -215,6 +286,13 @@ export function releaseProject(
       const checkout = checkoutFacts(project.path, selected.branch)
       const checkoutDecision = checkoutReleaseDecision(checkout)
       if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
+      const freshness = releaseTrunkFacts(
+        project.path,
+        trunk,
+        selected.branch,
+        checkout.head,
+        behindTrunkReason,
+      )
       const live = selected.live
         ? releaseLiveCommit(selected.live, project.path, 'pre-deploy live', selected.name)
         : newestSuccessfulReleasedCommit(projectName, selected.name)
@@ -233,43 +311,46 @@ export function releaseProject(
         live,
         rollback: forward.rollback,
         reason: forward.reason,
+        ...freshness,
       })
       const deployed = shell(
         deploy,
         project.path,
         releaseCommandEnvironment(projectName, selected.name, checkout.head, forward.rollback),
       )
-      let after: string | null = null
-      let matches: boolean | null = null
-      let warning: string | null = null
-      if (deployed.exitCode === 0 && selected.live) {
-        try {
-          after = releaseLiveCommit(selected.live, project.path, 'post-deploy live', selected.name)
-          const checked = postDeployLiveDecision(checkout.head, after)
-          matches = checked.matches
-          warning = checked.warning === null ? null : capturedReleaseText(checked.warning)
-        } catch (error) {
-          warning = capturedReleaseText(error instanceof Error ? error.message : String(error))
-        }
-      }
+      const checked = postDeployFacts(
+        deployed.exitCode,
+        selected.live,
+        project.path,
+        selected.name,
+        checkout.head,
+      )
       const outputTail = boundedGateOutputTail(
         capturedReleaseText(deployed.output),
         GATE_OUTPUT_TAIL_BYTES,
       )
-      finishReleaseLedgerEntry(writableDb(), id, deployed, outputTail, after, matches, warning)
+      finishReleaseLedgerEntry(
+        writableDb(),
+        id,
+        deployed,
+        outputTail,
+        checked.liveAfter,
+        checked.liveMatchesCandidate,
+        checked.warning,
+      )
       return {
         id,
         project: projectName,
         rung: selected.name,
-        candidate: checkout.head,
+        branch: selected.branch,
+        deployed: checkout.head,
+        ...freshness,
         liveBefore: live,
         baseline: forward.baseline,
         rollback: forward.rollback,
         exitCode: deployed.exitCode,
         outputTail,
-        liveAfter: after,
-        liveMatchesCandidate: matches,
-        warning,
+        ...checked,
       }
     },
   )

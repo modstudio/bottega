@@ -30,6 +30,10 @@ function started(database: Database): number {
     live: 'before-sha',
     rollback: false,
     reason: null,
+    trunk: 'main',
+    trunkTip: 'candidate-sha',
+    commitsBehindTrunk: 0,
+    behindTrunkReason: null,
   })
 }
 
@@ -55,6 +59,9 @@ test('release writes and evolves one whole-row pending payload without deploy ou
     projectName: PLATFORM_SLUG,
     rung: 'production',
     candidateCommit: 'candidate-sha',
+    trunk: 'main',
+    trunkTip: 'candidate-sha',
+    commitsBehindTrunk: 0,
     liveCommitBefore: 'before-sha',
     finishedAt: null,
     exitCode: null,

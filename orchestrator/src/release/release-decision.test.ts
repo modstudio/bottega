@@ -12,6 +12,7 @@ import {
   releaseTagVersionDecision,
   rollbackReasonDecision,
   selectReleaseRung,
+  trunkFreshnessDecision,
 } from './release-decision.ts'
 
 test('identifies the release to its deploy command', () => {
@@ -145,6 +146,40 @@ describe('forward-only release', () => {
       ok: false,
       message:
         'cannot determine whether live commit unknown is an ancestor of new; fetch unknown into the registered checkout, then retry',
+    }))
+})
+
+describe('release freshness against trunk', () => {
+  const facts = {
+    trunk: 'develop',
+    rungBranch: 'master',
+    candidate: '55c9b2a0',
+    commitsBehind: 337,
+  }
+
+  test('a rung on the trunk is unaffected', () =>
+    expect(trunkFreshnessDecision({ ...facts, trunk: 'master', rungBranch: 'master' })).toEqual({
+      ok: true,
+      overrideReason: null,
+    }))
+
+  test('a rung behind trunk refuses with the promotion remedy', () =>
+    expect(trunkFreshnessDecision(facts)).toEqual({
+      ok: false,
+      message:
+        "release refused: develop has 337 commits not in master (candidate 55c9b2a0); promote develop into master through the project's promotion pull request, then retry, or pass --behind-trunk with a reason to deploy master as it is",
+    }))
+
+  test('a rung behind trunk accepts and normalizes an override reason', () =>
+    expect(trunkFreshnessDecision({ ...facts, overrideReason: ' intentional hotfix ' })).toEqual({
+      ok: true,
+      overrideReason: 'intentional hotfix',
+    }))
+
+  test('a rung level with trunk is allowed', () =>
+    expect(trunkFreshnessDecision({ ...facts, commitsBehind: 0 })).toEqual({
+      ok: true,
+      overrideReason: null,
     }))
 })
 
