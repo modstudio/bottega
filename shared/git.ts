@@ -22,6 +22,8 @@ import { basename, dirname, join, resolve } from 'node:path'
 
 let listedLocalEnvVars: string[] | undefined
 
+const ORCH_GIT_ROUTING = ['ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF'] as const
+
 function localEnvVarQueryEnv(): NodeJS.ProcessEnv {
   return { PATH: process.env.PATH ?? '/usr/bin:/bin' }
 }
@@ -57,8 +59,19 @@ function localEnvVarNames(): string[] {
   }
 }
 
-/** Drop repository-local variables git lists while preserving config overlays and other routing. */
+/** Drop repository-location variables git lists, plus orchestrator ref-guard routing. */
 export function scrubbedGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...base }
+  for (const name of localEnvVarNames()) delete env[name]
+  for (const name of Object.keys(env)) {
+    if (/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(name)) delete env[name]
+  }
+  for (const name of ORCH_GIT_ROUTING) delete env[name]
+  return env
+}
+
+/** Child environment for project code: remove repository location without disabling its guard. */
+export function projectCodeGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = { ...base }
   for (const name of localEnvVarNames()) {
     if (!name.startsWith('GIT_CONFIG_')) delete env[name]

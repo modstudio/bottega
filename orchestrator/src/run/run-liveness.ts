@@ -225,6 +225,8 @@ type RunningRow = {
   agent_pid: number | null
   agent: string
   started_at: string
+  job: string
+  worktree: string | null
 }
 
 function deadRunReason(row: RunningRow): string {
@@ -356,11 +358,18 @@ function finalizeReapedRuns(
   for (const id of ended) teardownTerminalRunResources(database, id)
 }
 
-export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
+export function reapStale(
+  d: Database = db(),
+  checkSharedGitConfig: (input: {
+    runId: string
+    job: string
+    worktree: string | null
+  }) => string | null = () => null,
+): number | ObservedDeadRun[] {
   const now = Date.now()
   const rows = d
     .query(
-      `SELECT number, record_id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`,
+      `SELECT number, record_id, pid, agent_pid, agent, started_at, job, worktree FROM run WHERE status='running'`,
     )
     .all() as RunningRow[]
 
@@ -435,9 +444,19 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     )
     for (const id of dead) {
       const row = rows.find((candidate) => candidate.record_id === id)!
+      const sharedGitConfigHeader = checkSharedGitConfig({
+        runId: id,
+        job: row.job,
+        worktree: row.worktree,
+      })
       const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
       const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
-      const error = `abandoned: process gone, no terminal state recorded${surviving}`
+      const error = [
+        `abandoned: process gone, no terminal state recorded${surviving}`,
+        sharedGitConfigHeader,
+      ]
+        .filter(Boolean)
+        .join('\n')
       const reason = deadRunReason(row) + surviving
       writeTransaction(() => {
         if (update.run(error, id).changes !== 1) return

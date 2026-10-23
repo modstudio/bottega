@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-import { borrowedCheckoutFromAlternates, scrubbedGitEnv } from './git.ts'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { borrowedCheckoutFromAlternates, projectCodeGitEnv, scrubbedGitEnv } from './git.ts'
 
 describe('borrowed checkout identity', () => {
   const objects = '/trees/reader/.git/objects'
@@ -29,7 +29,7 @@ describe('borrowed checkout identity', () => {
 })
 
 describe('shared git environment decisions', () => {
-  test('the shared scrub removes repository-local variables while preserving config overlays and ref-guard routing', () => {
+  test('the shared scrub removes repository-local variables, config overlays, and ref-guard routing', () => {
     const contaminated: NodeJS.ProcessEnv = {
       UNRELATED: 'preserved',
       GIT_DIR: '/worker/git-dir',
@@ -64,14 +64,47 @@ describe('shared git environment decisions', () => {
     ]) {
       expect(scrubbed[variable]).toBeUndefined()
     }
-    expect(scrubbed.GIT_CONFIG_COUNT).toBe('2')
-    expect(scrubbed.GIT_CONFIG_PARAMETERS).toBe("'core.filemode'='false'")
+    expect(scrubbed.GIT_CONFIG_COUNT).toBeUndefined()
+    expect(scrubbed.GIT_CONFIG_PARAMETERS).toBeUndefined()
     expect(scrubbed.GIT_CONFIG_GLOBAL).toBe('/worker/global-config')
     expect(scrubbed.GIT_CONFIG_SYSTEM).toBe('/worker/system-config')
     expect(scrubbed.GIT_CONFIG_NOSYSTEM).toBe('1')
-    expect(scrubbed.GIT_CONFIG_KEY_0).toBe('core.hooksPath')
-    expect(scrubbed.GIT_CONFIG_VALUE_0).toBe('/worker/hooks')
-    expect(scrubbed.ORCH_GUARDED_GIT_COMMON_DIR).toBe('/worker/common')
-    expect(scrubbed.ORCH_ALLOWED_GIT_REF).toBe('refs/heads/worker')
+    expect(scrubbed.GIT_CONFIG_KEY_0).toBeUndefined()
+    expect(scrubbed.GIT_CONFIG_VALUE_0).toBeUndefined()
+    expect(scrubbed.ORCH_GUARDED_GIT_COMMON_DIR).toBeUndefined()
+    expect(scrubbed.ORCH_ALLOWED_GIT_REF).toBeUndefined()
+  })
+
+  describe('project-code launch environment', () => {
+    let previous: string | undefined
+
+    beforeEach(() => {
+      previous = process.env.GIT_DIR
+      process.env.GIT_DIR = '/lifecycle/hook/git-dir'
+    })
+
+    afterEach(() => {
+      if (previous === undefined) delete process.env.GIT_DIR
+      else process.env.GIT_DIR = previous
+    })
+
+    test('drops local git vars and keeps guard configuration', () => {
+      const scrubbed = projectCodeGitEnv({
+        ...process.env,
+        GIT_INDEX_FILE: '/lifecycle/hook/index',
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.hooksPath',
+        GIT_CONFIG_VALUE_0: '/guard/hooks',
+        ORCH_GUARDED_GIT_COMMON_DIR: '/guard/common',
+        ORCH_ALLOWED_GIT_REF: 'refs/heads/run',
+      })
+      expect(scrubbed.GIT_DIR).toBeUndefined()
+      expect(scrubbed.GIT_INDEX_FILE).toBeUndefined()
+      expect(scrubbed.GIT_CONFIG_COUNT).toBe('1')
+      expect(scrubbed.GIT_CONFIG_KEY_0).toBe('core.hooksPath')
+      expect(scrubbed.GIT_CONFIG_VALUE_0).toBe('/guard/hooks')
+      expect(scrubbed.ORCH_GUARDED_GIT_COMMON_DIR).toBe('/guard/common')
+      expect(scrubbed.ORCH_ALLOWED_GIT_REF).toBe('refs/heads/run')
+    })
   })
 })

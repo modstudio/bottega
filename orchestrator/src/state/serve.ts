@@ -29,6 +29,7 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { terminalSharedGitConfigForRun } from '../run/shared-git-config.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
@@ -255,7 +256,13 @@ export function state(sinceDays: number | null = null) {
   // flight" without ever becoming stale: reapStale had left it alone because
   // its pid was alive, and then the view hid it. Sweep first, then show
   // whatever is still marked running.
-  reapStale(d)
+  reapStale(d, (input) =>
+    terminalSharedGitConfigForRun({
+      runId: input.runId,
+      writesJob: Boolean(JOBS[input.job]?.needs.writesRepo),
+      worktree: input.worktree,
+    }),
+  )
 
   /**
    * ASKING RUNS ARE LIVE, and are the ones most worth seeing.

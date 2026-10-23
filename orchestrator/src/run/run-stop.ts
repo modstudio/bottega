@@ -95,8 +95,10 @@ function logStoppedRun(
   cleanupRow: ReturnType<typeof stopCleanupRow>,
   dockerTeardown: TerminalDockerTeardown,
   released: boolean,
+  sharedGitConfigHeader: string | null,
 ): void {
   options.presentation.log(stoppedRunLine(row.record_id))
+  if (sharedGitConfigHeader) options.presentation.log(sharedGitConfigHeader)
   if (cleanupRow.worktree) {
     options.presentation.log(
       stoppedWorktreeLine(
@@ -123,6 +125,11 @@ type RunControlHelpers = {
 export type RunStopHelpers = RunControlHelpers & {
   planRunProcessTermination: (runId: string, exceptPids?: number[]) => RunProcessTerminationPlan
   terminateRunProcesses: (plan: VerifiedRunProcessTermination) => TerminateRunProcessesResult
+  checkSharedGitConfig: (input: {
+    runId: string
+    job: string
+    worktree: string | null
+  }) => string | null
 }
 
 function enqueueAbandonedChain(rowId: string, rootId: string, at: string): void {
@@ -264,6 +271,16 @@ export async function stopRun(
     const refusal = stopTerminationRefusal(row, termination)
     if (refusal) throw new Error(refusal)
   }
+  const sharedGitConfigHeader = helpers.checkSharedGitConfig({
+    runId: row.record_id,
+    job: row.job,
+    worktree: row.worktree,
+  })
+  if (sharedGitConfigHeader) {
+    db()
+      .query("UPDATE run SET error=error || '\n' || ? WHERE record_id=? OR record_id=?")
+      .run(sharedGitConfigHeader, row.record_id, authority.rootId)
+  }
   const dockerTeardown = teardownTerminalRunResources(db(), row.record_id)
   const readerCloneRelease = releaseStoppedReaderClone(
     cleanupRow.record_id,
@@ -275,6 +292,7 @@ export async function stopRun(
     cleanupRow,
     dockerTeardown,
     readerCloneRelease === 'released' || readerCloneRelease === 'tree-released-with-unrecorded-row',
+    sharedGitConfigHeader,
   )
 }
 

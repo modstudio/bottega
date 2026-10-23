@@ -8,7 +8,7 @@ import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
 } from '../../../shared/check-execution.ts'
-import { scrubbedGitEnv } from '../../../shared/git.ts'
+import { projectCodeGitEnv, scrubbedGitEnv } from '../../../shared/git.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
@@ -362,14 +362,14 @@ async function spawnGateChild(input: {
   return setChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
-      env: scrubbedGitEnv({
+      env: {
         ...brokerGateEnvironment(
-          workerGateEnvironment(process.env),
+          workerGateEnvironment(projectCodeGitEnv(process.env)),
           process.env,
           input.environment,
         ),
         [HOST_SLOT_HELD_ENV]: '1',
-      }),
+      },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),

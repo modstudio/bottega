@@ -44,6 +44,7 @@ async function invoke(
       lifecycleCheckpoint: opts.checkpoint ?? (() => {}),
       planRunProcessTermination: opts.plan ?? (() => ({ outcome: 'no-pid' as const })),
       terminateRunProcesses: opts.terminate ?? (() => ({ outcome: 'no-pid' as const })),
+      checkSharedGitConfig: () => null,
     }
     if (action === 'stop') await stopRun(id, options, helpers)
     else await abandonRun(id, options, helpers)

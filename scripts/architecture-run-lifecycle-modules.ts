@@ -325,10 +325,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/run/shared-git-config.ts', [
+    'node:fs',
     'node:path',
     '../events.ts',
     '../git/git-environment.ts',
-    '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/run/run-terminal-blockers.ts', ['../failure/failure.ts']),
   module('orchestrator/src/run/run-terminal-change.ts', [

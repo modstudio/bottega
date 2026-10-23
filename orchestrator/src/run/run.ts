@@ -878,7 +878,11 @@ export async function run(opts: {
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
-  const sharedGitConfigSnapshot = snapshotWritingRunSharedGitConfig(writesJob, worktree)
+  snapshotWritingRunSharedGitConfig({
+    writesJob,
+    worktree: worktree?.path ?? null,
+    scratchDir,
+  })
   // Keep this handle visible to signals/finally so a running row can terminate.
   // A full Subprocess would widen the narrowed `p` streams.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
@@ -1034,7 +1038,6 @@ export async function run(opts: {
         failureKind,
         scratchDir,
         gitConfigEnvironment,
-        sharedGitConfigSnapshot,
         ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
         opts,
         watchedCheckouts,

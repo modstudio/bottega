@@ -74,10 +74,6 @@ function commonGitDir(cwd: string): string | null {
 /** Drop a worker's repository routing before deriving routing for the target checkout. */
 export function targetGitEnvironment(_cwd: string): NodeJS.ProcessEnv {
   const env = scrubbedGitEnv()
-  delete env.ORCH_GUARDED_GIT_COMMON_DIR
-  delete env.ORCH_ALLOWED_GIT_REF
-  delete env.GIT_CONFIG_PARAMETERS
-  env.GIT_CONFIG_COUNT = '0'
   // Operational git must not inherit a worker GIT_CONFIG_GLOBAL (hooksPath,
   // worker identity). Delete rather than /dev/null: landing commits keep
   // the user's ~/.gitconfig identity.
