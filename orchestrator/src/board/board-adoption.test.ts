@@ -784,7 +784,7 @@ test('the plan and upload include only receipts for readers that are still aroun
   expect(readers).toEqual(['live-reader'])
 })
 
-test('a receipt network failure resumes after recorded successes and sends only the remainder', async () => {
+test('a receipt server failure resumes after recorded successes and sends only the remainder', async () => {
   for (const reader of ['resume-a', 'resume-b', 'resume-c']) presence(reader)
   const notice = postNotice(
     { audience: 'session:resume-a', title: 'resumable receipts', body: 'receipt' },
@@ -799,7 +799,7 @@ test('a receipt network failure resumes after recorded successes and sends only 
     async putBoardReceipt(input) {
       firstRequests.push(input.readerSession)
       if (input.readerSession === 'resume-b')
-        throw new RecordApiRequestError('record API 500', 'unreachable')
+        throw new RecordApiRequestError('record API 500', 'server', 500)
       return base.putBoardReceipt(input)
     },
   }
@@ -885,7 +885,7 @@ test('a refused receipt is recorded as skipped and is not sent again on a rerun'
       firstRequests.push(input.readerSession)
       if (input.readerSession === 'refused-a')
         throw new RecordApiRequestError('receipt is no longer visible', 'refused')
-      throw new RecordApiRequestError('record API 500', 'unreachable')
+      throw new RecordApiRequestError('record API 500', 'server', 500)
     },
   }
 
