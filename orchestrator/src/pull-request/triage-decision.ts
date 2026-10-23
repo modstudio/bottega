@@ -1,8 +1,9 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
-import { type ApplicableReview, selectReviewApplicability } from '../review/review-applicability.ts'
+import type { ApplicableReview } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
+import type { ReviewFunnelPlan } from '../review/review-round-lens-plan.ts'
 import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
 
 export type TriageReviewGroup = {
@@ -15,7 +16,7 @@ export type TriageEvidence = {
   tip: string
   tier: 0 | 1 | 2 | 3
   applicableReview: ApplicableReview
-  roundReview?: ApplicableReview
+  reviewPlan?: ReviewFunnelPlan
   branchOwnerSession: string | null
   reviews: readonly TriageReviewRow[]
   branchReviewGroups: readonly TriageReviewGroup[]
@@ -318,27 +319,6 @@ function exactReviewEvidence(evidence: TriageEvidence) {
   }
 }
 
-function funnelApplicableReview(
-  evidence: TriageEvidence,
-  roundReview: ApplicableReview,
-): ApplicableReview {
-  if (evidence.roundReview === undefined) return evidence.applicableReview
-  const completedBranchLenses = new Set(
-    evidence.branchReviewGroups.flatMap(({ reviews }) =>
-      reviews
-        .filter(({ completedAt }) => completedAt !== null)
-        .flatMap(({ lensIdentities }) => lensIdentities),
-    ),
-  )
-  const requiredAtTip = new Set(roundReview.lenses)
-  return selectReviewApplicability(
-    evidence.applicableReview,
-    evidence.applicableReview.lenses.filter(
-      (lens) => completedBranchLenses.has(lens) || requiredAtTip.has(lens),
-    ),
-  )
-}
-
 function incompleteTriageDecision(input: {
   exact: ReturnType<typeof exactReviewEvidence>
   composed: ComposedReviewEvidence
@@ -346,9 +326,17 @@ function incompleteTriageDecision(input: {
   exactRead: TriageEvidence['reads'][number] | undefined
   finalTierRaised: boolean
   hasCompletedBranchReview: boolean
+  hasFunnelPlan: boolean
 }): Exclude<TriageDecision, { complete: true }> {
-  const { exact, composed, earlierRound, exactRead, finalTierRaised, hasCompletedBranchReview } =
-    input
+  const {
+    exact,
+    composed,
+    earlierRound,
+    exactRead,
+    finalTierRaised,
+    hasCompletedBranchReview,
+    hasFunnelPlan,
+  } = input
   const emptyGaps: ReviewGaps = {
     missingLenses: [],
     undisposedFindings: [],
@@ -377,7 +365,9 @@ function incompleteTriageDecision(input: {
     undisposedFindings,
     missingLenses: coverageGaps.missingLenses,
     missingSecondOpinion: coverageGaps.missingSecondOpinion,
-    architectReadRequired: Boolean(earlierRound && !finalTierRaised && !exactRead),
+    architectReadRequired: Boolean(
+      earlierRound && (!finalTierRaised || hasFunnelPlan) && !exactRead,
+    ),
     earlierReviewNumber: earlierRound?.reviews[0]?.reviewNumber ?? null,
     earlierReviewTier: earlierRound?.tier ?? null,
     finalTierRaised,
@@ -392,12 +382,15 @@ function incompleteTriageDecision(input: {
 
 /** One pure decision over the already-selected rows for a patch/path change group. */
 export function decideTriage(evidence: TriageEvidence): TriageDecision {
-  const exactReview = evidence.roundReview ?? evidence.applicableReview
-  const creditedRoundReview = evidence.roundReview ?? { lenses: [] }
-  const exact = exactReviewEvidence({ ...evidence, applicableReview: exactReview })
+  const reviewPlan = evidence.reviewPlan ?? {
+    round: { lenses: [] },
+    admissionRequired: evidence.applicableReview,
+  }
+  const exact = exactReviewEvidence({
+    ...evidence,
+    applicableReview: reviewPlan.admissionRequired,
+  })
   if (
-    exactReview.lenses.length === evidence.applicableReview.lenses.length &&
-    evidence.applicableReview.lenses.every((lens) => exactReview.lenses.includes(lens)) &&
     !exact.missingReview &&
     !exact.currentPatch.unfinishedReviewNumbers.length &&
     !exact.currentPatch.undisposedFindings.length &&
@@ -408,9 +401,9 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   }
   const composed = composedReviewEvidence(
     evidence.branchReviewGroups,
-    funnelApplicableReview(evidence, creditedRoundReview),
+    reviewPlan.admissionRequired,
     evidence.reviews,
-    creditedRoundReview,
+    reviewPlan.round,
   )
   const earlierRound = composed.round
   const hasCompletedBranchReview = evidence.branchReviewGroups.some(({ reviews }) =>
@@ -428,8 +421,8 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     : undefined
   const finalTierRaised = Boolean(earlierRound && evidence.tier > earlierRound.tier)
   if (
-    evidence.roundReview !== undefined &&
-    evidence.roundReview.lenses.length > 0 &&
+    evidence.reviewPlan !== undefined &&
+    (reviewPlan.round.lenses.length > 0 || reviewPlan.round.secondOpinion !== undefined) &&
     earlierRound &&
     !composed.coverageGaps.missingLenses.length &&
     !composed.coverageGaps.undisposedFindings.length &&
@@ -452,7 +445,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   }
   if (
     earlierRound &&
-    (!finalTierRaised || evidence.roundReview !== undefined) &&
+    (!finalTierRaised || evidence.reviewPlan !== undefined) &&
     exactRead &&
     !composed.coverageGaps.missingLenses.length &&
     !composed.coverageGaps.undisposedFindings.length &&
@@ -472,5 +465,6 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     exactRead,
     finalTierRaised,
     hasCompletedBranchReview,
+    hasFunnelPlan: evidence.reviewPlan !== undefined,
   })
 }

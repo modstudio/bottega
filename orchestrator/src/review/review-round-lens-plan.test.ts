@@ -4,19 +4,29 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { reviewsForTriage } from './review-group.ts'
 import { applicableRoundLensPlan, roundLensFacts, roundLensPlan } from './review-round-lens-plan.ts'
 
+const facts = (
+  overrides: Partial<Parameters<typeof applicableRoundLensPlan>[0]['facts']> = {},
+) => ({
+  reviewedPathsByLens: {},
+  completedLenses: [],
+  satisfiedSecondOpinionLenses: [],
+  latestAcceptedOrModifiedLenses: [],
+  ...overrides,
+})
+
 describe('round lens plan', () => {
   test('an initial round lists every relevant lens', () => {
     expect(
       applicableRoundLensPlan({
         relevant: { lenses: ['correctness', 'craft', 'architecture'] },
-        facts: {
-          reviewedPathsByLens: {},
-          latestAcceptedOrModifiedLenses: [],
-        },
+        facts: facts(),
         postFix: { kind: 'no-completed-round' },
         fixPathsByLens: {},
       }),
-    ).toEqual({ lenses: ['correctness', 'craft', 'architecture'] })
+    ).toEqual({
+      round: { lenses: ['correctness', 'craft', 'architecture'] },
+      admissionRequired: { lenses: ['correctness', 'craft', 'architecture'] },
+    })
   })
 
   test('an accepted-finding lens still re-runs', () => {
@@ -33,10 +43,10 @@ describe('round lens plan', () => {
     expect(
       applicableRoundLensPlan({
         relevant: { lenses: ['correctness', 'architecture'] },
-        facts: {
+        facts: facts({
           reviewedPathsByLens: { correctness: ['src/reviewed.ts'] },
-          latestAcceptedOrModifiedLenses: [],
-        },
+          completedLenses: ['correctness'],
+        }),
         postFix: {
           kind: 're-lens',
           reviewNumber: 2,
@@ -47,17 +57,17 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: {},
       }),
-    ).toEqual({ lenses: [] })
+    ).toEqual({ round: { lenses: [] }, admissionRequired: { lenses: ['correctness'] } })
   })
 
   test('a fix touching only paths a clean scoped lens already reviewed selects nothing', () => {
     expect(
       applicableRoundLensPlan({
         relevant: { lenses: ['safety'] },
-        facts: {
+        facts: facts({
           reviewedPathsByLens: { safety: ['src/risky.ts'] },
-          latestAcceptedOrModifiedLenses: [],
-        },
+          completedLenses: ['safety'],
+        }),
         postFix: {
           kind: 're-lens',
           reviewNumber: 2,
@@ -68,17 +78,17 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: { safety: ['src/risky.ts'] },
       }),
-    ).toEqual({ lenses: [] })
+    ).toEqual({ round: { lenses: [] }, admissionRequired: { lenses: ['safety'] } })
   })
 
   test("a fix touching a new path inside a lens's scope selects that lens", () => {
     expect(
       applicableRoundLensPlan({
         relevant: { lenses: ['safety'] },
-        facts: {
+        facts: facts({
           reviewedPathsByLens: { safety: ['src/reviewed.ts'] },
-          latestAcceptedOrModifiedLenses: [],
-        },
+          completedLenses: ['safety'],
+        }),
         postFix: {
           kind: 're-lens',
           reviewNumber: 2,
@@ -89,17 +99,17 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: { safety: ['src/new.ts'] },
       }),
-    ).toEqual({ lenses: ['safety'] })
+    ).toEqual({
+      round: { lenses: ['safety'] },
+      admissionRequired: { lenses: ['safety'] },
+    })
   })
 
-  test('no newly risky paths needs no round when every relevant lens completed', () => {
+  test('a no-round-needed decision selects no round lenses', () => {
     expect(
       applicableRoundLensPlan({
         relevant: { lenses: ['correctness', 'safety'] },
-        facts: {
-          reviewedPathsByLens: { correctness: ['src/a.ts'], safety: ['src/a.ts'] },
-          latestAcceptedOrModifiedLenses: ['correctness'],
-        },
+        facts: facts({ completedLenses: ['correctness', 'safety'] }),
         postFix: {
           kind: 'no-round-needed',
           reviewNumber: 1,
@@ -109,7 +119,10 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: {},
       }),
-    ).toEqual({ lenses: [] })
+    ).toEqual({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['correctness', 'safety'] },
+    })
   })
 
   const sixLenses = [
@@ -121,32 +134,21 @@ describe('round lens plan', () => {
     'test-quality',
   ] as const
 
-  test('a test-only commit after a clean six-lens round needs no round when the tip is unidentified', () => {
-    expect(
-      applicableRoundLensPlan({
-        relevant: { lenses: [...sixLenses] },
-        facts: {
-          reviewedPathsByLens: {},
-          latestAcceptedOrModifiedLenses: [],
-        },
-        postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
-        fixPathsByLens: {},
-      }),
-    ).toEqual({ lenses: [] })
-  })
-
   test('an unidentified tip with completed lenses applies the funnel, not the full set', () => {
     expect(
       applicableRoundLensPlan({
         relevant: { lenses: [...sixLenses] },
-        facts: {
-          reviewedPathsByLens: {},
+        facts: facts({
+          completedLenses: [...sixLenses],
           latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
-        },
+        }),
         postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
         fixPathsByLens: {},
       }),
-    ).toEqual({ lenses: ['correctness', 'craft'] })
+    ).toEqual({
+      round: { lenses: ['correctness', 'craft'] },
+      admissionRequired: { lenses: [...sixLenses] },
+    })
   })
 
   test('facts use the latest prior round and attribute accepted and modified findings by lens', () => {
@@ -223,6 +225,8 @@ describe('round lens plan', () => {
         architecture: ['a.ts'],
         safety: ['a.ts'],
       },
+      completedLenses: ['migration-safety', 'correctness', 'craft', 'architecture', 'safety'],
+      satisfiedSecondOpinionLenses: [],
       latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
     })
     database.close()

@@ -18,6 +18,7 @@ import {
   type TriageReviewRow,
 } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
+import type { ReviewFunnelPlan } from '../review/review-round-lens-plan.ts'
 import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
@@ -39,7 +40,7 @@ export type PullRequestChange = {
   group: ChangeGroup
   tier: 0 | 1 | 2 | 3
   applicability: ApplicableReview
-  roundApplicability?: ApplicableReview
+  reviewPlan?: ReviewFunnelPlan
 }
 
 const command = (cwd: string, argv: string[], label: string): string => {
@@ -109,7 +110,7 @@ export function resolvePullRequestChange(
     group: measured.group,
     tier: measured.tier.tier,
     applicability: measured.applicability,
-    roundApplicability: roundApplicabilityForChange({
+    reviewPlan: roundApplicabilityForChange({
       database,
       group: measured.group,
       relevant: measured.applicability,
@@ -138,7 +139,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     tip: change.tip,
     tier: change.tier,
     applicableReview: change.applicability,
-    roundReview: change.roundApplicability,
+    reviewPlan: change.reviewPlan,
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
     branchReviewGroups,
@@ -246,13 +247,13 @@ export function triageRefusal(
       `missing second opinion for ${lens} on a different model; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} --distinct-from ${firstRunId ?? '<first run>'} "Review ${change.branch} with ${lens}."`,
     )
   }
-  if (decision.finalTierRaised) {
-    lines.push(
-      `architect-read path failed: final tip tier ${change.tier} exceeds credited review ${decision.earlierReviewNumber} tier ${decision.earlierReviewTier}; cleared by: run and record a complete tier ${change.tier} review for ${change.branch}`,
-    )
-  } else if (decision.architectReadRequired) {
+  if (decision.architectReadRequired) {
     lines.push(
       `architect-read path failed: review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
+    )
+  } else if (decision.finalTierRaised) {
+    lines.push(
+      `architect-read path failed: final tip tier ${change.tier} exceeds credited review ${decision.earlierReviewNumber} tier ${decision.earlierReviewTier}; cleared by: run and record a complete tier ${change.tier} review for ${change.branch}`,
     )
   } else if (decision.noCompleteReviewRound) {
     lines.push(

@@ -4,10 +4,18 @@
 import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
+import { identifySecondOpinionRun } from './review-second-opinion.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
+  completedLenses: readonly string[]
+  satisfiedSecondOpinionLenses: readonly string[]
   latestAcceptedOrModifiedLenses: readonly string[]
+}
+
+export type ReviewFunnelPlan = {
+  round: ApplicableReview
+  admissionRequired: ApplicableReview
 }
 
 /**
@@ -29,6 +37,32 @@ export function roundLensFacts(
   branchReviews: readonly TriageReviewRow[],
   current: { patchId: string; pathSet: string },
 ): RoundLensFacts {
+  const completedLenses = [
+    ...new Set(
+      branchReviews
+        .filter((review) => review.completedAt !== null && review.tier !== null)
+        .flatMap((review) => review.lensIdentities),
+    ),
+  ]
+  const completedOpinions = branchReviews.flatMap((review) =>
+    review.lenses.flatMap((opinion) =>
+      opinion.runId && opinion.lens
+        ? [
+            {
+              recordId: opinion.recordId,
+              runId: opinion.runId,
+              lens: opinion.lens,
+              model: opinion.model ?? null,
+              graded: opinion.graded,
+              completed: review.completedAt !== null,
+            },
+          ]
+        : [],
+    ),
+  )
+  const satisfiedSecondOpinionLenses = completedLenses.filter((lens) =>
+    Boolean(identifySecondOpinionRun(completedOpinions, lens)),
+  )
   const prior = branchReviews.filter(
     (review) =>
       review.completedAt !== null &&
@@ -44,7 +78,13 @@ export function roundLensFacts(
     }
   }
   const latest = prior[0]
-  if (!latest) return { reviewedPathsByLens, latestAcceptedOrModifiedLenses: [] }
+  if (!latest)
+    return {
+      reviewedPathsByLens,
+      completedLenses,
+      satisfiedSecondOpinionLenses,
+      latestAcceptedOrModifiedLenses: [],
+    }
   const latestRound = prior.filter(
     (review) => review.patchId === latest.patchId && review.pathSet === latest.pathSet,
   )
@@ -57,7 +97,12 @@ export function roundLensFacts(
       ),
     ),
   ]
-  return { reviewedPathsByLens, latestAcceptedOrModifiedLenses }
+  return {
+    reviewedPathsByLens,
+    completedLenses,
+    satisfiedSecondOpinionLenses,
+    latestAcceptedOrModifiedLenses,
+  }
 }
 
 function newlyTouchedLenses(input: {
@@ -77,23 +122,48 @@ export function applicableRoundLensPlan(input: {
   facts: RoundLensFacts
   postFix: PostFixReviewDecision
   fixPathsByLens: Readonly<Record<string, readonly string[]>>
-}): ApplicableReview {
-  if (input.postFix.kind === 'no-completed-round') return input.relevant
-  if (input.postFix.kind === 'no-round-needed') return selectReviewApplicability(input.relevant, [])
-  const newlyTouched =
-    input.postFix.kind === 're-lens'
-      ? newlyTouchedLenses({
-          relevant: input.relevant,
-          facts: input.facts,
-          fixPathsByLens: input.fixPathsByLens,
-        })
-      : []
-  return selectReviewApplicability(
-    input.relevant,
-    roundLensPlan({
-      relevantLenses: input.relevant.lenses,
-      latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
-      newlyTouchedLenses: newlyTouched,
-    }),
-  )
+}): ReviewFunnelPlan {
+  const round = (() => {
+    if (input.postFix.kind === 'no-completed-round') return input.relevant
+    if (input.postFix.kind === 'no-round-needed')
+      return selectReviewApplicability(input.relevant, [])
+    const newlyTouched =
+      input.postFix.kind === 're-lens'
+        ? newlyTouchedLenses({
+            relevant: input.relevant,
+            facts: input.facts,
+            fixPathsByLens: input.fixPathsByLens,
+          })
+        : []
+    return selectReviewApplicability(
+      input.relevant,
+      roundLensPlan({
+        relevantLenses: input.relevant.lenses,
+        latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
+        newlyTouchedLenses: newlyTouched,
+      }),
+    )
+  })()
+  const required = new Set([...input.facts.completedLenses, ...round.lenses])
+  const admissionLenses = [
+    ...input.relevant.lenses.filter((lens) => required.has(lens)),
+    ...input.facts.completedLenses.filter((lens) => !input.relevant.lenses.includes(lens)),
+  ]
+  const secondOpinionOwed =
+    input.relevant.secondOpinion &&
+    required.has(input.relevant.secondOpinion) &&
+    !input.facts.satisfiedSecondOpinionLenses.includes(input.relevant.secondOpinion)
+  const roundWithOpinion = secondOpinionOwed
+    ? {
+        ...round,
+        secondOpinion: input.relevant.secondOpinion,
+        ...(input.relevant.secondOpinionBasis
+          ? { secondOpinionBasis: input.relevant.secondOpinionBasis }
+          : {}),
+      }
+    : round
+  return {
+    round: roundWithOpinion,
+    admissionRequired: selectReviewApplicability(input.relevant, admissionLenses),
+  }
 }

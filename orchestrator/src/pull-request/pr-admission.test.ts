@@ -229,7 +229,10 @@ test('a lens recorded on the branch is refused as missing for this change, not a
     tip: 'tip',
     tier: 2,
     applicableReview: { lenses: ['correctness', 'craft'] },
-    roundReview: { lenses: ['craft'] },
+    reviewPlan: {
+      round: { lenses: ['craft'] },
+      admissionRequired: { lenses: ['correctness', 'craft'] },
+    },
     branchOwnerSession: 'owner-session',
     reviews: [],
     branchReviewGroups: [{ reviews: [earlier] }],

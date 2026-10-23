@@ -57,6 +57,19 @@ describe('pull-request triage decision', () => {
     })
   })
 
+  test('a complete exact-tip review covers an empty later-round requirement', () => {
+    expect(
+      decideTriage(
+        evidence({
+          reviewPlan: {
+            round: { lenses: [] },
+            admissionRequired: { lenses: ['correctness'] },
+          },
+        }),
+      ),
+    ).toMatchObject({ complete: true, snapshot: { admissionPath: 'exact_review' } })
+  })
+
   test('path b admits a complete earlier round plus a later read of the exact tip', () => {
     const earlier = review({
       reviewId: 3,
@@ -103,10 +116,13 @@ describe('pull-request triage decision', () => {
       decideTriage(
         evidence({
           tier: 3,
-          reviews: [],
           applicableReview: { lenses: ['correctness', 'architecture'] },
-          roundReview: { lenses: [] },
+          reviewPlan: {
+            round: { lenses: [] },
+            admissionRequired: { lenses: ['correctness'] },
+          },
           branchReviewGroups: [branchGroup([earlier])],
+          reviews: [],
           reads: [
             {
               recordId: 'record-inline',
@@ -145,13 +161,45 @@ describe('pull-request triage decision', () => {
           applicableReview: {
             lenses: ['correctness', 'migration-safety', 'teardown-safety'],
           },
-          roundReview: { lenses: ['teardown-safety'] },
+          reviewPlan: {
+            round: { lenses: ['teardown-safety'] },
+            admissionRequired: {
+              lenses: ['correctness', 'migration-safety', 'teardown-safety'],
+            },
+          },
           branchReviewGroups: [branchGroup([earlier])],
         }),
       ),
     ).toMatchObject({
       complete: false,
       missingLenses: [{ lens: 'teardown-safety', recordedOnBranch: true }],
+    })
+  })
+
+  test('admission requires a newly selected round lens absent from earlier coverage', () => {
+    const earlier = review({
+      reviewId: 3,
+      tier: 3,
+      lensIdentities: ['correctness'],
+      lenses: [{ recordId: 'lens-correctness', lens: 'correctness', graded: true }],
+      findings: [],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          applicableReview: { lenses: ['correctness', 'safety'] },
+          reviewPlan: {
+            round: { lenses: ['safety'] },
+            admissionRequired: { lenses: ['correctness', 'safety'] },
+          },
+          reviews: [],
+          branchReviewGroups: [branchGroup([earlier])],
+        }),
+      ),
+    ).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'safety', recordedOnBranch: false }],
     })
   })
 
@@ -750,7 +798,12 @@ describe('pull-request triage decision', () => {
           applicableReview: {
             lenses: ['correctness', 'craft', 'test-quality', 'architecture'],
           },
-          roundReview: { lenses: ['correctness', 'craft', 'test-quality'] },
+          reviewPlan: {
+            round: { lenses: ['correctness', 'craft', 'test-quality'] },
+            admissionRequired: {
+              lenses: ['correctness', 'craft', 'test-quality', 'architecture'],
+            },
+          },
           reviews: [current],
           branchReviewGroups: [branchGroup([current]), branchGroup([earlier])],
         }),
