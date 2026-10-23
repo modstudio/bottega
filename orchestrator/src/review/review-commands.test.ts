@@ -223,7 +223,7 @@ test('review tier and admission select the same migration and teardown lenses', 
     const admission = resolvePullRequestChange(repo)
 
     expect(tier.lenses).toEqual(['correctness', 'migration-safety', 'teardown-safety'])
-    expect(admission.roundApplicability?.lenses).toEqual(tier.lenses)
+    expect(admission.reviewPlan?.round.lenses).toEqual(tier.lenses)
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -301,6 +301,7 @@ function postFixFixture(options: {
   fixPath?: string
   fixAfterMerge?: boolean
   resolveConflict?: boolean
+  secondOpinion?: boolean
   shiftReviewedPath?: boolean
 }): {
   repo: string
@@ -354,6 +355,7 @@ function postFixFixture(options: {
           { lens: 'safety', paths: ['critical/**'] },
           { lens: 'craft', paths: ['src/**'] },
         ],
+        ...(options.secondOpinion ? { secondOpinion: { lens: 'correctness' } } : {}),
         risk: {
           paths: [
             { pattern: '^critical/', tier: 3, reason: 'critical boundary' },
@@ -434,16 +436,36 @@ test('review tier needs no round when the only post-review commit is a clean tru
   }
 })
 
-test('review tier lists a never-completed lens when no tier-three fix path was touched', async () => {
+test('review tier and admission agree on an owed second opinion', async () => {
+  const { repo, branch } = postFixFixture({ secondOpinion: true })
+  try {
+    const output: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], output)
+    const tier = JSON.parse(output[0]!) as { lenses: string[]; secondOpinion?: string }
+    const admission = resolvePullRequestChange(repo)
+
+    expect(tier.lenses).toEqual([])
+    expect(tier.secondOpinion).toBe('correctness')
+    expect(admission.reviewPlan?.round.secondOpinion).toBe(tier.secondOpinion)
+    expect(admission.reviewPlan?.admissionRequired.secondOpinion).toBe(tier.secondOpinion)
+
+    const human: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo], human)
+    expect(human.some((line) => line.startsWith('second opinion correctness'))).toBeTrue()
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier needs no round for a never-completed lens when no scoped fix path was touched', async () => {
   const { repo, branch, reviewed } = postFixFixture({ fixPath: 'src/fix.ts' })
   try {
     const output: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
 
-    expect(output).not.toContain('no round needed: the architect reads the fix and lands it')
+    expect(output).toContain('no round needed: the architect reads the fix and lands it')
     expect(output.some((line) => line.startsWith('lens correctness'))).toBeFalse()
-    expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
-    expect(output).toContain('current change would start a new round')
+    expect(output.some((line) => line.startsWith('lens craft'))).toBeFalse()
 
     const json: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
@@ -470,7 +492,7 @@ test('review tier re-lenses a tier-three branch commit after a trunk merge', asy
     expect(output.some((line) => line.includes('critical/fix.ts'))).toBeTrue()
     expect(output.some((line) => line.startsWith('lens correctness'))).toBeFalse()
     expect(output.some((line) => line.startsWith('lens safety'))).toBeTrue()
-    expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
+    expect(output.some((line) => line.startsWith('lens craft'))).toBeFalse()
 
     const json: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)

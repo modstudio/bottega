@@ -778,13 +778,15 @@ describe('ACP permission policy', () => {
     const link = join(root, 'reply.json')
     roots.push(root, outside)
     symlinkSync(join(outside, 'missing.json'), link)
-    const resolved = resolveAcpEditLocations(root, [{ path: link }])
+    const resolved = resolveAcpEditLocations({ writing: false, worktree: '/tree', scratch: root }, [
+      { path: link },
+    ])
     expect(
       decideAcpPermission(
         'edit',
         ACP_FIXTURE_EDIT_PERMISSION.options,
         resolved?.locations,
-        resolved?.scratchRoot,
+        resolved?.admittedRoots,
       ).decision,
     ).toBe('reject')
   })
@@ -793,14 +795,16 @@ describe('ACP permission policy', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-missing-root-'))
     roots.push(root)
     const location = join(root, 'missing', 'reply.json')
-    const resolved = resolveAcpEditLocations(root, [{ path: location }])
+    const resolved = resolveAcpEditLocations({ writing: false, worktree: '/tree', scratch: root }, [
+      { path: location },
+    ])
     expect(resolved?.locations).toEqual([join(realpathSync(root), 'missing', 'reply.json')])
     expect(
       decideAcpPermission(
         'edit',
         ACP_FIXTURE_EDIT_PERMISSION.options,
         resolved?.locations,
-        resolved?.scratchRoot,
+        resolved?.admittedRoots,
       ).decision,
     ).toBe('allow')
   })
@@ -808,14 +812,16 @@ describe('ACP permission policy', () => {
   test('the permission edge rejects a relative location', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-permission-relative-root-'))
     roots.push(root)
-    const resolved = resolveAcpEditLocations(root, [{ path: 'reply.json' }])
+    const resolved = resolveAcpEditLocations({ writing: false, worktree: '/tree', scratch: root }, [
+      { path: 'reply.json' },
+    ])
     expect(resolved).toBeNull()
     expect(
       decideAcpPermission(
         'edit',
         ACP_FIXTURE_EDIT_PERMISSION.options,
         resolved?.locations,
-        resolved?.scratchRoot,
+        resolved?.admittedRoots,
       ).decision,
     ).toBe('reject')
   })
@@ -826,7 +832,7 @@ describe('ACP permission policy', () => {
       ACP_FIXTURE_EDIT_PERMISSION.toolKind,
       ACP_FIXTURE_EDIT_PERMISSION.options,
       [`${root}/reply.json`],
-      root,
+      [root],
     )
     expect(edit).toEqual({
       decision: 'allow',
@@ -841,7 +847,7 @@ describe('ACP permission policy', () => {
         'edit',
         ACP_FIXTURE_EDIT_PERMISSION.options,
         [`${root}/reply.json`, '/runs/41/prompt.txt'],
-        root,
+        [root],
       ).decision,
     ).toBe('reject')
   })
@@ -853,14 +859,14 @@ describe('ACP permission policy', () => {
         'edit',
         ACP_FIXTURE_EDIT_PERMISSION.options,
         [`${root}/../prompt.txt`],
-        root,
+        [root],
       ).decision,
     ).toBe('reject')
   })
 
   test('an edit without locations or a scratch root is rejected', () => {
     const options = ACP_FIXTURE_EDIT_PERMISSION.options
-    expect(decideAcpPermission('edit', options, [], '/runs/41/scratch').decision).toBe('reject')
+    expect(decideAcpPermission('edit', options, [], []).decision).toBe('reject')
     expect(decideAcpPermission('edit', options, ['/runs/41/scratch/reply.json']).decision).toBe(
       'reject',
     )
@@ -876,7 +882,7 @@ describe('ACP permission policy', () => {
           { optionId: 'reject-once', kind: 'reject_once' },
         ],
         [`${root}/reply.json`],
-        root,
+        [root],
       ).decision,
     ).toBe('reject')
   })
