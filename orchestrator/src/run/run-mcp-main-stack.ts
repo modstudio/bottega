@@ -4,6 +4,7 @@ import type { McpConnection, McpRequest } from '../mcp/mcp-preflight.ts'
 import {
   type DeferredCwdMcpStep,
   decideDeferredCwdMcpPlan,
+  preflightMcp,
   probeRequestedMcp,
   requestedMcpMode,
 } from '../mcp/mcp-preflight.ts'
@@ -39,11 +40,60 @@ export function prepareRunMcpPreflight(input: {
   }
 }
 
-export function ensureDispatchMcpMainStack(input: {
+function ensureDispatchMcpMainStack(input: {
   mcpRequest: McpRequest
   cwd: string
   projectName?: string
 }): void {
   const project = input.projectName ? projectByName(input.projectName) : projectAt(input.cwd)
   if (project) ensureProjectMainStack(project, 'mcp')
+}
+
+export function preflightDispatchMcp(input: {
+  mcpRequest: McpRequest | undefined
+  cwd: string
+  job: string
+  selectedAgent: string
+  projectName?: string
+}): void {
+  if (!input.mcpRequest) return
+  ensureDispatchMcpMainStack({
+    mcpRequest: input.mcpRequest,
+    cwd: input.cwd,
+    projectName: input.projectName,
+  })
+  preflightMcp({
+    mcp: input.mcpRequest,
+    cwd: input.cwd,
+    job: input.job,
+    selectedAgent: input.selectedAgent,
+  })
+}
+
+export async function selectAgentAndPreflightMcp<T extends { agent: string }>(input: {
+  select: () => Promise<T>
+  mcpRequest: McpRequest | undefined
+  cwd: string
+  job: string
+  projectName?: string
+  preflightedAgent?: string
+  preflight?: typeof preflightDispatchMcp
+  /** Records a selection or preflight failure before it propagates. */
+  onFailure?: (cause: unknown) => void
+}): Promise<T> {
+  try {
+    const selected = await input.select()
+    if (input.preflightedAgent === selected.agent) return selected
+    ;(input.preflight ?? preflightDispatchMcp)({
+      mcpRequest: input.mcpRequest,
+      cwd: input.cwd,
+      job: input.job,
+      selectedAgent: selected.agent,
+      projectName: input.projectName,
+    })
+    return selected
+  } catch (cause) {
+    input.onFailure?.(cause)
+    throw cause
+  }
 }

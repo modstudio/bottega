@@ -30,6 +30,11 @@
 import { Database } from 'bun:sqlite'
 import { RefusalError } from '../refusal-error.ts'
 
+type RunDispatchSpec = import('../route/failover.ts').DetachSpec & {
+  /** Agent whose MCP startup checks completed before the coordinator started. */
+  dispatchMcpPreflightedAgent?: string
+}
+
 export function startupFailureDiagnostic(error: unknown): string {
   if (error instanceof RefusalError) return error.message
   return String((error as Error)?.stack ?? error)
@@ -82,7 +87,7 @@ export async function main(argv: string[]): Promise<number> {
     registerStandardRuntime()
     const { run } = await import('./run.ts')
     const { detachedRunOptions } = await import('../route/failover.ts')
-    const spec = JSON.parse(specJson ?? '{}') as import('../route/failover.ts').DetachSpec
+    const spec = JSON.parse(specJson ?? '{}') as RunDispatchSpec
     const prompt = readFileSync(promptPath, 'utf8')
     const { db } = await import('../database/db.ts')
     const continuation = db()
@@ -97,7 +102,10 @@ export async function main(argv: string[]): Promise<number> {
       continuation.continuation_message_sha,
       spec.resume?.continuationMessage,
     )
-    await run(detachedRunOptions(jobName, prompt, id, spec))
+    await run({
+      ...detachedRunOptions(jobName, prompt, id, spec),
+      dispatchMcpPreflightedAgent: spec.dispatchMcpPreflightedAgent,
+    })
     return 0
   } catch (e) {
     const message = String((e as Error)?.message ?? e)
