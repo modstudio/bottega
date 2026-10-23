@@ -29,7 +29,7 @@ describe('tracker action names', () => {
     )
   })
 
-  test('array-mcp exposes bottega write paths while keeping its wire status action', () => {
+  test(`array-mcp exposes ${PLATFORM_SLUG} write paths while keeping its wire status action`, () => {
     expect(resolveTrackerAgentActions('array-mcp')).toMatchObject({
       status: `${PLATFORM_SLUG} task set {key} --status`,
       comment: `${PLATFORM_SLUG} workflow attach`,

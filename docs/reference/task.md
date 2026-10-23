@@ -343,7 +343,7 @@ what has been worked on, newest window first
 
 **Synopsis:** `bottega task set <key> [--project <X>] [--title <text>] [--status <Y>] [--parent <key>] [--no-parent] [--assignee <name>] [--force] [--abandon <reason>] [--body <text>] [--body-file <path>]`
 
-change fields on a local task
+change task fields; external trackers support status when adapted
 
 ### Options
 

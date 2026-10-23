@@ -758,7 +758,7 @@ describe('project workflow injection', () => {
     expect(tracker.actions.get).toBe(`${PLATFORM_SLUG} task show DEV_661`)
   })
 
-  test('array-mcp tracker facts name bottega status and workflow evidence verbs', () => {
+  test(`array-mcp tracker facts name ${PLATFORM_SLUG} status and workflow evidence verbs`, () => {
     const tracker = resolveInjection(
       {
         name: 'adanim',

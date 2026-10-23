@@ -239,6 +239,7 @@ export const hubModuleSpecs = [
       './task-import.ts',
       './tracker-new.ts',
       './tracker-task-cli.ts',
+      './tracker-task-write.ts',
     ],
   },
   {

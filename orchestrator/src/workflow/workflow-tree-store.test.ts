@@ -235,7 +235,7 @@ describe('importWorkflowTree', () => {
     })
   })
 
-  test('array-mcp ship steps render bottega status and workflow evidence verbs', async () => {
+  test(`array-mcp ship steps render ${PLATFORM_SLUG} status and workflow evidence verbs`, async () => {
     const d = database()
     await importAndPromoteCurrentTree(d)
     d.query(

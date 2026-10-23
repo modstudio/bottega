@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import type { RegisteredProject } from './projects.ts'
@@ -167,7 +168,7 @@ describe('array-mcp task writes', () => {
         registeredProjects: () => [project],
       }),
     ).rejects.toThrow(
-      'array-mcp tracker exposes no comment action; record the text on the workflow cursor with: bottega workflow attach --cursor <cursor> --file <path>',
+      `array-mcp tracker exposes no comment action; record the text on the workflow cursor with: ${PLATFORM_SLUG} workflow attach --cursor <cursor> --file <path>`,
     )
   })
 })
