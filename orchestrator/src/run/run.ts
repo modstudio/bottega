@@ -879,9 +879,10 @@ export async function run(opts: {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
   snapshotWritingRunSharedGitConfig({
+    runId: claim.id,
     writesJob,
     worktree: worktree?.path ?? null,
-    scratchDir,
+    writableRoots,
   })
   // Keep this handle visible to signals/finally so a running row can terminate.
   // A full Subprocess would widen the narrowed `p` streams.

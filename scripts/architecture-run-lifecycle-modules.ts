@@ -327,10 +327,15 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/shared-git-config.ts', [
     'node:fs',
     'node:path',
-    '../artifact-paths.ts',
     '../database/database-location.ts',
     '../events.ts',
     '../git/git-environment.ts',
+    '../resources/ref-guard.ts',
+  ]),
+  module('orchestrator/src/run/shared-git-config-run.ts', [
+    '../events.ts',
+    '../jobs/jobs.ts',
+    './shared-git-config.ts',
   ]),
   module('orchestrator/src/run/run-terminal-blockers.ts', ['../failure/failure.ts']),
   module('orchestrator/src/run/run-terminal-change.ts', [

@@ -58,7 +58,10 @@ import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { observedTestOutcome } from './run-test-outcome.ts'
 import { runUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
-import { terminalSharedGitConfigHeader } from './shared-git-config.ts'
+import {
+  shouldSnapshotSharedGitConfig,
+  terminalSharedGitConfigHeader,
+} from './shared-git-config.ts'
 
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
 
@@ -309,8 +312,7 @@ function terminalOperationalHeader(input: TerminalInput, current: string | null)
     terminalSharedGitConfigHeader({
       runId: input.claim.id,
       worktree: input.worktree?.path ?? null,
-      scratchDir: input.scratchDir,
-      expected: input.writesJob && Boolean(input.worktree),
+      expected: shouldSnapshotSharedGitConfig(input.writesJob, input.worktree?.path ?? null),
     }),
   ].filter((part): part is string => Boolean(part))
   return parts.length ? parts.join('\n') : null

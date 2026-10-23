@@ -7,11 +7,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
 import { db } from '../database/db.ts'
-import { JOBS } from '../jobs/jobs.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { confirmRunProcessTermination, planRecordedRunTermination } from '../run/run-process.ts'
 import { abandonRun, stopRun } from '../run/run-stop.ts'
-import { terminalSharedGitConfigForRun } from '../run/shared-git-config.ts'
+import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { log, optionFlags } from './support.ts'
 
@@ -105,12 +104,7 @@ export function register(program: Command): void {
           lifecycleCheckpoint,
           planRunProcessTermination: planRecordedRunTermination,
           terminateRunProcesses: confirmRunProcessTermination,
-          checkSharedGitConfig: (input) =>
-            terminalSharedGitConfigForRun({
-              runId: input.runId,
-              writesJob: Boolean(JOBS[input.job]?.needs.writesRepo),
-              worktree: input.worktree,
-            }),
+          checkSharedGitConfig: terminalSharedGitConfigForRecordedRun,
         },
       )
     })

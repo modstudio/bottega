@@ -157,7 +157,7 @@ describe('epic scoreboard', () => {
       landings: { attempted: 2, landed: 1, refused: 1 },
       reviews: { recorded: 1, completed: 1, outdated: 1 },
     })
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), () => null)).toBe(1)
     expect(
       db().query('SELECT status,failure_kind,latency_ms FROM run WHERE record_id=?').get(ghost),
     ).toEqual({
