@@ -23,6 +23,7 @@ import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
   type CataloguePromotionPorts,
   promoteSharedStepCatalogue,
@@ -668,20 +669,23 @@ export function promoteStepCatalogue(
 ) {
   assertCatalogueWriteAllowed('promote step catalogue')
   return applyRecordWriteAuthority({
-    local: () => promoteStepCatalogueLocal(n, reason, author, d),
+    local: () => {
+      promoteStepCatalogueLocal(n, reason, author, d)
+      return workflowPromotionReport(n, { changed: [null], overrides: [], pinned: [] })
+    },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await activeSpace(),
         target = selectedStepCatalogue(n, d, spaceId)
       if (target.status === 'retired') throw new Error(`step catalogue version ${n} is not a draft`)
-      await promoteSharedStepCatalogue(
+      const decision = await promoteSharedStepCatalogue(
         n,
         reason,
         spaceId,
         d,
         sharedStepCataloguePromotionPorts(author, d),
       )
-      return selectedStepCatalogue(n, d, spaceId)
+      return workflowPromotionReport(n, decision)
     },
   })
 }

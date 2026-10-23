@@ -229,7 +229,12 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
       }
     },
   })
-  expect((await promoteStepCatalogue(1, 'promote')).status).toBe('production')
+  expect(await promoteStepCatalogue(1, 'promote')).toEqual({
+    version: 1,
+    changedSpaces: [SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+  })
   expect(local.query('SELECT record_id FROM step_catalogue WHERE space_id=?').get(SPACE)).toEqual({
     record_id: ownerId,
   })
@@ -427,7 +432,7 @@ test('hosted catalogue promotion does not call the API when it removes a live re
   })
 
   await expect(promoteStepCatalogue(2, 'remove live reference')).rejects.toThrow(
-    'changes references used by production workflows',
+    'refusing shared workflow promotion for "shared step catalogue": space local catalogue follower planned version 2 cannot carry the workflow: step catalogue changes references used by production workflows',
   )
   expect(calls).toBe(0)
 })

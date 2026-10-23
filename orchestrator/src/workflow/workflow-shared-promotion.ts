@@ -15,6 +15,14 @@ export type WorkflowPromotionSpaceDecision = {
   changed: (string | null)[]
   overrides: string[]
   pinned: string[]
+  blockedByCatalogue?: WorkflowCatalogueBlock[]
+}
+
+export type WorkflowCatalogueBlock = {
+  space: string
+  disposition: 'override' | 'pinned'
+  plannedVersion: number
+  reason: string
 }
 
 export type WorkflowPromotionReport = {
@@ -22,6 +30,7 @@ export type WorkflowPromotionReport = {
   changedSpaces: string[]
   overrideSpaces: string[]
   pinnedSpaces: string[]
+  blockedByCatalogue?: WorkflowCatalogueBlock[]
 }
 
 export const workflowPromotionReport = (
@@ -32,6 +41,9 @@ export const workflowPromotionReport = (
   changedSpaces: decision.changed.map((spaceId) => spaceId ?? 'local'),
   overrideSpaces: decision.overrides,
   pinnedSpaces: decision.pinned,
+  ...(decision.blockedByCatalogue?.length
+    ? { blockedByCatalogue: decision.blockedByCatalogue }
+    : {}),
 })
 
 const pinsSharedPromotion = (
@@ -48,6 +60,19 @@ const pinsSharedPromotion = (
   return production !== undefined && production.n < highestCompletedVersion
 }
 
+export const sharedWorkflowPromotionDisposition = (
+  spaceId: string | null,
+  versions: readonly WorkflowPromotionVersion[],
+  sourceSpace: string,
+): 'follower' | 'override' | 'pinned' => {
+  const sourceVersions = new Map(
+    versions.filter((row) => row.spaceId === sourceSpace).map((row) => [row.n, row.definition]),
+  )
+  const rows = versions.filter((row) => row.spaceId === spaceId)
+  if (rows.some((row) => sourceVersions.get(row.n) !== row.definition)) return 'override'
+  return pinsSharedPromotion(spaceId, sourceSpace, rows) ? 'pinned' : 'follower'
+}
+
 /** A space follows while every version it holds matches the source history. */
 export function sharedWorkflowPromotionSpaces(
   versions: readonly WorkflowPromotionVersion[],
@@ -55,26 +80,21 @@ export function sharedWorkflowPromotionSpaces(
   sourceSpace: string,
   targetSpaces: readonly (string | null)[] = versions.map((row) => row.spaceId),
 ): WorkflowPromotionSpaceDecision {
-  const sourceVersions = new Map(
-    versions.filter((row) => row.spaceId === sourceSpace).map((row) => [row.n, row.definition]),
-  )
   const bySpace = new Map<string | null, WorkflowPromotionVersion[]>()
   for (const spaceId of targetSpaces) bySpace.set(spaceId, [])
-  for (const version of versions) {
-    const rows = bySpace.get(version.spaceId) ?? []
-    rows.push(version)
-    bySpace.set(version.spaceId, rows)
-  }
+  for (const version of versions.filter((row) => bySpace.has(row.spaceId)))
+    bySpace.get(version.spaceId)!.push(version)
 
   const changed: (string | null)[] = [],
     overrides: string[] = [],
     pinned: string[] = []
   for (const [spaceId, rows] of bySpace) {
-    if (rows.some((row) => sourceVersions.get(row.n) !== row.definition)) {
+    const disposition = sharedWorkflowPromotionDisposition(spaceId, versions, sourceSpace)
+    if (disposition === 'override') {
       if (spaceId !== null) overrides.push(spaceId)
       continue
     }
-    if (pinsSharedPromotion(spaceId, sourceSpace, rows)) {
+    if (disposition === 'pinned') {
       if (spaceId !== null) pinned.push(spaceId)
       continue
     }
