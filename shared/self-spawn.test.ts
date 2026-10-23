@@ -2,7 +2,12 @@ import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { registerEmbeddedAssets } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
-import { BOTTEGA_ENTRY_PROTOCOL, type BottegaEntry, bottegaEntryArgv } from './self-spawn.ts'
+import {
+  BOTTEGA_ENTRY_PROTOCOL,
+  type BottegaEntry,
+  bottegaEntryArgv,
+  installedBottegaExecutable,
+} from './self-spawn.ts'
 
 const entries: BottegaEntry[] = [
   PLATFORM_SLUG,
@@ -53,4 +58,5 @@ test('compiled entries re-execute the current binary', () => {
       }),
     ).toEqual([process.execPath, ...BOTTEGA_ENTRY_PROTOCOL[entry].compiledArguments])
   }
+  expect(installedBottegaExecutable()).toBe(process.execPath)
 })

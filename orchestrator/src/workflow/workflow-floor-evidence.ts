@@ -878,7 +878,7 @@ function realpathIfPresent(path: string): string | null {
   }
 }
 
-function bottegaCommandIdentity(
+export function bottegaCommandIdentity(
   executable: string | undefined,
   cwd: string,
   d: Database,

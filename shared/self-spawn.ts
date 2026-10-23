@@ -20,6 +20,7 @@ export type BottegaEntry = keyof typeof BOTTEGA_ENTRY_PROTOCOL
 
 /** The public executable of the running installed distribution, when this is one. */
 export function installedBottegaExecutable(): string | null {
+  if (embeddedDistributionManifest()) return process.execPath
   return readDistributionManifest(installRoot()) ? assetPath('bin', PLATFORM_SLUG) : null
 }
 
