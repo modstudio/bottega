@@ -1,7 +1,14 @@
 // concern: run-coordinator-log
 /** Owns detached coordinator log paths, reads, and durable diagnostic shaping. */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
@@ -14,14 +21,21 @@ function legacyCoordinatorLogNumber(name: string): string | null {
   return /^([1-9]\d*)\.coordinator\.log$/.exec(name)?.[1] ?? null
 }
 
-export type CoordinatorLogMigrationCandidate = { name: string; destinationExists: boolean }
+export type CoordinatorLogMigrationCandidate = {
+  name: string
+  destinationExists: boolean
+}
 
 export function planCoordinatorLogMigration(
   runsDirectory: string,
   candidates: readonly CoordinatorLogMigrationCandidate[],
   runs: ReadonlyMap<string, FilesystemIdentityRun>,
 ): FilesystemIdentityPlan {
-  const plan: FilesystemIdentityPlan = { mapped: [], collisions: [], unmapped: [] }
+  const plan: FilesystemIdentityPlan = {
+    mapped: [],
+    collisions: [],
+    unmapped: [],
+  }
   for (const candidate of candidates) {
     const number = legacyCoordinatorLogNumber(candidate.name)
     if (!number) continue
@@ -74,6 +88,23 @@ export function applyCoordinatorLogMigration(plan: FilesystemIdentityPlan): numb
 /** A detached coordinator's diagnostics, keyed by the run's machine identity. */
 export const runCoordinatorLogPath = (runRecordId: string, runsDir = RUNS_DIR): string =>
   join(runsDir, runRecordId, 'coordinator.log')
+
+const runCoordinatorCausePath = (runRecordId: string, runsDir = RUNS_DIR): string =>
+  join(runsDir, runRecordId, 'coordinator-cause.txt')
+
+/** Preserve a failure that this process cannot write to a newly migrated store. */
+export function recordCoordinatorCause(runRecordId: string, cause: string): void {
+  mkdirSync(join(RUNS_DIR, runRecordId), { recursive: true })
+  writeFileSync(runCoordinatorCausePath(runRecordId), cause)
+}
+
+export function recordedCoordinatorCause(runRecordId: string): string | null {
+  try {
+    return readFileSync(runCoordinatorCausePath(runRecordId), 'utf8').trim() || null
+  } catch {
+    return null
+  }
+}
 
 /** Bound coordinator diagnostics only after checking the whole candidate tail for secrets. */
 export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
