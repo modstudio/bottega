@@ -128,6 +128,53 @@ describe('run listing', () => {
     expect((await command({ json: true })).map(runJson).map((row) => row.record_id)).toEqual([root])
   })
 
+  test('runs --live includes an old chain whose latest turn is live before applying the limit', async () => {
+    const root = insert('asking')
+    const turn = insert('running')
+    db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
+    for (let index = 0; index < 201; index++) insert('ok')
+
+    const rows = (await command({ live: true, json: true, limit: ['1'] })).map(runJson)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      record_id: root,
+      status: 'running',
+      live_member_id: turn,
+      live_member_number: runNumber(turn),
+    })
+  })
+
+  test('runs --live returns supported live lifecycle statuses and no terminal status', async () => {
+    const statuses = ['queued', 'reserved', 'attached', 'running', 'asking']
+    const live = ['running', 'asking'].map((status) => insert(status))
+    insert('ok')
+
+    const rows = (await command({ live: true, json: true })).map(runJson)
+    expect(rows.map((row) => row.record_id).sort()).toEqual(live.sort())
+    expect(rows.map((row) => row.live_member_status).sort()).toEqual(['asking', 'running'])
+    expect(
+      rows.every((row) => JSON.stringify(row.live_statuses) === JSON.stringify(statuses)),
+    ).toBe(true)
+  })
+
+  test('runs --live includes a chain with an earlier member still marked live', async () => {
+    const root = insert('running')
+    const terminalTurn = insert('ok')
+    db()
+      .query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?')
+      .run(root, terminalTurn)
+
+    const rows = (await command({ live: true, json: true })).map(runJson)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      record_id: root,
+      live_member_id: root,
+      live_member_status: 'running',
+    })
+  })
+
   test('runs JSON publishes the stalled live member', async () => {
     const observedAt = Date.parse('2026-09-22T12:30:00.000Z')
     const id = addRun({

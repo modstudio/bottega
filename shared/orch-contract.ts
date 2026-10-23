@@ -550,11 +550,17 @@ export const HostLoadSchema = z.object({
   freeMem: z.number(),
 })
 
-export const AttributionKindSchema = z.enum(['lock_holder', 'landing', 'unattributed'])
+export const AttributionKindSchema = z.enum([
+  'lock_holder',
+  'landing',
+  'tree_removal',
+  'unattributed',
+])
 export const ConfinementClassSchema = z.enum([
   'overlapping',
   'non_overlapping',
   'edit_commit_cycle',
+  'removed',
 ])
 export type AttributionKind = z.infer<typeof AttributionKindSchema>
 export type ConfinementClass = z.infer<typeof ConfinementClassSchema>

@@ -160,6 +160,7 @@ const reviewSchema = strictObject({
     minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     basis: z.string().trim().min(1).optional(),
   }).optional(),
+  unscopedLenses: z.enum(['all', 'skip']).optional(),
   risk: reviewRiskSchema.optional(),
   record: z.string().trim().min(1).optional(),
 }).superRefine((review, context) => {

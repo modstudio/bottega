@@ -15,7 +15,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/fixtures/store.ts'
-import { db, enableSchemaReload, writeTransaction } from '../database/db.ts'
+import {
+  closeDatabaseForFixture,
+  db,
+  enableSchemaReload,
+  writeTransaction,
+} from '../database/db.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -31,6 +36,8 @@ import {
 } from '../database/migrations.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { upsertProject } from '../project/projects.ts'
+import { recordedCoordinatorCause } from '../run/run-coordinator-log.ts'
+import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import {
   BRACE_EXPANSION_LIMIT,
   braceExpansionUpperBound,
@@ -43,6 +50,11 @@ import {
 } from './canon.ts'
 
 const journalLength = () => migrationJournal().length
+const journalVersionAfter = (tag: string): number => {
+  const entry = migrationJournal().find((candidate) => candidate.tag === tag)
+  if (!entry) throw new Error(`missing migration fixture ${tag}`)
+  return entry.idx + 1
+}
 
 const fresh = () => migratedTestDatabase()
 
@@ -56,7 +68,15 @@ describe('schema coexistence', () => {
       JSON.stringify({
         version: '7',
         dialect: 'sqlite',
-        entries: [{ idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true }],
+        entries: [
+          {
+            idx: 0,
+            version: '6',
+            when: 1,
+            tag: '0000_base',
+            breakpoints: true,
+          },
+        ],
       }),
     )
     const d = new Database(':memory:')
@@ -249,7 +269,9 @@ describe('schema coexistence', () => {
       `INSERT INTO run (started_at, agent, job, repo, prompt_sha, prompt_bytes, prompt_head, status)
        VALUES ('t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
     ).run()
-    expect(d.query('SELECT project_id FROM run').get()).toEqual({ project_id: null })
+    expect(d.query('SELECT project_id FROM run').get()).toEqual({
+      project_id: null,
+    })
     const before = applyMigrationsBefore(d, '0115_project_identity_contract')
     d.query('UPDATE project SET record_id=? WHERE name=?').run(newRecordId(), 'widget')
     const after = applyMigrations(d)
@@ -331,8 +353,20 @@ describe('schema coexistence', () => {
         version: '7',
         dialect: 'sqlite',
         entries: [
-          { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
-          { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
+          {
+            idx: 0,
+            version: '6',
+            when: 1,
+            tag: '0000_base',
+            breakpoints: true,
+          },
+          {
+            idx: 1,
+            version: '6',
+            when: 2,
+            tag: '0001_fill',
+            breakpoints: true,
+          },
         ],
       }),
     )
@@ -350,27 +384,15 @@ describe('schema coexistence', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('reload mode re-prepares instead of refusing a write after user_version changes', () => {
-    const seen: Array<[number | null, number]> = []
-    db()
-    enableSchemaReload((from, to) => {
-      seen.push([from, to])
-    })
+  test('writeTransaction after an additive migration writes on the still-open handle', () => {
+    const next = journalVersionAfter('0145_agent_trains_on_inputs')
+    const prior = next - 1
+    closeDatabaseForFixture()
     const other = new Database(process.env.ORCH_DB!)
-    const next = journalLength() + 1
-    other.exec(`PRAGMA user_version = ${next}`)
-    other.close()
-    writeTransaction(() => {
-      db().query('UPDATE project SET name = name WHERE 0').run()
-    })
-    expect(seen).toEqual([[journalLength(), next]])
-  })
-
-  test('writeTransaction after reload writes on the new handle, not the closed one', () => {
+    other.exec(`PRAGMA user_version = ${prior}`)
     enableSchemaReload(() => {})
     const held = db()
-    const other = new Database(process.env.ORCH_DB!)
-    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
+    other.exec(`PRAGMA user_version = ${next}`)
     other.close()
     writeTransaction(() => {
       db()
@@ -379,7 +401,8 @@ describe('schema coexistence', () => {
         )
         .run()
     }, held)
-    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+    expect(held.query('SELECT 1').get()).toEqual({ '1': 1 })
+    expect(db()).toBe(held)
     expect(db().query("SELECT name FROM project WHERE name='held-reload'").get()).toEqual({
       name: 'held-reload',
     })
@@ -387,10 +410,13 @@ describe('schema coexistence', () => {
 
   test('schema reload waits until an open write transaction completes', () => {
     const seen: Array<[number | null, number]> = []
+    const next = journalVersionAfter('0145_agent_trains_on_inputs')
+    const prior = next - 1
+    closeDatabaseForFixture()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${prior}`)
     const held = db()
     enableSchemaReload((from, to) => seen.push([from, to]))
-    const other = new Database(process.env.ORCH_DB!)
-    const next = journalLength() + 1
     other.exec(`PRAGMA user_version = ${next}`)
     other.close()
 
@@ -413,9 +439,45 @@ describe('schema coexistence', () => {
     expect(
       held.query("SELECT name FROM project WHERE name LIKE '%-reload' ORDER BY name").all(),
     ).toEqual([{ name: 'after-reload' }, { name: 'before-reload' }])
-    expect(db()).not.toBe(held)
-    expect(seen).toEqual([[journalLength(), next]])
-    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+    expect(db()).toBe(held)
+    expect(seen).toEqual([[prior, next]])
+    expect(held.query('SELECT 1').get()).toEqual({ '1': 1 })
+  })
+
+  test('reload mode names an unmarked migration instead of closing the handle', () => {
+    const next = journalVersionAfter('0131_lens_port_uuid_key')
+    const prior = next - 1
+    closeDatabaseForFixture()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${prior}`)
+    const held = db()
+    enableSchemaReload(() => {})
+    other.exec(`PRAGMA user_version = ${next}`)
+    other.close()
+
+    expect(() => db()).toThrow(
+      `store migrated from version ${prior} to ${next} past this process's version; restart this process, and re-dispatch any run it was coordinating`,
+    )
+    expect(held.query('SELECT 1').get()).toEqual({ '1': 1 })
+  })
+
+  test('run reload records the named refusal when an unmarked migration advances', () => {
+    const next = journalVersionAfter('0131_lens_port_uuid_key')
+    const prior = next - 1
+    const runId = newRecordId()
+    closeDatabaseForFixture()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${prior}`)
+    db()
+    enableRunSchemaReload(runId)
+    other.exec(`PRAGMA user_version = ${next}`)
+    other.close()
+
+    const reason =
+      `store migrated from version ${prior} to ${next} past this process's version; ` +
+      `restart this process, and re-dispatch any run it was coordinating`
+    expect(() => db()).toThrow(reason)
+    expect(recordedCoordinatorCause(runId)).toBe(reason)
   })
 })
 
@@ -513,15 +575,24 @@ describe('scoped operator docs', () => {
     expect(braceExpansionUpperBound(token)).toBe(65_536)
     expect(braceExpansionUpperBound(token)).toBeGreaterThan(BRACE_EXPANSION_LIMIT)
     expect(
-      checkDoc(`\`${token}\``, { repoRoot: '/fixture', trackedFiles: new Set() }),
+      checkDoc(`\`${token}\``, {
+        repoRoot: '/fixture',
+        trackedFiles: new Set(),
+      }),
     ).toHaveLength(1)
     expect(braceExpansionUpperBound('scripts/a-{reads,writes}.php')).toBe(2)
   })
 
   test('numeric literal report classifies per clause and excludes non-prose spans', () => {
     const cases: { text: string; expected: [string, string][] }[] = [
-      { text: 'The suite currently has 6,676 tests.', expected: [['6,676', 'RESTATED']] },
-      { text: 'The service listens on port 5432.', expected: [['5432', 'RESTATED']] },
+      {
+        text: 'The suite currently has 6,676 tests.',
+        expected: [['6,676', 'RESTATED']],
+      },
+      {
+        text: 'The service listens on port 5432.',
+        expected: [['5432', 'RESTATED']],
+      },
       { text: 'Bun 1.3.14 is installed.', expected: [['1.3.14', 'RESTATED']] },
       { text: 'Qwen3.6 is installed.', expected: [['Qwen3.6', 'RESTATED']] },
       { text: 'The default is 5.', expected: [['5', 'OWNED']] },
@@ -530,10 +601,19 @@ describe('scoped operator docs', () => {
         expected: [['15', 'OWNED']],
       },
       { text: 'A product admits at most 1 tag.', expected: [['1', 'OWNED']] },
-      { text: 'A change under 10% is reported as flat.', expected: [['10%', 'OWNED']] },
-      { text: 'The gate asserts 170 characters.', expected: [['170', 'CHECKED']] },
+      {
+        text: 'A change under 10% is reported as flat.',
+        expected: [['10%', 'OWNED']],
+      },
+      {
+        text: 'The gate asserts 170 characters.',
+        expected: [['170', 'CHECKED']],
+      },
       { text: 'The check refuses 51 lines.', expected: [['51', 'CHECKED']] },
-      { text: 'This check caps output at 20 bytes.', expected: [['20', 'CHECKED']] },
+      {
+        text: 'This check caps output at 20 bytes.',
+        expected: [['20', 'CHECKED']],
+      },
       {
         text: 'Run 1565 measured 36,058 rows.',
         expected: [
@@ -543,10 +623,16 @@ describe('scoped operator docs', () => {
       },
       { text: 'We observed 42 rows.', expected: [['42', 'EVIDENCE']] },
       { text: 'The sample measured 80 bytes.', expected: [['80', 'EVIDENCE']] },
-      { text: 'The incident had 22 files.', expected: [['22', 'UNCLASSIFIED']] },
+      {
+        text: 'The incident had 22 files.',
+        expected: [['22', 'UNCLASSIFIED']],
+      },
       { text: 'Build 4 succeeded.', expected: [['4', 'UNCLASSIFIED']] },
       { text: 'Option 7 is preferred.', expected: [['7', 'UNCLASSIFIED']] },
-      { text: 'Version 2 was used during the incident.', expected: [['2', 'UNCLASSIFIED']] },
+      {
+        text: 'Version 2 was used during the incident.',
+        expected: [['2', 'UNCLASSIFIED']],
+      },
       {
         text: 'Do not trust the claim that the suite has 900 tests.',
         expected: [['900', 'UNCLASSIFIED']],
@@ -582,7 +668,10 @@ describe('scoped operator docs', () => {
       { text: 'The meeting starts at 13:20.', expected: [] },
       { text: 'See file.ts:42 and path/file:43.', expected: [] },
       { text: 'See lines 19-21.', expected: [] },
-      { text: 'Install Bun 1.3.14 before running the gate.', expected: [['1.3.14', 'RESTATED']] },
+      {
+        text: 'Install Bun 1.3.14 before running the gate.',
+        expected: [['1.3.14', 'RESTATED']],
+      },
       {
         text: 'The gate checks 50 files and Bun 1.3.14 is installed.',
         expected: [
@@ -598,7 +687,10 @@ describe('scoped operator docs', () => {
           ['900', 'RESTATED'],
         ],
       },
-      { text: 'The year 2020 changed everything.', expected: [['2020', 'UNCLASSIFIED']] },
+      {
+        text: 'The year 2020 changed everything.',
+        expected: [['2020', 'UNCLASSIFIED']],
+      },
     ]
     for (const row of cases) {
       const report = numericLiteralReport(row.text, 'fixture')

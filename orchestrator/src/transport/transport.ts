@@ -2,6 +2,7 @@ import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { assetPath } from '../../../shared/install-root.ts'
 import type { FailureKind } from '../failure/failure.ts'
+import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
@@ -239,6 +240,8 @@ export type TransportHandle = {
   pid: number | null
   /** Available once session/new or session/load has returned. */
   effectiveModel?: string | null
+  /** ACP capability observed from initialize; absent on transports without ACP. */
+  loadSessionAdvertised?: boolean
   kill(sig?: number | string): void
   prompt(text: string): Promise<void>
   events(): AsyncIterable<NormalizedEvent>
@@ -560,7 +563,7 @@ export function failureKindFromStop(stopReason: string | null, error: string | n
   if (stopReason === 'max_turn_requests') return 'context'
   if (stopReason === 'context_window' || stopReason === 'context_limit') return 'context'
   if (stopReason === 'cost_limit') return 'cost'
-  if (error) return 'other'
+  if (error) return classify(error)
   return 'other'
 }
 

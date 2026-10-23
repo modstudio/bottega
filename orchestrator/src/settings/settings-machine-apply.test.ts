@@ -341,6 +341,54 @@ describe('settings apply', () => {
     expect(pulls).toBe(0)
   })
 
+  test('a secondary checkout refuses real harness homes before pulling', async () => {
+    await expect(
+      applyMachineSettings(
+        { check: false },
+        {
+          environment: {
+            HOME: '/operator',
+            CODEX_HOME: '/operator/.codex',
+          },
+          local: db(),
+          workerProcess: () => false,
+          runningFromRegisteredMainCheckout: false,
+          registeredMainCheckout: '/projects/main',
+          binaryRepositoryRoot: '/projects/main',
+          pull: async () => {
+            pulls++
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
+    )
+    expect(pulls).toBe(0)
+  })
+
+  test('a mixed temporary and real harness environment is refused before pulling', async () => {
+    await expect(
+      applyMachineSettings(
+        { check: false },
+        {
+          environment: {
+            HOME: root,
+            CODEX_HOME: '/operator/.codex',
+            GROK_HOME: join(root, '.grok'),
+          },
+          local: db(),
+          workerProcess: () => false,
+          runningFromRegisteredMainCheckout: false,
+          registeredMainCheckout: '/projects/main',
+          pull: async () => {
+            pulls++
+          },
+        },
+      ),
+    ).rejects.toThrow('real harness homes may only be written from the registered main checkout')
+    expect(pulls).toBe(0)
+  })
+
   test('skips successfully when another settings apply holds the per-user lock', async () => {
     const stateDirectory = join(root, 'state', 'orchestrator')
     mkdirSync(stateDirectory, { recursive: true })

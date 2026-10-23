@@ -93,7 +93,7 @@ const READ_ONLY_COMMANDS = new Set(['mcp-reader-proxy', 'migrate', 'ratchet'])
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
-    review: ['coverage-audit', 'yield'],
+    review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],
     setup: ['facts', 'plan'],
   }

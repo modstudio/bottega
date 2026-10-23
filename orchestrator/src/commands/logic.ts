@@ -153,6 +153,21 @@ function epicRegisteredProjectWorkingDirectoryRefusal(): string {
 const describedCommand = (program: Command, name: string, description: string) =>
   program.command(name).description(description)
 
+function registerCloseOut(program: Command): void {
+  describedCommand(program, 'close-out <id>', 'release a terminal run worktree and its claims')
+    .option('--non-blocking', 'refuse instead of waiting for the cleanup lock')
+    .option('--json', 'write the close-out result as JSON')
+    .allowExcessArguments(false)
+    .action((id, options) =>
+      closeOutCommand(
+        localRunId(id),
+        Boolean(options.nonBlocking),
+        presentation,
+        Boolean(options.json),
+      ),
+    )
+}
+
 function answerCommandDefinition(program: Command): Command {
   return describedCommand(
     program,
@@ -311,6 +326,10 @@ function registerAgentCommands(program: Command): void {
     .option(
       '--route-metered <value>',
       "allow automatic read-only routing to this metered agent; spend limits live in the provider key's own settings",
+    )
+    .option(
+      '--trains-on-inputs <value>',
+      'declare whether the agent provider may train on submitted inputs',
     )
     .option('--jobs <value>', 'allow these comma-separated jobs or any')
     .option('--prefer <value>', 'prefer these comma-separated jobs')
@@ -579,12 +598,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     )
   registerMcpServers(program)
   registerMachineAttentionCommands(program)
-  describedCommand(program, 'close-out <id>', 'release a terminal run worktree and its claims')
-    .option('--non-blocking', 'refuse instead of waiting for the cleanup lock')
-    .allowExcessArguments(false)
-    .action((id, options) =>
-      closeOutCommand(localRunId(id), Boolean(options.nonBlocking), presentation),
-    )
+  registerCloseOut(program)
   describedCommand(program, 'spawns', 'report subagent spawn-gate decisions')
     .option('--limit <value>', 'show this many recent spawn decisions')
     .allowExcessArguments(false)

@@ -186,6 +186,7 @@ function selectFailoverSuccessor(input: {
           input.repo ?? undefined,
         ),
         pinnedTransport: input.pinnedTransport ?? undefined,
+        project: input.repo,
       },
       false,
       input.lens ?? undefined,

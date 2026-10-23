@@ -10,7 +10,6 @@ import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
 import { startWorkerNoteBroker, type WorkerNoteBroker } from '../ask/worker-note-broker.ts'
 import { markRunBoardNoticesDelivered } from '../board/board-delivery.ts'
-import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   isAsking,
   REPLY_FILE_NAME,
@@ -68,6 +67,7 @@ import {
   latestCheckpoint,
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
+import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
@@ -306,7 +306,7 @@ export type LiveInput = {
   mcpTrustGranted: boolean
   writableRoots: string[]
   gitConfigEnvironment: Record<string, string> | undefined
-  sandboxRunDir: string
+  runtimeDir: string
   recipeEnvironment: Record<string, string>
   launchEnvironment: Record<string, string>
   scratchDir: string
@@ -357,9 +357,6 @@ export type LiveResult = {
   artifactsPersisted: boolean
   preConfinement: string | null
   vendorTerminatedStream: string | null
-  confinementFailures: FreezeFailure[]
-  confinementEvent: ConfinementEvent | null
-  frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[]
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
   workerEvents: StreamEvent[]
@@ -367,6 +364,33 @@ export type LiveResult = {
 
 function vendorProcessSample(pid: number | null): ProcessSample | undefined {
   return pid && pid > 1 ? sampleProcesses().find((row) => row.pid === pid) : undefined
+}
+
+function liveCheckpointSchedule(input: {
+  writesJob: boolean
+  worktree: Worktree | null
+  runId: string
+  taskKey: string | null
+  scratchDir: string
+  guardEnvironment: NodeJS.ProcessEnv
+  containment: CheckpointContainment
+}) {
+  return createCheckpointSchedule((trigger) => {
+    if (!input.writesJob || !input.worktree) return null
+    const result = checkpointRun({
+      database: db(),
+      runId: input.runId,
+      worktree: input.worktree.path,
+      branch: input.worktree.branch,
+      taskKey: input.taskKey,
+      scratchDir: input.scratchDir,
+      guardEnvironment: input.guardEnvironment,
+      containment: input.containment,
+      final: trigger === 'limit',
+    })
+    if (result.error) console.error(`orch: run ${input.runId} checkpoint failed: ${result.error}`)
+    return result
+  })
 }
 
 type ConfiguredAsk = Parameters<typeof recordConfiguredAsk>[0]
@@ -460,7 +484,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     mcpTrustGranted,
     writableRoots,
     gitConfigEnvironment,
-    sandboxRunDir,
+    runtimeDir,
     recipeEnvironment,
     launchEnvironment,
     scratchDir,
@@ -502,9 +526,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let failureKind: ReturnType<typeof classify> | null = null
   const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
-  const confinementFailures: FreezeFailure[] = []
-  const confinementEvent: ConfinementEvent | null = null
-  const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = input.askLoopback
   let executionBrokers: WorkerExecutionBrokers | null = null
   let noteBroker: WorkerNoteBroker | null = null
@@ -514,6 +535,15 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let gateStartedAtMs: number | null = null
   let excludedGateMsAtTimeout = 0
   let rearmWallDeadline = () => {}
+  const checkpointSchedule = liveCheckpointSchedule({
+    writesJob,
+    worktree,
+    runId: claim.id,
+    taskKey: launchKey,
+    scratchDir,
+    guardEnvironment: gitConfigEnvironment ?? {},
+    containment: input.checkpointContainment,
+  })
   try {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
@@ -538,6 +568,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
       confinement: brokerConfinement(input, sandboxSelection.profile),
+      onExecutionStart: checkpointSchedule.executionStarted,
+      onExecutionFinish: checkpointSchedule.executionFinished,
       onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
@@ -586,9 +618,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
-      srt: sandboxSelection.profile
-        ? { profile: sandboxSelection.profile, runtimeDir: sandboxRunDir }
-        : undefined,
+      srt: sandboxSelection.profile ? { profile: sandboxSelection.profile, runtimeDir } : undefined,
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
       env: liveChildEnv(
@@ -637,26 +667,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
               last_event_at=COALESCE(last_event_at, ?) WHERE record_id=?`,
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
-    const createCheckpoint = (final = false) => {
-      if (!writesJob || !worktree) return null
-      const result = checkpointRun({
-        database: db(),
-        runId: claim.id,
-        worktree: worktree.path,
-        branch: worktree.branch,
-        taskKey: launchKey,
-        scratchDir,
-        guardEnvironment: gitConfigEnvironment ?? {},
-        containment: input.checkpointContainment,
-        final,
-      })
-      if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
-      return result
-    }
     if (writesJob) {
       checkpointTimer = setInterval(
         () => {
-          createCheckpoint(false)
+          checkpointSchedule.request('scheduled')
         },
         (requestedJob.checkpointMinutes ?? DEFAULT_CHECKPOINT_MINUTES) * 60_000,
       )
@@ -735,7 +749,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         reclaimedMs: Math.max(0, boundMs - elapsed),
         boundMs,
       })
-      const checkpoint = createCheckpoint(true)
+      const checkpoint = checkpointSchedule.request('limit')
       const afterCheckpoint = recordedRunStatus(claim.id)
       const askedDuringCheckpoint = afterCheckpoint === 'asking' || runHasOpenQuestion(claim.id)
       if (askedDuringCheckpoint) {
@@ -1048,9 +1062,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     artifactsPersisted: true,
     preConfinement,
     vendorTerminatedStream,
-    confinementFailures,
-    confinementEvent,
-    frozenBefore,
     askLoopback,
     mcpSetupHeader,
     workerEvents,

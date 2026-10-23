@@ -4,6 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
+import {
+  type MigrationInFlightRun,
+  migrationInFlightRuns,
+} from '../run/migration-in-flight-runs.ts'
 import { reconcileRun } from '../run/run-artifacts.ts'
 import { existingDatabaseMigrationRefusal } from './database-location.ts'
 import { backfillSpecSha, DB_PATH, migrateDatabase, withDatabaseForMigrationStep } from './db.ts'
@@ -18,7 +22,11 @@ import {
 export type DatabaseCommandPresentation = { log(value: string): void }
 type MigrateCommandActions = {
   assertAuthority?(): void
-  migrate(input?: { beforeMigration?: string }): { path: string; versions: string[] }
+  inFlightRuns(): Promise<MigrationInFlightRun[]>
+  migrate(input?: { beforeMigration?: string }): {
+    path: string
+    versions: string[]
+  }
   migrateCutover?(): {
     path: string
     versions: string[]
@@ -50,6 +58,10 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
       const refusal = (options.authorityRefusal ?? existingDatabaseMigrationRefusal)()
       if (refusal) throw new Error(refusal)
     },
+    inFlightRuns: () =>
+      existsSync(DB_PATH)
+        ? withDatabaseForMigrationStep(async (database) => migrationInFlightRuns(database))
+        : Promise.resolve([]),
     migrate: migrateDatabase,
     contracted: () =>
       existsSync(DB_PATH)
@@ -81,14 +93,24 @@ export async function migrateCommand(
 ): Promise<void> {
   actions ??= defaultMigrateCommandActions(options)
   actions.assertAuthority?.()
+  const inFlight = await actions.inFlightRuns()
+  presentation.log(`runs in flight before migration: ${inFlight.length}`)
+  for (const run of inFlight) {
+    presentation.log(`  ${run.name}: ${run.waiting ? 'waiting for host capacity' : run.status}`)
+  }
   const alreadyContracted = await actions.contracted()
   const before = alreadyContracted
     ? { path: '', versions: [] }
     : actions.migrate({ beforeMigration: PROJECT_IDENTITY_CONTRACT_MIGRATION })
   if (!alreadyContracted) await actions.fill()
-  const beforeCutover = actions.migrate({ beforeMigration: RUN_FILESYSTEM_IDENTITY_CUTOVER })
-  const after: { path: string; versions: string[]; files?: RunFilesystemMigrationReport } =
-    actions.migrateCutover?.() ?? actions.migrate()
+  const beforeCutover = actions.migrate({
+    beforeMigration: RUN_FILESYSTEM_IDENTITY_CUTOVER,
+  })
+  const after: {
+    path: string
+    versions: string[]
+    files?: RunFilesystemMigrationReport
+  } = actions.migrateCutover?.() ?? actions.migrate()
   const files = after.files
   if (files) {
     presentation.log(

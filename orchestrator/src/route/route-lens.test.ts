@@ -37,7 +37,10 @@ describe('findings routing narrows to a lens only when that buys a comparison', 
       judgedLensRun('codex', 'correctness', 'wrong')
       judgedLensRun('grok', 'unrecorded', 'right', false)
     }
-    const ev = evidenceFor('review-lens', 0, null, undefined, 'correctness')
+    const ev = evidenceFor('review-lens', 0, null, {
+      lens: 'correctness',
+      project: undefined,
+    })
     expect(ev.level).toBe('job')
     expect(ev.scoped!.find((candidate) => candidate.agent === 'codex')!.evidence).toBe(MIN_SAMPLE)
     const routed = pick('review-lens', undefined, 0, false, null, {}, false, 'correctness')
@@ -46,7 +49,10 @@ describe('findings routing narrows to a lens only when that buys a comparison', 
   })
   test('a scored run without a recorded review lens contributes only job-wide', () => {
     judgedLensRun('codex', 'correctness', 'right', false)
-    const ev = evidenceFor('review-lens', 0, null, undefined, 'correctness')
+    const ev = evidenceFor('review-lens', 0, null, {
+      lens: 'correctness',
+      project: undefined,
+    })
     expect(ev.job.find((candidate) => candidate.agent === 'codex')!.evidence).toBe(1)
     expect(ev.scoped!.find((candidate) => candidate.agent === 'codex')!.evidence).toBe(0)
   })
