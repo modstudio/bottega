@@ -47,7 +47,7 @@ export type TriageDecision =
       missingReview: boolean
       unfinishedReviewNumbers: number[]
       undisposedFindings: { reviewNumber: number; ordinal: number }[]
-      missingLenses: string[]
+      missingLenses: { lens: string; recordedOnBranch: boolean }[]
       missingSecondOpinion: { lens: string; firstRunId: string | null } | null
       architectReadRequired: boolean
       earlierReviewNumber: number | null
@@ -63,7 +63,7 @@ type CompleteReviewRound = {
 }
 
 type ReviewGaps = {
-  missingLenses: string[]
+  missingLenses: { lens: string; recordedOnBranch: boolean }[]
   undisposedFindings: { reviewNumber: number; ordinal: number }[]
   missingSecondOpinion: { lens: string; firstRunId: string | null } | null
 }
@@ -148,6 +148,24 @@ function undisposedReviewFindings(review: TriageReviewRow) {
     .map(({ ordinal }) => ({ reviewNumber: review.reviewNumber, ordinal }))
 }
 
+function coverApplicableLens(
+  lens: string,
+  exactRequired: ReadonlySet<string>,
+  exactCompleted: readonly TriageReviewRow[],
+  completed: readonly TriageReviewRow[],
+): { kind: 'covered'; review: TriageReviewRow } | { kind: 'missing'; recordedOnBranch: boolean } {
+  const latest = (exactRequired.has(lens) ? exactCompleted : completed).find((review) =>
+    review.lensIdentities.includes(lens),
+  )
+  if (latest && latest.tier !== null) return { kind: 'covered', review: latest }
+  return {
+    kind: 'missing',
+    recordedOnBranch: completed.some(
+      (review) => review.lensIdentities.includes(lens) && review.tier !== null,
+    ),
+  }
+}
+
 function composedReviewEvidence(
   branchReviewGroups: readonly TriageReviewGroup[],
   applicableReview: ApplicableReview,
@@ -159,25 +177,23 @@ function composedReviewEvidence(
     .filter((review) => review.completedAt !== null)
     .sort((left, right) => right.completedAt!.localeCompare(left.completedAt!))
   const selected = new Map<string, TriageReviewRow>()
-  const missingLenses: string[] = []
+  const missingLenses: ReviewGaps['missingLenses'] = []
   const undisposedFindings: { reviewNumber: number; ordinal: number }[] = []
   const exactCompleted = exactReviews
     .filter((review) => review.completedAt !== null)
     .sort((left, right) => right.completedAt!.localeCompare(left.completedAt!))
   const exactRequired = new Set(roundReview.lenses)
   for (const lens of applicableReview.lenses) {
-    const latest = (exactRequired.has(lens) ? exactCompleted : completed).find((review) =>
-      review.lensIdentities.includes(lens),
-    )
-    if (!latest || latest.tier === null) {
-      missingLenses.push(lens)
+    const coverage = coverApplicableLens(lens, exactRequired, exactCompleted, completed)
+    if (coverage.kind === 'missing') {
+      missingLenses.push({ lens, recordedOnBranch: coverage.recordedOnBranch })
       continue
     }
-    const untriaged = undisposedReviewFindings(latest)
+    const untriaged = undisposedReviewFindings(coverage.review)
     if (untriaged.length) {
       undisposedFindings.push(...untriaged)
     }
-    selected.set(latest.reviewRecordId, latest)
+    selected.set(coverage.review.reviewRecordId, coverage.review)
   }
   const selectedReviews = [...selected.values()]
   const secondOpinionPool =
@@ -279,7 +295,9 @@ function exactReviewEvidence(evidence: TriageEvidence) {
   }
   const coverageGaps: ReviewGaps = {
     undisposedFindings: [],
-    missingLenses: evidence.applicableReview.lenses.filter((lens) => !judgedLenses.has(lens)),
+    missingLenses: evidence.applicableReview.lenses
+      .filter((lens) => !judgedLenses.has(lens))
+      .map((lens) => ({ lens, recordedOnBranch: false })),
     missingSecondOpinion: secondOpinion.complete
       ? null
       : { lens: secondOpinion.lens, firstRunId: secondOpinion.firstRunId },

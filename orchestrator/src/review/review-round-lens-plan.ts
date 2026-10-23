@@ -13,7 +13,8 @@ export type RoundLensFacts = {
 /**
  * The review funnel: an initial round runs every relevant lens; a later round runs lenses
  * never completed on the branch, lenses whose latest-round findings were accepted or modified,
- * and lenses selected by paths newly touched in the fix.
+ * and lenses selected by paths newly touched in the fix. An unidentified reviewed tip still
+ * uses this funnel; the full relevant set is not the fallback.
  */
 export function roundLensPlan(input: {
   relevantLenses: readonly string[]
@@ -67,7 +68,6 @@ export function applicableRoundLensPlan(input: {
   pathScopedLenses: readonly string[]
 }): ApplicableReview {
   if (input.postFix.kind === 'no-completed-round') return input.relevant
-  if (input.postFix.kind === 'reviewed-tip-unidentified') return input.relevant
   if (input.postFix.kind === 'no-round-needed') {
     const completed = new Set(input.facts.completedLenses)
     return selectReviewApplicability(
