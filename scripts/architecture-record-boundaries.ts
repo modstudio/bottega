@@ -284,6 +284,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       '../../../shared/record-project-contract.ts',
+      '../../../shared/repository-visibility.ts',
       './record-project-columns.ts',
     ],
     'Keep hosted project record access isolated from other production modules.',
@@ -461,7 +462,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'record-project-columns-boundary',
     'orchestrator/src/record/record-project-columns.ts',
-    [],
+    ['../../../shared/repository-visibility.ts'],
     'Keep the hosted project column mapping pure and independent of SQL, HTTP, and stores.',
     ['../project/project-settings.ts'],
   ),
@@ -472,8 +473,10 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'Keep the project settings shape independent of stores, SQL, and HTTP.',
     [
       '../../../shared/trackers.ts',
+      '../../../shared/repository-visibility.ts',
       '../enforcement/mechanical-check-declaration.ts',
       '../focused-test/focused-test-decision.ts',
+      '../gate/gate-decision.ts',
       '../recipe/recipe.ts',
       '../workflow/autonomy.ts',
       '../worktree/worktree-provision.ts',

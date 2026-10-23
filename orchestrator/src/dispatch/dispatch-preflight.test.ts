@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { lensDispatchNotices } from './dispatch-commands.ts'
-import { preflight } from './dispatch-preflight.ts'
+import { preflight, sourceIsRegisteredMain } from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
 
@@ -21,6 +21,63 @@ function git(cwd: string, ...args: string[]): void {
   const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
+
+test('the registered main checkout is the main source', () => {
+  expect(
+    sourceIsRegisteredMain({
+      sourceToplevel: '/projects/example',
+      sourceRepoRoot: '/projects/example',
+      borrowedFromMain: null,
+      registeredMainPath: '/projects/example',
+    }),
+  ).toBe(true)
+})
+
+test('a linked worktree of the registered repository is not the main source', () => {
+  expect(
+    sourceIsRegisteredMain({
+      sourceToplevel: '/projects/example/.claude/worktrees/EX-1',
+      sourceRepoRoot: '/projects/example',
+      borrowedFromMain: null,
+      registeredMainPath: '/projects/example',
+    }),
+  ).toBe(false)
+})
+
+test('a clone borrowing from the registered repository is not the main source', () => {
+  expect(
+    sourceIsRegisteredMain({
+      sourceToplevel: '/tmp/borrowed-example',
+      sourceRepoRoot: '/projects/example',
+      borrowedFromMain: '/projects/example',
+      registeredMainPath: '/projects/example',
+    }),
+  ).toBe(false)
+})
+
+test('a cwd outside the registered project uses its main checkout as the source', () => {
+  expect(
+    sourceIsRegisteredMain({
+      sourceToplevel: '/projects/other',
+      sourceRepoRoot: '/projects/other',
+      borrowedFromMain: null,
+      registeredMainPath: '/projects/example',
+    }),
+  ).toBe(true)
+})
+
+test('a registered main path longer than 200 characters is still the main source', () => {
+  const registeredMainPath = `/projects/${'long-segment/'.repeat(20)}example`
+  expect(registeredMainPath.length).toBeGreaterThan(200)
+  expect(
+    sourceIsRegisteredMain({
+      sourceToplevel: registeredMainPath,
+      sourceRepoRoot: registeredMainPath,
+      borrowedFromMain: null,
+      registeredMainPath,
+    }),
+  ).toBe(true)
+})
 
 test('preflight uses the recipe default from the explicit base creation will use', () => {
   const path = mkdtempSync(join(tmpdir(), 'orch-seed-base-'))

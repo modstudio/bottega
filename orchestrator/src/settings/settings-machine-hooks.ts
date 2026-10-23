@@ -15,6 +15,7 @@ import { isPlainObject, type OwnedSettings } from './settings.ts'
 const SCRIPT_FILES = [
   'block-agent.py',
   'no-attribution.py',
+  'bun-cache-guard.py',
   'git-guard.py',
   'heartbeat-remind.py',
   'board-interrupt.py',
@@ -29,7 +30,7 @@ const SCRIPT_FILES = [
 
 type ScriptFile = (typeof SCRIPT_FILES)[number]
 type HookEvent = 'PreToolUse' | 'SubagentStart' | 'PostToolUse' | 'Stop' | 'SessionStart'
-type HookCondition = string | { absoluteBottega: 'run start' } | { absoluteOrch: 'do' }
+type HookCondition = string | { absoluteBottega: 'run start' }
 type ProductHookDeclaration = {
   event: HookEvent
   matcher?: string
@@ -53,6 +54,7 @@ export type MachineProductHooksResult = {
 const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
+  { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
   {
     event: 'PreToolUse',
@@ -85,24 +87,6 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   },
   {
     event: 'PostToolUse',
-    matcher: 'Bash',
-    if: 'Bash(orch do:*)',
-    script: 'heartbeat-remind.py',
-  },
-  {
-    event: 'PostToolUse',
-    matcher: 'Bash',
-    if: 'Bash(./bin/orch do:*)',
-    script: 'heartbeat-remind.py',
-  },
-  {
-    event: 'PostToolUse',
-    matcher: 'Bash',
-    if: { absoluteOrch: 'do' },
-    script: 'heartbeat-remind.py',
-  },
-  {
-    event: 'PostToolUse',
     matcher: '*',
     script: 'board-interrupt.py',
     timeout: Math.ceil(BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1),
@@ -130,9 +114,7 @@ function scriptPath(assetRoot: string, file: ScriptFile): string {
 
 function resolvedCondition(value: HookCondition | undefined, assetRoot: string) {
   if (typeof value === 'string' || value === undefined) return value
-  if ('absoluteBottega' in value)
-    return `Bash(${join(assetRoot, 'bin', PLATFORM_SLUG)} ${value.absoluteBottega}:*)`
-  return `Bash(${join(assetRoot, 'bin', 'orch')} ${value.absoluteOrch}:*)`
+  return `Bash(${join(assetRoot, 'bin', PLATFORM_SLUG)} ${value.absoluteBottega}:*)`
 }
 
 function boardCommand(file: ScriptFile, assetRoot: string, databasePath: string): string {

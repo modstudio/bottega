@@ -5,6 +5,7 @@ import {
   dispatchLaunchCwdDecision,
   resolveCallerCheckoutDecision,
   taskBranchLandingBypassWarning,
+  transportSelection,
 } from './dispatch-cli-service.ts'
 
 test('a routed selection is handed off separately from the caller pin', () => {
@@ -14,6 +15,14 @@ test('a routed selection is handed off separately from the caller pin', () => {
   expect(
     detachSpecWithRoutedSelection({ agent: 'grok' }, { agent: 'codex', reason: 'route' }),
   ).toEqual({ agent: 'grok' })
+})
+
+test('dispatch transport selection gives an explicit flag precedence over the environment', () => {
+  expect(transportSelection('cli', undefined, 'acp')).toEqual({
+    transport: 'cli',
+    transportExplicit: true,
+    transportPinSource: 'explicit',
+  })
 })
 
 describe('dispatch launch cwd selection', () => {
@@ -216,7 +225,11 @@ describe('caller checkout resolution', () => {
         linkedWorktree: false,
         borrowedCheckout: false,
       }),
-    ).toEqual({ callerCwd: '/unregistered', launchCwd: '/unregistered', notice: null })
+    ).toEqual({
+      callerCwd: '/unregistered',
+      launchCwd: '/unregistered',
+      notice: null,
+    })
   })
 
   test('an implicit borrowed clone resolves to the registered project', () => {

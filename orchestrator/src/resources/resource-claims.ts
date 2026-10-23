@@ -5,11 +5,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  CANON_MIRROR_JOB,
-  HOOK_TREE_JOB,
-  LANDING_TREE_JOB,
-} from '../run/synthetic-lifecycle-job.ts'
+import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
@@ -39,6 +35,37 @@ export type SandboxDirectoryReleaseInput = {
   directoryExists: boolean
 }
 export type SandboxDirectoryReleaseDecision = 'release' | 'absent' | `keep:${string}`
+type CheckoutRemovalAttribution = {
+  attribution: 'tree_removal' | 'unattributed'
+  removalSession: string | null
+  removalRun: string | null
+}
+
+/** Attribution proved by a worktree claim explicitly released after a run began. */
+export function checkoutRemovalAttribution(
+  database: Database,
+  checkout: string,
+  startedAt: string,
+): CheckoutRemovalAttribution {
+  const removal = database
+    .query(
+      `SELECT resource_claim.root_run_record_id removal_run, run.session_id removal_session
+       FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
+       WHERE resource_claim.kind='worktree' AND resource_claim.allocation_key=?
+         AND resource_claim.state='released'
+         AND datetime(resource_claim.settled_at) >= datetime(?)
+       ORDER BY resource_claim.settled_at DESC, resource_claim.id DESC LIMIT 1`,
+    )
+    .get(checkout, startedAt) as {
+    removal_run: string
+    removal_session: string | null
+  } | null
+  return {
+    attribution: removal ? 'tree_removal' : 'unattributed',
+    removalSession: removal?.removal_session ?? null,
+    removalRun: removal?.removal_run ?? null,
+  }
+}
 
 export type RecipeDatabaseProvider = 'postgres-template' | 'mysql-dump' | 'compose'
 
@@ -664,10 +691,10 @@ function claimedClaimsOnTerminalConversations(
       `SELECT resource_claim.kind, COUNT(*) count
        FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
        WHERE resource_claim.state='claimed' AND run.status IN ('ok','failed','stale','stopped')
-         AND run.job NOT IN (?,?,?)
+         AND run.job NOT IN (${SYNTHETIC_LIFECYCLE_JOBS.map(() => '?').join(',')})
        GROUP BY resource_claim.kind ORDER BY resource_claim.kind`,
     )
-    .all(HOOK_TREE_JOB, LANDING_TREE_JOB, CANON_MIRROR_JOB) as {
+    .all(...SYNTHETIC_LIFECYCLE_JOBS) as {
     kind: ResourceClaimKind
     count: number
   }[]

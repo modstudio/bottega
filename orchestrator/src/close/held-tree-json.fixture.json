@@ -1,0 +1,23 @@
+[
+  {
+    "runId": "abc-1",
+    "worktree": "/landing-tree",
+    "hold": "landing-progress",
+    "inFlightRef": "cursor 459 merge-pr",
+    "suppressBlock": true
+  },
+  {
+    "runId": "abc-2",
+    "worktree": "/dirty-tree",
+    "hold": "unique-work",
+    "inFlightRef": "cursor 459 merge-pr",
+    "suppressBlock": false
+  },
+  {
+    "runId": "abc-3",
+    "worktree": "/other-tree",
+    "hold": "other",
+    "inFlightRef": null,
+    "suppressBlock": false
+  }
+]

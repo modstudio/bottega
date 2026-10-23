@@ -5,7 +5,7 @@ import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { resumePromptByteLimit } from '../agent/agents.ts'
+import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
 import {
   resolveTaskBranch,
@@ -22,7 +22,12 @@ import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
+import {
+  effectiveMcpRequest,
+  type McpRequest,
+  parseRequestedMcp,
+  requiredMcpServer,
+} from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
@@ -45,6 +50,7 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { routedPromptBytes } from '../run/run-routing-input.ts'
 import {
   assertAcpReady,
+  classifyTransportPin,
   resolveTransportName,
   selectAgentForTransport,
   type TransportName,
@@ -81,7 +87,10 @@ function earlierReviewRejections(
 async function lookupTaskKey(project: string, key: string) {
   const registered = projectByName(project)
   if (!registered)
-    return { state: 'unreachable' as const, condition: `project ${project} is not registered` }
+    return {
+      state: 'unreachable' as const,
+      condition: `project ${project} is not registered`,
+    }
   return lookupProjectTaskKey(registered, key)
 }
 
@@ -230,7 +239,10 @@ async function routeConstraints(
       )
   if (agent && avoid.includes(agent))
     throw new Error(`--agent ${agent} contradicts --avoid ${agent}`)
-  return { avoid, distinctModels: await Promise.all(ids.map(modelForDistinct)) }
+  return {
+    avoid,
+    distinctModels: await Promise.all(ids.map(modelForDistinct)),
+  }
 }
 
 function warnCallerDrift(
@@ -252,7 +264,9 @@ function warnCallerDrift(
     .digest('hex')
   try {
     mkdirSync(join(RUNS_DIR, '.signals'), { recursive: true })
-    writeFileSync(join(RUNS_DIR, '.signals', `caller-drift-${key}`), '', { flag: 'wx' })
+    writeFileSync(join(RUNS_DIR, '.signals', `caller-drift-${key}`), '', {
+      flag: 'wx',
+    })
   } catch {
     return
   }
@@ -324,7 +338,11 @@ const scoreSuffix = (jobName: string) =>
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
 const runNumber = (id: string) =>
-  (db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }).number
+  (
+    db().query('SELECT number FROM run WHERE record_id=?').get(id) as {
+      number: number
+    }
+  ).number
 const scoreHint = (id: string, jobName: string, parent: string | null) => {
   const number = runNumber(parent ?? id)
   return `${PLATFORM_SLUG} score ${number} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."`
@@ -342,6 +360,30 @@ const argvResumeLimit = (agentName: string) =>
 const selectedAgentOptions = (transport: TransportName, agent: string | undefined) => ({
   agent: selectAgentForTransport(transport, agent),
   agentExplicit: Boolean(agent),
+})
+export const transportSelection = (
+  flag: string | undefined,
+  selected: Agent | undefined,
+  environment = process.env.ORCH_TRANSPORT,
+) => {
+  const pin = classifyTransportPin(flag, environment)
+  return {
+    transport:
+      pin.pinnedTransport ??
+      selected?.defaultTransport ??
+      resolveTransportName(undefined, undefined),
+    transportExplicit: Boolean(pin.pinnedTransport),
+    transportPinSource: pin.transportPinSource,
+  }
+}
+const detachedMcpConstraints = (
+  request: McpRequest | undefined,
+  spec: DetachSpec,
+  cwd: string,
+) => ({
+  requiredMcp: requiredMcpServer(request, spec.cwd ?? cwd, spec.repo),
+  pinnedTransport: spec.transport,
+  transportPinSource: spec.transportPinSource,
 })
 
 async function selectBeforeDetach(
@@ -374,7 +416,8 @@ async function selectBeforeDetach(
           models: spec.distinctModels,
           model: spec.model,
           noWaitCapacity: spec.noWaitCapacity,
-          requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
+          ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
+          project: spec.repo ?? null,
         },
         spec.probe,
         spec.lens,
@@ -397,27 +440,22 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   const has = (name: string) =>
     argv.includes(`--${name}`) || argv.some((arg) => arg.startsWith(`--${name}=`))
   const values = (name: string) => flagValues(argv, name)
-  const positional = doPositionals(argv)
   const prompt = async () =>
     (await readMessageText({
       missing: 'no prompt: pass it as an argument, via --file, or on stdin',
       optional: Boolean(JOBS[argv[1] ?? '']?.findings && flag('lens')),
-      sources: { commandFile: flag('file'), positionals: positional },
+      sources: { commandFile: flag('file'), positionals: doPositionals(argv) },
     })) ?? ''
   const resolveOptions = async (jobName: string) => {
-    const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined,
-      transportFlag = flag('transport'),
-      explicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT),
-      transport =
-        !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
-    if (transport === 'acp') {
+    const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined
+    const transport = transportSelection(flag('transport'), selected)
+    if (transport.transport === 'acp') {
       assertAcpPolicyAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')), true)
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
-      ...selectedAgentOptions(transport, flag('agent')),
-      transport,
-      transportExplicit: explicit,
+      ...selectedAgentOptions(transport.transport, flag('agent')),
+      ...transport,
       ...(await routeConstraints(argv, flag('agent'))),
       mcp: parseRequestedMcp(argv),
     }

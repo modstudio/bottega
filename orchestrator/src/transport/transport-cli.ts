@@ -19,6 +19,7 @@ import {
   type VendorUsage,
 } from './transport.ts'
 import { cliResultEvents } from './transport-result-events.ts'
+import { type AgentBilling, usageForBilling } from './vendor-usage.ts'
 
 /** Codex reports "tokens used\\n<n>" on stderr; other agents report nothing. */
 function parseVendorTokens(blob: string): number | null {
@@ -32,6 +33,15 @@ function cliUsage(estimatedCostUsd: number | null) {
       ? EMPTY_VENDOR_USAGE
       : { ...EMPTY_VENDOR_USAGE, estimatedCostUsd, costSource: 'estimated' }
   return { costUsd: null, vendorUsage }
+}
+
+function eventForBilling(billing: AgentBilling, event: NormalizedEvent): NormalizedEvent {
+  if (event.kind !== 'usage') return event
+  const usage = usageForBilling(billing, {
+    costUsd: event.costUsd,
+    vendorUsage: EMPTY_VENDOR_USAGE,
+  })
+  return { ...event, costUsd: usage.costUsd }
 }
 
 async function readStdoutLines(
@@ -123,8 +133,8 @@ function spawnCliChild(
   )
 }
 
-function agentArgv(opts: TransportStartOpts): string[] {
-  const argv: ArgvOpts = {
+async function cliLaunch(opts: TransportStartOpts) {
+  const argvOpts: ArgvOpts = {
     prompt: opts.prompt,
     out: opts.outPath,
     schema: opts.schemaPath,
@@ -142,21 +152,21 @@ function agentArgv(opts: TransportStartOpts): string[] {
     recipeEnvironment: opts.recipeEnvironment,
     session: opts.session,
   }
-  return opts.resume && opts.session && opts.agent.resumeArgv
-    ? opts.agent.resumeArgv({ ...argv, session: opts.session })
-    : opts.agent.argv(argv)
-}
-
-const stdinPrompt = (opts: TransportStartOpts) =>
-  opts.agent.stdin && !opts.resume ? opts.prompt : undefined
-
-async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
-  const argv = agentArgv(opts)
+  const argv =
+    opts.resume && opts.session && opts.agent.resumeArgv
+      ? opts.agent.resumeArgv({ ...argvOpts, session: opts.session })
+      : opts.agent.argv(argvOpts)
   const bin = opts.bin ?? opts.agent.bin
   const launchArgv = opts.srt
     ? await sandboxLaunchArgv(opts.srt.profile, bin, argv)
     : [bin, ...argv]
-  const p = spawnCliChild(launchArgv, opts, stdinPrompt(opts))
+  const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
+  return { launchArgv, stdinPrompt }
+}
+
+async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
+  const { launchArgv, stdinPrompt } = await cliLaunch(opts)
+  const p = spawnCliChild(launchArgv, opts, stdinPrompt)
 
   let cancelled = false
   let collected: Promise<TransportResult> | null = null
@@ -172,7 +182,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     stdout: p.stdout!,
     stderr: p.stderr!,
     codex: (opts.agent.harness ?? opts.agent.name) === 'codex',
-    push: pushEvent,
+    push: (event) => pushEvent(eventForBilling(opts.agent.billing, event)),
   })
 
   const finishEvents = () => {
@@ -192,7 +202,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const reply = opts.agent.parseReply?.(stdout)
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
-        const usage = cliUsage(reply?.costUsd ?? null)
+        const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -218,7 +228,12 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const terminalEvents: NormalizedEvent[] = []
         if (sessionId) terminalEvents.push({ kind: 'session', sessionId })
         if (output) terminalEvents.push({ kind: 'text', text: output })
-        if (tokens !== null) terminalEvents.push({ kind: 'usage', tokens, costUsd: usage.costUsd })
+        if (tokens !== null)
+          terminalEvents.push({
+            kind: 'usage',
+            tokens,
+            costUsd: usage.costUsd,
+          })
         if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
         if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })
         const events = cliResultEvents(liveEvents, terminalEvents)

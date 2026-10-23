@@ -11,7 +11,6 @@ const facts = (over: Partial<Parameters<typeof decideRunWallDeadline>[0]> = {}) 
   accruedGateMs: 0,
   gateStartedAtMs: null,
   nowMs: 1_100,
-  ceilingMs: 1_000,
   ...over,
 })
 
@@ -33,9 +32,10 @@ test('an in-flight gate excludes its elapsed time at the original bound', () => 
   })
 })
 
-test('the stale ceiling wins over any amount of excluded gate time', () => {
-  expect(decideRunWallDeadline(facts({ accruedGateMs: 10_000, ceilingMs: 100 }))).toEqual({
-    expireNow: true,
+test('gate time carries the reply deadline past the stale interval', () => {
+  expect(decideRunWallDeadline(facts({ accruedGateMs: 3_600_000 }))).toEqual({
+    expireNow: false,
+    delayMs: 3_600_000,
   })
 })
 
@@ -48,6 +48,17 @@ test('a gate finishing after the original bound leaves the run time remaining at
       }),
     ),
   ).toEqual({ expireNow: false, delayMs: 20 })
+})
+
+test('time after a finished gate still spends the remaining reply bound', () => {
+  expect(
+    decideRunWallDeadline(
+      facts({
+        accruedGateMs: 70,
+        nowMs: 1_170,
+      }),
+    ),
+  ).toEqual({ expireNow: true })
 })
 
 test('a timeout error records excluded gate time without changing its configured-bound text', () => {

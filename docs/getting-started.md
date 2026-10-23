@@ -24,8 +24,8 @@ live in a local store.
     curl -fsSL https://raw.githubusercontent.com/modstudio/bottega/main/install.sh | sh
 
 The installer downloads one verified binary for your platform into
-`~/.local/bin` and links `orch` and `hub` to it. It prints the line to add when
-that directory is not on your `PATH`.
+`~/.local/bin`. It prints the line to add when that directory is not on your
+`PATH`.
 
 To work from a checkout instead, build the binary for your platform:
 
@@ -52,8 +52,8 @@ it. On a new machine expect one for each agent:
 
     bottega agent probe codex
 
-The probe runs the agent once to prove it can read a repository and return a
-structured reply. An agent takes repository work only after it passes.
+The probe runs the agent to prove its registration capabilities and, when it
+succeeds, clears any quota cooldown. An agent takes repository work only after it passes.
 `bottega agent list` shows where each one stands.
 
 ## Delegate a first change

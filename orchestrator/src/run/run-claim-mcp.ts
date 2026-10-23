@@ -36,8 +36,8 @@ type PlanInput = {
   callerCwd: string
   agent: Agent
   agentName: string
-  sandboxRunDir: string
-  sandboxRunDirExisted: boolean
+  runtimeDir: string
+  runtimeDirExisted: boolean
   sandboxRootId: string
   runId: string
   runProjectId: string | null
@@ -69,8 +69,8 @@ function prepareScope(input: PlanInput, project: Project) {
   return prepareClaimedGrokMcpScope(
     {
       agent: input.agent,
-      runDir: input.sandboxRunDir,
-      runDirExisted: input.sandboxRunDirExisted,
+      runDir: input.runtimeDir,
+      runDirExisted: input.runtimeDirExisted,
       cwd: input.cwd,
       project,
       config: prepareClaimedWorkerMcpConfig({
@@ -87,7 +87,7 @@ function prepareScope(input: PlanInput, project: Project) {
           rootRunId: input.sandboxRootId,
           runId: input.runId,
           projectId: input.runProjectId,
-          path: input.sandboxRunDir,
+          path: input.runtimeDir,
           claimedAt: nowIso(),
         })
       }),

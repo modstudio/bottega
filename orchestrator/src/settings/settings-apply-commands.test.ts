@@ -19,6 +19,7 @@ import {
   settingsAdoptCommand,
   settingsEnvImportCommand,
   settingsRenderWriteCommand,
+  settingsRestoreCommand,
 } from './settings-apply-commands.ts'
 import { settingsRenderCheckCommand } from './settings-commands.ts'
 
@@ -294,7 +295,7 @@ describe('worker settings apply refusals', () => {
     delete process.env.ORCH_RUN_ID
     await seedUser()
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { FIRST: 'private' } }))
-    await settingsEnvImportCommand(flags({ user: true }), shown().port)
+    await settingsEnvImportCommand(flags({ user: true }), shown().port, () => false)
     expect(
       parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).envKeys,
     ).toEqual(['FIRST'])
@@ -303,9 +304,10 @@ describe('worker settings apply refusals', () => {
       join(claude, 'settings.json'),
       JSON.stringify({ env: { FIRST: 'private', SECOND: 'private' } }),
     )
-    process.env.ORCH_RUN_ID = 'settings-apply-worker'
-    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
-      'refusing document store write from an orchestrator worker run',
+    await expect(
+      settingsEnvImportCommand(flags({ user: true }), shown().port, () => true),
+    ).rejects.toThrow(
+      `refusing settings env import from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings env import --user`,
     )
   })
 
@@ -314,6 +316,14 @@ describe('worker settings apply refusals', () => {
       settingsRenderWriteCommand(flags({ user: true, write: true, yes: true }), shown().port),
     ).rejects.toThrow(
       `refusing settings render --write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings render --write`,
+    )
+  })
+
+  test('settings restore refuses a worker caller', () => {
+    expect(() =>
+      settingsRestoreCommand(flags({ user: true }), '/tmp/settings-backup', shown().port),
+    ).toThrow(
+      `refusing settings restore from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine settings restore`,
     )
   })
 
@@ -335,5 +345,37 @@ describe('worker settings apply refusals', () => {
     await expect(
       settingsAdoptCommand(flags({ user: true, all: true }), [], shown().port),
     ).rejects.toThrow('refusing document store write from an orchestrator worker run')
+  })
+})
+
+describe('real user home write authority', () => {
+  test('settings env import --user refuses outside the registered main checkout', async () => {
+    process.env.HOME = '/operator'
+    await expect(settingsEnvImportCommand(flags({ user: true }), shown().port)).rejects.toThrow(
+      'refusing machine settings env import --user from installation',
+    )
+  })
+
+  test('settings render --write --user refuses outside the registered main checkout', async () => {
+    process.env.HOME = '/operator'
+    await expect(
+      settingsRenderWriteCommand(
+        flags({ user: true, write: true, yes: true }),
+        shown().port,
+        () => false,
+      ),
+    ).rejects.toThrow('refusing machine settings render --write --user from installation')
+  })
+
+  test('settings restore --user refuses outside the registered main checkout before writing', () => {
+    process.env.HOME = '/operator'
+    expect(() =>
+      settingsRestoreCommand(
+        flags({ user: true }),
+        '/tmp/settings-backup-that-does-not-exist',
+        shown().port,
+        () => false,
+      ),
+    ).toThrow('refusing machine settings restore --user from installation')
   })
 })

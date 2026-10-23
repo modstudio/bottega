@@ -18,7 +18,7 @@ import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
-import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   gateCheckExecutionPath,
@@ -34,10 +34,14 @@ import {
   decideGateExecutionFinalization,
   decideGateHeadCommit,
   decideGateToolingDiffBase,
+  decideWorkerGateInput,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
+  type GateInput,
+  parseGateInput,
   resolveGateCommand,
 } from './gate-decision.ts'
+import { prepareSyntheticGateIndex } from './gate-index.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
@@ -94,6 +98,7 @@ function gatePlan(runId: string): {
   mainStackRequiredServices: string[] | undefined
   projectId: string
   projectName: string
+  gateInput: GateInput | undefined
 } {
   const row = db()
     .query(
@@ -111,6 +116,7 @@ function gatePlan(runId: string): {
   if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
   const settings = JSON.parse(row.settings ?? '{}') as {
     gate?: unknown
+    gateInput?: unknown
     trunk?: unknown
     mainStack?: {
       consumers?: MainStackConsumer[]
@@ -130,6 +136,7 @@ function gatePlan(runId: string): {
     mainStackRequiredServices: settings.mainStack?.requiredServices,
     projectId: row.project_record_id,
     projectName: row.project_name,
+    gateInput: parseGateInput(settings.gateInput, row.project_name),
   }
 }
 
@@ -352,7 +359,7 @@ async function spawnGateChild(input: {
   record: (chunk: Buffer | string) => void
 }) {
   const launch = await gateBrokerLaunchArgv(input.confinement, input.command)
-  return lowerRunChildPriority(
+  return setChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
       env: {
@@ -366,6 +373,7 @@ async function spawnGateChild(input: {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
+    HOST_TOOL_NICENESS,
     (message) => input.record(`warning: ${message}\n`),
   )
 }
@@ -425,22 +433,14 @@ function prepareGateExecution(input: {
   })
   const command = resolveGateCommand(plan.command, plan.worktree)
   const toolingPaths = changedGateTooling(plan, input.record)
-  const headCommit = decideGateHeadCommit({
-    headCommit:
-      gitPaths(plan.worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])[0]?.trim() ?? '',
-    porcelainPaths: gitPaths(plan.worktree, [
-      'status',
-      '--porcelain',
-      '-z',
-      '--untracked-files=all',
-    ]),
-  })
   db()
-    .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=?,head_commit=? WHERE id=?')
-    .run(JSON.stringify(toolingPaths), command, headCommit, input.request.id)
+    .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=? WHERE id=?')
+    .run(JSON.stringify(toolingPaths), command, input.request.id)
   return {
     command,
     worktree: plan.worktree,
+    baseCommit: plan.baseCommit,
+    gateInput: plan.gateInput,
     refreshInput: { mainCheckout, landingBranch: plan.trunk },
   }
 }
@@ -466,16 +466,69 @@ async function runPreparedGate(input: {
         )
         .run(refresh.elapsedMs, refresh.message, input.requestId)
     },
-    runGate: () =>
-      runGateProcess({
-        command: input.prepared.command,
+    runGate: async () => {
+      const trackedPorcelainPaths = gitPaths(input.prepared.worktree, [
+        'status',
+        '--porcelain',
+        '-z',
+        '--untracked-files=no',
+      ])
+      const gateInput = decideWorkerGateInput(
+        input.prepared.gateInput,
+        trackedPorcelainPaths.length > 0,
+      )
+      if (gateInput.kind === 'refused') throw new Error(gateInput.reason)
+      const porcelainPaths =
+        gateInput.kind === 'committed'
+          ? trackedPorcelainPaths
+          : gitPaths(input.prepared.worktree, [
+              'status',
+              '--porcelain',
+              '-z',
+              '--untracked-files=all',
+            ])
+      const headCommit = decideGateHeadCommit({
+        headCommit:
+          gitPaths(input.prepared.worktree, [
+            'rev-parse',
+            '--verify',
+            'HEAD^{commit}',
+          ])[0]?.trim() ?? '',
+        porcelainPaths,
+      })
+      db()
+        .query('UPDATE gate_execution SET head_commit=? WHERE id=?')
+        .run(headCommit, input.requestId)
+      if (gateInput.kind === 'committed') {
+        await runGateProcess({
+          command: input.prepared.command,
+          worktree: input.prepared.worktree,
+          environment: input.environment,
+          confinement: input.confinement,
+          state: input.state,
+          record: input.record,
+          stop: input.stop,
+        })
+        return
+      }
+      const gateIndex = prepareSyntheticGateIndex({
         worktree: input.prepared.worktree,
-        environment: input.environment,
-        confinement: input.confinement,
-        state: input.state,
-        record: input.record,
-        stop: input.stop,
-      }),
+        baseCommit: input.prepared.baseCommit,
+      })
+      try {
+        await runGateProcess({
+          command: input.prepared.command,
+          worktree: input.prepared.worktree,
+          environment: { ...input.environment, ...gateIndex.environment },
+          confinement: input.confinement,
+          state: input.state,
+          record: input.record,
+          stop: input.stop,
+        })
+      } finally {
+        gateIndex.remove()
+      }
+    },
   })
 }
 
@@ -550,12 +603,18 @@ function startGateExecution(
     })
     return state.termination
   }
-  let completion!: Promise<void>
-  const unregister = registerActive(async () => {
-    await stop(GATE_CLOSE_REASON)
-    await completion
-  })
   let finishedAt: string | null = null
+  let completion!: Promise<void>
+  let unregister: () => void
+  try {
+    unregister = registerActive(async () => {
+      await stop(GATE_CLOSE_REASON)
+      await completion
+    })
+  } catch (error) {
+    onFinish?.({ executionId: request.id, at: nowIso() })
+    throw error
+  }
   completion = (async () => {
     mkdirSync(scratchDir, { recursive: true })
     const artifactPath = join(runArtifactsDir(request.run_record_id), `gate-${request.id}.log`)

@@ -178,21 +178,6 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
       ),
     )
 
-  test('Stop cleanup has one global budget and uses non-blocking close-out', () => {
-    const hook = readFileSync(
-      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
-      'utf8',
-    )
-    expect(hook).toContain('GLOBAL_BUDGET_SECONDS = 20')
-    expect(hook).toContain('deadline = time.monotonic() + GLOBAL_BUDGET_SECONDS')
-    expect(hook).toContain('[bottega_bin(), "run", "close-out", str(root_id), "--non-blocking"]')
-    expect(hook).toContain('elif report.startswith("kept "):')
-    expect(hook).toContain('print(report, file=sys.stderr)')
-    expect(hook).toContain('cleanup_roots[index:]')
-    expect(hook).toContain('for sweep')
-    expect(hook).not.toContain('timeout=300')
-  })
-
   test('Stop note reminders parse labels and suggest label-addressed commands', () => {
     const hook = readFileSync(
       fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),

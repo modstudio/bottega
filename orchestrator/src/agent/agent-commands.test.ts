@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates, pick } from '../route/route.ts'
 import { agentCommand, agentReadinessPresentation } from './agent-commands.ts'
@@ -47,10 +48,65 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
 
   expect(fixed.map(agentReadinessPresentation)).toEqual([
     'not installed',
-    `installed but not probed — ${PLATFORM_SLUG} agent show probe newcomer`,
+    `installed but not probed — ${PLATFORM_SLUG} agent probe newcomer`,
     'disabled — retired after replacement',
     'ready',
   ])
+})
+
+test('agent command refuses verbs outside its declared dispatch list', async () => {
+  await expect(
+    agentCommand(['agent', 'rename', 'example'], { log: () => {}, setExitCode: () => {} }),
+  ).rejects.toThrow('unknown agent command "rename"; valid commands: add, set, remove, probe, show')
+})
+
+test('every named agent verb refuses a missing name with its usage', async () => {
+  for (const verb of ['add', 'set', 'remove', 'probe', 'show']) {
+    await expect(
+      agentCommand(['agent', verb], { log: () => {}, setExitCode: () => {} }),
+    ).rejects.toThrow(
+      `an agent name is required\nusage: ${PLATFORM_SLUG} agent ${verb} <name> [options]`,
+    )
+  }
+})
+
+test('a successful registration probe clears a quota cooldown', async () => {
+  addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    kind: 'quota',
+    startedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+  })
+  expect(
+    candidates('implement').find((candidate) => candidate.agent === 'codex')?.cooling,
+  ).toContain('quota')
+  const prior = db().query("SELECT probe_result FROM agent WHERE name='codex'").get() as {
+    probe_result: string
+  }
+  const calls: string[] = []
+  let probeInputs: unknown
+
+  await agentCommand(
+    ['agent', 'probe', 'codex'],
+    { log: () => {}, setExitCode: () => {} },
+    {
+      probeAgent: async (name, inputs) => {
+        calls.push(name)
+        probeInputs = inputs
+        return JSON.parse(prior.probe_result)
+      },
+    },
+  )
+
+  expect(calls).toEqual(['codex'])
+  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env })
+  expect(
+    candidates('implement').find((candidate) => candidate.agent === 'codex')?.cooling,
+  ).toBeNull()
+  expect(
+    db().query("SELECT probe, status FROM run WHERE agent='codex' AND job='agent-probe'").get(),
+  ).toEqual({ probe: 1, status: 'ok' })
 })
 
 test('agent add persists job, concurrency, and metered-routing flags', async () => {
@@ -75,6 +131,8 @@ test('agent add persists job, concurrency, and metered-routing flags', async () 
         '1',
         '--route-metered',
         'true',
+        '--trains-on-inputs',
+        'true',
       ],
       { log: (value) => output.push(value), setExitCode: () => {} },
     )
@@ -84,6 +142,7 @@ test('agent add persists job, concurrency, and metered-routing flags', async () 
       preferred_jobs: '["file-question"]',
       max_concurrent: 1,
       route_metered: 1,
+      trains_on_inputs: 1,
     })
   } finally {
     removeAgent('add-flags-test')

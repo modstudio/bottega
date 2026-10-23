@@ -1,6 +1,10 @@
 // concern: record-project-columns
 /** Maps local project settings onto hosted project columns. Must not know SQL or HTTP. */
 
+import {
+  type RepositoryVisibility,
+  repositoryVisibility,
+} from '../../../shared/repository-visibility.ts'
 import type { ProjectSettings } from '../project/project-settings.ts'
 
 export const PROJECT_SETTINGS_NOT_IMPORTED = [
@@ -16,14 +20,20 @@ export const PROJECT_SETTINGS_NOT_IMPORTED = [
     key: 'canonMirrorKey',
     reason: 'local scheduled-job identity is not carried by the hosted project row',
   },
+  {
+    key: 'visibilityRepository',
+    reason: 'the verified identity belongs to the local registered checkout origin',
+  },
 ] as const
 
 export type HostedProjectColumns = {
+  visibility: RepositoryVisibility | null
   keyPrefixes: string[]
   managedContext: boolean
   landingBranch: string | null
   productionBranch: string | null
   gate: string | null
+  gateInput: string | null
   focusedTests: JsonObject | null
   requireCleanMain: boolean
   color: string | null
@@ -52,11 +62,13 @@ type HostedSettingKey = Exclude<
 >
 
 export const PROJECT_SETTING_COLUMNS = {
+  visibility: 'visibility',
   color: 'color',
   colorDark: 'colorDark',
   docs: 'docs',
   envPrefix: 'envPrefix',
   gate: 'gate',
+  gateInput: 'gateInput',
   focusedTests: 'focusedTests',
   keyPrefixes: 'keyPrefixes',
   managedContext: 'managedContext',
@@ -91,6 +103,13 @@ function optionalString(value: unknown, location: string): string | null {
   if (value === undefined || value === null) return null
   if (typeof value !== 'string') throw new Error(`${location} must be a string`)
   return value
+}
+
+function optionalVisibility(value: unknown, project: string): RepositoryVisibility | null {
+  if (value === undefined || value === null) return null
+  const visibility = repositoryVisibility(value)
+  if (visibility) return visibility
+  throw new Error(`project ${project} settings.visibility must be public or private`)
 }
 
 function optionalStringArray(
@@ -145,6 +164,7 @@ export function hostedProjectColumns(
     throw new Error(`project ${project} has unmapped settings keys: ${unknown.sort().join(', ')}`)
   }
   return {
+    [PROJECT_SETTING_COLUMNS.visibility]: optionalVisibility(settings.visibility, project),
     [PROJECT_SETTING_COLUMNS.keyPrefixes]:
       optionalStringArray(settings, 'keyPrefixes', project) ?? [],
     [PROJECT_SETTING_COLUMNS.managedContext]: settings.managedContext === true,
@@ -159,6 +179,10 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.gate]: optionalString(
       settings.gate,
       `project ${project} settings.gate`,
+    ),
+    [PROJECT_SETTING_COLUMNS.gateInput]: optionalString(
+      settings.gateInput,
+      `project ${project} settings.gateInput`,
     ),
     [PROJECT_SETTING_COLUMNS.focusedTests]: settingDocument(settings, 'focusedTests', project),
     [PROJECT_SETTING_COLUMNS.requireCleanMain]: settings.requireCleanMain !== false,

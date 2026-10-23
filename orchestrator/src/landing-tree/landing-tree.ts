@@ -89,7 +89,15 @@ export function landingTreeCommandBase(trunk: string | undefined): string {
   return trunk.trim()
 }
 
-export type LandingTreeReleaseDecision = { action: 'release' } | { action: 'keep'; reason: string }
+export type LandingTreeHoldKind = 'landing-progress' | 'unique-work' | 'other'
+
+export type LandingTreeReleaseDecision =
+  | { action: 'release' }
+  | { action: 'keep'; reason: string; hold: LandingTreeHoldKind }
+
+function keep(reason: string, hold: LandingTreeHoldKind): LandingTreeReleaseDecision {
+  return { action: 'keep', reason, hold }
+}
 
 /** Release an absent terminal landing tree, or a present tree when its release policy permits. */
 export function landingTreeReleaseDecision(
@@ -108,33 +116,29 @@ export function landingTreeReleaseDecision(
   const owner = row.sessionId ? `session ${row.sessionId}` : 'its invoking session'
   if (!row.treeExists) {
     if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
-      return {
-        action: 'keep',
-        reason: `landing tree held by ${owner}: conversation is ${row.status}`,
-      }
+      return keep(`landing tree held by ${owner}: conversation is ${row.status}`, 'other')
     }
     if (row.landingInFlight) {
-      return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+      return keep(`landing tree held by ${owner}: landing is in flight`, 'landing-progress')
     }
     return { action: 'release' }
   }
-  if (!clean) return { action: 'keep', reason: `landing tree held by ${owner}: tree is dirty` }
+  if (!clean) return keep(`landing tree held by ${owner}: tree is dirty`, 'unique-work')
   if (row.explicitTreeRemovalRequested) {
     if (row.landingInFlight) {
-      return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+      return keep(`landing tree held by ${owner}: landing is in flight`, 'landing-progress')
     }
     return { action: 'release' }
   }
   if (row.landingInFlight) {
-    return { action: 'keep', reason: `landing tree held by ${owner}: landing is in flight` }
+    return keep(`landing tree held by ${owner}: landing is in flight`, 'landing-progress')
   }
   if (!landed)
-    return {
-      action: 'keep',
-      reason:
-        `landing tree held by ${owner}: branch has not landed; ` +
+    return keep(
+      `landing tree held by ${owner}: branch has not landed; ` +
         `${owner} releases it with ${PLATFORM_SLUG} tree remove <path>`,
-    }
+      'landing-progress',
+    )
   return { action: 'release' }
 }
 
@@ -142,13 +146,17 @@ export function landingTreeHoldDecision<T>(
   row: { job: string; treeExists: boolean; branch: string | null; runId: string },
   clean: boolean,
   ordinary: T,
-): T | { held: true; until: null; reason: string } | { held: false; kept: true; reason: string } {
+):
+  | T
+  | { held: true; until: null; reason: string; hold: 'unique-work' }
+  | { held: false; kept: true; reason: string } {
   if (row.job !== LANDING_TREE_JOB || !row.treeExists) return ordinary
   if (!clean) {
     return {
       held: true,
       until: null,
       reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      hold: 'unique-work' as const,
     }
   }
   return {
@@ -158,4 +166,69 @@ export function landingTreeHoldDecision<T>(
       `clean landing tree; branch ${row.branch ?? '<unknown>'} holds its work; ` +
       `${PLATFORM_SLUG} tree open ${row.runId} recreates it`,
   }
+}
+
+const SHIP_TASK_WORKFLOW = 'ship-task'
+const AFTER_FINISH_SHIP_CLEANUP = new Set(['finish-ship-cleanup', 'promote-release', 'close-task'])
+
+type HeldTreeCursorFacts = {
+  id: number
+  workflow: string | null
+  step: string | null
+  live: boolean
+  project: string | null
+  branch: string | null
+  worktree: string | null
+}
+
+export type HeldTreeInFlightFacts = {
+  treePath: string
+  project: string | null
+  branch: string | null
+  cursor: HeldTreeCursorFacts | null
+  openPr: string | null
+  uniqueWork: boolean
+}
+
+type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
+
+function shipTaskCursorIsInFlight(
+  cursor: Pick<HeldTreeCursorFacts, 'workflow' | 'step' | 'live'>,
+): boolean {
+  return (
+    cursor.live &&
+    cursor.workflow === SHIP_TASK_WORKFLOW &&
+    !AFTER_FINISH_SHIP_CLEANUP.has(cursor.step ?? '')
+  )
+}
+
+function cursorMatchesThisTree(
+  tree: Pick<HeldTreeInFlightFacts, 'treePath' | 'project' | 'branch'>,
+  cursor: HeldTreeCursorFacts | null,
+): cursor is HeldTreeCursorFacts {
+  return Boolean(
+    cursor &&
+      tree.project &&
+      tree.branch &&
+      tree.treePath &&
+      shipTaskCursorIsInFlight(cursor) &&
+      cursor.project === tree.project &&
+      cursor.branch === tree.branch &&
+      cursor.worktree === tree.treePath,
+  )
+}
+
+function inFlightRef(facts: HeldTreeInFlightFacts): string | null {
+  const cursor = facts.cursor
+  if (cursorMatchesThisTree(facts, cursor)) {
+    return cursor.step ? `cursor ${cursor.id} ${cursor.step}` : `cursor ${cursor.id}`
+  }
+  return facts.openPr
+}
+
+/** Cursor or open PR for this exact tree; unique-work holds still carry the fact without suppressing. */
+export function heldTreeInFlight(facts: HeldTreeInFlightFacts): HeldTreeInFlight | null {
+  const ref = inFlightRef(facts)
+  if (!ref) return null
+  return { ref, suppressBlock: !facts.uniqueWork }
 }

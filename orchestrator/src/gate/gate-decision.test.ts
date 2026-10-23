@@ -12,15 +12,36 @@ import {
   decideGateRequest,
   decideGateToolingDiffBase,
   decideGateWait,
+  decideWorkerGateInput,
   formatGateRequestDecision,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
   GATE_OUTPUT_TAIL_BYTES,
   isGateToolingPath,
+  parseGateInput,
   RUN_GATE_WAIT_MS,
   resolveGateCommand,
   shapeGateResult,
 } from './gate-decision.ts'
+
+test('gate input parsing keeps absence distinct from an invalid stored value', () => {
+  expect(parseGateInput(undefined)).toBeUndefined()
+  expect(parseGateInput('worktree')).toBe('worktree')
+  expect(() => parseGateInput('mystery', 'fixture-project')).toThrow(
+    'worker gate refused: project "fixture-project" has invalid gateInput "mystery"',
+  )
+  expect(() => parseGateInput('mystery', 'fixture-project')).toThrow('project set')
+})
+
+test('worker gate input follows the declared git view without hiding tracked changes', () => {
+  expect(decideWorkerGateInput('committed', false)).toEqual({ kind: 'committed' })
+  expect(decideWorkerGateInput('committed', true)).toEqual({
+    kind: 'refused',
+    reason:
+      'worker gate refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_gate again',
+  })
+  expect(decideWorkerGateInput('staged', true)).toEqual({ kind: 'synthetic-index' })
+})
 
 test('both writing ACP broker command shapes retain the real writer profile', () => {
   const writer: SandboxRuntimeConfig = {
@@ -71,6 +92,30 @@ test('broker gate environment adds host paths without exposing secrets and appli
     HOME: '/sandbox/home',
     TMPDIR: '/tmp/operator',
     ORCH_RUN_ID: '41',
+  })
+})
+
+test('synthetic-index gate environment exposes no broker variable', () => {
+  expect(
+    brokerGateEnvironment(
+      { PATH: '/bin', ORCH_RUN_ID: '41' },
+      {
+        HOME: '/Users/operator',
+        TMPDIR: '/tmp/operator',
+        BROKER_FAKE_SECRET: 'must-not-cross',
+      },
+      {
+        GIT_INDEX_FILE: '/private/broker/index',
+        ORCH_GATE_BASE_COMMIT: 'a'.repeat(40),
+      },
+    ),
+  ).toEqual({
+    PATH: '/bin',
+    ORCH_RUN_ID: '41',
+    HOME: '/Users/operator',
+    TMPDIR: '/tmp/operator',
+    GIT_INDEX_FILE: '/private/broker/index',
+    ORCH_GATE_BASE_COMMIT: 'a'.repeat(40),
   })
 })
 

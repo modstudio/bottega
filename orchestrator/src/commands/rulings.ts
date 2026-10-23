@@ -83,7 +83,7 @@ export function register(program: Command): void {
     .description('list recorded run and workflow rulings')
     .option('--since <ISO>', 'include ruling activity since this instant')
     .option('--kind <kind>', 'workflow, run, or all', 'all')
-    .requiredOption('--json', 'write the rulings as JSON')
+    .option('--json', 'write the rulings as JSON')
     .allowExcessArguments(false)
     .action((options) => {
       if (!['workflow', 'run', 'all'].includes(options.kind))

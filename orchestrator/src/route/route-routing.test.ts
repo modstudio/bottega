@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { recordAgentProbe } from '../agent/agent-probe.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { upsertProject } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
@@ -19,6 +24,58 @@ import {
   promptSizeBucket,
   scoreboard,
 } from './route.ts'
+import { trainingDataEligibility } from './training-data-eligibility.ts'
+
+test('training-data eligibility requires a declared public project even when named', () => {
+  const base = {
+    agent: 'or-free',
+    trainsOnInputs: true,
+    verifiedRepository: 'owner/public-repo',
+    currentRepository: 'owner/public-repo',
+  }
+  expect(
+    trainingDataEligibility({ ...base, project: 'public-repo', visibility: 'public' }),
+  ).toEqual({
+    eligible: true,
+    why: '',
+  })
+  expect(
+    trainingDataEligibility({ ...base, project: 'private-repo', visibility: 'private' }),
+  ).toMatchObject({ eligible: false })
+  expect(
+    trainingDataEligibility({
+      ...base,
+      project: null,
+      visibility: null,
+      currentRepository: null,
+    }),
+  ).toMatchObject({
+    eligible: false,
+  })
+  expect(
+    trainingDataEligibility({
+      agent: 'private-provider',
+      trainsOnInputs: false,
+      project: 'private-repo',
+      visibility: 'private',
+      verifiedRepository: 'owner/private-repo',
+      currentRepository: 'owner/private-repo',
+    }),
+  ).toEqual({ eligible: true, why: '' })
+})
+
+test('training-data eligibility rejects a public declaration recorded for another origin', () => {
+  expect(
+    trainingDataEligibility({
+      agent: 'or-free',
+      trainsOnInputs: true,
+      project: 'public-repo',
+      visibility: 'public',
+      verifiedRepository: 'owner/old',
+      currentRepository: 'owner/new',
+    }),
+  ).toMatchObject({ eligible: false })
+})
 
 test('metered route eligibility is an opt-in limited to read-only jobs unless named', () => {
   const base = { billing: 'metered', routeMetered: false, writesRepo: false, name: 'metered' }
@@ -42,6 +99,233 @@ test('metered route eligibility is an opt-in limited to read-only jobs unless na
     why: '',
     mayAutoRouteNamedJob: true,
   })
+})
+
+test('a training provider uses the existing route opt-in but remains nameable', () => {
+  const base = {
+    billing: 'free',
+    routeMetered: false,
+    trainsOnInputs: true,
+    writesRepo: false,
+    name: 'or-free',
+  }
+  expect(meteredRouteEligibility(base)).toMatchObject({ eligible: false })
+  expect(meteredRouteEligibility({ ...base, routeMetered: true })).toMatchObject({ eligible: true })
+  expect(meteredRouteEligibility({ ...base, explicitlyNamedAgent: 'or-free' })).toMatchObject({
+    eligible: true,
+  })
+})
+
+test('candidates wires verified project visibility and the current local origin', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-training-route-'))
+  const publicPath = join(root, 'public')
+  const privatePath = join(root, 'private')
+  Bun.spawnSync(['git', 'init', publicPath])
+  Bun.spawnSync(['git', 'init', privatePath])
+  Bun.spawnSync([
+    'git',
+    '-C',
+    publicPath,
+    'remote',
+    'add',
+    'origin',
+    'git@github.com:Owner/Public.git',
+  ])
+  Bun.spawnSync([
+    'git',
+    '-C',
+    privatePath,
+    'remote',
+    'add',
+    'origin',
+    'https://github.com/owner/private',
+  ])
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'training-public',
+    path: publicPath,
+    settings: { visibility: 'public', visibilityRepository: 'owner/public' },
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'training-private',
+    path: privatePath,
+    settings: { visibility: 'private', visibilityRepository: 'owner/private' },
+  })
+  const original = db()
+    .query("SELECT trains_on_inputs,route_metered FROM agent WHERE name='codex'")
+    .get() as { trains_on_inputs: number; route_metered: number }
+  try {
+    db().query("UPDATE agent SET trains_on_inputs=1,route_metered=0 WHERE name='codex'").run()
+    refreshAgents()
+    expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      eligible: false,
+      why: 'eligible only on public projects',
+    })
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: false })
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'codex',
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: true })
+    db().query("UPDATE agent SET route_metered=1 WHERE name='codex'").run()
+    refreshAgents()
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: true })
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'training-private',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: false })
+    Bun.spawnSync([
+      'git',
+      '-C',
+      publicPath,
+      'remote',
+      'set-url',
+      'origin',
+      'git@github.com:owner/repointed.git',
+    ])
+    expect(
+      candidates(
+        'summarize',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'codex',
+        'training-public',
+      ).find((candidate) => candidate.agent === 'codex'),
+    ).toMatchObject({ eligible: false })
+  } finally {
+    db()
+      .query("UPDATE agent SET trains_on_inputs=?,route_metered=? WHERE name='codex'")
+      .run(original.trains_on_inputs, original.route_metered)
+    refreshAgents()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('non-training candidates do not read the project origin', () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'non-training-public',
+    path: process.cwd(),
+    settings: { visibility: 'public', visibilityRepository: 'owner/public' },
+  })
+  let reads = 0
+  candidates(
+    'summarize',
+    0,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    'non-training-public',
+    () => {
+      reads += 1
+      return 'owner/public'
+    },
+  )
+
+  expect(reads).toBe(0)
+})
+
+test('a routing call reads a public project origin at most once for training candidates', () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'shared-training-public',
+    path: process.cwd(),
+    settings: { visibility: 'public', visibilityRepository: 'owner/public' },
+  })
+  const originals = db()
+    .query("SELECT name,trains_on_inputs FROM agent WHERE name IN ('codex','grok') ORDER BY name")
+    .all() as { name: string; trains_on_inputs: number }[]
+  let reads = 0
+  try {
+    db().query("UPDATE agent SET trains_on_inputs=1 WHERE name IN ('codex','grok')").run()
+    refreshAgents()
+    candidates(
+      'summarize',
+      0,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'shared-training-public',
+      () => {
+        reads += 1
+        return 'owner/public'
+      },
+    )
+    expect(reads).toBe(1)
+  } finally {
+    for (const original of originals) {
+      db()
+        .query('UPDATE agent SET trains_on_inputs=? WHERE name=?')
+        .run(original.trains_on_inputs, original.name)
+    }
+    refreshAgents()
+  }
 })
 
 test('automatic routing excludes metered billing without opt-in while a named agent may spend it', () => {
@@ -121,6 +405,30 @@ test('a named non-opted-in ACP agent remains eligible for a review lens', () => 
   }
 })
 
+test('only a named ACP agent declared for fix is eligible for fix', () => {
+  const name = 'codex'
+  const original = db()
+    .query('SELECT jobs,transport,probed_at FROM agent WHERE name=?')
+    .get(name) as { jobs: string | null; transport: string; probed_at: string | null }
+  try {
+    db()
+      .query("UPDATE agent SET jobs=?,transport='acp',probed_at=? WHERE name=?")
+      .run(JSON.stringify(['fix']), new Date().toISOString(), name)
+    refreshAgents()
+
+    expect(pick('fix', name)).toEqual({ agent: name, reason: 'explicit --agent' })
+    expect(candidates('fix').find((candidate) => candidate.agent === name)).toMatchObject({
+      eligible: false,
+      why: expect.stringContaining('writing jobs require an agent named with --agent <name>'),
+    })
+  } finally {
+    db()
+      .query('UPDATE agent SET jobs=?,transport=?,probed_at=? WHERE name=?')
+      .run(original.jobs, original.transport, original.probed_at, name)
+    refreshAgents()
+  }
+})
+
 test('the registration probe gates inline and repository jobs', () => {
   const original = db()
     .query("SELECT caps, probed_at, probe_result FROM agent WHERE name = 'codex'")
@@ -143,17 +451,17 @@ test('the registration probe gates inline and repository jobs', () => {
     )
     expect(unprobedInline).toMatchObject({
       eligible: false,
-      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe codex`,
     })
     expect(unprobedRepository).toMatchObject({
       eligible: false,
-      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', undefined)
     expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
       eligible: false,
-      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', true)
@@ -195,7 +503,7 @@ test('rerunning a narrowed file-question probe clears the file-contract refusal'
       candidates('file-question').find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({
       eligible: false,
-      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent probe codex`,
     })
 
     recordAgentProbe('codex', {
@@ -260,7 +568,7 @@ test('a no-agent refusal lists every exclusion in routing order with its remedy'
       .filter((candidate) => !candidate.eligible)
       .map((candidate) => `${candidate.agent}: ${candidate.why}`)
     expect(message).toBe(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
-    expect(message).toContain(`run ${PLATFORM_SLUG} agent show probe codex`)
+    expect(message).toContain(`run ${PLATFORM_SLUG} agent probe codex`)
     expect(message).toContain('disabled for routing refusal test')
   } finally {
     const restore = db().query(
@@ -628,7 +936,7 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
       score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
     for (let i = 0; i < 9; i++)
       score(addRun({ agent: 'grok', job: 'craft', stack: 'node' }), 'full', 'right')
-    expect(evidenceFor('craft', 0, 'php').level).toBe('job')
+    expect(evidenceFor('craft', 0, 'php', { project: undefined }).level).toBe('job')
   })
 
   test('two proven agents on a stack is a real comparison', () => {
@@ -636,7 +944,7 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
       score(addRun({ agent: 'codex', job: 'craft', stack: 'php' }), 'full', 'right')
     for (let i = 0; i < 6; i++)
       score(addRun({ agent: 'grok', job: 'craft', stack: 'php' }), 'full', 'mixed')
-    const ev = evidenceFor('craft', 0, 'php')
+    const ev = evidenceFor('craft', 0, 'php', { project: undefined })
     expect(ev.level).toBe('stack')
     expect(ev.stack).toBe('php')
   })
@@ -649,16 +957,20 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
     // A disaster on a different stack must not touch the php verdict.
     for (let i = 0; i < 9; i++)
       addRun({ agent: 'codex', job: 'craft', stack: 'node', status: 'failed' })
-    const scoped = evidenceFor('craft', 0, 'php').cands.find((c) => c.agent === 'codex')!
+    const scoped = evidenceFor('craft', 0, 'php', { project: undefined }).cands.find(
+      (c) => c.agent === 'codex',
+    )!
     expect(scoped.evidence).toBe(6)
     expect(scoped.score).toBe(weigh('full', 'right'))
   })
 
   test('no stack at all behaves exactly as it always did', () => {
     for (let i = 0; i < 6; i++) score(addRun({ agent: 'codex', job: 'craft' }), 'full', 'right')
-    expect(evidenceFor('craft', 0, null).level).toBe('job')
+    expect(evidenceFor('craft', 0, null, { project: undefined }).level).toBe('job')
     expect(
-      evidenceFor('craft', 0, undefined).cands.find((c) => c.agent === 'codex')!.evidence,
+      evidenceFor('craft', 0, undefined, { project: undefined }).cands.find(
+        (c) => c.agent === 'codex',
+      )!.evidence,
     ).toBe(6)
   })
 })

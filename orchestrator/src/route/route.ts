@@ -8,15 +8,22 @@ import {
 } from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
-import { COOLS_DOWN, NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
+import {
+  type McpTransportPinFacts,
+  requiredMcpIneligibility,
+} from '../mcp/mcp-native-attachment.ts'
+import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
+import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
+import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 export { AgentCapacityError } from './routing-refusal.ts'
 
@@ -67,6 +74,18 @@ export type Candidate = {
   routedReason?: string
 }
 
+type RouteConstraints = {
+  agents?: string[]
+  models?: string[]
+  model?: string
+  noWaitCapacity?: boolean
+  requiredMcp?: RequiredMcpServer
+  pinnedTransport?: 'cli' | 'acp'
+  transportPinSource?: McpTransportPinFacts['transportPinSource']
+  project?: string | null
+  routed?: { agent: string; reason: string }
+}
+
 const RUNNING_RUNS_SQL =
   "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
 
@@ -104,17 +123,33 @@ export const EVIDENCE_WINDOW = 40
  */
 export const PROMPT_SIZE_BOUNDARY = 16 * 1024
 
+function memoizedRepositoryReader(
+  reader: (project: Pick<Project, 'path'>) => string | null,
+): (project: Pick<Project, 'path'>) => string | null {
+  let currentRepository: string | null | undefined
+  return (project) => {
+    if (currentRepository === undefined) currentRepository = reader(project)
+    return currentRepository
+  }
+}
+
 function mcpCandidateIneligibility(
-  pattern: string | undefined,
+  agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
+  pinnedTransport?: 'cli' | 'acp',
+  transportPinSource?: McpTransportPinFacts['transportPinSource'],
 ): string | null {
-  if (!requiredMcp || !pattern) return null
+  const requiredWhy = requiredMcpIneligibility(agent, requiredMcp, {
+    pinnedTransport,
+    transportPinSource,
+  })
+  if (requiredWhy || !requiredMcp || !agent.mcpToolNamePattern) return requiredWhy
   const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
   return decideMcpGrammarRuling({
     mode: requiredMcp.mode,
     server: requiredMcp.server,
     listedTools: listing?.listedTools,
-    pattern,
+    pattern: agent.mcpToolNamePattern,
   }).routingIneligibility
 }
 
@@ -224,11 +259,6 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
   return { rows: modelRows, evidenceModel: currentModel }
 }
 
-/** COOLS_DOWN as a SQL list, so the query uses the canonical vocabulary. */
-function coolsDownSql(): string {
-  return COOLS_DOWN.map((k) => `'${k}'`).join(', ')
-}
-
 /**
  * How often to spend a run on an agent that has not earned a score yet.
  *
@@ -287,7 +317,10 @@ export const BETA_SCALE = 1.5
  */
 export const POSTERIOR_NOISE_BAND = NOISE_BAND / BETA_SCALE
 
-export function betaContribution(weight: number): { successes: number; failures: number } {
+export function betaContribution(weight: number): {
+  successes: number
+  failures: number
+} {
   // Map the judgment range [-0.5, 1] linearly onto [0, 1]: `none` is one
   // whole failure and full/right is one whole success. Thus successes +=
   // (w + 0.5) / 1.5 and failures += 1 - that for every judgment.
@@ -342,7 +375,11 @@ export function thompsonRank<T extends ThompsonCandidate>(
     const successes = priorSuccess * MIN_SAMPLE + observed.successes * candidate.evidence
     const failures = (1 - priorSuccess) * MIN_SAMPLE + observed.failures * candidate.evidence
     const mean = successes / (successes + failures)
-    return { candidate, mean, sample: draw ? beta(successes, failures, rng) : mean }
+    return {
+      candidate,
+      mean,
+      sample: draw ? beta(successes, failures, rng) : mean,
+    }
   })
   const tie = (a: (typeof posterior)[number], b: (typeof posterior)[number]) =>
     (a.candidate.precision === null || a.candidate.precision === undefined
@@ -440,9 +477,14 @@ export function candidates(
   coolingProbeAgent?: string,
   lens?: string | null,
   requiredMcp?: RequiredMcpServer,
+  pinnedTransport?: 'cli' | 'acp',
+  transportPinSource?: McpTransportPinFacts['transportPinSource'],
   explicitlyNamedAgent?: string,
+  projectName?: string | null,
+  repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ): Candidate[] {
   const j = job(jobName)
+  const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
   // let "reply with ok" vouch for an agent on real work.
   //
@@ -536,7 +578,12 @@ export function candidates(
       pts: number | null
     }[]
   ).filter(isRoutingEvidence)
-  type Evidence = { scored: number; failures: number; none: number; pts: number }
+  type Evidence = {
+    scored: number
+    failures: number
+    none: number
+    pts: number
+  }
   const aggregate = (rs: typeof evidenceRows): Evidence => ({
     scored: rs.filter((r) => r.delivery !== null).length,
     failures: rs.filter((r) => r.delivery === null).length,
@@ -574,42 +621,12 @@ export function candidates(
   // a human has fixed the quota or the login, without waiting out the hour or
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
-  const coolingByAgent = new Map(
-    (
-      db()
-        .query(
-          `WITH terminal AS (
-         SELECT record_id, agent, status, failure_kind,
-                julianday(started_at) + latency_ms / 86400000.0 AS finished_at
-           FROM run
-          WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
-       ), cooling_failures AS (
-         SELECT record_id, agent, failure_kind, finished_at,
-                ROW_NUMBER() OVER (
-                  PARTITION BY agent ORDER BY finished_at DESC, record_id DESC
-                ) AS recency
-           FROM terminal
-          WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
-       )
-       SELECT f.agent, f.failure_kind,
-              (julianday('now') - f.finished_at) * 1440 AS mins_ago
-         FROM cooling_failures f
-        WHERE f.recency = 1
-          AND (julianday('now') - f.finished_at) * 1440 < ?
-          AND NOT EXISTS (
-                SELECT 1 FROM terminal s
-                 WHERE s.agent = f.agent AND s.status = 'ok'
-                   AND s.finished_at > f.finished_at
-              )`,
-        )
-        .all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[]
-    ).map((r) => [r.agent, r]),
-  )
+  const coolingByAgent = coolingFailures(db(), COOLDOWN_MIN)
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
-    const cooling = failure ? `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago` : null
+    const cooling = failure ? coolingPhrase(failure) : null
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel)
     const recent = aggregate(window.rows)
@@ -617,8 +634,15 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    const mcpWhy = mcpCandidateIneligibility(a.mcpToolNamePattern, requiredMcp)
-    const policy = routePolicyEligibility(jobName, a, explicitlyNamedAgent)
+    const mcpWhy = mcpCandidateIneligibility(a, requiredMcp, pinnedTransport, transportPinSource)
+    const policy = routePolicyEligibility(
+      jobName,
+      a,
+      explicitlyNamedAgent,
+      pinnedTransport,
+      projectName,
+      readCurrentRepository,
+    )
     let eligible = true,
       why = policy.why
     const unavailable = unavailableReason(name)
@@ -629,7 +653,7 @@ export function candidates(
       why = `not declared for ${jobName}`
     } else if (cooling && coolingProbeAgent !== name) {
       eligible = false
-      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run '${PLATFORM_SLUG} agent probe ${name}' to clear it`
+      why = coolingRefusal(name, failure!, COOLDOWN_MIN)
     } else if (unavailable) {
       eligible = false
       why = unavailable
@@ -638,7 +662,7 @@ export function candidates(
       why = policy.why
     } else if (!a.probedAt) {
       eligible = false
-      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe ${name}`
+      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent probe ${name}`
     } else if (predatesFileContract(a)) {
       eligible = false
       why = fileContractProbeReason(name)
@@ -714,7 +738,10 @@ export function candidates(
 }
 
 /** One row per job × agent that has any history, on the router's own maths. */
-export type Scored = Candidate & { job: string; promptBucket: PromptSizeBucket }
+export type Scored = Candidate & {
+  job: string
+  promptBucket: PromptSizeBucket
+}
 
 /**
  * Every job × agent cell, scored exactly the way routing scores it.
@@ -778,9 +805,14 @@ export function evidenceFor(
   jobName: string,
   promptBytes: number,
   stack: string | null | undefined,
-  modelOverride?: string,
-  lens?: string | null,
-  requiredMcp?: RequiredMcpServer,
+  options: {
+    modelOverride?: string
+    lens?: string | null
+    requiredMcp?: RequiredMcpServer
+    pinnedTransport?: 'cli' | 'acp'
+    transportPinSource?: McpTransportPinFacts['transportPinSource']
+    project: string | null | undefined
+  },
 ): {
   cands: Candidate[]
   level: 'lens' | 'stack' | 'job'
@@ -789,6 +821,14 @@ export function evidenceFor(
   scoped: Candidate[] | null
   job: Candidate[]
 } {
+  const {
+    lens,
+    modelOverride,
+    pinnedTransport,
+    project: projectName,
+    requiredMcp,
+    transportPinSource,
+  } = options
   const requested =
     lens?.trim() && job(jobName).findings
       ? { level: 'lens' as const, value: lens.trim() }
@@ -803,6 +843,10 @@ export function evidenceFor(
     undefined,
     undefined,
     requiredMcp,
+    pinnedTransport,
+    transportPinSource,
+    undefined,
+    projectName,
   )
   if (requested) {
     const scoped =
@@ -815,6 +859,10 @@ export function evidenceFor(
             undefined,
             requested.value,
             requiredMcp,
+            pinnedTransport,
+            transportPinSource,
+            undefined,
+            projectName,
           )
         : candidates(
             jobName,
@@ -824,6 +872,10 @@ export function evidenceFor(
             undefined,
             undefined,
             requiredMcp,
+            pinnedTransport,
+            transportPinSource,
+            undefined,
+            projectName,
           )
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
@@ -875,10 +927,33 @@ export function evidenceFor(
   }
 }
 
+function evidenceForPick(
+  jobName: string,
+  promptBytes: number,
+  stack: string | null | undefined,
+  constraints: RouteConstraints,
+  lens?: string,
+) {
+  return evidenceFor(jobName, promptBytes, stack, {
+    modelOverride: constraints.model,
+    lens,
+    requiredMcp: constraints.requiredMcp,
+    pinnedTransport: constraints.pinnedTransport,
+    transportPinSource: constraints.transportPinSource,
+    project: constraints.project,
+  })
+}
+
 type CurrentPolicyCandidate = Pick<
   Candidate,
   'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
 > & { precision?: number | null }
+
+function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
+  if (ev.level === 'lens') return `lens ${ev.lens} cell`
+  if (ev.level === 'stack') return `stack ${ev.stack} cell`
+  return 'job-wide cell'
+}
 
 /** Failure-only history has already answered whether another run is worthwhile. */
 function worthExploring(c: CurrentPolicyCandidate): boolean {
@@ -907,6 +982,32 @@ function routeSurfaceSelection(
   if (!routed) return [...candidates]
   const candidate = candidates.find((item) => item.agent === routed.agent)
   return candidate ? [{ ...candidate, routedReason: routed.reason }] : [...candidates]
+}
+
+function namedCandidate(
+  jobName: string,
+  name: string,
+  promptBytes: number,
+  ev: ReturnType<typeof evidenceFor>,
+  constraints: RouteConstraints,
+  probe: boolean,
+): Candidate {
+  const rows = candidates(
+    jobName,
+    promptBytes,
+    ev.level === 'stack' ? ev.stack : undefined,
+    constraints.model,
+    probe ? name : undefined,
+    ev.level === 'lens' ? ev.lens : undefined,
+    constraints.requiredMcp,
+    constraints.pinnedTransport,
+    constraints.transportPinSource,
+    name,
+    constraints.project,
+  )
+  const candidate = rows.find((row) => row.agent === name)
+  if (!candidate) throw new RoutingRefusalError(`unknown agent "${name}"`)
+  return candidate
 }
 
 /**
@@ -959,7 +1060,12 @@ export function currentPolicySelection<T extends CurrentPolicyCandidate>(
           (c) => c.agent !== best.agent && worthExploring(c) && !explorationExcluded.has(c.agent),
         )
         .sort((a, b) => a.evidence - b.evidence)[0]
-      if (challenger) return { chosen: challenger, mode: 'standing-challenger', tied: ranked.tied }
+      if (challenger)
+        return {
+          chosen: challenger,
+          mode: 'standing-challenger',
+          tied: ranked.tied,
+        }
     }
     return { chosen: best, mode: 'best', tied: ranked.tied }
   }
@@ -980,14 +1086,7 @@ export function pick(
   explore = true,
   stack?: string | null,
   /** Agents and effective models a fan-out has already used. */
-  avoid: {
-    agents?: string[]
-    models?: string[]
-    model?: string
-    noWaitCapacity?: boolean
-    requiredMcp?: RequiredMcpServer
-    routed?: { agent: string; reason: string }
-  } = {},
+  avoid: RouteConstraints = {},
   /** An explicit calibration probe may test whether its named agent recovered. */
   probe = false,
   /** Stable findings viewpoint used for reviewer-precision calibration. */
@@ -995,37 +1094,18 @@ export function pick(
   rng: () => number = Math.random,
 ): { agent: string; reason: string } {
   const j = job(jobName)
-  const ev = evidenceFor(jobName, promptBytes, stack, avoid.model, lens, avoid.requiredMcp)
-  const cands = ev.cands
+  const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
-  const evidenceCell =
-    ev.level === 'lens'
-      ? `lens ${ev.lens} cell`
-      : ev.level === 'stack'
-        ? `stack ${ev.stack} cell`
-        : 'job-wide cell'
+  const evidenceCell = evidenceCellName(ev)
   const scope = (c: Candidate) =>
-    ` in ${evidenceCell}` + (c.evidenceModel ? ` on model ${c.evidenceModel}` : '')
+    ` in ${evidenceCell}${c.evidenceModel ? ` on model ${c.evidenceModel}` : ''}`
   if (override) {
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    // Keep candidates()' reporting view unchanged: metered billing and cooling
-    // remain routing exclusions in guide and hub. A named route may spend the
-    // former, while only an explicit probe bypasses the latter.
-    const namedCandidates = candidates(
-      jobName,
-      promptBytes,
-      ev.level === 'stack' ? ev.stack : undefined,
-      avoid.model,
-      probe ? override : undefined,
-      ev.level === 'lens' ? ev.lens : undefined,
-      avoid.requiredMcp,
-      override,
-    )
-    const c = namedCandidates.find((x) => x.agent === override)
-    if (!c) throw new RoutingRefusalError(`unknown agent "${override}"`)
+    // Keep candidates()' view unchanged. Naming bypasses opt-in; only a probe bypasses cooling.
+    const c = namedCandidate(jobName, override, promptBytes, ev, avoid, probe)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
       throw new AgentCapacityError(capacityRefusal(c))
     }
@@ -1035,10 +1115,24 @@ export function pick(
   }
   const requested = new Set(avoid.agents ?? [])
   const models = new Set(avoid.models ?? [])
-  let eligible = cands.filter((c) => c.eligible)
-  const excluded = cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`)
+  const blockedPreferred = ev.cands.find(
+    (candidate) =>
+      candidate.preferred &&
+      candidate.why.startsWith('at capacity') &&
+      candidate.maxConcurrent !== null &&
+      candidate.runningRunIds.length >= candidate.maxConcurrent,
+  )
+  if (blockedPreferred && !avoid.noWaitCapacity) {
+    throw new AgentCapacityError(
+      `${capacityRefusal(blockedPreferred)}\n` +
+        'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
+        'cleared by: wait for the named runs or pass --no-wait-capacity',
+    )
+  }
+  let eligible = ev.cands.filter((c) => c.eligible)
+  const excluded = ev.cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`)
   if (eligible.length === 0) {
-    const capacityBlocked = cands.filter(
+    const capacityBlocked = ev.cands.filter(
       (candidate) =>
         candidate.why.startsWith('at capacity') &&
         !requested.has(candidate.agent) &&
@@ -1166,11 +1260,15 @@ export function pick(
 export function meteredRouteEligibility(input: {
   billing: string
   routeMetered: boolean
+  trainsOnInputs?: boolean
   writesRepo: boolean
   name: string
   explicitlyNamedAgent?: string
 }): { eligible: boolean; why: string; mayAutoRouteNamedJob: boolean } {
-  if (input.billing !== 'metered' || input.explicitlyNamedAgent === input.name)
+  if (
+    (input.billing !== 'metered' && !input.trainsOnInputs) ||
+    input.explicitlyNamedAgent === input.name
+  )
     return {
       eligible: true,
       why: '',
@@ -1179,7 +1277,9 @@ export function meteredRouteEligibility(input: {
   if (!input.routeMetered)
     return {
       eligible: false,
-      why: 'metered billing is not opted in for automatic routing',
+      why: input.trainsOnInputs
+        ? 'a provider that may train on inputs is not opted in for automatic routing'
+        : 'metered billing is not opted in for automatic routing',
       mayAutoRouteNamedJob: false,
     }
   if (input.writesRepo)
@@ -1193,12 +1293,13 @@ export function meteredRouteEligibility(input: {
 
 export function agentMeteredRouteEligibility(
   jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name'>,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'trainsOnInputs'>,
   explicitlyNamedAgent?: string,
 ): ReturnType<typeof meteredRouteEligibility> {
   return meteredRouteEligibility({
     billing: agent.billing,
     routeMetered: Boolean(agent.routeMetered),
+    trainsOnInputs: Boolean(agent.trainsOnInputs),
     writesRepo: Boolean(job(jobName).needs.writesRepo),
     name: agent.name,
     explicitlyNamedAgent,
@@ -1207,21 +1308,55 @@ export function agentMeteredRouteEligibility(
 
 function routePolicyEligibility(
   jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport'>,
+  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport' | 'trainsOnInputs'>,
   explicitlyNamedAgent: string | undefined,
+  pinnedTransport?: 'cli' | 'acp',
+  projectName?: string | null,
+  repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ) {
+  const project = projectName ? projectByName(projectName) : null
+  if (agent.trainsOnInputs && projectName === undefined) {
+    return {
+      eligible: false,
+      why: 'eligible only on public projects',
+      mayAutoRouteNamedJob: false,
+    }
+  }
+  const training = trainingDataEligibility({
+    agent: agent.name,
+    trainsOnInputs: Boolean(agent.trainsOnInputs),
+    project: project?.name ?? null,
+    visibility: project?.settings.visibility ?? null,
+    verifiedRepository: project?.settings.visibilityRepository ?? null,
+    currentRepository:
+      agent.trainsOnInputs && project?.settings.visibility === 'public'
+        ? repositoryReader(project)
+        : null,
+  })
+  if (!training.eligible) return { ...training, mayAutoRouteNamedJob: false }
   const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)
   if (!metered.eligible) return metered
+  const transport = pinnedTransport ?? agent.defaultTransport
   const transportWhy =
-    agent.defaultTransport === 'acp'
+    transport === 'acp'
       ? transportPinIneligibility(
           jobName,
           agent.name,
           AGENTS[agent.name]!,
-          agent.defaultTransport,
+          transport,
+          explicitlyNamedAgent === agent.name,
           metered.mayAutoRouteNamedJob,
         )
-      : null
+      : pinnedTransport
+        ? transportPinIneligibility(
+            jobName,
+            agent.name,
+            AGENTS[agent.name]!,
+            transport,
+            explicitlyNamedAgent === agent.name,
+            metered.mayAutoRouteNamedJob,
+          )
+        : null
   return transportWhy ? { ...metered, eligible: false, why: transportWhy } : metered
 }
 
@@ -1235,6 +1370,7 @@ export function agentsIneligibleForTransport(jobName: string, transport: 'cli' |
           agent.name,
           agent,
           transport,
+          false,
           policy.mayAutoRouteNamedJob,
         ) !== null
       )

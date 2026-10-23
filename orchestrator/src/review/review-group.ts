@@ -2,9 +2,15 @@
 /** Measures change groups and reads their recorded review rows. */
 import type { Database } from 'bun:sqlite'
 import type { Project } from '../project/projects.ts'
+import {
+  type ApplicableReview,
+  applicableReviewForChange,
+  type ReviewPlan,
+} from './review-applicability.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { resolveReviewMergeBase } from './review-target.ts'
-import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
+import { diffNumstat } from './review-tier.ts'
+import type { ReviewTier } from './review-tier-classifier.ts'
 
 export type ChangeGroup = {
   project: string
@@ -29,7 +35,12 @@ export type TriageReviewRow = {
     model?: string | null
     graded: boolean
   }[]
-  findings: readonly { recordId: string; ordinal: number; disposition: string | null }[]
+  findings: readonly {
+    recordId: string
+    ordinal: number
+    disposition: string | null
+    lens?: string
+  }[]
 }
 
 export function reviewLensGraded(lens: {
@@ -59,6 +70,7 @@ export type MeasuredChangeGroup = {
   group: ChangeGroup
   base: string
   tier: ReviewTier
+  applicability: ApplicableReview
   message: string
 }
 
@@ -67,6 +79,7 @@ export type MeasuredReviewChange = {
   pathSet: string[]
   base: string
   tier: ReviewTier
+  applicability: ApplicableReview
   message: string
 }
 
@@ -77,18 +90,19 @@ type ChangeGroupOperations = {
     base: string,
     tip: string,
   ): { patchId: string; paths: string[]; message: string } | null
-  tier(
+  reviewPlan(
     cwd: string,
     base: string,
     tip: string,
-    risk: NonNullable<Project['settings']['review']>['risk'],
-  ): ReviewTier
+    review: Project['settings']['review'],
+  ): ReviewPlan
 }
 
 const changeGroupOperations: ChangeGroupOperations = {
   mergeBase: resolveReviewMergeBase,
   identity: measureChangeIdentity,
-  tier: (cwd, base, tip, risk) => classifyReviewTier({ files: diffNumstat(cwd, base, tip), risk }),
+  reviewPlan: (cwd, base, tip, review) =>
+    applicableReviewForChange(diffNumstat(cwd, base, tip), review),
 }
 
 export const serializePathSet = (paths: readonly string[]): string =>
@@ -125,11 +139,13 @@ export function measureReviewChange(
   if (!base) return null
   const identity = operations.identity(cwd, base, tip)
   if (!identity) return null
+  const plan = operations.reviewPlan(cwd, base, tip, project.settings.review)
   return {
     patchId: identity.patchId,
     pathSet: identity.paths,
     base,
-    tier: operations.tier(cwd, base, tip, project.settings.review?.risk),
+    tier: plan.tier,
+    applicability: plan.applicability,
     message: identity.message,
   }
 }
@@ -153,6 +169,7 @@ export function measureChangeGroup(
     },
     base: measured.base,
     tier: measured.tier,
+    applicability: measured.applicability,
     message: measured.message,
   }
 }
@@ -215,7 +232,7 @@ function reviewsForBranch(
               rf.record_id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
-         LEFT JOIN review_finding rf ON rf.review_record_id=r.record_id
+         LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (run.branch=? OR r.record_id=?) ORDER BY r.number DESC,rl.record_id,rf.ordinal`,
     )
@@ -259,11 +276,17 @@ function reviewsForBranch(
       !review.findings.some((finding) => finding.recordId === row.finding_id)
     ) {
       ;(
-        review.findings as { recordId: string; ordinal: number; disposition: string | null }[]
+        review.findings as {
+          recordId: string
+          ordinal: number
+          disposition: string | null
+          lens?: string
+        }[]
       ).push({
         recordId: row.finding_id,
         ordinal: row.ordinal!,
         disposition: row.disposition,
+        lens: row.lens,
       })
     }
     reviews.set(row.review_record_id, review)

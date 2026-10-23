@@ -1,11 +1,9 @@
 import { PLATFORM_SLUG } from './brand.ts'
 import { embeddedDistributionManifest } from './embedded-assets.ts'
-import { assetPath } from './install-root.ts'
+import { assetPath, installRoot, readDistributionManifest } from './install-root.ts'
 
 export const BOTTEGA_ENTRY_PROTOCOL = {
   [PLATFORM_SLUG]: { compiledArguments: [], usage: 'public' },
-  orch: { compiledArguments: ['orch'], usage: 'public' },
-  hub: { compiledArguments: ['hub'], usage: 'public' },
   'run-exec': { compiledArguments: ['__run-exec'], usage: 'hidden' },
   'ask-server': { compiledArguments: ['mcp', 'ask-server'], usage: 'nested' },
   'ask-proxy': { compiledArguments: ['__ask-proxy'], usage: 'hidden' },
@@ -20,14 +18,16 @@ export const BOTTEGA_ENTRY_PROTOCOL = {
 
 export type BottegaEntry = keyof typeof BOTTEGA_ENTRY_PROTOCOL
 
+/** The public executable of the running installed distribution, when this is one. */
+export function installedBottegaExecutable(): string | null {
+  if (embeddedDistributionManifest()) return process.execPath
+  return readDistributionManifest(installRoot()) ? assetPath('bin', PLATFORM_SLUG) : null
+}
+
 function sourceArguments(entry: BottegaEntry): string[] {
   switch (entry) {
     case PLATFORM_SLUG:
       return [assetPath('bin', PLATFORM_SLUG)]
-    case 'orch':
-      return [assetPath('bin', 'orch')]
-    case 'hub':
-      return [assetPath('bin', 'hub')]
     case 'run-exec':
       return [
         process.env.ORCH_EXEC_PATH ?? process.execPath,

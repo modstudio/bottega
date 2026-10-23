@@ -7,8 +7,10 @@ import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../..
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { runHarnessStateDir } from '../run-owned-paths.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { establishAcpSession } from './acp-session.ts'
 import {
   type AcpTrace,
   createAcpTrace,
@@ -40,6 +42,7 @@ import type {
   AcpPromptUsage,
 } from './transport-acp-types.ts'
 import { acpRunUsage } from './transport-acp-usage.ts'
+import type { AgentBilling } from './vendor-usage.ts'
 
 type AcpUpdate = {
   sessionUpdate: string
@@ -68,6 +71,7 @@ type AcpTurnInput = {
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
   usage?: AcpPromptUsage
 }
+type Billing = AgentBilling
 
 async function resolveWorkerRunId(value: string | undefined): Promise<string | null> {
   if (!value) return null
@@ -104,6 +108,8 @@ const ACP_HANDSHAKE_TIMEOUT_MS = 60_000
 const MARK_RUN_ASKING_SQL = "UPDATE run SET status='asking' WHERE record_id=? AND status='running'"
 type AcpHandshakeStage = 'initialize' | 'session/load' | 'session/new'
 
+class AcpHandshakeTimeout extends Error {}
+
 /** Bound a startup request before callers have a transport handle or wall timer. */
 export async function awaitAcpHandshake<T>(opts: {
   request: Promise<T>
@@ -125,7 +131,7 @@ export async function awaitAcpHandshake<T>(opts: {
     })
   } catch (error) {
     if (!(error instanceof TransportOperationTimeout)) throw error
-    throw new Error(
+    throw new AcpHandshakeTimeout(
       `ACP handshake refusal: ${opts.stage} timed out after ${ACP_HANDSHAKE_TIMEOUT_MS}ms ` +
         `for ${opts.harness} harness (pid ${opts.pid ?? 'unknown'}); inspect the harness ` +
         `startup logs, fix the stalled stage, and rerun the command`,
@@ -232,7 +238,10 @@ function toolCallResult(update: AcpUpdate): string | undefined {
  * A non-end_turn stop is a failure even when some agent text already arrived,
  * except elicitation which is asking.
  */
-export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
+export function normalizeAcpTurn(
+  input: AcpTurnInput,
+  billing: Billing = 'unknown',
+): TransportResult {
   const events: NormalizedEvent[] = []
   const chunks: string[] = []
   const usageUpdates: AcpMessageUsageUpdate[] = []
@@ -312,7 +321,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
     }
   }
 
-  const { tokens, costUsd, vendorUsage } = acpRunUsage(usageUpdates, input.usage ?? null)
+  const { tokens, costUsd, vendorUsage } = acpRunUsage(usageUpdates, input.usage ?? null, billing)
   if (tokens !== null) events.push({ kind: 'usage', tokens, costUsd })
 
   if (input.elicitation) {
@@ -375,6 +384,19 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
           ]
         : [],
   }
+}
+
+function normalizeAcpAgentTurn(
+  agent: TransportStartOpts['agent'],
+  input: AcpTurnInput,
+): TransportResult {
+  return normalizeAcpTurn(input, agent.billing)
+}
+
+function warnAcpLoadRejection(opts: TransportStartOpts, reason: string): void {
+  opts.onWarning?.(
+    `ACP session/load explicitly rejected ${opts.session}; continued in a fresh session: ${reason}`,
+  )
 }
 
 function webStream(
@@ -461,7 +483,7 @@ export function acpEnvironment(opts: TransportStartOpts): Record<string, string>
     )
   }
   if (opts.agent.harness === 'goose') {
-    const stateDir = opts.srt?.runtimeDir ?? dirname(opts.outPath)
+    const stateDir = opts.srt ? runHarnessStateDir(opts.srt.runtimeDir) : dirname(opts.outPath)
     env.XDG_STATE_HOME = stateDir
     env.XDG_DATA_HOME = stateDir
     env.XDG_CONFIG_HOME = stateDir
@@ -548,10 +570,11 @@ function observeAcpUpdate(
   outPath: string,
   sessionId: string | null,
   pushEvent: (event: NormalizedEvent) => void,
+  billing: AgentBilling,
 ): void {
   updates.push(params)
   persistAcpUpdates(outPath, sessionId, updates)
-  const folded = normalizeAcpTurn({ sessionId, updates: [params] })
+  const folded = normalizeAcpTurn({ sessionId, updates: [params] }, billing)
   for (const event of folded.events) {
     if (event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
   }
@@ -611,6 +634,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   let prompted = false
   let sessionId: string | null = opts.session ?? null
   let effectiveModel: string | null = null
+  let loadSessionAdvertised = false
   let connection: acp.ClientConnection | null = null
   let ctx: acp.ClientContext | null = null
 
@@ -620,7 +644,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     if (wait) wait(event)
   }
   const observeUpdate = (req: { params: unknown }) =>
-    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent)
+    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent, opts.agent.billing)
 
   const app = acp
     .client({ name: MCP_SERVER_NAME })
@@ -735,7 +759,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           terminate: () => terminateProcessGroup(child.pid ?? 0, { direct: child }),
         }),
       )
-    await handshake(
+    const initialized = await handshake(
       ctx.request(acp.methods.agent.initialize, {
         // ACP has no result object, so the reply file is the one advertised write.
         // Gap: usage_update.used is session context, not CLI input+output.
@@ -745,47 +769,39 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       }),
       'initialize',
     )
+    loadSessionAdvertised = initialized.agentCapabilities?.loadSession === true
     // The ruling channel is transport infrastructure, not a project MCP opt-in.
     // codex-acp needs it on session/new. Grok loads the per-run config prepared
     // in GROK_HOME; passing the same stdio server here makes 1.0.13 reject
     // session/new with "Path not found."
     const mcpServers = acpMcpServers(opts)
-    if (opts.session) {
-      const loaded = await handshake(
-        ctx.request(acp.methods.agent.session.load, {
-          // orchestrator resumes the vendor conversation; the prompt is the ruling.
-          cwd: opts.cwd,
-          sessionId: opts.session,
-          mcpServers,
-        }),
-        'session/load',
+    const established = await establishAcpSession({
+      connection: {
+        loadSession: (request) =>
+          handshake(ctx!.request(acp.methods.agent.session.load, request), 'session/load'),
+        newSession: (request) =>
+          handshake(
+            ctx!.request(acp.methods.agent.session.new, {
+              ...request,
+              ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
+            }),
+            'session/new',
+          ),
+      },
+      cwd: opts.cwd,
+      mcpServers,
+      sessionId: opts.session,
+      fallbackToNew: Boolean(opts.session),
+      loadFailureKilledProcess: (error) => error instanceof AcpHandshakeTimeout,
+      onLoadFailure: (reason) => warnAcpLoadRejection(opts, reason),
+    })
+    sessionId = established.sessionId
+    if (grok) {
+      effectiveModel = grokEffectiveModel(
+        established.response as GrokSessionResponse,
+        opts.model,
+        Boolean(opts.modelExplicit),
       )
-      sessionId = opts.session
-      if (grok) {
-        effectiveModel = grokEffectiveModel(
-          loaded as GrokSessionResponse,
-          opts.model,
-          Boolean(opts.modelExplicit),
-        )
-      }
-    } else {
-      const created = await handshake(
-        ctx.request(acp.methods.agent.session.new, {
-          // orchestrator opens a read-only session with its per-run ruling channel.
-          cwd: opts.cwd,
-          mcpServers,
-          ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
-        }),
-        'session/new',
-      )
-      sessionId = created.sessionId
-      if (grok) {
-        effectiveModel = grokEffectiveModel(
-          created as GrokSessionResponse,
-          opts.model,
-          Boolean(opts.modelExplicit),
-        )
-      }
     }
     if (sessionId) pushEvent({ kind: 'session', sessionId })
   } catch (error) {
@@ -813,6 +829,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const handle: TransportHandle = {
     pid: child.pid ?? null,
     effectiveModel,
+    loadSessionAdvertised,
     kill(_sig) {
       void terminateProcessGroup(child.pid ?? 0, { direct: child })
     },
@@ -851,7 +868,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         let result: ReturnType<typeof normalizeAcpTurn>
         try {
           const stderr = Buffer.concat(stderrChunks).toString('utf8')
-          result = normalizeAcpTurn({
+          result = normalizeAcpAgentTurn(opts.agent, {
             sessionId,
             updates,
             stopReason,

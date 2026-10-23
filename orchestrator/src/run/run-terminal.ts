@@ -8,14 +8,16 @@ import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
+  type CheckoutRemovalAttribution,
   type CheckoutToWatch,
   type ConfinementEvent,
-  classifyDivergence,
+  classifyCheckoutChanges,
   type FreezeFailure,
   type FrozenCheckout,
-  freezeCheckouts,
+  freezeAfterCheckouts,
   overlappingError,
 } from '../confinement/confinement.ts'
 import type { ReaderReply, ReviewReply, realQuestions, WorkerReply } from '../contract/contract.ts'
@@ -165,6 +167,10 @@ function reviewHidesGap(
   )
 }
 
+function nullableBooleanColumn(value: boolean | null): number | null {
+  return value === null ? null : value ? 1 : 0
+}
+
 export type TerminalInput = {
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
@@ -184,6 +190,7 @@ export type TerminalInput = {
   watchedCheckouts: CheckoutToWatch[]
   confinementFailures: FreezeFailure[]
   frozenBefore: FrozenCheckout[]
+  callerRemoval: CheckoutRemovalAttribution
   removeIsolatedCwd: (() => void) | null
   changes: Changes | null
   provisionedMcpConfig: { measure<T>(operation: () => T): T } | null
@@ -233,12 +240,53 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
-function checkpointAtTerminal(input: TerminalInput): boolean {
-  return shouldCheckpointAtTerminal({
+function checkpointTerminalWork(input: TerminalInput): string | null {
+  const shouldCheckpoint = shouldCheckpointAtTerminal({
     writesJob: input.writesJob,
     hasWorktree: Boolean(input.worktree),
-    launchKey: input.launchKey,
   })
+  if (!shouldCheckpoint) return null
+  const checkpoint = checkpointRun({
+    database: db(),
+    runId: input.claim.id,
+    worktree: input.worktree!.path,
+    branch: input.worktree!.branch,
+    taskKey: input.launchKey,
+    scratchDir: input.scratchDir,
+    guardEnvironment: input.gitConfigEnvironment ?? {},
+    containment: input.checkpointContainment,
+    final: true,
+  })
+  if (
+    checkpoint.created ||
+    latestCheckpoint(db(), checkpointRoot(input.opts.resume, input.claim.id))
+  ) {
+    db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(input.claim.id)
+  }
+  if (checkpoint.error)
+    console.error(`orch: run ${input.claim.id} checkpoint failed: ${checkpoint.error}`)
+  return checkpoint.created ? terminalCheckpointHeader(checkpoint.commit!) : null
+}
+
+function terminalAfterCheckouts(
+  watched: CheckoutToWatch[],
+  before: FrozenCheckout[],
+  runId: string,
+  removal: CheckoutRemovalAttribution,
+): ReturnType<typeof freezeAfterCheckouts> & {
+  removal: CheckoutRemovalAttribution
+} {
+  try {
+    return { ...freezeAfterCheckouts({ watched, before, removal }), removal }
+  } catch (error) {
+    console.error(`orch: could not freeze watched checkouts for run ${runId}: ${error}`)
+    return {
+      snapshots: [],
+      failures: [],
+      removedCaller: null,
+      removal: { attribution: 'unattributed', removalSession: null, removalRun: null },
+    }
+  }
 }
 
 function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | undefined): boolean {
@@ -264,9 +312,12 @@ export function questionsToInsert(
 export function shouldCheckpointAtTerminal(input: {
   writesJob: boolean
   hasWorktree: boolean
-  launchKey: string | null
 }): boolean {
-  return input.writesJob && input.hasWorktree && Boolean(input.launchKey)
+  return input.writesJob && input.hasWorktree
+}
+
+function terminalCheckpointHeader(commit: string): string {
+  return `Harness checkpoint: committed uncommitted work as ${commit}.`
 }
 
 /** Artifact copy faults retain the worker outcome while remaining visible on the run. */
@@ -415,6 +466,17 @@ function insertBlockerRows(runId: string, rows: BlockerRow[], at: string): void 
   for (const r of rows) q.run(newRecordId(), runId, at, r.what, r.why, r.impact, r.source, r.kind)
 }
 
+function terminalConfinementSnapshots(input: TerminalInput) {
+  const after = terminalAfterCheckouts(
+    input.watchedCheckouts,
+    input.frozenBefore,
+    input.claim.id,
+    input.callerRemoval,
+  )
+  input.confinementFailures.push(...after.failures)
+  return { after, before: input.frozenBefore, failures: input.confinementFailures }
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -425,14 +487,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     claim,
     writesJob,
     worktree,
-    launchKey,
     failureKind,
-    scratchDir,
-    gitConfigEnvironment,
     opts,
-    watchedCheckouts,
-    confinementFailures,
-    frozenBefore,
     removeIsolatedCwd,
     changes,
     provisionedMcpConfig,
@@ -477,46 +533,15 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
-  const preserveAtTerminal = checkpointAtTerminal(input)
-  if (preserveAtTerminal) {
-    const checkpoint = checkpointRun({
-      database: db(),
-      runId: claim.id,
-      worktree: worktree!.path,
-      branch: worktree!.branch,
-      taskKey: launchKey!,
-      scratchDir,
-      guardEnvironment: gitConfigEnvironment ?? {},
-      containment: input.checkpointContainment,
-      final: true,
-    })
-    if (checkpoint.created || latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))) {
-      db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
-    }
-    if (checkpoint.error)
-      console.error(`orch: run ${claim.id} checkpoint failed: ${checkpoint.error}`)
-  }
-  let frozenAfter: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  try {
-    const afterFreeze = freezeCheckouts(watchedCheckouts)
-    confinementFailures.push(
-      ...afterFreeze.failures.map((failure) => ({
-        ...failure,
-        error: `after snapshot: ${failure.error}`,
-      })),
-    )
-    frozenAfter = afterFreeze.snapshots
-  } catch (e) {
-    // An observation failure cannot name an unreadable checkout; preserve the outcome
-    // and expose the harness fault. Freeze failures take the binding path.
-    console.error(`orch: could not freeze watched checkouts for run ${claim.id}: ${e}`)
-  }
-
-  // The directory contains no input and is useful only while the vendor is
-  // alive. Remove it after readSession has had the chance to derive any
-  // vendor-owned transcript location from cwd.
+  const checkpointHeader = checkpointTerminalWork(input)
+  if (checkpointHeader)
+    mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${checkpointHeader}` : checkpointHeader
+  const startedAt = db()
+    .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
+    .get(claim.id) as { started_at: string; head_commit: string | null } | null
+  const confinement = terminalConfinementSnapshots(input)
+  // Remove the input-free directory after readSession can derive any transcript location from cwd.
   removeIsolatedCwd?.()
-
   /**
    * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.
    *
@@ -549,17 +574,16 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     measurementScope: provisionedMcpConfig,
   })
 
-  if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
-    const startedAt = db()
-      .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
-      .get(claim.id) as { started_at: string; head_commit: string | null } | null
-    confinementEvent = classifyDivergence({
-      before: frozenBefore,
-      after: frozenAfter,
+  if (confinement.before.length && !confinement.failures.length) {
+    confinementEvent = classifyCheckoutChanges({
+      before: confinement.before,
+      after: confinement.after.snapshots,
+      removedCaller: confinement.after.removedCaller,
       ownDiffPaths: changes?.files ?? [],
       chainRoot: startedAt?.head_commit ?? null,
       database: db(),
       startedAt: startedAt?.started_at ?? new Date(started).toISOString(),
+      removal: confinement.after.removal,
     })
   }
 
@@ -634,7 +658,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       workerEvents,
       acceptedQuestionCount: acceptedQuestions.length,
       exitCode,
-      latencyMs: Date.now() - started,
     }),
   ))
 
@@ -688,8 +711,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const confinementPrecedence = applyConfinementPrecedence({
     outcome: { status, failureKind, error },
     preConfinement,
-    confinementUnverifiedError: confinementFailures.length
-      ? confinementUnverifiedError(confinementFailures)
+    confinementUnverifiedError: confinement.failures.length
+      ? confinementUnverifiedError(confinement.failures)
       : null,
     overlappingError:
       confinementEvent?.classification === 'overlapping'
@@ -728,7 +751,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     latencyMs: Date.now() - started,
     vendorTokens,
     vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage),
+    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -737,7 +760,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     changedPaths: writesJob && changes ? JSON.stringify(changes.files) : null,
     linesAdded: writesJob ? (changes?.insertions ?? null) : null,
     linesRemoved: writesJob ? (changes?.deletions ?? null) : null,
-    testsRan: testOutcome ? (testOutcome.ran ? 1 : 0) : null,
+    testsRan: testOutcome ? nullableBooleanColumn(testOutcome.ran) : null,
     testsPassed: testOutcome?.passed == null ? null : testOutcome.passed ? 1 : 0,
     testsClaimDisagrees: testOutcome ? (testOutcome.claimDisagrees ? 1 : 0) : null,
     deviations: writesJob ? (contract?.deviations?.length ?? null) : null,
@@ -771,7 +794,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           promptPath,
           vendorTokens,
           costUsd,
-          ...runUsageColumnValues(runUsageColumns(vendorUsage)),
+          ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
           status,
           error,
@@ -810,7 +833,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
             changes ? JSON.stringify(changes.files) : null,
             changes?.insertions ?? null,
             changes?.deletions ?? null,
-            testOutcome!.ran ? 1 : 0,
+            nullableBooleanColumn(testOutcome!.ran),
             testOutcome!.passed == null ? null : testOutcome!.passed ? 1 : 0,
             testOutcome!.claimDisagrees ? 1 : 0,
             contract?.deviations?.length ?? null,
@@ -911,7 +934,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     const event = confinementEvent
     tryWriteContention({
       resourceKind: 'main_checkout',
-      resourceKey: event?.checkout ?? confinementFailures[0]?.path ?? callerCwd,
+      resourceKey: event?.checkout ?? confinement.failures[0]?.path ?? callerCwd,
       eventKind: 'invalidation',
       cause: error,
       runId: claim.id,

@@ -2,12 +2,15 @@ import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { registerEmbeddedAssets } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
-import { BOTTEGA_ENTRY_PROTOCOL, type BottegaEntry, bottegaEntryArgv } from './self-spawn.ts'
+import {
+  BOTTEGA_ENTRY_PROTOCOL,
+  type BottegaEntry,
+  bottegaEntryArgv,
+  installedBottegaExecutable,
+} from './self-spawn.ts'
 
 const entries: BottegaEntry[] = [
   PLATFORM_SLUG,
-  'orch',
-  'hub',
   'run-exec',
   'ask-server',
   'ask-proxy',
@@ -18,8 +21,6 @@ afterEach(() => registerEmbeddedAssets(null))
 
 test('source entries preserve their current argv prefixes', () => {
   expect(bottegaEntryArgv(PLATFORM_SLUG)).toEqual([assetPath('bin', PLATFORM_SLUG)])
-  expect(bottegaEntryArgv('orch')).toEqual([assetPath('bin', 'orch')])
-  expect(bottegaEntryArgv('hub')).toEqual([assetPath('bin', 'hub')])
   expect(bottegaEntryArgv('run-exec')).toEqual([
     process.env.ORCH_EXEC_PATH ?? process.execPath,
     '--no-env-file',
@@ -57,4 +58,5 @@ test('compiled entries re-execute the current binary', () => {
       }),
     ).toEqual([process.execPath, ...BOTTEGA_ENTRY_PROTOCOL[entry].compiledArguments])
   }
+  expect(installedBottegaExecutable()).toBe(process.execPath)
 })

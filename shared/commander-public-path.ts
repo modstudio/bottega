@@ -7,6 +7,10 @@ export type PublicCommandInvocation = {
 
 const publicCommandPaths = new WeakMap<Command, readonly string[]>()
 
+export function takesVariadicArgument(command: Command): boolean {
+  return command.registeredArguments.some((argument) => argument.variadic)
+}
+
 function commandRoot(command: Command): Command {
   let root = command
   while (root.parent) root = root.parent

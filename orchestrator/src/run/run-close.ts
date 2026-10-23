@@ -5,6 +5,7 @@
  * run control, dispatch surfaces, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
@@ -21,10 +22,10 @@ import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
 import {
   decideFailover,
+  failoverAttemptLimit,
   failoverAttempts,
   failoverRefusalReason,
   failoverSuccessorAgent,
-  MAX_FAILOVER_ATTEMPTS,
 } from '../route/failover.ts'
 import { AgentCapacityError, agentsIneligibleForTransport, pick } from '../route/route.ts'
 import type { TransportName } from '../transport/transport.ts'
@@ -102,10 +103,15 @@ export type CloseInput = {
   run: (opts: SuccessorOptions) => Promise<RunResult>
 }
 
-function appendFailoverRefusal(id: string, reason: string): void {
+function failoverRefusalMessage(id: string, reason: string, retryCommand: boolean): string {
+  const remedy = retryCommand ? `; retry with ${PLATFORM_SLUG} run retry ${id} --agent <name>` : ''
+  return `Failover refused: ${reason}${remedy}`
+}
+
+function appendFailoverRefusal(id: string, reason: string, retryCommand = false): void {
   db()
     .query(`UPDATE run SET error=COALESCE(error || '\n', '') || ? WHERE record_id=?`)
-    .run(`Failover refused: ${reason}`, id)
+    .run(failoverRefusalMessage(id, reason, retryCommand), id)
 }
 
 function hasFailoverSuccessor(id: string): boolean {
@@ -182,6 +188,8 @@ async function selectFailoverSuccessor(input: {
             input.launchCwd ?? input.callerCwd,
             input.repo ?? undefined,
           ),
+          pinnedTransport: input.pinnedTransport ?? undefined,
+          project: input.repo,
         },
         false,
         input.lens ?? undefined,
@@ -219,15 +227,6 @@ function notifyFailureRequiringHuman(input: {
     )
 }
 
-function recordFailoverRefusal(
-  runId: string,
-  facts: Parameters<typeof decideFailover>[0],
-): boolean {
-  const reason = failoverRefusalReason(decideFailover(facts))
-  if (reason) appendFailoverRefusal(runId, reason)
-  return Boolean(reason)
-}
-
 export async function closeRun(input: CloseInput): Promise<RunResult> {
   const {
     failureKind,
@@ -259,10 +258,15 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     error,
     run,
   } = input
-  notifyFailureRequiringHuman({ failureKind, name, job: opts.job, idleUnkillable, runId: claim.id })
+  notifyFailureRequiringHuman({
+    failureKind,
+    name,
+    job: opts.job,
+    idleUnkillable,
+    runId: claim.id,
+  })
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
-    // Terminate the recorded vendor, excluding this coordinator so it can
-    // still route and run the successor. This does not write a stopped row.
+    // Exclude this coordinator while terminating the vendor so it can route the successor.
     terminateRunProcesses(claim.id, [process.pid])
     const attempts = failoverAttempts(claim.id)
     const tried = attempts.map((attempt) => attempt.agent)
@@ -294,7 +298,6 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       transport: TransportName | null
       transport_explicit: number
     }
-    const treeName = worktree?.path ?? '(none — read-only job)'
     const failoverFacts = {
       status,
       failureKind,
@@ -302,13 +305,16 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       noFailover: Boolean(first.no_failover || opts.noFailover),
       writesJob,
       changes,
-      worktree: treeName,
+      worktree: worktree?.path ?? '(none — read-only job)',
       attemptCount: attempts.length,
-      maxAttempts: MAX_FAILOVER_ATTEMPTS,
+      maxAttempts: failoverAttemptLimit(failureKind),
       agentsTried: tried,
       originalPromptAvailable: Boolean(first.prompt_path && existsSync(first.prompt_path)),
     }
-    if (!recordFailoverRefusal(claim.id, failoverFacts)) {
+    const refusalReason = failoverRefusalReason(decideFailover(failoverFacts))
+    if (refusalReason) {
+      appendFailoverRefusal(claim.id, refusalReason, failureKind === 'premature-final')
+    } else {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
         const transportConstraints = storedFailoverSelectionConstraints(first, opts, tried)
@@ -387,6 +393,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
               selectionError: String((e as Error)?.message ?? e),
             }),
           )!,
+          failureKind === 'premature-final',
         )
       }
     }
@@ -411,7 +418,9 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
   }
 
   if (status === 'failed') {
-    throw Object.assign(new Error(`run ${claim.id} failed: ${error}`), { runId: claim.id })
+    throw Object.assign(new Error(`run ${claim.id} failed: ${error}`), {
+      runId: claim.id,
+    })
   }
   return {
     record_id: claim.id,

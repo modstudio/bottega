@@ -107,6 +107,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-preflight.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
+    '../run-owned-paths.ts',
     './run-claim-plan.ts',
     './run-claim-mcp.ts',
     './run-claim-inheritance.ts',
@@ -144,6 +145,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/task-rulings.ts', ['./question-vocabulary.ts']),
   module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
   module('orchestrator/src/run/run-close.ts', [
+    '../../../shared/brand.ts',
     '../close/close-out.ts',
     '../contract/contract.ts',
     '../database/db.ts',
@@ -188,6 +190,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../ask/ask-lifecycle.ts',
     '../ask/worker-note-broker.ts',
     '../board/board-delivery.ts',
+    './checkpoint-schedule.ts',
     './checkpoint.ts',
     './question-open.ts',
     '../sandbox/codex-mcp-scope.ts',
@@ -210,7 +213,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-board-prompt.ts',
     './run-reply-source.ts',
     './run-resume-kind.ts',
-    './run-liveness.ts',
     './run-wall-deadline.ts',
     './run-worker-brokers.ts',
     '../sandbox/sandbox.ts',
@@ -218,6 +220,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
   ]),
+  module('orchestrator/src/run/checkpoint-schedule.ts', []),
   module('orchestrator/src/run/run-worker-brokers.ts', [
     '../focused-test/focused-test-broker.ts',
     '../gate/gate-broker.ts',
@@ -277,6 +280,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-terminal.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../agent/agent-registry.ts',
     '../ask/ask.ts',
     './checkpoint.ts',
     '../confinement/confinement.ts',
@@ -327,6 +331,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'bun:sqlite',
     'node:fs',
     '../events.ts',
+    '../focused-test/focused-test-decision.ts',
   ]),
   module('orchestrator/src/run/run-types.ts', [
     '../contract/contract.ts',

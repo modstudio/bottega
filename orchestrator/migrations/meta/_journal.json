@@ -14,6 +14,7 @@
       "version": "6",
       "when": 1788800400000,
       "tag": "0001_landing_queue",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -21,6 +22,7 @@
       "version": "6",
       "when": 1788804000000,
       "tag": "0002_spec_sha",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -28,6 +30,7 @@
       "version": "6",
       "when": 1788829200000,
       "tag": "0003_keep_tree",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -56,6 +59,7 @@
       "version": "6",
       "when": 1788900000001,
       "tag": "0007_contention",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -63,6 +67,7 @@
       "version": "6",
       "when": 1788900000002,
       "tag": "0008_test_flake",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -70,6 +75,7 @@
       "version": "6",
       "when": 1788900000003,
       "tag": "0009_run_last_event",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -84,6 +90,7 @@
       "version": "6",
       "when": 1788900000005,
       "tag": "0011_run_confinement",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -91,6 +98,7 @@
       "version": "6",
       "when": 1788900000006,
       "tag": "0012_review_identity_provenance",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -105,6 +113,7 @@
       "version": "6",
       "when": 1788900000008,
       "tag": "0014_run_checkpoints",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -112,6 +121,7 @@
       "version": "6",
       "when": 1788900000009,
       "tag": "0015_monitor_condition_owner",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -119,6 +129,7 @@
       "version": "6",
       "when": 1788900000010,
       "tag": "0016_landing_notice_delivery",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -126,6 +137,7 @@
       "version": "6",
       "when": 1788900000011,
       "tag": "0017_run_close_out_outcome",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -133,6 +145,7 @@
       "version": "6",
       "when": 1788900000012,
       "tag": "0018_run_agent_process",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -147,6 +160,7 @@
       "version": "6",
       "when": 1788900000014,
       "tag": "0020_resource_claim",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -161,6 +175,7 @@
       "version": "6",
       "when": 1788900000016,
       "tag": "0022_keep_tree_expiry",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -168,6 +183,7 @@
       "version": "6",
       "when": 1788900000017,
       "tag": "0023_monitor_notice_indexes",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -175,6 +191,7 @@
       "version": "6",
       "when": 1788900000018,
       "tag": "0024_run_recipe_snapshot",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -196,6 +213,7 @@
       "version": "6",
       "when": 1788900000021,
       "tag": "0027_project_retired",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -203,6 +221,7 @@
       "version": "6",
       "when": 1788900000022,
       "tag": "0028_canon_pack_bytes",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -210,6 +229,7 @@
       "version": "6",
       "when": 1788900000023,
       "tag": "0029_run_record_outbox",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -217,6 +237,7 @@
       "version": "6",
       "when": 1788900000024,
       "tag": "0030_review_record_ids",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -224,6 +245,7 @@
       "version": "6",
       "when": 1788900000025,
       "tag": "0031_landing_evidence_record_ids",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -252,6 +274,7 @@
       "version": "6",
       "when": 1788900000029,
       "tag": "0035_branch_landing_record",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -259,6 +282,7 @@
       "version": "6",
       "when": 1788900000030,
       "tag": "0036_doc_record_ids",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -273,6 +297,7 @@
       "version": "6",
       "when": 1788900000032,
       "tag": "0038_run_started_by",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -287,6 +312,7 @@
       "version": "6",
       "when": 1788900000034,
       "tag": "0040_workflow_cursor",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -308,6 +334,7 @@
       "version": "6",
       "when": 1788900000037,
       "tag": "0043_lens_requires_execution",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -315,6 +342,7 @@
       "version": "6",
       "when": 1788900000038,
       "tag": "0044_workflow_cursor_autonomy",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -364,6 +392,7 @@
       "version": "6",
       "when": 1790272800004,
       "tag": "0051_worker_gate",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -371,6 +400,7 @@
       "version": "6",
       "when": 1790272800005,
       "tag": "0052_worker_gate_lifecycle",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -378,6 +408,7 @@
       "version": "6",
       "when": 1790272800006,
       "tag": "0053_question_filed_ruling",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -406,6 +437,7 @@
       "version": "6",
       "when": 1790272800010,
       "tag": "0057_review_finding_amendment",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -413,6 +445,7 @@
       "version": "6",
       "when": 1790272800011,
       "tag": "0058_question_record_id",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -420,6 +453,7 @@
       "version": "6",
       "when": 1790272800012,
       "tag": "0059_question_revision",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -427,6 +461,7 @@
       "version": "6",
       "when": 1790272800013,
       "tag": "0060_mutation_audit_turn",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -434,6 +469,7 @@
       "version": "6",
       "when": 1790272800014,
       "tag": "0061_pull_request_triage_snapshot",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -441,6 +477,7 @@
       "version": "6",
       "when": 1790272800015,
       "tag": "0062_run_resource_teardown",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -455,6 +492,7 @@
       "version": "6",
       "when": 1790272800017,
       "tag": "0064_architect_review_read",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -462,6 +500,7 @@
       "version": "6",
       "when": 1790272800018,
       "tag": "0065_workflow_exec_evidence",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -469,6 +508,7 @@
       "version": "6",
       "when": 1790272800019,
       "tag": "0066_landing_override_change_group",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -504,6 +544,7 @@
       "version": "6",
       "when": 1790272800024,
       "tag": "0071_worker_note_request",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -511,6 +552,7 @@
       "version": "6",
       "when": 1790884800000,
       "tag": "0072_release_ledger",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -518,6 +560,7 @@
       "version": "6",
       "when": 1790884800001,
       "tag": "0073_board_notices",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -532,6 +575,7 @@
       "version": "6",
       "when": 1790884800003,
       "tag": "0075_board_message_tags",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -553,6 +597,7 @@
       "version": "6",
       "when": 1790884800006,
       "tag": "0078_board_claims",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -574,6 +619,7 @@
       "version": "6",
       "when": 1790884800009,
       "tag": "0081_board_hosted_adoption",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -581,6 +627,7 @@
       "version": "6",
       "when": 1790884800010,
       "tag": "0082_workflow_operator_ruling",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -588,6 +635,7 @@
       "version": "6",
       "when": 1790884800011,
       "tag": "0083_workflow_step_text",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -595,6 +643,7 @@
       "version": "6",
       "when": 1790884800012,
       "tag": "0084_main_stack_activity",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -602,6 +651,7 @@
       "version": "6",
       "when": 1790884800013,
       "tag": "0085_board_hosted_adoption_receipts",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -609,6 +659,7 @@
       "version": "6",
       "when": 1790884800014,
       "tag": "0086_doc_tree",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -616,6 +667,7 @@
       "version": "6",
       "when": 1790884800015,
       "tag": "0087_doc_featured",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -623,6 +675,7 @@
       "version": "6",
       "when": 1790884800016,
       "tag": "0088_doc_status",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -630,6 +683,7 @@
       "version": "6",
       "when": 1790884800017,
       "tag": "0089_doc_kind",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -651,6 +705,7 @@
       "version": "6",
       "when": 1791536400000,
       "tag": "0092_worker_note_target_project",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -672,6 +727,7 @@
       "version": "6",
       "when": 1791734400000,
       "tag": "0095_doc_article_fields",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -679,6 +735,7 @@
       "version": "6",
       "when": 1791806400000,
       "tag": "0096_release_record_id",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -686,6 +743,7 @@
       "version": "6",
       "when": 1791849600000,
       "tag": "0097_check_execution",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -707,6 +765,7 @@
       "version": "6",
       "when": 1791874800000,
       "tag": "0100_board_reach_emission",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -714,6 +773,7 @@
       "version": "6",
       "when": 1791914400000,
       "tag": "0101_workflow_self_ruling_basis",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -742,6 +802,7 @@
       "version": "6",
       "when": 1791932400000,
       "tag": "0105_doc_checked_against_commit",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -791,6 +852,7 @@
       "version": "6",
       "when": 1791983200000,
       "tag": "0112_project_record_identity",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -805,6 +867,7 @@
       "version": "6",
       "when": 1791997600000,
       "tag": "0114_doc_summary",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -833,6 +896,7 @@
       "version": "6",
       "when": 1792324800000,
       "tag": "0118_lens_selection_version",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -861,6 +925,7 @@
       "version": "6",
       "when": 1792432800000,
       "tag": "0122_run_listing_indexes",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -931,6 +996,7 @@
       "version": "6",
       "when": 1793232000000,
       "tag": "0132_run_provisioning_measurement",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -938,6 +1004,7 @@
       "version": "6",
       "when": 1793318400000,
       "tag": "0133_agent_endpoint_api_key_secret",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -945,6 +1012,7 @@
       "version": "6",
       "when": 1793404800000,
       "tag": "0134_run_agent_explicit",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -952,6 +1020,7 @@
       "version": "6",
       "when": 1793491200000,
       "tag": "0135_review_finding_duplicate_link",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -959,6 +1028,7 @@
       "version": "6",
       "when": 1793491200001,
       "tag": "0136_metered_routing",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -966,6 +1036,7 @@
       "version": "6",
       "when": 1793577600000,
       "tag": "0137_run_metered_usage",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -973,6 +1044,7 @@
       "version": "6",
       "when": 1793577600001,
       "tag": "0138_branch_disposal",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -980,6 +1052,7 @@
       "version": "6",
       "when": 1793577600002,
       "tag": "0139_run_host_wait",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -987,6 +1060,7 @@
       "version": "6",
       "when": 1793577600003,
       "tag": "0140_run_resources",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -994,6 +1068,7 @@
       "version": "6",
       "when": 1793577600004,
       "tag": "0141_run_test_observation",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -1001,6 +1076,7 @@
       "version": "6",
       "when": 1793577600005,
       "tag": "0142_gate_base_refresh",
+      "compatibility": "additive",
       "breakpoints": true
     },
     {
@@ -1008,6 +1084,23 @@
       "version": "6",
       "when": 1793577600006,
       "tag": "0143_host_pressure_attribution",
+      "compatibility": "additive",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "6",
+      "when": 1793577600007,
+      "tag": "0144_run_continuation_message_hash",
+      "compatibility": "additive",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "6",
+      "when": 1793577600008,
+      "tag": "0145_agent_trains_on_inputs",
+      "compatibility": "additive",
       "breakpoints": true
     }
   ]

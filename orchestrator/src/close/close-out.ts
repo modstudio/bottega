@@ -6,13 +6,12 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
-import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
+import { type LandingTreeHoldKind, landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -55,6 +54,7 @@ import { landingTreeReleaseHold, protectRetainedBranch } from './close-out-relea
 import {
   type ConversationKeepTreeHold,
   cleanLandingTreeCloseOutResult,
+  heldConversationCloseOutResult,
 } from './close-out-report.ts'
 import {
   aliveConversationTurns,
@@ -83,6 +83,9 @@ export type CloseOutResult = {
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   reportOutcome?: 'kept'
   detail: string
+  hold?: LandingTreeHoldKind
+  inFlightRef?: string | null
+  suppressBlock?: boolean
 }
 
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
@@ -378,25 +381,9 @@ function terminalHoldResult(
   status: string,
   hold: ConversationKeepTreeHold,
 ): CloseOutResult | null {
-  if (!TERMINAL.has(status)) {
-    return {
-      runId,
-      worktree: treePath,
-      outcome: 'live',
-      detail: `conversation is ${status}`,
-    }
-  }
-  if (hold.held) {
-    return {
-      runId,
-      worktree: treePath,
-      outcome: 'held',
-      detail:
-        hold.until === null
-          ? hold.reason
-          : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`,
-    }
-  }
+  if (!TERMINAL.has(status))
+    return { runId, worktree: treePath, outcome: 'live', detail: `conversation is ${status}` }
+  if (hold.held) return heldConversationCloseOutResult(runId, treePath, hold)
   if ('kept' in hold && hold.kept)
     return cleanLandingTreeCloseOutResult(runId, treePath, hold.reason)
   return null

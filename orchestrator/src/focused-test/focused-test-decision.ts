@@ -134,6 +134,10 @@ export function parseFocusedTestRunner(value: unknown): FocusedTestRunner | null
   return validation.runner
 }
 
+export function hasFocusedTestRunner(value: unknown): boolean {
+  return validateFocusedTestRunner(value).runner !== null
+}
+
 export function parseFocusedTestRequest(value: unknown): FocusedTestRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('focused test request must be an object')
