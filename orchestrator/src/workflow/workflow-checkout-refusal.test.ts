@@ -46,15 +46,30 @@ test('recorded landing accepts its exact tip after the branch ref is gone', () =
   ).toBe('post-landing')
 })
 
-test('recorded landing refuses a head unrelated to its tip', () => {
+test('a head unrelated to the recorded tip or the landing is outside the change', () => {
   expect(
-    classifyRecordedLandingEvidence({
-      recordedTip: 'branch-tip',
-      headIsRecordedTipOrAncestor: false,
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
       landingCommit: 'squash-landing',
+      landingIsHeadOrAncestor: false,
+      recordedLandingTip: 'branch-tip',
+      headIsRecordedTipOrAncestor: false,
       landingIsOnTrunk: true,
     }),
   ).toBe('outside-change')
+})
+
+test('evidence recorded after the landing stays post-landing once the branch ref is gone', () => {
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
+      landingCommit: 'squash-landing',
+      landingIsHeadOrAncestor: true,
+      recordedLandingTip: 'branch-tip',
+      headIsRecordedTipOrAncestor: false,
+      landingIsOnTrunk: true,
+    }),
+  ).toBe('post-landing')
 })
 
 test('no recorded landing leaves checkout classification unchanged', () => {

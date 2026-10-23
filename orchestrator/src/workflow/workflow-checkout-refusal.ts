@@ -62,7 +62,7 @@ export function classifyRecordedLandingEvidence(input: {
   if (!input.recordedTip) return null
   if (input.headIsRecordedTipOrAncestor && input.landingCommit && input.landingIsOnTrunk)
     return 'post-landing'
-  return 'outside-change'
+  return null
 }
 
 export function checkoutOutsideChangeRefusal(
