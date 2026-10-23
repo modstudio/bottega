@@ -109,7 +109,7 @@ export function trackerCapabilities({
               ? workspaceTeamRefusal(project)
               : cursorProjectRefusal(project),
           ),
-    setStatus: refuse(TRACKER_STATUS_WRITE_REFUSAL),
+    setStatus: protocol === 'array-mcp' ? allow : refuse(TRACKER_STATUS_WRITE_REFUSAL),
     setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),
     setBody: refuse(TRACKER_BODY_WRITE_REFUSAL),
     comment: refuse(TRACKER_COMMENT_WRITE_REFUSAL),

@@ -2,5 +2,9 @@
   {
     "id": 1240912,
     "package": "node-forge"
+  },
+  {
+    "id": 1243066,
+    "package": "zod"
   }
 ]

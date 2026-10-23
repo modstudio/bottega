@@ -44,7 +44,7 @@ describe('tracker capabilities', () => {
     })
   })
 
-  for (const protocol of ['workspace-mcp', 'cursor-mcp', 'array-mcp'] as const) {
+  for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
     test(`${protocol} exposes only its evidenced create support`, () => {
       expect(
         trackerCapabilities({ source: 'mcp', project: project('external', protocol) }),
@@ -60,6 +60,16 @@ describe('tracker capabilities', () => {
       })
     })
   }
+
+  test('array-mcp exposes its evidenced status writer', () => {
+    expect(
+      trackerCapabilities({ source: 'mcp', project: project('external', 'array-mcp') }),
+    ).toMatchObject({
+      create: { allowed: true },
+      setStatus: { allowed: true },
+      setTitle: { allowed: false, reason: TRACKER_TITLE_WRITE_REFUSAL },
+    })
+  })
 
   test('cursor-mcp create capability refuses without projectId and names the remedy', () => {
     const missingProjectId = project('stopal', 'cursor-mcp')

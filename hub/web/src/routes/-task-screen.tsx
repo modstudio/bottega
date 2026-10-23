@@ -15,8 +15,6 @@ import { CalendarDays, UserRound, X } from 'lucide-react'
 import { taskHistoryEntries } from '@/routes/-task-history'
 import type { TaskScreenDetail, TaskScreenResult } from '@/routes/-task-screen-data'
 
-type TaskStatus = 'open' | 'active' | 'review' | 'done' | 'dropped'
-
 function StatusBadge({ task }: { task: TaskScreenDetail['task'] }) {
   if (!task.statusCategory) return <>{task.status ?? 'unknown'}</>
   return (
@@ -34,6 +32,13 @@ function statusKeyItem(task: TaskScreenDetail['task']) {
   return { key: 'status', icon: <Icon size={14} aria-hidden />, content: label }
 }
 
+export function taskStatusControlValue(detail: TaskScreenDetail): string {
+  if (detail.capabilities.statusVocabulary) {
+    return detail.task.status ?? detail.task.statusCategory ?? 'open'
+  }
+  return detail.task.statusCategory ?? 'open'
+}
+
 function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: TaskScreenResult }) {
   const { setStatus } = result.actions
   if (!detail.capabilities.setStatus.allowed) return <StatusBadge task={detail.task} />
@@ -42,12 +47,12 @@ function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: T
       label="Task status"
       size="sm"
       className="w-full min-w-0"
-      value={detail.task.statusCategory ?? 'open'}
+      value={taskStatusControlValue(detail)}
       options={(detail.capabilities.statusVocabulary ?? []).map((status) => ({
         value: status,
         label: status,
       }))}
-      onChange={(status) => void setStatus.run(status as TaskStatus)}
+      onChange={(status) => void setStatus.run(status)}
     />
   )
 }

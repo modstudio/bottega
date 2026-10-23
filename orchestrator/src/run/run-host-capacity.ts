@@ -12,6 +12,7 @@ import {
 
 export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
 export const RUN_HOST_WAIT_POLL_MS = 1_000
+export const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
 
 export function isFreshRunHostWait(
   status: string,

@@ -16,7 +16,8 @@ const TRACKER_ACTIONS = [
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
 export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub'] as const
 export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
-type TrackerActionName = { agent: string; wire?: string }
+export const ARRAY_MCP_STATUS_WRITE_CONFIRM = 'production'
+type TrackerActionName = { agent: string; wire?: string | null }
 
 /** The names agents and hub use for each protocol capability. */
 const trackerProtocolActions = {
@@ -45,7 +46,8 @@ const trackerProtocolActions = {
     create: { agent: 'task_create' },
     update: { agent: 'task_update' },
     // task_update takes status as a plain field; task_move also needs a board rank.
-    status: { agent: 'task_update' },
+    status: { agent: `${PLATFORM_SLUG} task set {key} --status`, wire: 'task_update' },
+    comment: { agent: `${PLATFORM_SLUG} workflow attach`, wire: null },
     document: { agent: 'task_addDocument' },
   },
   hub: {
@@ -65,7 +67,8 @@ export const trackerWireAction = (protocol: TrackerProtocol, action: TrackerActi
     Partial<Record<TrackerAction, TrackerActionName>>
   > = trackerProtocolActions
   const name = actions[protocol][action]
-  if (!name) throw new Error(`tracker protocol ${protocol} has no ${action} action`)
+  if (!name || name.wire === null)
+    throw new Error(`tracker protocol ${protocol} has no ${action} action`)
   return name.wire ?? name.agent
 }
 
@@ -195,6 +198,12 @@ export type TrackerProject = {
   }
 }
 
+export function trackerEnvPrefix(project: TrackerProject): string {
+  const env = project.settings.tracker?.envPrefix ?? project.settings.envPrefix
+  if (!env) throw new Error(`project ${project.name} tracker is missing envPrefix`)
+  return env
+}
+
 export const CURSOR_CREATE_REFUSAL =
   'cursor-mcp create refused: required projectId has no value in the tracker register'
 export const workspaceTeamRefusal = (project: TrackerProject): string =>
@@ -282,6 +291,8 @@ function categoryOf(
     states?.[normal(category)]
   return mapped === 'backlog' ? 'open' : (mapped ?? 'open')
 }
+
+export const trackerStatusCategory = categoryOf
 
 const ENTITIES: Record<string, string> = {
   '&amp;': '&',
@@ -657,10 +668,7 @@ export function trackerSourceFor(
       `project ${project.name} tracker has unrecognized protocol ${tracker.protocol ?? '(missing)'}`,
     )
   }
-  const env = tracker.envPrefix ?? project.settings.envPrefix
-  if (!env) {
-    throw new Error(`project ${project.name} tracker is missing envPrefix`)
-  }
+  const env = trackerEnvPrefix(project)
   const statuses = tracker.openStatuses ?? []
   if (tracker.protocol === 'workspace-mcp') {
     return workspaceSource(
@@ -764,4 +772,24 @@ export async function createTrackerTask(
     })
   }
   throw new Error(`tracker protocol ${tracker.protocol ?? '(missing)'} has no create support`)
+}
+
+/** Change an array-mcp task status through its tracker-owned immutable id. */
+export async function updateArrayMcpTaskStatus(
+  m: ToolCaller,
+  project: TrackerProject,
+  externalId: string,
+  status: string,
+  confirm: string,
+): Promise<unknown> {
+  const tracker = project.settings.tracker
+  if (tracker?.protocol !== 'array-mcp') {
+    throw new Error(`project ${project.name} does not use the array-mcp tracker protocol`)
+  }
+  if (!externalId.trim()) throw new Error(`task in project ${project.name} has no external id`)
+  return m.callTool(trackerWireAction('array-mcp', 'status'), {
+    id: externalId,
+    status,
+    confirm,
+  })
 }

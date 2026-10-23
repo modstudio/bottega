@@ -9,7 +9,11 @@ export type TaskBranchLandingCheck =
 
 export type TaskCloseDecision =
   | { action: 'close'; comment: string | null }
-  | { action: 'refuse'; reason: string }
+  | {
+      action: 'refuse'
+      reason: string
+      unlanded?: { facts: string; remedy: string }
+    }
 
 /** Decide whether task closure is safe from the already-observed branch facts. */
 export function decideTaskClose(
@@ -24,13 +28,16 @@ export function decideTaskClose(
   }
   if (classification.unlanded.length === 0) return { action: 'close', comment: null }
   if (abandonReason) return { action: 'close', comment: abandonReason }
+  const facts = [
+    'refusing to close a task with unlanded branch work:',
+    ...classification.unlanded.map(({ branch, reason }) => `  ${branch}: ${reason}`),
+  ].join('\n')
+  const remedy =
+    'Land each branch, delete it, or pass --abandon "<reason>" to close and record why the work was abandoned.'
   return {
     action: 'refuse',
-    reason: [
-      'refusing to close a task with unlanded branch work:',
-      ...classification.unlanded.map(({ branch, reason }) => `  ${branch}: ${reason}`),
-      'Land each branch, delete it, or pass --abandon "<reason>" to close and record why the work was abandoned.',
-    ].join('\n'),
+    reason: `${facts}\n${remedy}`,
+    unlanded: { facts, remedy },
   }
 }
 

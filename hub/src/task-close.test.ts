@@ -27,6 +27,13 @@ describe('task close decision', () => {
         'refusing to close a task with unlanded branch work:\n' +
         '  DEV-1027-worker: unlanded; 2 commits not on trunk\n' +
         'Land each branch, delete it, or pass --abandon "<reason>" to close and record why the work was abandoned.',
+      unlanded: {
+        facts:
+          'refusing to close a task with unlanded branch work:\n' +
+          '  DEV-1027-worker: unlanded; 2 commits not on trunk',
+        remedy:
+          'Land each branch, delete it, or pass --abandon "<reason>" to close and record why the work was abandoned.',
+      },
     })
   })
 
@@ -54,7 +61,7 @@ describe('task close decision', () => {
 describe('task close claim release', () => {
   test('releases claims after close even when branches are kept', async () => {
     let released = ''
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       close: async () => closedTask,
       releaseClaims: async (project, key) => {
         released = `${project}:${key}`
@@ -66,7 +73,7 @@ describe('task close claim release', () => {
   })
 
   test('surfaces a claim release error', async () => {
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       close: async () => closedTask,
       releaseClaims: async () => {
         throw new Error('orchestrator unavailable')
@@ -76,7 +83,7 @@ describe('task close claim release', () => {
   })
 
   test('returns the closed task when claim release fails', async () => {
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       close: async () => closedTask,
       releaseClaims: async () => {
         throw new Error('release failed')

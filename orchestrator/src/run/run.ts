@@ -56,7 +56,8 @@ import {
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick, runningRunCountForAgent } from '../route/route.ts'
+import { pick } from '../route/route.ts'
+import { runningRunCountForAgent } from '../route/running-runs.ts'
 import {
   type CodexMcpCatalogue,
   codexMcpSetupHeader,
