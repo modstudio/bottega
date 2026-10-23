@@ -263,6 +263,27 @@ test('execution probe seeds a local board delivery for an existing board message
   expect(result).toEqual({ risks: [], unprobed: [] })
 })
 
+test('execution probe seeds canon pack revisions as JSON for later migrations', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: 'CREATE TABLE canon_pack (doc_revisions TEXT NOT NULL);',
+    },
+    {
+      tag: '0001_doc_uuid_key',
+      source: `
+        CREATE TABLE canon_pack_snapshot AS SELECT * FROM canon_pack;
+        DROP TABLE canon_pack;
+        CREATE TABLE canon_pack (doc_revisions TEXT NOT NULL);
+        INSERT INTO canon_pack
+        SELECT (SELECT json_group_array(value) FROM json_each(doc_revisions))
+        FROM canon_pack_snapshot;`,
+    },
+  ])
+
+  expect(result).toEqual({ risks: [], unprobed: [] })
+})
+
 test('execution probe chooses a value permitted by a CHECK constraint', () => {
   const result = probeMigrations([
     {

@@ -626,11 +626,16 @@ function preserveLogicalSeedRelationships(
   )
     return
   // A local board delivery names an existing board message despite its polymorphic message_id column.
-  const message = database.query('SELECT id FROM board_message ORDER BY id LIMIT 1').get() as
-    | { id: number }
-    | null
+  const message = database.query('SELECT id FROM board_message ORDER BY id LIMIT 1').get() as {
+    id: number
+  } | null
   if (!message) throw new Error('local board delivery requires an existing board message')
   values.set('message_id', String(message.id))
+}
+
+function preserveLogicalJsonSeeds(table: string, values: Map<string, ProbeValue>): void {
+  // Later migrations read canon_pack.doc_revisions with json_each though its schema has no JSON CHECK.
+  if (table === 'canon_pack' && values.has('doc_revisions')) values.set('doc_revisions', '[]')
 }
 
 function seedTables(database: Database, migration: string): CascadeProbe['unprobed'] {
@@ -668,6 +673,7 @@ function seedTables(database: Database, migration: string): CascadeProbe['unprob
         const values = constrainedValues(database, required, checks, choices)
         nullSelfReferences(table, foreignKeys, values)
         preserveLogicalSeedRelationships(database, table, values)
+        preserveLogicalJsonSeeds(table, values)
         database.query(sql).run(...required.map((column) => values.get(column.name) ?? null))
         const count = rowCount(database, table)
         if (count >= (targetRows.get(table) ?? 1)) pending.delete(table)
