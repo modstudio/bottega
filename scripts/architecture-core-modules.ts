@@ -16,5 +16,9 @@ export const coreModuleSpecs = [
     allowed: ['../../shared/process-identity.ts'],
   },
   { file: 'orchestrator/src/refusal-error.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/secret-shaped-output.ts',
+    allowed: ['../../shared/secret-shaped.ts'],
+  },
   { file: 'orchestrator/src/worker-store-write.ts', allowed: [] },
 ] as const

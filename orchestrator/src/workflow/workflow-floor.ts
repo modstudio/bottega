@@ -115,7 +115,8 @@ export type ValidatedEvidence = {
     headCommit: string | null
     cursorBranch: string | null
     output: string
-    withheld?: boolean
+    outputWithheld?: boolean
+    commandWithheld?: boolean
     pullRequestCondition?: string
   }
   artifact?: { ref: string; exists: boolean }
@@ -358,7 +359,8 @@ export type PullRequestEvidenceFacts =
       headCommit: string | null
       cursorBranch: string | null
       output: string
-      withheld: boolean
+      outputWithheld: boolean
+      commandWithheld?: boolean
       link?: PullRequestLinkFacts
       linkCondition?: string
     }
@@ -369,9 +371,10 @@ export type PullRequestEvidenceDecision = { met: true } | { met: false; conditio
 const WITHHELD_PULL_REQUEST_OUTPUT = '[withheld: secret-shaped content]'
 const WITHHELD_PULL_REQUEST_CONDITION =
   'the recorded output was withheld, so the pull-request URL cannot be read'
+const WITHHELD_PULL_REQUEST_COMMAND_CONDITION = `the recorded command was withheld, so it cannot be identified as ${PLATFORM_SLUG} pr create`
 
-function execOutputWithheld(facts: { withheld: boolean; output: string }): boolean {
-  return facts.withheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
+function execOutputWithheld(facts: { outputWithheld: boolean; output: string }): boolean {
+  return facts.outputWithheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
 }
 
 export type BottegaCommandIdentity = {
@@ -413,6 +416,8 @@ export function githubPullRequestUrlIn(output: string): string | undefined {
 function decidePullRequestExec(
   facts: Extract<PullRequestEvidenceFacts, { kind: 'exec' }>,
 ): PullRequestEvidenceDecision {
+  if (facts.argv === null && facts.commandWithheld)
+    return { met: false, condition: WITHHELD_PULL_REQUEST_COMMAND_CONDITION }
   if (!pullRequestCreateArgv(facts.argv, facts.commandIdentity))
     return { met: false, condition: `the recorded command is not ${PLATFORM_SLUG} pr create` }
   if (facts.argv.includes('-h') || facts.argv.includes('--help'))
@@ -495,7 +500,8 @@ function execPullRequestFacts(
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
     output: exec.output,
-    withheld: exec.withheld === true,
+    outputWithheld: exec.outputWithheld === true,
+    commandWithheld: exec.commandWithheld === true,
     link: evidence.pullRequest ? { kind: 'link', ...evidence.pullRequest } : undefined,
     linkCondition: exec.pullRequestCondition,
   }
