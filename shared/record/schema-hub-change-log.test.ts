@@ -22,6 +22,11 @@ const newPruneTaskA = '01990000-0000-7000-8000-000000001251'
 const oldPruneTaskB = '01990000-0000-7000-8000-000000001252'
 const newPruneTaskB = '01990000-0000-7000-8000-000000001253'
 const afterPruneTask = '01990000-0000-7000-8000-000000001254'
+const actorUser = '01990000-0000-7000-8000-000000001255'
+const spaceAMembership = '01990000-0000-7000-8000-000000001256'
+const spaceBMembership = '01990000-0000-7000-8000-000000001257'
+const pruneSpaceAMembership = '01990000-0000-7000-8000-000000001258'
+const pruneSpaceBMembership = '01990000-0000-7000-8000-000000001259'
 
 async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
   for (const statement of migration.sql) await transaction.exec(statement)
@@ -58,6 +63,11 @@ async function createRecordDatabase(): Promise<PGlite> {
     INSERT INTO space (id,name,slug,created_at) VALUES
       ('${spaceA}','Change log A','change-log-a',now()),
       ('${spaceB}','Change log B','change-log-b',now());
+    INSERT INTO "user" (id,email,name,created_at)
+    VALUES ('${actorUser}','change-log@example.test','Change log actor',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+      ('${spaceAMembership}','${spaceA}','${actorUser}','member','write',now()),
+      ('${spaceBMembership}','${spaceB}','${actorUser}','member','write',now());
   `)
   return database
 }
@@ -65,6 +75,7 @@ async function createRecordDatabase(): Promise<PGlite> {
 async function bindActor(database: PGlite, spaceId: string) {
   await database.exec(`
     SET ROLE ${RECORD_ACTOR_ROLE};
+    SELECT set_config('app.user_id','${actorUser}',false);
     SELECT set_config('app.space_id','${spaceId}',false);
     SELECT set_config('app.space_ids','${spaceId}',false);
   `)
@@ -73,6 +84,7 @@ async function bindActor(database: PGlite, spaceId: string) {
 async function resetSession(database: PGlite) {
   await database.exec(`
     RESET ROLE;
+    SELECT set_config('app.user_id','',false);
     SELECT set_config('app.space_id','',false);
     SELECT set_config('app.space_ids','',false);
   `)
@@ -336,6 +348,9 @@ test('actor pruning crosses spaces under forced row security while preserving he
     INSERT INTO space (id,name,slug,created_at) VALUES
       ('${pruneSpaceA}','Prune A','prune-a',now()),
       ('${pruneSpaceB}','Prune B','prune-b',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+      ('${pruneSpaceAMembership}','${pruneSpaceA}','${actorUser}','member','write',now()),
+      ('${pruneSpaceBMembership}','${pruneSpaceB}','${actorUser}','member','write',now());
   `)
   for (const [spaceId, oldTaskId, newTaskId, suffix] of [
     [pruneSpaceA, oldPruneTaskA, newPruneTaskA, 'A'],
