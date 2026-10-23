@@ -2,7 +2,7 @@
 
 export type DatabaseLockRefusalFacts = {
   store: string
-  holder: { pid: number; command: string | null } | null
+  holder: { pid: number; command: string | null } | { unavailable: string }
 }
 
 export function isDatabaseLocked(error: unknown): boolean {
@@ -11,9 +11,10 @@ export function isDatabaseLocked(error: unknown): boolean {
 }
 
 export function formatDatabaseLockRefusal(facts: DatabaseLockRefusalFacts): string {
-  const holder = facts.holder
-    ? `pid ${facts.holder.pid}; command ${facts.holder.command ?? 'unavailable'}`
-    : 'unknown (the lock was released before its holder could be inspected)'
+  const holder =
+    'pid' in facts.holder
+      ? `pid ${facts.holder.pid}; command ${facts.holder.command ?? 'unavailable'}`
+      : `unknown (${facts.holder.unavailable})`
   return (
     `database write refused: database is locked\n` +
     `store: ${facts.store}\n` +

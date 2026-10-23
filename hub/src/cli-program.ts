@@ -85,7 +85,10 @@ export async function run(
     if (!(error instanceof CommanderError))
       console.error(
         isDatabaseLocked(error)
-          ? formatDatabaseLockRefusal({ store: DB_PATH, holder: null })
+          ? formatDatabaseLockRefusal({
+              store: DB_PATH,
+              holder: { unavailable: 'lock-holder inspection is unavailable for the hub store' },
+            })
           : error instanceof Error
             ? error.message
             : String(error),

@@ -136,7 +136,13 @@ async function lockedStoreMessage(error: unknown): Promise<string> {
   return formatDatabaseLockRefusal({
     store: DB_PATH,
     holder:
-      report.supported && report.pid !== null ? { pid: report.pid, command: report.command } : null,
+      report.supported && report.pid !== null
+        ? { pid: report.pid, command: report.command }
+        : {
+            unavailable: report.supported
+              ? 'the lock was released before its holder could be inspected'
+              : report.reason,
+          },
   })
 }
 

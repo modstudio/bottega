@@ -15,4 +15,10 @@ test('a database lock refusal names the store, holder, and remedy', () => {
       'cleared by: wait for the holder to finish, then retry the command',
   )
   expect(isDatabaseLocked({ code: 'SQLITE_BUSY' })).toBeTrue()
+  expect(
+    formatDatabaseLockRefusal({
+      store: '/state/hub/store.sqlite',
+      holder: { unavailable: 'inspection unavailable' },
+    }),
+  ).toContain('holder: unknown (inspection unavailable)')
 })
