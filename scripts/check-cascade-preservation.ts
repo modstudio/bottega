@@ -614,6 +614,25 @@ function nullSelfReferences(
   }
 }
 
+function preserveLogicalSeedRelationships(
+  database: Database,
+  table: string,
+  values: Map<string, ProbeValue>,
+): void {
+  if (
+    table !== 'board_reach_delivery' ||
+    values.get('message_source') !== 'local' ||
+    !values.has('message_id')
+  )
+    return
+  // A local board delivery names an existing board message despite its polymorphic message_id column.
+  const message = database.query('SELECT id FROM board_message ORDER BY id LIMIT 1').get() as
+    | { id: number }
+    | null
+  if (!message) throw new Error('local board delivery requires an existing board message')
+  values.set('message_id', String(message.id))
+}
+
 function seedTables(database: Database, migration: string): CascadeProbe['unprobed'] {
   const names = tableNames(database)
   const targetRows = probeTargetRows(database, names)
@@ -648,6 +667,7 @@ function seedTables(database: Database, migration: string): CascadeProbe['unprob
         assertSeedableSelfReferences(table, columns, foreignKeys)
         const values = constrainedValues(database, required, checks, choices)
         nullSelfReferences(table, foreignKeys, values)
+        preserveLogicalSeedRelationships(database, table, values)
         database.query(sql).run(...required.map((column) => values.get(column.name) ?? null))
         const count = rowCount(database, table)
         if (count >= (targetRows.get(table) ?? 1)) pending.delete(table)

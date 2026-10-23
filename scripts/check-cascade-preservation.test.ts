@@ -233,6 +233,36 @@ test('execution probe disables foreign keys only for migrations applied that way
   ).toThrow('FOREIGN KEY constraint failed')
 })
 
+test('execution probe seeds a local board delivery for an existing board message', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: `
+        CREATE TABLE board_message (id INTEGER PRIMARY KEY);
+        CREATE TABLE board_reach_delivery (
+          message_source TEXT NOT NULL CHECK(message_source IN ('local','hosted')),
+          message_id TEXT NOT NULL
+        );`,
+    },
+    {
+      tag: '0001_board_uuid_key',
+      source: `
+        CREATE TABLE board_message_snapshot AS SELECT * FROM board_message;
+        CREATE TABLE board_reach_delivery_snapshot AS SELECT * FROM board_reach_delivery;
+        DROP TABLE board_reach_delivery;
+        DROP TABLE board_message;
+        CREATE TABLE board_message (record_id TEXT NOT NULL PRIMARY KEY, number INTEGER NOT NULL);
+        INSERT INTO board_message SELECT 'message-' || id, id FROM board_message_snapshot;
+        CREATE TABLE board_reach_delivery (message_record_id TEXT NOT NULL);
+        INSERT INTO board_reach_delivery
+        SELECT (SELECT record_id FROM board_message WHERE number=CAST(message_id AS INTEGER))
+        FROM board_reach_delivery_snapshot;`,
+    },
+  ])
+
+  expect(result).toEqual({ risks: [], unprobed: [] })
+})
+
 test('execution probe chooses a value permitted by a CHECK constraint', () => {
   const result = probeMigrations([
     {
