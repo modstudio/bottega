@@ -6,8 +6,14 @@ const githubPat = 'ghp_123456789012345678901234567890123456'
 
 test('a 40-hex sha line and failure list survive', () => {
   expect(
-    withholdSecretShapedLines(`--base=${hex40}\ngate failures: scripts/check-architecture.ts`),
+    withholdSecretShapedLines(`--base=${hex40}\ngate failures: scripts/check-architecture.ts`, [
+      hex40,
+    ]),
   ).toBe(`--base=${hex40}\ngate failures: scripts/check-architecture.ts`)
+})
+
+test('an unrelated 64-hex output value is withheld', () => {
+  expect(withholdSecretShapedLines('b'.repeat(64), [hex40])).toBe('[withheld line: hex-run]')
 })
 
 test('output withholds only the secret-shaped line and names the rule', () => {

@@ -215,7 +215,7 @@ test('bounds the recorded tail', async () => {
 
 test('withholds secret-shaped output', async () => {
   const d = database()
-  const sha = 'a'.repeat(40)
+  const sha = headCommit
   await runArchitectGate({
     cwd: repositoryPath,
     d,
@@ -227,6 +227,7 @@ test('withholds secret-shaped output', async () => {
       output: [
         `--base=${sha}`,
         'gate failures: scripts/check-architecture.ts',
+        'b'.repeat(64),
         'ghp_123456789012345678901234567890123456',
       ].join('\n'),
       startedAt: '2026-09-01T00:00:00.000Z',
@@ -241,6 +242,7 @@ test('withholds secret-shaped output', async () => {
     [
       `--base=${sha}`,
       'gate failures: scripts/check-architecture.ts',
+      '[withheld line: hex-run]',
       '[withheld line: provider-prefix]',
     ].join('\n'),
   )

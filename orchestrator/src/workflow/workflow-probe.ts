@@ -31,15 +31,32 @@ type ProbeRunResult = {
   signal?: NodeJS.Signals | null
 }
 
-export type WorkflowOutput = Pick<ProbeRunResult, 'output' | 'secretFound'>
+export type WorkflowOutput = Pick<ProbeRunResult, 'output' | 'secretFound'> & {
+  knownIdentifiers?: readonly string[]
+  pendingLine?: string
+}
 
 /** Retains a bounded tail after redacting secret-shaped lines. */
 export function appendWorkflowOutput(current: WorkflowOutput, chunk: string): WorkflowOutput {
-  const candidate = current.output + chunk
-  const redacted = withholdSecretShapedLines(candidate)
+  const candidate = (current.pendingLine ?? '') + chunk
+  const lastNewline = candidate.lastIndexOf('\n')
+  if (lastNewline < 0) return { ...current, pendingLine: candidate }
+  const completeLines = candidate.slice(0, lastNewline + 1)
+  const redacted = withholdSecretShapedLines(completeLines, current.knownIdentifiers)
   return {
-    output: boundedGateOutputTail(redacted, GATE_OUTPUT_TAIL_BYTES),
-    secretFound: current.secretFound === true || redacted !== candidate,
+    output: boundedGateOutputTail(current.output + redacted, GATE_OUTPUT_TAIL_BYTES),
+    secretFound: current.secretFound === true || redacted !== completeLines,
+    knownIdentifiers: current.knownIdentifiers,
+    pendingLine: candidate.slice(lastNewline + 1),
+  }
+}
+
+function finishWorkflowOutput(current: WorkflowOutput): WorkflowOutput {
+  const pendingLine = current.pendingLine ?? ''
+  const redacted = withholdSecretShapedLines(pendingLine, current.knownIdentifiers)
+  return {
+    output: boundedGateOutputTail(current.output + redacted, GATE_OUTPUT_TAIL_BYTES),
+    secretFound: current.secretFound === true || redacted !== pendingLine,
   }
 }
 export type ProbeRunner = (input: {
@@ -73,6 +90,7 @@ async function sandboxedRunner(
   command: string[],
   cwd: string,
   database: Database,
+  knownIdentifiers: readonly string[],
 ): Promise<ProbeRunResult> {
   const runtime = sandboxRuntimeAvailability()
   if (!runtime.available) {
@@ -99,6 +117,7 @@ async function sandboxedRunner(
       env: probeEnv(scratch),
       stdin: 'ignore',
       write: () => {},
+      knownIdentifiers,
     })
   } finally {
     await resetSandbox()
@@ -123,11 +142,12 @@ export async function recordWorkflowProbe(
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow probe needs a command after --`)
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
+  const commit = input.commit === undefined ? headCommit(cwd) : input.commit
   probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
   const ran = input.runner
     ? await input.runner({ command, cwd })
-    : await sandboxedRunner(command, cwd, database)
-  const recorded = await recordWorkflowCommand(command, cwd, ran, 'probe', input)
+    : await sandboxedRunner(command, cwd, database, [commit ?? ''])
+  const recorded = await recordWorkflowCommand(command, cwd, ran, 'probe', { ...input, commit })
   return finishRecord(recorded, ran)
 }
 
@@ -135,8 +155,15 @@ async function execRunner(
   command: string[],
   cwd: string,
   write: (chunk: string) => void,
+  knownIdentifiers: readonly string[],
 ): Promise<ProbeRunResult> {
-  return streamingRunner(command, { cwd, env: process.env, stdin: 'inherit', write })
+  return streamingRunner(command, {
+    cwd,
+    env: process.env,
+    stdin: 'inherit',
+    write,
+    knownIdentifiers,
+  })
 }
 
 async function streamingRunner(
@@ -146,6 +173,7 @@ async function streamingRunner(
     env: NodeJS.ProcessEnv
     stdin: 'ignore' | 'inherit'
     write: (chunk: string) => void
+    knownIdentifiers: readonly string[]
   },
 ): Promise<ProbeRunResult> {
   return new Promise((resolve, reject) => {
@@ -154,7 +182,11 @@ async function streamingRunner(
       env: input.env,
       stdio: [input.stdin, 'pipe', 'pipe'],
     })
-    let streamed: WorkflowOutput = { output: '', secretFound: false }
+    let streamed: WorkflowOutput = {
+      output: '',
+      secretFound: false,
+      knownIdentifiers: input.knownIdentifiers,
+    }
     const record = (chunk: Buffer | string) => {
       const text = Buffer.isBuffer(chunk) ? chunk.toString() : chunk
       streamed = appendWorkflowOutput(streamed, text)
@@ -165,7 +197,13 @@ async function streamingRunner(
     child.once('error', (error) =>
       reject(new Error(`command could not be started: ${error.message}`, { cause: error })),
     )
-    child.once('close', (code, signal) => resolve({ exitCode: code ?? -1, ...streamed, signal }))
+    child.once('close', (code, signal) =>
+      resolve({
+        exitCode: code ?? -1,
+        ...finishWorkflowOutput(streamed),
+        signal,
+      }),
+    )
   })
 }
 
@@ -177,7 +215,7 @@ async function recordWorkflowCommand(
   input: { d?: Database; commit?: string | null },
 ): Promise<RecordedArtifact> {
   const commandJson = JSON.stringify(command)
-  const redactedOutput = withholdSecretShapedLines(ran.output)
+  const redactedOutput = withholdSecretShapedLines(ran.output, [input.commit ?? ''])
   const commandSecret = containsSecretShaped(commandJson)
   const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
@@ -193,7 +231,7 @@ async function recordWorkflowCommand(
         newRecordId(),
         storedCommand,
         cwd,
-        input.commit === undefined ? headCommit(cwd) : input.commit,
+        input.commit ?? null,
         ran.exitCode,
         tail,
         withheld ? 1 : 0,
@@ -228,11 +266,14 @@ export async function recordWorkflowExec(
       `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
     )
   const cwd = input.cwd ?? process.cwd()
+  const commit = input.commit === undefined ? headCommit(cwd) : input.commit
   if (input.registeredProject === false)
     throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
   const ran = input.runner
     ? await input.runner({ command, cwd })
-    : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)))
-  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', input)
+    : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)), [
+        commit ?? '',
+      ])
+  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', { ...input, commit })
   return finishRecord(recorded, ran)
 }

@@ -83,7 +83,7 @@ test('probe output keeps a 40-hex sha line and a refusal line', async () => {
   const result = await recordWorkflowProbe([PLATFORM_SLUG, 'pr', 'create'], {
     cwd: probeRepository,
     d,
-    commit: 'abc',
+    commit: 'a'.repeat(40),
     runner: () => ({
       exitCode: 1,
       output: `--base=${'a'.repeat(40)}\n${refusal}`,
@@ -237,10 +237,11 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
     delete process.env.ORCH_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const d = database()
-    const streamed = ['gh', 'p_exampletokenvalue', 'z'.repeat(GATE_OUTPUT_TAIL_BYTES + 50)].reduce(
-      appendWorkflowOutput,
-      { output: '', secretFound: false },
-    )
+    const streamed = [
+      'gh',
+      'p_exampletokenvalue',
+      `${'z'.repeat(GATE_OUTPUT_TAIL_BYTES + 50)}\n`,
+    ].reduce(appendWorkflowOutput, { output: '', secretFound: false })
     const result = await recordWorkflowExec(['supplied-command'], {
       cwd: probeRepository,
       d,
@@ -266,6 +267,15 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
   }
 })
 
+test('a secret split across chunks is withheld when its line completes', () => {
+  const streamed = ['ghp_1234567890', '123456789012345678901234567890123456\n'].reduce(
+    appendWorkflowOutput,
+    { output: '', secretFound: false },
+  )
+  expect(streamed.output).toBe('[withheld line: provider-prefix]\n')
+  expect(streamed.secretFound).toBe(true)
+})
+
 test('a sha line, pull-request URL, and refusal remain usable evidence', async () => {
   const priorDepth = process.env.ORCH_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -274,16 +284,17 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const url = 'https://github.com/acme/app/pull/7'
     const refusal = 'applicable lens safety has no recorded result on this branch'
-    const streamed = [`--base=${'a'.repeat(40)}\n`, `opened ${url}\n`, `${refusal}\n`].reduce(
+    const commit = 'a'.repeat(40)
+    const streamed = [`--base=${commit}\n`, `opened ${url}\n`, `${refusal}\n`].reduce(
       appendWorkflowOutput,
-      { output: '', secretFound: false },
+      { output: '', secretFound: false, knownIdentifiers: [commit] },
     )
     expect(streamed.output).toBe(`--base=${'a'.repeat(40)}\nopened ${url}\n${refusal}\n`)
     const d = database()
     const result = await recordWorkflowExec([PLATFORM_SLUG, 'pr', 'create'], {
       cwd: probeRepository,
       d,
-      commit: 'abc',
+      commit,
       runner: () => ({ exitCode: 0, ...streamed }),
       write: () => {},
     })
