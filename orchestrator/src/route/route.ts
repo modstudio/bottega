@@ -29,6 +29,7 @@ import {
 } from './route-policy.ts'
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
+import { runningRunsByAgent } from './running-runs.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 export { AgentCapacityError } from './routing-refusal.ts'
@@ -92,19 +93,6 @@ type RouteConstraints = {
   routed?: { agent: string; reason: string }
 }
 
-const RUNNING_RUNS_SQL =
-  "SELECT record_id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY number"
-
-function runningRunIdsForAgent(agent: string): string[] {
-  return (db().query(RUNNING_RUNS_SQL).all(agent) as { record_id: string }[]).map(
-    (row) => row.record_id,
-  )
-}
-
-export function runningRunCountForAgent(agent: string): number {
-  return runningRunIdsForAgent(agent).length
-}
-
 /**
  * How long to leave an agent alone after it runs out of quota or loses its
  * login. Nothing here can fix either, so continuing to route at it just
@@ -142,6 +130,7 @@ function memoizedRepositoryReader(
 function mcpCandidateIneligibility(
   agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
+  listedTools: string[] | undefined,
   pinnedTransport?: 'cli' | 'acp',
   transportPinSource?: McpTransportPinFacts['transportPinSource'],
 ): string | null {
@@ -150,11 +139,10 @@ function mcpCandidateIneligibility(
     transportPinSource,
   })
   if (requiredWhy || !requiredMcp || !agent.mcpToolNamePattern) return requiredWhy
-  const listing = latestMcpListing(requiredMcp.projectId, requiredMcp.server)
   return decideMcpGrammarRuling({
     mode: requiredMcp.mode,
     server: requiredMcp.server,
-    listedTools: listing?.listedTools,
+    listedTools,
     pattern: agent.mcpToolNamePattern,
   }).routingIneligibility
 }
@@ -197,6 +185,19 @@ export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
     .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
   const have = new Set(rows.map((row) => row.bucket))
   return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
+}
+
+function routingPassFacts(
+  requiredMcp: RequiredMcpServer | undefined,
+  projectName: string | null | undefined,
+): {
+  mcpListing: ReturnType<typeof latestMcpListing>
+  routeProject: Project | null
+} {
+  return {
+    mcpListing: requiredMcp ? latestMcpListing(requiredMcp.projectId, requiredMcp.server) : null,
+    routeProject: projectName ? projectByName(projectName) : null,
+  }
 }
 
 /**
@@ -383,6 +384,7 @@ export function candidates(
 ): Candidate[] {
   const j = job(jobName)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
+  const { mcpListing, routeProject } = routingPassFacts(requiredMcp, projectName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
   // let "reply with ok" vouch for an agent on real work.
   //
@@ -520,6 +522,25 @@ export function candidates(
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
   const coolingByAgent = coolingFailures(db(), COOLDOWN_MIN)
+  const runningByAgent = runningRunsByAgent()
+  const mcpIneligibility = (agent: Agent) =>
+    mcpCandidateIneligibility(
+      agent,
+      requiredMcp,
+      mcpListing?.listedTools,
+      pinnedTransport,
+      transportPinSource,
+    )
+  const policyEligibility = (agent: Agent) =>
+    routePolicyEligibility(
+      jobName,
+      agent,
+      explicitlyNamedAgent,
+      pinnedTransport,
+      projectName,
+      routeProject,
+      readCurrentRepository,
+    )
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
@@ -532,19 +553,12 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    const mcpWhy = mcpCandidateIneligibility(a, requiredMcp, pinnedTransport, transportPinSource)
-    const policy = routePolicyEligibility(
-      jobName,
-      a,
-      explicitlyNamedAgent,
-      pinnedTransport,
-      projectName,
-      readCurrentRepository,
-    )
+    const mcpWhy = mcpIneligibility(a)
+    const policy = policyEligibility(a)
     let eligible = true,
       why = policy.why
     const unavailable = unavailableReason(name)
-    const runningRunIds = runningRunIdsForAgent(name)
+    const runningRunIds = runningByAgent.get(name) ?? []
     const declared = a.jobs ?? null
     if (declared && !declared.includes(jobName)) {
       eligible = false
@@ -885,6 +899,14 @@ function capacityRefusal(
   )
 }
 
+function capacityCounts(
+  candidates: readonly Pick<Candidate, 'agent' | 'runningRunIds'>[],
+): Record<string, number> {
+  return Object.fromEntries(
+    candidates.map((candidate) => [candidate.agent, candidate.runningRunIds.length]),
+  )
+}
+
 function routeSurfaceSelection(
   candidates: readonly Candidate[],
   routed: { agent: string; reason: string } | undefined,
@@ -939,6 +961,7 @@ function admittedCandidates(
       `${capacityRefusal(blockedPreferred)}\n` +
         'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
         'cleared by: wait for the named runs or pass --no-wait-capacity',
+      capacityCounts([blockedPreferred]),
     )
   }
   const eligible = candidates.filter((candidate) => candidate.eligible)
@@ -955,6 +978,7 @@ function admittedCandidates(
     if (capacityBlocked.length)
       throw new AgentCapacityError(
         `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
+        capacityCounts(capacityBlocked),
       )
     throw new RoutingRefusalError(
       `no eligible agent for job "${jobName}"` +
@@ -1015,7 +1039,7 @@ export function pick(
     // Keep candidates()' view unchanged. Naming bypasses opt-in; only a probe bypasses cooling.
     const c = namedCandidate(jobName, override, promptBytes, ev, avoid, probe)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
-      throw new AgentCapacityError(capacityRefusal(c))
+      throw new AgentCapacityError(capacityRefusal(c), capacityCounts([c]))
     }
     if (!c.eligible)
       throw new RoutingRefusalError(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
@@ -1164,9 +1188,9 @@ function routePolicyEligibility(
   explicitlyNamedAgent: string | undefined,
   pinnedTransport?: 'cli' | 'acp',
   projectName?: string | null,
+  project: Project | null = projectName ? projectByName(projectName) : null,
   repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
 ) {
-  const project = projectName ? projectByName(projectName) : null
   if (agent.trainsOnInputs && projectName === undefined) {
     return {
       eligible: false,

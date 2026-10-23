@@ -4,7 +4,11 @@ import { refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { pick } from '../route/route.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
-import { decideCapacityWait, waitForAgentSelection } from './run-agent-capacity.ts'
+import {
+  decideCapacityWait,
+  nextCapacityPollMs,
+  waitForAgentSelection,
+} from './run-agent-capacity.ts'
 
 test('capacity waits unless opted out and refuses at the host wait bound', () => {
   expect(decideCapacityWait({ noWait: false, waitedMs: 0 })).toBe('wait')
@@ -12,24 +16,35 @@ test('capacity waits unless opted out and refuses at the host wait bound', () =>
   expect(decideCapacityWait({ noWait: false, waitedMs: 15 * 60_000 })).toBe('refuse')
 })
 
-test('selection polls capacity and announces the wait once', async () => {
+test('capacity poll backoff grows to its cap', () => {
+  const schedule = [1_000]
+  for (let i = 0; i < 6; i++) schedule.push(nextCapacityPollMs(schedule.at(-1)!))
+  expect(schedule).toEqual([1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000])
+})
+
+test('selection re-picks only after the cheap running-count fact may have freed a slot', async () => {
   let attempts = 0
   let now = 0
   const waits: string[] = []
+  const sleeps: number[] = []
+  const facts = [{ codex: 2 }, { codex: 1 }]
   const selected = await waitForAgentSelection({
     select: () => {
       attempts++
-      if (attempts < 3) throw new AgentCapacityError('at capacity')
+      if (attempts < 2) throw new AgentCapacityError('at capacity', { codex: 2 })
       return 'codex'
     },
     now: () => now,
     sleep: async (ms) => {
+      sleeps.push(ms)
       now += ms
     },
+    runningCounts: () => facts.shift()!,
     onWait: (at) => waits.push(at),
   })
   expect(selected).toBe('codex')
-  expect(attempts).toBe(3)
+  expect(attempts).toBe(2)
+  expect(sleeps).toEqual([1_000, 2_000])
   expect(waits).toHaveLength(1)
 })
 
@@ -48,12 +63,13 @@ test('selection names the exhausted wait bound in its refusal', async () => {
   await expect(
     waitForAgentSelection({
       select: () => {
-        throw new AgentCapacityError('agent codex is at capacity')
+        throw new AgentCapacityError('agent codex is at capacity', { codex: 2 })
       },
       now: () => now,
       sleep: async (ms) => {
         now += ms
       },
+      runningCounts: () => ({ codex: 2 }),
     }),
   ).rejects.toThrow('capacity wait bound reached after')
 })
