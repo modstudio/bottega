@@ -1,21 +1,14 @@
-import { createHash } from 'node:crypto'
-import {
-  appendFileSync,
-  existsSync,
-  lstatSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { classifyCaller } from '../shared/caller-classification'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
+import { mainCheckoutOf } from '../shared/git'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
 import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
@@ -24,9 +17,8 @@ import {
   type CommandCpuSample,
   cpuBudgetMs,
   decideRuntimeBudget,
-  dependencyInstallMode,
+  dependencyInstallDecision,
   HUNG_SUITE_TIMEOUT_MS,
-  installNeeded,
   parseCheckArguments,
   runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
@@ -310,31 +302,32 @@ function printFailedLegTails(results: LegResult[]) {
 
 const lockfilePath = join(root, 'bun.lock')
 const nodeModulesPath = join(root, 'node_modules')
-const installedStatePath = join(nodeModulesPath, '.check-lockfile')
 
 async function installDependencies() {
-  const installMode = dependencyInstallMode({
-    ci: Boolean(process.env.CI),
-    linkedWorktree: !lstatSync(join(root, '.git')).isDirectory(),
-    workerRun: Boolean(process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH),
-  })
-  if (installMode === 'normal') return inherit(['bun', 'install', '--silent'])
-
-  const verify = ['bun', 'install', '--offline', '--frozen-lockfile', '--dry-run', '--silent']
-  if ((await inherit(verify)) !== 0) return 1
-
-  const lockfileHash = createHash('sha256').update(readFileSync(lockfilePath)).digest('hex')
-  const installedState = {
-    lockfileHash: existsSync(installedStatePath)
-      ? readFileSync(installedStatePath, 'utf8').trim()
-      : null,
+  const workerRun = classifyCaller(process.env).kind === 'worker'
+  const mainCheckout = workerRun ? mainCheckoutOf(root) : null
+  const decision = dependencyInstallDecision({
+    workerRun,
     nodeModulesPresent: existsSync(nodeModulesPath),
+    lockfileMatchesMain:
+      mainCheckout !== null &&
+      readFileSync(lockfilePath).equals(readFileSync(join(mainCheckout, 'bun.lock'))),
+  })
+  if (decision === 'normal-install') return inherit(['bun', 'install', '--silent'])
+  if (decision === 'skip-provisioned') {
+    console.log('INSTALL: skipped; worker dependencies were provisioned from the main checkout')
+    return 0
   }
-  if (!installNeeded(lockfileHash, installedState)) return 0
-
-  const exitCode = await inherit(['bun', 'install', '--offline', '--frozen-lockfile', '--silent'])
-  if (exitCode === 0) writeFileSync(installedStatePath, `${lockfileHash}\n`)
-  return exitCode
+  if (decision === 'refuse-missing-node-modules') {
+    console.error(
+      "INSTALL: refused; the worker's node_modules is missing; run the architect's gate to provision dependencies because a sandboxed worker has neither the Bun cache nor the network",
+    )
+    return 1
+  }
+  console.error(
+    "INSTALL: refused; the worker's bun.lock differs from the main checkout's bun.lock; a lockfile change needs the architect's gate because a sandboxed worker has neither the Bun cache nor the network",
+  )
+  return 1
 }
 
 if ((await installDependencies()) !== 0) process.exit(1)

@@ -18,28 +18,24 @@ export type RuntimeBudgetVerdict = 'within' | 'over-informational' | 'over-fatal
 export type RuntimeMeasure = 'wall' | 'cpu'
 export type CommandCpuSample = { name: string; userMs: number; systemMs: number }
 export type AttributedCommandCpu = { name: string; cpuMs: number; share: number }
-export type InstalledDependencyState = {
-  lockfileHash: string | null
-  nodeModulesPresent: boolean
-}
 export type DependencyInstallFacts = {
-  ci: boolean
-  linkedWorktree: boolean
   workerRun: boolean
+  nodeModulesPresent: boolean
+  lockfileMatchesMain: boolean
 }
-export type DependencyInstallMode = 'normal' | 'worker-offline'
+export type DependencyInstallDecision =
+  | 'normal-install'
+  | 'skip-provisioned'
+  | 'refuse-lockfile-change'
+  | 'refuse-missing-node-modules'
 
-/** Only an orchestrator worker uses the registry-free install path. */
-export function dependencyInstallMode(facts: DependencyInstallFacts): DependencyInstallMode {
-  return facts.workerRun ? 'worker-offline' : 'normal'
-}
-
-/** Decide whether the provisioned dependency tree still belongs to this lockfile. */
-export function installNeeded(
-  lockfileHash: string,
-  installedState: InstalledDependencyState,
-): boolean {
-  return !installedState.nodeModulesPresent || installedState.lockfileHash !== lockfileHash
+/** Decide whether the gate may use dependencies provisioned before a worker entered its sandbox. */
+export function dependencyInstallDecision(
+  facts: DependencyInstallFacts,
+): DependencyInstallDecision {
+  if (!facts.workerRun) return 'normal-install'
+  if (!facts.nodeModulesPresent) return 'refuse-missing-node-modules'
+  return facts.lockfileMatchesMain ? 'skip-provisioned' : 'refuse-lockfile-change'
 }
 
 const CHECK_LEG_NAMES = CHECK_LEGS.map((leg) => leg.name)
