@@ -212,8 +212,18 @@ async function applySharedCataloguePromotion(
   )
   if (!sourceTarget)
     throw new Error(`step catalogue has no version ${n} in hosted space ${sourceSpace}`)
-  for (const spaceId of decision.changed)
-    ports.preflight(JSON.parse(sourceTarget.definition), spaceId)
+  for (const spaceId of decision.changed) {
+    const disposition = sharedWorkflowPromotionDisposition(spaceId, versions, sourceSpace)
+    const target = `space ${spaceId ?? 'local'} catalogue ${disposition} planned version ${n}`
+    try {
+      ports.preflight(JSON.parse(sourceTarget.definition), spaceId)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `refusing shared workflow promotion for "shared step catalogue": ${target} cannot carry the workflow: ${reason}`,
+      )
+    }
+  }
   return promoteSharedWorkflowSpaces({
     slug: 'shared step catalogue',
     targetVersion: n,
@@ -331,8 +341,13 @@ function preflightSharedWorkflowTargets(input: {
       input.ports.preflight(input.definition, spaceId, JSON.parse(catalogue.definition))
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
-      if (disposition !== 'follower' && spaceId !== null) {
-        blocked.push({ space: spaceId, disposition, plannedVersion: catalogue.n, reason })
+      if (disposition !== 'follower') {
+        blocked.push({
+          space: spaceId ?? 'local',
+          disposition,
+          plannedVersion: catalogue.n,
+          reason,
+        })
         continue
       }
       throw new Error(
@@ -396,7 +411,7 @@ export async function promoteSharedWorkflow(
     sourceSpace,
     versions,
     targetSpaces: targetSpaces.filter(
-      (spaceId) => !blockedByCatalogue.some((blocked) => blocked.space === spaceId),
+      (spaceId) => !blockedByCatalogue.some((blocked) => blocked.space === (spaceId ?? 'local')),
     ),
     draftVersion: (spaceId, version) =>
       spaceId === null

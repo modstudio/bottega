@@ -7,7 +7,11 @@ import {
 import { db } from '../database/db.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import type { RecordWorkflowWriteResponse } from '../record/record-workflow-contract.ts'
-import { productionStepCatalogue } from './step-catalogue.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import {
   importWorkflow,
@@ -641,6 +645,46 @@ test('shared hosted promotion skips an override whose catalogue cannot carry the
   ])
   expect(fixture.state.get(FOLLOWER_SPACE)!.versions).toHaveLength(1)
   expect(fixture.state.get(FOLLOWER_SPACE)!.versions[0]!.status).toBe('production')
+})
+
+test('shared hosted promotion skips a local override whose catalogue cannot carry the workflow', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
+  const local = db()
+  const localCatalogue = structuredClone(productionStepCatalogue(local).definition)
+  localCatalogue.steps[0]!.title = 'Local override'
+  const localDraft = setStepCatalogueLocal(localCatalogue, 'local override', 'test', local)
+  promoteStepCatalogueLocal(localDraft.n, 'local override', 'test', local)
+
+  expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
+    version: 2,
+    changedSpaces: [SPACE, FOLLOWER_SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+    blockedByCatalogue: [
+      {
+        space: 'local',
+        disposition: 'override',
+        plannedVersion: localDraft.n,
+        reason:
+          'invalid workflow definition:\n- mode "default" references missing step "new-shared-step"; add and promote that catalogue step, or edit the workflow mode',
+      },
+    ],
+  })
+  expect(fixture.calls).toEqual([
+    `catalogue-draft:${FOLLOWER_SPACE}:test`,
+    `catalogue-promote:${FOLLOWER_SPACE}:shared promotion: release`,
+    `promote:${SPACE}:shared promotion: release`,
+    `draft:${FOLLOWER_SPACE}:seed two`,
+    `promote:${FOLLOWER_SPACE}:shared promotion: release`,
+  ])
+  expect(
+    local
+      .query<{ n: number }, [string]>(
+        `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id
+         WHERE w.slug=? AND w.space_id IS NULL AND v.status='production'`,
+      )
+      .get(fixture.slug),
+  ).toEqual({ n: 1 })
 })
 
 test('shared hosted promotion refusal names the target catalogue plan before writing', async () => {

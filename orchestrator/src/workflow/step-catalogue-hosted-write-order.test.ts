@@ -432,7 +432,7 @@ test('hosted catalogue promotion does not call the API when it removes a live re
   })
 
   await expect(promoteStepCatalogue(2, 'remove live reference')).rejects.toThrow(
-    'changes references used by production workflows',
+    'refusing shared workflow promotion for "shared step catalogue": space local catalogue follower planned version 2 cannot carry the workflow: step catalogue changes references used by production workflows',
   )
   expect(calls).toBe(0)
 })
