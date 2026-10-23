@@ -127,6 +127,7 @@ import { finishRun, type TerminalInput } from './run-terminal.ts'
 import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
+import { snapshotWritingRunSharedGitConfig } from './shared-git-config.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
@@ -877,6 +878,7 @@ export async function run(opts: {
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
+  const sharedGitConfigSnapshot = snapshotWritingRunSharedGitConfig(writesJob, worktree)
   // Keep this handle visible to signals/finally so a running row can terminate.
   // A full Subprocess would widen the narrowed `p` streams.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
@@ -1032,6 +1034,7 @@ export async function run(opts: {
         failureKind,
         scratchDir,
         gitConfigEnvironment,
+        sharedGitConfigSnapshot,
         ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
         opts,
         watchedCheckouts,

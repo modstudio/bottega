@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { scrubbedGitEnv } from '../../../shared/git.ts'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
@@ -144,7 +145,8 @@ function liveChildEnv(
   includeStore: boolean,
   runNumber: number,
 ): Record<string, string> {
-  return childEnv(agent, runRecordId, runToken, extra, includeStore, runNumber)
+  const environment = childEnv(agent, runRecordId, runToken, extra, includeStore, runNumber)
+  return includeStore ? (scrubbedGitEnv(environment) as Record<string, string>) : environment
 }
 
 function recordConfiguredAsk(input: {

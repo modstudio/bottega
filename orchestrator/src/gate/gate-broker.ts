@@ -362,14 +362,14 @@ async function spawnGateChild(input: {
   return setChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
-      env: {
+      env: scrubbedGitEnv({
         ...brokerGateEnvironment(
           workerGateEnvironment(process.env),
           process.env,
           input.environment,
         ),
         [HOST_SLOT_HELD_ENV]: '1',
-      },
+      }),
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),

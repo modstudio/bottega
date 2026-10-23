@@ -20,8 +20,6 @@ import { basename, dirname, join, resolve } from 'node:path'
  * this invocation, not a cleanliness verdict.
  */
 
-const ORCH_ROUTING = ['ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF'] as const
-
 let listedLocalEnvVars: string[] | undefined
 
 function localEnvVarQueryEnv(): NodeJS.ProcessEnv {
@@ -59,11 +57,12 @@ function localEnvVarNames(): string[] {
   }
 }
 
-/** Drop repository-location variables git lists, plus orchestrator ref-guard routing. */
+/** Drop repository-local variables git lists while preserving config overlays and other routing. */
 export function scrubbedGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = { ...base }
-  for (const name of localEnvVarNames()) delete env[name]
-  for (const name of ORCH_ROUTING) delete env[name]
+  for (const name of localEnvVarNames()) {
+    if (!name.startsWith('GIT_CONFIG_')) delete env[name]
+  }
   return env
 }
 

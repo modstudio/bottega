@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process'
 import { closeSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
+import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import {
@@ -164,14 +165,14 @@ async function spawnFocusedTestChild(input: {
   return setChildPriority(
     spawn(launch[0]!, launch.slice(1), {
       cwd: input.worktree,
-      env: {
+      env: scrubbedGitEnv({
         ...brokerGateEnvironment(
           workerGateEnvironment(process.env),
           process.env,
           input.environment,
         ),
         [HOST_SLOT_HELD_ENV]: '1',
-      },
+      }),
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),

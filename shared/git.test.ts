@@ -29,7 +29,7 @@ describe('borrowed checkout identity', () => {
 })
 
 describe('shared git environment decisions', () => {
-  test('the shared scrub removes repository-location variables git lists and orchestrator routing, not global-behavior GIT_*', () => {
+  test('the shared scrub removes repository-local variables while preserving config overlays and ref-guard routing', () => {
     const contaminated: NodeJS.ProcessEnv = {
       UNRELATED: 'preserved',
       GIT_DIR: '/worker/git-dir',
@@ -37,6 +37,9 @@ describe('shared git environment decisions', () => {
       GIT_OBJECT_DIRECTORY: '/worker/objects',
       GIT_ALTERNATE_OBJECT_DIRECTORIES: '/worker/alternates',
       GIT_INDEX_FILE: '/worker/index',
+      GIT_COMMON_DIR: '/worker/common-dir',
+      GIT_CONFIG: '/worker/repository-config',
+      GIT_CONFIG_PARAMETERS: "'core.filemode'='false'",
       GIT_CONFIG_COUNT: '2',
       GIT_CONFIG_KEY_0: 'core.hooksPath',
       GIT_CONFIG_VALUE_0: '/worker/hooks',
@@ -56,16 +59,19 @@ describe('shared git environment decisions', () => {
       'GIT_OBJECT_DIRECTORY',
       'GIT_ALTERNATE_OBJECT_DIRECTORIES',
       'GIT_INDEX_FILE',
-      'GIT_CONFIG_COUNT',
-      'ORCH_GUARDED_GIT_COMMON_DIR',
-      'ORCH_ALLOWED_GIT_REF',
+      'GIT_COMMON_DIR',
+      'GIT_CONFIG',
     ]) {
       expect(scrubbed[variable]).toBeUndefined()
     }
+    expect(scrubbed.GIT_CONFIG_COUNT).toBe('2')
+    expect(scrubbed.GIT_CONFIG_PARAMETERS).toBe("'core.filemode'='false'")
     expect(scrubbed.GIT_CONFIG_GLOBAL).toBe('/worker/global-config')
     expect(scrubbed.GIT_CONFIG_SYSTEM).toBe('/worker/system-config')
     expect(scrubbed.GIT_CONFIG_NOSYSTEM).toBe('1')
     expect(scrubbed.GIT_CONFIG_KEY_0).toBe('core.hooksPath')
     expect(scrubbed.GIT_CONFIG_VALUE_0).toBe('/worker/hooks')
+    expect(scrubbed.ORCH_GUARDED_GIT_COMMON_DIR).toBe('/worker/common')
+    expect(scrubbed.ORCH_ALLOWED_GIT_REF).toBe('refs/heads/worker')
   })
 })

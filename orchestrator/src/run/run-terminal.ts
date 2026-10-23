@@ -58,6 +58,7 @@ import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { observedTestOutcome } from './run-test-outcome.ts'
 import { runUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
+import { type SharedGitConfigSnapshot, terminalSharedGitConfigHeader } from './shared-git-config.ts'
 
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
 
@@ -201,6 +202,7 @@ export type TerminalInput = {
   failureKind: ReturnType<typeof classify> | null
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
+  sharedGitConfigSnapshot: SharedGitConfigSnapshot | null
   writingAcp: boolean
   checkpointContainment: CheckpointContainment
   opts: TerminalOptions
@@ -299,6 +301,19 @@ export function checkpointTerminalWork(input: TerminalCheckpointInput): string |
     error: checkpoint.error,
     worktree: input.worktree!.path,
   })
+}
+
+function terminalOperationalHeader(input: TerminalInput, current: string | null): string | null {
+  const parts = [
+    current,
+    checkpointTerminalWork(input),
+    terminalSharedGitConfigHeader({
+      runId: input.claim.id,
+      worktree: input.worktree,
+      snapshot: input.sharedGitConfigSnapshot,
+    }),
+  ].filter((part): part is string => Boolean(part))
+  return parts.length ? parts.join('\n') : null
 }
 
 function terminalAfterCheckouts(
@@ -576,9 +591,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
   if (askLoopback) await askLoopback.close()
   await resetSandbox()
-  const checkpointHeader = checkpointTerminalWork(input)
-  if (checkpointHeader)
-    mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${checkpointHeader}` : checkpointHeader
+  mcpSetupHeader = terminalOperationalHeader(input, mcpSetupHeader)
   const startedAt = db()
     .query('SELECT started_at, head_commit FROM run WHERE record_id=?')
     .get(claim.id) as { started_at: string; head_commit: string | null } | null
