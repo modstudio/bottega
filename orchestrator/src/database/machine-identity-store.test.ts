@@ -91,6 +91,10 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
       live: 'before',
       rollback: false,
       reason: null,
+      trunk: 'main',
+      trunkTip: 'candidate',
+      commitsBehindTrunk: 0,
+      behindTrunkReason: null,
     })
     const questionRecordId = (
       database.query('SELECT record_id FROM question').get() as { record_id: string }
