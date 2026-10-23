@@ -874,7 +874,7 @@ test('hosted acknowledgement uses the reserved operator reader without a session
   })
 })
 
-test('hosted acknowledgement is cached and queued when the service is unreachable', async () => {
+test('hosted acknowledgement is cached and queued for unreachable and server failures', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const id = newRecordId()
   const message = hostedMessage(id)
@@ -884,22 +884,24 @@ test('hosted acknowledgement is cached and queued when the service is unreachabl
        VALUES (?,?,?,?,?)`,
     )
     .run(id, message.kind, message.threadRootId, message.revision, JSON.stringify(message))
-  await expect(
-    boardAcknowledge(id, {
-      clock: Date.parse('2026-10-16T12:00:00.000Z'),
-      env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
-      client: {
-        ...createMemoryRecordApiClient(),
-        putBoardReceipt: async () => {
-          throw new RecordApiRequestError('record service offline', 'unreachable', 503)
+  for (const kind of ['unreachable', 'server'] as const) {
+    await expect(
+      boardAcknowledge(id, {
+        clock: Date.parse('2026-10-16T12:00:00.000Z'),
+        env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+        client: {
+          ...createMemoryRecordApiClient(),
+          putBoardReceipt: async () => {
+            throw new RecordApiRequestError('record service offline', kind, 503)
+          },
         },
-      },
-    }),
-  ).resolves.toEqual({
-    acknowledged: id,
-    queued: true,
-    message: 'hosted change saved and queued',
-  })
+      }),
+    ).resolves.toEqual({
+      acknowledged: id,
+      queued: true,
+      message: 'hosted change saved and queued',
+    })
+  }
   expect(
     db()
       .query(

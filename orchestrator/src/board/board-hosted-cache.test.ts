@@ -649,7 +649,7 @@ test('a changes response without identity serves no prior cached rows and warns 
   expect(hostedBoardVerificationWarning(database)).toContain('identity is unverified')
 })
 
-test('receipt flushing follows change fetch; network failure stays pending and refusal is recorded and cleared', async () => {
+test('receipt flushing keeps server failures pending, then records a refusal', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const cached = message()
   const base = {
@@ -677,7 +677,7 @@ test('receipt flushing follows change fetch; network failure stays pending and r
       },
       putBoardReceipt: async () => {
         order.push('receipt')
-        throw new Error('offline')
+        throw new RecordApiRequestError('record API 503: maintenance', 'server', 503)
       },
     },
   })

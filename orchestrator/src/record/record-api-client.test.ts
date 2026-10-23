@@ -74,9 +74,11 @@ describe('record HTTP authentication responses', () => {
     expect(recordAuthRefusal(429, {}, new Headers({ 'retry-after': '12' })).message).toBe(
       'record sign-in is rate limited; retry after 12',
     )
-    expect(recordAuthRefusal(503, { error: 'maintenance' }, new Headers()).message).toBe(
-      `record API 503: maintenance\ncleared by: ${PLATFORM_SLUG} record doctor`,
-    )
+    expect(recordAuthRefusal(503, { error: 'maintenance' }, new Headers())).toMatchObject({
+      kind: 'server',
+      status: 503,
+      message: `record API 503: maintenance\ncleared by: ${PLATFORM_SLUG} record doctor`,
+    })
   })
 
   test('validates and maps whoami identity at the HTTP edge', () => {
@@ -443,9 +445,11 @@ describe('record API client test safety', () => {
           projectId: newRecordId(),
           subject: 'task:DEV-1638',
         }),
-      ).rejects.toThrow(
-        `record API 500: claim write failed\ncleared by: ${PLATFORM_SLUG} record doctor`,
-      )
+      ).rejects.toMatchObject({
+        kind: 'server',
+        status: 500,
+        message: `record API 500: claim write failed\ncleared by: ${PLATFORM_SLUG} record doctor`,
+      })
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv

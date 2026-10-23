@@ -642,6 +642,7 @@ export function registerBoardApiProofs(input: {
     userA: () => userA,
     project: PROJECT,
     projectId: IDS.project,
+    succeeds: input.succeeds,
   })
 
   test('a user bound through the API sees a project in a second space', async () => {

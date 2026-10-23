@@ -134,7 +134,7 @@ test('malformed refusal fields mark no local row', async () => {
 test('whole-request auth, server, and old-route failures leave the batch pending', async () => {
   for (const failure of [
     new RecordApiRequestError('credentials refused', 'refused', 401),
-    new RecordApiRequestError('server unavailable', 'unreachable', 500),
+    new RecordApiRequestError('server unavailable', 'server', 500),
     new RecordApiRequestError('not found', 'refused', 404),
   ]) {
     using local = localOutbox(1)

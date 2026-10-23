@@ -235,16 +235,17 @@ async function tellConflicts(
   }
 }
 
-async function supersedeConflicts(
+async function supersedeClaims(
   tx: SQL,
   conflicts: ClaimRow[],
+  linked: ClaimRow[],
   input: BoardTenant & HostedBoardTakeClaimInput,
   projectId: string,
   session: string | null,
   clock: number,
   now: string,
 ): Promise<void> {
-  for (const conflict of conflicts) {
+  for (const conflict of [...conflicts, ...linked]) {
     const ended =
       claimCloseReason({
         closed: false,
@@ -292,30 +293,34 @@ export async function takeHostedBoardClaim(
   const durationRefusal = claimDurationRefusal(duration)
   if (durationRefusal) throw new RecordBoardError(durationRefusal, 400)
   const session = sessionOrNull(input.holderSession)
-  const clock = Date.now()
-  let outcome: TakeOutcome
-  try {
-    outcome = await withBoardTenant(input, true, (tx) =>
+  const attempt = (clock: number) =>
+    withBoardTenant(input, true, (tx) =>
       takeClaimInTx(tx, input, subject, note, duration, session, clock),
     )
+  const currentLive = () =>
+    withBoardTenant(input, false, async (tx) => {
+      const { exactHeld, foreignLive } = await readTakeOverlaps(tx, input, subject, Date.now())
+      return [...(exactHeld ? [exactHeld] : []), ...foreignLive]
+    })
+  let outcome: TakeOutcome
+  try {
+    outcome = await attempt(Date.now())
   } catch (error) {
     if (!isBoardClaimSubjectUniqueViolation(error)) throw error
-    const live = await withBoardTenant(input, false, async (tx) => {
-      const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
-      const rows = (await tx`
-        SELECT * FROM board_claim
-        WHERE project_id=${projectId}::uuid AND subject_kind=${subject.kind}
-          AND subject_value=${subject.value} AND closed_at IS NULL
-        ORDER BY taken_at, id
-      `) as ClaimRow[]
-      return rows.filter((row) => hostedLive(row, Date.now()))
-    })
-    throw new RecordBoardError(
-      live.length
-        ? liveClaimRefusal(live)
-        : `${CLAIM_CONFLICT} another live holder (release the claim, or wait for lapse)`,
-      409,
-    )
+    const live = await currentLive()
+    if (live.length) throw new RecordBoardError(liveClaimRefusal(live), 409)
+    try {
+      outcome = await attempt(Date.now())
+    } catch (retryError) {
+      if (!isBoardClaimSubjectUniqueViolation(retryError)) throw retryError
+      const retryLive = await currentLive()
+      throw new RecordBoardError(
+        retryLive.length
+          ? liveClaimRefusal(retryLive)
+          : `${CLAIM_CONFLICT} the subject remains reserved by a non-live claim after retry; retry taking the claim`,
+        409,
+      )
+    }
   }
   if (takeRefused(outcome)) throw new RecordBoardError(outcome.refused, 409)
   return outcome
@@ -379,6 +384,7 @@ async function insertTakenClaim(
   session: string | null,
   projectId: string,
   conflicts: ClaimRow[],
+  linked: ClaimRow[],
   clock: number,
 ): Promise<HostedBoardClaim & { action: 'taken' | 'taken-over' }> {
   const now = new Date(clock).toISOString()
@@ -386,7 +392,7 @@ async function insertTakenClaim(
     runId: input.runId,
     runField: 'runId',
   })
-  await supersedeConflicts(tx, conflicts, input, projectId, session, clock, now)
+  await supersedeClaims(tx, conflicts, linked, input, projectId, session, clock, now)
   await tx`
     INSERT INTO board_claim (
       id, project_id, subject_kind, subject_value, holder_user_id, holder_session, note, run_id,
@@ -405,6 +411,20 @@ async function insertTakenClaim(
   }
 }
 
+async function readTakeOverlaps(
+  tx: SQL,
+  input: BoardTenant & HostedBoardTakeClaimInput,
+  subject: ClaimSubject,
+  clock: number,
+) {
+  const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
+  const open = (await tx`
+    SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
+    ORDER BY taken_at, id
+  `) as ClaimRow[]
+  return { projectId, ...takeOverlaps(open, subject, input.userId, clock) }
+}
+
 async function takeClaimInTx(
   tx: SQL,
   input: BoardTenant & HostedBoardTakeClaimInput,
@@ -416,15 +436,10 @@ async function takeClaimInTx(
 ): Promise<TakeOutcome> {
   const existing = await loadClaim(tx, input.id)
   if (existing) return replayExistingTake(tx, input, existing, subject, clock)
-  const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
-  const open = (await tx`
-    SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
-    ORDER BY taken_at, id
-  `) as ClaimRow[]
-  const { exactHeld, conflicts, foreignLive, lapsedExact } = takeOverlaps(
-    open,
+  const { projectId, exactHeld, conflicts, foreignLive, lapsedExact } = await readTakeOverlaps(
+    tx,
+    input,
     subject,
-    input.userId,
     clock,
   )
   const decision = claimTakeDecision({
@@ -450,7 +465,8 @@ async function takeClaimInTx(
     duration,
     session,
     projectId,
-    [...(decision === 'take-over' ? conflicts : []), ...lapsedExact],
+    decision === 'take-over' ? conflicts : [],
+    lapsedExact,
     clock,
   )
 }

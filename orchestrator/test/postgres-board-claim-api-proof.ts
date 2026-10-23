@@ -9,6 +9,7 @@ export function registerBoardClaimApiProof(input: {
   userA(): string
   project: string
   projectId: string
+  succeeds(user: string, password: string, source: string): string
 }): void {
   test('claim take, renewal, live conflict with notice, lapsed takeover, release, and release by task key', async () => {
     const take = (token: string, body: Record<string, unknown>) =>
@@ -117,7 +118,7 @@ export function registerBoardClaimApiProof(input: {
       holderSession: 'holder-a',
     })
     expect(sameHolderTakeover.status).toBe(200)
-    expect((await json(sameHolderTakeover)).action).toBe('taken-over')
+    expect((await json(sameHolderTakeover)).action).toBe('taken')
     const afterSameHolderTakeover = await json(
       await fetch(
         `${input.origin()}/v1/board/claims?project=${input.project}&projectId=${input.projectId}`,
@@ -137,6 +138,58 @@ export function registerBoardClaimApiProof(input: {
     expect(
       sameHolderClaims.find((claim) => claim.id === sameHolderSuccessor)?.previousClaimIds,
     ).toContain(sameHolderLapsedId)
+    const afterSameHolderNotices = await json(
+      await fetch(`${input.origin()}/v1/board/changes?after=0&limit=100`, {
+        headers: headers(input.tokenA()),
+      }),
+    )
+    expect(
+      (
+        afterSameHolderNotices.items as Array<{
+          message: { audience: string; claimId: string | null }
+        }>
+      ).some(
+        (item) =>
+          item.message.audience === 'session:holder-a' &&
+          item.message.claimId === sameHolderLapsedId,
+      ),
+    ).toBeFalse()
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `CREATE SEQUENCE board_claim_retry_once;
+       CREATE FUNCTION fail_board_claim_insert_once() RETURNS trigger
+       LANGUAGE plpgsql SECURITY DEFINER AS $$
+       BEGIN
+         IF NEW.subject_kind='task' AND NEW.subject_value='BAPI-3'
+            AND nextval('board_claim_retry_once')=1 THEN
+           RAISE EXCEPTION 'injected board claim collision'
+             USING ERRCODE='23505', CONSTRAINT='board_claim_live_subject_unique';
+         END IF;
+         RETURN NEW;
+       END $$;
+       CREATE TRIGGER board_claim_retry_once
+       BEFORE INSERT ON board_claim FOR EACH ROW EXECUTE FUNCTION fail_board_claim_insert_once();`,
+    )
+    try {
+      const retried = await take(input.tokenA(), {
+        id: newRecordId(),
+        project: input.project,
+        projectId: input.projectId,
+        subject: 'task:BAPI-3',
+        holderSession: 'holder-a',
+      })
+      expect(retried.status).toBe(200)
+      expect((await json(retried)).action).toBe('taken')
+    } finally {
+      input.succeeds(
+        'postgres',
+        'postgres',
+        `DROP TRIGGER board_claim_retry_once ON board_claim;
+         DROP FUNCTION fail_board_claim_insert_once();
+         DROP SEQUENCE board_claim_retry_once;`,
+      )
+    }
     const released = await fetch(`${input.origin()}/v1/board/claims/${liveId}/release`, {
       method: 'POST',
       headers: headers(input.tokenA()),

@@ -668,7 +668,11 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
       })
       cacheHostedBoardReceipt(receipt)
     } catch (error) {
-      if (!(error instanceof RecordApiRequestError) || error.kind !== 'unreachable') throw error
+      if (
+        !(error instanceof RecordApiRequestError) ||
+        (error.kind !== 'unreachable' && error.kind !== 'server')
+      )
+        throw error
       queueHostedBoardAcknowledgement(
         resolved.recordId,
         session,

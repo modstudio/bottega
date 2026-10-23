@@ -31,6 +31,16 @@ function postgresSqlState(error: unknown): string | null {
   return null
 }
 
+function postgresConstraint(error: unknown): string | null {
+  for (const item of errorChain(error)) {
+    const candidate = item as { constraint?: unknown; constraint_name?: unknown }
+    for (const value of [candidate.constraint, candidate.constraint_name]) {
+      if (typeof value === 'string' && value) return value
+    }
+  }
+  return null
+}
+
 function postgresServerMessage(error: unknown): string {
   for (const item of errorChain(error)) {
     const candidate = item as { code?: unknown }
@@ -40,24 +50,11 @@ function postgresServerMessage(error: unknown): string {
 }
 
 export function isBoardClaimSubjectUniqueViolation(error: unknown): boolean {
-  for (const item of errorChain(error)) {
-    const candidate = item as {
-      code?: unknown
-      errno?: unknown
-      constraint?: unknown
-      constraint_name?: unknown
-    }
-    const state = String(candidate.errno ?? candidate.code ?? '')
-    const constraint = String(candidate.constraint ?? candidate.constraint_name ?? '')
-    const message = item instanceof Error ? item.message : ''
-    if (
-      state === '23505' &&
-      (constraint === 'board_claim_live_subject_unique' ||
-        message.includes('board_claim_live_subject_unique'))
-    )
-      return true
-  }
-  return false
+  return (
+    postgresSqlState(error) === '23505' &&
+    (postgresConstraint(error) === 'board_claim_live_subject_unique' ||
+      postgresServerMessage(error).includes('board_claim_live_subject_unique'))
+  )
 }
 
 /** Maps a board trigger exception or RLS denial to a named refusal. */
