@@ -25,8 +25,19 @@ type SetAction = Extract<SetupAction, { kind: 'set' }>
 type RegistrationAction = Extract<SetupAction, { kind: 'register-mcp' }>
 type LegacySymlinkAction = Extract<SetupAction, { kind: 'remove-legacy-symlink' }>
 
+export const SETUP_ACTION_STATUSES = [
+  'applied',
+  'unchanged',
+  'follow-up',
+  'refused',
+  'not-attempted',
+] as const
+
+type SetupActionStatus = (typeof SETUP_ACTION_STATUSES)[number]
+type SetupAppliedActionStatus = Extract<SetupActionStatus, 'applied' | 'unchanged' | 'follow-up'>
+
 export type SetupActionResult = SetupAction & {
-  status: 'applied' | 'unchanged' | 'follow-up' | 'refused' | 'not-attempted'
+  status: SetupActionStatus
   message: string | null
 }
 
@@ -45,7 +56,7 @@ export type SetupProjectService = {
 
 export type SetupEnvironmentService = {
   migrateEnvironment(): Promise<{
-    status: 'applied' | 'unchanged' | 'follow-up'
+    status: SetupAppliedActionStatus
     message: string | null
   }>
 }
@@ -245,7 +256,7 @@ async function applySetupAction(
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner,
 ): Promise<{
-  status: 'applied' | 'unchanged' | 'follow-up'
+  status: SetupAppliedActionStatus
   message: string | null
 }> {
   if (action.kind === 'migrate-environment') {

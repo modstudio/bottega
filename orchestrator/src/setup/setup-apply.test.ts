@@ -22,7 +22,10 @@ import {
   type SetupProjectService,
   setupResultsRequireAttention,
 } from './setup-apply.ts'
-import { migrateProcessEnvironment } from './setup-environment-runtime.ts'
+import {
+  migrateProcessEnvironment,
+  withMigratedProcessEnvironment,
+} from './setup-environment-runtime.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
@@ -309,6 +312,29 @@ test('refuses conflicting running-process names before changing either one or ex
   expect(environment).toEqual({
     [legacyRecordApiUrl]: 'legacy-secret',
     BOTTEGA_RECORD_API_URL: 'replacement-secret',
+  })
+})
+
+test('restores the injected process environment when a later migration step refuses', async () => {
+  const environment: Record<string, string | undefined> = {
+    [legacyRecordApiUrl]: 'legacy-secret',
+    UNRELATED: 'preserved',
+  }
+
+  await expect(
+    withMigratedProcessEnvironment(environment, async () => {
+      expect(environment).toEqual({
+        BOTTEGA_RECORD_API_URL: 'legacy-secret',
+        UNRELATED: 'preserved',
+      })
+      environment.ADDED_LATER = 'removed'
+      throw new Error('file plan refused')
+    }),
+  ).rejects.toThrow('file plan refused')
+
+  expect(environment).toEqual({
+    [legacyRecordApiUrl]: 'legacy-secret',
+    UNRELATED: 'preserved',
   })
 })
 

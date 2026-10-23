@@ -146,7 +146,7 @@ const DYNAMIC_ENVIRONMENT_NAME_FAMILIES = [
 export type LegacyEnvironmentNamePair = (typeof LEGACY_ENVIRONMENT_NAME_PAIRS)[number]
 
 type ProcessEnvironmentNameConflict = {
-  legacyName: string
+  legacyNames: string[]
   replacementName: string
 }
 
@@ -184,18 +184,29 @@ export function processEnvironmentNameMigration(
   const set: Record<string, string> = {}
   const unset: string[] = []
   const conflicts: ProcessEnvironmentNameConflict[] = []
+  const claims = new Map<string, { legacyName: string; value: string }>()
   for (const [legacyName, legacyValue] of Object.entries(environment)) {
     if (legacyValue === undefined) continue
     const replacementName = replacementEnvironmentName(legacyName)
     if (!replacementName) continue
     const replacementValue = environment[replacementName]
     if (replacementValue === undefined) {
-      set[replacementName] = legacyValue
-      unset.push(legacyName)
+      const claim = claims.get(replacementName)
+      if (!claim) {
+        claims.set(replacementName, { legacyName, value: legacyValue })
+        set[replacementName] = legacyValue
+        unset.push(legacyName)
+      } else if (claim.value === legacyValue) {
+        unset.push(legacyName)
+      } else {
+        delete set[replacementName]
+        unset.splice(unset.indexOf(claim.legacyName), 1)
+        conflicts.push({ legacyNames: [claim.legacyName, legacyName], replacementName })
+      }
     } else if (replacementValue === legacyValue) {
       unset.push(legacyName)
     } else {
-      conflicts.push({ legacyName, replacementName })
+      conflicts.push({ legacyNames: [legacyName], replacementName })
     }
   }
   return { set, unset, conflicts }

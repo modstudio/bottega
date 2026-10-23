@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { SETUP_ACTION_STATUSES } from '../setup/setup-apply.ts'
 import {
   planSetupActions,
   recommendedAnswers,
@@ -40,7 +41,7 @@ const noticeSchema = z.object({ message: z.string(), fix: z.string().nullable() 
 const actionResultSchema = z
   .object({
     line: z.string(),
-    status: z.enum(['applied', 'unchanged', 'follow-up', 'refused', 'not-attempted']),
+    status: z.enum(SETUP_ACTION_STATUSES),
     message: z.string().nullable(),
   })
   .strict()
