@@ -2,7 +2,7 @@
 /** Owns dispatch composition across routing, transport, and run-dispatch ports. Must not know CLI grammar. */
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
@@ -17,7 +17,7 @@ import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
-import { contractConflicts } from '../contract/contract.ts'
+import { contractConflicts, resolveReplyDialect } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { branchOf } from '../git/git-environment.ts'
@@ -41,10 +41,13 @@ import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
+import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
+import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { routedPromptBytes } from '../run/run-routing-input.ts'
 import {
   assertAcpReady,
   classifyTransportPin,
@@ -84,7 +87,10 @@ function earlierReviewRejections(
 async function lookupTaskKey(project: string, key: string) {
   const registered = projectByName(project)
   if (!registered)
-    return { state: 'unreachable' as const, condition: `project ${project} is not registered` }
+    return {
+      state: 'unreachable' as const,
+      condition: `project ${project} is not registered`,
+    }
   return lookupProjectTaskKey(registered, key)
 }
 
@@ -233,7 +239,10 @@ async function routeConstraints(
       )
   if (agent && avoid.includes(agent))
     throw new Error(`--agent ${agent} contradicts --avoid ${agent}`)
-  return { avoid, distinctModels: await Promise.all(ids.map(modelForDistinct)) }
+  return {
+    avoid,
+    distinctModels: await Promise.all(ids.map(modelForDistinct)),
+  }
 }
 
 function warnCallerDrift(
@@ -255,7 +264,9 @@ function warnCallerDrift(
     .digest('hex')
   try {
     mkdirSync(join(RUNS_DIR, '.signals'), { recursive: true })
-    writeFileSync(join(RUNS_DIR, '.signals', `caller-drift-${key}`), '', { flag: 'wx' })
+    writeFileSync(join(RUNS_DIR, '.signals', `caller-drift-${key}`), '', {
+      flag: 'wx',
+    })
   } catch {
     return
   }
@@ -327,7 +338,11 @@ const scoreSuffix = (jobName: string) =>
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
 const runNumber = (id: string) =>
-  (db().query('SELECT number FROM run WHERE record_id=?').get(id) as { number: number }).number
+  (
+    db().query('SELECT number FROM run WHERE record_id=?').get(id) as {
+      number: number
+    }
+  ).number
 const scoreHint = (id: string, jobName: string, parent: string | null) => {
   const number = runNumber(parent ?? id)
   return `${PLATFORM_SLUG} score ${number} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."`
@@ -371,6 +386,54 @@ const detachedMcpConstraints = (
   transportPinSource: spec.transportPinSource,
 })
 
+async function selectBeforeDetach(
+  jobName: string,
+  text: string,
+  spec: DetachSpec,
+  presentation: Pick<Presentation, 'cwd' | 'error'>,
+): Promise<{ agent: string; reason: string } | undefined> {
+  if (spec.resume) return undefined
+  const requestedJob = job(jobName)
+  const mcpRequest = effectiveMcpRequest(spec.mcp, requestedJob)
+  const replySchemaName = spec.schema
+    ? basename(spec.schema)
+    : resolveReplyDialect(requestedJob).schemaName
+  const requiresCanonSource = runEvidence(
+    jobName,
+    Boolean(requestedJob.findings),
+    spec.deliverables ?? [],
+  ).requiresCanonSource
+  return waitForAgentSelection({
+    select: () =>
+      pick(
+        jobName,
+        spec.agent,
+        routedPromptBytes(text, replySchemaName, requestedJob, requiresCanonSource),
+        true,
+        stackAt(spec.cwd ?? presentation.cwd()),
+        {
+          agents: spec.avoid,
+          models: spec.distinctModels,
+          model: spec.model,
+          noWaitCapacity: spec.noWaitCapacity,
+          ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
+          project: spec.repo ?? null,
+        },
+        spec.probe,
+        spec.lens,
+      ),
+    noWait: spec.noWaitCapacity,
+    onWait: () => presentation.error('waiting for capacity'),
+  })
+}
+
+export function detachSpecWithRoutedSelection(
+  spec: DetachSpec,
+  selected: { agent: string; reason: string } | undefined,
+): DetachSpec {
+  return selected && !spec.agent ? { ...spec, routedAgent: selected } : spec
+}
+
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
   const flag = (name: string) => flagValue(argv, name)
@@ -398,26 +461,13 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
     }
   }
   const detach = async (jobName: string, text: string, spec: DetachSpec) => {
-    let selected: string | undefined
-    const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
-    if (!spec.resume && mcpRequest)
-      selected = pick(
-        jobName,
-        spec.agent,
-        text.length,
-        true,
-        stackAt(spec.cwd ?? presentation.cwd()),
-        {
-          agents: spec.avoid,
-          models: spec.distinctModels,
-          model: spec.model,
-          ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
-          project: spec.repo ?? null,
-        },
-        spec.probe,
-        spec.lens,
-      ).agent
-    return dispatchDetached(jobName, text, spec, selected)
+    const selected = await selectBeforeDetach(jobName, text, spec, presentation)
+    return dispatchDetached(
+      jobName,
+      text,
+      detachSpecWithRoutedSelection(spec, selected),
+      selected?.agent,
+    )
   }
   await dispatchCommand(
     argv,

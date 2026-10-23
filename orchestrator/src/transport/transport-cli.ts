@@ -5,6 +5,7 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { classifyCodexThrottle } from './codex-throttle.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
@@ -69,6 +70,45 @@ async function readStdoutLines(
   return stdout
 }
 
+function codexThrottleEvent(line: string): NormalizedEvent | null {
+  const throttle = classifyCodexThrottle(line)
+  if (!throttle) return null
+  return {
+    kind: 'throttled',
+    attempt: throttle.attempt,
+    max: throttle.max,
+    retryDelayMs: throttle.retryDelayMs,
+    httpStatus: throttle.status,
+    retryAt:
+      throttle.retryDelayMs === null
+        ? null
+        : new Date(Date.now() + throttle.retryDelayMs).toISOString(),
+  }
+}
+
+export function startCliStreamReaders(input: {
+  stdout: AsyncIterable<string | Uint8Array>
+  stderr: AsyncIterable<string | Uint8Array>
+  codex: boolean
+  push: (event: NormalizedEvent) => void
+}) {
+  let throttleSeen = false
+  const observeThrottle = (line: string) => {
+    if (!input.codex || throttleSeen) return
+    const event = codexThrottleEvent(line)
+    if (!event) return
+    throttleSeen = true
+    input.push(event)
+  }
+  return {
+    stdoutTask: readStdoutLines(input.stdout, (line) => {
+      observeThrottle(line)
+      for (const event of eventsFromVendorLine(line)) input.push(event)
+    }),
+    stderrTask: readStdoutLines(input.stderr, observeThrottle),
+  }
+}
+
 function spawnCliChild(
   launchArgv: string[],
   opts: TransportStartOpts,
@@ -124,6 +164,7 @@ async function cliLaunch(opts: TransportStartOpts) {
   return { launchArgv, stdinPrompt }
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const { launchArgv, stdinPrompt } = await cliLaunch(opts)
   const p = spawnCliChild(launchArgv, opts, stdinPrompt)
@@ -138,10 +179,11 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     liveEvents.push(event)
     eventWaiters.shift()?.()
   }
-
-  const stdoutTask = readStdoutLines(p.stdout!, (line) => {
-    for (const event of eventsFromVendorLine(line))
-      pushEvent(eventForBilling(opts.agent.billing, event))
+  const { stdoutTask, stderrTask } = startCliStreamReaders({
+    stdout: p.stdout!,
+    stderr: p.stderr!,
+    codex: (opts.agent.harness ?? opts.agent.name) === 'codex',
+    push: (event) => pushEvent(eventForBilling(opts.agent.billing, event)),
   })
 
   const finishEvents = () => {
@@ -154,8 +196,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     if (collected) return collected
     collected = (async () => {
       try {
-        const [stdout, processResult] = await Promise.all([stdoutTask, p])
-        const stderr = processResult.stderr
+        const [stdout, stderr, processResult] = await Promise.all([stdoutTask, stderrTask, p])
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
@@ -188,7 +229,12 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const terminalEvents: NormalizedEvent[] = []
         if (sessionId) terminalEvents.push({ kind: 'session', sessionId })
         if (output) terminalEvents.push({ kind: 'text', text: output })
-        if (tokens !== null) terminalEvents.push({ kind: 'usage', tokens, costUsd: usage.costUsd })
+        if (tokens !== null)
+          terminalEvents.push({
+            kind: 'usage',
+            tokens,
+            costUsd: usage.costUsd,
+          })
         if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
         if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })
         const events = cliResultEvents(liveEvents, terminalEvents)

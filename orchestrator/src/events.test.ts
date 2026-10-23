@@ -14,6 +14,7 @@ import {
   runEventsPath,
 } from './events.ts'
 import type { NormalizedEvent } from './transport/transport.ts'
+import { startCliStreamReaders } from './transport/transport-cli.ts'
 
 const CODEX_PROBE_COMMAND_STARTED = JSON.stringify({
   type: 'item.started',
@@ -66,6 +67,49 @@ function probeEvents(...lines: string[]): NormalizedEvent[] {
 }
 
 describe('vendor event log', () => {
+  test('CLI retry lines record one throttled event with routed concurrency', async () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const path = runEventsPath(id)
+    const log = createEventLog(id, () => 7, path)
+    async function* lines(line: string) {
+      yield `${line}\n`
+    }
+    const readers = startCliStreamReaders({
+      stderr: lines(
+        '2026-10-21T20:00:00Z WARN codex_core: retrying sampling request (1/5 in 224.999951542s) ... last status: 429 Too Many Requests',
+      ),
+      stdout: lines(
+        JSON.stringify({
+          type: 'error',
+          message: 'Reconnecting... 2/5 (exceeded retry limit, last status: 429 Too Many Requests)',
+        }),
+      ),
+      codex: true,
+      push: (event) => {
+        if (
+          event.kind === 'text' ||
+          event.kind === 'tool' ||
+          event.kind === 'usage' ||
+          event.kind === 'throttled'
+        )
+          log.observe(event, '2026-10-21T20:00:00.000Z')
+      },
+    })
+    await Promise.all([readers.stdoutTask, readers.stderrTask])
+    const events = readFileSync(path, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      ts: '2026-10-21T20:00:00.000Z',
+      type: 'throttled',
+      max: 5,
+      status: 429,
+      concurrency: 7,
+    })
+  })
+
   test('peek preserves and formats focused test evidence', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     appendRunEvent(id, {
@@ -155,7 +199,7 @@ describe('vendor event log', () => {
   test('coalesces assistant chunks and records tool results without bodies', () => {
     const id = addRun({ agent: 'grok', job: 'summarize', status: 'running' })
     const path = runEventsPath(id)
-    const log = createEventLog(id, path)
+    const log = createEventLog(id, () => 0, path)
     log.observe({ kind: 'text', text: 'Hello ' }, 't1')
     log.observe({ kind: 'text', text: 'world' }, 't2')
     log.observe(
@@ -371,7 +415,7 @@ describe('the live log is observation, never outcome', () => {
         yield { kind: 'text', text: 'one' }
         throw new Error('vendor stream broke')
       }
-      await expect(teeTransportEvents(broken(), '0')).resolves.toBeUndefined()
+      await expect(teeTransportEvents(broken(), '0', () => 0)).resolves.toBeUndefined()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { COOLS_DOWN, FAILS_OVER, NOT_EVIDENCE } from './failure/failure.ts'
 import {
   composeCompletedReplyEndedError,
   deriveLiveOutcome,
@@ -6,6 +7,7 @@ import {
   type LiveOutcomeFacts,
 } from './live-outcome.ts'
 import { decideOutcome } from './outcome.ts'
+import { composeCodexThrottleNotice } from './transport/codex-throttle.ts'
 
 const base: LiveOutcomeFacts = {
   writesJob: true,
@@ -41,6 +43,25 @@ const outcome = (facts: Partial<LiveOutcomeFacts>) => {
 }
 
 describe('live outcome derivation', () => {
+  test('a first-throttle cancellation remains quota rather than interruption', () => {
+    const error = composeCodexThrottleNotice({ attempt: 1, max: 5 })
+    expect(
+      outcome({
+        replyError: error,
+        output: '',
+        exitCode: 143,
+        signal: 'SIGTERM',
+      }),
+    ).toEqual({
+      status: 'failed',
+      failureKind: 'quota',
+      error,
+    })
+    expect(FAILS_OVER).toContain('quota')
+    expect(COOLS_DOWN).toContain('quota')
+    expect(NOT_EVIDENCE).toContain('quota')
+  })
+
   test('a completed reply outranks an idle kill', () => {
     expect(
       outcome({

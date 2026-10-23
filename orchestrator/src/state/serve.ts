@@ -17,7 +17,7 @@ import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { readAskServerFailure } from '../ask/ask-failure.ts'
 import { summarizeAskServer } from '../ask/ask-lifecycle.ts'
 import { db } from '../database/db.ts'
-import { readEventLog, runEventsPath } from '../events.ts'
+import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { messagesForRun, receiptMessagesForArchitect } from '../mailbox/mailbox.ts'
@@ -152,6 +152,7 @@ export function runDetail(
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
   const eventsPath = runEventsPath(id)
+  const events = existsSync(eventsPath) ? readEventLog(eventsPath) : null
   const identity = db()
     .query(
       `SELECT subject.parent_run_record_id, root.number root_id,
@@ -213,8 +214,9 @@ export function runDetail(
       : ['delivery', 'quality'],
     prompt: read(row.prompt_path),
     output: read(row.output_path),
+    ...liveOperationalStatusFromEvents(events ?? []),
     ask_server: summarizeAskServer(
-      existsSync(eventsPath) ? readEventLog(eventsPath) : null,
+      events,
       readAskServerFailure(runScratchDir(id)) ?? readAskServerFailure(runArtifactsDir(id)),
     ),
     reviews: reviewsForRun(id),

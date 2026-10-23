@@ -46,6 +46,27 @@ export function blockersPayload(days = 14) {
 
 export const healthPayload = (days?: number) => harnessHealth(days)
 
+function printThrottleBuckets(
+  throttles: NonNullable<ReturnType<typeof harnessHealth>['throttles']>,
+  log: CommandPresentation['log'],
+): void {
+  log('\nCODEX THROTTLES BY LIVE CONCURRENCY')
+  if (!throttles.length) log('(none)')
+  for (const row of throttles)
+    log(
+      `${String(row.concurrency).padStart(4)} live  ${row.throttles} throttle${row.throttles === 1 ? '' : 's'}`,
+    )
+}
+
+function printHealthHeader(
+  report: ReturnType<typeof healthPayload>,
+  log: CommandPresentation['log'],
+) {
+  log(report.header)
+  log(`window: ${report.days} days from ${report.from}`)
+  printThrottleBuckets(report.throttles ?? [], log)
+}
+
 /**
  * What is stopping agents doing their work, counted.
  *
@@ -111,8 +132,7 @@ export function healthCommand(flags: CommandFlags, presentation: CommandPresenta
       : ms < 3_600_000
         ? `${(ms / 60_000).toFixed(1)}m`
         : `${(ms / 3_600_000).toFixed(1)}h`
-  log(report.header)
-  log(`window: ${report.days} days from ${report.from}`)
+  printHealthHeader(report, log)
   log(
     '\nFAILURE CLASS'.padEnd(25) +
       'COUNT'.padStart(7) +

@@ -1,21 +1,14 @@
-import { createHash } from 'node:crypto'
-import {
-  appendFileSync,
-  existsSync,
-  lstatSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { classifyCaller } from '../shared/caller-classification'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
+import { mainCheckoutOf } from '../shared/git'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
 import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
@@ -24,9 +17,8 @@ import {
   type CommandCpuSample,
   cpuBudgetMs,
   decideRuntimeBudget,
-  dependencyInstallMode,
+  dependencyInstallDecision,
   HUNG_SUITE_TIMEOUT_MS,
-  installNeeded,
   parseCheckArguments,
   runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
@@ -314,31 +306,61 @@ function printFailedLegTails(results: LegResult[]) {
 
 const lockfilePath = join(root, 'bun.lock')
 const nodeModulesPath = join(root, 'node_modules')
-const installedStatePath = join(nodeModulesPath, '.check-lockfile')
+
+function gitOutput(cwd: string, argv: string[]): Buffer | null {
+  const result = Bun.spawnSync(['git', ...argv], { cwd, stdout: 'pipe', stderr: 'ignore' })
+  return result.exitCode === 0 && result.stdout.length ? result.stdout : null
+}
+
+function provisionedLockfile(): Buffer | null {
+  const mainCheckout = mainCheckoutOf(root)
+  if (!mainCheckout) return null
+  const landingBranch = gitOutput(mainCheckout, ['symbolic-ref', '--short', 'HEAD'])
+    ?.toString()
+    .trim()
+  if (!landingBranch) return null
+  const remoteLanding = `origin/${landingBranch}`
+  const landingRef = gitOutput(root, ['rev-parse', '--verify', remoteLanding])
+    ? remoteLanding
+    : landingBranch
+  const base = gitOutput(root, ['merge-base', 'HEAD', landingRef])?.toString().trim()
+  if (!base) return null
+  // The tracked writer recipe runs bun install after creating the tree at this base. Reading the
+  // base commit keeps that provisioning source stable when the main checkout advances later.
+  return gitOutput(root, ['show', `${base}:bun.lock`])
+}
 
 async function installDependencies() {
-  const installMode = dependencyInstallMode({
-    ci: Boolean(process.env.CI),
-    linkedWorktree: !lstatSync(join(root, '.git')).isDirectory(),
-    workerRun: Boolean(process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH),
-  })
-  if (installMode === 'normal') return inherit(['bun', 'install', '--silent'])
-
-  const verify = ['bun', 'install', '--offline', '--frozen-lockfile', '--dry-run', '--silent']
-  if ((await inherit(verify)) !== 0) return 1
-
-  const lockfileHash = createHash('sha256').update(readFileSync(lockfilePath)).digest('hex')
-  const installedState = {
-    lockfileHash: existsSync(installedStatePath)
-      ? readFileSync(installedStatePath, 'utf8').trim()
-      : null,
+  const workerRun = classifyCaller(process.env).kind === 'worker'
+  const sourceLockfile = workerRun ? provisionedLockfile() : null
+  const decision = dependencyInstallDecision({
+    workerRun,
     nodeModulesPresent: existsSync(nodeModulesPath),
+    provisioningSourceResolved: sourceLockfile !== null,
+    lockfileMatchesProvisioningSource:
+      sourceLockfile !== null && readFileSync(lockfilePath).equals(sourceLockfile),
+  })
+  if (decision === 'normal-install') return inherit(['bun', 'install', '--silent'])
+  if (decision === 'skip-provisioned') {
+    console.log("INSTALL: skipped; worker dependencies match the tree's provisioning base")
+    return 0
   }
-  if (!installNeeded(lockfileHash, installedState)) return 0
-
-  const exitCode = await inherit(['bun', 'install', '--offline', '--frozen-lockfile', '--silent'])
-  if (exitCode === 0) writeFileSync(installedStatePath, `${lockfileHash}\n`)
-  return exitCode
+  if (decision === 'refuse-missing-node-modules') {
+    console.error(
+      "INSTALL: refused; the worker's node_modules is missing; run the architect's gate to provision dependencies because a sandboxed worker has neither the Bun cache nor the network",
+    )
+    return 1
+  }
+  if (decision === 'refuse-unresolved-provisioning-source') {
+    console.error(
+      "INSTALL: refused; the worker's dependency provisioning source or its bun.lock could not be resolved; run the architect's gate to reprovision dependencies",
+    )
+    return 1
+  }
+  console.error(
+    "INSTALL: refused; the worker's bun.lock differs from its provisioning base; a lockfile change needs the architect's gate because a sandboxed worker has neither the Bun cache nor the network",
+  )
+  return 1
 }
 
 if ((await installDependencies()) !== 0) process.exit(1)
