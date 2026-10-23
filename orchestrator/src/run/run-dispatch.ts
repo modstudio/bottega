@@ -28,7 +28,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
-import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from '../mcp/mcp-preflight.ts'
+import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
@@ -36,7 +36,7 @@ import { runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
-import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
+import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
@@ -94,6 +94,39 @@ function detachedProject(cwd: string, spec: DetachSpec) {
   }
 }
 
+export function detachMcpPreflightedAgent(input: {
+  firstTurn: boolean
+  mcpRequest: McpRequest | undefined
+  selectedAgent: string | undefined
+}): string | undefined {
+  if (!input.firstTurn || !input.mcpRequest) return undefined
+  return input.selectedAgent
+}
+
+function preflightDetachMcp(
+  jobName: string,
+  spec: DetachSpec,
+  facts: {
+    selectedAgent: string | undefined
+    mcpRequest: McpRequest | undefined
+    firstTurn: boolean
+  },
+): string | undefined {
+  const preflightedAgent = detachMcpPreflightedAgent(facts)
+  // A resume keeps the agent that already started; it is not a new dispatch.
+  if (!preflightedAgent || !facts.mcpRequest) return undefined
+  // Capacity-only selection completes in the coordinator; every other detached
+  // selection is knowable here and refuses before a placeholder row exists.
+  preflightDispatchMcp({
+    mcpRequest: facts.mcpRequest,
+    cwd: spec.cwd ?? process.cwd(),
+    job: jobName,
+    selectedAgent: preflightedAgent,
+    projectName: spec.repo,
+  })
+  return preflightedAgent
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -120,9 +153,6 @@ export async function detach(
   // A retry names the directory the original ran in; everything else is here.
   const cwd = spec.cwd ?? process.cwd()
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
-  // A RESUME skips preflight: its agent was chosen long ago, its worktree
-  // exists, and its seed was settled when that worktree was cut. Re-checking
-  // would demand a `--seed` for a database that is already there.
   const firstTurn = resumeFacts(
     spec.resume?.kind ?? null,
     '',
@@ -143,14 +173,8 @@ export async function detach(
         spec.carry,
         spec.repo,
       )
-  if (firstTurn && mcpRequest) {
-    // Who will run is knowable here, and a proven-failed grok attach must not
-    // leave a placeholder for the child to fail. Resume keeps the agent that
-    // already started; it is not a new dispatch.
-    if (!selectedAgent) throw new Error('MCP preflight requires the selected agent')
-    ensureDispatchMcpMainStack({ mcpRequest, cwd, projectName: spec.repo })
-    preflightMcp({ mcp: mcpRequest, cwd, job: jobName, selectedAgent })
-  }
+  const mcpDispatch = { selectedAgent, mcpRequest, firstTurn }
+  const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
   mkdirSync(runsDir, { recursive: true })
@@ -305,7 +329,7 @@ export async function detach(
       String(recordId),
       promptPath,
       jobName,
-      JSON.stringify({ ...spec, seed }),
+      JSON.stringify({ ...spec, seed, dispatchMcpPreflightedAgent }),
     ]
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)

@@ -171,7 +171,12 @@ type DispatchPresentation = {
     cwd: string,
     explicitBranch: string | null,
   ): ReviewFindingMemory
-  detach(jobName: string, prompt: string, spec: DetachSpec): Promise<string>
+  detach(
+    jobName: string,
+    prompt: string,
+    waitForCapacityBeforeDetach: boolean,
+    spec: DetachSpec,
+  ): Promise<string>
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
 }
@@ -512,7 +517,7 @@ export async function dispatchCommand(
    */
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
-    const id = await detach(jobName, prompt, {
+    const id = await detach(jobName, prompt, false, {
       ...{ agent, agentExplicit },
       schema,
       label: flag('label'),
@@ -557,9 +562,8 @@ export async function dispatchCommand(
 
   /**
    * The foreground path runs DETACHED too, and then watches the row.
-   *
-   * It used to spawn the agent as a child of this process, which meant the
-   * work died with the caller. That is not hypothetical: a `bottega run start` left in
+   * It used to spawn the agent as a child of this process, which meant the work died with the
+   * caller. That is not hypothetical: a `bottega run start` left in
    * the foreground outlives an agent harness's command timeout, the harness
    * kills the process group, run()'s signal handler forwards SIGTERM to the
    * agent, and a run that was minutes from an answer is destroyed having
@@ -567,17 +571,15 @@ export async function dispatchCommand(
    * died exactly that way, and the same kill was reproduced twice while this
    * was being written.
    *
-   * Detaching first means the worker owns the row and finishes regardless. A
-   * killed caller now loses only its own view of the output: the run
-   * completes, records its verdict, and `bottega run show <id>` still has the answer.
-   * The wait is bounded by the agent's own timeout plus a margin, so a
+   * Detaching first means the worker owns the row and finishes regardless. A killed caller
+   * loses only its own view of the output: the run
+   * completes, records its verdict, and `bottega run show <id>` still has the answer. The wait
+   * is bounded by the agent's own timeout plus a margin, so a
    * genuinely stuck run still returns control rather than hanging for ever.
    */
-  const id = await detach(jobName, prompt, {
-    ...{ agent, agentExplicit },
-    schema,
+  const id = await detach(jobName, prompt, true, {
+    ...{ agent, agentExplicit, schema, lens },
     label: flag('label'),
-    lens,
     mcp: resolved.mcp,
     model: flag('model'),
     probe: has('probe'),

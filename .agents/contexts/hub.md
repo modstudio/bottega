@@ -172,7 +172,10 @@ Collection uses separate configured cadences for local and remote work. The serv
 daemon may both request collection, but exactly one process collects on a clock. A store
 lease coordinates processes atomically, is renewed by its holder, is released on a clean
 exit, and expires after a crashed holder. An explicit refresh waits for and acquires that
-same lease, so exactly one process collects at a time.
+same lease, so exactly one process collects at a time. While it waits it records an intent
+that expires with its own deadline, and the watcher starts no new cycle under another
+holder's live intent, so a busy watcher cannot starve an explicit request
+(`collect.ts:watcherMayStartCycle`).
 
 # Tracker
 

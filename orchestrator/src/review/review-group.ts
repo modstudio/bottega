@@ -8,7 +8,7 @@ import {
   type ReviewPlan,
 } from './review-applicability.ts'
 import { measureChangeIdentity } from './review-pins.ts'
-import { resolveReviewMergeBase } from './review-target.ts'
+import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
 
@@ -99,7 +99,7 @@ type ChangeGroupOperations = {
 }
 
 const changeGroupOperations: ChangeGroupOperations = {
-  mergeBase: resolveReviewMergeBase,
+  mergeBase: resolveReviewBase,
   identity: measureChangeIdentity,
   reviewPlan: (cwd, base, tip, review) =>
     applicableReviewForChange(diffNumstat(cwd, base, tip), review),
