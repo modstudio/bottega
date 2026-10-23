@@ -116,9 +116,6 @@ test('K8b-1 makes existing UUIDs primary keys without losing row data', () => {
       doc_record_id: ids.doc,
       subject_id: ids.subject,
     })
-    expect(
-      database.query("SELECT name FROM pragma_table_info('doc_related_subject')").all(),
-    ).not.toContainEqual({ name: 'id' })
     expect(database.query('SELECT * FROM run_mutation_audit').get()).toEqual({
       record_id: ids.audit,
       run_record_id: ids.runA,

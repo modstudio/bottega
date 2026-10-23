@@ -14,6 +14,8 @@ import type { RecordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
@@ -114,6 +116,87 @@ describe('record cache pull', () => {
         .query<{ source_files: string }, [string]>('SELECT source_files FROM doc WHERE record_id=?')
         .get(recordId)?.source_files,
     ).toBe('["src/article.ts"]')
+  })
+
+  test('replaces pulled related subjects and refuses subjects that are not local', async () => {
+    const projectRecordId = newRecordId()
+    const docRecordId = newRecordId()
+    const subjectIds = [newRecordId(), newRecordId(), newRecordId()]
+    const missingSubjectId = newRecordId()
+    upsertProject({
+      recordId: projectRecordId,
+      name: 'related-subjects',
+      path: '/w/related-subjects',
+      settings: {},
+    })
+    const insertSubject = db().query(
+      `INSERT INTO subject
+       (id,project_record_id,name,definition,position,created_at,updated_at)
+       VALUES (?,?,?,?,?,'2026-10-23T12:00:00.000Z','2026-10-23T12:00:00.000Z')`,
+    )
+    for (const [position, id] of subjectIds.entries()) {
+      const name = `Subject ${position}`
+      insertSubject.run(id, projectRecordId, name, `${name}.`, position)
+    }
+
+    let pull = 0
+    const relatedByPull = [subjectIds.slice(0, 2), subjectIds.slice(2), [missingSubjectId]]
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => {
+          const relatedSubjects = relatedByPull[pull++] ?? []
+          return {
+            items: [
+              {
+                id: docRecordId,
+                scope: 'global',
+                subject: null,
+                owner: null,
+                slug: 'related-subjects',
+                title: 'Related subjects',
+                body: 'Body',
+                delivery: 'demand',
+                audiences: ['technical'],
+                parentId: null,
+                position: 0,
+                relatedSubjects: relatedSubjects.map((id) => ({ id })),
+                sourceFiles: [],
+                createdAt: '2026-10-23T12:00:00.000Z',
+                updatedAt: `2026-10-23T12:00:0${pull}.000Z`,
+                deletedAt: null,
+              },
+            ],
+            nextCursor: null,
+          }
+        },
+      }),
+    )
+    const relatedRows = () =>
+      db()
+        .query<{ record_id: string; doc_record_id: string; subject_id: string }, [string]>(
+          'SELECT record_id,doc_record_id,subject_id FROM doc_related_subject WHERE doc_record_id=? ORDER BY subject_id',
+        )
+        .all(docRecordId)
+
+    await pullRecordCache(db())
+    expect(relatedRows()).toEqual(
+      subjectIds.slice(0, 2).map((subjectId) => ({
+        record_id: expect.stringMatching(UUID_V7),
+        doc_record_id: docRecordId,
+        subject_id: subjectId,
+      })),
+    )
+
+    await pullRecordCache(db())
+    expect(relatedRows()).toEqual([
+      {
+        record_id: expect.stringMatching(UUID_V7),
+        doc_record_id: docRecordId,
+        subject_id: subjectIds[2]!,
+      },
+    ])
+
+    await expect(pullRecordCache(db())).rejects.toThrow(`subject ${missingSubjectId} is not local`)
   })
 
   test('refuses a wrong source-file shape while applying a hosted document', async () => {
