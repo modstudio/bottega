@@ -4,7 +4,15 @@
  * Must not know contracts, databases, run lifecycle, or worktree ownership.
  */
 import { basename, join, relative } from 'node:path'
-import { runScratchDir } from './run-owned-paths.ts'
+import { runScratchDir as ownedRunScratchDir, runOwnedPaths } from './run-owned-paths.ts'
+
+export function runScratchDir(id: string, runsDir: string): string {
+  return ownedRunScratchDir(id, runsDir)
+}
+
+export function runSandboxDir(id: string, runsDir: string): string {
+  return runOwnedPaths(id, id, runsDir).runtimeDir
+}
 
 export function runArtifactsDir(id: string, runsDir: string): string {
   return join(runsDir, String(id), 'artifacts')

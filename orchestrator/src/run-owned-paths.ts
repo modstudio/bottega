@@ -1,4 +1,5 @@
-// concern: pure run-owned path layout; confinement and probes import it directly, all other consumers use run-artifacts
+// concern: pure run-owned path layout; confinement and probes import it directly, everything
+// else reaches it through artifact-paths, or through run-artifacts for the default runs directory
 
 import { join } from 'node:path'
 
