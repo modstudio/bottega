@@ -62,13 +62,30 @@ describe('shared workflow promotion spaces', () => {
     })
   })
 
-  test('keeps a space whose production is below its highest version', () => {
+  test('an interrupted copy with matching drafts follows on retry', () => {
+    const versions = [
+      shared('source', 17, 'retired'),
+      shared('source', 18, 'retired'),
+      shared('source', 19, 'retired'),
+      shared('source', 20, 'draft'),
+      shared('follower', 17),
+      shared('follower', 18, 'draft'),
+      shared('follower', 19, 'draft'),
+    ]
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source', 'follower'],
+      overrides: [],
+      pinned: [],
+    })
+  })
+
+  test('keeps a space with a retired version above production', () => {
     const versions = [
       shared('source', 17, 'retired'),
       shared('source', 18, 'retired'),
       shared('source', 20, 'draft'),
       shared('pinned', 17),
-      shared('pinned', 18, 'draft'),
+      shared('pinned', 18, 'retired'),
     ]
     expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
       changed: ['source'],

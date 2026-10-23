@@ -41,8 +41,11 @@ const pinsSharedPromotion = (
 ): boolean => {
   if (spaceId === sourceSpace) return false
   const production = versions.find((version) => version.status === 'production')
-  const highestVersion = versions.reduce((highest, version) => Math.max(highest, version.n), 0)
-  return production !== undefined && production.n !== highestVersion
+  const highestCompletedVersion = versions.reduce(
+    (highest, version) => (version.status === 'draft' ? highest : Math.max(highest, version.n)),
+    0,
+  )
+  return production !== undefined && production.n < highestCompletedVersion
 }
 
 /** A space follows while every version it holds matches the source history. */

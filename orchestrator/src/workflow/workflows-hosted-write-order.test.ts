@@ -303,6 +303,7 @@ function addSharedFixtureSpace(
   latestVersion: number,
   pinned: boolean,
   versionAuthor = BUILT_IN_WORKFLOW_AUTHOR,
+  distinctDefinitions = false,
 ): void {
   const ownerId = newRecordId()
   const identity: RecordWorkflowWriteResponse['identity'] = {
@@ -325,15 +326,17 @@ function addSharedFixtureSpace(
         status:
           n === productionVersion
             ? ('production' as const)
-            : n < productionVersion
+            : n < productionVersion || pinned
               ? ('retired' as const)
               : ('draft' as const),
-        definition: JSON.stringify(definition),
+        definition: JSON.stringify(
+          distinctDefinitions ? { ...definition, title: `${definition.title} v${n}` } : definition,
+        ),
         author: versionAuthor,
         reason: n === 1 ? 'seed one' : n === 2 ? 'seed two' : `version ${n}`,
         createdAt: at,
-        promotedAt: n <= productionVersion ? at : null,
-        retiredAt: n < productionVersion ? at : null,
+        promotedAt: n <= productionVersion || pinned ? at : null,
+        retiredAt: n < productionVersion || (pinned && n > productionVersion) ? at : null,
         updatedAt: at,
       }
     },
@@ -422,6 +425,7 @@ function installSharedPromotionFixture(
     targetVersion,
     false,
     options.currentProduction ? 'source-session' : BUILT_IN_WORKFLOW_AUTHOR,
+    options.currentProduction,
   )
   addSharedFixtureSpace(
     local,
@@ -433,6 +437,7 @@ function installSharedPromotionFixture(
     options.currentProduction ? 17 : options.pinned ? 2 : 1,
     options.pinned ?? false,
     options.currentProduction ? 'follower-session' : BUILT_IN_WORKFLOW_AUTHOR,
+    options.currentProduction,
   )
   if (options.secondFollower)
     addSharedFixtureSpace(
@@ -445,6 +450,7 @@ function installSharedPromotionFixture(
       17,
       false,
       'second-follower-session',
+      true,
     )
 
   const calls: string[] = []
@@ -518,7 +524,7 @@ function installSharedPromotionFixture(
       return { identity: current.identity, versions: current.versions, events: [event] }
     },
   })
-  return { slug, calls, targetVersion }
+  return { slug, calls, targetVersion, state }
 }
 
 test('shared hosted promotion reads every space, copies followers, and reports all changes', async () => {
@@ -571,4 +577,12 @@ test('shared hosted promotion copies through current production without writing 
       `promote:${spaceId}:shared promotion: release`,
     ]),
   )
+  const sourceVersions = fixture.state.get(SPACE)!.versions
+  for (const spaceId of [FOLLOWER_SPACE, SECOND_FOLLOWER_SPACE]) {
+    const followerVersions = fixture.state.get(spaceId)!.versions
+    for (const n of [18, 19, 20])
+      expect(followerVersions.find((version) => version.n === n)!.definition).toBe(
+        sourceVersions.find((version) => version.n === n)!.definition,
+      )
+  }
 })

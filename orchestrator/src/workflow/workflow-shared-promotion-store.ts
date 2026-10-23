@@ -153,7 +153,7 @@ async function promoteHostedWorkflowSpace(
   spaceId: string,
   d: Database,
   ports: Pick<PromotionPorts, 'preflight' | 'author'>,
-  expectedProductionVersion?: number | null,
+  expectedProductionVersion: number | null,
 ): Promise<void> {
   const target = d
     .query<{ definition: string }, [string, string, number]>(
@@ -162,18 +162,12 @@ async function promoteHostedWorkflowSpace(
     .get(slug, spaceId, n)
   if (!target) throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${spaceId}`)
   ports.preflight(JSON.parse(target.definition) as WorkflowDefinition, spaceId)
-  const current = d
-    .query<{ n: number }, [string, string]>(
-      `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
-    )
-    .get(slug, spaceId)
   const result = await recordApiClient().promoteWorkflow!(
     {
       kind: 'workflow',
       slug,
       n,
-      expectedProductionVersion:
-        expectedProductionVersion === undefined ? (current?.n ?? null) : expectedProductionVersion,
+      expectedProductionVersion,
       author: ports.author(),
       reason: reason.trim(),
       sessionId: sessionId(),
