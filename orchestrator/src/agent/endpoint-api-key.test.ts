@@ -53,18 +53,18 @@ test('a sealed-store failure is not reported as an unset secret', async () => {
 test('endpoint key retry policy retries only transient failures within the attempt bound', () => {
   expect(decideEndpointApiKeyRetry({ kind: 'hosted-failure' }, 1)).toEqual({
     retry: true,
-    delayMs: 250,
+    delayMs: 2_000,
   })
   expect(decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'unreachable' }, 2)).toEqual({
     retry: true,
-    delayMs: 500,
+    delayMs: 4_000,
   })
   expect(
     decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 429 }, 1),
-  ).toEqual({ retry: true, delayMs: 250 })
+  ).toEqual({ retry: true, delayMs: 2_000 })
   expect(
     decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 503 }, 1),
-  ).toEqual({ retry: true, delayMs: 250 })
+  ).toEqual({ retry: true, delayMs: 2_000 })
   expect(
     decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 403 }, 1),
   ).toEqual({ retry: false, retriesExhausted: false })
@@ -91,7 +91,7 @@ test('endpoint key resolution succeeds after one transient failure without a rea
 
   expect(env).toEqual({ OPENAI_API_KEY: 'sealed-value' })
   expect(attempts).toBe(2)
-  expect(delays).toEqual([250])
+  expect(delays).toEqual([2_000])
 })
 
 test('an exhausted transient refusal safely names its cause and retry remedy', async () => {

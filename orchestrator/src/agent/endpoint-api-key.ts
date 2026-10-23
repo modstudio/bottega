@@ -23,7 +23,8 @@ export type EndpointApiKeyRetryDecision =
   | { retry: false; retriesExhausted: boolean }
 
 export const ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS = 3
-const ENDPOINT_API_KEY_RESOLUTION_INITIAL_RETRY_DELAY_MS = 250
+/** Hosted slowness lasts seconds, so the retry window spans seconds rather than milliseconds. */
+const ENDPOINT_API_KEY_RESOLUTION_INITIAL_RETRY_DELAY_MS = 2_000
 
 /** Pure policy: retry only transient hosted failures, up to the endpoint-key attempt bound. */
 export function decideEndpointApiKeyRetry(
