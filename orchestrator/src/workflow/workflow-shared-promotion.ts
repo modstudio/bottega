@@ -11,6 +11,22 @@ export type WorkflowPromotionVersion = {
 
 export const SHARED_WORKFLOW_PROMOTION_REASON = 'shared promotion:'
 
+export function workflowsAfterReplacement<Definition>(
+  rows: readonly { slug: string; definition: string }[],
+  incomingSlug: string,
+  incomingDefinition: Definition,
+): { slug: string; definition: string }[] {
+  const definition = JSON.stringify(incomingDefinition)
+  if (!rows.some((row) => row.slug === incomingSlug))
+    return [...rows, { slug: incomingSlug, definition }]
+  return rows.map((row) => (row.slug === incomingSlug ? { slug: incomingSlug, definition } : row))
+}
+
+export const sharedWorkflowReachableSpaces = (
+  spaces: readonly (string | null)[],
+  blockedSpaces: readonly (string | null)[],
+): (string | null)[] => spaces.filter((spaceId) => !blockedSpaces.includes(spaceId))
+
 export type WorkflowPromotionSpaceDecision = {
   changed: (string | null)[]
   overrides: string[]

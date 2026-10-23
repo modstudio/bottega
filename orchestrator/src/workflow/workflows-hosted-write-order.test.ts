@@ -416,9 +416,25 @@ const secondFollowerShape = (currentProduction: boolean | undefined) =>
     ? { productionVersion: 17, latestVersion: 17, distinctDefinitions: true }
     : { productionVersion: 1, latestVersion: 1, distinctDefinitions: false }
 
+function sharedFixtureDefinition(
+  local: ReturnType<typeof db>,
+  catalogueDrop: boolean | undefined,
+): WorkflowDefinition {
+  if (catalogueDrop) {
+    const catalogue = structuredClone(productionStepCatalogue(local).definition)
+    catalogue.steps.push({ ...catalogue.steps[0]!, slug: 'drop-shared-step' })
+    const draft = setStepCatalogueLocal(catalogue, 'add shared-only step', 'test', local)
+    promoteStepCatalogueLocal(draft.n, 'add shared-only step', 'test', local)
+  }
+  const definition = structuredClone(productionWorkflows(local, null)[0]!.definition)
+  if (catalogueDrop) definition.modes[0]!.steps = ['drop-shared-step']
+  return definition
+}
+
 function installSharedPromotionFixture(
   options: {
     catalogueAdvance?: boolean
+    catalogueDrop?: boolean
     currentProduction?: boolean
     pinned?: boolean
     secondFollower?: boolean
@@ -427,7 +443,7 @@ function installSharedPromotionFixture(
 ) {
   const local = db()
   const slug = 'shared-hosted'
-  const definition = structuredClone(productionWorkflows(local, null)[0]!.definition)
+  const definition = sharedFixtureDefinition(local, options.catalogueDrop)
   setWorkflowLocal(slug, definition, 'seed one', BUILT_IN_WORKFLOW_AUTHOR, local)
   promoteWorkflowLocal(
     slug,
@@ -481,12 +497,23 @@ function installSharedPromotionFixture(
     )
   }
 
-  if (options.catalogueAdvance) {
+  if (options.catalogueAdvance || options.catalogueDrop) {
     const source = state.get(SPACE)!
     source.catalogueVersions[0]!.status = 'retired'
     source.catalogueVersions[0]!.retiredAt = at
     const nextCatalogue = structuredClone(productionStepCatalogue(local).definition)
-    nextCatalogue.steps.push({ ...nextCatalogue.steps[0]!, slug: 'new-shared-step' })
+    const sourceTarget = source.versions.find((version) => version.n === targetVersion)!
+    const targetDefinition = JSON.parse(sourceTarget.definition) as WorkflowDefinition
+    if (options.catalogueDrop) {
+      const dropped = targetDefinition.modes[0]!.steps[0]!
+      nextCatalogue.steps = nextCatalogue.steps.filter((step) => step.slug !== dropped)
+      targetDefinition.modes[0]!.steps = [
+        nextCatalogue.steps.find((step) => step.slug !== dropped)!.slug,
+      ]
+    } else {
+      nextCatalogue.steps.push({ ...nextCatalogue.steps[0]!, slug: 'new-shared-step' })
+      targetDefinition.modes[0]!.steps = ['new-shared-step']
+    }
     source.catalogueVersions.push({
       ...source.catalogueVersions[0]!,
       id: newRecordId(),
@@ -496,9 +523,6 @@ function installSharedPromotionFixture(
       promotedAt: at,
       retiredAt: null,
     })
-    const sourceTarget = source.versions.find((version) => version.n === targetVersion)!
-    const targetDefinition = JSON.parse(sourceTarget.definition) as WorkflowDefinition
-    targetDefinition.modes[0]!.steps = ['new-shared-step']
     sourceTarget.definition = JSON.stringify(targetDefinition)
   }
 
@@ -612,6 +636,53 @@ test('shared hosted promotion gives a follower the required catalogue before the
     `draft:${FOLLOWER_SPACE}:seed two`,
     `promote:${FOLLOWER_SPACE}:shared promotion: release`,
   ])
+})
+
+test('shared hosted promotion validates catalogue catch-up against the incoming workflow', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueDrop: true })
+  expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
+    version: 2,
+    changedSpaces: ['local', SPACE, FOLLOWER_SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+  })
+  expect(fixture.calls).toEqual([
+    `catalogue-draft:${FOLLOWER_SPACE}:test`,
+    `catalogue-promote:${FOLLOWER_SPACE}:shared promotion: release`,
+    `promote:${SPACE}:shared promotion: release`,
+    `draft:${FOLLOWER_SPACE}:seed two`,
+    `promote:${FOLLOWER_SPACE}:shared promotion: release`,
+  ])
+})
+
+test('shared hosted promotion does not catch up catalogue outside its workflow write set', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true, secondFollower: true })
+  const override = fixture.state.get(SECOND_FOLLOWER_SPACE)!.versions[0]!
+  override.definition = JSON.stringify({
+    ...(JSON.parse(override.definition) as WorkflowDefinition),
+    title: 'Space workflow override',
+  })
+
+  expect(await promoteWorkflow(fixture.slug, 2, 'release')).toMatchObject({
+    changedSpaces: ['local', SPACE, FOLLOWER_SPACE],
+    overrideSpaces: [SECOND_FOLLOWER_SPACE],
+  })
+  expect(fixture.calls).not.toContain(`catalogue-draft:${SECOND_FOLLOWER_SPACE}:test`)
+})
+
+test('standalone catalogue promotion still checks the current production workflow', () => {
+  const local = db()
+  const workflow = structuredClone(productionWorkflows(local, null)[0]!.definition)
+  setWorkflowLocal('catalogue-current-production', workflow, 'set', 'test', local)
+  promoteWorkflowLocal('catalogue-current-production', 1, 'publish', 'test', local)
+  const dropped = workflow.modes[0]!.steps[0]!
+  const catalogue = structuredClone(productionStepCatalogue(local).definition)
+  catalogue.steps = catalogue.steps.filter((step) => step.slug !== dropped)
+  const draft = setStepCatalogueLocal(catalogue, 'drop current step', 'test', local)
+
+  expect(() => promoteStepCatalogueLocal(draft.n, 'drop current step', 'test', local)).toThrow(
+    'step catalogue changes references used by production workflows',
+  )
 })
 
 test('shared hosted promotion skips an override whose catalogue cannot carry the workflow', async () => {

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
   sharedWorkflowPromotionSpaces,
+  sharedWorkflowReachableSpaces,
   type WorkflowPromotionVersion,
+  workflowsAfterReplacement,
 } from './workflow-shared-promotion.ts'
 
 const shared = (
@@ -92,5 +94,34 @@ describe('shared workflow promotion spaces', () => {
       overrides: [],
       pinned: ['pinned'],
     })
+  })
+})
+
+describe('shared workflow catalogue preflight inputs', () => {
+  test('replaces the outgoing production workflow with the incoming definition', () => {
+    const rows = [
+      { slug: 'shared', definition: JSON.stringify({ steps: ['drop-x'] }) },
+      { slug: 'other', definition: JSON.stringify({ steps: ['keep-y'] }) },
+    ]
+    const incoming = { steps: ['keep-y'] }
+
+    expect(workflowsAfterReplacement(rows, 'shared', incoming)).toEqual([
+      { slug: 'shared', definition: JSON.stringify(incoming) },
+      rows[1]!,
+    ])
+  })
+
+  test('adds an incoming workflow when the target space has no production version', () => {
+    const incoming = { steps: ['keep-y'] }
+    expect(workflowsAfterReplacement([], 'shared', incoming)).toEqual([
+      { slug: 'shared', definition: JSON.stringify(incoming) },
+    ])
+  })
+
+  test('excludes a blocked local space from the write set without stringifying its key', () => {
+    expect(sharedWorkflowReachableSpaces([null, 'source', 'follower'], [null])).toEqual([
+      'source',
+      'follower',
+    ])
   })
 })

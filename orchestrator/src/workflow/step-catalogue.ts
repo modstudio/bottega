@@ -23,7 +23,7 @@ import { versionedLifecycle } from './versioned-lifecycle.ts'
 import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import { workflowPromotionReport } from './workflow-shared-promotion.ts'
+import { workflowPromotionReport, workflowsAfterReplacement } from './workflow-shared-promotion.ts'
 import {
   type CataloguePromotionPorts,
   promoteSharedStepCatalogue,
@@ -703,6 +703,7 @@ function cataloguePromotionPreflight(
   definition: StepCatalogueDefinition,
   d: Database,
   spaceId: string | null,
+  replacement?: { slug: string; definition: WorkflowDefinition },
 ): void {
   const current = d
     .query<{ definition: string }, [string | null]>(
@@ -713,12 +714,15 @@ function cataloguePromotionPreflight(
   const currentSequences = current
     ? ((JSON.parse(current.definition) as StepCatalogueDefinition).sequences ?? [])
     : []
-  const rows = d
+  const currentWorkflowRows = d
     .query(
       `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
        WHERE v.status='production' AND w.space_id IS ?`,
     )
     .all(spaceId) as { slug: string; definition: string }[]
+  const rows = replacement
+    ? workflowsAfterReplacement(currentWorkflowRows, replacement.slug, replacement.definition)
+    : currentWorkflowRows
   const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
   if (missing.length)
     throw new Error(
@@ -742,8 +746,8 @@ export function sharedStepCataloguePromotionPorts(
     draftLocal: (version) =>
       importStepCatalogueLocal(JSON.parse(version.definition), version.reason, version.author, d).n,
     promoteLocal: (version, reason) => promoteStepCatalogueLocal(version, reason, author, d),
-    preflight: (definition, spaceId) =>
-      cataloguePromotionPreflight(definition as StepCatalogueDefinition, d, spaceId),
+    preflight: (definition, spaceId, replacement) =>
+      cataloguePromotionPreflight(definition as StepCatalogueDefinition, d, spaceId, replacement),
     author: () => writeAuthor(author),
   }
 }
