@@ -98,9 +98,9 @@ test('identifies an ancestor commit first and falls back to patch identity after
       .query(
         `INSERT INTO run
            (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
-            repo,project_record_id,branch,base_commit,input_tree,head_commit)
+            repo,project_record_id,branch,launch_key,base_commit,input_tree,head_commit)
          VALUES (?,2,'2026-10-22','codex','review-lens','sha',1,'head','ok',
-            'fixture',?,?,?,?,?)`,
+            'fixture',?,?, 'DEV-1598',?,?,?)`,
       )
       .run(
         rebasedRunId,
