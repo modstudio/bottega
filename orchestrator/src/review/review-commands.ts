@@ -32,7 +32,7 @@ import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './revi
 import { reviewTierForRange } from './review-tier-service.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
 import { DISPOSITIONS, type Disposition, REVIEW_SEVERITY } from './review-vocabulary.ts'
-import { reviewRoundIdentity } from './review-yield.ts'
+import { type ReviewYieldCostContext, reviewRoundIdentity } from './review-yield.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void }
@@ -442,10 +442,15 @@ export function showReviewCommand(
 export async function yieldReviewCommand(
   flags: ReviewFlags,
   { log }: ReviewPresentation,
+  subscriptionCost: ReviewYieldCostContext,
 ): Promise<void> {
   const since = flags.flag('since')
   if (since && !z.iso.datetime().safeParse(since).success) {
     throw new Error('--since must be an ISO datetime (for example 2026-01-01T00:00:00Z)')
+  }
+  const until = flags.flag('until')
+  if (until && !z.iso.datetime().safeParse(until).success) {
+    throw new Error('--until must be an ISO datetime (for example 2026-01-08T00:00:00Z)')
   }
   if (flags.flag('task') && flags.flag('key'))
     throw new Error('--task and --key are aliases; supply only one')
@@ -456,11 +461,13 @@ export async function yieldReviewCommand(
       {
         project: flags.flag('project'),
         since,
+        until,
         task: flags.flag('task') ?? flags.flag('key'),
         lens: flags.flag('lens'),
         agent: flags.flag('agent'),
       },
       database,
+      subscriptionCost,
     )
     log(flags.has('json') ? JSON.stringify(report) : renderReviewYieldHuman(report))
   } finally {

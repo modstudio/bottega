@@ -1,6 +1,8 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { attributedTaskKey } from '../epic/epic.ts'
+import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
+import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { median } from '../state/statistics.ts'
 import { applicableReview } from './review-applicability.ts'
 import {
@@ -17,6 +19,7 @@ import {
   type ReviewOverlap,
   type ReviewSeverity,
 } from './review-vocabulary.ts'
+import { reviewYieldCost } from './review-yield-cost.ts'
 import {
   mediumPlusAcceptedCount,
   mediumPlusAcceptedYield,
@@ -30,10 +33,13 @@ import {
 export type ReviewYieldFilters = {
   project?: string
   since?: string
+  until?: string
   task?: string
   lens?: string
   agent?: string
 }
+
+export type ReviewYieldCostContext = SubscriptionCostContext
 
 type ReviewYieldOverlap = {
   unique: number
@@ -60,6 +66,12 @@ type ReviewYieldRow = {
   findingsPerRun: number | null
   highOrCriticalPerRun: number | null
   medianLensMinutes: number | null
+  costUsd: number
+  costSources: Record<string, number>
+  pricedHits: number
+  costPerHit: number | null
+  lensMinutes: number
+  minutesPerHit: number | null
   linkedFindings: number
   mediumPlusAccepted: number
   mediumPlusAcceptedYield: number | null
@@ -77,6 +89,7 @@ export type ReviewYieldReport = {
   filters: {
     project: string | null
     since: string | null
+    until: string | null
     task: string | null
     lens: string | null
     agent: string | null
@@ -111,6 +124,12 @@ export type ReviewRoundEvidenceRow = {
   agent: string
   model: string | null
   latency_ms: number | null
+  started_at: string
+  run_agent: string
+  vendor_tokens: number | null
+  vendor_cost_usd: number | null
+  vendor_estimated_cost_usd: number | null
+  vendor_cost_source: string | null
   input_tree: string | null
   head_commit: string | null
   overlap: string | null
@@ -136,6 +155,8 @@ type ComputedLens = ReviewRoundEvidenceRow & {
   findings: FindingRow[]
   reviewComplete: boolean
   secondOpinion: boolean
+  cost_usd: number | null
+  cost_source: string | null
 }
 
 const normalized = (value: string | null | undefined) => value?.trim().toLowerCase() ?? null
@@ -187,15 +208,60 @@ const reviewFindingRows = (database: Database): FindingRow[] =>
     )
     .all() as FindingRow[]
 
+function lensMatchesFilters(
+  row: ReviewRoundEvidenceRow,
+  filters: ReviewYieldFilters,
+  rounds: Map<string, { task: string | null; round: number | null }>,
+): boolean {
+  const wanted = {
+    project: normalized(filters.project),
+    task: normalized(filters.task),
+    lens: normalized(filters.lens),
+    agent: normalized(filters.agent),
+  }
+  if (wanted.project && normalized(row.project ?? row.run_repo) !== wanted.project) return false
+  if (filters.since && Date.parse(row.recorded_at) < Date.parse(filters.since)) return false
+  if (filters.until && Date.parse(row.recorded_at) >= Date.parse(filters.until)) return false
+  if (wanted.task && normalized(rounds.get(row.lens_id)?.task) !== wanted.task) return false
+  if (wanted.lens && normalized(row.lens) !== wanted.lens) return false
+  if (wanted.agent && normalized(row.agent) !== wanted.agent) return false
+  return true
+}
+
+function computedLensRow(input: {
+  row: ReviewRoundEvidenceRow
+  round: { task: string | null; round: number | null }
+  findings: FindingRow[]
+  reviewFindings: FindingRow[]
+  secondOpinion: boolean
+  costContext: SubscriptionCostContext
+}): ComputedLens {
+  const priced = withReportedCost({ ...input.row, agent: input.row.run_agent }, input.costContext)
+  return {
+    ...input.row,
+    ...input.round,
+    findings: input.findings,
+    reviewComplete:
+      input.row.completed_at !== null &&
+      input.reviewFindings.every((finding) => finding.disposition !== null),
+    secondOpinion: input.secondOpinion,
+    cost_usd: priced.cost_usd,
+    cost_source: priced.cost_source,
+  }
+}
+
 export function reviewYield(
   filters: ReviewYieldFilters = {},
   database: Database = db(),
+  subscriptionCost?: SubscriptionCostContext,
 ): ReviewYieldReport {
   const lensRows = database
     .query(
       `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.tier_risk, r.tier_size, r.patch_id, r.path_set, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
-            rl.model, run.latency_ms, run.input_tree, run.head_commit, rl.overlap,rl.reproduced,
+            rl.model, run.latency_ms, run.started_at, run.agent AS run_agent, run.vendor_tokens,
+            run.vendor_cost_usd, run.vendor_estimated_cost_usd, run.vendor_cost_source,
+            run.input_tree, run.head_commit, rl.overlap,rl.reproduced,
             rl.coverage,rl.limits,p.settings AS project_settings
        FROM review_lens rl
        JOIN review r ON r.record_id=rl.review_record_id
@@ -222,32 +288,22 @@ export function reviewYield(
       row,
     ])
 
-  const wanted = {
-    project: normalized(filters.project),
-    task: normalized(filters.task),
-    lens: normalized(filters.lens),
-    agent: normalized(filters.agent),
+  const costContext = subscriptionCost ?? {
+    facts: subscriptionCostFacts(database),
+    prices: {},
   }
   const rows: ComputedLens[] = lensRows
-    .filter((row) => {
-      if (wanted.project && normalized(row.project ?? row.run_repo) !== wanted.project) return false
-      if (filters.since && Date.parse(row.recorded_at) < Date.parse(filters.since)) return false
-      if (wanted.task && normalized(rounds.get(row.lens_id)?.task) !== wanted.task) return false
-      if (wanted.lens && normalized(row.lens) !== wanted.lens) return false
-      if (wanted.agent && normalized(row.agent) !== wanted.agent) return false
-      return true
-    })
-    .map((row) => ({
-      ...row,
-      ...rounds.get(row.lens_id)!,
-      findings: findings.get(row.lens_id) ?? [],
-      reviewComplete:
-        row.completed_at !== null &&
-        (reviewFindings.get(row.review_record_id) ?? []).every(
-          (finding) => finding.disposition !== null,
-        ),
-      secondOpinion: secondOpinionRuns.has(row.run_id),
-    }))
+    .filter((row) => lensMatchesFilters(row, filters, rounds))
+    .map((row) =>
+      computedLensRow({
+        row,
+        round: rounds.get(row.lens_id)!,
+        findings: findings.get(row.lens_id) ?? [],
+        reviewFindings: reviewFindings.get(row.review_record_id) ?? [],
+        secondOpinion: secondOpinionRuns.has(row.run_id),
+        costContext,
+      }),
+    )
 
   const missingPatch = rows.filter((row) => row.patch_id === null).length
   const pairs = lensPairs(rows)
@@ -256,6 +312,7 @@ export function reviewYield(
     filters: {
       project: filters.project ?? null,
       since: filters.since ?? null,
+      until: filters.until ?? null,
       task: filters.task ?? null,
       lens: filters.lens ?? null,
       agent: filters.agent ?? null,
@@ -440,6 +497,14 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
     .flatMap((row) => (row.latency_ms === null ? [] : [Math.max(0, row.latency_ms)]))
     .sort((a, b) => a - b)
   const medianMs = median(latencies)
+  const cost = reviewYieldCost(
+    rows.map((row) => ({
+      costUsd: row.cost_usd,
+      costSource: row.cost_source,
+      hits: row.reviewComplete ? reviewTriageBag(row.findings).hits : 0,
+      lensMinutes: row.latency_ms === null ? null : Math.max(0, row.latency_ms) / 60_000,
+    })),
+  )
   const overlapCounts = Object.fromEntries(
     REVIEW_OVERLAP.map((value) => [value, rows.filter((row) => row.overlap === value).length]),
   ) as Record<ReviewOverlap, number>
@@ -462,6 +527,7 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
     findingsPerRun: evidenceRows.length ? evidenceFindings.length / evidenceRows.length : null,
     highOrCriticalPerRun: evidenceRows.length ? high / evidenceRows.length : null,
     medianLensMinutes: medianMs === null ? null : medianMs / 60_000,
+    ...cost,
     linkedFindings: linkedFindingIds(rows, allRows).size,
     mediumPlusAccepted: mediumPlusAcceptedCount(evidenceFindings),
     mediumPlusAcceptedYield: mediumPlusAcceptedYield(evidenceRows),
@@ -515,6 +581,12 @@ const YIELD_ROW_COLUMNS: YieldColumn[] = [
   { header: 'F/R', align: 'right' },
   { header: 'H+C/R', align: 'right' },
   { header: 'MED MIN', align: 'right' },
+  { header: 'COST USD', align: 'right' },
+  { header: 'COST SOURCES', align: 'left' },
+  { header: 'PRICED HITS', align: 'right' },
+  { header: '$/HIT', align: 'right' },
+  { header: 'LENS MIN', align: 'right' },
+  { header: 'MIN/HIT', align: 'right' },
   { header: 'MED+', align: 'right' },
   { header: 'UNIQUE', align: 'right' },
   { header: 'SHARED', align: 'right' },
@@ -547,6 +619,14 @@ function yieldRowCells(row: ReviewYieldRow): string[] {
     number(row.findingsPerRun),
     number(row.highOrCriticalPerRun),
     row.medianLensMinutes === null ? '—' : number(row.medianLensMinutes),
+    number(row.costUsd),
+    Object.entries(row.costSources)
+      .map(([source, count]) => `${source}:${count}`)
+      .join(','),
+    String(row.pricedHits),
+    number(row.costPerHit),
+    number(row.lensMinutes),
+    number(row.minutesPerHit),
     number(row.mediumPlusAcceptedYield),
     String(row.overlap.unique),
     String(row.overlap.shared),

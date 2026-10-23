@@ -589,6 +589,72 @@ describe('review yield', () => {
       runs: 1,
     })
   })
+
+  test('keeps unpriced hits out of cost per hit and counts runs in every identity row', () => {
+    const firstReview = addReview('2026-09-09T10:00:00Z', 'cost-1')
+    const firstLens = addLens(firstReview, {
+      lens: 'correctness',
+      agent: 'codex',
+      model: 'gpt-cost',
+      minutes: 12,
+      launchKey: 'DEV-COST',
+    })
+    addFinding(firstReview, firstLens, 1, 'high', 'accepted', 'high')
+    addFinding(firstReview, firstLens, 2, 'medium', 'modified', 'medium')
+    const secondReview = addReview('2026-09-09T11:00:00Z', 'cost-2')
+    const secondLens = addLens(secondReview, {
+      lens: 'correctness',
+      agent: 'codex',
+      model: 'gpt-cost',
+      minutes: 18,
+      launchKey: 'DEV-COST',
+    })
+    addFinding(secondReview, secondLens, 1, 'high', 'accepted', 'high')
+
+    const runFor = (lensId: string) =>
+      (
+        db().query('SELECT run_record_id FROM review_lens WHERE record_id=?').get(lensId) as {
+          run_record_id: string
+        }
+      ).run_record_id
+    db()
+      .query("UPDATE run SET vendor_cost_usd=6,vendor_cost_source='billed' WHERE record_id=?")
+      .run(runFor(firstLens))
+    db()
+      .query("UPDATE run SET vendor_cost_usd=NULL,vendor_cost_source='unpriced' WHERE record_id=?")
+      .run(runFor(secondLens))
+
+    const report = reviewYield({ task: 'DEV-COST' }, db(), {
+      facts: {
+        agents: { codex: { billing: 'metered', harness: 'codex' } },
+        monthTokens: {},
+      },
+      prices: {},
+    })
+    const expected = {
+      runs: 2,
+      hits: 3,
+      costUsd: 6,
+      costSources: { billed: 1, unpriced: 1 },
+      pricedHits: 2,
+      costPerHit: 3,
+      lensMinutes: 30,
+      minutesPerHit: 10,
+    }
+    expect(report.lenses[0]).toMatchObject(expected)
+    expect(report.agents[0]).toMatchObject(expected)
+    expect(report.models[0]).toMatchObject(expected)
+  })
+
+  test('treats until as an exclusive review-recorded bound', () => {
+    fixture()
+    const report = reviewYield(
+      { task: 'DEV-YIELD', since: '2026-09-08T10:00:00Z', until: '2026-09-08T11:00:00Z' },
+      db(),
+    )
+    expect(report.filters.until).toBe('2026-09-08T11:00:00Z')
+    expect(report.lenses.reduce((sum, row) => sum + row.runs, 0)).toBe(3)
+  })
 })
 
 describe('review yield text table', () => {
@@ -632,13 +698,19 @@ describe('review yield text table', () => {
       findingsPerRun: null,
       highOrCriticalPerRun: null,
       medianLensMinutes: null,
+      costUsd: 0,
+      costSources: {},
+      pricedHits: 0,
+      costPerHit: null,
+      lensMinutes: 0,
+      minutesPerHit: null,
       linkedFindings: 0,
       mediumPlusAccepted: 0,
       mediumPlusAcceptedYield: null,
       overlap,
     })
     const text = renderReviewYieldHuman({
-      filters: { project: null, since: null, task: null, lens: null, agent: null },
+      filters: { project: null, since: null, until: null, task: null, lens: null, agent: null },
       lenses: [row('craft')],
       bySize: [row('craft / size 0')],
       byRisk: [row('craft / risk 2')],
