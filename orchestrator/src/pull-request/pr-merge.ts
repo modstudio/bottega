@@ -42,6 +42,11 @@ import {
   resolvePullRequestChange,
   triageRefusal,
 } from './pr-admission.ts'
+import {
+  pullRequestCiIncompleteMessage,
+  pullRequestCiRetryCommand,
+  recordPullRequestCi,
+} from './pr-ci-record.ts'
 
 export type PullRequestMergeFacts = {
   nodeId: string
@@ -79,6 +84,11 @@ export type PullRequestMergeAdapter = {
     pullRequest: PullRequestMergeFacts,
     database: Database,
   ): void
+  recordCi?(
+    change: PullRequestChange,
+    pullRequest: PullRequestMergeFacts,
+    database: Database,
+  ): string | undefined
   merge(
     cwd: string,
     number: number,
@@ -249,6 +259,15 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       admittedHead: pullRequest.headCommit,
       number: pullRequest.number,
     })
+  },
+  recordCi(change, pullRequest, database) {
+    const result = recordPullRequestCi({
+      project: change.project,
+      target: String(pullRequest.number),
+      cwd: change.project.path,
+      database,
+    })
+    return result.complete ? undefined : result.error
   },
   merge(cwd, number, method, subject, headCommit) {
     successful(
@@ -440,11 +459,11 @@ function mergedPullRequestOutput(input: {
   branch: string
   prNumber: number
   mergeCommit: string
-  landingRecordingError?: string
+  recordingError?: string
 }): PullRequestMergeOutcome {
-  if (input.landingRecordingError) {
+  if (input.recordingError) {
     return {
-      output: `${input.mergeCommit}\nlanding recording failed for ${input.branch}: ${input.landingRecordingError}; cleanup was not run`,
+      output: `${input.mergeCommit}\n${input.recordingError}; cleanup was not run`,
       exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
     }
   }
@@ -469,6 +488,39 @@ function mergedPullRequestOutput(input: {
       exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
     }
   }
+}
+
+function recordPostMergeEvidence(input: {
+  adapter: PullRequestMergeAdapter
+  change: PullRequestChange
+  pullRequest: PullRequestMergeFacts
+  database: Database
+  projectName: string
+}): string | undefined {
+  let recordingError: string | undefined
+  try {
+    input.adapter.recordLandings?.(input.change, input.pullRequest, input.database)
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    recordingError = `landing recording failed for ${input.change.branch}: ${detail}`
+  }
+  try {
+    const incomplete = input.adapter.recordCi?.(input.change, input.pullRequest, input.database)
+    if (incomplete) {
+      console.error(incomplete)
+      recordingError ??= incomplete
+    }
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    const incomplete = pullRequestCiIncompleteMessage(
+      input.pullRequest.number,
+      detail,
+      pullRequestCiRetryCommand(input.pullRequest.number, input.projectName),
+    )
+    console.error(incomplete)
+    recordingError ??= incomplete
+  }
+  return recordingError
 }
 
 export function mergePullRequest(
@@ -546,12 +598,13 @@ export function mergePullRequest(
       `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
     )
   }
-  let landingRecordingError: string | undefined
-  try {
-    adapter.recordLandings?.(admittedChange!, pullRequest, database)
-  } catch (cause) {
-    landingRecordingError = cause instanceof Error ? cause.message : String(cause)
-  }
+  const recordingError = recordPostMergeEvidence({
+    adapter,
+    change: admittedChange!,
+    pullRequest,
+    database,
+    projectName: project.name,
+  })
   return mergedPullRequestOutput({
     adapter,
     database,
@@ -559,6 +612,6 @@ export function mergePullRequest(
     branch: pullRequest.headBranch,
     prNumber: pullRequest.number,
     mergeCommit,
-    landingRecordingError,
+    recordingError,
   })
 }

@@ -15,6 +15,7 @@ const PROJECT_ID_NAME_COLUMNS = [
   ['landing_override', 'project'],
   ['landing_review_carry', 'project'],
   ['landing_triage_snapshot', 'project'],
+  ['pull_request_ci', 'project'],
   ['review_read', 'project'],
 ] as const
 
@@ -104,6 +105,11 @@ function seedNameMirrors(projectId: string, otherId: string): void {
     override.record_id,
     projectId,
   )
+  d.query(
+    `INSERT INTO pull_request_ci
+     (record_id,project,project_record_id,pr_number,record_kind,complete,recorded_at)
+     VALUES (?,?,?,?, 'collection',1,?)`,
+  ).run(id(), OLD, projectId, 42, 't')
   d.query(
     `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,

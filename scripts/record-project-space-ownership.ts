@@ -127,6 +127,7 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     kind: 'project',
     ownerColumns: ['project_id'],
   },
+  { table: 'pull_request_ci', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'lens', kind: 'space', reason: 'space lens catalogue' },
   {
     table: 'lens_profile',

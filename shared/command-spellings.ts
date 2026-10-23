@@ -196,6 +196,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'note stale',
   'pr',
   'pr check',
+  'pr ci-record',
   'pr create',
   'pr help',
   'pr merge',

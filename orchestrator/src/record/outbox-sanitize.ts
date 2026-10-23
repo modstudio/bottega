@@ -15,6 +15,7 @@ export type OutboxSanitizeKind =
   | 'release'
   | 'landing'
   | 'landing_override'
+  | 'pull_request_ci'
   | 'contention'
   | 'test_flake'
   | 'branch_disposal'
@@ -81,6 +82,11 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
     { at: 'steps', style: 'walk' },
   ],
   landing_override: [{ at: 'reason', style: 'value' }],
+  pull_request_ci: [
+    { at: 'error', style: 'value' },
+    { at: 'workflowName', style: 'value' },
+    { at: 'failedJobs', style: 'elements' },
+  ],
   contention: [{ at: 'cause', style: 'value' }],
   test_flake: [
     { at: 'test', style: 'value' },

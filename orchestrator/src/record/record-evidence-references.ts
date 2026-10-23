@@ -13,9 +13,25 @@ export type MachineEvidenceTable =
   | 'landing_override'
   | 'landing_review_carry'
   | 'landing_triage_snapshot'
+  | 'pull_request_ci'
   | 'contention'
   | 'test_flake'
   | 'branch_disposal'
+
+export type ExistingEvidenceOwned<Transaction> = (
+  tx: Transaction,
+  table: MachineEvidenceTable,
+  id: string,
+  machineId: string,
+  principal: { userId: string; spaceId: string },
+) => Promise<boolean>
+
+export type RequireOwnedUpsert = (
+  rows: readonly unknown[],
+  kind: string,
+  id: string,
+  existingOwned?: boolean,
+) => void
 
 export type EvidenceReference = {
   table: MachineEvidenceTable

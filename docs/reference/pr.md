@@ -6,6 +6,7 @@ pull requests
 
 - [bottega pr](#bottega-pr)
 - [bottega pr check](#bottega-pr-check)
+- [bottega pr ci-record](#bottega-pr-ci-record)
 - [bottega pr create](#bottega-pr-create)
 - [bottega pr help](#bottega-pr-help)
 - [bottega pr merge](#bottega-pr-merge)
@@ -20,6 +21,7 @@ pull requests
 ### Related
 
 - [bottega pr check](./pr.md#bottega-pr-check)
+- [bottega pr ci-record](./pr.md#bottega-pr-ci-record)
 - [bottega pr create](./pr.md#bottega-pr-create)
 - [bottega pr help](./pr.md#bottega-pr-help)
 - [bottega pr merge](./pr.md#bottega-pr-merge)
@@ -36,6 +38,20 @@ read-only pre-push triage check
 - `--local-ref <ref>`: name the local ref being pushed
 - `--sha <sha>`: name the commit being pushed
 - `--remote-ref <ref>`: name the destination ref
+
+### Related
+
+- [bottega pr](./pr.md#bottega-pr)
+
+## bottega pr ci-record
+
+**Synopsis:** `bottega pr ci-record <number> [--project <name>]`
+
+record GitHub Actions attempts for an already-merged pull request
+
+### Options
+
+- `--project <name>`: record against this registered project
 
 ### Related
 

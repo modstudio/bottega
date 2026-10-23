@@ -10,6 +10,7 @@ const PROJECT_ID_NAME_COLUMNS = [
   ['landing_override', 'project'],
   ['landing_review_carry', 'project'],
   ['landing_triage_snapshot', 'project'],
+  ['pull_request_ci', 'project'],
   ['review_read', 'project'],
   ['doc', 'subject'],
   ['doc_revision', 'subject'],

@@ -8,6 +8,7 @@ export const PROJECT_REFERENCES = [
   ['landing_override', 'landing_override', 'project_record_id'],
   ['landing_review_carry', 'landing_review_carry', 'project_record_id'],
   ['landing_triage_snapshot', 'landing_triage_snapshot', 'project_record_id'],
+  ['pull_request_ci', 'pull_request_ci', 'project_record_id'],
   ['review_read', 'review_read', 'project_record_id'],
   ['doc', 'doc', 'project_record_id'],
   ['doc_revision', 'doc_revision', 'project_record_id'],

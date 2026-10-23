@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { branchDisposal } from '../../../shared/record/schema-landing.ts'
 import { OutboxRowError } from './outbox-failure.ts'
-import type { MachineEvidenceTable } from './record-evidence-references.ts'
+import type { ExistingEvidenceOwned } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
@@ -32,20 +32,12 @@ function values(row: RecordPayload, projectId: string | null) {
   }
 }
 
-type ExistingEvidenceOwned = (
-  tx: SQL,
-  table: MachineEvidenceTable,
-  id: string,
-  machineId: string,
-  principal: RecordPrincipal,
-) => Promise<boolean>
-
 export async function pushBranchDisposal(
   postgres: SQL,
   row: RecordPayload,
   principal: RecordPrincipal,
   projectIds?: ProjectResolutionCache,
-  existingEvidenceOwned?: ExistingEvidenceOwned,
+  existingEvidenceOwned?: ExistingEvidenceOwned<SQL>,
 ): Promise<void> {
   if (!existingEvidenceOwned) throw new Error('branch disposal sync requires collision ownership')
   await postgres.begin(async (tx) => {
