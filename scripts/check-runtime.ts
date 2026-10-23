@@ -22,6 +22,17 @@ export type InstalledDependencyState = {
   lockfileHash: string | null
   nodeModulesPresent: boolean
 }
+export type DependencyInstallFacts = {
+  ci: boolean
+  linkedWorktree: boolean
+  workerRun: boolean
+}
+export type DependencyInstallMode = 'normal' | 'worker-offline'
+
+/** Only an orchestrator worker uses the registry-free install path. */
+export function dependencyInstallMode(facts: DependencyInstallFacts): DependencyInstallMode {
+  return facts.workerRun ? 'worker-offline' : 'normal'
+}
 
 /** Decide whether the provisioned dependency tree still belongs to this lockfile. */
 export function installNeeded(

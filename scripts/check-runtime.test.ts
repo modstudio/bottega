@@ -3,6 +3,7 @@ import {
   attributeCommandCpu,
   cpuBudgetMs,
   decideRuntimeBudget,
+  dependencyInstallMode,
   HUNG_SUITE_TIMEOUT_MS,
   installNeeded,
   parseCheckArguments,
@@ -13,6 +14,24 @@ import {
 } from './check-runtime'
 
 describe('dependency installation', () => {
+  test('uses the offline mode only for an orchestrator worker run', () => {
+    expect(dependencyInstallMode({ ci: false, linkedWorktree: true, workerRun: true })).toBe(
+      'worker-offline',
+    )
+  })
+
+  test('uses the normal mode for an architect linked worktree, CI, and the main checkout', () => {
+    expect(dependencyInstallMode({ ci: false, linkedWorktree: true, workerRun: false })).toBe(
+      'normal',
+    )
+    expect(dependencyInstallMode({ ci: true, linkedWorktree: false, workerRun: false })).toBe(
+      'normal',
+    )
+    expect(dependencyInstallMode({ ci: false, linkedWorktree: false, workerRun: false })).toBe(
+      'normal',
+    )
+  })
+
   test('an installed tree recorded for the current lockfile needs no install', () => {
     expect(installNeeded('current', { lockfileHash: 'current', nodeModulesPresent: true })).toBe(
       false,

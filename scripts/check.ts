@@ -24,6 +24,7 @@ import {
   type CommandCpuSample,
   cpuBudgetMs,
   decideRuntimeBudget,
+  dependencyInstallMode,
   HUNG_SUITE_TIMEOUT_MS,
   installNeeded,
   parseCheckArguments,
@@ -312,8 +313,12 @@ const nodeModulesPath = join(root, 'node_modules')
 const installedStatePath = join(nodeModulesPath, '.check-lockfile')
 
 async function installDependencies() {
-  const workerTree = !process.env.CI && !lstatSync(join(root, '.git')).isDirectory()
-  if (!workerTree) return inherit(['bun', 'install', '--silent'])
+  const installMode = dependencyInstallMode({
+    ci: Boolean(process.env.CI),
+    linkedWorktree: !lstatSync(join(root, '.git')).isDirectory(),
+    workerRun: Boolean(process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH),
+  })
+  if (installMode === 'normal') return inherit(['bun', 'install', '--silent'])
 
   const verify = ['bun', 'install', '--offline', '--frozen-lockfile', '--dry-run', '--silent']
   if ((await inherit(verify)) !== 0) return 1
