@@ -40,7 +40,7 @@ import {
   claimRunBoardNotices,
   markRunBoardNoticesDelivered,
 } from '../board/board-delivery.ts'
-import { db, enableSchemaReload, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { registerFocusedTestTool } from '../focused-test/focused-test-tool.ts'
 import {
@@ -65,6 +65,7 @@ import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
+import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
@@ -899,16 +900,11 @@ async function proxyAsk(urlValue: string): Promise<void> {
 export async function serveAsk(): Promise<void> {
   const loopback = process.env.ORCH_ASK_URL
   if (loopback) return proxyAsk(loopback)
-  enableAskSchemaReload()
   const runId = resolveRunIdentifier(db(), process.env.ORCH_RUN_ID ?? '')
+  enableRunSchemaReload(runId)
   const token = process.env.ORCH_RUN_TOKEN ?? ''
   serveStdio(() => createAskMcpServer(runId, token), {
     transport: observeAskTransport(new StdioServerTransport(), runId),
     onerror: writeAskServerFailure,
   })
-}
-
-/** Keep the standalone ask server's store handle usable across additive migrations. */
-export function enableAskSchemaReload(): void {
-  enableSchemaReload(() => {})
 }

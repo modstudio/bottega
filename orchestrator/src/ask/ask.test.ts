@@ -1,4 +1,3 @@
-import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   Client,
@@ -15,13 +14,11 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
-import { closeDatabaseForFixture, db } from '../database/db.ts'
-import { migrationJournal } from '../database/migrations.ts'
+import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
-import { checkMessages } from '../mailbox/mailbox.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { ask, createAskHttpHandler, createAskMcpServer, enableAskSchemaReload } from './ask.ts'
+import { ask, createAskHttpHandler, createAskMcpServer } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
 
 async function askClient(
@@ -57,42 +54,6 @@ afterEach(() => {
 })
 
 describe('the live ask channel always answers', () => {
-  test('the standalone server reloads additive migrations and refuses non-additive ones', () => {
-    const versionAfter = (tag: string) => {
-      const entry = migrationJournal().find((candidate) => candidate.tag === tag)
-      if (!entry) throw new Error(`missing migration fixture ${tag}`)
-      return entry.idx + 1
-    }
-    const checkMessagesAfterAdvance = (next: number) => {
-      const prior = next - 1
-      closeDatabaseForFixture()
-      const migrator = new Database(process.env.ORCH_DB!)
-      migrator.exec(`PRAGMA user_version = ${prior}`)
-      enableAskSchemaReload()
-      db()
-      const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-      db()
-        .query(
-          `INSERT INTO run_message
-           (record_id,direction,root_run_record_id,run_record_id,body,created_at,delivery)
-           VALUES (?, 'to_worker', ?, ?, 'migration notice', ?, 'architect_cli')`,
-        )
-        .run(newRecordId(), run, run, new Date().toISOString())
-      migrator.exec(`PRAGMA user_version = ${next}`)
-      migrator.close()
-      return checkMessages(run)
-    }
-
-    const additive = checkMessagesAfterAdvance(versionAfter('0145_agent_trains_on_inputs'))
-    expect(additive.map((message) => message.body)).toEqual(['migration notice'])
-
-    closeDatabaseForFixture()
-    const incompatibleVersion = versionAfter('0131_lens_port_uuid_key')
-    expect(() => checkMessagesAfterAdvance(incompatibleVersion)).toThrow(
-      `store migrated from version ${incompatibleVersion - 1} to ${incompatibleVersion} past this process's version; restart this process, and re-dispatch any run it was coordinating`,
-    )
-  })
-
   test('the HTTP endpoint rejects a missing token and serves an authenticated MCP request', async () => {
     const run = addRun({ agent: 'goose-trial', job: 'implement', status: 'running' })
     db().query('UPDATE run SET run_token=? WHERE record_id=?').run('run-token', run)
