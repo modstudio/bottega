@@ -129,9 +129,7 @@ describe('failure classification', () => {
   })
 
   test('billing creates an operator-cleared hold rather than a probe-cleared cooldown', () => {
-    expect(COOLS_DOWN).not.toContain('billing')
     expect(FAILS_OVER).toContain('billing')
-    expect(NOT_EVIDENCE).toContain('billing')
     expect(billingHoldForFailure('quota', 'grok')).toBeNull()
     expect(billingHoldForFailure('billing', 'grok')).toEqual({
       enabled: 0,

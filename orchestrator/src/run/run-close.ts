@@ -10,6 +10,7 @@ import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import {
+  billingHoldForFailure,
   type classify,
   FAILS_OVER,
   NEEDS_HUMAN,
@@ -215,10 +216,10 @@ function notifyFailureRequiringHuman(input: {
   runId: string
 }): void {
   if (input.failureKind && NEEDS_HUMAN.includes(input.failureKind)) {
-    const routingRemedy =
-      input.failureKind === 'billing'
-        ? `Routing will avoid it until the billing hold is cleared with '${PLATFORM_SLUG} agent set ${input.name} --enabled true'.`
-        : 'Routing will avoid it until it succeeds again.'
+    const billingHold = billingHoldForFailure(input.failureKind, input.name)
+    const routingRemedy = billingHold
+      ? `Routing will avoid it: ${billingHold.disabledReason}.`
+      : 'Routing will avoid it until it succeeds again.'
     notify(
       NEEDS_HUMAN_TITLE[input.failureKind]?.(input.name) ?? `${input.name} needs attention`,
       `${input.job} failed. ${routingRemedy}`,

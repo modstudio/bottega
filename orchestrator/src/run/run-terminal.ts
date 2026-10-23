@@ -78,7 +78,7 @@ type TerminalOptions = {
   }
 }
 
-function writeTerminalOperationalState(
+export function writeTerminalOperationalState(
   database: Database,
   runId: string,
   resourceUsage: RunResourceUsage | null,
