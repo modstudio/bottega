@@ -14,8 +14,11 @@ export class RoutingRefusalError extends RefusalError {
 }
 
 export class AgentCapacityError extends RoutingRefusalError {
-  constructor(message: string) {
+  readonly runningCounts: Readonly<Record<string, number>>
+
+  constructor(message: string, runningCounts: Readonly<Record<string, number>>) {
     super(message)
     this.name = AGENT_CAPACITY_ERROR_NAME
+    this.runningCounts = runningCounts
   }
 }

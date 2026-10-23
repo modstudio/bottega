@@ -26,6 +26,20 @@ import {
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
+test('candidate running-run map matches per-agent fixture counts from one grouped snapshot', () => {
+  addRun({ agent: 'codex', job: 'craft', status: 'running' })
+  addRun({ agent: 'codex', job: 'craft', status: 'running' })
+  addRun({ agent: 'grok', job: 'craft', status: 'running' })
+  addRun({ agent: 'grok', job: 'craft', status: 'running', probe: 1 })
+
+  const running = Object.fromEntries(
+    candidates('craft').map((candidate) => [candidate.agent, candidate.runningRunIds.length]),
+  )
+  expect(running.codex).toBe(2)
+  expect(running.grok).toBe(1)
+  expect(Object.values(running).reduce((sum, count) => sum + count, 0)).toBe(3)
+})
+
 test('training-data eligibility requires a declared public project even when named', () => {
   const base = {
     agent: 'or-free',

@@ -4,7 +4,12 @@
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
-import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
+import { type RunningRunCounts, runningRunCountsForAgents } from '../route/running-runs.ts'
+import {
+  RUN_HOST_WAIT_MAX_MS,
+  RUN_HOST_WAIT_POLL_CAP_MS,
+  RUN_HOST_WAIT_POLL_MS,
+} from './run-host-capacity.ts'
 
 export type CapacityWaitDecision = 'wait' | 'refuse'
 
@@ -16,11 +21,44 @@ export function decideCapacityWait(input: {
   return 'wait'
 }
 
+export function nextCapacityPollMs(currentMs: number): number {
+  return Math.min(currentMs * 2, RUN_HOST_WAIT_POLL_CAP_MS)
+}
+
+function runningCountsMayHaveFreed(
+  before: Readonly<RunningRunCounts>,
+  after: Readonly<RunningRunCounts>,
+): boolean {
+  return Object.keys(before).some((agent) => (after[agent] ?? 0) < (before[agent] ?? 0))
+}
+
+function nextCapacityWaitState(
+  priorPollMs: number,
+  before: Readonly<RunningRunCounts>,
+  after: Readonly<RunningRunCounts>,
+): { retrySelection: boolean; pollMs: number } {
+  const retrySelection = runningCountsMayHaveFreed(before, after)
+  return {
+    retrySelection,
+    pollMs: retrySelection ? RUN_HOST_WAIT_POLL_MS : nextCapacityPollMs(priorPollMs),
+  }
+}
+
+function announceCapacityWait(
+  announced: boolean,
+  onWait: ((at: string) => void) | undefined,
+  now: number,
+): boolean {
+  if (!announced) onWait?.(new Date(now).toISOString())
+  return true
+}
+
 export async function waitForAgentSelection<T>(input: {
   select: () => T
   noWait?: boolean
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  runningCounts?: (agents: readonly string[]) => RunningRunCounts
   onWait?: (at: string) => void
 }): Promise<T> {
   const now = input.now ?? Date.now
@@ -28,22 +66,27 @@ export async function waitForAgentSelection<T>(input: {
     input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const started = now()
   let announced = false
+  let pollMs = RUN_HOST_WAIT_POLL_MS
+  let lastCapacityError: AgentCapacityError | null = null
   for (;;) {
-    try {
-      return input.select()
-    } catch (error) {
-      if (!(error instanceof AgentCapacityError)) throw error
-      const decision = decideCapacityWait({
-        noWait: Boolean(input.noWait),
-        waitedMs: now() - started,
-      })
-      if (decision === 'refuse') throw refusalAtWaitBound(error, Boolean(input.noWait))
-      if (!announced) {
-        announced = true
-        input.onWait?.(new Date(now()).toISOString())
+    if (!lastCapacityError) {
+      try {
+        return input.select()
+      } catch (error) {
+        if (!(error instanceof AgentCapacityError)) throw error
+        lastCapacityError = error
       }
-      await sleep(RUN_HOST_WAIT_POLL_MS)
     }
+    const waitedMs = now() - started
+    const decision = decideCapacityWait({ noWait: Boolean(input.noWait), waitedMs })
+    if (decision === 'refuse') throw refusalAtWaitBound(lastCapacityError, Boolean(input.noWait))
+    announced = announceCapacityWait(announced, input.onWait, now())
+    await sleep(Math.min(pollMs, RUN_HOST_WAIT_MAX_MS - waitedMs))
+    const agents = Object.keys(lastCapacityError.runningCounts)
+    const currentCounts = (input.runningCounts ?? runningRunCountsForAgents)(agents)
+    const next = nextCapacityWaitState(pollMs, lastCapacityError.runningCounts, currentCounts)
+    pollMs = next.pollMs
+    if (next.retrySelection) lastCapacityError = null
   }
 }
 
@@ -52,6 +95,7 @@ function refusalAtWaitBound(error: AgentCapacityError, noWait: boolean): AgentCa
     ? error
     : new AgentCapacityError(
         `${error.message}; capacity wait bound reached after ${RUN_HOST_WAIT_MAX_MS}ms`,
+        error.runningCounts,
       )
 }
 
