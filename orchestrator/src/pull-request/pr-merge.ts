@@ -531,7 +531,7 @@ export function mergePullRequest(
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
   injectedDatabase?: Database,
 ): PullRequestMergeOutcome {
-  enableSchemaReload(() => {})
+  enableSchemaReload()
   const database = injectedDatabase ?? writableDb()
   const project = projectAt(cwd, database)
   if (!project) {

@@ -45,6 +45,7 @@ export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
 let openedUserVersion: number | null = null
+const noopSchemaReload = (): void => {}
 let schemaReload: ((from: number, to: number) => void) | null = null
 let schemaReloadRefusal: ((reason: string) => void) | null = null
 type OpenHook = (database: Database) => void
@@ -196,7 +197,7 @@ export function closeDatabaseForFixture(): void {
 
 /** Long-lived processes (bottega mcp serve) reload instead of refusing a write after a migrate. */
 export function enableSchemaReload(
-  onReload: (from: number, to: number) => void,
+  onReload: (from: number, to: number) => void = noopSchemaReload,
   onRefusal?: (reason: string) => void,
 ): void {
   schemaReload = onReload

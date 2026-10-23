@@ -5,5 +5,5 @@ import { enableSchemaReload } from '../database/db.ts'
 import { recordCoordinatorCause } from './run-coordinator-log.ts'
 
 export function enableRunSchemaReload(runId?: string): void {
-  enableSchemaReload(() => {}, runId ? (cause) => recordCoordinatorCause(runId, cause) : undefined)
+  enableSchemaReload(undefined, runId ? (cause) => recordCoordinatorCause(runId, cause) : undefined)
 }
