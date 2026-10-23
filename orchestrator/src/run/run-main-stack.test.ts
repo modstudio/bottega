@@ -8,6 +8,7 @@ import { upsertProject } from '../project/projects.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { provisionMcpConfig } from '../worktree/worktree-mcp.ts'
 import { waitForAgentSelection } from './run-agent-capacity.ts'
+import { detachMcpPreflightedAgent } from './run-dispatch.ts'
 import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
 
 const directories: string[] = []
@@ -111,6 +112,67 @@ test('coordinator MCP preflight runs after its capacity wait selects an agent', 
 
   expect(selected).toEqual({ agent: 'codex', reason: 'capacity available' })
   expect(order).toEqual(['select-1', 'select-2', 'preflight-codex-require'])
+})
+
+test('coordinator skips MCP preflight only for the agent already checked', async () => {
+  let calls = 0
+  const selected = await selectAgentAndPreflightMcp({
+    select: async () => ({ agent: 'codex', reason: 'selected' }),
+    mcpRequest: 'require',
+    cwd: process.cwd(),
+    job: 'craft',
+    preflightedAgent: 'codex',
+    preflight: () => calls++,
+  })
+
+  expect(selected.agent).toBe('codex')
+  expect(calls).toBe(0)
+})
+
+test('coordinator runs MCP preflight when failover selects a different agent', async () => {
+  const calls: string[] = []
+  const selected = await selectAgentAndPreflightMcp({
+    select: async () => ({ agent: 'claude', reason: 'failover' }),
+    mcpRequest: 'require',
+    cwd: process.cwd(),
+    job: 'craft',
+    preflightedAgent: 'codex',
+    preflight: ({ selectedAgent }) => calls.push(selectedAgent),
+  })
+
+  expect(selected.agent).toBe('claude')
+  expect(calls).toEqual(['claude'])
+})
+
+test('detach records the selected agent only for a first-turn MCP preflight', () => {
+  expect(
+    detachMcpPreflightedAgent({
+      firstTurn: true,
+      mcpRequest: 'require',
+      selectedAgent: 'codex',
+    }),
+  ).toBe('codex')
+  expect(
+    detachMcpPreflightedAgent({
+      firstTurn: false,
+      mcpRequest: 'require',
+      selectedAgent: 'codex',
+    }),
+  ).toBeUndefined()
+  expect(
+    detachMcpPreflightedAgent({
+      firstTurn: true,
+      mcpRequest: undefined,
+      selectedAgent: 'codex',
+    }),
+  ).toBeUndefined()
+  expect(
+    detachMcpPreflightedAgent({
+      firstTurn: true,
+      mcpRequest: 'require',
+      selectedAgent: undefined,
+    }),
+  ).toBeUndefined()
 })
 
 test('worker MCP provisioning executes the final plan step against the worker tree', () => {

@@ -62,11 +62,7 @@ import {
   isWorktreeRelativeRef,
   resolveBase,
 } from '../worktree/worktree-caller.ts'
-import {
-  type DispatchDetachSpec,
-  dispatchCommand,
-  reviewMemoryBranch,
-} from './dispatch-commands.ts'
+import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts } from './dispatch-preflight.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey } from './task-key-lookup.ts'
@@ -404,8 +400,9 @@ export function decidePreDetachSelection(input: {
 export async function selectBeforeDetach(
   jobName: string,
   text: string,
-  spec: DispatchDetachSpec,
+  spec: DetachSpec,
   presentation: Pick<Presentation, 'cwd' | 'error'>,
+  waitForCapacityBeforeDetach = false,
 ): Promise<{ agent: string; reason: string } | undefined> {
   if (spec.resume) return undefined
   const requestedJob = job(jobName)
@@ -436,7 +433,7 @@ export async function selectBeforeDetach(
       spec.probe,
       spec.lens,
     )
-  if (spec.waitForCapacityBeforeDetach) {
+  if (waitForCapacityBeforeDetach) {
     return waitForAgentSelection({
       select,
       noWait: spec.noWaitCapacity,
@@ -461,6 +458,29 @@ export function detachSpecWithRoutedSelection(
   selected: { agent: string; reason: string } | undefined,
 ): DetachSpec {
   return selected && !spec.agent ? { ...spec, routedAgent: selected } : spec
+}
+
+function commandDetacher(presentation: Presentation) {
+  return async (
+    jobName: string,
+    text: string,
+    waitForCapacityBeforeDetach: boolean,
+    spec: DetachSpec,
+  ) => {
+    const selected = await selectBeforeDetach(
+      jobName,
+      text,
+      spec,
+      presentation,
+      waitForCapacityBeforeDetach,
+    )
+    return dispatchDetached(
+      jobName,
+      text,
+      detachSpecWithRoutedSelection(spec, selected),
+      selected?.agent,
+    )
+  }
 }
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
@@ -488,16 +508,6 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       ...(await routeConstraints(argv, flag('agent'))),
       mcp: parseRequestedMcp(argv),
     }
-  }
-  const detach = async (jobName: string, text: string, spec: DispatchDetachSpec) => {
-    const selected = await selectBeforeDetach(jobName, text, spec, presentation)
-    const { waitForCapacityBeforeDetach: _, ...runSpec } = spec
-    return dispatchDetached(
-      jobName,
-      text,
-      detachSpecWithRoutedSelection(runSpec, selected),
-      selected?.agent,
-    )
   }
   await dispatchCommand(
     argv,
@@ -539,7 +549,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,
-      detach,
+      detach: commandDetacher(presentation),
       runNumber,
       follow: (id, quiet) =>
         followRun(id, quiet, true, {

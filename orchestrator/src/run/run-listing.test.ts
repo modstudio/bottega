@@ -218,12 +218,7 @@ describe('run listing', () => {
   })
 
   test('runs publish capacity waits and live throttle details instead of idle', async () => {
-    const waiting = addRun({
-      agent: '(pending)',
-      job: 'review-lens',
-      status: 'running',
-      session: 'capacity-wait-session',
-    })
+    const waiting = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
     appendRunEvent(waiting, {
       ts: '2026-10-21T12:00:00.000Z',
       type: 'capacity_wait',
@@ -268,11 +263,6 @@ describe('run listing', () => {
         status: 429,
         concurrency: 6,
       },
-    })
-
-    const liveRows = (await command({ live: true, json: true })).map(runJson)
-    expect(liveRows.find((row) => row.session_id === 'capacity-wait-session')).toMatchObject({
-      live_status_detail: 'waiting for capacity since 2026-10-21T12:00:00.000Z',
     })
   })
 

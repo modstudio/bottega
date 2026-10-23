@@ -76,11 +76,11 @@ export async function selectAgentAndPreflightMcp<T extends { agent: string }>(in
   cwd: string
   job: string
   projectName?: string
-  alreadyPreflighted?: boolean
+  preflightedAgent?: string
   preflight?: typeof preflightDispatchMcp
 }): Promise<T> {
   const selected = await input.select()
-  if (input.alreadyPreflighted) return selected
+  if (input.preflightedAgent === selected.agent) return selected
   ;(input.preflight ?? preflightDispatchMcp)({
     mcpRequest: input.mcpRequest,
     cwd: input.cwd,

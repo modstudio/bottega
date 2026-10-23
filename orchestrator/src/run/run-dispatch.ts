@@ -94,30 +94,37 @@ function detachedProject(cwd: string, spec: DetachSpec) {
   }
 }
 
+export function detachMcpPreflightedAgent(input: {
+  firstTurn: boolean
+  mcpRequest: McpRequest | undefined
+  selectedAgent: string | undefined
+}): string | undefined {
+  if (!input.firstTurn || !input.mcpRequest) return undefined
+  return input.selectedAgent
+}
+
 function preflightDetachMcp(
   jobName: string,
   spec: DetachSpec,
-  selectedAgent: string | undefined,
-): boolean {
-  const cwd = spec.cwd ?? process.cwd()
-  const mcpRequest: McpRequest | undefined = effectiveMcpRequest(spec.mcp, job(jobName))
-  const firstTurn = resumeFacts(
-    spec.resume?.kind ?? null,
-    '',
-    spec.resume?.parent ?? null,
-  ).isFirstTurn
+  facts: {
+    selectedAgent: string | undefined
+    mcpRequest: McpRequest | undefined
+    firstTurn: boolean
+  },
+): string | undefined {
+  const preflightedAgent = detachMcpPreflightedAgent(facts)
   // A resume keeps the agent that already started; it is not a new dispatch.
-  if (!firstTurn || !mcpRequest || !selectedAgent) return false
+  if (!preflightedAgent || !facts.mcpRequest) return undefined
   // Capacity-only selection completes in the coordinator; every other detached
   // selection is knowable here and refuses before a placeholder row exists.
   preflightDispatchMcp({
-    mcpRequest,
-    cwd,
+    mcpRequest: facts.mcpRequest,
+    cwd: spec.cwd ?? process.cwd(),
     job: jobName,
-    selectedAgent,
+    selectedAgent: preflightedAgent,
     projectName: spec.repo,
   })
-  return true
+  return preflightedAgent
 }
 
 export async function detach(
@@ -166,7 +173,8 @@ export async function detach(
         spec.carry,
         spec.repo,
       )
-  const dispatchMcpPreflighted = preflightDetachMcp(jobName, spec, selectedAgent)
+  const mcpDispatch = { selectedAgent, mcpRequest, firstTurn }
+  const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
   mkdirSync(runsDir, { recursive: true })
@@ -321,7 +329,7 @@ export async function detach(
       String(recordId),
       promptPath,
       jobName,
-      JSON.stringify({ ...spec, seed, dispatchMcpPreflighted }),
+      JSON.stringify({ ...spec, seed, dispatchMcpPreflightedAgent }),
     ]
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)

@@ -192,8 +192,8 @@ export async function run(opts: {
   /** True only when the caller selected the agent rather than routing it. */
   agentExplicit?: boolean
   routedAgent?: { agent: string; reason: string }
-  /** True when detached foreground selection already completed MCP startup checks. */
-  dispatchMcpPreflighted?: boolean
+  /** Agent whose detached foreground selection completed MCP startup checks. */
+  dispatchMcpPreflightedAgent?: string
   schemaPath?: string
   mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
@@ -517,7 +517,7 @@ export async function run(opts: {
         cwd: callerCwd,
         job: opts.job,
         projectName: runProjectName ?? undefined,
-        alreadyPreflighted: opts.dispatchMcpPreflighted,
+        preflightedAgent: opts.dispatchMcpPreflightedAgent,
       })
     } catch (cause) {
       recordRunStartupFailure(opts.reserveId, cause)
