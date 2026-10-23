@@ -25,14 +25,7 @@ import {
   type WorkerReply,
   workerPreamble,
 } from '../contract/contract.ts'
-import {
-  db,
-  enableSchemaReload,
-  nowIso,
-  sessionId,
-  writableDb,
-  writeTransaction,
-} from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
@@ -136,6 +129,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
+import * as runMigration from './run-schema-reload-cause.ts'
 import {
   enforceRunStartupRefusal,
   recordNeverStartedRunFailure,
@@ -287,7 +281,6 @@ export async function run(opts: {
    * row whatever happened. A second copy of that machinery would be a second
    * place for the bug this system has already had twice: a run that never says
    * it stopped.
-   *
    * What a resume changes is only the front: no routing (the conversation
    * belongs to the agent that started it), no new worktree (the worker is
    * mid-edit in one), and `resumeArgv` in place of `argv`.
@@ -303,7 +296,7 @@ export async function run(opts: {
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
-  enableSchemaReload(() => {})
+  runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
@@ -313,8 +306,7 @@ export async function run(opts: {
     resume.workspaceSource === 'retained' ? readDispatchState(prior!.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
-  const writesJob = Boolean(requestedJob.needs.writesRepo)
-  const repoJob = Boolean(requestedJob.needs.readsRepo)
+  const [writesJob, repoJob] = [!!requestedJob.needs.writesRepo, !!requestedJob.needs.readsRepo]
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd()
@@ -680,6 +672,7 @@ export async function run(opts: {
     replySchemaName,
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
   })
+  runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt

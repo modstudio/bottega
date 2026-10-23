@@ -8,7 +8,7 @@ import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
-import { runCoordinatorLogPath } from './run-coordinator-log.ts'
+import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 
@@ -35,8 +35,11 @@ async function inbox(): Promise<string> {
 }
 
 const runNumber = (recordId: string): number =>
-  (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
-    .number
+  (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as {
+      number: number
+    }
+  ).number
 
 describe('reapStale', () => {
   test('elapsed time does not kill a legacy run while its pid is alive', () => {
@@ -49,7 +52,11 @@ describe('reapStale', () => {
 
     expect(reapStale(db())).toBe(0)
     expect(
-      (db().query('SELECT status FROM run WHERE record_id=?').get(id) as { status: string }).status,
+      (
+        db().query('SELECT status FROM run WHERE record_id=?').get(id) as {
+          status: string
+        }
+      ).status,
     ).toBe('running')
     expect(
       db().query('SELECT rowid FROM run_mutation_audit WHERE run_record_id=?').get(id),
@@ -212,7 +219,11 @@ describe('reapStale', () => {
       parent: root,
       turn: 2,
     })
-    const young = addRun({ agent: '(pending)', job: 'craft', status: 'running' })
+    const young = addRun({
+      agent: '(pending)',
+      job: 'craft',
+      status: 'running',
+    })
     db()
       .query('UPDATE run SET pid=NULL, started_at=? WHERE record_id=?')
       .run(new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), old)
@@ -246,8 +257,11 @@ describe('reapStale', () => {
       failureKind: 'harness',
     })
     expect(
-      (db().query('SELECT status FROM run WHERE record_id=?').get(young) as { status: string })
-        .status,
+      (
+        db().query('SELECT status FROM run WHERE record_id=?').get(young) as {
+          status: string
+        }
+      ).status,
     ).toBe('running')
   })
 
@@ -268,7 +282,11 @@ describe('reapStale', () => {
   })
 
   test('a pending claim refusal reaches the run error through the coordinator log', () => {
-    const id = addRun({ agent: '(pending)', job: 'implement', status: 'running' })
+    const id = addRun({
+      agent: '(pending)',
+      job: 'implement',
+      status: 'running',
+    })
     db()
       .query('UPDATE run SET pid=?, started_at=? WHERE record_id=?')
       .run(4_194_304, new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), id)
@@ -347,6 +365,19 @@ describe('reapStale', () => {
       failure_kind: 'harness',
       error: 'coordinator exited during setup before the agent started; last output: (no output)',
     })
+  })
+
+  test('a reaped coordinator whose agent started records its preserved migration cause', () => {
+    const id = addRun({ agent: 'codex', job: 'craft', status: 'running' })
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4_194_304, 4_194_305, id)
+    const cause =
+      "store migrated from version 145 to 146 past this process's version; restart this process, and re-dispatch any run it was coordinating"
+    recordCoordinatorCause(id, cause)
+
+    expect(reapStale(db())).toBe(1)
+    expect(
+      db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
+    ).toEqual({ status: 'failed', failure_kind: 'harness', error: cause })
   })
 
   test('a setup death continuation preserves the scored root as routing evidence', () => {

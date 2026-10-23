@@ -8,6 +8,10 @@ import {
   lensPortReferenceOrphanCounts,
   portStaleCopyConflicts,
 } from './lens-port-migration-preflight.ts'
+import {
+  type MigrationJournalEntry,
+  validatedMigrationJournalEntries,
+} from './migration-compatibility.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
@@ -18,7 +22,6 @@ const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKF
 const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'
 const LENS_PORT_UUID_KEY_MIGRATION = '0131_lens_port_uuid_key'
 
-type JournalEntry = { idx: number; when: number; tag: string }
 export type BeforeMigrationApply = {
   migration: string
   action(database: Database): void
@@ -63,16 +66,16 @@ type SchemaInventory = {
   triggers: TriggerShape[]
 }
 
-export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
+export function migrationJournal(folder = MIGRATIONS_FOLDER): MigrationJournalEntry[] {
   const journal = JSON.parse(
     readInstallAsset(
       join('orchestrator', 'migrations', 'meta', '_journal.json'),
       join(folder, 'meta', '_journal.json'),
     ),
   ) as {
-    entries: JournalEntry[]
+    entries: unknown[]
   }
-  const entries = journal.entries
+  const entries = validatedMigrationJournalEntries(journal.entries)
   for (let i = 1; i < entries.length; i++) {
     const previous = entries[i - 1]!
     const current = entries[i]!
@@ -87,7 +90,7 @@ export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
   return entries
 }
 
-function migrationSource(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
+function migrationSource(entry: MigrationJournalEntry, folder = MIGRATIONS_FOLDER): string {
   return readInstallAsset(
     join('orchestrator', 'migrations', `${entry.tag}.sql`),
     join(folder, `${entry.tag}.sql`),
@@ -115,7 +118,7 @@ export function splitMigrationSource(source: string): { ddl: string; backfill: s
   return { ddl, backfill: blocks.join('\n') }
 }
 
-function migrationHash(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
+function migrationHash(entry: MigrationJournalEntry, folder = MIGRATIONS_FOLDER): string {
   return createHash('sha256')
     .update(splitMigrationSource(migrationSource(entry, folder)).ddl)
     .digest('hex')
@@ -150,7 +153,7 @@ function tableExists(d: Database, table: string): boolean {
 function migrationState(
   d: Database,
   folder = MIGRATIONS_FOLDER,
-): { pending: JournalEntry[]; ahead: string | null } {
+): { pending: MigrationJournalEntry[]; ahead: string | null } {
   const journal = migrationJournal(folder)
   if (!tableExists(d, MIGRATIONS_TABLE)) return { pending: journal, ahead: null }
   const applied = d
@@ -700,7 +703,7 @@ function docReferenceOrphanCounts(d: Database): string[] {
   return findings
 }
 
-function applyBackfills(d: Database, entries: JournalEntry[], folder: string): void {
+function applyBackfills(d: Database, entries: MigrationJournalEntry[], folder: string): void {
   for (const entry of entries) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
     if (backfill.trim()) executeStatements(d, backfill)
@@ -714,7 +717,10 @@ const INTEGER_PROJECT_BACKFILLS = new Set([
   '0116_release_project_identity',
 ])
 
-function compatibleBackfillEntries(d: Database, entries: JournalEntry[]): JournalEntry[] {
+function compatibleBackfillEntries(
+  d: Database,
+  entries: MigrationJournalEntry[],
+): MigrationJournalEntry[] {
   const projectHasIntegerId = (
     d.query("SELECT COUNT(*) AS n FROM pragma_table_info('project') WHERE name='id'").get() as {
       n: number
@@ -832,7 +838,7 @@ function ensureSchemaLock(d: Database): void {
   d.exec(`INSERT OR IGNORE INTO ${SCHEMA_LOCK_TABLE} (id) VALUES (1)`)
 }
 
-function recordMigration(d: Database, entry: JournalEntry, folder: string): void {
+function recordMigration(d: Database, entry: MigrationJournalEntry, folder: string): void {
   d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`).run(
     migrationHash(entry, folder),
     entry.when,
@@ -894,7 +900,7 @@ function migrationEntityLabel(tag: string): { migration: string; parent: string 
 
 function prepareMigrationEntry(
   d: Database,
-  entry: JournalEntry,
+  entry: MigrationJournalEntry,
   beforeApply?: BeforeMigrationApply,
 ): void {
   if (beforeApply?.migration === entry.tag) beforeApply.action(d)
