@@ -230,6 +230,40 @@ test('exec records an architect command with its kind and session', async () => 
   }
 })
 
+test('exec records the checkout head after the command finishes', async () => {
+  const priorDepth = process.env.BOTTEGA_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.BOTTEGA_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    const preRebaseHead = 'a'.repeat(40)
+    const rebasedTip = 'b'.repeat(40)
+    const heads = [preRebaseHead, rebasedTip]
+
+    await recordWorkflowExec(['git', 'rebase', 'origin/main'], {
+      cwd: probeRepository,
+      d,
+      runner: () => ({ exitCode: 0, output: preRebaseHead }),
+      resolveHeadCommit: () => heads.shift() ?? null,
+    })
+
+    expect(
+      d.query('SELECT head_commit,pre_command_head_commit,output_tail FROM probe').get(),
+    ).toEqual({
+      head_commit: rebasedTip,
+      pre_command_head_commit: preRebaseHead,
+      output_tail: preRebaseHead,
+    })
+    expect(heads).toEqual([])
+  } finally {
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
 test('exec stores a bounded tail after scanning supplied chunks', async () => {
   const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID

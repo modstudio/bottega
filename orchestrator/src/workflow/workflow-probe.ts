@@ -212,10 +212,13 @@ async function recordWorkflowCommand(
   cwd: string,
   ran: ProbeRunResult,
   kind: 'probe' | 'exec',
-  input: { d?: Database; commit?: string | null },
+  input: { d?: Database; commit?: string | null; preCommandCommit?: string | null },
 ): Promise<RecordedArtifact> {
   const commandJson = JSON.stringify(command)
-  const redactedOutput = withholdSecretShapedLines(ran.output, [input.commit ?? ''])
+  const redactedOutput = withholdSecretShapedLines(ran.output, [
+    input.commit ?? '',
+    input.preCommandCommit ?? '',
+  ])
   const commandSecret = containsSecretShaped(commandJson)
   const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
@@ -224,14 +227,15 @@ async function recordWorkflowCommand(
   return writeTransaction(() => {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,withheld,command_withheld,session_id,created_at,kind)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO probe (record_id,command,cwd,head_commit,pre_command_head_commit,exit_code,output_tail,withheld,command_withheld,session_id,created_at,kind)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),
         storedCommand,
         cwd,
         input.commit ?? null,
+        input.preCommandCommit ?? null,
         ran.exitCode,
         tail,
         withheld ? 1 : 0,
@@ -254,6 +258,7 @@ export async function recordWorkflowExec(
     commit?: string | null
     write?: (chunk: string) => void
     registeredProject?: boolean
+    resolveHeadCommit?: (cwd: string) => string | null
   } = {},
 ): Promise<ProbeRecord> {
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
@@ -266,14 +271,20 @@ export async function recordWorkflowExec(
       `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
     )
   const cwd = input.cwd ?? process.cwd()
-  const commit = input.commit === undefined ? headCommit(cwd) : input.commit
+  const resolveHeadCommit = input.resolveHeadCommit ?? headCommit
+  const commandHead = input.commit === undefined ? resolveHeadCommit(cwd) : input.commit
   if (input.registeredProject === false)
     throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
   const ran = input.runner
     ? await input.runner({ command, cwd })
     : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)), [
-        commit ?? '',
+        commandHead ?? '',
       ])
-  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', { ...input, commit })
+  const evidenceHead = input.commit === undefined ? resolveHeadCommit(cwd) : input.commit
+  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', {
+    ...input,
+    commit: evidenceHead,
+    preCommandCommit: commandHead,
+  })
   return finishRecord(recorded, ran)
 }

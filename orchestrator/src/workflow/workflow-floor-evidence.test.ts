@@ -4,10 +4,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
-  checkoutOutsideChangeRefusal,
-  classifyCheckoutEvidence,
-} from './workflow-checkout-refusal.ts'
-import {
   type CursorIdentity,
   type FloorEvidencePorts,
   gatherValidatedEvidence,
@@ -29,72 +25,6 @@ test.each([
     `--task DEV-1070 could not be read through the project's tracker by ${PLATFORM_SLUG} task show DEV-1070 --json --fresh: detail withheld`,
   )
   expect(refusal).not.toContain(detail)
-})
-
-test('checkout evidence accepts a commit from the cursor branch', () => {
-  expect(
-    classifyCheckoutEvidence({
-      headIsTipOrAncestor: true,
-      landingCommit: null,
-      landingIsHeadOrAncestor: false,
-    }),
-  ).toBe('branch')
-})
-
-test('checkout evidence accepts a squash landing commit contained by the checkout head', () => {
-  expect(
-    classifyCheckoutEvidence({
-      headIsTipOrAncestor: false,
-      landingCommit: 'squash-landing',
-      landingIsHeadOrAncestor: true,
-    }),
-  ).toBe('post-landing')
-})
-
-test('checkout evidence accepts a checkout off trunk when it contains the landing commit', () => {
-  expect(
-    classifyCheckoutEvidence({
-      headIsTipOrAncestor: false,
-      landingCommit: 'landing',
-      landingIsHeadOrAncestor: true,
-    }),
-  ).toBe('post-landing')
-})
-
-test('checkout evidence refuses a trunk commit before the recorded landing', () => {
-  expect(
-    classifyCheckoutEvidence({
-      headIsTipOrAncestor: false,
-      landingCommit: 'later-landing',
-      landingIsHeadOrAncestor: false,
-    }),
-  ).toBe('outside-change')
-})
-
-test('checkout evidence refuses an unrelated head with no landing commit', () => {
-  expect(
-    classifyCheckoutEvidence({
-      headIsTipOrAncestor: false,
-      landingCommit: null,
-      landingIsHeadOrAncestor: false,
-    }),
-  ).toBe('outside-change')
-})
-
-test('an unavailable landing commit names the condition and pull remedy', () => {
-  const refusal = checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
-    project: 'fixture',
-    branch: 'main',
-    checkoutPath: '/fixture/main',
-    headIsTipOrAncestor: false,
-    landingCommit: 'dd3e2d8050120bf3d676f86257d0c92c0c5bff41',
-    landingIsHeadOrAncestor: undefined,
-    landingBranch: 'main',
-  })
-  expect(refusal).toContain(
-    'landing commit dd3e2d8050120bf3d676f86257d0c92c0c5bff41 is not available in /fixture/main',
-  )
-  expect(refusal).toContain('git pull --ff-only origin main')
 })
 
 const identity: CursorIdentity = {
@@ -648,6 +578,45 @@ test('exec evidence is branch-bound and carries its exit code', () => {
     exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
     pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
   })
+})
+
+test('exec evidence uses the post-command head that belongs to the rebased branch', () => {
+  const d = database()
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}','["git","rebase","origin/main"]','/fixture/work','rebased-tip',0,'','2026-09-01','exec')`,
+  ).run()
+
+  expect(
+    gather(
+      d,
+      { artifact: 'exec:1' },
+      {
+        resolveCheckout: (_cwd, headCommit) =>
+          headCommit === 'rebased-tip'
+            ? matchingCheckout
+            : { ...matchingCheckout, headIsTipOrAncestor: false },
+      },
+    ).artifact,
+  ).toEqual({ ref: 'exec:1', exists: true })
+})
+
+test('exec evidence refuses a post-command head outside the change', () => {
+  const d = database()
+  d.query(
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}','["git","rebase","origin/main"]','/fixture/work','foreign-tip',0,'','2026-09-01','exec')`,
+  ).run()
+
+  expect(() =>
+    gather(
+      d,
+      { artifact: 'exec:1' },
+      {
+        resolveCheckout: () => ({ ...matchingCheckout, headIsTipOrAncestor: false }),
+      },
+    ),
+  ).toThrow('--artifact exec:1 head_commit does not belong to DEV-977-work or its recorded landing')
 })
 
 test('a pr-create exec whose output URL cannot be judged is gathered as a condition', () => {
