@@ -32,25 +32,25 @@ test('only a real path inside the OS temporary directory earns scratch migration
     symlinkSync(process.cwd(), linked)
     expect(
       temporaryStateStoreMigrationAllowed(
-        realPathForPotentialPath(join(scratch, 'state', 'orch.db')),
+        realPathForPotentialPath(join(scratch, 'state', 'orchestrator.db')),
         temporaryDirectory,
       ),
     ).toBeTrue()
     expect(
       temporaryStateStoreMigrationAllowed(
-        realPathForPotentialPath('/installation/state/orch.db'),
+        realPathForPotentialPath('/installation/state/orchestrator.db'),
         temporaryDirectory,
       ),
     ).toBeFalse()
     expect(
       temporaryStateStoreMigrationAllowed(
-        realPathForPotentialPath(`${temporaryDirectory}-lookalike/orch.db`),
+        realPathForPotentialPath(`${temporaryDirectory}-lookalike/orchestrator.db`),
         temporaryDirectory,
       ),
     ).toBeFalse()
     expect(
       temporaryStateStoreMigrationAllowed(
-        realPathForPotentialPath(join(linked, 'orch.db')),
+        realPathForPotentialPath(join(linked, 'orchestrator.db')),
         temporaryDirectory,
       ),
     ).toBeFalse()
@@ -97,8 +97,8 @@ describe('state root resolution', () => {
   })
 
   test('per-file overrides resolve without HOME', () => {
-    expect(resolveOrchestratorDatabase({ BOTTEGA_ORCHESTRATOR_DB: '/tmp/orch.db' })).toBe(
-      '/tmp/orch.db',
+    expect(resolveOrchestratorDatabase({ BOTTEGA_ORCHESTRATOR_DB: '/tmp/orchestrator.db' })).toBe(
+      '/tmp/orchestrator.db',
     )
     expect(resolveHubDatabase({ BOTTEGA_HUB_DB: '/tmp/hub.db' })).toBe('/tmp/hub.db')
   })
@@ -110,7 +110,7 @@ describe('state root resolution', () => {
       BOTTEGA_RUNS: '',
       BOTTEGA_HUB_DB: '',
     }
-    expect(resolveOrchestratorDatabase(env)).toBe('/state/orchestrator/orch.db')
+    expect(resolveOrchestratorDatabase(env)).toBe('/state/orchestrator/orchestrator.db')
     expect(resolveRunsDirectory(env)).toBe('/state/orchestrator/runs')
     expect(resolveHubDatabase(env)).toBe('/state/hub/hub.db')
   })
@@ -136,22 +136,31 @@ describe('state root resolution', () => {
 
 test('legacy store refusal names every orchestrator move', () => {
   const refusal = legacyStoreRefusal(
-    { store: true, wal: true, shm: true, runs: true, destinationStore: false },
+    { store: true, wal: true, shm: true, journal: true, runs: true, destinationStore: false },
     {
-      legacyStore: '/checkout/orchestrator/orch.db',
-      destinationStore: '/state/orchestrator/orch.db',
+      legacyStore: '/checkout/orchestrator/orchestrator.db',
+      destinationStore: '/state/orchestrator/orchestrator.db',
       legacyRuns: '/checkout/orchestrator/runs',
       destinationRuns: '/state/orchestrator/runs',
     },
   )
-  expect(refusal).toContain('/checkout/orchestrator/orch.db -> /state/orchestrator/orch.db')
-  expect(refusal).toContain('/checkout/orchestrator/orch.db-wal -> /state/orchestrator/orch.db-wal')
-  expect(refusal).toContain('/checkout/orchestrator/orch.db-shm -> /state/orchestrator/orch.db-shm')
+  expect(refusal).toContain(
+    '/checkout/orchestrator/orchestrator.db -> /state/orchestrator/orchestrator.db',
+  )
+  expect(refusal).toContain(
+    '/checkout/orchestrator/orchestrator.db-wal -> /state/orchestrator/orchestrator.db-wal',
+  )
+  expect(refusal).toContain(
+    '/checkout/orchestrator/orchestrator.db-shm -> /state/orchestrator/orchestrator.db-shm',
+  )
+  expect(refusal).toContain(
+    '/checkout/orchestrator/orchestrator.db-journal -> /state/orchestrator/orchestrator.db-journal',
+  )
   expect(refusal).toContain('/checkout/orchestrator/runs -> /state/orchestrator/runs')
   expect(refusal).toContain('check any existing destination before moving')
   expect(
     legacyStoreRefusal(
-      { store: false, wal: false, shm: false, destinationStore: false },
+      { store: false, wal: false, shm: false, journal: false, destinationStore: false },
       { legacyStore: '/legacy', destinationStore: '/state' },
     ),
   ).toBeNull()
@@ -159,31 +168,31 @@ test('legacy store refusal names every orchestrator move', () => {
 
 test('legacy store refusal lists only a remaining sidecar', () => {
   const refusal = legacyStoreRefusal(
-    { store: false, wal: true, shm: false, destinationStore: false },
-    { legacyStore: '/legacy/orch.db', destinationStore: '/state/orch.db' },
+    { store: false, wal: true, shm: false, journal: false, destinationStore: false },
+    { legacyStore: '/legacy/orchestrator.db', destinationStore: '/state/orchestrator.db' },
   )
-  expect(refusal).toContain('/legacy/orch.db-wal -> /state/orch.db-wal')
-  expect(refusal).not.toContain('/legacy/orch.db -> /state/orch.db')
-  expect(refusal).not.toContain('/legacy/orch.db-shm')
+  expect(refusal).toContain('/legacy/orchestrator.db-wal -> /state/orchestrator.db-wal')
+  expect(refusal).not.toContain('/legacy/orchestrator.db -> /state/orchestrator.db')
+  expect(refusal).not.toContain('/legacy/orchestrator.db-shm')
 })
 
 test('legacy store refusal lists only a remaining runs directory', () => {
   const refusal = legacyStoreRefusal(
-    { store: false, wal: false, shm: false, runs: true, destinationStore: false },
+    { store: false, wal: false, shm: false, journal: false, runs: true, destinationStore: false },
     {
-      legacyStore: '/legacy/orch.db',
-      destinationStore: '/state/orch.db',
+      legacyStore: '/legacy/orchestrator.db',
+      destinationStore: '/state/orchestrator.db',
       legacyRuns: '/legacy/runs',
       destinationRuns: '/state/runs',
     },
   )
   expect(refusal).toContain('/legacy/runs -> /state/runs')
-  expect(refusal).not.toContain('/legacy/orch.db -> /state/orch.db')
+  expect(refusal).not.toContain('/legacy/orchestrator.db -> /state/orchestrator.db')
 })
 
 test('legacy store refusal applies even when the destination already exists', () => {
   const refusal = legacyStoreRefusal(
-    { store: true, wal: false, shm: false, destinationStore: true },
+    { store: true, wal: false, shm: false, journal: false, destinationStore: true },
     {
       legacyStore: '/legacy',
       destinationStore: '/existing-state',

@@ -42,7 +42,7 @@ const WORKTREE_DIR = /\.claude\/worktrees\/([^/]+)/
  * A key inside a worktree directory name.
  *
  * Deliberately loose about separator and case, because the naming convention
- * is not one convention. All of these are live in `orch.db` right now:
+ * is not one convention. All of these are live in `orchestrator.db` right now:
  *
  *     .claude/worktrees/AB-2533
  *     .claude/worktrees/STAR-5347

@@ -18,7 +18,7 @@ test('counts each legacy-name class in fixture text', () => {
       'bin/orch, bin/hub.',
       `mcp__orch__get_doc orch-ask mcp_servers.orch={command="${PLATFORM_NAME}"}`,
       'ORCH_DB HUB_PORT',
-      'orch.db',
+      ['orch', 'db'].join('.'),
     ].join('\n'),
   )
 

@@ -1,6 +1,6 @@
 ---
 name: port-feature
-description: Port task-management / workflow / MCP subsystem features between projects registered in orch. Scans the source project for changes since the last port, filters through recorded per-project differences, and stages adapted tasks in the target project via its MCP server. The ledger, doctrine, baselines and differences live in orch.db, not in files.
+description: Port task-management / workflow / MCP subsystem features between projects registered in orch. Scans the source project for changes since the last port, filters through recorded per-project differences, and stages adapted tasks in the target project via its MCP server. The ledger, doctrine, baselines and differences live in orchestrator.db, not in files.
 ---
 
 # Port Feature Between Projects
@@ -18,7 +18,7 @@ and it is why the data had to be moved.
 
 ## Where the substance lives
 
-It is in `orch.db`, reachable through `bottega doc port` and `bottega doc show`. There are
+It is in `orchestrator.db`, reachable through `bottega doc port` and `bottega doc show`. There are
 no supporting files in this directory any more.
 
 | what | how to read it |

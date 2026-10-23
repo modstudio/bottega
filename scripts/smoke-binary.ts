@@ -210,7 +210,7 @@ try {
     }
   }
   await smoke(binary, ['task', 'list'], stateHome)
-  if (!existsSync(join(stateHome, 'orchestrator', 'orch.db'))) {
+  if (!existsSync(join(stateHome, 'orchestrator', 'orchestrator.db'))) {
     throw new Error(`${PLATFORM_SLUG} agent jobs did not create the orchestrator store`)
   }
   if (!existsSync(join(stateHome, 'hub', 'hub.db'))) {
@@ -307,7 +307,7 @@ try {
   ) {
     throw new Error(`second ${PLATFORM_SLUG} machine setup apply did not report unchanged`)
   }
-  const orchestrator = new Database(join(stateHome, 'orchestrator', 'orch.db'), {
+  const orchestrator = new Database(join(stateHome, 'orchestrator', 'orchestrator.db'), {
     readonly: true,
   })
   try {
@@ -347,7 +347,7 @@ try {
   await run(['git', 'config', 'user.name', 'Binary Smoke'], probeRepository)
   await run(['git', 'add', 'README.md'], probeRepository)
   await run(['git', 'commit', '-m', 'DEV-997 binary smoke fixture'], probeRepository)
-  const smokeStore = new Database(join(stateHome, 'orchestrator', 'orch.db'))
+  const smokeStore = new Database(join(stateHome, 'orchestrator', 'orchestrator.db'))
   try {
     smokeStore
       .query(

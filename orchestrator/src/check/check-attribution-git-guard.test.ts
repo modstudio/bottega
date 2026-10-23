@@ -26,7 +26,7 @@ function fixture() {
   mkdirSync(worktree, { recursive: true })
   mkdirSync(outside)
 
-  const databasePath = join(root, 'orch.db')
+  const databasePath = join(root, 'orchestrator.db')
   writeMigratedTestDatabase(databasePath)
   const database = new Database(databasePath)
   database

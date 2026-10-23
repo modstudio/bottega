@@ -2,15 +2,15 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../../shared/install-root.ts'
 import {
+  LEGACY_ORCHESTRATOR_DATABASE,
   legacyStoreRefusal,
   realPathForPotentialPath,
   resolveOrchestratorDatabase,
-  resolveRunsDirectory,
   resolveStatePaths,
   type StateEnvironment,
   temporaryStateStoreMigrationAllowed,
@@ -278,29 +278,31 @@ export function legacyDatabaseRefusal(
   env: StateEnvironment = process.env as StateEnvironment,
 ): string | null {
   if (resolution.method === 'BOTTEGA_ORCHESTRATOR_DB') return null
-  if (embeddedDistributionManifest()) return null
-  const binaryRepository = repositoryRootFromGit(ROOT) ?? repositoryRootFromDotGit(ROOT)
-  if (!binaryRepository) return null
-  const legacyStore = join(
-    binaryRepository.root,
-    'orchestrator',
-    FROZEN_STATE_NAMES.orchestratorDatabase,
-  )
-  const legacyRuns = join(binaryRepository.root, 'orchestrator', FROZEN_STATE_NAMES.runsDirectory)
+  const state = resolveStatePaths(env)
+  const legacyStore = join(state.orchestratorDirectory, LEGACY_ORCHESTRATOR_DATABASE)
+  const destinationStore = existsSync(resolution.path)
+  const legacyFacts = {
+    store: existsSync(legacyStore),
+    wal: existsSync(`${legacyStore}-wal`),
+    shm: existsSync(`${legacyStore}-shm`),
+    journal: existsSync(`${legacyStore}-journal`),
+    destinationStore,
+  }
+  const interruptedMove =
+    !legacyFacts.store &&
+    destinationStore &&
+    (legacyFacts.wal || legacyFacts.shm || legacyFacts.journal)
   return legacyStoreRefusal(
-    {
-      store: existsSync(legacyStore),
-      wal: existsSync(`${legacyStore}-wal`),
-      shm: existsSync(`${legacyStore}-shm`),
-      runs: existsSync(legacyRuns),
-      destinationStore: existsSync(resolution.path),
-    },
+    legacyFacts,
     {
       legacyStore,
       destinationStore: resolution.path,
-      legacyRuns,
-      destinationRuns: resolveRunsDirectory(env),
     },
+    interruptedMove
+      ? `${PLATFORM_SLUG} machine setup apply completes the interrupted move before retrying`
+      : destinationStore
+        ? 'decide which database holds the live store, then remove the other before retrying'
+        : `run ${PLATFORM_SLUG} machine setup apply before retrying`,
   )
 }
 

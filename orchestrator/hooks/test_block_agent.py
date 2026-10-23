@@ -30,7 +30,7 @@ class SpawnIdentityTest(unittest.TestCase):
 
     def test_logged_spawn_has_version_seven_record_id(self):
         with tempfile.TemporaryDirectory() as folder:
-            database = os.path.join(folder, "orch.db")
+            database = os.path.join(folder, "orchestrator.db")
             connection = sqlite3.connect(database)
             connection.execute(
                 """CREATE TABLE spawn (
@@ -51,7 +51,7 @@ class SpawnIdentityTest(unittest.TestCase):
 
     def test_fallback_uuid_has_version_variant_and_current_timestamp(self):
         with tempfile.TemporaryDirectory() as folder:
-            block_agent = self.load_hook(os.path.join(folder, "orch.db"))
+            block_agent = self.load_hook(os.path.join(folder, "orchestrator.db"))
             before_ms = int(time.time() * 1000)
             with patch.object(block_agent.uuid, "uuid7", None, create=True):
                 minted = block_agent.mint_uuid7()
@@ -65,7 +65,7 @@ class SpawnIdentityTest(unittest.TestCase):
 
     def test_uuid_failure_takes_the_fail_open_write_failure_path(self):
         with tempfile.TemporaryDirectory() as folder:
-            database = os.path.join(folder, "orch.db")
+            database = os.path.join(folder, "orchestrator.db")
             sqlite3.connect(database).close()
             block_agent = self.load_hook(database)
             stderr = io.StringIO()

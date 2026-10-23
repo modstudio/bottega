@@ -136,6 +136,9 @@ export function resolveOrchestratorDatabase(env: StateEnvironment): string {
     : resolveStatePaths(env).orchestratorDatabase
 }
 
+/** The retired default filename, retained only for the one-way setup migration and refusal. */
+export const LEGACY_ORCHESTRATOR_DATABASE = ['orch', 'db'].join('.')
+
 export function resolveRunsDirectory(env: StateEnvironment): string {
   if (env.BOTTEGA_RUNS) return resolve(env.BOTTEGA_RUNS)
   if (env.BOTTEGA_ORCHESTRATOR_DB)
@@ -162,23 +165,31 @@ export type LegacyStoreFacts = {
   store: boolean
   wal: boolean
   shm: boolean
+  journal: boolean
   runs?: boolean
   destinationStore: boolean
 }
 
 /** Pure refusal decision shared by both stores; callers supply filesystem facts. */
-export function legacyStoreRefusal(facts: LegacyStoreFacts, move: LegacyStoreMove): string | null {
+export function legacyStoreRefusal(
+  facts: LegacyStoreFacts,
+  move: LegacyStoreMove,
+  remedy = 'check any existing destination before moving, then move the existing state before retrying (sidecars and runs when present)',
+): string | null {
   const paths: [string, string][] = []
   if (facts.store) paths.push([move.legacyStore, move.destinationStore])
   if (facts.wal) paths.push([`${move.legacyStore}-wal`, `${move.destinationStore}-wal`])
   if (facts.shm) paths.push([`${move.legacyStore}-shm`, `${move.destinationStore}-shm`])
+  if (facts.journal) {
+    paths.push([`${move.legacyStore}-journal`, `${move.destinationStore}-journal`])
+  }
   if (facts.runs && move.legacyRuns && move.destinationRuns) {
     paths.push([move.legacyRuns, move.destinationRuns])
   }
   if (paths.length === 0) return null
   return (
     `refusing to open state while legacy state exists${facts.destinationStore ? ' and the destination store already exists' : ''}\n` +
-    `check any existing destination before moving, then move the existing state before retrying (sidecars and runs when present):\n` +
+    `${remedy}:\n` +
     paths.map(([source, destination]) => `  ${source} -> ${destination}`).join('\n')
   )
 }

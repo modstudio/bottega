@@ -9,7 +9,7 @@ import { initializeDefaultLocalProject } from './project-register-store.ts'
 
 function temporaryStore() {
   const root = mkdtempSync(join(tmpdir(), 'orch-private-create-'))
-  return { root, path: join(root, 'orch.db') }
+  return { root, path: join(root, 'orchestrator.db') }
 }
 
 function initialize(database: Database, root: string): void {

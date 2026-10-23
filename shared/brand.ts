@@ -29,7 +29,7 @@
  * - **`BOTTEGA_*` environment variables** are the process protocol. Old
  *   environment names exist only as inputs to the operator setup migration.
  * - **`.orch-run`**, the persisted worktree ownership marker.
- * - **`orch.db` and `hub.db`**, which are files on disk with history in them.
+ * - **the orchestrator and hub databases**, which are files on disk with history in them.
  * Renaming one of those is a migration with a rollout, not a find-and-replace,
  * which is exactly why they are listed rather than left to judgment.
  */
@@ -47,7 +47,7 @@ export const MCP_TOOL_PREFIX = `mcp__${PLATFORM_SLUG}__`
 
 /** On-disk state names are protocol: changing one requires an operator migration. */
 export const FROZEN_STATE_NAMES = {
-  orchestratorDatabase: 'orch.db',
+  orchestratorDatabase: 'orchestrator.db',
   hubDatabase: 'hub.db',
   retrievalDatabase: 'retrieval.db',
   runsDirectory: 'runs',

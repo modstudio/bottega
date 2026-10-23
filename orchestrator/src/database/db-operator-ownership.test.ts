@@ -93,7 +93,7 @@ test('a plain terminal adopts an ownerless run on its first score', async () => 
 
 test('sessionId neither throws nor writes through a read-only store with no machine id', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-session-id-readonly-'))
-  const path = join(root, 'orch.db')
+  const path = join(root, 'orchestrator.db')
   const configHome = process.env.BOTTEGA_CONFIG_HOME
   try {
     process.env.BOTTEGA_CONFIG_HOME = join(root, 'config')

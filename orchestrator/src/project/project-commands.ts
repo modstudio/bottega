@@ -111,7 +111,7 @@ function listProjectsCommand(flags: ProjectFlags, presentation: ProjectPresentat
   const all = retired ? projects({ retired: true }) : projects()
   /**
    * PUBLISHED, because hub cannot import this concern and must not open
-   * `orch.db`.
+   * `orchestrator.db`.
    *
    * The boundary check forbids the import and a shared database would make
    * two concerns one, so what another concern needs is emitted here — the

@@ -37,7 +37,7 @@ export type StorageReport = {
   }
   worktrees: { project: string; path: string; measurement: StorageMeasurement }[]
   stores: {
-    kind: 'orch.db' | 'orch.db-wal' | 'hub.db' | 'hub.db-wal'
+    kind: 'orchestrator.db' | 'orchestrator.db-wal' | 'hub.db' | 'hub.db-wal'
     path: string
     measurement: StorageMeasurement
   }[]
@@ -192,8 +192,8 @@ export async function storageReport(clock = Date.now()): Promise<StorageReport> 
       }),
   )
   const storePaths = [
-    { kind: 'orch.db' as const, path: orch },
-    { kind: 'orch.db-wal' as const, path: `${orch}-wal` },
+    { kind: 'orchestrator.db' as const, path: orch },
+    { kind: 'orchestrator.db-wal' as const, path: `${orch}-wal` },
     { kind: 'hub.db' as const, path: hub },
     { kind: 'hub.db-wal' as const, path: `${hub}-wal` },
   ]

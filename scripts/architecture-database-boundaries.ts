@@ -21,6 +21,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       'shared/store-access.ts',
       'orchestrator/src/caller-classification.ts',
       `${source}contention.ts`,
+      `${source}database-file-family.ts`,
       `${source}database-location.ts`,
       `${source}machine-identity-store.ts`,
       `${source}migration-compatibility.ts`,

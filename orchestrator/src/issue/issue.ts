@@ -898,7 +898,7 @@ export async function workIssue(key: string): Promise<void> {
           `Live current value matched diagnosis: ${currentMatches ? 'yes' : `no; observed ${JSON.stringify(actualCurrent)}`}`,
           `Coordinator before against live read-only register: ${before.text}`,
           `Coordinator after against copied register: ${after.text}`,
-          'Application: not performed; the live orch.db remains unchanged.',
+          'Application: not performed; the live orchestrator.db remains unchanged.',
           `Ready to apply: ${proven ? 'yes' : 'no — handed back because independent measurements did not match'}`,
         ],
       )

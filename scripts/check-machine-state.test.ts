@@ -71,7 +71,7 @@ describe('machine state decision', () => {
           true,
           'node_modules/package/cache.db',
           'hub/node_modules/package/cache.db.backup-now',
-          '.claude/worktrees/other/orchestrator/orch.db',
+          '.claude/worktrees/other/orchestrator/orchestrator.db',
           'nested/.claude/agent/cache.db.backup-',
         ),
         ...paths(true, 'shared/state-directory.ts'),

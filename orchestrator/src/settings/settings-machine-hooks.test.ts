@@ -11,7 +11,7 @@ import {
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
 
 const ASSET_ROOT = '/installed/product'
-const DATABASE = '/state/orchestrator/orch.db'
+const DATABASE = '/state/orchestrator/orchestrator.db'
 const OLD_ROOT = '/Users/operator/Projects/bottega'
 const command = (file: string) => `python3 ${OLD_ROOT}/orchestrator/hooks/${file}`
 const handler = (file: string, extra: Record<string, unknown> = {}) => ({

@@ -23,7 +23,7 @@ let readCanonGateInput: typeof import('./check-canon-drift.ts').readCanonGateInp
 
 beforeAll(async () => {
   databaseScratch = mkdtempSync(join(tmpdir(), 'canon-drift-database-'))
-  process.env.BOTTEGA_ORCHESTRATOR_DB = join(databaseScratch, 'orch.db')
+  process.env.BOTTEGA_ORCHESTRATOR_DB = join(databaseScratch, 'orchestrator.db')
   ;({ openReadOnlyDatabase } = await import('../orchestrator/src/database/db.ts'))
   ;({
     branchChangedPaths,

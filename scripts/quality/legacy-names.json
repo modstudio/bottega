@@ -32,41 +32,7 @@
     "files": {}
   },
   "state-file": {
-    "total": 86,
-    "files": {
-      ".agents/contexts/hub.md": 1,
-      ".agents/contexts/orchestrator-docs.md": 4,
-      ".agents/skills/cleanup/SKILL.md": 1,
-      ".agents/skills/port-feature/SKILL.md": 2,
-      "hub/src/attribute.ts": 1,
-      "hub/src/duplicate-matcher.fixture.ts": 1,
-      "hub/src/ingest/runs.ts": 1,
-      "hub/src/orch.ts": 1,
-      "orchestrator/hooks/test_block_agent.py": 3,
-      "orchestrator/src/check/check-attribution-git-guard.test.ts": 1,
-      "orchestrator/src/check/check-commands-attribution.test.ts": 1,
-      "orchestrator/src/check/check-commands.test.ts": 1,
-      "orchestrator/src/database/database-commands.test.ts": 1,
-      "orchestrator/src/database/database-location.test.ts": 15,
-      "orchestrator/src/database/db-operator-ownership.test.ts": 1,
-      "orchestrator/src/database/db-private-creation.test.ts": 1,
-      "orchestrator/src/health/health-commands.ts": 1,
-      "orchestrator/src/issue/issue.ts": 1,
-      "orchestrator/src/monitor/storage-report.ts": 4,
-      "orchestrator/src/porting/porting-import.ts": 1,
-      "orchestrator/src/project/project-commands.ts": 1,
-      "orchestrator/src/project/projects.ts": 1,
-      "orchestrator/src/run/run-listing.ts": 1,
-      "orchestrator/src/settings/settings-machine-apply.test.ts": 1,
-      "orchestrator/src/settings/settings-machine-hooks.test.ts": 1,
-      "orchestrator/src/worktree/worktree-provision.test.ts": 2,
-      "README.md": 2,
-      "scripts/check-canon-drift.test.ts": 1,
-      "scripts/check-machine-state.test.ts": 1,
-      "scripts/smoke-binary.ts": 3,
-      "scripts/smoke-release.ts": 1,
-      "shared/brand.ts": 2,
-      "shared/state-directory.test.ts": 26
-    }
+    "total": 0,
+    "files": {}
   }
 }

@@ -33,6 +33,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-legacy-path.ts',
       './setup-planner.ts',
       './setup-registration-write.ts',
+      './setup-state-file.ts',
     ],
     typeOnlyAllowed: [],
     reason:
@@ -48,11 +49,25 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/config-directory.ts',
       '../../../shared/config-client.ts',
       './environment-name-migration.ts',
+      './setup-state-file.ts',
       '../config/config-service.ts',
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep environment migration decisions and operator-file writes independent of setup planning and presentation.',
+  },
+  {
+    name: 'setup-state-file-boundary',
+    file: 'orchestrator/src/setup/setup-state-file.ts',
+    allowed: [
+      'node:fs/promises',
+      'node:path',
+      '../../../shared/process-identity.ts',
+      '../../../shared/state-directory.ts',
+      '../database/database-file-family.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep state-file migration independent of SQLite and setup presentation.',
   },
   {
     name: 'setup-registration-write-boundary',
@@ -118,7 +133,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-mcp-config.ts',
       './setup-legacy-path.ts',
     ],
-    typeOnlyAllowed: ['./setup-planner.ts'],
+    typeOnlyAllowed: ['./setup-environment.ts', './setup-planner.ts'],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
   },

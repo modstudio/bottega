@@ -44,7 +44,7 @@ function run(database: string, ...argv: string[]) {
 }
 
 function registerProject(name: string, path: string, settings: ProjectSettings): string {
-  const databasePath = join(fixtureDirectory('enabled-check-db-'), 'orch.db')
+  const databasePath = join(fixtureDirectory('enabled-check-db-'), 'orchestrator.db')
   writeMigratedTestDatabase(databasePath)
   const database = new Database(databasePath)
   database

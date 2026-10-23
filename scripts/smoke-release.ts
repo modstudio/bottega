@@ -121,7 +121,7 @@ cp /fake-harness /tmp/fake-bin/codex
 chmod 755 /tmp/fake-bin/codex
 printf '%s\\n' '{}' > /home/smoke/.codex/auth.json
 : > /home/smoke/.codex/config.toml
-sqlite3 /tmp/state/orchestrator/orch.db "UPDATE agent SET caps=json_set(caps, '$.replyFile', json('true')), probed_at=datetime('now'), probe_result=json_object('ok', json('true'), 'source', 'release smoke fixture') WHERE name='codex';"
+sqlite3 /tmp/state/orchestrator/orchestrator.db "UPDATE agent SET caps=json_set(caps, '$.replyFile', json('true')), probed_at=datetime('now'), probe_result=json_object('ok', json('true'), 'source', 'release smoke fixture') WHERE name='codex';"
 chown -R smoke:smoke /tmp/state /tmp/probe-repository /tmp/mcp-state /home/smoke/.codex
 su -s /bin/sh smoke -c '
   set -eux
