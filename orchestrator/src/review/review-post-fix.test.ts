@@ -9,6 +9,32 @@ import { serializePathSet } from './review-group.ts'
 import { measureChangeIdentity, pinRef } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 
+const unidentifiedTipFacts = {
+  completed: { number: 7, identity: null, launchKey: null, runIds: [] },
+  reviewedTip: null,
+  fixFiles: null,
+}
+
+test('a completed tier-two round needs no later round when its reviewed tip is unidentified', () => {
+  expect(
+    postFixReviewDecision({ facts: unidentifiedTipFacts, tier: 2, review: undefined }),
+  ).toMatchObject({
+    kind: 'no-round-needed',
+    reviewNumber: 7,
+    reviewedTip: null,
+    applicability: { lenses: [] },
+  })
+})
+
+test('a completed tier-three round applies the fallback when its reviewed tip is unidentified', () => {
+  expect(
+    postFixReviewDecision({ facts: unidentifiedTipFacts, tier: 3, review: undefined }),
+  ).toEqual({
+    kind: 'reviewed-tip-unidentified',
+    reviewNumber: 7,
+  })
+})
+
 function git(repo: string, ...args: string[]): string {
   const result = spawnFixtureGitSync(args, { cwd: repo })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
