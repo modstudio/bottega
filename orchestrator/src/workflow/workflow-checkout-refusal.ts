@@ -4,6 +4,7 @@
 export type CheckoutResolution = {
   project: string | null
   branch: string | null
+  checkoutPath?: string
   headIsTipOrAncestor: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
@@ -11,6 +12,21 @@ export type CheckoutResolution = {
 }
 
 export type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
+
+type CheckoutAnswer = { checkoutPath: string } | { refusal: string }
+
+/** Chooses the checkout that can answer git provenance questions for recorded evidence. */
+export function decideCheckoutAnswer(input: {
+  recordedCwd: string
+  recordedCwdIsDirectory: boolean
+  mainCheckoutPath: string | null
+}): CheckoutAnswer {
+  if (input.recordedCwdIsDirectory) return { checkoutPath: input.recordedCwd }
+  if (input.mainCheckoutPath) return { checkoutPath: input.mainCheckoutPath }
+  return {
+    refusal: `recorded evidence cwd ${input.recordedCwd} is no longer a directory and the cursor project has no registered main checkout`,
+  }
+}
 
 /** Decides whether a commit belongs to the change before or after its recorded landing. */
 export function classifyCheckoutEvidence(input: {

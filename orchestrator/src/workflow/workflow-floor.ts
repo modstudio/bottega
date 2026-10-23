@@ -809,7 +809,10 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   )
   const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }
-  const bindingRefusal = commandExitBindingRefusal(input.evidence.exec)
+  const bindingRefusal = commandExitBindingRefusal(
+    input.evidence.exec,
+    input.floors.some((floor) => floor.commandEvidence === 'pull-request'),
+  )
   if (
     met.length === 0 &&
     bindingRefusal &&

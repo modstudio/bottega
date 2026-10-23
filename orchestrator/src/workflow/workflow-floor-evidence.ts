@@ -2,7 +2,7 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
@@ -24,6 +24,7 @@ import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
+  decideCheckoutAnswer,
 } from './workflow-checkout-refusal.ts'
 import {
   type ArtifactRef,
@@ -211,36 +212,46 @@ function productionResolveCheckout(
   identity: CursorIdentity,
   d: Database,
 ): CheckoutResolution {
-  const project = cwdProject(cwd, identity, d)
-  const branch = gitText(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const registered = projectByName(identity.project, d)
+  const cwdIsDirectory = existsSync(cwd) && statSync(cwd).isDirectory()
+  const answer = decideCheckoutAnswer({
+    recordedCwd: cwd,
+    recordedCwdIsDirectory: cwdIsDirectory,
+    mainCheckoutPath: registered?.path ?? null,
+  })
+  if ('refusal' in answer) throw new Error(answer.refusal)
+  const checkout = answer.checkoutPath
+  const project = cwdProject(checkout, identity, d)
+  const branch = gitText(checkout, ['rev-parse', '--abbrev-ref', 'HEAD'])
   const tip =
     (expectedBranch
-      ? (gitText(cwd, ['rev-parse', '--verify', expectedBranch]) ??
-        gitText(cwd, ['rev-parse', '--verify', `origin/${expectedBranch}`]))
-      : null) ?? gitText(cwd, ['rev-parse', 'HEAD'])
+      ? (gitText(checkout, ['rev-parse', '--verify', expectedBranch]) ??
+        gitText(checkout, ['rev-parse', '--verify', `origin/${expectedBranch}`]))
+      : null) ?? gitText(checkout, ['rev-parse', 'HEAD'])
   const headIsTipOrAncestor = Boolean(
-    headCommit && tip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, tip]),
+    headCommit && tip && gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, tip]),
   )
   const landingCommit = headIsTipOrAncestor
     ? null
     : checkoutLandingCommit(identity.project, expectedBranch, d)
   const landingCommitAvailable = Boolean(
-    landingCommit && gitOk(cwd, ['cat-file', '-e', `${landingCommit}^{commit}`]),
+    landingCommit && gitOk(checkout, ['cat-file', '-e', `${landingCommit}^{commit}`]),
   )
   const landingIsHeadOrAncestor = landingCommitAvailable
     ? Boolean(
         landingCommit &&
           headCommit &&
-          gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+          gitOk(checkout, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
       )
     : undefined
   return {
     project,
     branch,
+    checkoutPath: checkout,
     headIsTipOrAncestor,
     landingCommit,
     landingIsHeadOrAncestor,
-    landingBranch: projectByName(identity.project, d)?.settings.trunk ?? 'main',
+    landingBranch: registered?.settings.trunk ?? 'main',
   }
 }
 
@@ -453,7 +464,9 @@ function requireCheckout(
       `${flag} cwd is on ${checkout.branch ?? 'unset'}, not this cursor's ${identity.branch}`,
     )
   if (identity.branch && location === 'outside-change')
-    throw new Error(checkoutOutsideChangeRefusal(flag, identity.branch, cwd, checkout))
+    throw new Error(
+      checkoutOutsideChangeRefusal(flag, identity.branch, checkout.checkoutPath ?? cwd, checkout),
+    )
   return checkout
 }
 
