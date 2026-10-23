@@ -77,7 +77,7 @@ describe('MCP attachment ruling', () => {
     ).toEqual({
       agentHasMcp: false,
       refusalReason:
-        'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp',
+        'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; unset BOTTEGA_TRANSPORT and re-dispatch with --transport cli, or drop --mcp',
     })
   })
 

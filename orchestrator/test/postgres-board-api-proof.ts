@@ -99,7 +99,7 @@ export function registerBoardApiProofs(input: {
     server = await startRecordApiServer({
       ...process.env,
       PORT: '0',
-      ORCH_RECORD_URL: input.actorUrl,
+      BOTTEGA_RECORD_URL: input.actorUrl,
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
       BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
       RECORD_HUB_URL: 'http://127.0.0.1',
@@ -215,7 +215,7 @@ export function registerBoardApiProofs(input: {
       expect(
         await refreshHostedBoard({
           budgetMs: 2_000,
-          env: { ORCH_RECORD_API_URL: origin },
+          env: { BOTTEGA_RECORD_API_URL: origin },
           client: clientA,
           database: storeA,
         }),
@@ -223,7 +223,7 @@ export function registerBoardApiProofs(input: {
       expect(
         await refreshHostedBoard({
           budgetMs: 2_000,
-          env: { ORCH_RECORD_API_URL: origin },
+          env: { BOTTEGA_RECORD_API_URL: origin },
           client: clientB,
           database: storeB,
         }),
@@ -256,7 +256,7 @@ export function registerBoardApiProofs(input: {
       expect((await post(tokenA, notice(operatorNotice, 'operator', sessionA))).status).toBe(200)
       await refreshHostedBoard({
         budgetMs: 2_000,
-        env: { ORCH_RECORD_API_URL: origin },
+        env: { BOTTEGA_RECORD_API_URL: origin },
         client: clientB,
         database: storeB,
       })
@@ -291,7 +291,7 @@ export function registerBoardApiProofs(input: {
       expect(
         await refreshHostedBoard({
           budgetMs: 2_000,
-          env: { ORCH_RECORD_API_URL: origin },
+          env: { BOTTEGA_RECORD_API_URL: origin },
           client: cacheClient(tokenA),
           database: store,
         }),
@@ -303,7 +303,7 @@ export function registerBoardApiProofs(input: {
       expect(
         await refreshHostedBoard({
           budgetMs: 2_000,
-          env: { ORCH_RECORD_API_URL: origin },
+          env: { BOTTEGA_RECORD_API_URL: origin },
           client: cacheClient(tokenB),
           database: store,
         }),

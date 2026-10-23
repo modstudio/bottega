@@ -48,7 +48,7 @@ to a sidecar log rather than vanishing.
 Allowed through:
   - NEEDS-WEB in the first 200 characters of the prompt or description
   - subagent_type in ALLOW                   Claude-specific knowledge
-  - ORCH_ALLOW_AGENT=1                       the human's override
+  - BOTTEGA_ALLOW_AGENT=1                       the human's override
 
 DENIAL ONLY HAPPENS ON PreToolUse. SubagentStart cannot carry a permission
 decision and has no prompt to judge, so it is audit-only.
@@ -58,7 +58,7 @@ import json, os, re, sqlite3, subprocess, sys, time, uuid
 ALLOW = {"claude-code-guide"}
 
 ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DB = os.environ.get("ORCH_DB") or subprocess.check_output(
+DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"),
      "orchestrator", "database"], text=True,
 ).strip()
@@ -202,7 +202,7 @@ def main() -> int:
     )
     blob = "\n".join(str(inp.get(k) or "") for k in ("description", "prompt"))
 
-    if os.environ.get("ORCH_ALLOW_AGENT") == "1":
+    if os.environ.get("BOTTEGA_ALLOW_AGENT") == "1":
         log("allowed", "env-override", inp, event, payload)
         return 0
     if inp.get("subagent_type") in ALLOW:

@@ -107,7 +107,7 @@ test('records machine-readable checks emitted by a worker gate against its execu
   const gatePath = join(root, 'scripts', 'gate')
   writeFileSync(
     gatePath,
-    `#!/bin/sh\ngit diff --cached --name-only "$ORCH_GATE_BASE_COMMIT" | grep -Fx worker.txt >/dev/null || exit 9\nprintf '%s\\n' '{"check":"unit suite","category":"unit-tests","wallMs":1,"exitCode":0}' >> "$${CHECK_EXECUTION_FILE_ENV}"\n`,
+    `#!/bin/sh\ngit diff --cached --name-only "$BOTTEGA_GATE_BASE_COMMIT" | grep -Fx worker.txt >/dev/null || exit 9\nprintf '%s\\n' '{"check":"unit suite","category":"unit-tests","wallMs":1,"exitCode":0}' >> "$${CHECK_EXECUTION_FILE_ENV}"\n`,
   )
   chmodSync(gatePath, 0o755)
   git(root, 'init', '-q')
@@ -153,7 +153,7 @@ test('records machine-readable checks emitted by a worker gate against its execu
   const broker = startGateBroker({
     runId,
     scratchDir: scratch,
-    environment: { ORCH_MAIN_CHECKOUT: root },
+    environment: { BOTTEGA_MAIN_CHECKOUT: root },
     confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
@@ -204,8 +204,8 @@ test('base refresh resolves the branch remote and fetches without worker identit
   ])
   expect(calls.every((call) => call.options.cwd === '/registered/main')).toBe(true)
   expect(calls.every((call) => call.options.timeout === GATE_BASE_REFRESH_TIMEOUT_MS)).toBe(true)
-  expect(calls[1]!.options.env.ORCH_RUN_ID).toBeUndefined()
-  expect(calls[1]!.options.env.ORCH_RUN_TOKEN).toBeUndefined()
+  expect(calls[1]!.options.env.BOTTEGA_RUN_ID).toBeUndefined()
+  expect(calls[1]!.options.env.BOTTEGA_RUN_TOKEN).toBeUndefined()
   expect(result.message).toBe('gate base refresh passed: fetched upstream/develop')
 })
 
@@ -390,7 +390,7 @@ test('an occupied gate log path fails the execution without following the path',
   const broker = startGateBroker({
     runId,
     scratchDir: scratch,
-    environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
+    environment: { BOTTEGA_MAIN_CHECKOUT: '/main/checkout' },
     confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
     onExecutionStart: () => {

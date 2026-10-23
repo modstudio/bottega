@@ -30,7 +30,7 @@ import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const env = {
   CLAUDE_CODE_SESSION_ID: 'board-route-session',
-  ORCH_RECORD_API_URL: 'https://record.test',
+  BOTTEGA_RECORD_API_URL: 'https://record.test',
 }
 const noRecordEnv = {
   [CONFIG_HOME_ENV]: '/definitely-missing-config',
@@ -93,7 +93,7 @@ test('an unadopted install keeps a post local and renders its id as a string', a
   const result = await boardPost(
     { audience: 'operator', title: 'Local', body: 'unchanged' },
     {
-      env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+      env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL },
       clock: Date.parse('2026-10-05T12:00:00Z'),
       cwd: process.cwd(),
     },
@@ -571,7 +571,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
     listBoardClaims: async () => ({ claims: [hostedClaim] }),
   }
   const hostedContext = {
-    env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+    env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL },
     clock,
     client: hostedClient,
   }
@@ -711,7 +711,7 @@ test('machine audiences stay local after adoption and ids are validated for the 
   const client = createMemoryRecordApiClient()
   const local = await boardPost(
     { audience: 'machine:host', title: 'Machine', body: 'local' },
-    { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL }, client },
+    { env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL }, client },
   )
   expect(local.recordId).toMatch(/^[0-9a-f-]{36}$/)
   await expect(boardThread(local.recordId, { env, client })).rejects.toThrow(
@@ -854,7 +854,7 @@ test('hosted acknowledgement uses the reserved operator reader without a session
     },
   }
   await expect(
-    boardAcknowledge(id, { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL }, client }),
+    boardAcknowledge(id, { env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL }, client }),
   ).resolves.toEqual({ acknowledged: id })
   expect(readerSession).toBe('operator')
   expect(
@@ -888,7 +888,7 @@ test('hosted acknowledgement is cached and queued for unreachable and server fai
     await expect(
       boardAcknowledge(id, {
         clock: Date.parse('2026-10-16T12:00:00.000Z'),
-        env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+        env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL },
         client: {
           ...createMemoryRecordApiClient(),
           putBoardReceipt: async () => {
@@ -928,7 +928,7 @@ test('hosted acknowledgement refusal is rejected without caching a pending ackno
     .run(id, message.kind, message.threadRootId, message.revision, JSON.stringify(message))
   await expect(
     boardAcknowledge(id, {
-      env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL },
+      env: { BOTTEGA_RECORD_API_URL: env.BOTTEGA_RECORD_API_URL },
       client: {
         ...createMemoryRecordApiClient(),
         putBoardReceipt: async () => {
@@ -949,7 +949,7 @@ test('an adopted install without hosted configuration refuses instead of writing
       { audience: 'operator', title: 'No fallback', body: 'body' },
       { env: { ...noRecordEnv, CLAUDE_CODE_SESSION_ID: 'board-route-session' } },
     ),
-  ).rejects.toThrow('ORCH_RECORD_API_URL')
+  ).rejects.toThrow('BOTTEGA_RECORD_API_URL')
   expect(
     db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
   ).toBe(0)

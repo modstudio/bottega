@@ -7,8 +7,8 @@ import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
-const successUrl = process.env.ORCH_TEST_HOSTED_PROJECT_CLEANUP_URL
-const collisionUrl = process.env.ORCH_TEST_HOSTED_PROJECT_CLEANUP_COLLISION_URL
+const successUrl = process.env.BOTTEGA_TEST_HOSTED_PROJECT_CLEANUP_URL
+const collisionUrl = process.env.BOTTEGA_TEST_HOSTED_PROJECT_CLEANUP_COLLISION_URL
 const realPostgres = successUrl && collisionUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const cleanupMigration = '20261019214243_dev_1214_hosted_project_cleanup'

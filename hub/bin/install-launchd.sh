@@ -15,7 +15,7 @@ INSTALL_ROOT="$(bun --no-env-file "$SCRIPT_ROOT/shared/install-root.ts" root "$S
 CONCERN="$INSTALL_ROOT/hub"
 STATE_HOME_ENV="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" environment)"
 STATE_HOME="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" root)"
-HUB_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get hub.port)"
+BOTTEGA_HUB_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get hub.port)"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
 
@@ -44,8 +44,13 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
       -e "s#__STATE_HOME__#${STATE_HOME}#g" \
-      -e "s#__HUB_PORT__#${HUB_PORT}#g" \
-      -e "s#__HUB_HOSTED_URL__#${HUB_HOSTED_URL:-}#g" "$tmpl" > "$TARGET"
+      -e "s#__HUB_PORT__#${BOTTEGA_HUB_PORT}#g" \
+      -e "s#__HUB_HOSTED_URL__#${BOTTEGA_HOSTED_URL:-}#g" "$tmpl" > "$TARGET"
+  if ! bun --no-env-file "$INSTALL_ROOT/orchestrator/src/setup/environment-name-migration.ts" check-file "$TARGET"; then
+    echo "refusing installed plist with a legacy environment name: $TARGET" >&2
+    failed=1
+    continue
+  fi
   # One job failing must not leave the others uninstalled, which is exactly what
   # happened the first time this ran.
   if launchctl bootstrap "gui/$UID_NUM" "$TARGET" 2>/dev/null; then

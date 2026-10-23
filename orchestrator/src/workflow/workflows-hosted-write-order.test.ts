@@ -66,7 +66,7 @@ function installHostedCatalogue(): (table: string) => Record<string, unknown>[] 
   }
 }
 afterEach(() => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
 })
 
@@ -81,7 +81,7 @@ test('hosted import validates a workflow against a same-import catalogue', async
   }
   const definition = structuredClone(productionWorkflows(local, null)[0]!.definition)
   definition.modes[0]!.steps = ['same-import-step']
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
@@ -98,7 +98,7 @@ test('hosted import validates a workflow against a same-import catalogue', async
 test('hosted set failure is inert and success adopts identity, version, and event ids', async () => {
   installHostedCatalogue()
   const definition = { ...productionWorkflows(db(), null)[0]!.definition, title: 'Hosted set' }
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
@@ -216,7 +216,7 @@ test('hosted promote failure leaves draft state and success adopts promoted stat
     if (table === 'workflow_event') return [setEvent]
     return hostedCatalogueItems(table)
   }
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
@@ -527,7 +527,7 @@ function installSharedPromotionFixture(
   }
 
   const calls: string[] = []
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami: async () => ({

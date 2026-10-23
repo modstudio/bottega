@@ -555,10 +555,10 @@ export function recordApiBaseUrl(
   environment: Record<string, string | undefined> = process.env,
 ): string {
   const url = resolveRecordApiUrl(environment)
-  if (!url) throw recordApiUnreachable(new Error('ORCH_RECORD_API_URL is not set'))
+  if (!url) throw recordApiUnreachable(new Error('BOTTEGA_RECORD_API_URL is not set'))
   if (
     environment.NODE_ENV === 'test' &&
-    !environment.ORCH_TEST_POSTGRES_CONTAINER &&
+    !environment.BOTTEGA_TEST_POSTGRES_CONTAINER &&
     !injectedClient()
   )
     throw new Error(TEST_REFUSAL)
@@ -707,7 +707,7 @@ export function authenticatedRecordApiClient(
 export function recordApiClient(request = defaultRequest): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
-  if (process.env.NODE_ENV === 'test' && !process.env.ORCH_TEST_POSTGRES_CONTAINER)
+  if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error(TEST_REFUSAL)
   return {
     ...recordIdentityAndSpaceClient(request),

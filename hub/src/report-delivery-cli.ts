@@ -37,7 +37,7 @@ export async function runScheduledReportDelivery(input: {
   }
   if (!input.dryRun && !input.deliveryEnabled) {
     input.print(
-      'report delivery is disabled; set HUB_REPORT_DELIVERY_ENABLED=true to enable sending',
+      'report delivery is disabled; set BOTTEGA_REPORT_DELIVERY_ENABLED=true to enable sending',
     )
     return { due: 0, sent: 0, skipped: 0, failed: 0 }
   }
@@ -52,12 +52,12 @@ export async function runReportDeliveryCommand(
   input: { dryRun: boolean },
   environment: Environment = process.env,
 ) {
-  const databaseUrl = environment.HUB_RECORD_DATABASE_URL
-  if (!databaseUrl) throw new Error('HUB_RECORD_DATABASE_URL is required')
+  const databaseUrl = environment.BOTTEGA_RECORD_DATABASE_URL
+  if (!databaseUrl) throw new Error('BOTTEGA_RECORD_DATABASE_URL is required')
   const database = new SQL(databaseUrl)
   try {
     return await runScheduledReportDelivery({
-      deliveryEnabled: environment.HUB_REPORT_DELIVERY_ENABLED === 'true',
+      deliveryEnabled: environment.BOTTEGA_REPORT_DELIVERY_ENABLED === 'true',
       dryRun: input.dryRun,
       prune: () => pruneHostedChanges(database),
       deliver: () =>

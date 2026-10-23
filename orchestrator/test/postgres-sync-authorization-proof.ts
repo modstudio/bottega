@@ -93,15 +93,15 @@ function localOutbox(payload: Record<string, unknown>): Database {
 }
 
 async function withoutDirectRecordCredentials<T>(operation: () => Promise<T>): Promise<T> {
-  const recordUrl = process.env.ORCH_RECORD_URL
+  const recordUrl = process.env.BOTTEGA_RECORD_URL
   const authSecret = process.env.BETTER_AUTH_SECRET
-  delete process.env.ORCH_RECORD_URL
+  delete process.env.BOTTEGA_RECORD_URL
   delete process.env.BETTER_AUTH_SECRET
   try {
     return await operation()
   } finally {
-    if (recordUrl === undefined) delete process.env.ORCH_RECORD_URL
-    else process.env.ORCH_RECORD_URL = recordUrl
+    if (recordUrl === undefined) delete process.env.BOTTEGA_RECORD_URL
+    else process.env.BOTTEGA_RECORD_URL = recordUrl
     if (authSecret === undefined) delete process.env.BETTER_AUTH_SECRET
     else process.env.BETTER_AUTH_SECRET = authSecret
   }

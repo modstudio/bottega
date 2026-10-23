@@ -646,8 +646,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         runToken,
         {
           ...launchEnvironment,
-          ORCH_SCRATCH: scratchDir,
-          ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
+          BOTTEGA_SCRATCH: scratchDir,
+          ...(askLoopback ? { BOTTEGA_ASK_URL: askLoopback.url } : {}),
         },
         repoJob,
         claim.number,

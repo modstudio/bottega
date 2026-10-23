@@ -19,7 +19,7 @@ test('upstream environment contains only declared and allowlisted values', () =>
     TMPDIR: '/tmp/reader',
     USER: 'reader',
     SHELL: '/bin/zsh',
-    ORCH_RUN_TOKEN: 'run-token-secret',
+    BOTTEGA_RUN_TOKEN: 'run-token-secret',
     SSH_AUTH_SOCK: '/tmp/agent.sock',
     OPENAI_API_KEY: 'harness-key',
   }
@@ -120,7 +120,7 @@ test('command sanitizes a configured credential from an upstream startup failure
           'upstream rejected credential-value-123 after spawn --token argument-credential-456',
         )
       },
-      environment: { ORCH_RUN_TOKEN: 'run-token-secret', PATH: '/bin' },
+      environment: { BOTTEGA_RUN_TOKEN: 'run-token-secret', PATH: '/bin' },
       error: (line) => errors.push(line),
       setExitCode: (code) => exitCodes.push(code),
     })

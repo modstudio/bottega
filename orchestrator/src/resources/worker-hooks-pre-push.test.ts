@@ -53,7 +53,7 @@ function createFixture() {
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'core.hooksPath',
     GIT_CONFIG_VALUE_0: hooks,
-    ORCH_GUARDED_GIT_COMMON_DIR: realpathSync(guarded),
+    BOTTEGA_GUARDED_GIT_COMMON_DIR: realpathSync(guarded),
   }
   const push = (cwd: string, target: string, env: NodeJS.ProcessEnv = environment) =>
     Bun.spawnSync(['git', 'push', target, 'HEAD:refs/heads/pushed'], {
@@ -123,7 +123,7 @@ test('worker pre-push refuses non-local, outside-scratch, and unguarded invocati
     'destination is not a local scratch repository',
   )
 
-  const { ORCH_GUARDED_GIT_COMMON_DIR: _guard, ...withoutGuard } = fixture.environment
+  const { BOTTEGA_GUARDED_GIT_COMMON_DIR: _guard, ...withoutGuard } = fixture.environment
   const guardUnset = fixture.invoke(fixture.source, fixture.destination, withoutGuard)
   expect(guardUnset.exitCode).not.toBe(0)
   expect(guardUnset.stderr.toString()).toContain(refusal)

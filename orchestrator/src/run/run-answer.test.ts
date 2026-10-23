@@ -30,19 +30,19 @@ const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
   upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
   priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
-  priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
-  priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
+  priorEnv.BOTTEGA_DEPTH = process.env.BOTTEGA_DEPTH
+  priorEnv.BOTTEGA_EXEC_PATH = process.env.BOTTEGA_EXEC_PATH
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
-  delete process.env.ORCH_DEPTH
-  process.env.ORCH_EXEC_PATH = '/usr/bin/true'
+  delete process.env.BOTTEGA_DEPTH
+  process.env.BOTTEGA_EXEC_PATH = '/usr/bin/true'
 })
 afterEach(() => {
   if (priorEnv.CLAUDE_CODE_SESSION_ID === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorEnv.CLAUDE_CODE_SESSION_ID
-  if (priorEnv.ORCH_DEPTH === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = priorEnv.ORCH_DEPTH
-  if (priorEnv.ORCH_EXEC_PATH === undefined) delete process.env.ORCH_EXEC_PATH
-  else process.env.ORCH_EXEC_PATH = priorEnv.ORCH_EXEC_PATH
+  if (priorEnv.BOTTEGA_DEPTH === undefined) delete process.env.BOTTEGA_DEPTH
+  else process.env.BOTTEGA_DEPTH = priorEnv.BOTTEGA_DEPTH
+  if (priorEnv.BOTTEGA_EXEC_PATH === undefined) delete process.env.BOTTEGA_EXEC_PATH
+  else process.env.BOTTEGA_EXEC_PATH = priorEnv.BOTTEGA_EXEC_PATH
 })
 
 describe('run answers', () => {
@@ -769,7 +769,7 @@ test('UI operator answers require the dashboard capability', async () => {
     .query(returningQuestionSql())
     .get(id, new Date().toISOString(), 'which?') as { number: number }
   delete process.env.CLAUDE_CODE_SESSION_ID
-  delete process.env.ORCH_DEPTH
+  delete process.env.BOTTEGA_DEPTH
   await expect(
     answerRun(
       id,
@@ -795,7 +795,7 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
     .query(returningQuestionSql())
     .get(id, new Date().toISOString(), 'which?') as { number: number }
   delete process.env.CLAUDE_CODE_SESSION_ID
-  delete process.env.ORCH_DEPTH
+  delete process.env.BOTTEGA_DEPTH
   let resumedSession: string | null | undefined
   const dispatch: typeof detach = async (_job, _prompt, spec) => {
     resumedSession = spec.resume!.sessionId

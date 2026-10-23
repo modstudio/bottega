@@ -6,7 +6,7 @@ paths: ["local-stack/**"]
 # Local model service
 
 The orchestrator consumes the OpenAI-compatible Responses endpoint selected by
-`ORCH_MODEL_HOST_URL`; local-stack and orchestrator do not import one another.
+`BOTTEGA_MODEL_HOST_URL`; local-stack and orchestrator do not import one another.
 
 The model server stays bound to localhost on its host, because the SSH tunnel is the
 security boundary. A service change must verify `/v1/responses` through that tunnel.

@@ -26,7 +26,7 @@ def heartbeat_path() -> str:
 
 
 def heartbeat_armed(session_id: str) -> bool | None:
-    process_list = os.environ.get("ORCH_HEARTBEAT_PROCESS_LIST")
+    process_list = os.environ.get("BOTTEGA_HEARTBEAT_PROCESS_LIST")
     if process_list is None:
         try:
             observed = subprocess.run(

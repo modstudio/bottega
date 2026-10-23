@@ -12,16 +12,16 @@ let priorDepth: string | undefined
 
 beforeEach(() => {
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  priorDepth = process.env.ORCH_DEPTH
+  priorDepth = process.env.BOTTEGA_DEPTH
   process.env.CLAUDE_CODE_SESSION_ID = 'owner-session'
-  delete process.env.ORCH_DEPTH
+  delete process.env.BOTTEGA_DEPTH
 })
 
 afterEach(() => {
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-  if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = priorDepth
+  if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+  else process.env.BOTTEGA_DEPTH = priorDepth
 })
 
 function addAnsweredQuestion(

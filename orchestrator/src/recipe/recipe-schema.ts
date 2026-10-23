@@ -431,7 +431,8 @@ export function allocationEnvironmentVariable(
 ): string {
   const normalized = name.toUpperCase().replace(/[^A-Z0-9]/g, '_')
   const family = kind === 'ports' ? 'PORTS' : kind === 'db' ? 'DB' : 'ALLOC'
-  return `ORCH_${family}_${normalized}`
+  const prefix = family === 'DB' ? 'BOTTEGA_ORCHESTRATOR_DB' : `BOTTEGA_${family}`
+  return `${prefix}_${normalized}`
 }
 
 function validateServeUndo(recipe: RecipeInput, context: z.RefinementCtx): void {

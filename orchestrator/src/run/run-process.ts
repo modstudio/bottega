@@ -34,9 +34,9 @@ export function childEnv(
     if (v === undefined || !isForwardedChildEnvName(k)) continue
     env[k] = v
   }
-  delete env.ORCH_TEST_WORKERS
+  delete env.BOTTEGA_TEST_WORKERS
   delete env.VITEST_MAX_WORKERS
-  env.ORCH_DEPTH = String(depth() + 1)
+  env.BOTTEGA_DEPTH = String(depth() + 1)
   /**
    * Which run is asking, for the ask-server the child may call back into.
    *
@@ -46,17 +46,17 @@ export function childEnv(
    * attach a question to another worker's run, and the ruling would be delivered
    * to whichever of them happened to be waiting.
    */
-  if (runRecordId) env.ORCH_RUN_ID = runRecordId
-  if (runNumber) env.ORCH_RUN_NUMBER = String(runNumber)
-  if (runRecordId) env.ORCH_AGENT = a.name
+  if (runRecordId) env.BOTTEGA_RUN_ID = runRecordId
+  if (runNumber) env.BOTTEGA_RUN_NUMBER = String(runNumber)
+  if (runRecordId) env.BOTTEGA_AGENT = a.name
   // The credential half. The id says which run; this says the caller is
   // actually that run, and the environment of a child process is the one place
   // an unrelated process cannot read it from.
-  if (runToken) env.ORCH_RUN_TOKEN = runToken
+  if (runToken) env.BOTTEGA_RUN_TOKEN = runToken
   /**
    * THE REAL DATABASE, not the one beside whatever checkout the worker is in.
    *
-   * The parent has already resolved the one database through ORCH_DB, git's
+   * The parent has already resolved the one database through BOTTEGA_ORCHESTRATOR_DB, git's
    * common directory, or the main binary. Passing the absolute result keeps a
    * detached worker on that same file even after its cwd changes to a worktree.
    *
@@ -67,7 +67,7 @@ export function childEnv(
    * Residual exposure: the canon accepts that a worktree worker reads the real
    * register.
    */
-  if (includeStore) env.ORCH_DB = DB_PATH
+  if (includeStore) env.BOTTEGA_ORCHESTRATOR_DB = DB_PATH
   const child: Record<string, string> = {
     ...env,
     ...(a.env?.() ?? {}),
@@ -75,7 +75,7 @@ export function childEnv(
     ...endpointEnvironment,
     ...workerLaunchEnv(workerHarnessName(a)),
   }
-  if (!includeStore) delete child.ORCH_DB
+  if (!includeStore) delete child.BOTTEGA_ORCHESTRATOR_DB
   return child
 }
 export type LiveProcess = { pid?: number | null; kill(sig?: number | string): void }
@@ -194,7 +194,7 @@ export function isOrchWorkerProcess(
   pid = process.pid,
   inventory: ProcessInventory = processTable(),
 ): boolean {
-  if (env.ORCH_RUN_ID) return true
+  if (env.BOTTEGA_RUN_ID) return true
   if (!inventory.ascertainable) return false
 
   const byPid = new Map(inventory.rows.map((row) => [row.pid, row]))

@@ -222,7 +222,7 @@ if (recorder) {
   const started = Date.now()
   const child = Bun.spawn(command, {
     cwd: orchRoot,
-    env: { ...process.env, ORCH_GATE_TIMINGS: jsonPath },
+    env: { ...process.env, BOTTEGA_GATE_TIMINGS: jsonPath },
     stdout: 'inherit',
     stderr: 'inherit',
   })

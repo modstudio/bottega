@@ -9,7 +9,7 @@ const trackResidue = trackedTestResidue()
 
 test('proxy failure leaves the ask-server failure line without launching the proxy', () => {
   const scratch = trackResidue(join(dir, 'ask-proxy-failure-scratch'))
-  const error = new Error('ORCH_ASK_URL is required')
+  const error = new Error('BOTTEGA_ASK_URL is required')
   expect(recordAskProxyFailure(error, scratch)).toBe(error)
-  expect(readAskServerFailure(scratch)).toBe('ORCH_ASK_URL is required')
+  expect(readAskServerFailure(scratch)).toBe('BOTTEGA_ASK_URL is required')
 })

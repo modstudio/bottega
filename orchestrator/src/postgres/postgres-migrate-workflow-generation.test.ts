@@ -6,7 +6,7 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 
-const url = process.env.ORCH_TEST_WORKFLOW_GENERATION_MIGRATION_URL
+const url = process.env.BOTTEGA_TEST_WORKFLOW_GENERATION_MIGRATION_URL
 const postgres = url ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const generationMigration = '20261019210000_dev_1406_workflow_generation_replay'

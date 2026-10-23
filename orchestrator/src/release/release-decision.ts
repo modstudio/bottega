@@ -6,10 +6,10 @@ import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-ta
 export const RELEASE_OUTPUT_WITHHELD = '[withheld: secret-shaped content]'
 
 const RELEASE_ENVIRONMENT_NAMES = [
-  'ORCH_RELEASE_PROJECT',
-  'ORCH_RELEASE_RUNG',
-  'ORCH_RELEASE_COMMIT',
-  'ORCH_RELEASE_ROLLBACK',
+  'BOTTEGA_RELEASE_PROJECT',
+  'BOTTEGA_RELEASE_RUNG',
+  'BOTTEGA_RELEASE_COMMIT',
+  'BOTTEGA_RELEASE_ROLLBACK',
 ] as const
 
 /** Keep release identity out of every child process except the registered deploy command. */

@@ -50,8 +50,8 @@ import {
   sendHostedReportSubscriptionTest,
 } from '../src/report-delivery-hosted.ts'
 
-const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
-const actorDatabaseUrl = process.env.ORCH_RECORD_URL
+const adminUrl = process.env.BOTTEGA_TEST_POSTGRES_URL
+const actorDatabaseUrl = process.env.BOTTEGA_RECORD_URL
 if (!adminUrl || !actorDatabaseUrl)
   throw new Error('Postgres evidence proof requires test and actor URLs')
 const actorUrl = new SQL(actorDatabaseUrl)

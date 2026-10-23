@@ -15,7 +15,7 @@ describe('retrieval endpoints', () => {
     await expect(
       probeEndpoints({ embedUrl: 'http://embed/v1', rerankUrl: 'http://rerank/v1' }, absent),
     ).rejects.toThrow(
-      'embedding endpoint could not be established at http://embed/v1/embeddings: connection refused. Run `bin/retrieval-search --check` and retry. Configure the endpoints with ORCH_EMBED_URL and ORCH_RERANK_URL.',
+      'embedding endpoint could not be established at http://embed/v1/embeddings: connection refused. Run `bin/retrieval-search --check` and retry. Configure the endpoints with BOTTEGA_EMBED_URL and BOTTEGA_RERANK_URL.',
     )
   })
 

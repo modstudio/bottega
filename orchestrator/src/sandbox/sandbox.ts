@@ -60,7 +60,7 @@ export type SandboxRuntimeConfig = {
 
 /** Pin operator state before a worker's isolated HOME changes implicit resolution. */
 export function workerStateEnvironment(environment: StateEnvironment): Record<string, string> {
-  return { HUB_DB: resolveHubDatabase(environment) }
+  return { BOTTEGA_HUB_DB: resolveHubDatabase(environment) }
 }
 
 export type RunSandbox = 'host' | 'srt'
@@ -489,7 +489,7 @@ export function selectReadonlySandboxKind(input: {
       return { sandbox: 'srt', reason: null, missingRoot: true }
     }
     if (input.override === 'host') {
-      throw new Error('writing ACP sandbox refusal: ORCH_SANDBOX=host cannot bypass srt')
+      throw new Error('writing ACP sandbox refusal: BOTTEGA_SANDBOX=host cannot bypass srt')
     }
     return { sandbox: 'srt', reason: null, missingRoot: false }
   }
@@ -503,8 +503,8 @@ export function selectReadonlySandboxKind(input: {
     return {
       sandbox: 'host',
       reason: input.readsRepo
-        ? 'ORCH_SANDBOX=host'
-        : 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
+        ? 'BOTTEGA_SANDBOX=host'
+        : 'BOTTEGA_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
       missingRoot: false,
     }
   }

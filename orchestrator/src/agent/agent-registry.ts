@@ -98,7 +98,7 @@ export function rowAgent(row: AgentRow): Agent {
       ? {
           env: () => ({
             ...(base.env?.() ?? {}),
-            ORCH_MODEL_HOST_URL: row.base_url!,
+            BOTTEGA_MODEL_HOST_URL: row.base_url!,
             OPENAI_BASE_URL: row.base_url!,
             ...(row.harness === 'goose'
               ? {

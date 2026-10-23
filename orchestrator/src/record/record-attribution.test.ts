@@ -17,20 +17,20 @@ let priorDirectUrl: string | undefined
 let session: ReturnType<typeof memoryRecordSession>
 
 beforeEach(() => {
-  priorApiUrl = process.env.ORCH_RECORD_API_URL
-  priorDirectUrl = process.env.ORCH_RECORD_URL
-  process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
-  delete process.env.ORCH_RECORD_URL
+  priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  priorDirectUrl = process.env.BOTTEGA_RECORD_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  delete process.env.BOTTEGA_RECORD_URL
   session = memoryRecordSession()
   installRecordSessionRunner(session.runner)
 })
 
 afterEach(() => {
   installRecordSessionRunner(null)
-  if (priorApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorApiUrl
-  if (priorDirectUrl === undefined) delete process.env.ORCH_RECORD_URL
-  else process.env.ORCH_RECORD_URL = priorDirectUrl
+  if (priorApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorApiUrl
+  if (priorDirectUrl === undefined) delete process.env.BOTTEGA_RECORD_URL
+  else process.env.BOTTEGA_RECORD_URL = priorDirectUrl
 })
 
 describe('run attribution identity resolution', () => {
@@ -38,12 +38,12 @@ describe('run attribution identity resolution', () => {
     session.setToken('fixture-session')
 
     expect(await signedInRecordUserId()).toBe('01990000-0000-7000-8000-000000000001')
-    expect(process.env.ORCH_RECORD_URL).toBeUndefined()
+    expect(process.env.BOTTEGA_RECORD_URL).toBeUndefined()
     expect(recordAttributionFailure()).toBeNull()
   })
 
   test('returns null without a stored session', async () => {
-    const readOnly = new Database(process.env.ORCH_DB!, { readonly: true })
+    const readOnly = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!, { readonly: true })
     expect(await signedInRecordUserId(readOnly)).toBeNull()
     expect(recordAttributionFailure()).toBeNull()
     readOnly.close()
@@ -51,7 +51,7 @@ describe('run attribution identity resolution', () => {
 
   test('resolves a stored session without writing through a read-only handle', async () => {
     session.setToken('fixture-session')
-    const readOnly = new Database(process.env.ORCH_DB!, { readonly: true })
+    const readOnly = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!, { readonly: true })
 
     expect(await signedInRecordUserId(readOnly)).toBe('01990000-0000-7000-8000-000000000001')
     expect(recordAttributionFailure()).toBeNull()
@@ -95,14 +95,14 @@ describe('run attribution identity resolution', () => {
       name: 'last run attribution resolution',
       status: 'fail',
       detail:
-        'record API: connection refused; check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+        'record API: connection refused; check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry',
       section: 'customer',
     })
   })
 
-  test('does not require ORCH_RECORD_URL when the API resolves the user', async () => {
+  test('does not require BOTTEGA_RECORD_URL when the API resolves the user', async () => {
     session.setToken('fixture-session')
-    delete process.env.ORCH_RECORD_URL
+    delete process.env.BOTTEGA_RECORD_URL
 
     expect(await signedInRecordUserId()).not.toBeNull()
   })

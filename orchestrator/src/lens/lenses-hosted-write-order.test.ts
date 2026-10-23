@@ -31,7 +31,7 @@ function installHostedCorrectness(): void {
 
 test('a hosted lens failure leaves the local catalogue unchanged', async () => {
   const before = showLens('correctness')
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertLens: async () => {
@@ -53,14 +53,14 @@ test('a hosted lens failure leaves the local catalogue unchanged', async () => {
     ).rejects.toThrow('hosted lens write failed')
     expect(showLens('correctness')).toEqual(before)
   } finally {
-    delete process.env.ORCH_RECORD_API_URL
+    delete process.env.BOTTEGA_RECORD_API_URL
     installRecordApiClient(createMemoryRecordApiClient())
   }
 })
 
 test('hosted profile failure is inert and success adopts hosted identities and versions', async () => {
   installHostedCorrectness()
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const before = showProfile('correctness', 'framework', 'default')!
   const beforeRevisions = db()
     .query<{ n: number }, []>(
@@ -139,7 +139,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
       db().query('SELECT record_id FROM lens_profile_revision WHERE space_id=?').get(HOSTED_SPACE),
     ).toEqual({ record_id: revisionId })
   } finally {
-    delete process.env.ORCH_RECORD_API_URL
+    delete process.env.BOTTEGA_RECORD_API_URL
     installRecordApiClient(createMemoryRecordApiClient())
   }
 })
@@ -148,7 +148,7 @@ test('hosted selection failure is inert and success adopts hosted identities and
   installHostedCorrectness()
   const projectId = newRecordId()
   upsertProject({ recordId: projectId, name: 'hosted-project', path: '/tmp/hosted', settings: {} })
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     selectProjectLensProfile: async () => {
@@ -213,13 +213,13 @@ test('hosted selection failure is inert and success adopts hosted identities and
         .get(HOSTED_SPACE),
     ).toEqual({ record_id: revisionId })
   } finally {
-    delete process.env.ORCH_RECORD_API_URL
+    delete process.env.BOTTEGA_RECORD_API_URL
     installRecordApiClient(createMemoryRecordApiClient())
   }
 })
 
 test('lens writes stay local-authoritative without a record and refuse a bound missing endpoint', async () => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   const created = await setLens({
     id: 'local-authoritative-lens',
     title: 'Local lens',

@@ -113,7 +113,7 @@ const RUN_IDENTITY_MAP_DEADLINE_MS = 20_000
 
 /** Resolve the executable for every call made by a long-lived process in the hub concern. */
 export function resolveOrchExecutable(): string {
-  const override = process.env.HUB_ORCH?.trim() || null
+  const override = process.env.BOTTEGA_ORCH?.trim() || null
   const checkout = assetPath('bin', PLATFORM_SLUG)
   if (override && usableExecutable(override)) return override
   if (usableExecutable(checkout)) return checkout
@@ -134,9 +134,9 @@ function usableExecutable(candidate: string): boolean {
 
 function missingBinary(override: string | null, checkout: string): Error {
   return new Error(
-    `${PLATFORM_SLUG} executable unavailable: HUB_ORCH override ${override ?? 'unset'}; ` +
+    `${PLATFORM_SLUG} executable unavailable: BOTTEGA_ORCH override ${override ?? 'unset'}; ` +
       `checkout executable ${checkout}; PATH lookup found nothing. ` +
-      `Set HUB_ORCH to an executable file, restore the checkout executable, or add ${PLATFORM_SLUG} to PATH.`,
+      `Set BOTTEGA_ORCH to an executable file, restore the checkout executable, or add ${PLATFORM_SLUG} to PATH.`,
   )
 }
 
@@ -921,8 +921,8 @@ export const docHistory = (scope: string, subject: string | null, slug: string) 
 export const docSubjects = () => jsonDocument<DocSubjects>(docArgv('subjects'))
 
 const boardOperatorMarkers = () => [
-  'ORCH_RUN_ID',
-  'ORCH_DEPTH',
+  'BOTTEGA_RUN_ID',
+  'BOTTEGA_DEPTH',
   ...Object.keys(process.env).filter((key) => /(?:SESSION_ID|THREAD_ID)$/.test(key)),
 ]
 const boardOptions = () => ({ unsetEnv: boardOperatorMarkers() })

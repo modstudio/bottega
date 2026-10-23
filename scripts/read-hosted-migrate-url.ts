@@ -1,6 +1,6 @@
 import { readEnvValues } from '../shared/env-values.ts'
 
-const name = 'ORCH_RECORD_MIGRATE_URL'
+const name = 'BOTTEGA_RECORD_MIGRATE_URL'
 
 if (process.stdout.isTTY) {
   console.error('REFUSE: this command writes a credential for command substitution only')

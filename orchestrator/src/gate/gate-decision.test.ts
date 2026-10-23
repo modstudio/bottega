@@ -85,20 +85,20 @@ test('broker gate environment adds host paths without exposing secrets and appli
         TMPDIR: '/tmp/operator',
         ANTHROPIC_API_KEY: 'secret',
       },
-      { HOME: '/sandbox/home', ORCH_RUN_ID: '41', ORCH_GATE_PIDS: '/worker/controlled' },
+      { HOME: '/sandbox/home', BOTTEGA_RUN_ID: '41', BOTTEGA_GATE_PIDS: '/worker/controlled' },
     ),
   ).toEqual({
     PATH: '/bin',
     HOME: '/sandbox/home',
     TMPDIR: '/tmp/operator',
-    ORCH_RUN_ID: '41',
+    BOTTEGA_RUN_ID: '41',
   })
 })
 
 test('synthetic-index gate environment exposes no broker variable', () => {
   expect(
     brokerGateEnvironment(
-      { PATH: '/bin', ORCH_RUN_ID: '41' },
+      { PATH: '/bin', BOTTEGA_RUN_ID: '41' },
       {
         HOME: '/Users/operator',
         TMPDIR: '/tmp/operator',
@@ -106,16 +106,16 @@ test('synthetic-index gate environment exposes no broker variable', () => {
       },
       {
         GIT_INDEX_FILE: '/private/broker/index',
-        ORCH_GATE_BASE_COMMIT: 'a'.repeat(40),
+        BOTTEGA_GATE_BASE_COMMIT: 'a'.repeat(40),
       },
     ),
   ).toEqual({
     PATH: '/bin',
-    ORCH_RUN_ID: '41',
+    BOTTEGA_RUN_ID: '41',
     HOME: '/Users/operator',
     TMPDIR: '/tmp/operator',
     GIT_INDEX_FILE: '/private/broker/index',
-    ORCH_GATE_BASE_COMMIT: 'a'.repeat(40),
+    BOTTEGA_GATE_BASE_COMMIT: 'a'.repeat(40),
   })
 })
 

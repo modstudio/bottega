@@ -37,7 +37,7 @@ export type CloneProvisionMeasurement = {
   durationMs: number
 }
 
-const INSTALL_ENVIRONMENT_PREFIXES = ['ORCH_', 'HUB_', 'SSH_'] as const
+const INSTALL_ENVIRONMENT_PREFIXES = ['BOTTEGA_', 'SSH_'] as const
 const INSTALL_ENVIRONMENT_SECRET_MARKERS = [
   'TOKEN',
   'SECRET',

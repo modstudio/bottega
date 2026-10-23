@@ -8,7 +8,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
 import { type RecordPortTable, recordPortPageSchema } from './record-port-contract.ts'
 
-const url = process.env.ORCH_TEST_PORT_CATALOGUE_URL
+const url = process.env.BOTTEGA_TEST_PORT_CATALOGUE_URL
 const postgres = url ? describe : describe.skip
 const spaceId = newRecordId()
 const pagingSpaceId = newRecordId()

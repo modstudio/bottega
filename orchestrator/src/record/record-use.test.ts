@@ -13,33 +13,35 @@ const addresses = {
 
 test('writes both addresses into an absent file', () => {
   expect(rewriteRecordBindingEnv('', addresses)).toBe(
-    'ORCH_RECORD_API_URL=https://api.example.test\nHUB_HOSTED_URL=https://app.example.test\n',
+    'BOTTEGA_RECORD_API_URL=https://api.example.test\nBOTTEGA_HOSTED_URL=https://app.example.test\n',
   )
 })
 
 test('appends both addresses after unrelated keys', () => {
   expect(rewriteRecordBindingEnv('OTHER=kept\n', addresses)).toBe(
-    'OTHER=kept\nORCH_RECORD_API_URL=https://api.example.test\nHUB_HOSTED_URL=https://app.example.test\n',
+    'OTHER=kept\nBOTTEGA_RECORD_API_URL=https://api.example.test\nBOTTEGA_HOSTED_URL=https://app.example.test\n',
   )
 })
 
 test('replaces old address values', () => {
   expect(
     rewriteRecordBindingEnv(
-      'ORCH_RECORD_API_URL=https://old-api.test\nHUB_HOSTED_URL=https://old-app.test\n',
+      'BOTTEGA_RECORD_API_URL=https://old-api.test\nBOTTEGA_HOSTED_URL=https://old-app.test\n',
       addresses,
     ),
-  ).toBe('ORCH_RECORD_API_URL=https://api.example.test\nHUB_HOSTED_URL=https://app.example.test\n')
+  ).toBe(
+    'BOTTEGA_RECORD_API_URL=https://api.example.test\nBOTTEGA_HOSTED_URL=https://app.example.test\n',
+  )
 })
 
 test('preserves comments, blank lines, and unrelated lines byte for byte', () => {
   expect(
     rewriteRecordBindingEnv(
-      '# heading\r\n\r\nKEEP = untouched # exactly\r\nORCH_RECORD_API_URL=old\r\n# tail\r\n',
+      '# heading\r\n\r\nKEEP = untouched # exactly\r\nBOTTEGA_RECORD_API_URL=old\r\n# tail\r\n',
       addresses,
     ),
   ).toBe(
-    '# heading\r\n\r\nKEEP = untouched # exactly\r\nORCH_RECORD_API_URL=https://api.example.test\r\n# tail\r\nHUB_HOSTED_URL=https://app.example.test\r\n',
+    '# heading\r\n\r\nKEEP = untouched # exactly\r\nBOTTEGA_RECORD_API_URL=https://api.example.test\r\n# tail\r\nBOTTEGA_HOSTED_URL=https://app.example.test\r\n',
   )
 })
 
@@ -54,7 +56,7 @@ test('discovers addresses, writes the resolved config file, and warns about proc
       { log: (message) => output.push(message), warn: (message) => warnings.push(message) },
       {
         [CONFIG_HOME_ENV]: root,
-        ORCH_RECORD_API_URL: 'https://shell.example.test',
+        BOTTEGA_RECORD_API_URL: 'https://shell.example.test',
       },
       async (input) => {
         requested = String(input)
@@ -63,11 +65,11 @@ test('discovers addresses, writes the resolved config file, and warns about proc
     )
     expect(requested).toBe('https://entry.example.test/client-config')
     expect(readFileSync(join(root, `${PLATFORM_SLUG}.env`), 'utf8')).toBe(
-      'ORCH_RECORD_API_URL=https://api.example.test\nHUB_HOSTED_URL=https://app.example.test\n',
+      'BOTTEGA_RECORD_API_URL=https://api.example.test\nBOTTEGA_HOSTED_URL=https://app.example.test\n',
     )
     expect(output.at(-1)).toBe(`next: ${PLATFORM_SLUG} record sign-in --email <email>`)
     expect(warnings).toEqual([
-      'ORCH_RECORD_API_URL=https://shell.example.test from the environment wins for this shell',
+      'BOTTEGA_RECORD_API_URL=https://shell.example.test from the environment wins for this shell',
     ])
   } finally {
     rmSync(root, { recursive: true, force: true })

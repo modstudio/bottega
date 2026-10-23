@@ -211,8 +211,8 @@ describe('collect lease', () => {
   })
 
   test('watch shares hosted outbox state between its slow and fast cycles', async () => {
-    const previousHostedUrl = process.env.HUB_HOSTED_URL
-    process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+    const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+    process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
     const callbacks: Array<() => void> = []
     const interval = spyOn(globalThis, 'setInterval').mockImplementation(((
       callback: () => void,
@@ -260,14 +260,14 @@ describe('collect lease', () => {
     } finally {
       await stop()
       interval.mockRestore()
-      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-      else process.env.HUB_HOSTED_URL = previousHostedUrl
+      if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+      else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
     }
   })
 
   test('a timed-out hosted drain releases watch for the next local cycle', async () => {
-    const previousHostedUrl = process.env.HUB_HOSTED_URL
-    process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+    const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+    process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
     const callbacks: Array<() => void> = []
     const interval = spyOn(globalThis, 'setInterval').mockImplementation(((
       callback: () => void,
@@ -326,8 +326,8 @@ describe('collect lease', () => {
     } finally {
       await stop()
       interval.mockRestore()
-      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-      else process.env.HUB_HOSTED_URL = previousHostedUrl
+      if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+      else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
     }
   })
 })

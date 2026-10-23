@@ -425,7 +425,7 @@ describe('hosted report delivery', () => {
     expect(sent).toBe(0)
     expect(fake.rows[0]).toMatchObject({
       status: 'skipped',
-      reason: 'HUB_HOSTED_URL is required for email-recipient unsubscribe links',
+      reason: 'BOTTEGA_HOSTED_URL is required for email-recipient unsubscribe links',
     })
   })
 

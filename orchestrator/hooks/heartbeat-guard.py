@@ -22,7 +22,7 @@ import uuid
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
-DB = os.environ.get("ORCH_DB") or subprocess.check_output(
+DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()
@@ -46,7 +46,7 @@ def uuid_string(value) -> bool:
 
 
 def heartbeat_armed(session_id: str) -> bool | None:
-    process_list = os.environ.get("ORCH_HEARTBEAT_PROCESS_LIST")
+    process_list = os.environ.get("BOTTEGA_HEARTBEAT_PROCESS_LIST")
     if process_list is None:
         try:
             observed = subprocess.run(

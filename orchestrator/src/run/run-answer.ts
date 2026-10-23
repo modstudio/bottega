@@ -220,7 +220,7 @@ function requireAnswerAuthority(
     channel,
     fromOperator,
     sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
-    depthPresent: process.env.ORCH_DEPTH !== undefined,
+    depthPresent: process.env.BOTTEGA_DEPTH !== undefined,
     dashboardAuthorized,
     owner: authority.owner,
     actor: authority.actor,

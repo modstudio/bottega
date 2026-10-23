@@ -73,8 +73,8 @@ export BOTTEGA_INSTALL_DIR=/tmp/bin
 export BOTTEGA_STATE_HOME=/tmp/state
 export BOTTEGA_DOWNLOAD_BASE_URL=http://host.docker.internal:${port}/releases
 export CLAUDE_CODE_SESSION_ID=DEV-1123-release-smoke
-export ORCH_EMBED_URL=http://127.0.0.1:1/v1/embeddings
-export ORCH_RERANK_URL=http://127.0.0.1:1/v1/rerank
+export BOTTEGA_EMBED_URL=http://127.0.0.1:1/v1/embeddings
+export BOTTEGA_RERANK_URL=http://127.0.0.1:1/v1/rerank
 mkdir -p "$HOME"
 apt-get update >/dev/null
 apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
@@ -128,8 +128,8 @@ su -s /bin/sh smoke -c '
   export HOME=/home/smoke
   export BOTTEGA_STATE_HOME=/tmp/state
   export CLAUDE_CODE_SESSION_ID=DEV-1123-release-smoke
-  export ORCH_EMBED_URL=http://127.0.0.1:1/v1/embeddings
-  export ORCH_RERANK_URL=http://127.0.0.1:1/v1/rerank
+  export BOTTEGA_EMBED_URL=http://127.0.0.1:1/v1/embeddings
+  export BOTTEGA_RERANK_URL=http://127.0.0.1:1/v1/rerank
   export SMOKE_MCP_STATE=/tmp/mcp-state
   export PATH=/tmp/fake-bin:/tmp/bin:/usr/bin:/bin
   agent_output=$(${installedBinary} agent list)

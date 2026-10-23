@@ -198,10 +198,10 @@ test('refuses a probe outside a registered project', async () => {
 })
 
 test('exec records an architect command with its kind and session', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const d = database()
     const result = await recordWorkflowExec(['printf', 'ok'], {
@@ -223,18 +223,18 @@ test('exec records an architect command with its kind and session', async () => 
       exit_code: 0,
     })
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
 })
 
 test('exec stores a bounded tail after scanning supplied chunks', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const d = database()
     const streamed = [
@@ -260,8 +260,8 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
       withheld: 0,
     })
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
@@ -277,10 +277,10 @@ test('a secret split across chunks is withheld when its line completes', () => {
 })
 
 test('a sha line, pull-request URL, and refusal remain usable evidence', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const url = 'https://github.com/acme/app/pull/7'
     const refusal = 'applicable lens safety has no recorded result on this branch'
@@ -325,31 +325,31 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
       }),
     ).toEqual({ met: true })
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
 })
 
 test('exec refuses worker depth and an unsupported harness identity', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   const priorThread = process.env.CODEX_THREAD_ID
   try {
-    process.env.ORCH_DEPTH = '1'
+    process.env.BOTTEGA_DEPTH = '1'
     await expect(recordWorkflowExec(['true'], { d: database() })).rejects.toThrow(
-      'ORCH_DEPTH is set',
+      'BOTTEGA_DEPTH is set',
     )
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     delete process.env.CLAUDE_CODE_SESSION_ID
     process.env.CODEX_THREAD_ID = 'unsupported-thread'
     await expect(recordWorkflowExec(['true'], { d: database() })).rejects.toThrow(
       'unsupported harness',
     )
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
     if (priorThread === undefined) delete process.env.CODEX_THREAD_ID
@@ -358,10 +358,10 @@ test('exec refuses worker depth and an unsupported harness identity', async () =
 })
 
 test('exec refuses a checkout outside a registered project', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     await expect(
       recordWorkflowExec(['true'], {
@@ -371,18 +371,18 @@ test('exec refuses a checkout outside a registered project', async () => {
       }),
     ).rejects.toThrow('no registered project contains /outside/project')
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
 })
 
 test('exec reports a command that could not start without recording a row', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const d = database()
 
@@ -397,8 +397,8 @@ test('exec reports a command that could not start without recording a row', asyn
 
     expect(d.query('SELECT count(*) AS n FROM probe').get()).toEqual({ n: 0 })
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }

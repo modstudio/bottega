@@ -32,6 +32,7 @@ export const settingsModules: SettingsModule[] = [
     'node:os',
     '../../../shared/config-directory.ts',
     '../../../shared/config-client.ts',
+    '../setup/environment-name-migration.ts',
     '../../../shared/hosted-config-space.ts',
     '../../../shared/hosted-secret-opening.ts',
     '../../../shared/machine-key-id.ts',

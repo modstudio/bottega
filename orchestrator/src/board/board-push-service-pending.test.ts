@@ -247,7 +247,7 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
     .run(message.id, session, new Date(clock - 500).toISOString())
 
   await boardAcknowledge(message.id, {
-    env: { CLAUDE_CODE_SESSION_ID: session, ORCH_RECORD_API_URL: 'https://record.test' },
+    env: { CLAUDE_CODE_SESSION_ID: session, BOTTEGA_RECORD_API_URL: 'https://record.test' },
     client,
   })
   for (const outcome of ['success', 'failed: hosted board refresh budget spent']) {
@@ -310,7 +310,10 @@ test('hosted status never counts the notice author as unacknowledged', async () 
   }
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const status = await boardStatus(message.id, {
-    env: { CLAUDE_CODE_SESSION_ID: 'posting-session', ORCH_RECORD_API_URL: 'https://record.test' },
+    env: {
+      CLAUDE_CODE_SESSION_ID: 'posting-session',
+      BOTTEGA_RECORD_API_URL: 'https://record.test',
+    },
     client: {
       ...createMemoryRecordApiClient(),
       getBoardStatus: async () => ({ message, receipts: [authorReceipt, readerReceipt] }),

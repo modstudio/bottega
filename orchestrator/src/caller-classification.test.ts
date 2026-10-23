@@ -57,7 +57,7 @@ describe('caller classification', () => {
   test('a worker marker wins over every harness and operator marker', () => {
     expect(
       classifyCaller({
-        ORCH_DEPTH: '1',
+        BOTTEGA_DEPTH: '1',
         CLAUDE_CODE_SESSION_ID: 'claude-1',
         CODEX_THREAD_ID: 'codex-1',
       }),
@@ -70,8 +70,8 @@ describe('caller classification', () => {
 
   test('worker remnants win after the ordinary run and depth markers are removed', () => {
     const fullWorker = Object.fromEntries(WORKER_ENVIRONMENT_MARKERS.map((key) => [key, 'set']))
-    delete fullWorker.ORCH_RUN_ID
-    delete fullWorker.ORCH_DEPTH
+    delete fullWorker.BOTTEGA_RUN_ID
+    delete fullWorker.BOTTEGA_DEPTH
     expect(classifyCaller(fullWorker)).toEqual({ kind: 'worker' })
   })
 

@@ -99,7 +99,7 @@ export function trackedWorkerEnvironment(
 ): Record<string, string> {
   return {
     ...(writesJob && worktree ? trackedRecipeEnvironment(runId) : {}),
-    ...(repoJob && worktree ? { ORCH_MAIN_CHECKOUT: worktree.repoRoot } : {}),
+    ...(repoJob && worktree ? { BOTTEGA_MAIN_CHECKOUT: worktree.repoRoot } : {}),
   }
 }
 

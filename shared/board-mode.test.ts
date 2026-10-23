@@ -36,7 +36,7 @@ test('an adopted install refuses rather than falling back without configuration'
   const decision = decideBoardMode({ adopted: true, hostedConfigured: false, locality: 'shared' })
   expect(decision.mode).toBe('refused')
   if (decision.mode === 'refused') {
-    expect(decision.reason).toContain('ORCH_RECORD_API_URL')
+    expect(decision.reason).toContain('BOTTEGA_RECORD_API_URL')
     expect(decision.reason).toContain(`${PLATFORM_SLUG} record sign-in`)
   }
 })
@@ -62,7 +62,7 @@ test('UUID ids select hosted only after adoption with configuration', () => {
   })
   expect(decideBoardIdMode({ id, adopted: true, hostedConfigured: false })).toEqual({
     mode: 'refused',
-    reason: `this install has adopted the hosted board but ORCH_RECORD_API_URL is not configured; configure the hosted record API and sign in with ${PLATFORM_SLUG} record sign-in`,
+    reason: `this install has adopted the hosted board but BOTTEGA_RECORD_API_URL is not configured; configure the hosted record API and sign in with ${PLATFORM_SLUG} record sign-in`,
   })
 })
 

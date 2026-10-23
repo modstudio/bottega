@@ -59,9 +59,9 @@ export async function fileNote(
 ) {
   if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
   let cwd = options.cwd ?? process.cwd()
-  const runMarker = process.env.ORCH_RUN_ID
+  const runMarker = process.env.BOTTEGA_RUN_ID
   const runId = runMarker ? resolveRunIdentifier(db(), runMarker) : null
-  const token = process.env.ORCH_RUN_TOKEN ?? ''
+  const token = process.env.BOTTEGA_RUN_TOKEN ?? ''
   if (options.cwd === undefined && runId && strictlyAuthenticatedWorkerRun(runId, token)) {
     const worker = db()
       .query<{ launch_cwd: string | null }, [string]>(

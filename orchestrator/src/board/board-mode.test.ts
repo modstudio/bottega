@@ -22,7 +22,7 @@ test('an adopted board is hosted when only a configured file provides the endpoi
     const config = join(root, 'config')
     const harness = join(root, 'harness.env')
     mkdirSync(config)
-    writeFileSync(harness, 'ORCH_RECORD_API_URL=https://file.example.test\n')
+    writeFileSync(harness, 'BOTTEGA_RECORD_API_URL=https://file.example.test\n')
 
     expect(
       boardMode('shared', { [CONFIG_HOME_ENV]: config, [HARNESS_ENV_FILE_ENV]: harness }, database),

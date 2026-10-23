@@ -338,15 +338,20 @@ export function claimRunPushNotices(
   const run = database
     .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
     .get(runId) as { root_id: number } | null
-  if (!run)
+  if (!run) {
+    const selected = selectPushNotices('unbounded', [], clock)
     return {
-      ...selectPushNotices('unbounded', [], clock),
+      notices: selected.notices,
+      withheldOlderCount: selected.withheldOlderCount,
       warning: missingReaderStartWarning(`run:${runId}`),
     }
+  }
   const reader = `run:${run.root_id}`
   const beganAt = boardReaderBeganAt(reader, database)
+  const selected = selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database), clock)
   return {
-    ...selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database), clock),
+    notices: selected.notices,
+    withheldOlderCount: selected.withheldOlderCount,
     warning: beganAt === null ? missingReaderStartWarning(reader) : null,
   }
 }
@@ -419,15 +424,22 @@ export function claimPushNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database: Database = writableDb(),
+  claimReplySuccessors = true,
 ): {
   notices: ReturnType<typeof claimNotices>
   withheldOlderCount: number
+  deferredReplySuccessorCount: number
   warning: string | null
 } {
   const reader = boardReader(env)
   const beganAt =
     reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
-  const selected = selectPushNotices(beganAt, claimNotices(all, env, clock, database), clock)
+  const selected = selectPushNotices(
+    beganAt,
+    claimNotices(all, env, clock, database),
+    clock,
+    claimReplySuccessors,
+  )
   const notices = selected.notices.filter((notice) => {
     if (!notice.reportReplySuccessor) return true
     const row = messageRows(database).find((item) => item.record_id === notice.recordId)
@@ -436,6 +448,7 @@ export function claimPushNotices(
   return {
     notices,
     withheldOlderCount: selected.withheldOlderCount,
+    deferredReplySuccessorCount: selected.deferredReplySuccessorCount,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

@@ -15,7 +15,7 @@ import {
 } from './main-stack-decision.ts'
 
 export const MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT = 4 * 60 * 60 * 1_000
-const MAIN_STACK_IDLE_STOP_AFTER_KEY = 'ORCH_MAIN_STACK_IDLE_STOP_AFTER_MS'
+const MAIN_STACK_IDLE_STOP_AFTER_KEY = 'BOTTEGA_MAIN_STACK_IDLE_STOP_AFTER_MS'
 const MAIN_STACK_COMMAND_TIMEOUT_MS = 120_000
 
 type CommandResult = { ok: true; output: string } | { ok: false; reason: string }
