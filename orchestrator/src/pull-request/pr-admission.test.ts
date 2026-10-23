@@ -192,7 +192,7 @@ test('a never-reviewed branch names its missing lens without the generic no-roun
     missingReview: true,
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
-    missingLenses: ['craft'],
+    missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
     missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -205,6 +205,53 @@ test('a never-reviewed branch names its missing lens without the generic no-roun
     `${PLATFORM_SLUG} run start review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft`,
   )
   expect(message).not.toContain('no earlier complete review round')
+})
+
+test('a lens recorded on the branch is refused as missing for this change, not as absent from the branch', () => {
+  const earlier = {
+    reviewRecordId: 'review-3',
+    reviewNumber: 3,
+    recordedAt: '2026-09-25T00:00:00Z',
+    completedAt: '2026-09-25T01:00:00Z',
+    tier: 2 as const,
+    patchId: 'patch-before',
+    pathSet: '["a.ts"]',
+    lensIdentities: ['correctness', 'craft'],
+    lenses: [
+      { recordId: 'lens-1', lens: 'correctness', graded: true },
+      { recordId: 'lens-2', lens: 'craft', graded: true },
+    ],
+    findings: [],
+  }
+  const decision = decideTriage({
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    tip: 'tip',
+    tier: 2,
+    applicableReview: { lenses: ['correctness', 'craft'] },
+    roundReview: { lenses: ['craft'] },
+    branchOwnerSession: 'owner-session',
+    reviews: [],
+    branchReviewGroups: [{ reviews: [earlier] }],
+    reads: [],
+  })
+  expect(decision).toMatchObject({
+    complete: false,
+    missingLenses: [{ lens: 'craft', recordedOnBranch: true }],
+  })
+  if (decision.complete) throw new Error('expected incomplete triage')
+  const message = triageRefusal(
+    {
+      project: { name: 'fixture' },
+      branch: 'DEV-1598-funnel',
+      tip: 'tip',
+      group: { patchId: 'patch' },
+      tier: 2,
+    } as PullRequestChange,
+    decision,
+  )
+  expect(message).toContain('applicable lens craft has no recorded result for this change')
+  expect(message).not.toContain('applicable lens craft has no recorded result on this branch')
 })
 
 test('a no-round refusal prints the generic remedy only from its decision field', () => {

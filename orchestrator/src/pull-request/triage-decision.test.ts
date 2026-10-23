@@ -282,7 +282,7 @@ describe('pull-request triage decision', () => {
       ),
     ).toMatchObject({
       complete: false,
-      missingLenses: ['safety'],
+      missingLenses: [{ lens: 'safety', recordedOnBranch: false }],
       missingSecondOpinion: null,
       undisposedFindings: [],
     })
@@ -358,7 +358,7 @@ describe('pull-request triage decision', () => {
     ).toMatchObject({
       complete: false,
       earlierReviewNumber: null,
-      missingLenses: expect.arrayContaining(['craft']),
+      missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
     })
   })
 
@@ -437,7 +437,7 @@ describe('pull-request triage decision', () => {
     expect(decideTriage(evidence({ reviews: [], branchReviewGroups: [] }))).toMatchObject({
       complete: false,
       missingReview: true,
-      missingLenses: ['correctness'],
+      missingLenses: [{ lens: 'correctness', recordedOnBranch: false }],
       noCompleteReviewRound: false,
     })
   })
@@ -464,7 +464,10 @@ describe('pull-request triage decision', () => {
           reviews: [first, second],
         }),
       ),
-    ).toMatchObject({ complete: false, missingLenses: ['craft'] })
+    ).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
+    })
   })
 
   test('an unfinished review blocks an otherwise complete identical patch group', () => {
@@ -618,7 +621,11 @@ describe('pull-request triage decision', () => {
       complete: false,
       unfinishedReviewNumbers: [4],
       undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
-      missingLenses: ['correctness', 'craft', 'safety'],
+      missingLenses: [
+        { lens: 'correctness', recordedOnBranch: false },
+        { lens: 'craft', recordedOnBranch: false },
+        { lens: 'safety', recordedOnBranch: false },
+      ],
     })
   })
 
@@ -642,7 +649,10 @@ describe('pull-request triage decision', () => {
           reviews: [required],
         }),
       ),
-    ).toMatchObject({ complete: false, missingLenses: ['craft'] })
+    ).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
+    })
   })
 
   test('a later round admits required exact lenses and credits a clean earlier lens', () => {
