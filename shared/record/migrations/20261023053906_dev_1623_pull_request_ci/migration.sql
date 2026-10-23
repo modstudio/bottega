@@ -23,6 +23,7 @@ CREATE TABLE "pull_request_ci" (
 );
 --> statement-breakpoint
 ALTER TABLE "pull_request_ci" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "pull_request_ci" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "pull_request_ci" ADD CONSTRAINT "pull_request_ci_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id");--> statement-breakpoint
 ALTER TABLE "pull_request_ci" ADD CONSTRAINT "pull_request_ci_project_id_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "project"("id");--> statement-breakpoint
 ALTER TABLE "pull_request_ci" ADD CONSTRAINT "pull_request_ci_machine_id_machine_id_fkey" FOREIGN KEY ("machine_id") REFERENCES "machine"("id");--> statement-breakpoint
