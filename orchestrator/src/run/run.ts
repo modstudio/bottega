@@ -508,26 +508,21 @@ export async function run(opts: {
       opts.probe,
       opts.lens,
     )
-  const selectFirstTurnAgent = async () => {
-    try {
-      return await selectAgentAndPreflightMcp({
-        select: () =>
-          selectAgentWithCapacityEvents({
-            runId: opts.reserveId,
-            select: pickSource,
-            noWait: opts.noWaitCapacity,
-          }),
-        mcpRequest,
-        cwd: callerCwd,
-        job: opts.job,
-        projectName: runProjectName ?? undefined,
-        preflightedAgent: opts.dispatchMcpPreflightedAgent,
-      })
-    } catch (cause) {
-      recordRunStartupFailure(opts.reserveId, cause)
-      throw cause
-    }
-  }
+  const selectFirstTurnAgent = () =>
+    selectAgentAndPreflightMcp({
+      select: () =>
+        selectAgentWithCapacityEvents({
+          runId: opts.reserveId,
+          select: pickSource,
+          noWait: opts.noWaitCapacity,
+        }),
+      mcpRequest,
+      cwd: callerCwd,
+      job: opts.job,
+      projectName: runProjectName ?? undefined,
+      preflightedAgent: opts.dispatchMcpPreflightedAgent,
+      onFailure: (cause) => recordRunStartupFailure(opts.reserveId, cause),
+    })
   const source = resume.isFirstTurn
     ? {
         source: 'pick' as const,

@@ -78,15 +78,22 @@ export async function selectAgentAndPreflightMcp<T extends { agent: string }>(in
   projectName?: string
   preflightedAgent?: string
   preflight?: typeof preflightDispatchMcp
+  /** Records a selection or preflight failure before it propagates. */
+  onFailure?: (cause: unknown) => void
 }): Promise<T> {
-  const selected = await input.select()
-  if (input.preflightedAgent === selected.agent) return selected
-  ;(input.preflight ?? preflightDispatchMcp)({
-    mcpRequest: input.mcpRequest,
-    cwd: input.cwd,
-    job: input.job,
-    selectedAgent: selected.agent,
-    projectName: input.projectName,
-  })
-  return selected
+  try {
+    const selected = await input.select()
+    if (input.preflightedAgent === selected.agent) return selected
+    ;(input.preflight ?? preflightDispatchMcp)({
+      mcpRequest: input.mcpRequest,
+      cwd: input.cwd,
+      job: input.job,
+      selectedAgent: selected.agent,
+      projectName: input.projectName,
+    })
+    return selected
+  } catch (cause) {
+    input.onFailure?.(cause)
+    throw cause
+  }
 }
