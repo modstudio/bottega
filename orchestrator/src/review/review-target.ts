@@ -51,39 +51,22 @@ export function reviewRemoteTrunkRefExists(
   return probe(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`])
 }
 
-/** The live landing merge-base is authoritative; a run's recorded base is never a review base. */
-export function decideReviewBase(input: {
-  mergeBase: string | null
-  recordedBase: string | null
-}): string | null {
-  return input.mergeBase
+/** Run a git probe whose result is determined only by its exit code. */
+export function spawnGitProbe(cwd: string): (args: string[]) => boolean {
+  return (args) =>
+    Bun.spawnSync(['git', '-C', cwd, ...args], {
+      env: targetGitEnvironment(cwd),
+      stdout: 'ignore',
+      stderr: 'ignore',
+    }).exitCode === 0
 }
 
 /** Landing-branch merge-base of a reviewed tip. Shared by tier, dispatch, and admission. */
-export function resolveReviewBase(
-  cwd: string,
-  tip: string,
-  trunk: string,
-  recordedBase: string | null = null,
-): string | null {
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
-    trunk,
-    (args) =>
-      Bun.spawnSync(['git', '-C', cwd, ...args], {
-        env: targetGitEnvironment(cwd),
-        stdout: 'ignore',
-        stderr: 'ignore',
-      }).exitCode === 0,
-  )
+export function resolveReviewBase(cwd: string, tip: string, trunk: string): string | null {
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(cwd))
   const trunkCommit = resolveBase(cwd, `${reviewTrunkRef(remoteTrackingRefExists, trunk)}^{commit}`)
-  return decideReviewBase({
-    mergeBase: gitContext(cwd, 'merge-base', tip, trunkCommit),
-    recordedBase,
-  })
+  return gitContext(cwd, 'merge-base', tip, trunkCommit)
 }
-
-/** Base adapter used by gate and issue-review callers. */
-export const resolveReviewMergeBase = resolveReviewBase
 
 export function emptyReviewRefusal(
   commit: string,

@@ -37,20 +37,6 @@ test('unknown review verb with options keeps the review-family refusal', async (
   )
 })
 
-test('review tier help distinguishes explicit ranges from branch and run bases', () => {
-  const program = new Command()
-  registerReviewCommand(program, { log: () => {} })
-  const review = program.commands.find((command) => command.name() === 'review')!
-  const tier = review.commands.find((command) => command.name() === 'tier')!
-  const output: string[] = []
-  tier.configureOutput({ writeOut: (value) => output.push(value) })
-  tier.outputHelp()
-
-  expect(output.join('')).toContain(
-    'an explicit range keeps its from; a branch or run target uses the merge-base with origin/<landing branch>',
-  )
-})
-
 test('review record runs through Commander and records the lens output', async () => {
   const output: string[] = []
   const outputPath = join(dir, `review-command-record-${crypto.randomUUID()}.json`)
@@ -593,7 +579,7 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
   }
 })
 
-test('review tier reports stack and generic profile sources resolved for its project', async () => {
+test('review tier run target uses the landing merge-base instead of its recorded base', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-profiles-'))
   try {
     git(repo, 'init', '-b', 'main')
@@ -610,6 +596,12 @@ test('review tier reports stack and generic profile sources resolved for its pro
           secondOpinion: { lens: 'correctness', basis: 'escaped defect evidence' },
           risk: {
             paths: [
+              {
+                pattern: '^orchestrator/hooks/',
+                tier: 3,
+                reason: 'recorded-base-only hook',
+                basis: 'stale recorded base evidence',
+              },
               {
                 pattern: '^notes\\.md$',
                 tier: 3,
@@ -644,6 +636,10 @@ test('review tier reports stack and generic profile sources resolved for its pro
 
     await runReview(['review', 'tier', String(run.id)], output)
 
+    expect(FIXTURE_BASE).not.toBe(git(repo, 'merge-base', FIXTURE_WRITER_HEAD, 'origin/main'))
+    expect(output).toContain('tier 3')
+    expect(output).toContain('risk 3')
+    expect(output.some((line) => line.includes('recorded-base-only hook'))).toBeFalse()
     expect(output).toContain('risk map project declaration')
     expect(
       output.some(

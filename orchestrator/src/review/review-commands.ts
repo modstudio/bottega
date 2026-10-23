@@ -23,7 +23,12 @@ import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
-import { resolveReviewBase, reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
+import {
+  resolveReviewBase,
+  reviewRemoteTrunkRefExists,
+  reviewTrunkRef,
+  spawnGitProbe,
+} from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
@@ -120,16 +125,6 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   return resolution
 }
 
-function spawnGitProbe(repo: string): (args: string[]) => boolean {
-  return (args) =>
-    Bun.spawnSync(['git', ...args], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).exitCode === 0
-}
-
 function resolveTierTarget(
   value: string,
   cwd: string,
@@ -180,7 +175,7 @@ function resolveTierTarget(
       const reviewedTip = branchLive ? reviewed : (row.head_commit ?? reviewed)
       const from = (() => {
         try {
-          return resolveReviewBase(project.path, reviewedTip, trunk, row.base_commit)
+          return resolveReviewBase(project.path, reviewedTip, trunk)
         } catch {
           return null
         }
