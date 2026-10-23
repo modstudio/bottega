@@ -10,7 +10,8 @@ BUN_CACHE_COMMAND = re.compile(
     r"(?<![\w-])bun\s+pm\s+cache\s+(?:rm|clean)(?![\w-])"
 )
 RECURSIVE_CACHE_REMOVAL = re.compile(
-    r"(?<![\w-])rm\s+-[^\s;&|]*r[^\s;&|]*\s+[^;&|\n]*"
+    r"(?<![\w-])(?:/[^\s;&|]+/)?rm\s+"
+    r"(?:-[^\s;&|]*[rR][^\s;&|]*|--recursive)\s+[^;&|\n]*"
     r"(?:(?:~|\$HOME|\$\{HOME\})/|/(?:[^\s\"';&|]+/)+)"
     r"\.bun/install/cache(?:/links)?(?=$|[/\s\"';&|])"
 )
