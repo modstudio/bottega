@@ -14,20 +14,23 @@ import {
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
-import { type ClaimInput, claimRun as productionClaimRun } from './run-claim.ts'
+import * as productionClaim from './run-claim.ts'
+import * as productionClose from './run-close.ts'
 import type { LiveInput, LiveResult } from './run-live.ts'
+import * as productionLive from './run-live.ts'
+import * as productionTerminal from './run-terminal.ts'
 import * as productionWorkerHome from './run-worker-home.ts'
 
 const directories: string[] = []
-const originalClaimRun = productionClaimRun
+const originalClaimRun = productionClaim.claimRun
 let classified: ConfinementEvent | null = null
 let runLiveFixture: ((input: LiveInput) => Promise<LiveResult>) | null = null
 let runUnderTest: typeof import('./run.ts').run
 let caller: string
 
 async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
-  mock.module('./run-claim.ts', () => ({
-    claimRun: async (input: ClaimInput) => {
+  spyOn(productionClaim, 'claimRun').mockImplementation(
+    async (input: Parameters<typeof productionClaim.claimRun>[0]) => {
       if (input.callerCwd !== caller) return originalClaimRun(input)
       const id = newRecordId()
       const started = Date.now()
@@ -76,14 +79,15 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
         usingMcp: input.usingMcp,
       }
     },
+  )
+  spyOn(productionLive, 'runLive').mockImplementation((input: LiveInput) => runLiveFixture!(input))
+  spyOn(productionModelHost, 'ensureLocalHealth').mockImplementation(async () => ({
+    ok: true,
+    detail: 'fixture',
   }))
-  mock.module('./run-live.ts', () => ({
-    runLive: (input: LiveInput) => runLiveFixture!(input),
-  }))
-  mock.module('../agent/model-host.ts', () => ({
-    ...productionModelHost,
-    ensureLocalHealth: async () => ({ ok: true, detail: 'fixture' }),
-    tryWake: () => ({ sent: false, detail: 'fixture' }),
+  spyOn(productionModelHost, 'tryWake').mockImplementation(() => ({
+    sent: false,
+    detail: 'fixture',
   }))
   spyOn(productionWorkerHome, 'prepareWorkerHomeLaunch').mockImplementation(
     async (input: Parameters<typeof productionWorkerHome.prepareWorkerHomeLaunch>[0]) => {
@@ -97,8 +101,8 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
       }
     },
   )
-  mock.module('./run-terminal.ts', () => ({
-    finishRun: async (input: {
+  spyOn(productionTerminal, 'finishRun').mockImplementation(
+    async (input: {
       watchedCheckouts: Parameters<typeof freezeAfterCheckouts>[0]['watched']
       frozenBefore: Parameters<typeof classifyCheckoutChanges>[0]['before']
       callerRemoval: Parameters<typeof classifyCheckoutChanges>[0]['removal']
@@ -138,12 +142,12 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
         artifactsPersisted: input.artifactsPersisted,
       }
     },
-  }))
-  mock.module('./run-close.ts', () => ({
-    closeRun: async (input: { claim: { id: string } }) => {
+  )
+  spyOn(productionClose, 'closeRun').mockImplementation(
+    async (input: Parameters<typeof productionClose.closeRun>[0]) => {
       throw Object.assign(new Error('fixture terminal outcome'), { runId: input.claim.id })
     },
-  }))
+  )
   return (await import('./run.ts')).run
 }
 
