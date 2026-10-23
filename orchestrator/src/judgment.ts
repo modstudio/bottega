@@ -9,6 +9,7 @@ import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './datab
 import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
 import { isNotEvidenceFailure } from './failure/failure.ts'
 import { JOBS, job } from './jobs/jobs.ts'
+import { findingsCloseOutRefusal } from './judgment-closeout-refusal.ts'
 import { machineId } from './record/machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
 import {
@@ -80,6 +81,7 @@ type JudgeOptions = {
   notEvidence: readonly string[]
 }
 type ScoreOptions = JudgeOptions & { dashboardAuthorized: boolean }
+const ALL_CLOSE_OUT_FLAGS = ['finding', 'duplicate', ...REVIEW_GRADE_NAMES] as const
 type JudgmentPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
@@ -595,12 +597,9 @@ export async function judgeRun(
     }
     const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))
     if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
-  } else if (
-    [parsedFindings.length, parsedDuplicates.length].some(Boolean) ||
-    REVIEW_GRADE_NAMES.some((name) => suppliedGrades[name])
-  ) {
-    throw new Error(`${row.job} does not take findings close-out flags`)
   }
+  const closeOutRefusal = closeOutRefusalFor(id, row.job, delivery, flags, ALL_CLOSE_OUT_FLAGS)
+  if (closeOutRefusal) throw new Error(closeOutRefusal)
   if (comparison) {
     const expected = partners.map((partner) => partner.record_id).sort((a, b) => a.localeCompare(b))
     const actual = [...comparisonIds].sort((a, b) => a.localeCompare(b))
@@ -657,23 +656,6 @@ export async function judgeRun(
   )
   return { id, row, reviewId: reviewRecordId, comparison }
 }
-/** Review grades belong to a findings lens that produced output to grade. */
-function refuseReviewGradeFlags(
-  flags: JudgmentFlags,
-  findingsJob: boolean,
-  delivery: string | undefined,
-  jobName: string,
-): string | null {
-  if (!REVIEW_GRADE_NAMES.some((name) => flags.flag(name) !== undefined)) return null
-  if (!findingsJob) {
-    return `${jobName} is not a findings-producing lens; review grade flags are not valid for this job`
-  }
-  if (delivery === 'none') {
-    return "delivery 'none' takes no review grades: there was no lens output to judge"
-  }
-  return null
-}
-
 /**
  * The axes are judged before the review evidence is gathered, so a mistyped
  * word fails before any work is done.
@@ -805,6 +787,26 @@ function suppliedReviewGrades(flags: JudgmentFlags): GivenScoreFlags['grades'] {
   return Object.fromEntries(
     REVIEW_GRADE_NAMES.map((name) => [name, flags.flag(name)]),
   ) as GivenScoreFlags['grades']
+}
+
+function closeOutRefusalFor(
+  id: string,
+  jobName: string,
+  delivery: string | undefined,
+  flags: JudgmentFlags,
+  flagNames: readonly ('finding' | 'duplicate' | (typeof REVIEW_GRADE_NAMES)[number])[],
+): string | null {
+  return findingsCloseOutRefusal({
+    runId: id,
+    jobName,
+    findingsJob: Boolean(job(jobName).findings),
+    delivery,
+    suppliedFlags: flagNames.filter((name) =>
+      name === 'finding' || name === 'duplicate'
+        ? flags.values(name).length > 0
+        : flags.flag(name) !== undefined,
+    ),
+  })
 }
 
 function givenScoreFlags(
@@ -984,7 +986,7 @@ export async function scoreRun(
     jobName: row.job,
   })
   if (initialRefusal) throw new Error(scoringHelp(initialRefusal, id, delivery, quality, row.job))
-  const gradeFlagRefusal = refuseReviewGradeFlags(flags, findingsJob, delivery, row.job)
+  const gradeFlagRefusal = closeOutRefusalFor(id, row.job, delivery, flags, REVIEW_GRADE_NAMES)
   if (gradeFlagRefusal) throw new Error(gradeFlagRefusal)
   const scoredFidelity = needsFidelity ? fidelity : undefined
   let givenGrades = suppliedReviewGrades(flags)
