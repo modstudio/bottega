@@ -1,12 +1,29 @@
 import { describe, expect, test } from 'bun:test'
+import { addRun } from '../../test/fixtures/store.ts'
+import { refreshAgents } from '../agent/agent-registry.ts'
+import { db } from '../database/db.ts'
 import {
   callerCheckoutDecision,
+  decidePreDetachSelection,
   detachSpecWithRoutedSelection,
   dispatchLaunchCwdDecision,
   resolveCallerCheckoutDecision,
+  selectBeforeDetach,
   taskBranchLandingBypassWarning,
   transportSelection,
 } from './dispatch-cli-service.ts'
+
+test('detached selection waits only after a capacity-only foreground result', () => {
+  expect(decidePreDetachSelection({ selection: 'capacity-wait', noWaitCapacity: false })).toBe(
+    'detach-then-wait',
+  )
+  expect(decidePreDetachSelection({ selection: 'capacity-wait', noWaitCapacity: true })).toBe(
+    'foreground-refuse',
+  )
+  expect(decidePreDetachSelection({ selection: 'hard-refusal', noWaitCapacity: false })).toBe(
+    'foreground-refuse',
+  )
+})
 
 test('a routed selection is handed off separately from the caller pin', () => {
   expect(detachSpecWithRoutedSelection({}, { agent: 'codex', reason: 'surface route' })).toEqual({
@@ -15,6 +32,32 @@ test('a routed selection is handed off separately from the caller pin', () => {
   expect(
     detachSpecWithRoutedSelection({ agent: 'grok' }, { agent: 'codex', reason: 'route' }),
   ).toEqual({ agent: 'grok' })
+})
+
+test('detached selection waits in the coordinator only for a capacity refusal', async () => {
+  const original = db().query("SELECT max_concurrent FROM agent WHERE name='codex'").get() as {
+    max_concurrent: number
+  }
+  db().query("UPDATE agent SET max_concurrent=1 WHERE name='codex'").run()
+  refreshAgents()
+  const occupyingRun = addRun({ agent: 'codex', job: 'craft', status: 'running' })
+  const presentation = { cwd: () => process.cwd(), error: () => {} }
+
+  try {
+    await expect(
+      selectBeforeDetach('craft', 'prompt', { agent: 'codex' }, presentation),
+    ).resolves.toBeUndefined()
+    await expect(
+      selectBeforeDetach('craft', 'prompt', { agent: 'codex', noWaitCapacity: true }, presentation),
+    ).rejects.toThrow('agent codex is at capacity (1 running:')
+    await expect(
+      selectBeforeDetach('craft', 'prompt', { agent: 'not-an-agent' }, presentation),
+    ).rejects.toThrow('unknown agent "not-an-agent"')
+  } finally {
+    db().query('DELETE FROM run WHERE record_id=?').run(occupyingRun)
+    db().query("UPDATE agent SET max_concurrent=? WHERE name='codex'").run(original.max_concurrent)
+    refreshAgents()
+  }
 })
 
 test('dispatch transport selection gives an explicit flag precedence over the environment', () => {
