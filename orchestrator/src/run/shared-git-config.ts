@@ -89,7 +89,7 @@ function readSharedGitConfig(configPath: string): GitConfigValues {
 }
 
 /** Capture the exact common-dir config before a writing worker can run project code. */
-export function snapshotSharedGitConfig(worktree: string): SharedGitConfigSnapshot {
+function snapshotSharedGitConfig(worktree: string): SharedGitConfigSnapshot {
   const commonDir = commonGitDir(worktree)
   if (!commonDir) {
     return {
@@ -129,10 +129,10 @@ function restoreKey(configPath: string, action: SharedGitConfigAction): string |
   return null
 }
 
-export type SharedGitConfigCheck = { header: string | null }
+type SharedGitConfigCheck = { header: string | null }
 
 /** Compare at terminal, repair only run-tree paths, and leave all other changes visible. */
-export function checkSharedGitConfigAtTerminal(input: {
+function checkSharedGitConfigAtTerminal(input: {
   runId: string
   worktree: string
   snapshot: SharedGitConfigSnapshot
