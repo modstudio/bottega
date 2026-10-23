@@ -260,6 +260,13 @@
       "when": 1792706936000,
       "tag": "0036_question_uuid_key",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792793336000,
+      "tag": "0037_foreign_key_leading_indexes",
+      "breakpoints": true
     }
   ]
 }

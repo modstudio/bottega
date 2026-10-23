@@ -1,0 +1,15 @@
+CREATE INDEX IF NOT EXISTS calibration_run_record_id_idx ON calibration(run_record_id);
+CREATE INDEX IF NOT EXISTS canon_eval_run_record_id_idx ON canon_eval(run_record_id);
+CREATE INDEX IF NOT EXISTS compared_pair_run_b_record_id_idx ON compared_pair(run_b_record_id);
+CREATE INDEX IF NOT EXISTS duel_loser_run_record_id_idx ON duel(loser_run_record_id);
+CREATE INDEX IF NOT EXISTS question_delivery_run_record_id_idx ON question_delivery(run_record_id);
+CREATE INDEX IF NOT EXISTS resource_claim_run_record_id_idx ON resource_claim(run_record_id);
+CREATE INDEX IF NOT EXISTS resource_claim_root_run_record_id_idx ON resource_claim(root_run_record_id);
+CREATE INDEX IF NOT EXISTS resource_claim_project_record_id_idx ON resource_claim(project_record_id);
+CREATE INDEX IF NOT EXISTS run_carried_ruling_question_record_id_idx ON run_carried_ruling(question_record_id);
+CREATE INDEX IF NOT EXISTS run_message_run_record_id_idx ON run_message(run_record_id);
+CREATE INDEX IF NOT EXISTS run_mutation_audit_run_record_id_idx ON run_mutation_audit(run_record_id);
+CREATE INDEX IF NOT EXISTS check_execution_gate_execution_id_idx ON check_execution(gate_execution_id);
+CREATE INDEX IF NOT EXISTS release_ledger_project_record_id_idx ON release_ledger(project_record_id);
+CREATE INDEX IF NOT EXISTS run_retry_of_record_id_idx ON run(retry_of_record_id);
+CREATE INDEX IF NOT EXISTS operator_notification_question_record_id_idx ON operator_notification(question_record_id);
