@@ -31,6 +31,22 @@ test('groups focused paths by nearest package with package-relative arguments', 
   ])
 })
 
+test('runs a package selection through its own test entry point without nested packages', () => {
+  const [group] = groupFocusedTestPaths(['hub/src'])
+  expect(relative(root, group.directory)).toBe('hub')
+  expect(group.paths).toEqual(['src'])
+  expect(group.argv.slice(0, 4)).toEqual(['bun', 'run', 'test', '--'])
+  expect(group.argv).toContain('data/**')
+
+  const directoryGroups = groupFocusedTestPaths(['hub'])
+  expect(directoryGroups.map((candidate) => relative(root, candidate.directory))).toContain(
+    'hub/data',
+  )
+  expect(
+    directoryGroups.find((candidate) => relative(root, candidate.directory) === 'hub/data')?.argv,
+  ).toEqual(['bun', 'run', 'test', '--', '.'])
+})
+
 test('refuses missing and escaping path arguments', () => {
   expect(() => groupFocusedTestPaths([])).toThrow('at least one')
   expect(() => groupFocusedTestPaths(['../outside.test.ts'])).toThrow('outside the project')
