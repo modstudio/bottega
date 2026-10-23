@@ -21,7 +21,10 @@ import {
   restoreStoredSettingsEnvironmentNames,
 } from '../settings/settings-apply-commands.ts'
 import { applyMachineSettings } from '../settings/settings-machine-apply.ts'
-import { replacementEnvironmentName } from './environment-name-migration.ts'
+import {
+  processEnvironmentNameMigration,
+  replacementEnvironmentName,
+} from './environment-name-migration.ts'
 import type { SetupEnvironmentService } from './setup-apply.ts'
 import {
   environmentMigrationMessage,
@@ -39,8 +42,24 @@ export async function restoreSetupEnvironment(directory: string): Promise<void> 
   })
 }
 
+export function migrateProcessEnvironment(environment: Record<string, string | undefined>): number {
+  const migration = processEnvironmentNameMigration(environment)
+  if (migration.conflicts.length) {
+    const names = migration.conflicts
+      .map(({ legacyName, replacementName }) => `${legacyName} and ${replacementName}`)
+      .join(', ')
+    throw new Error(
+      `refusing environment migration: ${names} have different values in the running process; unset one name from each pair, then re-run ${PLATFORM_SLUG} machine setup apply`,
+    )
+  }
+  for (const [name, value] of Object.entries(migration.set)) environment[name] = value
+  for (const name of migration.unset) delete environment[name]
+  return migration.unset.length
+}
+
 export const setupEnvironmentService: SetupEnvironmentService = {
   migrateEnvironment: async () => {
+    const processNamesRenamed = migrateProcessEnvironment(process.env)
     const notes: string[] = []
     const home = homedir()
     const report = await migrateOperatorEnvironment(home, {
@@ -76,8 +95,14 @@ export const setupEnvironmentService: SetupEnvironmentService = {
           .map((project) => project),
       notes: () => notes,
     })
-    const message = environmentMigrationMessage(report)
-    if (report.followUps.length) throw new Error(message ?? 'applied, follow-up required')
-    return message
+    const migrationMessage = environmentMigrationMessage(report)
+    const processMessage = processNamesRenamed
+      ? `${processNamesRenamed} environment name${processNamesRenamed === 1 ? '' : 's'} renamed in-process`
+      : null
+    const message = [processMessage, migrationMessage].filter(Boolean).join('; ') || null
+    return {
+      status: report.followUps.length ? 'follow-up' : message ? 'applied' : 'unchanged',
+      message,
+    }
   },
 }

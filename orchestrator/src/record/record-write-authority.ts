@@ -10,9 +10,12 @@ export const BOUND_RECORD_WRITE_REFUSAL =
   'this install is bound to a hosted record, but BOTTEGA_RECORD_API_URL is not set in this environment\n' +
   `cleared by: ${PLATFORM_SLUG} record use <address>`
 
-export function currentRecordWriteDecision(database?: Database): RecordWriteDecision {
+export function currentRecordWriteDecision(
+  database?: Database,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): RecordWriteDecision {
   return decideRecordWrite({
-    recordApiUrlSet: Boolean(resolveRecordApiUrl()?.trim()),
+    recordApiUrlSet: Boolean(resolveRecordApiUrl(environment)?.trim()),
     installBound: readRecordInstallBinding(database).bound,
   })
 }

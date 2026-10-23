@@ -40,7 +40,7 @@ const noticeSchema = z.object({ message: z.string(), fix: z.string().nullable() 
 const actionResultSchema = z
   .object({
     line: z.string(),
-    status: z.enum(['applied', 'unchanged', 'refused', 'not-attempted']),
+    status: z.enum(['applied', 'unchanged', 'follow-up', 'refused', 'not-attempted']),
     message: z.string().nullable(),
   })
   .strict()

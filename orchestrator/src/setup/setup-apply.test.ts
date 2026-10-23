@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, expect, test } from 'bun:test'
 import {
   existsSync,
@@ -12,21 +13,30 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  BOUND_RECORD_WRITE_REFUSAL,
+  currentRecordWriteDecision,
+} from '../record/record-write-authority.ts'
+import {
   applySetupActions as applySetupActionsWithService,
   type SetupEnvironmentService,
   type SetupProjectService,
+  setupResultsRequireAttention,
 } from './setup-apply.ts'
+import { migrateProcessEnvironment } from './setup-environment-runtime.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
+const legacyRecordApiUrl = ['ORCH', 'RECORD', 'API', 'URL'].join('_')
 
 const applySetupActions = (
   actions: SetupAction[],
   service: SetupProjectService,
   runner?: Parameters<typeof applySetupActionsWithService>[3],
-  environment: SetupEnvironmentService = { migrateEnvironment: async () => null },
+  environment: SetupEnvironmentService = {
+    migrateEnvironment: async () => ({ status: 'unchanged', message: null }),
+  },
 ) => applySetupActionsWithService(actions, service, environment, runner)
 
 const action = (name: string): SetupAction => ({
@@ -219,7 +229,7 @@ test('applies the required environment migration before later actions and its re
   const environment: SetupEnvironmentService = {
     migrateEnvironment: async () => {
       attempted.push('environment')
-      return 'migrated'
+      return { status: 'applied', message: 'migrated' }
     },
   }
   const results = await applySetupActions(
@@ -244,6 +254,80 @@ test('applies the required environment migration before later actions and its re
   )
   expect(attempted).toEqual(['environment'])
   expect(refused.map(({ status }) => status)).toEqual(['refused', 'not-attempted'])
+})
+
+test('renames the injected process environment before the hosted record-write gate', async () => {
+  const database = new Database(':memory:')
+  database.exec(
+    "CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL); INSERT INTO record_install_binding VALUES (1, '2026-10-23T00:00:00.000Z')",
+  )
+  const environment: Record<string, string | undefined> = {
+    [legacyRecordApiUrl]: 'https://record.example.test',
+  }
+  const results = await applySetupActions(
+    [{ kind: 'migrate-environment' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    {
+      migrateEnvironment: async () => {
+        const renamed = migrateProcessEnvironment(environment)
+        if (currentRecordWriteDecision(database, environment) === 'refused') {
+          throw new Error(BOUND_RECORD_WRITE_REFUSAL)
+        }
+        return { status: 'applied', message: `${renamed} environment name renamed in-process` }
+      },
+    },
+  )
+  database.close()
+
+  expect(results).toEqual([
+    {
+      kind: 'migrate-environment',
+      status: 'applied',
+      message: '1 environment name renamed in-process',
+    },
+  ])
+  expect(environment).toEqual({ BOTTEGA_RECORD_API_URL: 'https://record.example.test' })
+})
+
+test('refuses conflicting running-process names before changing either one or exposing values', () => {
+  const environment = {
+    [legacyRecordApiUrl]: 'legacy-secret',
+    BOTTEGA_RECORD_API_URL: 'replacement-secret',
+  }
+
+  expect(() => migrateProcessEnvironment(environment)).toThrow(
+    `${legacyRecordApiUrl} and BOTTEGA_RECORD_API_URL have different values`,
+  )
+  try {
+    migrateProcessEnvironment(environment)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    expect(message).not.toContain('legacy-secret')
+    expect(message).not.toContain('replacement-secret')
+  }
+  expect(environment).toEqual({
+    [legacyRecordApiUrl]: 'legacy-secret',
+    BOTTEGA_RECORD_API_URL: 'replacement-secret',
+  })
+})
+
+test('reports an applied environment migration requiring operator follow-up distinctly', async () => {
+  const results = await applySetupActions(
+    [{ kind: 'migrate-environment' }, action('project')],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    {
+      migrateEnvironment: async () => ({
+        status: 'follow-up',
+        message: 'applied, follow-up required: reload the service',
+      }),
+    },
+  )
+
+  expect(results.map(({ status }) => status)).toEqual(['follow-up', 'applied'])
+  expect(results[0]?.message).toBe('applied, follow-up required: reload the service')
+  expect(setupResultsRequireAttention(results)).toBe(true)
 })
 
 test('applies an MCP configuration migration once and then reports unchanged', async () => {

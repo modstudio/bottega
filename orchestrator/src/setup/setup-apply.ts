@@ -26,7 +26,7 @@ type RegistrationAction = Extract<SetupAction, { kind: 'register-mcp' }>
 type LegacySymlinkAction = Extract<SetupAction, { kind: 'remove-legacy-symlink' }>
 
 export type SetupActionResult = SetupAction & {
-  status: 'applied' | 'unchanged' | 'refused' | 'not-attempted'
+  status: 'applied' | 'unchanged' | 'follow-up' | 'refused' | 'not-attempted'
   message: string | null
 }
 
@@ -44,7 +44,14 @@ export type SetupProjectService = {
 }
 
 export type SetupEnvironmentService = {
-  migrateEnvironment(): Promise<string | null>
+  migrateEnvironment(): Promise<{
+    status: 'applied' | 'unchanged' | 'follow-up'
+    message: string | null
+  }>
+}
+
+export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
+  return results.some((result) => result.status === 'refused' || result.status === 'follow-up')
 }
 
 type CreatedRecipe = { path: string; device: number; inode: number; contentHash: string }
@@ -237,10 +244,12 @@ async function applySetupAction(
   service: SetupProjectService,
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner,
-): Promise<{ status: 'applied' | 'unchanged'; message: string | null }> {
+): Promise<{
+  status: 'applied' | 'unchanged' | 'follow-up'
+  message: string | null
+}> {
   if (action.kind === 'migrate-environment') {
-    const message = await environment.migrateEnvironment()
-    return { status: message ? 'applied' : 'unchanged', message }
+    return environment.migrateEnvironment()
   }
   if (
     action.kind === 'unchanged' ||
