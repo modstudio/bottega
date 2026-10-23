@@ -17,6 +17,31 @@ test('the shared leg uses a directory-anchored selector that collects only share
   expect(shared.testDirectories).toEqual(['shared'])
 })
 
+test('the Python hook leg runs unittest discovery over its declared reach', () => {
+  const hooks = CHECK_LEGS.find((leg) => leg.name === 'orchestrator/hooks')!
+  expect(hooks).toMatchObject({
+    directory: '.',
+    ciJob: 'orchestrator-hooks',
+    testDirectories: ['orchestrator/hooks'],
+    typecheck: null,
+    suite: [
+      {
+        argv: [
+          'python3',
+          '-m',
+          'unittest',
+          'discover',
+          '-s',
+          'orchestrator/hooks',
+          '-p',
+          'test_*.py',
+        ],
+        unitTests: true,
+      },
+    ],
+  })
+})
+
 test('the hub data package is reached only by its own package leg', () => {
   const hub = CHECK_LEGS.find((leg) => leg.name === 'hub')!
   const data = CHECK_LEGS.find((leg) => leg.name === 'hub/data')!

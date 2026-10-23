@@ -20,6 +20,30 @@ export const CHECK_LEGS = [
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
   },
   {
+    name: 'orchestrator/hooks',
+    directory: '.',
+    ciJob: 'orchestrator-hooks',
+    testDirectories: ['orchestrator/hooks'],
+    excludedTestDirectories: [],
+    excludedTestPatterns: [],
+    typecheck: null,
+    suite: [
+      {
+        argv: [
+          'python3',
+          '-m',
+          'unittest',
+          'discover',
+          '-s',
+          'orchestrator/hooks',
+          '-p',
+          'test_*.py',
+        ],
+        unitTests: true,
+      },
+    ],
+  },
+  {
     name: 'hub',
     directory: 'hub',
     ciJob: 'hub',

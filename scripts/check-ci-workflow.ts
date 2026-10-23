@@ -60,10 +60,17 @@ export function checkCiWorkflow(source: string): void {
   }
   if (!aggregateNeeds(source).includes('hub-ui-stories'))
     throw new Error('CI aggregate job must need hub-ui-stories')
+  if (!aggregateNeeds(source).includes('orchestrator-hooks'))
+    throw new Error('CI aggregate job must need orchestrator-hooks')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/ui storybook:test'))
     throw new Error('hub-ui-stories job must run the hub-ui story-test script')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/views storybook:test'))
     throw new Error('hub-ui-stories job must run the hub-views story-test script')
+  const hooks = workflowJob(source, 'orchestrator-hooks')
+  if (!hooks.includes('uses: actions/setup-python@v6') || !hooks.includes("python-version: '3.12'"))
+    throw new Error('orchestrator-hooks job must use Python 3.12')
+  if (!hooks.includes('run: $SUITE_COMMAND --only=orchestrator/hooks'))
+    throw new Error('orchestrator-hooks job must run its check-plan leg')
 }
 
 if (import.meta.main) {
