@@ -153,7 +153,8 @@ describe('release freshness against trunk', () => {
   const facts = {
     trunk: 'develop',
     rungBranch: 'master',
-    candidate: '55c9b2a0',
+    candidateTrunkBase: 'base-a',
+    previousTrunkBase: 'base-a',
     commitsBehind: 337,
   }
 
@@ -163,23 +164,29 @@ describe('release freshness against trunk', () => {
       overrideReason: null,
     }))
 
-  test('a rung behind trunk refuses with the promotion remedy', () =>
+  test('nothing promoted since the last release refuses with the promotion remedy', () =>
     expect(trunkFreshnessDecision(facts)).toEqual({
       ok: false,
       message:
-        "release refused: develop has 337 commits not in master (candidate 55c9b2a0); promote develop into master through the project's promotion pull request, then retry, or pass --behind-trunk with a reason to deploy master as it is",
+        'release refused: develop trunk base base-a is unchanged since the last successful master release; develop has 337 commits beyond that shared base not promoted into master; promote develop into master, then retry, or pass --behind-trunk with a reason',
     }))
 
-  test('a rung behind trunk accepts and normalizes an override reason', () =>
+  test('a promotion followed by more trunk work is allowed and retains the lag', () =>
+    expect(trunkFreshnessDecision({ ...facts, candidateTrunkBase: 'base-b' })).toEqual({
+      ok: true,
+      overrideReason: null,
+    }))
+
+  test('a baseline is allowed', () =>
+    expect(trunkFreshnessDecision({ ...facts, previousTrunkBase: null })).toEqual({
+      ok: true,
+      overrideReason: null,
+    }))
+
+  test('an override allows an otherwise refused release and normalizes its reason', () =>
     expect(trunkFreshnessDecision({ ...facts, overrideReason: ' intentional hotfix ' })).toEqual({
       ok: true,
       overrideReason: 'intentional hotfix',
-    }))
-
-  test('a rung level with trunk is allowed', () =>
-    expect(trunkFreshnessDecision({ ...facts, commitsBehind: 0 })).toEqual({
-      ok: true,
-      overrideReason: null,
     }))
 })
 

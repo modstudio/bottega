@@ -69,22 +69,28 @@ export type TrunkFreshnessDecision =
   | { ok: true; overrideReason: string | null }
   | { ok: false; message: string }
 
-/** Require a production branch to contain the landing branch unless the operator records why not. */
+/** Refuse only when a production branch has promoted nothing from trunk since its prior release. */
 export function trunkFreshnessDecision(facts: {
   trunk: string
   rungBranch: string
-  candidate: string
+  candidateTrunkBase: string | null
+  previousTrunkBase: string | null
   commitsBehind: number
   overrideReason?: string
 }): TrunkFreshnessDecision {
-  if (facts.rungBranch === facts.trunk || facts.commitsBehind === 0) {
+  if (
+    facts.rungBranch === facts.trunk ||
+    facts.previousTrunkBase === null ||
+    facts.candidateTrunkBase !== facts.previousTrunkBase ||
+    facts.commitsBehind === 0
+  ) {
     return { ok: true, overrideReason: null }
   }
   const reason = facts.overrideReason?.trim()
   if (reason) return { ok: true, overrideReason: reason }
   return {
     ok: false,
-    message: `release refused: ${facts.trunk} has ${facts.commitsBehind} commits not in ${facts.rungBranch} (candidate ${facts.candidate}); promote ${facts.trunk} into ${facts.rungBranch} through the project's promotion pull request, then retry, or pass --behind-trunk with a reason to deploy ${facts.rungBranch} as it is`,
+    message: `release refused: ${facts.trunk} trunk base ${facts.candidateTrunkBase} is unchanged since the last successful ${facts.rungBranch} release; ${facts.trunk} has ${facts.commitsBehind} commits beyond that shared base not promoted into ${facts.rungBranch}; promote ${facts.trunk} into ${facts.rungBranch}, then retry, or pass --behind-trunk with a reason`,
   }
 }
 

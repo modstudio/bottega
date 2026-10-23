@@ -221,17 +221,24 @@ function releaseTrunkFacts(
   trunk: string,
   rungBranch: string,
   candidate: string,
+  previousRelease: string | null,
   overrideReason: string | undefined,
 ) {
   const trunkTip = git(['rev-parse', `origin/${trunk}`], path)
-  const commitsBehindTrunk =
-    rungBranch === trunk
-      ? 0
-      : Number(git(['rev-list', '--count', `${candidate}..origin/${trunk}`], path))
+  const candidateTrunkBase =
+    rungBranch === trunk ? null : git(['merge-base', candidate, `origin/${trunk}`], path)
+  const previousTrunkBase =
+    rungBranch === trunk || previousRelease === null
+      ? null
+      : git(['merge-base', previousRelease, `origin/${trunk}`], path)
+  const commitsBehindTrunk = candidateTrunkBase
+    ? Number(git(['rev-list', '--count', `${candidateTrunkBase}..origin/${trunk}`], path))
+    : 0
   const decision = trunkFreshnessDecision({
     trunk,
     rungBranch,
-    candidate,
+    candidateTrunkBase,
+    previousTrunkBase,
     commitsBehind: commitsBehindTrunk,
     overrideReason,
   })
@@ -286,16 +293,17 @@ export function releaseProject(
       const checkout = checkoutFacts(project.path, selected.branch)
       const checkoutDecision = checkoutReleaseDecision(checkout)
       if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
+      const live = selected.live
+        ? releaseLiveCommit(selected.live, project.path, 'pre-deploy live', selected.name)
+        : newestSuccessfulReleasedCommit(projectName, selected.name)
       const freshness = releaseTrunkFacts(
         project.path,
         trunk,
         selected.branch,
         checkout.head,
+        live,
         behindTrunkReason,
       )
-      const live = selected.live
-        ? releaseLiveCommit(selected.live, project.path, 'pre-deploy live', selected.name)
-        : newestSuccessfulReleasedCommit(projectName, selected.name)
       const contained = releaseAncestry(live, checkout.head, project.path)
       const forward = forwardReleaseDecision({
         candidate: checkout.head,
