@@ -126,11 +126,25 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
     decidePullRequestEvidence({ ...exec, output: `opened ${url}\n${withheldLine}`, link }),
   ).toEqual({ met: true })
   expect(
-    decidePullRequestEvidence({ ...exec, output: `opened ${url}`, withheld: true, link }),
+    decidePullRequestEvidence({
+      ...exec,
+      argv: null,
+      commandWithheld: true,
+      output: `opened ${url}`,
+      link,
+    }),
   ).toEqual({
     met: false,
-    condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
+    condition: `the recorded command was withheld, so it cannot be identified as ${PLATFORM_SLUG} pr create`,
   })
+  expect(
+    decidePullRequestEvidence({
+      ...exec,
+      output: `opened ${url}`,
+      commandWithheld: true,
+      link,
+    }),
+  ).toEqual({ met: true })
   expect(
     decidePullRequestEvidence({ ...exec, output: `opened ${url}`, sessionBound: false, link }),
   ).toEqual({

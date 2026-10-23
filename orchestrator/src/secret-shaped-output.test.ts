@@ -4,10 +4,10 @@ import { withholdSecretShapedGateLines } from './secret-shaped-output.ts'
 const hex40 = 'a'.repeat(40)
 const githubPat = 'ghp_123456789012345678901234567890123456'
 
-test('a 40-hex line is withheld and a failure list survives', () => {
+test('a 40-hex sha line and failure list survive', () => {
   expect(
     withholdSecretShapedGateLines(`--base=${hex40}\ngate failures: scripts/check-architecture.ts`),
-  ).toBe(`[withheld line: hex-run]\ngate failures: scripts/check-architecture.ts`)
+  ).toBe(`--base=${hex40}\ngate failures: scripts/check-architecture.ts`)
 })
 
 test('output withholds only the secret-shaped line and names the rule', () => {
@@ -22,14 +22,14 @@ test('output withholds only the secret-shaped line and names the rule', () => {
   )
 })
 
-test('a ghp_ line and a 40-hex line are each withheld and the failure list is kept', () => {
+test('a ghp_ line is withheld while a 40-hex sha and failure list are kept', () => {
   expect(
     withholdSecretShapedGateLines(
       [`--base=${hex40}`, 'gate failures: scripts/check-architecture.ts', githubPat].join('\n'),
     ),
   ).toBe(
     [
-      '[withheld line: hex-run]',
+      `--base=${hex40}`,
       'gate failures: scripts/check-architecture.ts',
       '[withheld line: provider-prefix]',
     ].join('\n'),

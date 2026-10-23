@@ -179,15 +179,15 @@ async function recordWorkflowCommand(
   const commandJson = JSON.stringify(command)
   const redactedOutput = withholdSecretShapedGateLines(ran.output)
   const commandSecret = containsSecretShaped(commandJson)
-  const withheld = commandSecret
+  const withheld = ran.secretFound === true || redactedOutput !== ran.output
   const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,withheld,session_id,created_at,kind)
-         VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,withheld,command_withheld,session_id,created_at,kind)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),
@@ -197,6 +197,7 @@ async function recordWorkflowCommand(
         ran.exitCode,
         tail,
         withheld ? 1 : 0,
+        commandSecret ? 1 : 0,
         sessionId(),
         nowIso(),
         kind,

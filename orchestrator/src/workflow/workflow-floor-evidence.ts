@@ -811,6 +811,7 @@ function gatheredCommandEvidence(
     created_at: string
     output_tail: string
     withheld: number
+    command_withheld: number
   },
   identity: CursorIdentity,
   cursorId: number,
@@ -839,6 +840,7 @@ function gatheredCommandEvidence(
     cursorBranch: identity.branch,
     output: row.output_tail,
     withheld: row.withheld === 1,
+    commandWithheld: row.command_withheld === 1,
   }
   if (!url) return { exec }
   try {
@@ -1003,10 +1005,11 @@ export function gatherValidatedEvidence(input: {
             created_at: string
             output_tail: string
             withheld: number
+            command_withheld: number
           },
           [number]
         >(
-          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld FROM probe WHERE id=?',
+          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE id=?',
         )
         .get(parsed.id)!
       const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)

@@ -46,6 +46,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'lens.enabled',
     'lens.requires_execution',
     'lens_profile.enabled',
+    'probe.command_withheld',
     'probe.withheld',
     'project.canon',
     'release_ledger.rollback',

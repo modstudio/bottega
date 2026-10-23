@@ -76,7 +76,7 @@ test('records the selected cwd and its head commit', async () => {
   expect(d.query('SELECT cwd,head_commit FROM probe').get()).toEqual({ cwd, head_commit: head })
 })
 
-test('probe output withholds a 40-hex sha line and keeps a refusal line', async () => {
+test('probe output keeps a 40-hex sha line and a refusal line', async () => {
   initializeProbeRepository()
   const d = database()
   const refusal = 'applicable lens safety has no recorded result on this branch'
@@ -89,7 +89,7 @@ test('probe output withholds a 40-hex sha line and keeps a refusal line', async 
       output: `--base=${'a'.repeat(40)}\n${refusal}`,
     }),
   })
-  const tail = `[withheld line: hex-run]\n${refusal}`
+  const tail = `--base=${'a'.repeat(40)}\n${refusal}`
   expect(result.withheld).toBe(false)
   expect(result.outputTail).toBe(tail)
   expect(
@@ -121,14 +121,14 @@ test('probe output withholds only the secret-shaped line and names the rule', as
     '[withheld line: provider-prefix]',
     'ok',
   ].join('\n')
-  expect(result.withheld).toBe(false)
+  expect(result.withheld).toBe(true)
   expect(result.outputTail).toBe(tail)
   expect(
     d.query('SELECT output_tail,withheld FROM probe').get() as {
       output_tail: string
       withheld: number
     },
-  ).toEqual({ output_tail: tail, withheld: 0 })
+  ).toEqual({ output_tail: tail, withheld: 1 })
 })
 
 test('withholds secret-shaped output', async () => {
@@ -140,12 +140,12 @@ test('withholds secret-shaped output', async () => {
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'token=ghp_exampletokenvalue' }),
   })
-  expect(result.withheld).toBe(false)
+  expect(result.withheld).toBe(true)
   expect(result.outputTail).toBe('[withheld line: assignment]')
-  expect(
-    (d.query('SELECT output_tail,withheld FROM probe').get() as { output_tail: string })
-      .output_tail,
-  ).toBe('[withheld line: assignment]')
+  expect(d.query('SELECT output_tail,withheld FROM probe').get()).toEqual({
+    output_tail: '[withheld line: assignment]',
+    withheld: 1,
+  })
 })
 
 test('withholds secret-shaped command JSON', async () => {
@@ -157,10 +157,12 @@ test('withholds secret-shaped command JSON', async () => {
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'ok' }),
   })
-  expect(result.withheld).toBe(true)
-  expect(d.query('SELECT command,output_tail FROM probe').get()).toEqual({
+  expect(result.withheld).toBe(false)
+  expect(d.query('SELECT command,command_withheld,output_tail,withheld FROM probe').get()).toEqual({
     command: '[withheld: secret-shaped content]',
+    command_withheld: 1,
     output_tail: 'ok',
+    withheld: 0,
   })
 })
 
@@ -249,12 +251,12 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
     expect(Buffer.byteLength(streamed.output)).toBeLessThanOrEqual(GATE_OUTPUT_TAIL_BYTES)
     expect(streamed.output).not.toContain('ghp_exampletokenvalue')
     expect(result).toMatchObject({
-      withheld: false,
+      withheld: true,
       outputTail: streamed.output,
     })
     expect(d.query('SELECT output_tail,withheld FROM probe').get()).toEqual({
       output_tail: streamed.output,
-      withheld: 0,
+      withheld: 1,
     })
   } finally {
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH
@@ -264,7 +266,7 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
   }
 })
 
-test('a sha line is withheld while a pull-request URL and refusal remain usable evidence', async () => {
+test('a sha line, pull-request URL, and refusal remain usable evidence', async () => {
   const priorDepth = process.env.ORCH_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
@@ -276,7 +278,7 @@ test('a sha line is withheld while a pull-request URL and refusal remain usable 
       appendWorkflowOutput,
       { output: '', secretFound: false },
     )
-    expect(streamed.output).toBe(`[withheld line: hex-run]\nopened ${url}\n${refusal}\n`)
+    expect(streamed.output).toBe(`--base=${'a'.repeat(40)}\nopened ${url}\n${refusal}\n`)
     expect(streamed.output).toContain(url)
     expect(streamed.output).toContain(refusal)
     const d = database()
