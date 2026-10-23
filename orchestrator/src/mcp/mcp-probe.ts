@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
   output: string,
@@ -49,7 +50,7 @@ process.stdin.on('data', (chunk) => {
   writeFileSync(
     join(dir, '.mcp.json'),
     JSON.stringify({
-      mcpServers: { minted: { command: process.execPath, args: [server] } },
+      mcpServers: { minted: { command: sourceBunExecutable(), args: [server] } },
     }),
   )
   return server

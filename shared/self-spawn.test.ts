@@ -7,6 +7,7 @@ import {
   type BottegaEntry,
   bottegaEntryArgv,
   installedBottegaExecutable,
+  sourceBunExecutable,
 } from './self-spawn.ts'
 
 const entries: BottegaEntry[] = [
@@ -36,13 +37,36 @@ test('source entries preserve their current argv prefixes', () => {
     'mcp',
     'reader-proxy',
   ])
-  expect(bottegaEntryArgv('ask-proxy')).toEqual([
-    Bun.which('bun') ?? process.execPath,
+  expect(
+    bottegaEntryArgv('ask-proxy', undefined, (executable) =>
+      executable === 'bun' ? '/stable/bin/bun' : null,
+    ),
+  ).toEqual([
+    '/stable/bin/bun',
     '--no-env-file',
     assetPath('orchestrator', 'src', 'ask', 'ask-proxy.ts'),
     'ask-server',
   ])
   expect(bottegaEntryArgv('retrieval-search')).toEqual([assetPath('bin', 'retrieval-search')])
+})
+
+test('source Bun resolution prefers PATH and falls back to the current executable', () => {
+  expect(
+    sourceBunExecutable((executable) => (executable === 'bun' ? '/stable/bin/bun' : null)),
+  ).toBe('/stable/bin/bun')
+  expect(sourceBunExecutable((executable) => (executable === 'bun' ? null : '/wrong'))).toBe(
+    process.execPath,
+  )
+})
+
+test('long-lived source entries use the resolved Bun executable', () => {
+  for (const entry of ['ask-proxy', 'check-attribution', 'schema-check'] as const) {
+    expect(
+      bottegaEntryArgv(entry, undefined, (executable) =>
+        executable === 'bun' ? '/stable/bin/bun' : null,
+      )[0],
+    ).toBe('/stable/bin/bun')
+  }
 })
 
 test('compiled entries re-execute the current binary', () => {

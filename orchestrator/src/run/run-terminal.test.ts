@@ -7,6 +7,7 @@ import { db } from '../database/db.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import {
   artifactPersistenceOutcome,
+  checkpointTerminalWork,
   finalizeTerminalChain,
   questionsToInsert,
   recordArtifactPersistenceFailure,
@@ -217,6 +218,26 @@ describe('terminal checkpoint decision', () => {
         hasWorktree: true,
       }),
     ).toBe(false)
+  })
+
+  test('the terminal checkpoint step surfaces a containment refusal', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    const worktree = '/worktrees/DEV-1647'
+
+    expect(
+      checkpointTerminalWork({
+        writesJob: true,
+        worktree: { path: worktree, branch: 'DEV-1647-test' },
+        claim: { id: runId, number: 1647 },
+        launchKey: 'DEV-1647',
+        scratchDir: '/scratch/DEV-1647',
+        gitConfigEnvironment: undefined,
+        checkpointContainment: { disableHooks: true, gitDir: null, hooksDir: null },
+        opts: { job: 'implement' },
+      }),
+    ).toBe(
+      `Harness checkpoint failed: checkpoint refused: writing ACP run has incomplete checkpoint containment; any uncommitted work is still in the worktree at ${worktree}.`,
+    )
   })
 })
 

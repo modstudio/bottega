@@ -17,6 +17,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
+import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
 import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
@@ -204,7 +205,7 @@ test('reads the configured Grok ask command from the table its writer owns', () 
 
 test('chooses the Grok ask command from the launch sandbox', () => {
   expect(grokAskServerCommand('srt')).toEqual([
-    Bun.which('bun') ?? process.execPath,
+    sourceBunExecutable(),
     '--no-env-file',
     join(ROOT, 'src', 'ask', 'ask-proxy.ts'),
     'ask-server',
@@ -564,7 +565,7 @@ describe('readonly-lens sandbox profile', () => {
   test(`replaces a stale registered Grok ${WORKER_MCP_SERVER_NAME} entry with this checkout proxy`, () => {
     const config = `[mcp_servers.${WORKER_MCP_SERVER_NAME}]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n`
     const rewritten = grokSandboxConfig(config, 'srt')
-    expect(rewritten).toContain(`command = ${JSON.stringify(Bun.which('bun') ?? process.execPath)}`)
+    expect(rewritten).toContain(`command = ${JSON.stringify(sourceBunExecutable())}`)
     expect(rewritten).toContain('"ask-server"')
     expect(rewritten).not.toContain('/main/orchestrator/src/cli.ts')
     expect(rewritten).toContain('/orchestrator/src/ask/ask-proxy.ts')
