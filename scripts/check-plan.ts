@@ -1,3 +1,5 @@
+import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+
 export const CHECK_LEGS = [
   {
     name: 'cli',
@@ -14,10 +16,14 @@ export const CHECK_LEGS = [
     name: 'orchestrator',
     directory: 'orchestrator',
     ciJob: 'orchestrator',
-    testDirectories: ['orchestrator/src'],
+    testDirectories: ORCHESTRATOR_GATE_TEST_SELECTION.directories.map(({ reach }) => reach),
     testPatterns: [],
-    excludedTestDirectories: ['orchestrator/src/postgres'],
-    excludedTestPatterns: ['orchestrator/src/record/*-postgres.test.ts'],
+    excludedTestDirectories: ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.flatMap((exclusion) =>
+      'reachDirectory' in exclusion ? [exclusion.reachDirectory] : [],
+    ),
+    excludedTestPatterns: ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.flatMap((exclusion) =>
+      'reachPattern' in exclusion ? [exclusion.reachPattern] : [],
+    ),
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
   },
@@ -127,6 +133,12 @@ export const CHECK_LEGS = [
 ] as const
 
 export const ROOT_TEST_FILES = [
+  'scripts/architecture-cruise.test.ts',
+  'scripts/architecture-hub-data.test.ts',
+  'scripts/architecture-ui-layers.test.ts',
+  'scripts/architecture-violation-baseline.test.ts',
+  'scripts/check-hub-ui-styles.test.ts',
+  'scripts/check-record-project-space-ownership.test.ts',
   'scripts/check-machine-state.test.ts',
   'scripts/check-legacy-names.test.ts',
   'scripts/check-docker-workspaces.test.ts',

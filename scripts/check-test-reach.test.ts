@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
 import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
 import {
   assertExemptionBaselineShrinks,
@@ -41,6 +42,41 @@ test('the Python hook leg runs unittest discovery over its declared reach', () =
       },
     ],
   })
+})
+
+test('the orchestrator gate selectors are anchored and cover every declared exclusion', () => {
+  const orchestrator = CHECK_LEGS.find((leg) => leg.name === 'orchestrator')!
+  const selections = ORCHESTRATOR_GATE_TEST_SELECTION.directories
+
+  expect(selections.every(({ selector }) => selector.startsWith('./'))).toBe(true)
+  for (const reach of orchestrator.testDirectories) {
+    expect(
+      selections.filter(({ selector }) => `orchestrator/${selector.slice(2)}` === reach),
+    ).toHaveLength(1)
+  }
+
+  for (const reachDirectory of orchestrator.excludedTestDirectories) {
+    const relativeDirectory = reachDirectory.replace(/^orchestrator\//, '')
+    expect(
+      ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.filter(
+        (exclusion) =>
+          'reachDirectory' in exclusion &&
+          exclusion.reachDirectory === reachDirectory &&
+          exclusion.ignore === `${relativeDirectory}/**`,
+      ),
+    ).toHaveLength(1)
+  }
+  for (const reachPattern of orchestrator.excludedTestPatterns) {
+    const relativePattern = reachPattern.replace(/^orchestrator\//, '')
+    expect(
+      ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.filter(
+        (exclusion) =>
+          'reachPattern' in exclusion &&
+          exclusion.reachPattern === reachPattern &&
+          exclusion.ignore === relativePattern,
+      ),
+    ).toHaveLength(1)
+  }
 })
 
 test('the hub data package is reached only by its own package leg', () => {
