@@ -448,6 +448,10 @@ test('review tier and admission agree on an owed second opinion', async () => {
     expect(tier.secondOpinion).toBe('correctness')
     expect(admission.reviewPlan?.round.secondOpinion).toBe(tier.secondOpinion)
     expect(admission.reviewPlan?.admissionRequired.secondOpinion).toBe(tier.secondOpinion)
+
+    const human: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo], human)
+    expect(human.some((line) => line.startsWith('second opinion correctness'))).toBeTrue()
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
