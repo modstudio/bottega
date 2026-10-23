@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
+import * as productionModelHost from '../agent/model-host.ts'
 import {
   type ConfinementEvent,
   classifyCheckoutChanges,
@@ -14,6 +15,7 @@ import { upsertProject } from '../project/projects.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
 import { type ClaimInput, claimRun as productionClaimRun } from './run-claim.ts'
 import type { LiveInput, LiveResult } from './run-live.ts'
+import * as productionWorkerHome from './run-worker-home.ts'
 
 const directories: string[] = []
 const originalClaimRun = productionClaimRun
@@ -78,8 +80,18 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
     runLive: (input: LiveInput) => runLiveFixture!(input),
   }))
   mock.module('../agent/model-host.ts', () => ({
+    ...productionModelHost,
     ensureLocalHealth: async () => ({ ok: true, detail: 'fixture' }),
     tryWake: () => ({ sent: false, detail: 'fixture' }),
+  }))
+  mock.module('./run-worker-home.ts', () => ({
+    ...productionWorkerHome,
+    prepareWorkerHomeLaunch: async () => ({
+      codexMcpCatalogues: [],
+      environment: {},
+      hasRunScopedHome: false,
+      sandboxEnvironment: {},
+    }),
   }))
   mock.module('./run-terminal.ts', () => ({
     finishRun: async (input: {
@@ -203,8 +215,8 @@ test('run carries its before-snapshots into terminal confinement classification'
     path: caller,
     settings: { trunk: 'main' },
   })
-  try {
-    await runUnderTest({
+  await expect(
+    runUnderTest({
       job: 'understand',
       prompt: 'confinement handoff fixture',
       agent: 'codex',
@@ -213,8 +225,8 @@ test('run carries its before-snapshots into terminal confinement classification'
       launchCwd: caller,
       repo: 'run-confinement-handoff-fixture',
       noFailover: true,
-    })
-  } catch {}
+    }),
+  ).rejects.toMatchObject({ message: 'fixture terminal outcome' })
 
   expect(classified).toMatchObject({
     classification: 'non_overlapping',
