@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { CHECK_LEGS } from './check-plan.ts'
+import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const EXEMPTIONS_PATH = `${ROOT}/scripts/quality/test-reach-exemptions.json`
-const CHECK_PATH = `${ROOT}/scripts/check.ts`
+const EXEMPTIONS_FILE = 'scripts/quality/test-reach-exemptions.json'
+const EXEMPTIONS_PATH = `${ROOT}/${EXEMPTIONS_FILE}`
 
 export type TestReachExemption = { file: string; reason: string }
 
@@ -17,15 +17,12 @@ function beneath(directory: string, path: string): boolean {
   return path === directory || path.startsWith(`${directory}/`)
 }
 
-export function rootTestFiles(checkSource: string): string[] {
-  const start = checkSource.indexOf('const rootTests = [')
-  const end = checkSource.indexOf('\n]\n\nconst selected', start)
-  if (start < 0 || end < 0)
-    throw new Error('could not find the rootTests declaration in scripts/check.ts')
-  const declaration = checkSource.slice(start, end)
-  return [...declaration.matchAll(/['"]\.\/([^'"]+(?:\.test\.tsx?|\/test_[^/'"]+\.py))['"]/g)]
-    .map((match) => match[1]!)
-    .sort()
+function matchesPattern(pattern: string, path: string): boolean {
+  const expression = pattern
+    .split('*')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[^/]*')
+  return new RegExp(`^${expression}$`).test(path)
 }
 
 export function parseTestReachExemptions(text: string): TestReachExemption[] {
@@ -74,16 +71,25 @@ export function assertExemptionBaselineShrinks(
 export function testReach(input: {
   tracked: readonly string[]
   rootTests: readonly string[]
-  testDirectories: readonly string[]
+  legs: readonly {
+    testDirectories: readonly string[]
+    excludedTestDirectories: readonly string[]
+    excludedTestPatterns: readonly string[]
+  }[]
   exemptions: readonly TestReachExemption[]
 }): { unreached: string[]; unexempted: string[]; staleExemptions: string[] } {
   const tracked = input.tracked.filter(testFile).sort()
   const trackedSet = new Set(tracked)
   const rootTests = new Set(input.rootTests)
   const exemptionFiles = new Set(input.exemptions.map((entry) => entry.file))
-  const reached = (file: string) =>
-    rootTests.has(file) || input.testDirectories.some((directory) => beneath(directory, file))
-  const unreached = tracked.filter((file) => exemptionFiles.has(file) || !reached(file))
+  const reachedByLeg = (file: string) =>
+    input.legs.some(
+      (leg) =>
+        leg.testDirectories.some((directory) => beneath(directory, file)) &&
+        !leg.excludedTestDirectories.some((directory) => beneath(directory, file)) &&
+        !leg.excludedTestPatterns.some((pattern) => matchesPattern(pattern, file)),
+    )
+  const unreached = tracked.filter((file) => !rootTests.has(file) && !reachedByLeg(file))
   return {
     unreached,
     unexempted: unreached.filter((file) => !exemptionFiles.has(file)),
@@ -108,8 +114,7 @@ function trackedFiles(): string[] {
 }
 
 function baseExemptions(commit: string): TestReachExemption[] | null {
-  const path = 'scripts/quality/test-reach-exemptions.json'
-  const result = Bun.spawnSync(['git', 'show', `${commit}:${path}`], {
+  const result = Bun.spawnSync(['git', 'show', `${commit}:${EXEMPTIONS_FILE}`], {
     cwd: ROOT,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -134,8 +139,8 @@ function run(): number {
   assertExemptionBaselineShrinks(exemptions, base ? baseExemptions(base) : null)
   const reach = testReach({
     tracked,
-    rootTests: rootTestFiles(readFileSync(CHECK_PATH, 'utf8')),
-    testDirectories: CHECK_LEGS.flatMap((leg) => [...leg.testDirectories]),
+    rootTests: ROOT_TEST_FILES,
+    legs: CHECK_LEGS,
     exemptions,
   })
   const testCount = tracked.filter(testFile).length

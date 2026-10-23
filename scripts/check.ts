@@ -17,7 +17,7 @@ import {
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
-import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
+import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
@@ -37,7 +37,11 @@ import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
 
 type Command = { cwd: string; argv: string[]; category?: string }
-type Leg = { name: (typeof CHECK_LEGS)[number]['name']; typecheck: Command; suite: Command[] }
+type Leg = {
+  name: (typeof CHECK_LEGS)[number]['name']
+  typecheck: Command | null
+  suite: Command[]
+}
 type RunnableLeg = { name: string; commands: Command[] }
 type LegResult = GateStepResult & { tail: string[] }
 type StaticCheck = { name: string; argv: string[]; category?: string; reportPath?: string }
@@ -183,7 +187,7 @@ function track(
 
 const legs: Leg[] = CHECK_LEGS.map((leg) => ({
   name: leg.name,
-  typecheck: { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] },
+  typecheck: leg.typecheck ? { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] } : null,
   suite: leg.suite.map(({ argv, unitTests }) => ({
     cwd: `${root}${leg.directory}`,
     ...(unitTests ? { category: UNIT_TEST_CHECK_CATEGORY } : {}),
@@ -351,61 +355,7 @@ const rootTests = [
   // not providing.
   'bun',
   'test',
-  './scripts/check-machine-state.test.ts',
-  './scripts/check-legacy-names.test.ts',
-  './scripts/check-docker-workspaces.test.ts',
-  './scripts/check-dependency-audit.test.ts',
-  './scripts/check-runtime.test.ts',
-  './scripts/check-ci-workflow.test.ts',
-  './scripts/check-storybook.test.ts',
-  './scripts/check-outcome.test.ts',
-  './scripts/check-gitleaks-plan.test.ts',
-  './scripts/check-cascade-preservation.test.ts',
-  './scripts/identity-inventory.test.ts',
-  './scripts/check-outbox-payload-contracts.test.ts',
-  './scripts/postgres-migration-rls.test.ts',
-  './scripts/check-test-placement.test.ts',
-  './scripts/check-test-reach.test.ts',
-  './shared/change-view.test.ts',
-  './orchestrator/src/ratchet/biome-adapter.test.ts',
-  './orchestrator/src/ratchet/ratchet-plan.test.ts',
-  './scripts/check-file-ceiling.test.ts',
-  './scripts/command-descriptions.test.ts',
-  './scripts/command-reference.test.ts',
-  './scripts/check-cognitive-ceiling.test.ts',
-  './scripts/check-harness-mirror.test.ts',
-  './scripts/check-canon-drift.test.ts',
-  './scripts/check-postgres-array-bindings.test.ts',
-  './scripts/check-self-spawn.test.ts',
-  './scripts/check-source-root.test.ts',
-  './scripts/build-binary.test.ts',
-  './scripts/build-release.test.ts',
-  './scripts/build-release-artifacts.test.ts',
-  './scripts/publish-release.test.ts',
-  './cli/dispatch.test.ts',
-  './cli/routes.test.ts',
-  './cli/legacy-calls.test.ts',
-  './shared/self-spawn.test.ts',
-  './scripts/quality/dead-code.test.ts',
-  './scripts/architecture.test.ts',
-  './scripts/architecture-hub-packages.test.ts',
-  './scripts/import-scanner.test.ts',
-  './shared/test-substance/test-substance.test.ts',
-  './shared/test-substance/no-assertion.test.ts',
-  './shared/test-substance/test-substance-php.test.ts',
-  './shared/test-substance/self-comparison.test.ts',
-  './shared/ratchet.test.ts',
-  './shared/check-execution.test.ts',
-  './scripts/quality/test-timing-decision.test.ts',
-  './shared/file-kind.test.ts',
-  './shared/git.test.ts',
-  './shared/orch-contract.test.ts',
-  './shared/interval.test.ts',
-  './shared/trackers-protocols.test.ts',
-  './shared/shard.test.ts',
-  './scripts/test-focused.test.ts',
-  './scripts/check-sql-literal-schema.test.ts',
-  './scripts/check-hosted-sql-schema.test.ts',
+  ...ROOT_TEST_FILES.map((file) => `./${file}`),
 ]
 
 const selected = new Set(selectedCheckLegs(checkArguments))
@@ -415,7 +365,8 @@ const results = await Promise.all(
     .map((leg) =>
       runLeg({
         name: leg.name,
-        commands: checkArguments.mode === 'static' ? [leg.typecheck] : leg.suite,
+        commands:
+          checkArguments.mode === 'static' ? (leg.typecheck ? [leg.typecheck] : []) : leg.suite,
       }),
     ),
 )

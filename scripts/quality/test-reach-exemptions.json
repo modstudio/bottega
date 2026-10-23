@@ -88,6 +88,10 @@
     "reason": "DEV-1474"
   },
   {
+    "file": "orchestrator/src/postgres/postgres-migrate-schema.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
     "file": "orchestrator/src/postgres/postgres-migrate-workflow-generation.test.ts",
     "reason": "DEV-1474"
   },
