@@ -56,7 +56,7 @@ export function registerBoardClaimCommands(
     .command('release-task <key>')
     .description('release every live claim for a task')
     .requiredOption('--project <name>', 'name the task project')
-    .requiredOption('--json', 'write the released claims as JSON')
+    .option('--json', 'write the released claims as JSON')
     .action(async (key, options) =>
       console.log(JSON.stringify(await boardClaimReleaseTask(key, options.project))),
     )

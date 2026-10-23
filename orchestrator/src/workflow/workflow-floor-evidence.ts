@@ -2,12 +2,13 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
@@ -21,6 +22,7 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
   type ArtifactRef,
+  type BottegaCommandIdentity,
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   type Floor,
@@ -829,11 +831,15 @@ function gatheredCommandEvidence(
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
   const session = sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
   const argv = recordedArgv(row.command)
-  const url = pullRequestCreateArgv(argv) ? githubPullRequestUrlIn(row.output_tail) : undefined
+  const commandIdentity = bottegaCommandIdentity(argv?.[0], row.cwd, d)
+  const url = pullRequestCreateArgv(argv, commandIdentity)
+    ? githubPullRequestUrlIn(row.output_tail)
+    : undefined
   const exec: NonNullable<ValidatedEvidence['exec']> = {
     id,
     command: recordedCommand(row.command),
     argv,
+    commandIdentity,
     exitCode: row.exit_code,
     sessionMatches: session.sessionMatches,
     sessionAdoptedCursor: session.sessionAdoptedCursor,
@@ -862,6 +868,37 @@ function gatheredCommandEvidence(
       },
     }
   }
+}
+
+function realpathIfPresent(path: string): string | null {
+  try {
+    return realpathSync(path)
+  } catch {
+    return null
+  }
+}
+
+export function bottegaCommandIdentity(
+  executable: string | undefined,
+  cwd: string,
+  d: Database,
+): BottegaCommandIdentity | undefined {
+  if (!executable || executable === PLATFORM_SLUG) return undefined
+  const resolvedExecutable = realpathIfPresent(
+    isAbsolute(executable) ? executable : resolve(cwd, executable),
+  )
+  const registeredExecutables = new Set<string>()
+  const mainCheckout = projectByName(PLATFORM_SLUG, d)?.path
+  if (mainCheckout) {
+    const mainExecutable = realpathIfPresent(join(mainCheckout, 'bin', PLATFORM_SLUG))
+    if (mainExecutable) registeredExecutables.add(mainExecutable)
+  }
+  const installed = installedBottegaExecutable()
+  if (installed) {
+    const installedExecutable = realpathIfPresent(installed)
+    if (installedExecutable) registeredExecutables.add(installedExecutable)
+  }
+  return { resolvedExecutable, registeredExecutables: [...registeredExecutables] }
 }
 
 function recordedArgv(raw: string): string[] | null {
