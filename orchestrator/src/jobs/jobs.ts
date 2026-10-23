@@ -86,7 +86,7 @@ export function jobIdleKillMs(
   wallMs?: number,
 ): number {
   const raw =
-    env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== ''
+    env.BOTTEGA_IDLE_KILL_MS !== undefined && env.BOTTEGA_IDLE_KILL_MS !== ''
       ? idleKillMs(env)
       : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
   const wall = wallMs ?? jobDeclaredWallMs(name)
@@ -191,7 +191,7 @@ export function jobBoundInstruction(j: Job, boundMs: number): string {
   const minutes = Math.round(boundMs / 60_000)
   return (
     `This job's bound is ${minutes} minutes. When a step is long, write tables ` +
-    `incrementally to a named file under $ORCH_SCRATCH rather than holding them only in the final reply.`
+    `incrementally to a named file under $BOTTEGA_SCRATCH rather than holding them only in the final reply.`
   )
 }
 
@@ -203,7 +203,7 @@ export function jobBoundInstructionForContract(j: Job): string {
       : `the selected agent's bound, capped at ${jobTimeoutCeilingMinutes(j)} minutes`
   return (
     `This job's bound is ${bound}. When a step is long, write tables ` +
-    `incrementally to a named file under $ORCH_SCRATCH rather than holding them only in the final reply.`
+    `incrementally to a named file under $BOTTEGA_SCRATCH rather than holding them only in the final reply.`
   )
 }
 

@@ -179,9 +179,9 @@ test('install environment keeps only ordinary process context', () => {
       TMPDIR: '/tmp/reader',
       LANG: 'en_US.UTF-8',
       TERM: 'xterm-256color',
-      ORCH_DB: '/state/orch.db',
-      ORCH_RUN_TOKEN: 'run-token',
-      HUB_HOSTED_URL: 'https://hub.example',
+      BOTTEGA_ORCHESTRATOR_DB: '/state/orch.db',
+      BOTTEGA_RUN_TOKEN: 'run-token',
+      BOTTEGA_HOSTED_URL: 'https://hub.example',
       SSH_AUTH_SOCK: '/tmp/agent.sock',
       API_TOKEN: 'api-token',
       CLIENT_SECRET: 'client-secret',
@@ -202,7 +202,7 @@ test('install environment keeps only ordinary process context', () => {
     installEnvironment({
       PATH: '/bin',
       HOME: undefined,
-      orch_db: '/state/orch.db',
+      bottega_orchestrator_db: '/state/orch.db',
       accessToken: 'token',
     }),
   ).toEqual({ PATH: '/bin' })

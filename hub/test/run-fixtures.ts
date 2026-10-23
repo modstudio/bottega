@@ -16,7 +16,7 @@ export function resetFixtureStore(assertSafe?: () => void) {
   refreshKeyPrefixes()
   const guard = assertSafe ?? createTestHubDatabaseGuard()
   guard()
-  const database = new Database(process.env.HUB_DB!)
+  const database = new Database(process.env.BOTTEGA_HUB_DB!)
   try {
     database.exec('PRAGMA query_only = OFF; PRAGMA foreign_keys = OFF')
     const tables = database

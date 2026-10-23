@@ -44,7 +44,7 @@ function fixture() {
 
 function invoke(databasePath: string, cwd: string, command: string) {
   const result = Bun.spawnSync(['python3', hook], {
-    env: { ...process.env, ORCH_DB: databasePath },
+    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: databasePath },
     stdin: Buffer.from(JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd })),
     stdout: 'pipe',
     stderr: 'pipe',
@@ -83,7 +83,7 @@ json.dump(results, sys.stdout)
     cwd,
   }))
   const result = Bun.spawnSync(['python3', '-c', runner, hook], {
-    env: { ...process.env, ORCH_DB: databasePath },
+    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: databasePath },
     stdin: Buffer.from(JSON.stringify(payloads)),
     stdout: 'pipe',
     stderr: 'pipe',

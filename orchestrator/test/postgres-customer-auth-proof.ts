@@ -10,9 +10,9 @@ export function registerCustomerAuthProof(input: {
   userId: () => string
 }): void {
   test('customer authentication and space commands need only the hosted API address', async () => {
-    const directUrl = process.env.ORCH_RECORD_URL
+    const directUrl = process.env.BOTTEGA_RECORD_URL
     const authSecret = process.env.BETTER_AUTH_SECRET
-    delete process.env.ORCH_RECORD_URL
+    delete process.env.BOTTEGA_RECORD_URL
     delete process.env.BETTER_AUTH_SECRET
     try {
       const output: string[] = []
@@ -32,7 +32,7 @@ export function registerCustomerAuthProof(input: {
       )
       expect(output).toContain(`active record space ${selected.slug}`)
     } finally {
-      if (directUrl !== undefined) process.env.ORCH_RECORD_URL = directUrl
+      if (directUrl !== undefined) process.env.BOTTEGA_RECORD_URL = directUrl
       if (authSecret !== undefined) process.env.BETTER_AUTH_SECRET = authSecret
     }
   })

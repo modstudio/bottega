@@ -73,7 +73,7 @@ export function registerBoardSharedSpaceApiProof(
       expect(
         await refreshHostedBoard({
           budgetMs: 2_000,
-          env: { ORCH_RECORD_API_URL: origin() },
+          env: { BOTTEGA_RECORD_API_URL: origin() },
           client: postgresBoardCacheClient(origin(), sharedToken()),
           database: store,
         }),

@@ -3,7 +3,9 @@
 import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
+import { restoreSetupEnvironment } from '../setup/setup-environment-runtime.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts'
 import { planSetupActions, recommendedAnswers } from '../setup/setup-planner.ts'
@@ -14,6 +16,13 @@ type SetupOptions = { in?: string[]; json?: boolean; yes?: boolean; answers?: st
 
 function inputs(options: SetupOptions): string[] {
   return options.in?.length ? options.in : [process.cwd()]
+}
+
+function refuseWorkerRestore(): void {
+  if (!isOrchWorkerProcess(process.env, process.pid)) return
+  throw new Error(
+    `refusing setup restore from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine setup restore`,
+  )
 }
 
 export function register(program: Command): void {
@@ -47,6 +56,15 @@ export function register(program: Command): void {
       ) {
         process.exitCode = 1
       }
+    })
+  setup
+    .command('restore <backup-dir>')
+    .description('restore a reversible environment migration backup')
+    .allowExcessArguments(false)
+    .action(async (directory: string) => {
+      refuseWorkerRestore()
+      await restoreSetupEnvironment(directory)
+      log(`restored setup environment backup ${directory}`)
     })
   setup
     .command('facts')

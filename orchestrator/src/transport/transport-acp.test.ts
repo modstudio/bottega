@@ -211,7 +211,7 @@ describe('ACP transport selection', () => {
     expect(acpHarnessArgv('goose')).toEqual(['acp'])
     expect(acpHarnessArgv('codex')).toEqual([])
   })
-  test('defaults to cli, honors the flag and ORCH_TRANSPORT', () => {
+  test('defaults to cli, honors the flag and BOTTEGA_TRANSPORT', () => {
     expect(resolveTransportName(undefined, undefined)).toBe('cli')
     expect(resolveTransportName(undefined, '')).toBe('cli')
     expect(resolveTransportName('cli', 'acp')).toBe('cli')
@@ -656,10 +656,10 @@ describe('ACP defaults Codex and preflight names the missing piece', () => {
 })
 
 describe('codex-acp executable resolution', () => {
-  test('ORCH_ACP_BIN wins when set', () => {
+  test('BOTTEGA_ACP_BIN wins when set', () => {
     expect(
       resolveCodexAcpBin({
-        env: { ORCH_ACP_BIN: '/override/codex-acp' },
+        env: { BOTTEGA_ACP_BIN: '/override/codex-acp' },
         checkoutBin: '/checkout/node_modules/.bin/codex-acp',
         exists: () => true,
         which: () => '/usr/bin/codex-acp',
@@ -697,7 +697,7 @@ describe('codex-acp executable resolution', () => {
         exists: () => false,
         which: () => null,
       }),
-    ).toThrow('set ORCH_ACP_BIN to its path, or install it so it is on PATH')
+    ).toThrow('set BOTTEGA_ACP_BIN to its path, or install it so it is on PATH')
   })
 })
 

@@ -46,7 +46,7 @@ function requiredMcpRemedy(pin: McpTransportPinFacts): string {
     return 're-dispatch on an agent that attaches natively (--agent codex) or drop --mcp'
   }
   return pin.transportPinSource === 'environment'
-    ? 'unset ORCH_TRANSPORT and re-dispatch with --transport cli, or drop --mcp'
+    ? 'unset BOTTEGA_TRANSPORT and re-dispatch with --transport cli, or drop --mcp'
     : 're-dispatch with --transport cli or drop --mcp'
 }
 

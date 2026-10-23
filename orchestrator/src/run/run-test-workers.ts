@@ -13,7 +13,7 @@ export function runTestWorkerEnvironment(
 ): Record<string, string> {
   const workers = String(runTestWorkerCount(parallelism))
   return {
-    ORCH_TEST_WORKERS: workers,
+    BOTTEGA_TEST_WORKERS: workers,
     VITEST_MAX_WORKERS: workers,
     ...recipeEnvironment,
   }

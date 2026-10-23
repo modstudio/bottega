@@ -12,7 +12,7 @@ const DOCKER_REMOVAL_TIMEOUT_MS = 10_000
 export function dockerInventoryTimeoutMs(
   env: Record<string, string | undefined> = process.env,
 ): number {
-  const raw = env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+  const raw = env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
   if (raw === undefined || raw === '') return DOCKER_INVENTORY_TIMEOUT_MS
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? n : DOCKER_INVENTORY_TIMEOUT_MS
@@ -21,7 +21,7 @@ export function dockerInventoryTimeoutMs(
 export function dockerRemovalTimeoutMs(
   env: Record<string, string | undefined> = process.env,
 ): number {
-  const raw = env.ORCH_DOCKER_REMOVAL_TIMEOUT_MS
+  const raw = env.BOTTEGA_DOCKER_REMOVAL_TIMEOUT_MS
   if (raw === undefined || raw === '') return DOCKER_REMOVAL_TIMEOUT_MS
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? n : DOCKER_REMOVAL_TIMEOUT_MS
@@ -325,7 +325,7 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
   const composeContainers: ComposeContainerFact[] = []
   const observed: { workingDir: string | null; composeProject: string | null }[] = []
   const configuredTimeout = dockerInventoryTimeoutMs()
-  const explicitTimeout = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+  const explicitTimeout = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
   for (const kind of ['container', 'volume'] as const) {
     let found = list(kind, configuredTimeout)
     // The idle-machine default gets one materially longer chance under load.

@@ -92,7 +92,8 @@ function wakeDecision(o: { mac: string; haveBinary: boolean; last: Date | null; 
   send: boolean
   detail: string
 } {
-  if (!o.mac) return { send: false, detail: 'ORCH_MODEL_HOST_WOL_MAC not set — waking is opt-in' }
+  if (!o.mac)
+    return { send: false, detail: 'BOTTEGA_MODEL_HOST_WOL_MAC not set — waking is opt-in' }
   if (!o.haveBinary) {
     return { send: false, detail: 'wakeonlan not installed (brew install wakeonlan)' }
   }
@@ -240,7 +241,7 @@ export function unavailableReason(name: string): string | null {
   if (a.operatedBy === 'self') {
     // A row's endpoint wins when present. Rows without one retain the global
     // model-host fallback used by the worker environment.
-    if (!(a.baseUrl ?? modelHostUrl())) return 'ORCH_MODEL_HOST_URL not set'
+    if (!(a.baseUrl ?? modelHostUrl())) return 'BOTTEGA_MODEL_HOST_URL not set'
     // ...and only usable once it ANSWERS. Configuration is not reachability:
     // the env var stayed correct for the whole eleven hours the box was off.
     // Only a probe that has actually run can say no here, so a caller that
@@ -269,7 +270,7 @@ export async function localReachable(
   // the "answered 200 with HTML" case that Docker Desktop actually produced.
   baseUrl = modelHostUrl(),
 ): Promise<LocalHealth> {
-  if (!baseUrl) return { ok: false, detail: 'ORCH_MODEL_HOST_URL not set' }
+  if (!baseUrl) return { ok: false, detail: 'BOTTEGA_MODEL_HOST_URL not set' }
   try {
     const res = await fetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {
       signal: AbortSignal.timeout(timeoutMs),

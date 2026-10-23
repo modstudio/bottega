@@ -83,7 +83,7 @@ describe('answer authority decision', () => {
         sessionIdPresent: false,
         depthPresent: true,
       }),
-    ).toEqual({ kind: 'refuse', code: 'session-marker', actor: 'ORCH_DEPTH' })
+    ).toEqual({ kind: 'refuse', code: 'session-marker', actor: 'BOTTEGA_DEPTH' })
   })
 
   test('grants the external UI operator without adopting the owner identity', () => {

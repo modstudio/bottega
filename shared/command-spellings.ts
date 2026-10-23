@@ -178,6 +178,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine setup apply',
   'machine setup facts',
   'machine setup plan',
+  'machine setup restore',
   'machine setup-ask',
   'machine storage',
   'machine sweep',

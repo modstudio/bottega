@@ -7,20 +7,20 @@ const userId = '01990000-0000-7000-8000-000000000002'
 const subscriptionId = '01990000-0000-7000-8000-000000000003'
 const revisionId = '01990000-0000-7000-8000-000000000004'
 const originalFetch = globalThis.fetch
-const originalRecordApiUrl = process.env.HUB_RECORD_API_URL
-const originalRecordDatabaseUrl = process.env.HUB_RECORD_DATABASE_URL
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+const originalRecordDatabaseUrl = process.env.BOTTEGA_RECORD_DATABASE_URL
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  if (originalRecordApiUrl === undefined) delete process.env.HUB_RECORD_API_URL
-  else process.env.HUB_RECORD_API_URL = originalRecordApiUrl
-  if (originalRecordDatabaseUrl === undefined) delete process.env.HUB_RECORD_DATABASE_URL
-  else process.env.HUB_RECORD_DATABASE_URL = originalRecordDatabaseUrl
+  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
+  if (originalRecordDatabaseUrl === undefined) delete process.env.BOTTEGA_RECORD_DATABASE_URL
+  else process.env.BOTTEGA_RECORD_DATABASE_URL = originalRecordDatabaseUrl
 })
 
 function caller(permission: 'read' | 'write') {
-  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
-  delete process.env.HUB_RECORD_DATABASE_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  delete process.env.BOTTEGA_RECORD_DATABASE_URL
   globalThis.fetch = (async () =>
     Response.json({
       user: { id: userId },
@@ -32,7 +32,7 @@ function caller(permission: 'read' | 'write') {
 }
 
 test('hosted document mutations bind the destination, authenticated author, and revision', async () => {
-  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const requests: Array<{ path: string; init: RequestInit }> = []
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const path = new URL(String(input)).pathname
@@ -83,7 +83,7 @@ test('hosted document mutations bind the destination, authenticated author, and 
 })
 
 test('hosted document reorder binds the destination and complete sibling order', async () => {
-  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   let request: { path: string; init: RequestInit } | null = null
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     request = { path: new URL(String(input)).pathname, init: init ?? {} }
@@ -106,7 +106,7 @@ test('hosted document reorder binds the destination and complete sibling order',
 })
 
 test('hosted document save sends explicit article clears and refuses invalid fields at the edge', async () => {
-  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   let savedBody: unknown
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const path = new URL(String(input)).pathname
@@ -168,7 +168,7 @@ test('hosted document save sends explicit article clears and refuses invalid fie
 })
 
 test('hosted subject choices read the destination space through the record client', async () => {
-  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   let request: { url: string; space: string | null } | undefined
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     request = {
@@ -237,7 +237,7 @@ for (const mutation of mutations) {
     // Production break watched: refuse every membership without considering permission = 'write'.
     await expect(mutation.call(caller('write'))).rejects.toMatchObject({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'HUB_RECORD_DATABASE_URL is required',
+      message: 'BOTTEGA_RECORD_DATABASE_URL is required',
     })
   })
 }

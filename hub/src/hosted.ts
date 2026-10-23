@@ -25,10 +25,10 @@ type HostedRouteDependencies = {
 }
 
 export function hostedServerConfig(environment: ServerEnvironment = process.env) {
-  const recordApiUrl = environment.HUB_RECORD_API_URL
-  if (!recordApiUrl) throw new Error('HUB_RECORD_API_URL is required')
-  const recordDatabaseUrl = environment.HUB_RECORD_DATABASE_URL
-  if (!recordDatabaseUrl) throw new Error('HUB_RECORD_DATABASE_URL is required')
+  const recordApiUrl = environment.BOTTEGA_RECORD_API_URL
+  if (!recordApiUrl) throw new Error('BOTTEGA_RECORD_API_URL is required')
+  const recordDatabaseUrl = environment.BOTTEGA_RECORD_DATABASE_URL
+  if (!recordDatabaseUrl) throw new Error('BOTTEGA_RECORD_DATABASE_URL is required')
   const port = Number(environment.PORT ?? '3000')
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error('PORT must be an integer from 0 through 65535')

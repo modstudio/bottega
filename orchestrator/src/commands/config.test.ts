@@ -45,7 +45,7 @@ test('config set --json uses the written structured row presentation', () => {
 
 test('an orchestrator worker run cannot write autonomy while an operator process can', () => {
   expect(() =>
-    assertConfigWriteAllowed('autonomy.release', 'promote', { ORCH_RUN_ID: '6731' }),
+    assertConfigWriteAllowed('autonomy.release', 'promote', { BOTTEGA_RUN_ID: '6731' }),
   ).toThrow(
     `refusing autonomy config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config set autonomy.ship-to production`,
   )

@@ -39,16 +39,16 @@ describe('missing working directory fallback', () => {
 })
 
 describe('orchestrator database path decision', () => {
-  test('test process + non-ORCH_DB method: refuses the live fallback', () => {
+  test('test process + non-BOTTEGA_ORCHESTRATOR_DB method: refuses the live fallback', () => {
     expect(() => decideOrchestratorDatabasePath(true, 'state-root', livePath)).toThrow(
-      `test process refuses orchestrator database: ORCH_DB resolved <unset>; live store is ${livePath}\n` +
+      `test process refuses orchestrator database: BOTTEGA_ORCHESTRATOR_DB resolved <unset>; live store is ${livePath}\n` +
         'invariant: A test suite never falls back to the live orchestrator database.\n' +
-        'cleared by: set ORCH_DB to a scratch store before importing orchestrator/src/database/db.ts',
+        'cleared by: set BOTTEGA_ORCHESTRATOR_DB to a scratch store before importing orchestrator/src/database/db.ts',
     )
   })
 
-  test("test process + 'ORCH_DB' method: returns the path", () => {
-    expect(decideOrchestratorDatabasePath(true, 'ORCH_DB', tempPath)).toBe(tempPath)
+  test("test process + 'BOTTEGA_ORCHESTRATOR_DB' method: returns the path", () => {
+    expect(decideOrchestratorDatabasePath(true, 'BOTTEGA_ORCHESTRATOR_DB', tempPath)).toBe(tempPath)
   })
 
   test('non-test + fallback method: returns the path', () => {
@@ -67,8 +67,8 @@ test('the unauthorized default-store refusal names the condition and remedy', ()
 test('the absent explicit-store refusal names the condition and explicit remedy', () => {
   expect(missingDatabaseMessage('/scratch/missing.db')).toBe(
     'orchestrator database does not exist: /scratch/missing.db\n' +
-      'invariant: An absent ORCH_DB path is a mistake, not a request to create a store.\n' +
-      'cleared by: unset ORCH_DB to use the installation store, or name an existing database',
+      'invariant: An absent BOTTEGA_ORCHESTRATOR_DB path is a mistake, not a request to create a store.\n' +
+      'cleared by: unset BOTTEGA_ORCHESTRATOR_DB to use the installation store, or name an existing database',
   )
 })
 
@@ -93,9 +93,9 @@ test('implicit creation uses the existing installation authority decision', () =
   expect(implicitDatabaseCreationRefusal({ ...authorized, initializable: false })).toBe(
     unauthorizedDatabaseInitializationMessage('/state/orch.db'),
   )
-  expect(implicitDatabaseCreationRefusal({ ...authorized, method: 'ORCH_DB' })).toBe(
-    missingDatabaseMessage('/state/orch.db'),
-  )
+  expect(
+    implicitDatabaseCreationRefusal({ ...authorized, method: 'BOTTEGA_ORCHESTRATOR_DB' }),
+  ).toBe(missingDatabaseMessage('/state/orch.db'))
 })
 
 test('migrating an existing store retains the linked-worktree refusal', () => {
@@ -133,12 +133,12 @@ test('a linked-worktree binary may create and migrate a temporary store', () => 
   expect(existingDatabaseMigrationRefusal(scratch)).toBeNull()
 })
 
-test('the migrate and init-db creation decision refuses an absent ORCH_DB before touching its parent', () => {
+test('the migrate and init-db creation decision refuses an absent BOTTEGA_ORCHESTRATOR_DB before touching its parent', () => {
   const parent = join(tmpdir(), `orch-explicit-${randomUUID()}`)
   const path = join(parent, 'orch.db')
   const explicit = {
     path,
-    method: 'ORCH_DB' as const,
+    method: 'BOTTEGA_ORCHESTRATOR_DB' as const,
     tried: [path],
     registeredPath: null,
     repositoryRoot: null,

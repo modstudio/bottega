@@ -6,7 +6,7 @@ describe('task attribution', () => {
   test('resolves delegated runs, harness sessions, record users, and machine users from supplied values', () => {
     expect(
       attributionFromInputs({
-        env: { ORCH_RUN_ID: '42', ORCH_AGENT: 'codex' },
+        env: { BOTTEGA_RUN_ID: '42', BOTTEGA_AGENT: 'codex' },
         user: { id: 'user-1', name: 'Sam' },
         machineUser: 'local',
       }),
@@ -53,7 +53,7 @@ describe('task attribution', () => {
       throw new Error('offline')
     }
     const input = {
-      env: { HUB_HOSTED_URL: 'https://record.example' },
+      env: { BOTTEGA_HOSTED_URL: 'https://record.example' },
       machineUser: 'local',
       signedInUser,
     }
@@ -68,7 +68,7 @@ describe('task attribution', () => {
 
     calls = 0
     const resolvedInput = {
-      env: { HUB_HOSTED_URL: 'https://another-record.example' },
+      env: { BOTTEGA_HOSTED_URL: 'https://another-record.example' },
       machineUser: 'local',
       signedInUser: async () => {
         calls++

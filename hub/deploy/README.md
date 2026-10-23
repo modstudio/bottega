@@ -4,15 +4,15 @@ Run these commands from the repository root. Create the app directly; do not use
 
 The image is built from the repository root. `VITE_HUB_MODE`, `VITE_RECORD_API_URL`,
 `VITE_PUBLIC_SITE_ORIGIN`, and `VITE_APP_ORIGIN` are build arguments baked into the web
-bundle. `HUB_RECORD_API_URL` and `HUB_RECORD_DATABASE_URL` are runtime secrets the server
+bundle. `BOTTEGA_RECORD_API_URL` and `BOTTEGA_RECORD_DATABASE_URL` are runtime secrets the server
 uses for the record API and its hosted report procedures. The SES secrets are present because Send test
 (`sendReportSubscriptionTest`) mails from the web app.
 
 ```sh
 fly apps create bottega-hub --org bottega
 fly secrets set -a bottega-hub \
-  HUB_RECORD_API_URL='https://api.bottega.run' \
-  HUB_RECORD_DATABASE_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
+  BOTTEGA_RECORD_API_URL='https://api.bottega.run' \
+  BOTTEGA_RECORD_DATABASE_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
   SES_REGION='us-east-2' \
   SES_FROM_ADDRESS='<display name and verified sender address>' \
   SES_ACCESS_KEY_ID='<access-key-id>' \
@@ -26,11 +26,11 @@ fly certs add next.bottega.run -a bottega-hub
 
 The app is deployed with `bottega release run bottega --rung hosted-hub`; the deploy script refuses a
 direct call. The deploy script preserves the hosted web build arguments. It takes
-`ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one variable from the operator's
+`BOTTEGA_RECORD_MIGRATE_URL` from the environment, or reads that one variable from the operator's
 env file when the environment lacks it, and gives the value to the migration only, never to
 Fly. It then migrates the record and confirms that applied migrations equal those shipped in
 the image before invoking Fly. The image's release command
-uses its low-privilege `HUB_RECORD_DATABASE_URL` and refuses a release with pending migrations,
+uses its low-privilege `BOTTEGA_RECORD_DATABASE_URL` and refuses a release with pending migrations,
 so a bare `fly deploy` cannot run ahead of the record schema.
 The app serves `GET /version` with the commit it was built from; the deploy script supplies that
 commit as a build argument.

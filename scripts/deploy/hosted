@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 APP="${1:-}"
 
+# shellcheck source=scripts/deploy/hosted-required-secrets
+source "$SCRIPT_DIR/hosted-required-secrets"
+
 case "$APP" in
   api|hub) ;;
   *)
@@ -21,30 +24,30 @@ if (( $# != 1 )); then
 fi
 
 release_command="bottega release run bottega --rung hosted-$APP"
-for release_variable in ORCH_RELEASE_PROJECT ORCH_RELEASE_RUNG ORCH_RELEASE_COMMIT; do
+for release_variable in BOTTEGA_RELEASE_PROJECT BOTTEGA_RELEASE_RUNG BOTTEGA_RELEASE_COMMIT; do
   if [[ -z "${!release_variable:-}" ]]; then
     echo "REFUSE: $release_variable is unset or empty; deploy with $release_command" >&2
     exit 1
   fi
 done
-if [[ "$ORCH_RELEASE_PROJECT" != "bottega" ]]; then
-  echo "REFUSE: ORCH_RELEASE_PROJECT must be bottega; deploy with $release_command" >&2
+if [[ "$BOTTEGA_RELEASE_PROJECT" != "bottega" ]]; then
+  echo "REFUSE: BOTTEGA_RELEASE_PROJECT must be bottega; deploy with $release_command" >&2
   exit 1
 fi
-if [[ "$ORCH_RELEASE_RUNG" != "hosted-$APP" ]]; then
-  echo "REFUSE: ORCH_RELEASE_RUNG must be hosted-$APP for $APP; deploy with $release_command" >&2
+if [[ "$BOTTEGA_RELEASE_RUNG" != "hosted-$APP" ]]; then
+  echo "REFUSE: BOTTEGA_RELEASE_RUNG must be hosted-$APP for $APP; deploy with $release_command" >&2
   exit 1
 fi
 
 # Keep the credential out of shell traces whether it was inherited or read below,
 # and out of the environment of every command that does not need it.
 set +x
-record_migrate_url="${ORCH_RECORD_MIGRATE_URL:-}"
-unset ORCH_RECORD_MIGRATE_URL
+record_migrate_url="${BOTTEGA_RECORD_MIGRATE_URL:-}"
+unset BOTTEGA_RECORD_MIGRATE_URL
 
 commit="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
-if [[ "$ORCH_RELEASE_COMMIT" != "$commit" ]]; then
-  echo "REFUSE: ORCH_RELEASE_COMMIT does not match checkout commit $commit; deploy with $release_command" >&2
+if [[ "$BOTTEGA_RELEASE_COMMIT" != "$commit" ]]; then
+  echo "REFUSE: BOTTEGA_RELEASE_COMMIT does not match checkout commit $commit; deploy with $release_command" >&2
   exit 1
 fi
 if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=no)" ]]; then
@@ -54,10 +57,10 @@ fi
 
 if [[ -z "$record_migrate_url" ]]; then
   if ! record_migrate_url="$(
-    env -u ORCH_RECORD_MIGRATE_URL \
+    env -u BOTTEGA_RECORD_MIGRATE_URL \
       bun --no-env-file "$PROJECT_ROOT/scripts/read-hosted-migrate-url.ts" 2>/dev/null
   )"; then
-    echo "REFUSE: ORCH_RECORD_MIGRATE_URL is unset; its owner is ~/.claude/.env" >&2
+    echo "REFUSE: BOTTEGA_RECORD_MIGRATE_URL is unset; its owner is ~/.claude/.env" >&2
     exit 1
   fi
 fi
@@ -67,19 +70,57 @@ if ! command -v fly >/dev/null 2>&1; then
   exit 1
 fi
 
+case "$APP" in
+  api)
+    fly_app="bottega-api"
+    required_secrets=("${HOSTED_API_REQUIRED_SECRETS[@]}")
+    ;;
+  hub)
+    fly_app="bottega-hub"
+    required_secrets=("${HOSTED_HUB_REQUIRED_SECRETS[@]}")
+    ;;
+esac
+
+if ! listed_secrets_json="$(fly secrets list -a "$fly_app" --json)"; then
+  echo "REFUSE: fly could not list secrets for $fly_app; restore Fly access and retry" >&2
+  exit 1
+fi
+if ! listed_secret_names="$(
+  printf '%s' "$listed_secrets_json" |
+    bun --no-env-file -e \
+      'const rows = JSON.parse(await Bun.stdin.text()); for (const row of rows) { const name = row.name ?? row.Name; if (typeof name === "string") console.log(name) }'
+)"; then
+  echo "REFUSE: fly returned an unreadable secret list for $fly_app; restore Fly access and retry" >&2
+  exit 1
+fi
+
+missing_secrets=()
+for secret_name in "${required_secrets[@]}"; do
+  if ! grep -Fqx "$secret_name" <<<"$listed_secret_names"; then
+    missing_secrets+=("$secret_name")
+  fi
+done
+if (( ${#missing_secrets[@]} > 0 )); then
+  echo "REFUSE: $fly_app is missing required secrets: ${missing_secrets[*]}" >&2
+  for secret_name in "${missing_secrets[@]}"; do
+    echo "Remedy: fly secrets set $secret_name=<value> -a $fly_app (use the value from the old name's owner), then retry" >&2
+  done
+  exit 1
+fi
+
 cd "$PROJECT_ROOT"
 
-if ! ORCH_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/bottega" record migrate; then
+if ! BOTTEGA_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/bottega" record migrate; then
   echo "REFUSE: record migration or applied-equals-shipped confirmation failed; fly deploy was not run" >&2
   exit 1
 fi
 
 if [[ "$APP" == "api" ]]; then
-  exec env -u ORCH_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml" \
+  exec env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml" \
     --build-arg GIT_SHA="$commit"
 fi
 
-exec env -u ORCH_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
+exec env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
   --build-arg VITE_HUB_MODE=hosted \
   --build-arg VITE_RECORD_API_URL=https://api.bottega.run \
   --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run \

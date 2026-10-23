@@ -71,7 +71,7 @@ test('a standalone secondary clone is refused', () => {
   ).toThrow('real harness homes may only be written from the registered main checkout')
 })
 
-test('a linked invocation without ORCH_MAIN_CHECKOUT names the binary repository root', () => {
+test('a linked invocation without BOTTEGA_MAIN_CHECKOUT names the binary repository root', () => {
   expect(() =>
     assertMachineHomeWriteAuthority({
       command: 'machine settings apply',

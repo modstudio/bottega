@@ -82,7 +82,7 @@ test('two database connections cannot both claim the hosted report reply success
     import { Database } from 'bun:sqlite'
     import { existsSync, writeFileSync } from 'node:fs'
     import { claimCachedHostedForPush } from './src/board/board-hosted-cache.ts'
-    const database = new Database(process.env.ORCH_DB, { readwrite: true })
+    const database = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB, { readwrite: true })
     database.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON')
     let snapshotRead = false
     const instrumented = new Proxy(database, {

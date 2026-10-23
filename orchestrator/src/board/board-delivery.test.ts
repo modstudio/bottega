@@ -77,17 +77,17 @@ function installFailedRefreshWithCached(message: HostedBoardMessage): void {
 }
 
 beforeEach(() => {
-  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 })
 afterEach(() => {
   installRecordApiClient(null)
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 
 test('board read and read --claim deliver hosted beside local once and retain a failed-refresh warning', async () => {
   const env = {
     CLAUDE_CODE_SESSION_ID: 'delivery-reader',
-    ORCH_RECORD_API_URL: 'https://record.test',
+    BOTTEGA_RECORD_API_URL: 'https://record.test',
   }
   db()
     .query(
@@ -174,7 +174,7 @@ test('a second chain turn claims and marks hosted and local notices through its 
 test('a spent refresh budget still surfaces the failed-refresh warning', async () => {
   const env = {
     CLAUDE_CODE_SESSION_ID: 'delivery-reader',
-    ORCH_RECORD_API_URL: 'https://record.test',
+    BOTTEGA_RECORD_API_URL: 'https://record.test',
   }
   db()
     .query(

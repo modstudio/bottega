@@ -1,5 +1,5 @@
 /**
- * Opt-in test instrumenter. Activated by ORCH_GATE_TIMINGS (a JSON path, or
+ * Opt-in test instrumenter. Activated by BOTTEGA_GATE_TIMINGS (a JSON path, or
  * any non-empty value to auto-place under the orchestrator state directory).
  *
  * Counts Bun.spawn / Bun.spawnSync and fixture-store bootstraps per test file
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 
-const enabled = process.env.ORCH_GATE_TIMINGS
+const enabled = process.env.BOTTEGA_GATE_TIMINGS
 if (enabled) {
   const orchRoot = join(import.meta.dir, '..')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -143,7 +143,7 @@ if (enabled) {
       files: Object.fromEntries(files),
     }
     writeFileSync(sidecarPath, JSON.stringify(payload, null, 2))
-    process.env.ORCH_GATE_TIMINGS_SIDECAR = sidecarPath
+    process.env.BOTTEGA_GATE_TIMINGS_SIDECAR = sidecarPath
   }
 
   afterAll(writeSidecar)

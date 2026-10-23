@@ -3,8 +3,8 @@ import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 import { asSpace, psql, succeeds } from '../../test/fixtures/postgres-rls.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 
-const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
-const { ORCH_RECORD_MIGRATE_URL: ownerUrl, ORCH_RECORD_URL: actorUrl } = process.env
+const container = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+const { BOTTEGA_RECORD_MIGRATE_URL: ownerUrl, BOTTEGA_RECORD_URL: actorUrl } = process.env
 const SPACE = '01990000-0000-7000-8000-00000000100a'
 const ADMIN_USER = '01990000-0000-7000-8000-000000001010'
 const READ_USER = '01990000-0000-7000-8000-000000001013'

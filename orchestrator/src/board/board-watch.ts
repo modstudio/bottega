@@ -25,7 +25,7 @@ import { type BoardStreamFrame, createBoardStreamParser } from './board-watch-fr
 
 const BOARD_WATCH_REFRESH_BUDGET_MS = 30_000
 export const BOARD_WATCH_ERROR_DETAIL_MAX = 240
-export const BOARD_WATCH_UNCONFIGURED_REMEDY = `ORCH_RECORD_API_URL is not set; cleared by: ${PLATFORM_SLUG} record doctor`
+export const BOARD_WATCH_UNCONFIGURED_REMEDY = `BOTTEGA_RECORD_API_URL is not set; cleared by: ${PLATFORM_SLUG} record doctor`
 
 export type BoardWatchOpen = RecordBoardStreamOpen
 

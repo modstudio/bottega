@@ -29,7 +29,7 @@ test('reply contract names absolute scratch files without a shell variable', () 
   const instruction = replyFileInstruction('WORKER_SCHEMA', scratch)
   expect(instruction).toContain(`${scratch}/reply.json`)
   expect(instruction).toContain(`${scratch}/progress.json`)
-  expect(instruction).not.toContain('$ORCH_SCRATCH')
+  expect(instruction).not.toContain('$BOTTEGA_SCRATCH')
 })
 
 const baseWorkerReply = {

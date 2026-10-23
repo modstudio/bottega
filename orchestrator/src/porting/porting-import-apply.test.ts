@@ -411,13 +411,13 @@ describe('worker port import refusal', () => {
   let priorRunId: string | undefined
 
   beforeEach(() => {
-    priorRunId = process.env.ORCH_RUN_ID
-    process.env.ORCH_RUN_ID = 'port-import-worker'
+    priorRunId = process.env.BOTTEGA_RUN_ID
+    process.env.BOTTEGA_RUN_ID = 'port-import-worker'
   })
 
   afterEach(() => {
-    if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-    else process.env.ORCH_RUN_ID = priorRunId
+    if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+    else process.env.BOTTEGA_RUN_ID = priorRunId
   })
 
   test('port import and replacement allow an architect caller and refuse a worker caller', async () => {
@@ -463,11 +463,11 @@ describe('worker port import refusal', () => {
     )
     expect(getDoc('global', null, 'port-category-map')).toBeNull()
 
-    delete process.env.ORCH_RUN_ID
+    delete process.env.BOTTEGA_RUN_ID
     await applyImport(plan)
     expect(getDoc('global', null, 'port-category-map')).not.toBeNull()
 
-    process.env.ORCH_RUN_ID = 'port-import-worker'
+    process.env.BOTTEGA_RUN_ID = 'port-import-worker'
     await expect(applyImport(planImport(source, projects()), { replace: true })).rejects.toThrow(
       'refusing document store write from an orchestrator worker run',
     )

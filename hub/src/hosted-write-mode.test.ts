@@ -32,7 +32,7 @@ const gamma = {
 }
 
 describe('hosted write mode', () => {
-  test('hosted-configured when HUB_HOSTED_URL is set, otherwise local-authoritative', () => {
+  test('hosted-configured when BOTTEGA_HOSTED_URL is set, otherwise local-authoritative', () => {
     expect(hostedWriteMode('https://hub.example')).toBe('hosted-configured')
     expect(hostedWriteMode(' https://hub.example ')).toBe('hosted-configured')
     expect(hostedWriteMode(undefined)).toBe('local-authoritative')
@@ -78,7 +78,7 @@ describe('hosted write mode', () => {
     })
   })
 
-  test('a hosted-bound install with HUB_HOSTED_URL unset refuses hublocal-shaped writes', () => {
+  test('a hosted-bound install with BOTTEGA_HOSTED_URL unset refuses hublocal-shaped writes', () => {
     const decision = projectWriteDecisionFor(hublocal, bound, undefined)
     expect(decision.mode).toBe('refused')
     if (decision.mode !== 'refused') throw new Error('expected refusal')

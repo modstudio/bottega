@@ -509,14 +509,14 @@ function openAcpTrace(
   profile: SandboxRuntimeConfig | null,
 ): AcpTrace | null {
   return createAcpTrace(
-    opts.env.ORCH_ACP_TRACE,
-    opts.env.ORCH_RUN_ID ?? 'unknown-run',
+    opts.env.BOTTEGA_ACP_TRACE,
+    opts.env.BOTTEGA_RUN_ID ?? 'unknown-run',
     child.pid ?? 0,
     bin,
     agentArgv,
     opts.cwd,
     profile !== null,
-    [opts.env.ORCH_RUN_TOKEN ?? ''],
+    [opts.env.BOTTEGA_RUN_TOKEN ?? ''],
   )
 }
 
@@ -540,14 +540,15 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
 }
 
 function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
-  if (opts.agent.name === 'grok' || !opts.env.ORCH_RUN_ID || !opts.env.ORCH_RUN_TOKEN) return []
+  if (opts.agent.name === 'grok' || !opts.env.BOTTEGA_RUN_ID || !opts.env.BOTTEGA_RUN_TOKEN)
+    return []
   if (opts.writingAcp && opts.ask?.kind === 'endpoint') {
     return [
       {
         type: 'http',
         name: WORKER_MCP_SERVER_NAME,
         url: opts.ask.url,
-        headers: [{ name: 'Authorization', value: `Bearer ${opts.env.ORCH_RUN_TOKEN}` }],
+        headers: [{ name: 'Authorization', value: `Bearer ${opts.env.BOTTEGA_RUN_TOKEN}` }],
       },
     ]
   }
@@ -557,9 +558,12 @@ function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
       name: WORKER_MCP_SERVER_NAME,
       command: command!,
       args,
-      env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'].flatMap((name) =>
-        opts.env[name] ? [{ name, value: opts.env[name]! }] : [],
-      ),
+      env: [
+        'BOTTEGA_ASK_URL',
+        'BOTTEGA_RUN_ID',
+        'BOTTEGA_RUN_TOKEN',
+        'BOTTEGA_ORCHESTRATOR_DB',
+      ].flatMap((name) => (opts.env[name] ? [{ name, value: opts.env[name]! }] : [])),
     },
   ]
 }
@@ -656,7 +660,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       const toolKind = req.params.toolCall.kind ?? undefined
       const optionKinds = req.params.options.map((option) => option.kind)
       const editLocations = resolveAcpEditLocations(
-        opts.env.ORCH_SCRATCH,
+        opts.env.BOTTEGA_SCRATCH,
         req.params.toolCall.locations,
       )
       const decided = decideAcpPermission(
@@ -691,7 +695,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           )
         })
         if (fields.length === 1 && stringFields.length === 1) {
-          const runId = await resolveWorkerRunId(opts.env.ORCH_RUN_ID)
+          const runId = await resolveWorkerRunId(opts.env.BOTTEGA_RUN_ID)
           if (runId) {
             const { ask } = await import('../ask/ask.ts')
             const { db } = await import('../database/db.ts')
@@ -734,8 +738,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     .onRequest(acp.methods.client.fs.writeTextFile, (req) => {
       // ACP has no result object. The one write it receives is the universal
       // reply carrier, confined to the run's artifact scratch directory.
-      const scratch = opts.env.ORCH_SCRATCH
-      if (!scratch) throw new Error('ACP fs.writeTextFile refused: ORCH_SCRATCH is not set')
+      const scratch = opts.env.BOTTEGA_SCRATCH
+      if (!scratch) throw new Error('ACP fs.writeTextFile refused: BOTTEGA_SCRATCH is not set')
       const confined = confineFsPath(req.params.path, scratch, 'writeTextFile')
       writeFileSync(confined, req.params.content)
       return {}

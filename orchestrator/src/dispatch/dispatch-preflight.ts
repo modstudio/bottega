@@ -37,7 +37,7 @@ import { projectSeedPreflight, validateProjectSeed } from '../worktree/worktree-
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 
 const MAX_DEPTH = 1
-export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
+export const depth = () => Number(process.env.BOTTEGA_DEPTH ?? 0)
 
 /** Stable lens question and exclusions for a findings dispatch that named --lens. */
 export function resolvedFindingsLens(

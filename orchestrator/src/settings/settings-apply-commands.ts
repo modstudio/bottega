@@ -327,6 +327,97 @@ async function writeOwned(
   })
 }
 
+/** Migrate only names in the stored user settings body; values remain in settings.env. */
+export async function migrateStoredSettingsEnvironmentNames(
+  replacement: (name: string) => string | null,
+): Promise<Array<{ oldName: string; newName: string }>> {
+  const owner = await signedInDocOwner()
+  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  if (!row) return []
+  const owned = parseStoredOwnedSettings(row.body)
+  const current = owned.envKeys ?? []
+  const { names: migrated, changed } = settingsEnvironmentNamesDecision(current, replacement)
+  if (!changed.length) return []
+  owned.envKeys = migrated
+  await writeOwned(
+    targetAddress({ kind: 'user' }, owner),
+    owned,
+    'migrated legacy environment key names',
+    row.revision!,
+  )
+  return current.flatMap((oldName) => {
+    const newName = replacement(oldName)
+    return newName && newName !== oldName ? [{ oldName, newName }] : []
+  })
+}
+
+/** Reverse only the stored settings key renames recorded by setup's backup manifest. */
+export async function restoreStoredSettingsEnvironmentNames(
+  migrations: ReadonlyArray<{ oldName: string; newName: string }>,
+): Promise<void> {
+  if (!migrations.length) return
+  const owner = await signedInDocOwner()
+  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  if (!row) {
+    throw new Error(
+      `refusing setup restore: stored user settings are absent; restore the settings document, then re-run ${PLATFORM_SLUG} machine setup restore`,
+    )
+  }
+  const owned = parseStoredOwnedSettings(row.body)
+  const current = owned.envKeys ?? []
+  for (const { oldName, newName } of migrations) {
+    if (current.includes(oldName)) {
+      throw new Error(
+        `refusing setup restore: stored settings already contain ${oldName}; delete that stored env key, then re-run ${PLATFORM_SLUG} machine setup restore`,
+      )
+    }
+    if (!current.includes(newName)) {
+      throw new Error(
+        `refusing setup restore: stored settings do not contain ${newName}; restore that stored env key, then re-run ${PLATFORM_SLUG} machine setup restore`,
+      )
+    }
+  }
+  const reverse = new Map(migrations.map(({ oldName, newName }) => [newName, oldName]))
+  owned.envKeys = current.map((name) => reverse.get(name) ?? name).sort()
+  await writeOwned(
+    targetAddress({ kind: 'user' }, owner),
+    owned,
+    'restored legacy environment key names',
+    row.revision!,
+  )
+}
+
+function settingsEnvironmentNamesDecision(
+  current: string[],
+  replacement: (name: string) => string | null,
+): {
+  names: string[]
+  changed: string[]
+} {
+  const replacements = current.map((name) => replacement(name) ?? name)
+  for (const [index, name] of replacements.entries()) {
+    const prior = replacements.indexOf(name)
+    if (prior !== index && current[prior] !== current[index]) {
+      throw new Error(
+        `refusing settings environment migration: ${current[prior]} and ${current[index]} both map to ${name}; delete one stored env key, then re-run ${PLATFORM_SLUG} machine setup apply`,
+      )
+    }
+  }
+  return {
+    names: [...new Set(replacements)].sort(),
+    changed: current.filter((name, index) => name !== replacements[index]),
+  }
+}
+
+export async function assertStoredSettingsEnvironmentMigration(
+  replacement: (name: string) => string | null,
+): Promise<void> {
+  const owner = await signedInDocOwner()
+  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  if (!row) return
+  settingsEnvironmentNamesDecision(parseStoredOwnedSettings(row.body).envKeys ?? [], replacement)
+}
+
 function logWritePlan(
   target: Target,
   path: string,

@@ -3,8 +3,8 @@ import { SQL } from 'bun'
 import { RECORD_ACTOR_ROLE, RECORD_PUBLIC_ROLE } from '../../../shared/record/schema.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 
-const migrationUrl = process.env.ORCH_TEST_PUBLIC_ROLE_MIGRATION_URL
-const superuserUrl = process.env.ORCH_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL
+const migrationUrl = process.env.BOTTEGA_TEST_PUBLIC_ROLE_MIGRATION_URL
+const superuserUrl = process.env.BOTTEGA_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL
 const realPostgres = migrationUrl && superuserUrl ? describe : describe.skip
 
 realPostgres('record public role migration preconditions', () => {

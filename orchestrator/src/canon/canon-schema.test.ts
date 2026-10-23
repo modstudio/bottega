@@ -156,7 +156,7 @@ describe('schema coexistence', () => {
 
   test('a connection opened before a migration refuses its next write', () => {
     db()
-    const other = new Database(process.env.ORCH_DB!)
+    const other = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!)
     other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
     other.close()
     expect(() =>
@@ -388,7 +388,7 @@ describe('schema coexistence', () => {
     const next = journalVersionAfter('0145_agent_trains_on_inputs')
     const prior = next - 1
     closeDatabaseForFixture()
-    const other = new Database(process.env.ORCH_DB!)
+    const other = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!)
     other.exec(`PRAGMA user_version = ${prior}`)
     enableSchemaReload(() => {})
     const held = db()
@@ -413,7 +413,7 @@ describe('schema coexistence', () => {
     const next = journalVersionAfter('0145_agent_trains_on_inputs')
     const prior = next - 1
     closeDatabaseForFixture()
-    const other = new Database(process.env.ORCH_DB!)
+    const other = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!)
     other.exec(`PRAGMA user_version = ${prior}`)
     const held = db()
     enableSchemaReload((from, to) => seen.push([from, to]))
@@ -448,7 +448,7 @@ describe('schema coexistence', () => {
     const next = journalVersionAfter('0131_lens_port_uuid_key')
     const prior = next - 1
     closeDatabaseForFixture()
-    const other = new Database(process.env.ORCH_DB!)
+    const other = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!)
     other.exec(`PRAGMA user_version = ${prior}`)
     const held = db()
     enableSchemaReload(() => {})
@@ -466,7 +466,7 @@ describe('schema coexistence', () => {
     const prior = next - 1
     const runId = newRecordId()
     closeDatabaseForFixture()
-    const other = new Database(process.env.ORCH_DB!)
+    const other = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!)
     other.exec(`PRAGMA user_version = ${prior}`)
     db()
     enableRunSchemaReload(runId)

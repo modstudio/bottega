@@ -251,14 +251,14 @@ describe('suggestion notes', () => {
   })
 
   describe('local-authoritative note writes', () => {
-    const previousHostedUrl = process.env.HUB_HOSTED_URL
+    const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
     beforeAll(() => {
-      delete process.env.HUB_HOSTED_URL
+      delete process.env.BOTTEGA_HOSTED_URL
     })
     beforeEach(resetFixtureStore)
     afterAll(() => {
-      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-      else process.env.HUB_HOSTED_URL = previousHostedUrl
+      if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+      else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
     })
 
     test('two projects each file their own first local note', async () => {
@@ -486,7 +486,7 @@ describe('suggestion notes', () => {
       expect(() => getNote(doomed)).toThrow(`no note ${doomed}`)
     })
 
-    test('a hosted-bound install with HUB_HOSTED_URL unset refuses note writes', async () => {
+    test('a hosted-bound install with BOTTEGA_HOSTED_URL unset refuses note writes', async () => {
       writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
       await expect(
         createNote({
@@ -586,8 +586,8 @@ describe('suggestion notes', () => {
     const file = join(scratch, 'anchor.ts')
     writeFileSync(file, 'first\nanchored line\n')
     const anchor = deriveNoteAnchor(`inspect ${file}:2`, '/fixtures/repos/workshop', {
-      ORCH_RUN_ID: '42000000-0000-4000-8000-000000000000',
-      ORCH_RUN_NUMBER: '42',
+      BOTTEGA_RUN_ID: '42000000-0000-4000-8000-000000000000',
+      BOTTEGA_RUN_NUMBER: '42',
       CLAUDE_CODE_SESSION_ID: 'session-42',
     } as NodeJS.ProcessEnv)
     expect(anchor).toMatchObject({

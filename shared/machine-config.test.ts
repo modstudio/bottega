@@ -67,7 +67,7 @@ describe('machine config resolution', () => {
     expect(
       resolveMachineValue(
         MACHINE_CONFIG,
-        { ORCH_MODEL_HOST_URL: 'canonical', ORCH_LOCAL_BASE_URL: 'legacy' },
+        { BOTTEGA_MODEL_HOST_URL: 'canonical', BOTTEGA_LOCAL_BASE_URL: 'legacy' },
         { model_host: { url: 'file' } },
         'model_host.url',
         path,
@@ -78,7 +78,7 @@ describe('machine config resolution', () => {
     expect(
       resolveMachineValue(
         MACHINE_CONFIG,
-        { ORCH_LOCAL_BASE_URL: 'legacy' },
+        { BOTTEGA_LOCAL_BASE_URL: 'legacy' },
         { model_host: { url: 'file' } },
         'model_host.url',
         path,
@@ -108,7 +108,7 @@ describe('machine config resolution', () => {
     for (let index = 0; index < 2; index++) {
       resolveMachineValue(
         MACHINE_CONFIG,
-        { ORCH_LOCAL_MODEL: 'legacy' },
+        { BOTTEGA_LOCAL_MODEL: 'legacy' },
         {},
         'model_host.model',
         path,
@@ -116,7 +116,7 @@ describe('machine config resolution', () => {
         warned,
       )
     }
-    expect(warnings).toEqual(['ORCH_LOCAL_MODEL is deprecated; use ORCH_MODEL_HOST_MODEL'])
+    expect(warnings).toEqual(['BOTTEGA_LOCAL_MODEL is deprecated; use BOTTEGA_MODEL_HOST_MODEL'])
   })
 
   test('refuses an unknown file key with its key and path', () => {
@@ -151,7 +151,7 @@ describe('machine config resolution', () => {
     expect(
       resolveMachineValue(
         MACHINE_CONFIG,
-        { HUB_TRANSCRIPT_ROOT: '' },
+        { BOTTEGA_TRANSCRIPT_ROOT: '' },
         { hub: { transcript_root: '/transcripts' } },
         'hub.transcript_root',
         path,
@@ -204,7 +204,7 @@ describe('machine config resolution', () => {
     expect(() =>
       resolveMachineValue(
         MACHINE_CONFIG,
-        { HUB_PORT: 'wrong' },
+        { BOTTEGA_HUB_PORT: 'wrong' },
         {},
         'hub.port',
         path,
@@ -212,7 +212,7 @@ describe('machine config resolution', () => {
         freshWarnings(),
       ),
     ).toThrow(
-      'refusing machine config key hub.port: HUB_PORT must be an integer; set HUB_PORT to an integer or unset it',
+      'refusing machine config key hub.port: BOTTEGA_HUB_PORT must be an integer; set BOTTEGA_HUB_PORT to an integer or unset it',
     )
   })
 })

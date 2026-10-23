@@ -45,13 +45,13 @@ export function attributionFromInputs(input: {
   user: { id: string; name: string | null } | null
   machineUser: string
 }): Attribution {
-  const runId = input.env.ORCH_RUN_ID?.trim() || null
+  const runId = input.env.BOTTEGA_RUN_ID?.trim() || null
   const caller = classifyCaller(input.env)
   return {
     actorUserId: input.user?.id ?? null,
     actorName: input.user?.name ?? input.machineUser,
     agent:
-      (runId ? input.env.ORCH_AGENT?.trim() : null) ||
+      (runId ? input.env.BOTTEGA_AGENT?.trim() : null) ||
       (caller.kind === 'harness' ? caller.harness : null),
     runId,
   }

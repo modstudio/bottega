@@ -13,7 +13,7 @@ import {
 } from './record-lens-catalogue.ts'
 import { RecordLensError } from './record-lens-contract.ts'
 
-const url = process.env.ORCH_TEST_LENS_CATALOGUE_URL
+const url = process.env.BOTTEGA_TEST_LENS_CATALOGUE_URL
 const postgres = url ? describe : describe.skip
 const spaceId = newRecordId()
 const pagingSpaceId = newRecordId()

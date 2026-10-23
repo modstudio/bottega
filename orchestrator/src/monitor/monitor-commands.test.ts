@@ -45,9 +45,9 @@ test('notice command maps skip-board-refresh to hosted refresh behavior', async 
   const session = 'monitor-command-reader'
   const userId = newRecordId()
   const previousSession = process.env.CLAUDE_CODE_SESSION_ID
-  const previousRecordApiUrl = process.env.ORCH_RECORD_API_URL
+  const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.CLAUDE_CODE_SESSION_ID = session
-  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_CACHE_OWNER_KEY, userId)
   db()
@@ -108,7 +108,7 @@ test('notice command maps skip-board-refresh to hosted refresh behavior', async 
     installRecordApiClient(null)
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = previousSession
-    if (previousRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-    else process.env.ORCH_RECORD_API_URL = previousRecordApiUrl
+    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
   }
 })

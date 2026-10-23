@@ -15,7 +15,7 @@ case "$changed" in
   *"orchestrator/migrations/"*|orchestrator/migrations/*|*"hub/migrations/"*|hub/migrations/*)
     # A caller may carry the live-store override used by linked worktrees.
     # The main checkout migrates the stores resolved by its own binaries.
-    unset ORCH_DB ORCH_DEPTH
+    unset BOTTEGA_ORCHESTRATOR_DB BOTTEGA_DEPTH
     if ! (cd "$root" && ./bin/bottega machine migrate); then
       echo "post-merge: migration failed; run by hand: cd '$root' && ./bin/bottega machine migrate" >&2
     fi

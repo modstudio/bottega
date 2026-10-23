@@ -348,7 +348,7 @@ export async function run(opts: {
   // one minutes later finds the endpoint up. Nothing is slower than it was; the
   // difference is that the outage now ends by itself.
   //
-  // Opt-in via ORCH_MODEL_HOST_WOL_MAC, because the box is shared and powering on
+  // Opt-in via BOTTEGA_MODEL_HOST_WOL_MAC, because the box is shared and powering on
   // somebody else's machine is not a default worth assuming.
   if (!health.ok) {
     const woken = tryWake()
@@ -476,7 +476,7 @@ export async function run(opts: {
     prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   const requiresCanonSource = evidencePrompt.requiresCanonSource
-  const transportPin = runTransportPin(opts.transport, process.env.ORCH_TRANSPORT),
+  const transportPin = runTransportPin(opts.transport, process.env.BOTTEGA_TRANSPORT),
     transportPinFacts = {
       explicitTransport: transportPin.transportPinSource === 'explicit',
       envTransport: transportPin.transportPinSource === 'environment',
@@ -700,7 +700,7 @@ export async function run(opts: {
         runtimeDir,
         scratchDir,
         project: runProject,
-        override: process.env.ORCH_SANDBOX,
+        override: process.env.BOTTEGA_SANDBOX,
         path: process.env.PATH,
         baseUrl: a.baseUrl,
         mcp: Boolean(mcpMode),

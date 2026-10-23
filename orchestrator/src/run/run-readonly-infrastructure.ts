@@ -53,7 +53,7 @@ export function readonlyInfrastructurePrompt(input: {
           `infrastructure (no databases, no generated env, no vendor tree).`
     infrastructure =
       `${tree} Do not treat a test suite that cannot start as a finding; ` +
-      `record what you could not run in could_not_verify. ORCH_MAIN_CHECKOUT names the ` +
+      `record what you could not run in could_not_verify. BOTTEGA_MAIN_CHECKOUT names the ` +
       `registered project's main checkout when project tooling needs it.`
   } else {
     infrastructure = [input.regularNotes, input.generatedNotes].filter(Boolean).join('\n\n')

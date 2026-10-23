@@ -289,7 +289,7 @@ function recordEvidenceExclusion(
     ? `blocked by its tree: ${options.note!.trim()}`
     : VOID_EXCLUSION_REASON
   const scoredAt = nowIso()
-  const recordedBy = flags.flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
+  const recordedBy = flags.flag('scorer') ?? process.env.BOTTEGA_SCORER ?? 'claude'
   writeTransaction(() => {
     authority = reauthorizeRunMutation(authority, 'void')
     authority = adoptRunMutation(authority, 'void')
@@ -627,7 +627,7 @@ export async function judgeRun(
   let authority = runMutationActor(id)
   const scoredAt = nowIso()
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_record_id=?').get(id))
-  const scorer = process.env.ORCH_SCORER ?? 'claude'
+  const scorer = process.env.BOTTEGA_SCORER ?? 'claude'
   const scoredFidelity = writes && delivery !== 'none' ? (fidelity ?? null) : null
   writeTransaction(() => {
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
@@ -1035,7 +1035,7 @@ export async function scoreRun(
   }
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_record_id=?').get(id))
   const scoredAt = nowIso()
-  const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
+  const recordedBy = scorer ?? process.env.BOTTEGA_SCORER ?? 'claude'
   writeTransaction(() => {
     if (!dashboardAuthorized && !(flags.has('force') && !scoreAuthority.actor)) {
       scoreAuthority = adoptRunMutation(scoreAuthority, 'score')

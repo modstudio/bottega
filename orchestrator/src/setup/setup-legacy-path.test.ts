@@ -4,10 +4,21 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST } from '../../../shared/install-root.ts'
-import { applySetupActions } from './setup-apply.ts'
+import {
+  applySetupActions as applySetupActionsWithService,
+  type SetupProjectService,
+} from './setup-apply.ts'
 import type { SetupPlan } from './setup-engine.ts'
 import { captureLegacyPathSymlinks, pathDirectories } from './setup-legacy-path.ts'
-import { planSetupActions, recommendedAnswers, setupActionLine } from './setup-planner.ts'
+import {
+  planSetupActions,
+  recommendedAnswers,
+  type SetupAction,
+  setupActionLine,
+} from './setup-planner.ts'
+
+const applySetupActions = (actions: SetupAction[], service: SetupProjectService) =>
+  applySetupActionsWithService(actions, service, { migrateEnvironment: async () => null })
 
 const temporary: string[] = []
 afterEach(() => {
@@ -119,8 +130,11 @@ test('setup plan proposes removing a checkout-pointing symlink and leaves others
     legacyPathSymlinks: captured,
   } as unknown as SetupPlan
   const actions = planSetupActions(plan, recommendedAnswers(plan))
-  expect(actions).toEqual([{ kind: 'remove-legacy-symlink', path: remove, target: orch }])
-  expect(setupActionLine(actions[0]!)).toBe(`Remove leftover ${remove} symlink`)
+  expect(actions).toEqual([
+    { kind: 'migrate-environment' },
+    { kind: 'remove-legacy-symlink', path: remove, target: orch },
+  ])
+  expect(setupActionLine(actions[1]!)).toBe(`Remove leftover ${remove} symlink`)
 })
 
 test('setup apply removes a checkout-pointing symlink and refuses a file or foreign link', async () => {

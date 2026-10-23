@@ -402,7 +402,7 @@ describe('hub migration journal', () => {
   test('a connection opened before a migration refuses its next write', () => {
     closeDatabaseForFixture()
     db()
-    const other = new Database(process.env.HUB_DB!)
+    const other = new Database(process.env.BOTTEGA_HUB_DB!)
     other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
     other.close()
     expect(() =>
@@ -411,7 +411,7 @@ describe('hub migration journal', () => {
       }),
     ).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
     closeDatabaseForFixture()
-    const reset = new Database(process.env.HUB_DB!)
+    const reset = new Database(process.env.BOTTEGA_HUB_DB!)
     applyMigrations(reset, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     reset.close()
   })
@@ -605,10 +605,10 @@ describe('hub migration journal', () => {
         process.execPath,
         '--no-env-file',
         '-e',
-        `const { adoptTestHubDatabase } = await import('./shared/test-hub-database.ts'); adoptTestHubDatabase(process.env.HUB_DB); const { collectFast } = await import('./hub/src/collect.ts'); await collectFast({ transcripts: async () => ({ rows: 0, skipped: 0 }) })`,
+        `const { adoptTestHubDatabase } = await import('./shared/test-hub-database.ts'); adoptTestHubDatabase(process.env.BOTTEGA_HUB_DB); const { collectFast } = await import('./hub/src/collect.ts'); await collectFast({ transcripts: async () => ({ rows: 0, skipped: 0 }) })`,
       ],
       {
-        env: { ...process.env, HUB_DB: path, HUB_ORCH: fakeOrch },
+        env: { ...process.env, BOTTEGA_HUB_DB: path, BOTTEGA_ORCH: fakeOrch },
         cwd: join(import.meta.dir, '../..'),
       },
     )
@@ -948,14 +948,14 @@ describe('hub migration journal', () => {
     enableSchemaReload((_from, to) => {
       seen.push(to)
     })
-    const other = new Database(process.env.HUB_DB!)
+    const other = new Database(process.env.BOTTEGA_HUB_DB!)
     const next = migrationJournal().length + 1
     other.exec(`PRAGMA user_version = ${next}`)
     other.close()
     db()
     expect(seen).toEqual([next])
     closeDatabaseForFixture()
-    const reset = new Database(process.env.HUB_DB!)
+    const reset = new Database(process.env.BOTTEGA_HUB_DB!)
     applyMigrations(reset, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     reset.close()
   })
@@ -964,7 +964,7 @@ describe('hub migration journal', () => {
     closeDatabaseForFixture()
     enableSchemaReload(() => {})
     const held = db()
-    const other = new Database(process.env.HUB_DB!)
+    const other = new Database(process.env.BOTTEGA_HUB_DB!)
     other.exec(`PRAGMA user_version = ${migrationJournal().length + 1}`)
     other.close()
     writeTransaction((conn) => {
@@ -975,7 +975,7 @@ describe('hub migration journal', () => {
       value: '1',
     })
     closeDatabaseForFixture()
-    const reset = new Database(process.env.HUB_DB!)
+    const reset = new Database(process.env.BOTTEGA_HUB_DB!)
     applyMigrations(reset, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     reset.close()
   })

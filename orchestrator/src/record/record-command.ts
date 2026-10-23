@@ -39,22 +39,22 @@ import { recordTunnelFailure } from './record-tunnel-error.ts'
 type Presentation = { log(value: string): void; exitCode?(code: number): void }
 
 function recordUrl(): string {
-  const url = process.env.ORCH_RECORD_URL
-  if (!url) throw new Error('ORCH_RECORD_URL is required for record operations')
+  const url = process.env.BOTTEGA_RECORD_URL
+  if (!url) throw new Error('BOTTEGA_RECORD_URL is required for record operations')
   return url
 }
 
 function recordOwnerUrl(): string {
-  const url = process.env.ORCH_RECORD_MIGRATE_URL
+  const url = process.env.BOTTEGA_RECORD_MIGRATE_URL
   if (!url) {
-    throw new Error('ORCH_RECORD_MIGRATE_URL is required to manage public document designations')
+    throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to manage public document designations')
   }
   return url
 }
 
 export async function recordMigrateCommand(presentation: Presentation): Promise<void> {
-  const url = process.env.ORCH_RECORD_MIGRATE_URL
-  if (!url) throw new Error('ORCH_RECORD_MIGRATE_URL is required to migrate the record')
+  const url = process.env.BOTTEGA_RECORD_MIGRATE_URL
+  if (!url) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to migrate the record')
   let before: number
   let after: number
   try {

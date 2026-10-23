@@ -26,9 +26,9 @@ import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts
 
 describe('record HTTP authentication responses', () => {
   test('sign-in posts without an Origin and prefers the bearer response header', async () => {
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     const originalFetch = globalThis.fetch
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const requests: Array<{ url: string; headers: Headers; body: unknown }> = []
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
@@ -54,8 +54,8 @@ describe('record HTTP authentication responses', () => {
       expect(requests[0]?.headers.has('origin')).toBe(false)
     } finally {
       globalThis.fetch = originalFetch
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
     }
   })
 
@@ -122,7 +122,7 @@ test('the record API base URL resolves from configured files', () => {
     const config = join(root, 'config')
     const harness = join(root, 'harness.env')
     mkdirSync(config)
-    writeFileSync(harness, 'ORCH_RECORD_API_URL=https://file.example.test/\n')
+    writeFileSync(harness, 'BOTTEGA_RECORD_API_URL=https://file.example.test/\n')
 
     expect(
       recordApiBaseUrl({
@@ -143,9 +143,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () =>
       Response.json(
@@ -171,27 +171,27 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordApiClient(createMemoryRecordApiClient())
     }
   })
 
   test('refuses a real base URL unless a stub is injected', () => {
     installRecordApiClient(null)
-    const previous = process.env.ORCH_RECORD_API_URL
-    const previousContainer = process.env.ORCH_TEST_POSTGRES_CONTAINER
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
-    delete process.env.ORCH_TEST_POSTGRES_CONTAINER
+    const previous = process.env.BOTTEGA_RECORD_API_URL
+    const previousContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
+    delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
     try {
       expect(() => recordApiClient()).toThrow(
         'record API client refuses a real base URL unless a stub is injected in tests',
       )
     } finally {
-      if (previous === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previous
-      if (previousContainer === undefined) delete process.env.ORCH_TEST_POSTGRES_CONTAINER
-      else process.env.ORCH_TEST_POSTGRES_CONTAINER = previousContainer
+      if (previous === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previous
+      if (previousContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+      else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = previousContainer
       installRecordApiClient(createMemoryRecordApiClient())
     }
   })
@@ -200,9 +200,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(null)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const calls: Array<{ url: string; headers: Headers; credentials?: RequestCredentials }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -232,8 +232,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordApiClient(createMemoryRecordApiClient())
     }
   })
@@ -244,9 +244,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const calls: Headers[] = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -276,8 +276,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordApiClient(createMemoryRecordApiClient())
     }
   })
@@ -288,9 +288,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const calls: Array<{ url: string; method: string; body: unknown }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -314,8 +314,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }
@@ -327,9 +327,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const calls: Array<{ url: string; method: string; body: unknown }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -382,8 +382,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }
@@ -395,9 +395,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json(
@@ -418,8 +418,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }
@@ -431,9 +431,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () =>
       Response.json({ error: 'claim write failed' }, { status: 500 })) as unknown as typeof fetch
@@ -453,8 +453,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }
@@ -466,9 +466,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
     const stub = (status: number, withBody: boolean) => {
       let cancelled = false
@@ -525,8 +525,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }
@@ -538,9 +538,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
     const run = async (status: number | 'throw') => {
       globalThis.fetch = (async () => {
@@ -567,8 +567,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }

@@ -353,7 +353,7 @@ test('an additive store advance during the merge-queue wait lets landing recordi
   const next = journalVersionAfter('0149_pull_request_ci')
   const prior = next - 1
   closeDatabaseForFixture()
-  const migrator = new Database(process.env.ORCH_DB!)
+  const migrator = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!)
   migrator.exec(`PRAGMA user_version = ${prior}`)
   let queuePolls = 0
   let recorded = false
@@ -391,7 +391,7 @@ test('a non-additive store advance during the merge-queue wait refuses with its 
   const next = journalVersionAfter('0131_lens_port_uuid_key')
   const prior = next - 1
   closeDatabaseForFixture()
-  const migrator = new Database(process.env.ORCH_DB!)
+  const migrator = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!)
   migrator.exec(`PRAGMA user_version = ${prior}`)
   let queuePolls = 0
 

@@ -257,9 +257,9 @@ export async function recordWorkflowExec(
   } = {},
 ): Promise<ProbeRecord> {
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
-  if (process.env.ORCH_DEPTH !== undefined)
+  if (process.env.BOTTEGA_DEPTH !== undefined)
     throw new Error(
-      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ORCH_DEPTH is set`,
+      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; BOTTEGA_DEPTH is set`,
     )
   if (!sessionId())
     throw new Error(

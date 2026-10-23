@@ -8,8 +8,8 @@ import {
   upsertRecordDoc,
 } from '../record/record-docs.ts'
 
-const actorUrl = process.env.ORCH_RECORD_URL
-const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
+const actorUrl = process.env.BOTTEGA_RECORD_URL
+const adminUrl = process.env.BOTTEGA_TEST_POSTGRES_URL
 const realPostgres = actorUrl && adminUrl ? describe : describe.skip
 
 const SPACE_ID = '01990000-0000-7000-8000-000000001303'

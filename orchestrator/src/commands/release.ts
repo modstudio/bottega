@@ -28,7 +28,7 @@ export function register(program: Command): void {
   const release = program
     .command('release [project]')
     .description(
-      'run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH_RELEASE_COMMIT set, plus ORCH_RELEASE_ROLLBACK set to 1 on a deliberate rollback',
+      'run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback',
     )
     .option('--rung <name>', 'release rung to run')
     .option('--rollback <reason>', 'reason for deploying the prior live commit')

@@ -31,7 +31,7 @@ describe('filed issue command confinement', () => {
         lang: 'en_US.UTF-8',
         operatorEnvPaths: ['/Users/operator/.claude/.env', '/Users/operator/config/platform.env'],
         secretPaths: ['/project/.env', '/keys/token'],
-        workerEnvironment: { ORCH_RUN_ID: '41' },
+        workerEnvironment: { BOTTEGA_RUN_ID: '41' },
         environment,
       })
 
@@ -49,7 +49,7 @@ describe('filed issue command confinement', () => {
         '/Users/operator/config/platform.env',
       ])
       expect(plan.env).toEqual({
-        ORCH_RUN_ID: '41',
+        BOTTEGA_RUN_ID: '41',
         PATH: '/usr/bin:/bin',
         HOME: '/tmp/issue-home',
         LANG: 'en_US.UTF-8',
@@ -72,9 +72,9 @@ describe('filed issue command confinement', () => {
         LC_ALL: 'en_US.UTF-8',
         OPENAI_API_KEY: 'sk-secret',
         SSH_AUTH_SOCK: '/tmp/ssh.sock',
-        ORCH_RUN_ID: '41',
-        ORCH_GUARDED_GIT_COMMON_DIR: '/repo/.git',
-        ORCH_ALLOWED_GIT_REF: 'refs/heads/DEV-1',
+        BOTTEGA_RUN_ID: '41',
+        BOTTEGA_GUARDED_GIT_COMMON_DIR: '/repo/.git',
+        BOTTEGA_ALLOWED_GIT_REF: 'refs/heads/DEV-1',
         HOME: '/Users/operator',
       }),
     ).toEqual({
@@ -84,8 +84,8 @@ describe('filed issue command confinement', () => {
       LANG: 'C.UTF-8',
       TERM: 'xterm',
       LC_ALL: 'en_US.UTF-8',
-      ORCH_GUARDED_GIT_COMMON_DIR: '/repo/.git',
-      ORCH_ALLOWED_GIT_REF: 'refs/heads/DEV-1',
+      BOTTEGA_GUARDED_GIT_COMMON_DIR: '/repo/.git',
+      BOTTEGA_ALLOWED_GIT_REF: 'refs/heads/DEV-1',
     })
   })
 

@@ -364,7 +364,7 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
 export const transportSelection = (
   flag: string | undefined,
   selected: Agent | undefined,
-  environment = process.env.ORCH_TRANSPORT,
+  environment = process.env.BOTTEGA_TRANSPORT,
 ) => {
   const pin = classifyTransportPin(flag, environment)
   return {

@@ -40,16 +40,16 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
     ...(mcpState ? { SMOKE_MCP_STATE: mcpState } : {}),
   }
   for (const key of Object.keys(env)) {
-    if (key.startsWith('ORCH_') || key.startsWith('CLAUDE_') || key.startsWith('ANTHROPIC_')) {
+    if (key.startsWith('BOTTEGA_') || key.startsWith('CLAUDE_') || key.startsWith('ANTHROPIC_')) {
       delete env[key]
     }
   }
   env.CLAUDE_CODE_SESSION_ID = 'DEV-997-binary-smoke'
-  env.ORCH_EMBED_URL = 'http://127.0.0.1:1/v1/embeddings'
-  env.ORCH_RERANK_URL = 'http://127.0.0.1:1/v1/rerank'
-  if (recordApiUrl) env.ORCH_RECORD_API_URL = recordApiUrl
-  delete env.HUB_HOSTED_URL
-  delete env.HUB_DB
+  env.BOTTEGA_EMBED_URL = 'http://127.0.0.1:1/v1/embeddings'
+  env.BOTTEGA_RERANK_URL = 'http://127.0.0.1:1/v1/rerank'
+  if (recordApiUrl) env.BOTTEGA_RECORD_API_URL = recordApiUrl
+  delete env.BOTTEGA_HOSTED_URL
+  delete env.BOTTEGA_HUB_DB
   return env
 }
 

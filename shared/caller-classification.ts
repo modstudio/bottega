@@ -13,12 +13,12 @@ export type CallerClassification =
   | { kind: 'operator' }
 
 export const WORKER_ENVIRONMENT_MARKERS = [
-  'ORCH_RUN_ID',
-  'ORCH_DEPTH',
-  'ORCH_MAIN_CHECKOUT',
-  'ORCH_SCRATCH',
-  'ORCH_RUN_TOKEN',
-  'ORCH_ASK_URL',
+  'BOTTEGA_RUN_ID',
+  'BOTTEGA_DEPTH',
+  'BOTTEGA_MAIN_CHECKOUT',
+  'BOTTEGA_SCRATCH',
+  'BOTTEGA_RUN_TOKEN',
+  'BOTTEGA_ASK_URL',
 ] as const
 
 const RECOGNIZED_HARNESSES = [

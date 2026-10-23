@@ -239,7 +239,7 @@ test('issue verification bounds an unfinished broker gate and records its cancel
     expect(closed).toBe(true)
     expect(environment).toMatchObject({
       GIT_CONFIG_KEY_0: 'core.hooksPath',
-      ORCH_MAIN_CHECKOUT: main,
+      BOTTEGA_MAIN_CHECKOUT: main,
     })
     expect(result.id).toBeGreaterThan(0)
     expect(result).toMatchObject({

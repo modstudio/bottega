@@ -55,13 +55,13 @@ test('board status CLI refuses worker callers', async () => {
   )
   const program = new Command().exitOverride()
   registerBoardCommands(program)
-  process.env.ORCH_RUN_ID = 'cli-board-worker'
+  process.env.BOTTEGA_RUN_ID = 'cli-board-worker'
   try {
     await expect(
       program.parseAsync(['node', 'orch', 'board', 'status', String(posted.recordId)]),
     ).rejects.toThrow(/workers cannot use the architect notice board/)
   } finally {
-    delete process.env.ORCH_RUN_ID
+    delete process.env.BOTTEGA_RUN_ID
   }
 })
 

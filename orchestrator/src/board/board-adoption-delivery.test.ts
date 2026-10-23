@@ -101,8 +101,8 @@ test('delivery stamps hosted receipt and reach for an uploaded local shadow UUID
       }
     },
   })
-  const previousUrl = process.env.ORCH_RECORD_API_URL
-  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   try {
     await markBoardDeliveryDelivered({
       session: reader,
@@ -112,8 +112,8 @@ test('delivery stamps hosted receipt and reach for an uploaded local shadow UUID
       deliveryPoint: 'after-tool-call',
     })
   } finally {
-    if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-    else process.env.ORCH_RECORD_API_URL = previousUrl
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
   }
 
   expect(receipts).toEqual([local.recordId])

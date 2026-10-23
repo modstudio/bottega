@@ -45,8 +45,8 @@ describe('shared git environment decisions', () => {
       GIT_CONFIG_GLOBAL: '/worker/global-config',
       GIT_CONFIG_SYSTEM: '/worker/system-config',
       GIT_CONFIG_NOSYSTEM: '1',
-      ORCH_GUARDED_GIT_COMMON_DIR: '/worker/common',
-      ORCH_ALLOWED_GIT_REF: 'refs/heads/worker',
+      BOTTEGA_GUARDED_GIT_COMMON_DIR: '/worker/common',
+      BOTTEGA_ALLOWED_GIT_REF: 'refs/heads/worker',
     }
     const scrubbed = scrubbedGitEnv(contaminated)
     expect(scrubbed.UNRELATED).toBe('preserved')
@@ -57,8 +57,8 @@ describe('shared git environment decisions', () => {
       'GIT_ALTERNATE_OBJECT_DIRECTORIES',
       'GIT_INDEX_FILE',
       'GIT_CONFIG_COUNT',
-      'ORCH_GUARDED_GIT_COMMON_DIR',
-      'ORCH_ALLOWED_GIT_REF',
+      'BOTTEGA_GUARDED_GIT_COMMON_DIR',
+      'BOTTEGA_ALLOWED_GIT_REF',
     ]) {
       expect(scrubbed[variable]).toBeUndefined()
     }

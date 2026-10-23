@@ -105,7 +105,7 @@ test('an unadopted refresh touches neither the hosted client nor the cache', asy
   expect(
     await refreshHostedBoard({
       budgetMs: 50,
-      env: { ORCH_RECORD_API_URL: 'https://record.test' },
+      env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
       client,
     }),
   ).toMatchObject({ status: 'local' })
@@ -138,7 +138,7 @@ test('refresh pages to completion, advances with each page, and replaces an upda
     },
   }
   expect(
-    await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
+    await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client }),
   ).toMatchObject({ status: 'success' })
   expect(calls).toEqual(['0', '100'])
   expect(
@@ -168,7 +168,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
       throw new Error('unused')
     },
   }
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: good })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client: good })
   const failed = {
     ...good,
     listBoardChanges: async () => {
@@ -178,7 +178,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
   expect(
     await refreshHostedBoard({
       budgetMs: 1_000,
-      env: { ORCH_RECORD_API_URL: 'x' },
+      env: { BOTTEGA_RECORD_API_URL: 'x' },
       client: failed,
     }),
   ).toMatchObject({ status: 'failed' })
@@ -196,7 +196,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
   expect(
     claimCachedHosted('cache-reader', false, Date.parse('2026-10-05T12:02:00.000Z')),
   ).toHaveLength(1)
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: good })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client: good })
 })
 
 test('routing narrows own-user audiences and withholds questions from worker chains', async () => {
@@ -215,7 +215,7 @@ test('routing narrows own-user audiences and withholds questions from worker cha
       throw new Error('unused')
     },
   }
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client })
   expect(
     claimCachedHosted('cache-reader', false, Date.parse('2026-10-05T12:02:00.000Z')).map(
       (row) => row.id,
@@ -383,7 +383,7 @@ test('cache refresh distinguishes legacy architects rows from a hidden stored pr
       throw new Error('unused')
     },
   }
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client })
   for (const reader of ['cache-reader', 'cache-reader-other']) {
     expect(claimCachedHosted(reader, false, Date.parse('2026-10-05T12:02:00.000Z'))).toEqual([
       expect.objectContaining({ id: legacy.id }),
@@ -411,7 +411,7 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
   }
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...base,
       putBoardReceipt: async () => {
@@ -437,7 +437,7 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
       return {} as never
     },
   }
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: retry })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client: retry })
   expect(receipts).toEqual([true])
 })
 
@@ -446,7 +446,7 @@ test('an adopted install without record configuration records a failed refresh w
   expect(await refreshHostedBoard({ budgetMs: 50, env: noRecordEnv })).toMatchObject({
     status: 'failed',
   })
-  expect(hostedBoardVerificationWarning()).toContain('ORCH_RECORD_API_URL is not configured')
+  expect(hostedBoardVerificationWarning()).toContain('BOTTEGA_RECORD_API_URL is not configured')
   expect(hostedBoardVerificationWarning()).toContain(`${PLATFORM_SLUG} record sign-in`)
 })
 
@@ -467,14 +467,14 @@ test('refresh stops at its budget, keeps the last page cursor, and resumes from 
   }
   const now = () => (resumed ? 20 : clockCalls++ < 3 ? 0 : 10)
   expect(
-    await refreshHostedBoard({ budgetMs: 5, env: { ORCH_RECORD_API_URL: 'x' }, client, now }),
+    await refreshHostedBoard({ budgetMs: 5, env: { BOTTEGA_RECORD_API_URL: 'x' }, client, now }),
   ).toMatchObject({ status: 'incomplete' })
   expect(calls).toEqual(['0'])
   expect(
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_CURSOR_KEY),
   ).toEqual({ value: '100' })
   resumed = true
-  await refreshHostedBoard({ budgetMs: 50, env: { ORCH_RECORD_API_URL: 'x' }, client, now })
+  await refreshHostedBoard({ budgetMs: 50, env: { BOTTEGA_RECORD_API_URL: 'x' }, client, now })
   expect(calls).toEqual(['0', '100'])
 })
 
@@ -492,7 +492,7 @@ test('a spent refresh budget records failure in the store and returns incomplete
     return ticks <= 2 ? 0 : 5
   }
   expect(
-    await refreshHostedBoard({ budgetMs: 5, env: { ORCH_RECORD_API_URL: 'x' }, client, now }),
+    await refreshHostedBoard({ budgetMs: 5, env: { BOTTEGA_RECORD_API_URL: 'x' }, client, now }),
   ).toMatchObject({ status: 'incomplete' })
   expect(
     (
@@ -518,7 +518,7 @@ test('a page request that outlives its deadline is aborted', async () => {
       }),
   }
   expect(
-    await refreshHostedBoard({ budgetMs: 20, env: { ORCH_RECORD_API_URL: 'x' }, client }),
+    await refreshHostedBoard({ budgetMs: 20, env: { BOTTEGA_RECORD_API_URL: 'x' }, client }),
   ).toMatchObject({ status: 'incomplete' })
   expect(aborted).toBe(true)
 })
@@ -536,12 +536,12 @@ test('refresh establishes identity from changes without a whoami round trip', as
   }
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client,
   })
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client,
   })
   expect(identities).toBe(0)
@@ -563,7 +563,7 @@ test('a changed hosted user clears the prior cache and receipts, resets the curs
   const fromB = message({ authorUserId: userB })
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...createMemoryRecordApiClient(),
       listBoardChanges: async () => ({
@@ -586,7 +586,7 @@ test('a changed hosted user clears the prior cache and receipts, resets the curs
   let receiptWrites = 0
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...createMemoryRecordApiClient(),
       listBoardChanges: async ({ after: cursor }) => {
@@ -628,7 +628,7 @@ test('a changes response without identity serves no prior cached rows and warns 
   const cached = message()
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...createMemoryRecordApiClient(),
       listBoardChanges: async () => ({ userId, items: [change(cached)], highestRevision: '1' }),
@@ -641,7 +641,7 @@ test('a changes response without identity serves no prior cached rows and warns 
   expect(
     await refreshHostedBoard({
       budgetMs: 1_000,
-      env: { ORCH_RECORD_API_URL: 'x' },
+      env: { BOTTEGA_RECORD_API_URL: 'x' },
       client: malformed,
     }),
   ).toMatchObject({ status: 'failed' })
@@ -656,7 +656,7 @@ test('receipt flushing keeps server failures pending, then records a refusal', a
     ...createMemoryRecordApiClient(),
     listBoardChanges: async () => ({ userId, items: [change(cached)], highestRevision: '1' }),
   }
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: base })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client: base })
   await markCachedHostedDelivered('cache-reader', [cached.id], {
     client: {
       ...base,
@@ -668,7 +668,7 @@ test('receipt flushing keeps server failures pending, then records a refusal', a
   const order: string[] = []
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...base,
       listBoardChanges: async () => {
@@ -689,7 +689,7 @@ test('receipt flushing keeps server failures pending, then records a refusal', a
   ).toEqual({ pending_sync: 1 })
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...base,
       listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
@@ -708,7 +708,7 @@ test('receipt flushing keeps server failures pending, then records a refusal', a
   let sent: unknown
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...base,
       listBoardChanges: async () => ({ userId, items: [], highestRevision: null }),
@@ -739,7 +739,7 @@ test('a delivered-only receipt refresh preserves and flushes a queued acknowledg
   const base = createMemoryRecordApiClient()
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...base,
       listBoardChanges: async () => ({
@@ -753,7 +753,7 @@ test('a delivered-only receipt refresh preserves and flushes a queued acknowledg
   let sent: Parameters<typeof base.putBoardReceipt>[0] | undefined
   await refreshHostedBoard({
     budgetMs: 1_000,
-    env: { ORCH_RECORD_API_URL: 'x' },
+    env: { BOTTEGA_RECORD_API_URL: 'x' },
     client: {
       ...base,
       listBoardChanges: async () => ({
@@ -821,11 +821,11 @@ test('applying an older page after a newer one leaves the cursor where it was', 
     },
   }
   expect(
-    await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
+    await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client }),
   ).toMatchObject({ status: 'success' })
   expect(hostedBoardCursor()).toBe('20')
   expect(
-    await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
+    await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client }),
   ).toMatchObject({ status: 'success' })
   expect(hostedBoardCursor()).toBe('20')
 })
@@ -891,8 +891,8 @@ test('an older snapshot applied after a newer one leaves payload, tags, receipts
           }
     },
   }
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client })
-  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { BOTTEGA_RECORD_API_URL: 'x' }, client })
   expect(hostedBoardCursor()).toBe('20')
   expect(
     (

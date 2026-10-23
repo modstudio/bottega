@@ -97,16 +97,16 @@ test('self-operated agents use the reachability of their own endpoints', async (
 })
 
 describe('a self-operated agent without its own base URL', () => {
-  const originalModelHostUrl = process.env.ORCH_MODEL_HOST_URL
+  const originalModelHostUrl = process.env.BOTTEGA_MODEL_HOST_URL
 
   afterEach(() => {
-    if (originalModelHostUrl === undefined) delete process.env.ORCH_MODEL_HOST_URL
-    else process.env.ORCH_MODEL_HOST_URL = originalModelHostUrl
+    if (originalModelHostUrl === undefined) delete process.env.BOTTEGA_MODEL_HOST_URL
+    else process.env.BOTTEGA_MODEL_HOST_URL = originalModelHostUrl
   })
 
   describe('with a configured global endpoint', () => {
     beforeEach(() => {
-      process.env.ORCH_MODEL_HOST_URL = 'http://127.0.0.1:19003/v1'
+      process.env.BOTTEGA_MODEL_HOST_URL = 'http://127.0.0.1:19003/v1'
     })
 
     test('uses the answering global endpoint', async () => {
@@ -163,7 +163,7 @@ describe('a self-operated agent without its own base URL', () => {
           'endpoint unreachable — refused http://127.0.0.1:19003',
         )
 
-        process.env.ORCH_MODEL_HOST_URL = 'http://127.0.0.1:19004/v1'
+        process.env.BOTTEGA_MODEL_HOST_URL = 'http://127.0.0.1:19004/v1'
         await ensureLocalHealth()
 
         expect(unavailableReason('changing-global-fallback-local')).toBeNull()
@@ -176,7 +176,7 @@ describe('a self-operated agent without its own base URL', () => {
 
   describe('without a configured global endpoint', () => {
     beforeEach(() => {
-      process.env.ORCH_MODEL_HOST_URL = ''
+      process.env.BOTTEGA_MODEL_HOST_URL = ''
     })
 
     test('names the missing global endpoint', async () => {
@@ -189,7 +189,7 @@ describe('a self-operated agent without its own base URL', () => {
       addedAgents.push('missing-global-local')
       refreshAgents()
       await ensureLocalHealth({ force: true })
-      expect(unavailableReason('missing-global-local')).toBe('ORCH_MODEL_HOST_URL not set')
+      expect(unavailableReason('missing-global-local')).toBe('BOTTEGA_MODEL_HOST_URL not set')
     })
   })
 })

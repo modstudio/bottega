@@ -87,11 +87,11 @@ describe('codex worker shell environment', () => {
     const argv = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',
-      recipeEnvironment: { ORCH_INDEX: '1', ORCH_PORTS_HUB: '21003' },
+      recipeEnvironment: { BOTTEGA_INDEX: '1', BOTTEGA_PORTS_HUB: '21003' },
     })
     expect(shellSets(argv)).toEqual([
-      'shell_environment_policy.set.ORCH_INDEX="1"',
-      'shell_environment_policy.set.ORCH_PORTS_HUB="21003"',
+      'shell_environment_policy.set.BOTTEGA_INDEX="1"',
+      'shell_environment_policy.set.BOTTEGA_PORTS_HUB="21003"',
     ])
   })
 
@@ -99,10 +99,10 @@ describe('codex worker shell environment', () => {
     const argv = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',
-      recipeEnvironment: { ORCH_MAIN_CHECKOUT: '/projects/app' },
+      recipeEnvironment: { BOTTEGA_MAIN_CHECKOUT: '/projects/app' },
     })
     expect(shellSets(argv)).toEqual([
-      'shell_environment_policy.set.ORCH_MAIN_CHECKOUT="/projects/app"',
+      'shell_environment_policy.set.BOTTEGA_MAIN_CHECKOUT="/projects/app"',
     ])
   })
 

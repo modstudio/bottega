@@ -16,8 +16,8 @@ import { openResumeViolations, resumeWriteRefusal } from './doc-resume-write.ts'
 import { getDoc, listDocRevisions, restoreDoc } from './docs.ts'
 
 const written = '2026-10-20T12:34:56.000Z'
-const actorUrl = process.env.ORCH_RECORD_URL
-const adminUrl = process.env.ORCH_TEST_POSTGRES_URL
+const actorUrl = process.env.BOTTEGA_RECORD_URL
+const adminUrl = process.env.BOTTEGA_TEST_POSTGRES_URL
 const hosted = actorUrl && adminUrl ? describe : describe.skip
 
 function brief(lines: string[] = [], status = 'open'): string {

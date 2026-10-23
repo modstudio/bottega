@@ -380,7 +380,7 @@ async function shell(
     secretPaths: resolveSecretPaths(input.project),
     workerEnvironment: input.workerEnvironment,
   })
-  if (input.orchStore) plan.env.ORCH_DB = input.orchStore
+  if (input.orchStore) plan.env.BOTTEGA_ORCHESTRATOR_DB = input.orchStore
   try {
     const launch = await sandboxLaunchArgv(plan.profile, plan.argv[0], plan.argv.slice(1))
     return await runFiledIssueCommand(launch, cwd, plan.env)
@@ -878,7 +878,7 @@ export async function workIssue(key: string): Promise<void> {
           JSON.stringify(nested),
         ],
         reporting.path,
-        { ...process.env, ORCH_DB: copy },
+        { ...process.env, BOTTEGA_ORCHESTRATOR_DB: copy },
       )
       const after =
         applied.ok && diagnosisRun.worktree && reproductionCommand

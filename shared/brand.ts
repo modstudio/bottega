@@ -26,8 +26,9 @@
  * Some strings contain a name and are not the brand. They are protocol — frozen
  * the moment something outside this repository depended on them:
  *
- * - **`ORCH_*` environment variables**, read from a developer's own shell and
- *   from launchd plists that this repo does not own.
+ * - **`BOTTEGA_*` environment variables** are the process protocol. Old
+ *   environment names exist only as inputs to the operator setup migration.
+ * - **`.orch-run`**, the persisted worktree ownership marker.
  * - **`orch.db` and `hub.db`**, which are files on disk with history in them.
  * Renaming one of those is a migration with a rollout, not a find-and-replace,
  * which is exactly why they are listed rather than left to judgment.

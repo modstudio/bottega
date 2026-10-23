@@ -84,9 +84,9 @@ const structured = <T extends Record<string, unknown>>(value: T) => ({
 })
 
 function refuseWorkerCaller(tool: string): void {
-  if (process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH) {
+  if (process.env.BOTTEGA_RUN_ID || process.env.BOTTEGA_DEPTH) {
     throw new Error(
-      `${tool} refuses worker-marked callers because ORCH_RUN_ID or ORCH_DEPTH is set`,
+      `${tool} refuses worker-marked callers because BOTTEGA_RUN_ID or BOTTEGA_DEPTH is set`,
     )
   }
 }
