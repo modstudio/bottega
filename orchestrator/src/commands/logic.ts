@@ -14,7 +14,7 @@ import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
 import { migrateCommand, reconcileCommand } from '../database/database-commands.ts'
-import { db } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
 import { enforcementCommand } from '../enforcement/enforcement-commands.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
@@ -48,7 +48,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
-import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { resolveAnswerIdentifier, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
@@ -541,7 +541,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     )
   answerCommandDefinition(program).action((id, _message, options, command) =>
     answerCommand(
-      localRunId(id),
+      resolveAnswerIdentifier(db(), id, sessionId()),
       rawArgv(command).slice(2),
       Boolean(options.recordOnly),
       Boolean(options.json),
