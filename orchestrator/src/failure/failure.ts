@@ -7,8 +7,9 @@ import { isCodexThrottleNotice } from '../transport/codex-throttle.ts'
  * Some failures need a person because retrying cannot restore service. They
  * must announce themselves or routing keeps spending runs on the same outage.
  *
- * Grok's HTTP 402 / exhausted-balance response is observed in real runs. The
- * remaining strings are deliberately generic shapes. That is why `other` is
+ * Grok's HTTP 402 / exhausted-balance response and OpenRouter's out-of-credits
+ * sentence are observed in real runs. The remaining strings are deliberately
+ * generic shapes. That is why `other` is
  * reported rather than swallowed: a real vendor failure that classifies as
  * `other` is the signal to add its actual wording here.
  */
@@ -168,6 +169,8 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // A balance or billing limit cannot recover through request pacing or a
   // capability probe. Keep these before quota because some providers report
   // billing exhaustion with HTTP 429 and an `insufficient_quota` error type.
+  // The provider-account sentence is OpenRouter's observed wording, anchored so
+  // a run that merely quotes the phrase is not read as out of credits.
   [
     'billing',
     /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|account with your provider to add more credits)\b/i,
