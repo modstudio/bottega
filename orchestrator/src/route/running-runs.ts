@@ -6,10 +6,16 @@ import { db } from '../database/db.ts'
 export type RunningRunsByAgent = Map<string, string[]>
 export type RunningRunCounts = Record<string, number>
 
+/**
+ * The live-run predicate both queries share. The capacity waiter compares a
+ * snapshot's counts with fresh counts, so the two must define live identically.
+ */
+const LIVE_RUN = "status='running' AND probe=0"
+
 /** One routing-pass snapshot, grouped without issuing a query per registry row. */
 export function runningRunsByAgent(database: Database = db()): RunningRunsByAgent {
   const rows = database
-    .query("SELECT agent, record_id FROM run WHERE status='running' AND probe=0 ORDER BY number")
+    .query(`SELECT agent, record_id FROM run WHERE ${LIVE_RUN} ORDER BY number`)
     .all() as { agent: string; record_id: string }[]
   const grouped: RunningRunsByAgent = new Map()
   for (const row of rows) {
@@ -31,7 +37,7 @@ export function runningRunCountsForAgents(
   const rows = database
     .query(
       `SELECT agent, COUNT(*) AS running FROM run
-        WHERE status='running' AND probe=0 AND agent IN (${placeholders})
+        WHERE ${LIVE_RUN} AND agent IN (${placeholders})
         GROUP BY agent`,
     )
     .all(...uniqueAgents) as { agent: string; running: number }[]
