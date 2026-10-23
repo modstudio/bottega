@@ -3,12 +3,7 @@
 import { recordRunWarning } from '../events.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { terminalSharedGitConfigHeader } from './shared-git-config.ts'
-
-export type RecordedRunSharedGitConfigInput = {
-  runId: string
-  job: string
-  worktree: string | null
-}
+import type { RecordedRunSharedGitConfigInput } from './shared-git-config-check.ts'
 
 /** Resolve the recorded job once for terminal, stop, stale, and operator paths. */
 export function terminalSharedGitConfigForRecordedRun(
