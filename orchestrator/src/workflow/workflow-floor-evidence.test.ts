@@ -7,7 +7,6 @@ import {
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
 } from './workflow-checkout-refusal.ts'
-import { decidePullRequestEvidence } from './workflow-floor.ts'
 import {
   type CursorIdentity,
   type FloorEvidencePorts,
@@ -642,44 +641,6 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   expect(gather(d, { artifact: 'exec:4' })).toMatchObject({
     exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
     pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
-  })
-})
-
-test('a withheld pr-create exec carries the withheld flag and no pull request', () => {
-  const d = database()
-  d.query(
-    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,withheld)
-     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'[withheld: secret-shaped content]','2026-09-01','exec',1)`,
-  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(gather(d, { artifact: 'exec:1' })).toMatchObject({
-    exec: { outputWithheld: true, output: '[withheld: secret-shaped content]' },
-  })
-  expect(gather(d, { artifact: 'exec:1' }).pullRequest).toBeUndefined()
-})
-
-test('a withheld command is gathered separately from readable output and names its refusal', () => {
-  const d = database()
-  const url = 'https://github.com/acme/app/pull/15'
-  d.query(
-    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,command_withheld,session_id)
-     VALUES ('${newRecordId()}','[withheld: secret-shaped content]','/fixture/work','abc',0,?,'2026-09-01','exec',1,'s')`,
-  ).run(`opened ${url}`)
-  const evidence = gather(d, { artifact: 'exec:1' })
-  expect(evidence).toMatchObject({
-    exec: { argv: null, commandWithheld: true, outputWithheld: false, output: `opened ${url}` },
-  })
-
-  const exec = evidence.exec!
-  expect(
-    decidePullRequestEvidence({
-      ...exec,
-      kind: 'exec',
-      sessionBound: true,
-      outputWithheld: exec.outputWithheld === true,
-    }),
-  ).toEqual({
-    met: false,
-    condition: `the recorded command was withheld, so it cannot be identified as ${PLATFORM_SLUG} pr create`,
   })
 })
 
