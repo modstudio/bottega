@@ -24,6 +24,10 @@ import { chainTerminationAtForRoot } from './run-chain.ts'
 import { coordinatorSetupError, recordedCoordinatorCause } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+import {
+  type RecordedRunSharedGitConfigInput,
+  sharedGitConfigCheckSkipReason,
+} from './shared-git-config-check.ts'
 
 /**
  * The outer ceiling for a run and for callers waiting on one. Liveness itself
@@ -173,6 +177,20 @@ export function rollUpRootAndEnqueue(
   const changes = resolveRootFromLastTurnPreserving(database, rootId, preserveFailureKindForTurnId)
   enqueueRunRecord(database, rootId, machine, finishedAt)
   return changes
+}
+
+/** Append a terminal check result and serialize that same state for the hosted record. */
+export function recordRunSharedGitConfigHeader(
+  database: Database,
+  runId: string,
+  header: string,
+  machine: string,
+  finishedAt: string,
+): void {
+  writeTransaction(() => {
+    database.query("UPDATE run SET error=error || '\n' || ? WHERE record_id=?").run(header, runId)
+    enqueueRunRecord(database, runId, machine, finishedAt)
+  }, database)
 }
 
 function rollUpReapedRoots(
@@ -363,11 +381,7 @@ function finalizeReapedRuns(
 
 export function reapStale(
   d: Database,
-  checkSharedGitConfig: (input: {
-    runId: string
-    job: string
-    worktree: string | null
-  }) => string | null,
+  checkSharedGitConfig: (input: RecordedRunSharedGitConfigInput) => string | null,
 ): number | ObservedDeadRun[] {
   const now = Date.now()
   const rows = d
@@ -453,7 +467,7 @@ export function reapStale(
 function reapDeadRun(
   d: Database,
   row: RunningRow,
-  checkSharedGitConfig: Parameters<typeof reapStale>[1],
+  checkSharedGitConfig: (input: RecordedRunSharedGitConfigInput) => string | null,
   localMachineId: string,
   finishedAt: string,
 ): void {
@@ -475,23 +489,22 @@ function reapDeadRun(
     return true
   }, d)
   if (!claimed) return
-  const skipReason = vendorAlive
-    ? `shared git config check skipped: vendor pid ${row.agent_pid} is still alive`
-    : row.worktree && liveWorktreeSharers(d, { record_id: id, worktree: row.worktree }).length
-      ? `shared git config check skipped: another live run still claims ${row.worktree}`
-      : null
+  const sharerCount =
+    !vendorAlive && row.worktree
+      ? liveWorktreeSharers(d, { record_id: id, worktree: row.worktree }).length
+      : 0
+  const skipReason = sharedGitConfigCheckSkipReason({
+    vendorPid: row.agent_pid,
+    vendorAlive: Boolean(vendorAlive),
+    worktree: row.worktree,
+    sharerCount,
+  })
   if (skipReason) {
-    writeTransaction(() => {
-      d.query("UPDATE run SET error=error || '\n' || ? WHERE record_id=?").run(skipReason, id)
-      enqueueRunRecord(d, id, localMachineId, finishedAt)
-    }, d)
+    recordRunSharedGitConfigHeader(d, id, skipReason, localMachineId, finishedAt)
     return
   }
   // The check spawns git, so it runs after the claim commits rather than holding the write lock.
   const header = checkSharedGitConfig({ runId: id, job: row.job, worktree: row.worktree })
   if (!header) return
-  writeTransaction(() => {
-    d.query("UPDATE run SET error=error || '\n' || ? WHERE record_id=?").run(header, id)
-    enqueueRunRecord(d, id, localMachineId, finishedAt)
-  }, d)
+  recordRunSharedGitConfigHeader(d, id, header, localMachineId, finishedAt)
 }

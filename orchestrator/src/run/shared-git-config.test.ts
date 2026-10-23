@@ -8,7 +8,6 @@ import {
   sharedGitConfigRepairValues,
   sharedGitConfigRepairVerification,
   sharedGitConfigSnapshotPath,
-  shouldRemoveSharedGitConfigSnapshot,
   shouldSnapshotSharedGitConfig,
 } from './shared-git-config.ts'
 
@@ -145,7 +144,6 @@ describe('writing-run shared git config decision', () => {
     }
 
     expect(sharedGitConfigRepairValues(action, tree)).toEqual({
-      retained: [],
       restore: ['/projects/app/.githooks'],
       removed: [`${tree}/worker-hooks`],
     })
@@ -173,11 +171,6 @@ describe('writing-run shared git config decision', () => {
     expect(sharedGitConfigRepairVerification(action, tree, [])).toContain('restored config value')
   })
 
-  test('keeps snapshots when comparison did not run and removes them after comparison', () => {
-    expect(shouldRemoveSharedGitConfigSnapshot(false)).toBe(false)
-    expect(shouldRemoveSharedGitConfigSnapshot(true)).toBe(true)
-  })
-
   test('records a failed snapshot persist and the missing-check consequence', () => {
     const runId = 'failed-snapshot-persist'
     recordSharedGitConfigSnapshotFailure(runId, {
@@ -189,7 +182,23 @@ describe('writing-run shared git config decision', () => {
     expect(readEventLog(runEventsPath(runId))).toContainEqual(
       expect.objectContaining({
         type: 'warning',
-        text: expect.stringContaining('no shared-config check for this run'),
+        text: 'shared git config snapshot persist failed: permission denied; no shared-config check for this run',
+      }),
+    )
+  })
+
+  test('records a failed snapshot capture separately from a persist failure', () => {
+    const runId = 'failed-snapshot-capture'
+    recordSharedGitConfigSnapshotFailure(runId, {
+      ok: false,
+      configPath: null,
+      error: 'could not resolve git common dir for /repo/tree',
+    })
+
+    expect(readEventLog(runEventsPath(runId))).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        text: 'shared git config snapshot capture failed: could not resolve git common dir for /repo/tree; no shared-config check for this run',
       }),
     )
   })

@@ -11,8 +11,36 @@ import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
 const noSharedGitConfigCheck = () => null
+
+test('shared git config skip reasons prioritize a live vendor over worktree sharers', () => {
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: 42,
+      vendorAlive: true,
+      worktree: '/trees/shared',
+      sharerCount: 1,
+    }),
+  ).toBe('shared git config check skipped: vendor pid 42 is still alive')
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: 42,
+      vendorAlive: false,
+      worktree: '/trees/shared',
+      sharerCount: 1,
+    }),
+  ).toBe('shared git config check skipped: another live run still claims /trees/shared')
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: null,
+      vendorAlive: false,
+      worktree: null,
+      sharerCount: 0,
+    }),
+  ).toBeNull()
+})
 
 async function inbox(): Promise<string> {
   const lines: string[] = []

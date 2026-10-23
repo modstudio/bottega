@@ -64,6 +64,15 @@ const verifiedVendor = {
   signalGroup: false,
 }
 
+function lastRunPayload(id: string): Record<string, unknown> {
+  const row = db()
+    .query<{ payload: string }, [string]>(
+      "SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1",
+    )
+    .get(id)
+  return JSON.parse(row!.payload) as Record<string, unknown>
+}
+
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
@@ -279,6 +288,7 @@ test('stop appends and presents a shared git config result header', async () => 
   expect(
     (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
   ).toBe(`stopped by architect\n${header}`)
+  expect(lastRunPayload(id).error).toBe(`stopped by architect\n${header}`)
 })
 
 test('abandon appends and presents a shared git config result header', async () => {
@@ -292,6 +302,7 @@ test('abandon appends and presents a shared git config result header', async () 
   expect(
     (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
   ).toBe(`abandoned by architect\n${header}`)
+  expect(lastRunPayload(id).error).toBe(`abandoned by architect\n${header}`)
 })
 
 test('stop records a setup run with no vendor and signals nothing', async () => {

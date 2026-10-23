@@ -166,9 +166,13 @@ export function recordSharedGitConfigSnapshotFailure(
   snapshot: SharedGitConfigSnapshot | null,
 ): void {
   if (snapshot?.ok !== false) return
+  const persistPrefix = 'could not persist shared git config snapshot: '
+  const failure = snapshot.error.startsWith(persistPrefix)
+    ? `persist failed: ${snapshot.error.slice(persistPrefix.length)}`
+    : `capture failed: ${snapshot.error}`
   recordRunWarning(
     runId,
-    `shared git config snapshot persist failed: ${snapshot.error}; no shared-config check for this run`,
+    `shared git config snapshot ${failure}; no shared-config check for this run`,
   )
 }
 
@@ -228,10 +232,9 @@ function missingOldValues(
 export function sharedGitConfigRepairValues(
   action: SharedGitConfigAction,
   worktree: string,
-): { retained: GitConfigValue[]; restore: GitConfigValue[]; removed: GitConfigValue[] } {
+): { restore: GitConfigValue[]; removed: GitConfigValue[] } {
   const retained = action.newValues.filter((value) => !namesRunTree(value, worktree))
   return {
-    retained,
     restore: missingOldValues(action, retained).filter((value) => !namesRunTree(value, worktree)),
     removed: action.newValues.filter((value) => namesRunTree(value, worktree)),
   }
@@ -300,43 +303,39 @@ function validatedTerminalConfigTarget(
   runId: string,
   worktree: string,
   storedPath: string,
-): { target: string | null; reason: string | null } {
+): { ok: true; target: string } | { ok: false; reason: string } {
   const commonDir = commonGitDir(worktree)
   const target = commonDir ? join(commonDir, 'config') : null
   if (!target || target !== storedPath) {
     const reason = `shared git config check could not run: stored config path does not match the run worktree's common config`
     recordRunWarning(runId, reason)
-    return { target: null, reason }
+    return { ok: false, reason }
   }
   try {
     if (lstatSync(target).isSymbolicLink()) {
       const reason = `shared git config check could not run: ${target} is a symlink`
       recordRunWarning(runId, reason)
-      return { target: null, reason }
+      return { ok: false, reason }
     }
   } catch (error) {
     const reason = `shared git config check could not run: could not inspect ${target}: ${String((error as Error)?.message ?? error)}`
     recordRunWarning(runId, reason)
-    return { target: null, reason }
+    return { ok: false, reason }
   }
-  return { target, reason: null }
+  return { ok: true, target }
 }
 
 function terminalConfigValues(
   runId: string,
   target: string,
-): { values: GitConfigValues | null; reason: string | null } {
+): { ok: true; values: GitConfigValues } | { ok: false; reason: string } {
   try {
-    return { values: readSharedGitConfig(target), reason: null }
+    return { ok: true, values: readSharedGitConfig(target) }
   } catch (error) {
     const reason = `shared git config check could not compare ${target}: ${String((error as Error)?.message ?? error)}`
     recordRunWarning(runId, reason)
-    return { values: null, reason }
+    return { ok: false, reason }
   }
-}
-
-export function shouldRemoveSharedGitConfigSnapshot(comparisonRan: boolean): boolean {
-  return comparisonRan
 }
 
 function keptSnapshotHeader(snapshotPath: string, reason: string): string {
@@ -362,23 +361,17 @@ function loadTerminalComparison(input: { runId: string; worktree: string; snapsh
     input.worktree,
     snapshot.configPath,
   )
-  if (!targetResult.target) {
+  if (!targetResult.ok) {
     return {
       ok: false,
-      header: keptSnapshotHeader(
-        input.snapshotPath,
-        targetResult.reason ?? 'shared git config check did not run',
-      ),
+      header: keptSnapshotHeader(input.snapshotPath, targetResult.reason),
     }
   }
   const afterResult = terminalConfigValues(input.runId, targetResult.target)
-  if (!afterResult.values) {
+  if (!afterResult.ok) {
     return {
       ok: false,
-      header: keptSnapshotHeader(
-        input.snapshotPath,
-        afterResult.reason ?? 'shared git config check did not run',
-      ),
+      header: keptSnapshotHeader(input.snapshotPath, afterResult.reason),
     }
   }
   return { ok: true, snapshot, target: targetResult.target, after: afterResult.values }
@@ -423,7 +416,7 @@ export function terminalSharedGitConfigHeader(input: {
     }
     return headers.length ? headers.join('\n') : null
   } finally {
-    if (shouldRemoveSharedGitConfigSnapshot(comparisonRan)) {
+    if (comparisonRan) {
       try {
         unlinkSync(snapshotPath)
       } catch (error) {
