@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from './migrations.ts'
-import { migratedTestDatabase, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
+import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const TABLES = ['doc', 'doc_revision', 'canon_pack', 'doc_related_subject'] as const
 const DOC_UUID_BOUNDARY = '0130_doc_uuid_key'
@@ -216,34 +216,6 @@ test('document UUID-key migration preserves a path-shaped canon artifact address
       satisfied_evidence:
         '[{"flag":"--artifact","value":"doc:canon/fixture/.agents/rules/10-code.md"}]',
     })
-  } finally {
-    database.close()
-  }
-})
-
-test('every declared document foreign key leads an index', () => {
-  const database = migratedTestDatabase()
-  try {
-    for (const table of TABLES) {
-      const leading = new Set(
-        database
-          .query<{ name: string }, []>(`SELECT name FROM pragma_index_list('${table}')`)
-          .all()
-          .flatMap(({ name }) =>
-            database
-              .query<{ name: string }, []>(
-                `SELECT name FROM pragma_index_info('${name}') WHERE seqno=0`,
-              )
-              .all()
-              .map((row) => row.name),
-          ),
-      )
-      for (const foreignKey of database
-        .query<{ from: string }, []>(`SELECT "from" FROM pragma_foreign_key_list('${table}')`)
-        .all()) {
-        expect(leading.has(foreignKey.from), `${table}.${foreignKey.from}`).toBeTrue()
-      }
-    }
   } finally {
     database.close()
   }

@@ -420,37 +420,3 @@ test('lens and port UUID-key migration reports every orphan and leaves the old s
     database.close()
   }
 })
-
-test('every declared lens and port foreign key leads an index', () => {
-  const database = new Database(':memory:')
-  try {
-    applyMigrations(database)
-    for (const table of TABLES) {
-      const foreignKeys = database
-        .query<{ from: string }, []>(`PRAGMA foreign_key_list('${table}')`)
-        .all()
-      const indexed = new Set(
-        database
-          .query<{ name: string }, []>(`PRAGMA index_list('${table}')`)
-          .all()
-          .flatMap((index) =>
-            database
-              .query<{ name: string }, []>(`PRAGMA index_info('${index.name}')`)
-              .all()
-              .slice(0, 1)
-              .map((column) => column.name),
-          ),
-      )
-      const primary = database
-        .query<{ name: string }, []>(`PRAGMA table_info('${table}')`)
-        .all()
-        .slice(0, 1)
-        .map((column) => column.name)
-      for (const column of primary) indexed.add(column)
-      for (const foreignKey of foreignKeys)
-        expect(indexed.has(foreignKey.from), `${table}.${foreignKey.from}`).toBe(true)
-    }
-  } finally {
-    database.close()
-  }
-})

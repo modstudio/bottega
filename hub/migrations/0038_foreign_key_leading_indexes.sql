@@ -1,1 +1,0 @@
-CREATE INDEX IF NOT EXISTS question_delivery_question_record_id_idx ON question_delivery(question_record_id);

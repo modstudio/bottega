@@ -7,8 +7,11 @@ const K7B_2_EXCLUSIONS = ['step_catalogue_event.version_n', 'workflow_event.vers
 
 function leadingIndexColumns(database: Database, table: string): Set<string> {
   const indexes = database
-    .query<{ name: string }, [string]>('SELECT name FROM pragma_index_list(?)')
+    .query<{ name: string; partial: number }, [string]>(
+      'SELECT name,partial FROM pragma_index_list(?)',
+    )
     .all(table)
+    .filter((index) => index.partial === 0)
   const leading = new Set(
     indexes.flatMap(({ name }) =>
       database

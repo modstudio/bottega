@@ -161,31 +161,3 @@ test('board UUID-key migration reports every orphan together and leaves the old 
     database.close()
   }
 })
-
-test('every declared board foreign key leads an index', () => {
-  const database = new Database(':memory:')
-  try {
-    applyMigrations(database)
-    for (const table of TABLES) {
-      const leading = new Set(
-        database
-          .query<{ name: string }, []>(`SELECT name FROM pragma_index_list('${table}')`)
-          .all()
-          .flatMap(({ name }) =>
-            database
-              .query<{ name: string }, []>(
-                `SELECT name FROM pragma_index_info('${name}') WHERE seqno=0`,
-              )
-              .all()
-              .map((row) => row.name),
-          ),
-      )
-      for (const foreignKey of database
-        .query<{ from: string }, []>(`SELECT "from" FROM pragma_foreign_key_list('${table}')`)
-        .all())
-        expect(leading.has(foreignKey.from), `${table}.${foreignKey.from}`).toBeTrue()
-    }
-  } finally {
-    database.close()
-  }
-})

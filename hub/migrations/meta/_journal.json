@@ -265,7 +265,7 @@
       "idx": 37,
       "version": "7",
       "when": 1792793336000,
-      "tag": "0038_foreign_key_leading_indexes",
+      "tag": "0037_foreign_key_leading_indexes",
       "breakpoints": true
     }
   ]

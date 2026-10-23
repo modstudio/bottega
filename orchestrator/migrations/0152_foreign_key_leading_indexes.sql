@@ -11,3 +11,5 @@ CREATE INDEX IF NOT EXISTS run_message_run_record_id_idx ON run_message(run_reco
 CREATE INDEX IF NOT EXISTS run_mutation_audit_run_record_id_idx ON run_mutation_audit(run_record_id);
 CREATE INDEX IF NOT EXISTS check_execution_gate_execution_id_idx ON check_execution(gate_execution_id);
 CREATE INDEX IF NOT EXISTS release_ledger_project_record_id_idx ON release_ledger(project_record_id);
+CREATE INDEX IF NOT EXISTS run_retry_of_record_id_idx ON run(retry_of_record_id);
+CREATE INDEX IF NOT EXISTS operator_notification_question_record_id_idx ON operator_notification(question_record_id);
