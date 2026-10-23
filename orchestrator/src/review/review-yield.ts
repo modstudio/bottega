@@ -1,8 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
 import { attributedTaskKey } from '../epic/epic.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
-import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { median } from '../state/statistics.ts'
 import { applicableReview } from './review-applicability.ts'
 import {
@@ -71,6 +69,7 @@ type ReviewYieldRow = {
   pricedHits: number
   costPerHit: number | null
   lensMinutes: number
+  timedHits: number
   minutesPerHit: number | null
   linkedFindings: number
   mediumPlusAccepted: number
@@ -251,9 +250,9 @@ function computedLensRow(input: {
 }
 
 export function reviewYield(
-  filters: ReviewYieldFilters = {},
-  database: Database = db(),
-  subscriptionCost?: SubscriptionCostContext,
+  filters: ReviewYieldFilters,
+  database: Database,
+  subscriptionCost: SubscriptionCostContext,
 ): ReviewYieldReport {
   const lensRows = database
     .query(
@@ -288,10 +287,6 @@ export function reviewYield(
       row,
     ])
 
-  const costContext = subscriptionCost ?? {
-    facts: subscriptionCostFacts(database),
-    prices: {},
-  }
   const rows: ComputedLens[] = lensRows
     .filter((row) => lensMatchesFilters(row, filters, rounds))
     .map((row) =>
@@ -301,7 +296,7 @@ export function reviewYield(
         findings: findings.get(row.lens_id) ?? [],
         reviewFindings: reviewFindings.get(row.review_record_id) ?? [],
         secondOpinion: secondOpinionRuns.has(row.run_id),
-        costContext,
+        costContext: subscriptionCost,
       }),
     )
 
@@ -489,6 +484,7 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
   const evidenceRows = rows.filter((row) => row.reviewComplete)
   const evidenceFindings = evidenceRows.flatMap((row) => row.findings)
   const triage = reviewTriageBag(evidenceFindings)
+  const rowHits = rows.map((row) => ({ row, hits: completedLensHits(row) }))
   const highSeverities = REVIEW_SEVERITY.slice(0, 2)
   const high = evidenceFindings.filter((finding) =>
     highSeverities.includes(finding.triaged_severity as ReviewSeverity),
@@ -498,10 +494,10 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
     .sort((a, b) => a - b)
   const medianMs = median(latencies)
   const cost = reviewYieldCost(
-    rows.map((row) => ({
+    rowHits.map(({ row, hits }) => ({
       costUsd: row.cost_usd,
       costSource: row.cost_source,
-      hits: row.reviewComplete ? reviewTriageBag(row.findings).hits : 0,
+      hits,
       lensMinutes: row.latency_ms === null ? null : Math.max(0, row.latency_ms) / 60_000,
     })),
   )
@@ -519,7 +515,7 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
     findings: evidenceFindings.length,
     triaged: triage.triaged,
     untriaged: recordedTriage.untriaged,
-    hits: triage.hits,
+    hits: rowHits.reduce((sum, row) => sum + row.hits, 0),
     accepted: triage.accepted,
     rejected: triage.rejected,
     modified: triage.modified,
@@ -539,6 +535,10 @@ function aggregate(key: string, rows: ComputedLens[], allRows: ComputedLens[]): 
       ).length,
     },
   }
+}
+
+function completedLensHits(row: ComputedLens): number {
+  return row.reviewComplete ? reviewTriageBag(row.findings).hits : 0
 }
 
 const number = (value: number | null) => (value === null ? '—' : value.toFixed(2))
@@ -586,6 +586,7 @@ const YIELD_ROW_COLUMNS: YieldColumn[] = [
   { header: 'PRICED HITS', align: 'right' },
   { header: '$/HIT', align: 'right' },
   { header: 'LENS MIN', align: 'right' },
+  { header: 'TIMED HITS', align: 'right' },
   { header: 'MIN/HIT', align: 'right' },
   { header: 'MED+', align: 'right' },
   { header: 'UNIQUE', align: 'right' },
@@ -626,6 +627,7 @@ function yieldRowCells(row: ReviewYieldRow): string[] {
     String(row.pricedHits),
     number(row.costPerHit),
     number(row.lensMinutes),
+    String(row.timedHits),
     number(row.minutesPerHit),
     number(row.mediumPlusAcceptedYield),
     String(row.overlap.unique),

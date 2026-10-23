@@ -71,7 +71,7 @@ function formatCycleCost(report: ReturnType<typeof loadCycleCostReport>): string
 
 type UsefulResultRow = Pick<
   ReviewYieldReport['lenses'][number],
-  'key' | 'runs' | 'hits' | 'costPerHit' | 'pricedHits' | 'minutesPerHit'
+  'key' | 'runs' | 'hits' | 'costPerHit' | 'pricedHits' | 'minutesPerHit' | 'timedHits'
 >
 
 type UsefulResultWindow = {
@@ -83,13 +83,14 @@ type UsefulResultWindow = {
 
 function usefulResultRows(rows: ReviewYieldReport['lenses']): UsefulResultRow[] {
   return rows
-    .map(({ key, runs, hits, costPerHit, pricedHits, minutesPerHit }) => ({
+    .map(({ key, runs, hits, costPerHit, pricedHits, minutesPerHit, timedHits }) => ({
       key,
       runs,
       hits,
       costPerHit,
       pricedHits,
       minutesPerHit,
+      timedHits,
     }))
     .sort((a, b) => b.hits - a.hits || a.key.localeCompare(b.key))
 }
@@ -114,10 +115,10 @@ const usefulAmount = (value: number | null, dollars = false) => {
 function formatUsefulRows(label: string, rows: UsefulResultRow[]): string[] {
   return [
     `  ${label}`,
-    '    KEY | RUNS | HITS | COST/HIT | PRICED/HITS | MIN/HIT',
+    '    KEY | RUNS | HITS | COST/HIT | PRICED/HITS | MIN/HIT | TIMED/HITS',
     ...rows.map(
       (row) =>
-        `    ${row.key} | ${row.runs} | ${row.hits} | ${usefulAmount(row.costPerHit, true)} | ${row.pricedHits}/${row.hits} | ${usefulAmount(row.minutesPerHit)}`,
+        `    ${row.key} | ${row.runs} | ${row.hits} | ${usefulAmount(row.costPerHit, true)} | ${row.pricedHits}/${row.hits} | ${usefulAmount(row.minutesPerHit)} | ${row.timedHits}/${row.hits}`,
     ),
   ]
 }

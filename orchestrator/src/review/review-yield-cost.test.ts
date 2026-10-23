@@ -14,6 +14,7 @@ describe('review yield cost', () => {
       pricedHits: 2,
       costPerHit: 3,
       lensMinutes: 30,
+      timedHits: 5,
       minutesPerHit: 6,
     })
   })
@@ -27,7 +28,21 @@ describe('review yield cost', () => {
       pricedHits: 0,
       costPerHit: null,
       lensMinutes: 0,
+      timedHits: 0,
       minutesPerHit: null,
+    })
+  })
+
+  test('excludes hits without a known duration from minutes per hit', () => {
+    expect(
+      reviewYieldCost([
+        { costUsd: 2, costSource: 'billed', hits: 2, lensMinutes: 10 },
+        { costUsd: 3, costSource: 'billed', hits: 3, lensMinutes: null },
+      ]),
+    ).toMatchObject({
+      lensMinutes: 10,
+      timedHits: 2,
+      minutesPerHit: 5,
     })
   })
 })

@@ -4,6 +4,11 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { renderReviewYieldHuman, renderYieldTable, reviewYield } from './review-yield.ts'
 
+const NO_SUBSCRIPTION_COST = {
+  facts: { agents: {}, monthTokens: {} },
+  prices: {},
+}
+
 function addReview(
   recordedAt: string,
   patchId: string | null,
@@ -143,7 +148,7 @@ function fixture() {
 describe('review yield', () => {
   test('one computed object supplies lens, round, agent and model yield', () => {
     fixture()
-    const report = reviewYield({ task: 'DEV-YIELD' }, db())
+    const report = reviewYield({ task: 'DEV-YIELD' }, db(), NO_SUBSCRIPTION_COST)
     expect(report.rounds).toEqual([
       expect.objectContaining({
         key: 'round 1',
@@ -229,7 +234,7 @@ describe('review yield', () => {
       )
       .run(runFor(none))
 
-    const report = reviewYield({ task: 'DEV-YIELD' }, db())
+    const report = reviewYield({ task: 'DEV-YIELD' }, db(), NO_SUBSCRIPTION_COST)
     expect(report.lenses.map((row) => row.key)).toEqual(['correctness'])
     expect(report.lenses[0]).toMatchObject({ runs: 1, findings: 1 })
   })
@@ -277,7 +282,7 @@ describe('review yield', () => {
       .run(invalidOverlap)
     db().run('PRAGMA ignore_check_constraints=OFF')
 
-    const report = reviewYield({ task: 'DEV-424' }, db())
+    const report = reviewYield({ task: 'DEV-424' }, db(), NO_SUBSCRIPTION_COST)
     expect(report.rounds).toHaveLength(2)
     expect(report.rounds[0]).toMatchObject({ key: 'round 1', runs: 2 })
     expect(report.rounds[1]).toMatchObject({ key: 'round 2', runs: 1 })
@@ -298,7 +303,7 @@ describe('review yield', () => {
     for (let ordinal = 1; ordinal <= 6; ordinal++) {
       addFinding(review, lens, ordinal, 'low', 'rejected', 'low')
     }
-    expect(reviewYield({ task: 'DEV-YIELD' }, db()).lenses[0]).toMatchObject({
+    expect(reviewYield({ task: 'DEV-YIELD' }, db(), NO_SUBSCRIPTION_COST).lenses[0]).toMatchObject({
       runs: 1,
       findings: 6,
       medianLensMinutes: 10,
@@ -323,7 +328,7 @@ describe('review yield', () => {
     })
     addFinding(open, openLens, 1, 'high', null)
 
-    expect(reviewYield({ task: 'DEV-YIELD' }, db()).lenses[0]).toMatchObject({
+    expect(reviewYield({ task: 'DEV-YIELD' }, db(), NO_SUBSCRIPTION_COST).lenses[0]).toMatchObject({
       reviews: { recorded: 2, completed: 1 },
       recordedFindings: 2,
       findings: 1,
@@ -394,7 +399,7 @@ describe('review yield', () => {
       .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')
       .run(secondFinding, thirdFinding)
 
-    const report = reviewYield({ project: 'yield-project' }, db())
+    const report = reviewYield({ project: 'yield-project' }, db(), NO_SUBSCRIPTION_COST)
     expect(report.lenses.map((row) => row.key)).toEqual([
       'correctness',
       'correctness (second opinion)',
@@ -508,7 +513,7 @@ describe('review yield', () => {
     })
     attach(correctness, correctnessLens, 1, 0, '["src/c.ts"]')
 
-    const report = reviewYield({ project: 'slice-project' }, db())
+    const report = reviewYield({ project: 'slice-project' }, db(), NO_SUBSCRIPTION_COST)
     expect(report.lenses.find((row) => row.key === 'craft')).toMatchObject({
       runs: 4,
       accepted: 3,
@@ -583,7 +588,7 @@ describe('review yield', () => {
     const empty = addReview('2026-09-08T19:02:00Z', 'empty', true, '[]')
     attach(empty, addLens(empty, { lens: 'craft', agent: 'codex', model: 'gpt-a', minutes: 1 }))
 
-    const report = reviewYield({ project: 'unrecorded-project' }, db())
+    const report = reviewYield({ project: 'unrecorded-project' }, db(), NO_SUBSCRIPTION_COST)
     expect(report.byArea.find((row) => row.key === 'craft / unrecorded')).toMatchObject({ runs: 2 })
     expect(report.byArea.find((row) => row.key === 'craft / (no declared glob)')).toMatchObject({
       runs: 1,
@@ -610,6 +615,15 @@ describe('review yield', () => {
       launchKey: 'DEV-COST',
     })
     addFinding(secondReview, secondLens, 1, 'high', 'accepted', 'high')
+    const subscriptionReview = addReview('2026-09-09T12:00:00Z', 'cost-3')
+    const subscriptionLens = addLens(subscriptionReview, {
+      lens: 'subscription',
+      agent: 'grok',
+      model: 'zz-subscription',
+      minutes: 5,
+      launchKey: 'DEV-COST',
+    })
+    addFinding(subscriptionReview, subscriptionLens, 1, 'high', 'accepted', 'high')
 
     const runFor = (lensId: string) =>
       (
@@ -623,13 +637,19 @@ describe('review yield', () => {
     db()
       .query("UPDATE run SET vendor_cost_usd=NULL,vendor_cost_source='unpriced' WHERE record_id=?")
       .run(runFor(secondLens))
+    db()
+      .query("UPDATE run SET started_at='2026-09-09T12:00:00Z',vendor_tokens=200 WHERE record_id=?")
+      .run(runFor(subscriptionLens))
 
     const report = reviewYield({ task: 'DEV-COST' }, db(), {
       facts: {
-        agents: { codex: { billing: 'metered', harness: 'codex' } },
-        monthTokens: {},
+        agents: {
+          codex: { billing: 'metered', harness: 'codex' },
+          grok: { billing: 'subscription', harness: 'grok' },
+        },
+        monthTokens: { 'grok:2026-09': 1_000 },
       },
-      prices: {},
+      prices: { grok: 100 },
     })
     const expected = {
       runs: 2,
@@ -639,11 +659,17 @@ describe('review yield', () => {
       pricedHits: 2,
       costPerHit: 3,
       lensMinutes: 30,
+      timedHits: 3,
       minutesPerHit: 10,
     }
     expect(report.lenses[0]).toMatchObject(expected)
     expect(report.agents[0]).toMatchObject(expected)
     expect(report.models[0]).toMatchObject(expected)
+    expect(report.lenses.find((row) => row.key === 'subscription')).toMatchObject({
+      costUsd: 20,
+      costSources: { 'subscription, amortized': 1 },
+      pricedHits: 1,
+    })
   })
 
   test('treats until as an exclusive review-recorded bound', () => {
@@ -651,6 +677,7 @@ describe('review yield', () => {
     const report = reviewYield(
       { task: 'DEV-YIELD', since: '2026-09-08T10:00:00Z', until: '2026-09-08T11:00:00Z' },
       db(),
+      NO_SUBSCRIPTION_COST,
     )
     expect(report.filters.until).toBe('2026-09-08T11:00:00Z')
     expect(report.lenses.reduce((sum, row) => sum + row.runs, 0)).toBe(3)
@@ -703,6 +730,7 @@ describe('review yield text table', () => {
       pricedHits: 0,
       costPerHit: null,
       lensMinutes: 0,
+      timedHits: 0,
       minutesPerHit: null,
       linkedFindings: 0,
       mediumPlusAccepted: 0,
