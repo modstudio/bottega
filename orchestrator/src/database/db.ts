@@ -1,6 +1,6 @@
 // concern: database
 /** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
-import { Database } from 'bun:sqlite'
+import { constants, Database } from 'bun:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -143,9 +143,19 @@ export function openReadOnlyDatabase(path = DB_PATH): Database {
     storePathUnderTemporaryRoot: false,
     walOrShmSidecarPresent: sidecarsExist,
   })
-  const readOnlyPath =
-    access.openMode === 'read-only-immutable' ? `${pathToFileURL(path).href}?immutable=1` : path
-  return new Database(readOnlyPath, { readonly: true })
+  return openReadOnlyStore(path, access.openMode === 'read-only-immutable')
+}
+
+/**
+ * Open a store read-only; immutable when it has no WAL sidecars. The immutable form is a URI,
+ * which Bun's Linux SQLite accepts only with SQLITE_OPEN_URI passed explicitly.
+ */
+function openReadOnlyStore(path: string, immutable: boolean): Database {
+  if (!immutable) return new Database(path, { readonly: true })
+  return new Database(
+    `${pathToFileURL(path).href}?immutable=1`,
+    constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
+  )
 }
 
 /** Run one read command against a SQLite-enforced read-only process handle. */
@@ -283,14 +293,10 @@ function defaultDatabase(writable: boolean): Database {
   const access = orchestratorStoreAccess(
     existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`),
   )
-  const databasePath =
-    access.openMode === 'read-only-immutable'
-      ? `${pathToFileURL(DB_PATH).href}?immutable=1`
-      : DB_PATH
   const d =
     access.openMode === 'read-write'
-      ? new Database(databasePath, { readwrite: true, create: false })
-      : new Database(databasePath, { readonly: true })
+      ? new Database(DB_PATH, { readwrite: true, create: false })
+      : openReadOnlyStore(DB_PATH, access.openMode === 'read-only-immutable')
   // Several `bottega run start` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record

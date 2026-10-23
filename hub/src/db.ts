@@ -1,4 +1,4 @@
-import { Database } from 'bun:sqlite'
+import { constants, Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -215,6 +215,18 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   )
 }
 
+/**
+ * Open the hub store read-only; immutable when it has no WAL sidecars. The immutable form is a
+ * URI, which Bun's Linux SQLite accepts only with SQLITE_OPEN_URI passed explicitly.
+ */
+function openReadOnlyHubStore(immutable: boolean): Database {
+  if (!immutable) return new Database(DB_PATH, { readonly: true })
+  return new Database(
+    `${pathToFileURL(DB_PATH).href}?immutable=1`,
+    constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
+  )
+}
+
 /** The read-only command handle: the same legacy, test-path and migration refusals as a writable open. */
 function commandReadOnlyDatabase(): Database {
   if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
@@ -223,11 +235,7 @@ function commandReadOnlyDatabase(): Database {
   assertTestHubDatabasePath()
   if (!existsSync(DB_PATH)) throw new Error(missingHubDatabaseMessage())
   const access = hubStoreAccess(restrictedActor, DB_PATH)
-  const databasePath =
-    access.openMode === 'read-only-immutable'
-      ? `${pathToFileURL(DB_PATH).href}?immutable=1`
-      : DB_PATH
-  const opened = new Database(databasePath, { readonly: true })
+  const opened = openReadOnlyHubStore(access.openMode === 'read-only-immutable')
   opened.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(opened)
   if (refused) {
@@ -245,14 +253,10 @@ export function db(): Database {
   assertTestHubDatabasePath()
   requireDatabase()
   const access = hubStoreAccess(restrictedActor, DB_PATH)
-  const databasePath =
-    access.openMode === 'read-only-immutable'
-      ? `${pathToFileURL(DB_PATH).href}?immutable=1`
-      : DB_PATH
   const d =
     access.openMode === 'read-write'
-      ? new Database(databasePath, { readwrite: true, create: false })
-      : new Database(databasePath, { readonly: true })
+      ? new Database(DB_PATH, { readwrite: true, create: false })
+      : openReadOnlyHubStore(access.openMode === 'read-only-immutable')
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(d)
   if (refused) {
