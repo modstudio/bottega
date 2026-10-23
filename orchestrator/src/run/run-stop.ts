@@ -35,13 +35,14 @@ import {
   type RootAuthority,
   reauthorizeRunMutation,
 } from './run-authority.ts'
-import { rollUpRootAndEnqueue } from './run-liveness.ts'
+import { recordRunSharedGitConfigHeader, rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type {
   RunProcessTerminationPlan,
   TerminateRunProcessesResult,
   VerifiedRunProcessTermination,
 } from './run-process.ts'
+import type { RecordedRunSharedGitConfigInput } from './shared-git-config-check.ts'
 import { stoppedWorktreeLine } from './stopped-worktree-decision.ts'
 
 export function stoppedRunLine(id: string): string {
@@ -95,8 +96,10 @@ function logStoppedRun(
   cleanupRow: ReturnType<typeof stopCleanupRow>,
   dockerTeardown: TerminalDockerTeardown,
   released: boolean,
+  sharedGitConfigHeader: string | null,
 ): void {
   options.presentation.log(stoppedRunLine(row.record_id))
+  if (sharedGitConfigHeader) options.presentation.log(sharedGitConfigHeader)
   if (cleanupRow.worktree) {
     options.presentation.log(
       stoppedWorktreeLine(
@@ -119,10 +122,33 @@ function logStoppedRun(
 export type RunStopOptions = CleanupOptions & { note?: string }
 type RunControlHelpers = {
   lifecycleCheckpoint: (name: string) => void
+  checkSharedGitConfig: (input: RecordedRunSharedGitConfigInput) => string | null
 }
 export type RunStopHelpers = RunControlHelpers & {
   planRunProcessTermination: (runId: string, exceptPids?: number[]) => RunProcessTerminationPlan
   terminateRunProcesses: (plan: VerifiedRunProcessTermination) => TerminateRunProcessesResult
+}
+
+function finishAbandonedRun(
+  abandoned: {
+    row: { record_id: string; job: string }
+    cleanupRow: { worktree: string | null }
+  },
+  helpers: RunControlHelpers,
+  options: RunStopOptions,
+): void {
+  const { row, cleanupRow } = abandoned
+  const header = helpers.checkSharedGitConfig({
+    runId: row.record_id,
+    job: row.job,
+    worktree: cleanupRow.worktree,
+  })
+  if (header) {
+    recordRunSharedGitConfigHeader(db(), row.record_id, header, machineId(), nowIso())
+  }
+  teardownTerminalRunResources(db(), row.record_id)
+  options.presentation.log(`abandoned run ${row.record_id}`)
+  if (header) options.presentation.log(header)
 }
 
 function enqueueAbandonedChain(rowId: string, rootId: string, at: string): void {
@@ -264,6 +290,20 @@ export async function stopRun(
     const refusal = stopTerminationRefusal(row, termination)
     if (refusal) throw new Error(refusal)
   }
+  const sharedGitConfigHeader = helpers.checkSharedGitConfig({
+    runId: row.record_id,
+    job: row.job,
+    worktree: row.worktree,
+  })
+  if (sharedGitConfigHeader) {
+    recordRunSharedGitConfigHeader(
+      db(),
+      row.record_id,
+      sharedGitConfigHeader,
+      machineId(),
+      nowIso(),
+    )
+  }
   const dockerTeardown = teardownTerminalRunResources(db(), row.record_id)
   const readerCloneRelease = releaseStoppedReaderClone(
     cleanupRow.record_id,
@@ -275,6 +315,7 @@ export async function stopRun(
     cleanupRow,
     dockerTeardown,
     readerCloneRelease === 'released' || readerCloneRelease === 'tree-released-with-unrecorded-row',
+    sharedGitConfigHeader,
   )
 }
 
@@ -291,6 +332,7 @@ export async function abandonRun(
     repo: string | null
     cwd: string | null
     worktree: string | null
+    job: string
     branch: string | null
     parent_run_record_id: string | null
     turn: number
@@ -304,7 +346,7 @@ export async function abandonRun(
   const readChain = () =>
     db()
       .query(
-        `SELECT record_id, number, status, repo, cwd, worktree, branch, parent_run_record_id, turn, base_commit,
+        `SELECT record_id, number, status, repo, cwd, worktree, branch, job, parent_run_record_id, turn, base_commit,
               worktree_source
          FROM run WHERE record_id = ? OR parent_run_record_id = ? ORDER BY turn DESC, number DESC`,
       )
@@ -380,9 +422,8 @@ export async function abandonRun(
     auditRunMutation(authority, 'abandon', note ?? null)
     return { row, cleanupRow }
   })
-  const { row, cleanupRow } = abandoned
-  teardownTerminalRunResources(db(), row.record_id)
-  options.presentation.log(`abandoned run ${row.record_id}`)
+  const { cleanupRow } = abandoned
+  finishAbandonedRun(abandoned, helpers, options)
 
   if (cleanupRow.worktree) {
     await discardWorktree(cleanupRow as CleanupRow, 'abandoned', options.force, undefined, options)

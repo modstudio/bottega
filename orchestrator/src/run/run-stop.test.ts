@@ -35,6 +35,7 @@ async function invoke(
     checkpoint?: (name: string) => void
     plan?: () => RunProcessTerminationPlan
     terminate?: () => TerminateRunProcessesResult
+    checkSharedGitConfig?: () => string | null
   } = {},
 ) {
   const shown = presentation()
@@ -44,6 +45,7 @@ async function invoke(
       lifecycleCheckpoint: opts.checkpoint ?? (() => {}),
       planRunProcessTermination: opts.plan ?? (() => ({ outcome: 'no-pid' as const })),
       terminateRunProcesses: opts.terminate ?? (() => ({ outcome: 'no-pid' as const })),
+      checkSharedGitConfig: opts.checkSharedGitConfig ?? (() => null),
     }
     if (action === 'stop') await stopRun(id, options, helpers)
     else await abandonRun(id, options, helpers)
@@ -60,6 +62,15 @@ const verifiedVendor = {
   pids: [42922],
   pgid: 42922,
   signalGroup: false,
+}
+
+function lastRunPayload(id: string): Record<string, unknown> {
+  const row = db()
+    .query<{ payload: string }, [string]>(
+      "SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1",
+    )
+    .get(id)
+  return JSON.parse(row!.payload) as Record<string, unknown>
 }
 
 beforeEach(() => {
@@ -264,6 +275,34 @@ test('stop calls terminate only after the row already reads stopped', async () =
   expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
     status: 'stopped',
   })
+})
+
+test('stop appends and presents a shared git config result header', async () => {
+  const id = insert('running')
+  const header = 'shared git config repair failed for core.worktree in /repo/.git/config'
+
+  const result = await invoke('stop', id, { checkSharedGitConfig: () => header })
+
+  expect(result.code).toBe(0)
+  expect(result.out).toContain(header)
+  expect(
+    (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+  ).toBe(`stopped by architect\n${header}`)
+  expect(lastRunPayload(id).error).toBe(`stopped by architect\n${header}`)
+})
+
+test('abandon appends and presents a shared git config result header', async () => {
+  const id = insert('asking')
+  const header = 'shared git config repair failed for core.worktree in /repo/.git/config'
+
+  const result = await invoke('abandon', id, { checkSharedGitConfig: () => header })
+
+  expect(result.code).toBe(0)
+  expect(result.out).toContain(header)
+  expect(
+    (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+  ).toBe(`abandoned by architect\n${header}`)
+  expect(lastRunPayload(id).error).toBe(`abandoned by architect\n${header}`)
 })
 
 test('stop records a setup run with no vendor and signals nothing', async () => {

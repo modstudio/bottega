@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process'
 import { closeSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
+import { projectCodeGitEnv } from '../../../shared/git.ts'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import {
@@ -166,7 +167,7 @@ async function spawnFocusedTestChild(input: {
       cwd: input.worktree,
       env: {
         ...brokerGateEnvironment(
-          workerGateEnvironment(process.env),
+          workerGateEnvironment(projectCodeGitEnv(process.env)),
           process.env,
           input.environment,
         ),

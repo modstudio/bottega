@@ -505,15 +505,27 @@ export function assertSharedRefGuardOutsideWritableRoots(
   guardPath: string,
   writableRoots: string[],
 ): void {
-  const protectedPaths = [realpathSync(hookDir), realpathSync(guardPath)]
+  assertOrchestratorOwnedPathsOutsideWritableRoots(
+    [realpathSync(hookDir), realpathSync(guardPath)],
+    writableRoots,
+    'THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE',
+  )
+}
+
+/** Refuse an orchestrator-owned path that a worker could replace through any granted root. */
+export function assertOrchestratorOwnedPathsOutsideWritableRoots(
+  paths: string[],
+  writableRoots: string[],
+  invariant: string,
+): void {
+  const protectedPaths = paths.map(canonicalWritableRoot)
   for (const root of writableRoots) {
     const canonicalRoot = canonicalWritableRoot(root)
     for (const protectedPath of protectedPaths) {
       const rel = relative(canonicalRoot, protectedPath)
       if (rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))) {
         throw new Error(
-          `THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE invariant failed: ` +
-            `${protectedPath} is inside writable root ${canonicalRoot}`,
+          `${invariant} invariant failed: ${protectedPath} is inside writable root ${canonicalRoot}`,
         )
       }
     }

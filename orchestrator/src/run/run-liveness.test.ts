@@ -11,6 +11,36 @@ import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
+
+const noSharedGitConfigCheck = () => null
+
+test('shared git config skip reasons prioritize a live vendor over worktree sharers', () => {
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: 42,
+      vendorAlive: true,
+      worktree: '/trees/shared',
+      sharerCount: 1,
+    }),
+  ).toBe('shared git config check skipped: vendor pid 42 is still alive')
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: 42,
+      vendorAlive: false,
+      worktree: '/trees/shared',
+      sharerCount: 1,
+    }),
+  ).toBe('shared git config check skipped: another live run still claims /trees/shared')
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: null,
+      vendorAlive: false,
+      worktree: null,
+      sharerCount: 0,
+    }),
+  ).toBeNull()
+})
 
 async function inbox(): Promise<string> {
   const lines: string[] = []
@@ -50,7 +80,7 @@ describe('reapStale', () => {
       .query('UPDATE run SET started_at=?, pid=? WHERE record_id=?')
       .run(new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), process.pid, id)
 
-    expect(reapStale(db())).toBe(0)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(0)
     expect(
       (
         db().query('SELECT status FROM run WHERE record_id=?').get(id) as {
@@ -70,7 +100,7 @@ describe('reapStale', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
     try {
-      expect(reapStale(db())).toBe(1)
+      expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     } finally {
       if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = prior
@@ -86,12 +116,101 @@ describe('reapStale', () => {
     })
   })
 
+  test('a stale writing run checks shared config before recording its terminal result', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, 4194304, '/trees/run', id)
+    const checked: unknown[] = []
+
+    expect(
+      reapStale(db(), (input) => {
+        checked.push(input)
+        return 'shared git config changed: user.name (changed; value names run tree: no) in /repo/.git/config'
+      }),
+    ).toBe(1)
+    expect(checked).toEqual([{ runId: id, job: 'implement', worktree: '/trees/run' }])
+    expect(
+      (
+        db().query('SELECT error FROM run WHERE record_id=?').get(id) as {
+          error: string
+        }
+      ).error,
+    ).toContain('shared git config changed: user.name')
+  })
+
+  test('a stale run keeps shared config untouched while its vendor is alive', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, process.pid, '/trees/run', id)
+    let checks = 0
+
+    expect(
+      reapStale(db(), () => {
+        checks++
+        return null
+      }),
+    ).toBe(1)
+    expect(checks).toBe(0)
+    expect(
+      (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+    ).toContain(`vendor pid ${process.pid} is still alive`)
+  })
+
+  test('a stale run keeps shared config untouched while another live run claims its tree', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, 4194304, '/trees/shared', id)
+    db()
+      .query('UPDATE run SET pid=?, worktree=? WHERE record_id=?')
+      .run(process.pid, '/trees/shared', sharer)
+    let checks = 0
+
+    expect(
+      reapStale(db(), () => {
+        checks++
+        return null
+      }),
+    ).toBe(1)
+    expect(checks).toBe(0)
+    expect(
+      (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+    ).toContain('another live run still claims /trees/shared')
+  })
+
+  test('a competing stale reaper does not run the shared config check after losing the status guard', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, 4194304, '/trees/run', id)
+    let winnerChecks = 0
+    let loserChecks = 0
+
+    expect(
+      reapStale(db(), () => {
+        winnerChecks++
+        expect(
+          reapStale(db(), () => {
+            loserChecks++
+            return null
+          }),
+        ).toBe(0)
+        return null
+      }),
+    ).toBe(1)
+    expect(winnerChecks).toBe(1)
+    expect(loserChecks).toBe(0)
+  })
+
   test('the reaper says WHY it swept, so routing can discount it', () => {
     // Without the kind these rows are indistinguishable from an agent that
     // simply failed, and the router charges them accordingly.
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, id)
-    reapStale(db())
+    reapStale(db(), noSharedGitConfigCheck)
     const r = db()
       .query('SELECT status, failure_kind, error FROM run WHERE record_id=?')
       .get(id) as {
@@ -108,13 +227,13 @@ describe('reapStale', () => {
   test('a legacy run with no lease and no pid is swept at once', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     db().query('UPDATE run SET pid=NULL WHERE record_id=?').run(id)
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
   })
 
   test('a live recent run is left alone', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, id)
-    expect(reapStale(db())).toBe(0)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(0)
   })
 
   test('reaping a running child inherits stale onto an asking root as evidence', () => {
@@ -134,7 +253,7 @@ describe('reapStale', () => {
     })
     db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, child)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     expect(db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(child)).toEqual(
       {
         status: 'stale',
@@ -192,7 +311,7 @@ describe('reapStale', () => {
     })
     db().query('UPDATE run SET pid=?, agent_pid=? WHERE record_id=?').run(4194304, 4194304, child)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'stale',
     })
@@ -231,7 +350,7 @@ describe('reapStale', () => {
       .query('UPDATE run SET pid=NULL, started_at=? WHERE record_id=?')
       .run(new Date(Date.now() - 10_000).toISOString(), young)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     const swept = db()
       .query('SELECT status, failure_kind, error FROM run WHERE record_id=?')
       .get(old) as {
@@ -271,7 +390,7 @@ describe('reapStale', () => {
       .query('UPDATE run SET pid=?, started_at=? WHERE record_id=?')
       .run(4_194_304, new Date(Date.now() - PENDING_BOOTSTRAP_MS - 1000).toISOString(), id)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     expect(
       db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
     ).toEqual({
@@ -300,7 +419,7 @@ describe('reapStale', () => {
       `orch: run ${id} could not start: Error: refusing to create a worktree on branch DEV-1054-orch-7738\n`,
     )
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     expect(db().query('SELECT error FROM run WHERE record_id=?').get(id)).toEqual({
       error:
         `coordinator exited during setup before the agent started; last output: ` +
@@ -325,7 +444,7 @@ describe('reapStale', () => {
     mkdirSync(dirname(logPath), { recursive: true })
     writeFileSync(logPath, 'setup began\nmodule import failed\n')
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     const error =
       'coordinator exited during setup before the agent started; last output: setup began\nmodule import failed'
     expect(
@@ -357,7 +476,7 @@ describe('reapStale', () => {
     const id = addRun({ agent: 'codex', job: 'craft', status: 'running' })
     db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE record_id=?').run(4_194_304, id)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     expect(
       db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
     ).toEqual({
@@ -374,7 +493,7 @@ describe('reapStale', () => {
       "store migrated from version 145 to 146 past this process's version; restart this process, and re-dispatch any run it was coordinating"
     recordCoordinatorCause(id, cause)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     expect(
       db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
     ).toEqual({ status: 'failed', failure_kind: 'harness', error: cause })
@@ -392,7 +511,7 @@ describe('reapStale', () => {
     })
     db().query('UPDATE run SET pid=?, agent_pid=NULL WHERE record_id=?').run(4_194_304, child)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
     expect(db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(child)).toEqual(
       {
         status: 'failed',

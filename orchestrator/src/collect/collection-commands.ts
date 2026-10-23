@@ -5,6 +5,7 @@ import { formatPeek, peekRun } from '../events.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
 
@@ -65,5 +66,7 @@ export function resultCommand(
 }
 
 export async function waitCommand(database: Database, argv: string[]): Promise<void> {
-  await collectWait(database, argv, reapStale)
+  await collectWait(database, argv, () =>
+    reapStale(database, terminalSharedGitConfigForRecordedRun),
+  )
 }

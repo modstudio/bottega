@@ -20,7 +20,7 @@ export const runStopBoundarySpecs = [
       '../worktree/worktree-remove.ts',
       '../worktree/worktree-types.ts',
     ],
-    typeOnlyAllowed: ['./run-process.ts'],
+    typeOnlyAllowed: ['./run-process.ts', './shared-git-config-check.ts'],
     reason:
       'Keep run-stop independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   },
