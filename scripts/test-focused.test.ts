@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 test('groups focused paths by nearest package with package-relative arguments', () => {
   const groups = groupFocusedTestPaths([
     'hub/src/db.test.ts',
+    'hub/data/src/use-task.test.ts',
     'hub/web/src/app.test.tsx',
     'hub/deploy/site/src/site.test.ts',
     'orchestrator/src/run.test.ts',
@@ -21,6 +22,7 @@ test('groups focused paths by nearest package with package-relative arguments', 
     })),
   ).toEqual([
     { directory: 'hub', paths: ['src/db.test.ts'] },
+    { directory: 'hub/data', paths: ['src/use-task.test.ts'] },
     { directory: 'hub/web', paths: ['src/app.test.tsx'] },
     { directory: 'hub/deploy/site', paths: ['src/site.test.ts'] },
     { directory: 'orchestrator', paths: ['src/run.test.ts'] },

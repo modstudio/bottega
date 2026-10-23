@@ -7,8 +7,9 @@ import { type PresenceFact, resolveAudience } from './board-policy.ts'
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
 export type BoardReaderStart = string | null | 'unbounded'
 
-function reportReplySuccessorDecision(input: {
+export function reportReplySuccessorDecision(input: {
   rootAuthorLive: boolean
+  rootAuthorReceivedReply: boolean
   readerIsArchitect: boolean
   readerProject: string
   rootProject: string | null
@@ -16,9 +17,11 @@ function reportReplySuccessorDecision(input: {
   successorAlreadyReceived: boolean
   readerBeganAt: string | null
   authorLastActivityAt: number | null
+  replyPostedAt: string
 }): boolean {
   return (
     !input.rootAuthorLive &&
+    !input.rootAuthorReceivedReply &&
     !input.readerIsParticipant &&
     !input.successorAlreadyReceived &&
     input.readerIsArchitect &&
@@ -26,6 +29,7 @@ function reportReplySuccessorDecision(input: {
     input.readerProject === input.rootProject &&
     input.readerBeganAt !== null &&
     input.authorLastActivityAt !== null &&
+    Date.parse(input.replyPostedAt) > input.authorLastActivityAt &&
     Date.parse(input.readerBeganAt) > input.authorLastActivityAt
   )
 }
@@ -34,10 +38,12 @@ export function replySuccessorAddressing(input: {
   presence: PresenceFact[]
   reader: string
   rootAuthorSession: string
+  rootAuthorReceivedReply: boolean
   rootProject: string | null
   readerIsParticipant: boolean
   successorAlreadyReceived: boolean
   readerBeganAt: string | null
+  replyPostedAt: string
   now: number
   liveWindowMs: number
 }): boolean {
@@ -54,6 +60,7 @@ export function replySuccessorAddressing(input: {
       input.now,
       input.liveWindowMs,
     ).includes(input.rootAuthorSession),
+    rootAuthorReceivedReply: input.rootAuthorReceivedReply,
     readerIsArchitect: readerFact?.role === 'architect',
     readerProject: readerFact?.project ?? '',
     rootProject: input.rootProject,
@@ -61,6 +68,7 @@ export function replySuccessorAddressing(input: {
     successorAlreadyReceived: input.successorAlreadyReceived,
     readerBeganAt: input.readerBeganAt,
     authorLastActivityAt: authorFact?.lastSeen ?? null,
+    replyPostedAt: input.replyPostedAt,
   })
 }
 

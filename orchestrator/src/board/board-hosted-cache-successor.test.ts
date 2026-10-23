@@ -89,7 +89,7 @@ test('two database connections cannot both claim the hosted report reply success
       get(target, property) {
         if (property === 'query') return (sql) => {
           const statement = target.query(sql)
-          if (snapshotRead || !sql.includes('WHERE successor=1')) return statement
+          if (snapshotRead || !sql.includes('successor_receipt.successor=1')) return statement
           return new Proxy(statement, {
             get(statementTarget, statementProperty) {
               if (statementProperty !== 'all') {

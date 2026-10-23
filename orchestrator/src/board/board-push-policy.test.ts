@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { boardPushDecision } from './board-push-policy.ts'
+import { boardPushDecision, reportReplySuccessorDecision } from './board-push-policy.ts'
 import { claimPushNotices, postNotice } from './board-service.ts'
 import { replyToThread } from './board-thread-service.ts'
 
@@ -22,6 +22,31 @@ const decision = (input: Partial<Parameters<typeof boardPushDecision>[0]> = {}) 
     clock,
     ...input,
   })
+
+const successorDecision = (
+  input: Partial<Parameters<typeof reportReplySuccessorDecision>[0]> = {},
+) =>
+  reportReplySuccessorDecision({
+    rootAuthorLive: false,
+    rootAuthorReceivedReply: false,
+    readerIsArchitect: true,
+    readerProject: 'project',
+    rootProject: 'project',
+    readerIsParticipant: false,
+    successorAlreadyReceived: false,
+    readerBeganAt: '2026-10-16T12:00:00.000Z',
+    authorLastActivityAt: Date.parse('2026-10-16T10:00:00.000Z'),
+    replyPostedAt: '2026-10-16T11:00:00.000Z',
+    ...input,
+  })
+
+test('a report reply successor is withheld when the reporter received the reply', () => {
+  expect(successorDecision({ rootAuthorReceivedReply: true })).toBe(false)
+})
+
+test('a report reply successor is withheld when the reply predates reporter activity', () => {
+  expect(successorDecision({ replyPostedAt: '2026-10-16T09:00:00.000Z' })).toBe(false)
+})
 
 test('acknowledgement delivery ends at its deadline and belongs only to sessions already running', () => {
   expect(decision({ acknowledgementDeadline: '2026-10-16T11:59:59.999Z' })).toBe('withheld')
