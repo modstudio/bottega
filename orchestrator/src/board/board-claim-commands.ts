@@ -12,7 +12,9 @@ import {
 export function registerBoardClaimCommands(
   board: Command,
   parseDuration: (value: string) => number,
+  deps: { releaseTask?: (key: string, project: string) => Promise<unknown> } = {},
 ): void {
+  const releaseTask = deps.releaseTask ?? boardClaimReleaseTask
   const claim = board.command('claim').description('manage claims on shared work')
   claim
     .command('take <subject>')
@@ -56,8 +58,8 @@ export function registerBoardClaimCommands(
     .command('release-task <key>')
     .description('release every live claim for a task')
     .requiredOption('--project <name>', 'name the task project')
-    .requiredOption('--json', 'write the released claims as JSON')
+    .option('--json', 'write the released claims as JSON')
     .action(async (key, options) =>
-      console.log(JSON.stringify(await boardClaimReleaseTask(key, options.project))),
+      console.log(JSON.stringify(await releaseTask(key, options.project))),
     )
 }
