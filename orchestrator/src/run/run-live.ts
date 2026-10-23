@@ -74,6 +74,7 @@ import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-ca
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
+import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
   appendGateExclusionToTimeoutError,
   currentExcludedGateMs,
@@ -105,6 +106,15 @@ function outputCeilingReached(
   return Boolean(
     reply && !reply.text.trim() && ceilingReason !== null && reply.stopReason === ceilingReason,
   )
+}
+
+async function recordInitialDeliveries(
+  runId: string,
+  messageIds: number[],
+  noticeIds: Array<number | string>,
+): Promise<void> {
+  receiptWorkerMessages(runId, messageIds)
+  await markRunBoardNoticesDelivered(runId, noticeIds)
 }
 
 function idleSnapshotObserver(
@@ -323,6 +333,7 @@ export type LiveInput = {
   resolvedDialect: ReplyDialect
   mcpSetupHeader: string | null
   initialBoardNoticeIds: Array<number | string>
+  throttleConcurrency: () => number
   askLoopback: AskLoopback | null
   writingAcp: boolean
   checkpointContainment: CheckpointContainment
@@ -455,6 +466,14 @@ function recordedRunStatus(runId: string): string | null {
       } | null
     )?.status ?? null
   )
+}
+
+function teeLiveTransport(
+  input: LiveInput,
+  handle: TransportHandle,
+  observe: (event: StreamEvent) => void,
+) {
+  return teeTransportEvents(handle.events(), input.claim.id, input.throttleConcurrency, observe)
 }
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
@@ -824,16 +843,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
       idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
     )
-    const teeing = teeTransportEvents(handle.events(), claim.id)
+    const throttle = firstThrottleObserver(() => void t.cancel(handle))
+    const teeing = teeLiveTransport(input, handle, throttle.observe)
     await t.prompt(handle, prompt)
-    receiptWorkerMessages(
+    await recordInitialDeliveries(
       claim.id,
       checkpointMessages.map((message) => message.id),
+      [...initialBoardNoticeIds, ...checkpointNotices.map((notice) => notice.id)],
     )
-    await markRunBoardNoticesDelivered(claim.id, [
-      ...initialBoardNoticeIds,
-      ...checkpointNotices.map((notice) => notice.id),
-    ])
     const collected = await Promise.race([handle.collect(), forcedCollect])
     workerEvents = collected.events.filter(
       (event): event is StreamEvent =>
@@ -848,7 +865,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     vendorTerminatedStream = [stdout, stderr].find(hasVendorTerminationMarker) ?? null
     exitCode = collected.exitCode
     const reply = collected.parsed
-    const replyError = reply?.error ?? collected.error
+    const replyError = throttleReplyError(throttle.state.first, reply?.error, collected.error)
     const reachedOutputCeiling = outputCeilingReached(reply, a.outputCeilingStopReason)
     vendorTokens = collected.tokens
     costUsd = collected.costUsd
