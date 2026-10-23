@@ -4,6 +4,7 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isDatabaseLocked } from '../../../shared/database-lock-refusal.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { boardEscalations } from '../board/board-service.ts'
@@ -346,11 +347,6 @@ export class MonitorStoreBusyError extends Error {
   }
 }
 
-function databaseBusy(error: unknown): boolean {
-  const candidate = error as { code?: unknown; message?: unknown }
-  return candidate?.code === 'SQLITE_BUSY' || /database is locked/i.test(String(candidate?.message))
-}
-
 function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: string) {
   try {
     const database = writableDb()
@@ -361,7 +357,7 @@ function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: stri
       .get(newRecordId(), startedAt, trigger) as { id: number }
     return { database, invocation: row.id }
   } catch (error) {
-    if (databaseBusy(error)) throw new MonitorStoreBusyError(error)
+    if (isDatabaseLocked(error)) throw new MonitorStoreBusyError(error)
     throw error
   }
 }

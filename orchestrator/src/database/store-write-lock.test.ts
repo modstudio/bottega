@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import { db } from './db.ts'
@@ -52,4 +53,22 @@ test('a free WAL store has no write-lock holder', () => {
     return
   }
   expect(probe).toBeNull()
+})
+
+test('an unopenable shared-memory file is an unsupported probe instead of an exception', () => {
+  const path = join(dir, 'unopenable-lock-store.db')
+  mkdirSync(`${path}-shm`)
+  try {
+    const probe = probeWalWriteLock(path)
+    if (probe !== null && typeof probe === 'object' && probe.reason.includes('unsupported on')) {
+      expect(probe.reason).toContain('unsupported')
+      return
+    }
+    expect(probe).toEqual({
+      unsupported: true,
+      reason: expect.stringContaining(`cannot open ${path}-shm`),
+    })
+  } finally {
+    rmSync(`${path}-shm`, { recursive: true })
+  }
 })

@@ -11,7 +11,7 @@ import { formatDatabaseLockRefusal, isDatabaseLocked } from '../../shared/databa
 import { installationVersionText } from '../../shared/install-root.ts'
 import { HubCommand } from './cli-command.ts'
 import { registerCoreCommands } from './core-cli.ts'
-import { DB_PATH, nowIso, withReadOnlyDatabaseAccess } from './db.ts'
+import { DB_PATH, hubDatabaseLockHolder, nowIso, withReadOnlyDatabaseAccess } from './db.ts'
 import { registerNoteCommands } from './note-cli.ts'
 import { registerOutboxCommands } from './outbox-cli.ts'
 import { registerReportCommands } from './report-cli.ts'
@@ -46,10 +46,14 @@ export function createHubProgram(): HubCommand {
 
 export const program = createHubProgram()
 
-export function isReadOnlyInvocation(argv: readonly string[]): boolean {
-  return (
-    argv[0] === 'task' && (argv[1] === 'list' || (argv[1] === 'show' && !argv.includes('--fresh')))
-  )
+const READ_ONLY_STORE_COMMANDS = ['list', 'show'] as const
+
+/** Store queries whose result does not refresh an external tracker. */
+export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
+  if (argv[0] !== 'task') return false
+  if (!READ_ONLY_STORE_COMMANDS.includes(argv[1] as (typeof READ_ONLY_STORE_COMMANDS)[number]))
+    return false
+  return argv[1] !== 'show' || !argv.includes('--fresh')
 }
 
 function exitCodeFor(error: unknown): number {
@@ -79,7 +83,7 @@ export async function run(
   try {
     const input = literalHelp(argv.length ? argv : ['--help'])
     const parse = () => command.parseAsync(['bun', PLATFORM_SLUG, ...input])
-    await (isReadOnlyInvocation(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
+    await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
     return Number(process.exitCode ?? 0)
   } catch (error) {
     if (!(error instanceof CommanderError))
@@ -87,7 +91,7 @@ export async function run(
         isDatabaseLocked(error)
           ? formatDatabaseLockRefusal({
               store: DB_PATH,
-              holder: { unavailable: 'lock-holder inspection is unavailable for the hub store' },
+              holder: hubDatabaseLockHolder(),
             })
           : error instanceof Error
             ? error.message

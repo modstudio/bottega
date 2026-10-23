@@ -7,7 +7,11 @@ export type DatabaseLockRefusalFacts = {
 
 export function isDatabaseLocked(error: unknown): boolean {
   const candidate = error as { code?: unknown; message?: unknown }
-  return candidate?.code === 'SQLITE_BUSY' || /database is locked/i.test(String(candidate?.message))
+  return (
+    candidate?.code === 'SQLITE_BUSY' ||
+    candidate?.code === 'SQLITE_LOCKED' ||
+    /database (?:table )?is locked/i.test(String(candidate?.message))
+  )
 }
 
 export function formatDatabaseLockRefusal(facts: DatabaseLockRefusalFacts): string {

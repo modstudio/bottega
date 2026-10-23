@@ -1,16 +1,17 @@
 import { Database } from 'bun:sqlite'
-import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
+import type { DatabaseLockRefusalFacts } from '../../shared/database-lock-refusal.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { installRoot, isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
 import { machineId, storedMachineId } from '../../shared/machine-config.ts'
 import type { QuestionIdentity } from '../../shared/orch-contract.ts'
+import { createReadOnlyDatabaseAccess } from '../../shared/read-only-database-access.ts'
 import {
   legacyStoreRefusal,
   realPathForPotentialPath,
@@ -164,7 +165,7 @@ export function existingDefaultStoreMigrationRefusal(
 
 let handle: Database | null = null
 let readOnlyHandle: Database | null = null
-const databaseAccess = new AsyncLocalStorage<'read-only'>()
+const databaseAccess = createReadOnlyDatabaseAccess()
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
 const writeDepth = new WeakMap<Database, number>()
@@ -215,11 +216,16 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 }
 
 export function db(): Database {
-  if (databaseAccess.getStore() === 'read-only') {
+  if (databaseAccess.active()) {
     if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
     assertTestHubDatabasePath()
     if (!existsSync(DB_PATH)) throw new Error(missingHubDatabaseMessage())
-    readOnlyHandle = new Database(DB_PATH, { readonly: true })
+    const access = hubStoreAccess(restrictedActor, DB_PATH)
+    const databasePath =
+      access.openMode === 'read-only-immutable'
+        ? `${pathToFileURL(DB_PATH).href}?immutable=1`
+        : DB_PATH
+    readOnlyHandle = new Database(databasePath, { readonly: true })
     readOnlyHandle.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     const refused = migrationRefusal(readOnlyHandle)
     if (refused) {
@@ -264,13 +270,17 @@ export function db(): Database {
 
 /** Run one query command against a SQLite-enforced read-only process handle. */
 export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
-  return databaseAccess.run('read-only', action)
+  return databaseAccess.run(action)
+}
+
+/** Hub does not inspect another process's SQLite WAL lock holder. */
+export function hubDatabaseLockHolder(): DatabaseLockRefusalFacts['holder'] {
+  return { unavailable: 'lock-holder inspection is unavailable for the hub store' }
 }
 
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: (conn: Database) => T, database?: Database): T {
-  if (databaseAccess.getStore() === 'read-only')
-    throw new Error('refusing a write from a read-only command')
+  if (databaseAccess.active()) throw new Error('refusing a write from a read-only command')
   assertHubStoreWritable()
   const target = database ?? db()
   const conn = refuseOrReloadStaleSchema(target, true)

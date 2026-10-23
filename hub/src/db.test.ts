@@ -9,6 +9,7 @@ import { runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
   closeDatabaseForFixture,
   db,
+  hubDatabaseLockHolder,
   hubStoreAccess,
   implicitHubDatabaseCreationRefusal,
   missingHubDatabaseMessage,
@@ -57,6 +58,12 @@ test('a reader checkout resolves the shared hub path as read-only', () => {
     openMode: 'read-only-immutable',
     writesRefused: true,
     migrationsRefused: true,
+  })
+})
+
+test('the hub database owns its unavailable lock-holder fact', () => {
+  expect(hubDatabaseLockHolder()).toEqual({
+    unavailable: 'lock-holder inspection is unavailable for the hub store',
   })
 })
 

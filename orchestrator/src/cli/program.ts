@@ -43,6 +43,7 @@ import { register as registerTestSubstance } from '../commands/test-substance.ts
 import { DB_PATH, withReadOnlyDatabaseAccess } from '../database/db.ts'
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
 import { storeWriteLockReport } from '../monitor/monitor-store-write-lock.ts'
+import { classifyRunIdentifier } from '../run/run-identifier.ts'
 
 export const program = new Command()
   .name(PLATFORM_SLUG)
@@ -94,23 +95,24 @@ program.commands
 
 export { AGENT_COMMAND_VERBS }
 
-const READ_ONLY_COMMANDS = new Set([
+/** Routed internal verbs for public `run show`, `run list`, and `run result`. */
+const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result'] as const
+
+const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
   'mcp-reader-proxy',
   'migrate',
   'ratchet',
-  'run',
-  'runs',
-  'result',
+  ...READ_ONLY_STORE_COMMANDS,
 ])
 
 /** Verbs that only read the store must not stamp the session as seen. */
-function isReadOnlyInvocation(argv: string[]): boolean {
+function invocationSkipsSessionStamp(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],
     setup: ['facts', 'plan'],
   }
-  if (READ_ONLY_COMMANDS.has(argv[0]!)) return true
+  if (INVOCATIONS_WITHOUT_SESSION_STAMP.has(argv[0]!)) return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.
   // The lock-holder-only path never opens SQLite writable at all.
   if (argv[0] === 'monitor') return true
@@ -125,14 +127,29 @@ function isReadOnlyInvocation(argv: string[]): boolean {
   return false
 }
 
-/** Store queries whose result does not depend on incidental maintenance. */
 export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
-  return argv[0] === 'run' || argv[0] === 'runs' || argv[0] === 'result'
+  const command = argv[0] as (typeof READ_ONLY_STORE_COMMANDS)[number]
+  if (!READ_ONLY_STORE_COMMANDS.includes(command)) return false
+  if (command === 'runs') return true
+  return classifyRunIdentifier(argv[1] ?? '') !== null
 }
 
-async function lockedStoreMessage(error: unknown): Promise<string> {
+export async function lockedStoreMessage(
+  error: unknown,
+  inspect: typeof storeWriteLockReport = storeWriteLockReport,
+): Promise<string> {
   if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
-  const report = await storeWriteLockReport(DB_PATH)
+  let report: Awaited<ReturnType<typeof storeWriteLockReport>>
+  try {
+    report = await inspect(DB_PATH)
+  } catch (inspectionError) {
+    return formatDatabaseLockRefusal({
+      store: DB_PATH,
+      holder: {
+        unavailable: `lock-holder inspection failed: ${inspectionError instanceof Error ? inspectionError.message : String(inspectionError)}`,
+      },
+    })
+  }
   return formatDatabaseLockRefusal({
     store: DB_PATH,
     holder:
@@ -159,7 +176,7 @@ function exitCodeFor(error: unknown): number {
  */
 
 export function recordInvocationSession(argv: string[]): void {
-  if (isReadOnlyInvocation(argv)) return
+  if (invocationSkipsSessionStamp(argv)) return
   recordSessionHostPressure()
 }
 

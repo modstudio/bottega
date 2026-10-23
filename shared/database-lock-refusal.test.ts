@@ -15,6 +15,8 @@ test('a database lock refusal names the store, holder, and remedy', () => {
       'cleared by: wait for the holder to finish, then retry the command',
   )
   expect(isDatabaseLocked({ code: 'SQLITE_BUSY' })).toBeTrue()
+  expect(isDatabaseLocked({ code: 'SQLITE_LOCKED' })).toBeTrue()
+  expect(isDatabaseLocked({ message: 'database table is locked' })).toBeTrue()
   expect(
     formatDatabaseLockRefusal({
       store: '/state/hub/store.sqlite',

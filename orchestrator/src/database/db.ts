@@ -1,13 +1,13 @@
 // concern: database
 /** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
 import { Database } from 'bun:sqlite'
-import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
 import {
@@ -46,7 +46,7 @@ export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
 let handle: Database | null = null
 let readOnlyHandle: Database | null = null
-const databaseAccess = new AsyncLocalStorage<'read-only'>()
+const databaseAccess = createReadOnlyDatabaseAccess()
 let connectionWritable: boolean | null = null
 let openedUserVersion: number | null = null
 const noopSchemaReload = (): void => {}
@@ -150,7 +150,7 @@ export function openReadOnlyDatabase(path = DB_PATH): Database {
 
 /** Run one read command against a SQLite-enforced read-only process handle. */
 export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
-  return databaseAccess.run('read-only', action)
+  return databaseAccess.run(action)
 }
 
 function commandReadOnlyDatabase(): Database {
@@ -169,8 +169,7 @@ function commandReadOnlyDatabase(): Database {
 
 /** Request the process connection for a mutation. */
 export function writableDb(): Database {
-  if (databaseAccess.getStore() === 'read-only')
-    throw new Error('refusing a write from a read-only command')
+  if (databaseAccess.active()) throw new Error('refusing a write from a read-only command')
   return db(true)
 }
 
@@ -263,7 +262,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 }
 
 export function db(writable = false): Database {
-  if (databaseAccess.getStore() === 'read-only') {
+  if (databaseAccess.active()) {
     if (writable) throw new Error('refusing a write from a read-only command')
     return commandReadOnlyDatabase()
   }

@@ -1,5 +1,6 @@
 // concern: worker note broker
 /** Host-side filing of note requests recorded by sandboxed ask servers. */
+import { isDatabaseLocked } from '../../../shared/database-lock-refusal.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { fileWorkerNote, type WorkerNoteRun } from './worker-note.ts'
@@ -17,15 +18,6 @@ type PendingNote = {
   project: string | null
   file: string | null
   same_as: string | null
-}
-
-function storeContention(error: unknown): boolean {
-  const candidate = error as { code?: unknown; message?: unknown }
-  return (
-    candidate?.code === 'SQLITE_BUSY' ||
-    candidate?.code === 'SQLITE_LOCKED' ||
-    /database (?:table )?is locked/i.test(String(candidate?.message))
-  )
 }
 
 function claim(runId: string): PendingNote | null {
@@ -150,7 +142,7 @@ export function startWorkerNoteBroker(
     try {
       request = claim(runId)
     } catch (error) {
-      if (!storeContention(error)) {
+      if (!isDatabaseLocked(error)) {
         stopped = true
         clearInterval(timer)
         appendRunEvent(runId, {
