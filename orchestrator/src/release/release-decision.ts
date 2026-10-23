@@ -42,12 +42,14 @@ export function releaseCapturedText(text: string, secretShaped: boolean): string
   return secretShaped ? RELEASE_OUTPUT_WITHHELD : text
 }
 
-export function rollbackReasonDecision(secretShaped: boolean): Decision {
+export function releaseReasonDecision(
+  field: 'rollback' | 'behind-trunk',
+  secretShaped: boolean,
+): Decision {
   if (secretShaped) {
     return {
       ok: false,
-      message:
-        'rollback reason contains secret-shaped text; restate the reason without the credential, then retry',
+      message: `${field} reason contains secret-shaped text; restate the reason without the credential, then retry`,
     }
   }
   return { ok: true }
@@ -77,20 +79,22 @@ export function trunkFreshnessDecision(facts: {
   previousTrunkBase: string | null
   commitsBehind: number
   overrideReason?: string
+  rollback: boolean
 }): TrunkFreshnessDecision {
+  const reason = facts.overrideReason?.trim() || null
   if (
     facts.rungBranch === facts.trunk ||
     facts.previousTrunkBase === null ||
     facts.candidateTrunkBase !== facts.previousTrunkBase ||
-    facts.commitsBehind === 0
+    facts.commitsBehind === 0 ||
+    facts.rollback
   ) {
-    return { ok: true, overrideReason: null }
+    return { ok: true, overrideReason: reason }
   }
-  const reason = facts.overrideReason?.trim()
   if (reason) return { ok: true, overrideReason: reason }
   return {
     ok: false,
-    message: `release refused: ${facts.trunk} trunk base ${facts.candidateTrunkBase} is unchanged since the last successful ${facts.rungBranch} release; ${facts.trunk} has ${facts.commitsBehind} commits beyond that shared base not promoted into ${facts.rungBranch}; promote ${facts.trunk} into ${facts.rungBranch}, then retry, or pass --behind-trunk with a reason`,
+    message: `release refused: ${facts.trunk} trunk base ${facts.candidateTrunkBase} is unchanged since the last successful ${facts.rungBranch} release; ${facts.trunk} has ${facts.commitsBehind} commits beyond that shared base not promoted into ${facts.rungBranch}; promote ${facts.trunk} into ${facts.rungBranch}, then retry, or, for an intentional hotfix, pass --behind-trunk "<reason>" to deploy ${facts.rungBranch} as it is`,
   }
 }
 

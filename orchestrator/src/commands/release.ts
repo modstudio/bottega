@@ -3,16 +3,14 @@
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  type ReleaseResult,
   releaseLog,
   releaseProject,
   validateReleaseTagVersion,
 } from '../release/release-service.ts'
 import { log } from './support.ts'
 
-function writeReleaseResult(
-  result: ReturnType<typeof releaseProject>,
-  rollbackReason?: string,
-): void {
+function writeReleaseResult(result: ReleaseResult): void {
   if (result.outputTail) log(result.outputTail)
   log(
     `${result.project}/${result.rung}: deployed ${result.deployed}, deploy exit ${result.exitCode}, ledger ${result.id}`,
@@ -22,7 +20,7 @@ function writeReleaseResult(
     log(result.behindTrunkReason ? `${detail}; override: ${result.behindTrunkReason}` : detail)
   }
   if (result.baseline) log('baseline: no prior live commit was known')
-  if (result.rollback) log(`rollback: ${rollbackReason}`)
+  if (result.rollback) log(`rollback: ${result.rollbackReason}`)
   if (result.warning) log(`warning: ${result.warning}`)
 }
 
@@ -44,7 +42,7 @@ export function register(program: Command): void {
         )
       const result = releaseProject(project, options.rung, options.rollback, options.behindTrunk)
       if (options.json) log(JSON.stringify(result))
-      else writeReleaseResult(result, options.rollback)
+      else writeReleaseResult(result)
       if (result.exitCode !== 0) process.exitCode = result.exitCode
     })
 

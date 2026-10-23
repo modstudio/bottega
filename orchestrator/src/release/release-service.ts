@@ -25,8 +25,8 @@ import {
   releaseCommandEnvironment,
   releaseLockDecision,
   releaseProcessEnvironment,
+  releaseReasonDecision,
   releaseTagVersionDecision,
-  rollbackReasonDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
 } from './release-decision.ts'
@@ -133,6 +133,10 @@ function capturedReleaseText(text: string): string {
   return releaseCapturedText(text, containsSecretShaped(text))
 }
 
+function capturedOutputTail(output: string): string {
+  return boundedGateOutputTail(capturedReleaseText(output), GATE_OUTPUT_TAIL_BYTES)
+}
+
 function checkoutFacts(path: string, branch: string) {
   git(['fetch', 'origin'], path)
   const head = git(['rev-parse', 'HEAD'], path)
@@ -185,15 +189,19 @@ function releaseLiveCommit(command: string, cwd: string, purpose: string, rung: 
   return reading.commit
 }
 
-function unregisteredReleaseProjectRemedy(projectName: string): string {
-  return `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`
+function previousReleaseCommit(
+  liveCommand: string | undefined,
+  path: string,
+  project: string,
+  rung: string,
+): string | null {
+  return liveCommand
+    ? releaseLiveCommit(liveCommand, path, 'pre-deploy live', rung)
+    : newestSuccessfulReleasedCommit(project, rung)
 }
 
-function validateBehindTrunkReason(reason: string | undefined): void {
-  if (reason !== undefined && containsSecretShaped(reason))
-    throw new Error(
-      'behind-trunk reason contains secret-shaped text; restate the reason without the credential, then retry',
-    )
+function unregisteredReleaseProjectRemedy(projectName: string): string {
+  return `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`
 }
 
 function releaseTarget(projectName: string, requestedRung: string | undefined) {
@@ -223,6 +231,7 @@ function releaseTrunkFacts(
   candidate: string,
   previousRelease: string | null,
   overrideReason: string | undefined,
+  rollback: boolean,
 ) {
   const trunkTip = git(['rev-parse', `origin/${trunk}`], path)
   const candidateTrunkBase =
@@ -241,6 +250,7 @@ function releaseTrunkFacts(
     previousTrunkBase,
     commitsBehind: commitsBehindTrunk,
     overrideReason,
+    rollback,
   })
   if (!decision.ok) throw new Error(decision.message)
   return { trunk, trunkTip, commitsBehindTrunk, behindTrunkReason: decision.overrideReason }
@@ -272,17 +282,48 @@ function postDeployFacts(
   }
 }
 
+export type ReleaseResult = {
+  id: number
+  project: string
+  rung: string
+  branch: string
+  deployed: string
+  trunk: string
+  commitsBehindTrunk: number
+  behindTrunkReason: string | null
+  liveBefore: string | null
+  baseline: boolean
+  rollback: boolean
+  rollbackReason: string | null
+  exitCode: number
+  outputTail: string
+  liveAfter: string | null
+  liveMatchesCandidate: boolean | null
+  warning: string | null
+}
+
+function validateReleaseReasons(
+  reasons: readonly [field: 'rollback' | 'behind-trunk', reason: string | undefined][],
+): void {
+  for (const [field, reason] of reasons) {
+    const decision = releaseReasonDecision(
+      field,
+      reason !== undefined && containsSecretShaped(reason),
+    )
+    if (!decision.ok) throw new Error(decision.message)
+  }
+}
+
 export function releaseProject(
   projectName: string,
   requestedRung: string | undefined,
   rollbackReason: string | undefined,
   behindTrunkReason: string | undefined,
-) {
-  const reasonDecision = rollbackReasonDecision(
-    rollbackReason !== undefined && containsSecretShaped(rollbackReason),
-  )
-  if (!reasonDecision.ok) throw new Error(reasonDecision.message)
-  validateBehindTrunkReason(behindTrunkReason)
+): ReleaseResult {
+  validateReleaseReasons([
+    ['rollback', rollbackReason],
+    ['behind-trunk', behindTrunkReason],
+  ])
   const { project, selected, deploy, trunk } = releaseTarget(projectName, requestedRung)
   const lock = releaseLockDecision(projectLockState(project.path, 'release').holder)
   if (!lock.ok) throw new Error(lock.message)
@@ -293,9 +334,7 @@ export function releaseProject(
       const checkout = checkoutFacts(project.path, selected.branch)
       const checkoutDecision = checkoutReleaseDecision(checkout)
       if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
-      const live = selected.live
-        ? releaseLiveCommit(selected.live, project.path, 'pre-deploy live', selected.name)
-        : newestSuccessfulReleasedCommit(projectName, selected.name)
+      const live = previousReleaseCommit(selected.live, project.path, projectName, selected.name)
       const freshness = releaseTrunkFacts(
         project.path,
         trunk,
@@ -303,6 +342,7 @@ export function releaseProject(
         checkout.head,
         live,
         behindTrunkReason,
+        rollbackReason !== undefined,
       )
       const contained = releaseAncestry(live, checkout.head, project.path)
       const forward = forwardReleaseDecision({
@@ -333,10 +373,7 @@ export function releaseProject(
         selected.name,
         checkout.head,
       )
-      const outputTail = boundedGateOutputTail(
-        capturedReleaseText(deployed.output),
-        GATE_OUTPUT_TAIL_BYTES,
-      )
+      const outputTail = capturedOutputTail(deployed.output)
       finishReleaseLedgerEntry(
         writableDb(),
         id,
@@ -352,13 +389,18 @@ export function releaseProject(
         rung: selected.name,
         branch: selected.branch,
         deployed: checkout.head,
-        ...freshness,
+        trunk: freshness.trunk,
+        commitsBehindTrunk: freshness.commitsBehindTrunk,
+        behindTrunkReason: freshness.behindTrunkReason,
         liveBefore: live,
         baseline: forward.baseline,
         rollback: forward.rollback,
+        rollbackReason: forward.reason,
         exitCode: deployed.exitCode,
         outputTail,
-        ...checked,
+        liveAfter: checked.liveAfter,
+        liveMatchesCandidate: checked.liveMatchesCandidate,
+        warning: checked.warning,
       }
     },
   )
