@@ -7,11 +7,15 @@ import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/b
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import { runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
+  closeDatabaseForFixture,
+  db,
+  hubDatabaseLockHolder,
   hubStoreAccess,
   implicitHubDatabaseCreationRefusal,
   missingHubDatabaseMessage,
   resolveHubRuntime,
   unauthorizedHubMigrationMessage,
+  withReadOnlyDatabaseAccess,
 } from './db.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
@@ -55,6 +59,26 @@ test('a reader checkout resolves the shared hub path as read-only', () => {
     writesRefused: true,
     migrationsRefused: true,
   })
+})
+
+test('the hub database owns its unavailable lock-holder fact', () => {
+  expect(hubDatabaseLockHolder()).toEqual({
+    unavailable: 'lock-holder inspection is unavailable for the hub store',
+  })
+})
+
+test('a read-only command uses a SQLite-enforced read-only handle', () => {
+  closeDatabaseForFixture()
+  try {
+    withReadOnlyDatabaseAccess(() => {
+      expect(db().query('SELECT COUNT(*) AS count FROM task').get()).toBeTruthy()
+      expect(() => db().query('UPDATE task SET status=status').run()).toThrow(
+        'attempt to write a readonly database',
+      )
+    })
+  } finally {
+    closeDatabaseForFixture()
+  }
 })
 
 test('a linked checkout may write an isolated temporary hub store', () => {

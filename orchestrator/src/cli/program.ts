@@ -7,6 +7,10 @@ import {
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
+import {
+  formatDatabaseLockRefusal,
+  isDatabaseLocked,
+} from '../../../shared/database-lock-refusal.ts'
 import { AGENT_COMMAND_VERBS } from '../agent/agent-commands.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
@@ -36,7 +40,10 @@ import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
+import { DB_PATH, withReadOnlyDatabaseAccess } from '../database/db.ts'
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
+import { storeWriteLockReport } from '../monitor/monitor-store-write-lock.ts'
+import { classifyRunIdentifier } from '../run/run-identifier.ts'
 
 export const program = new Command()
   .name(PLATFORM_SLUG)
@@ -88,16 +95,24 @@ program.commands
 
 export { AGENT_COMMAND_VERBS }
 
-const READ_ONLY_COMMANDS = new Set(['mcp-reader-proxy', 'migrate', 'ratchet'])
+/** Routed internal verbs for public `run show`, `run list`, and `run result`. */
+const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result'] as const
+
+const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
+  'mcp-reader-proxy',
+  'migrate',
+  'ratchet',
+  ...READ_ONLY_STORE_COMMANDS,
+])
 
 /** Verbs that only read the store must not stamp the session as seen. */
-function isReadOnlyInvocation(argv: string[]): boolean {
+function invocationSkipsSessionStamp(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],
     setup: ['facts', 'plan'],
   }
-  if (READ_ONLY_COMMANDS.has(argv[0]!)) return true
+  if (INVOCATIONS_WITHOUT_SESSION_STAMP.has(argv[0]!)) return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.
   // The lock-holder-only path never opens SQLite writable at all.
   if (argv[0] === 'monitor') return true
@@ -110,6 +125,44 @@ function isReadOnlyInvocation(argv: string[]): boolean {
     if (argv[1] === 'import' && argv.includes('--dry-run')) return true
   }
   return false
+}
+
+export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
+  const command = argv[0] as (typeof READ_ONLY_STORE_COMMANDS)[number]
+  if (!READ_ONLY_STORE_COMMANDS.includes(command)) return false
+  if (command === 'runs') return true
+  // Every option these verbs take is a boolean flag, so the first non-flag token is the run id.
+  const identifier = argv.slice(1).find((token) => !token.startsWith('-'))
+  return classifyRunIdentifier(identifier ?? '') !== null
+}
+
+export async function lockedStoreMessage(
+  error: unknown,
+  inspect: typeof storeWriteLockReport = storeWriteLockReport,
+): Promise<string> {
+  if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
+  let report: Awaited<ReturnType<typeof storeWriteLockReport>>
+  try {
+    report = await inspect(DB_PATH)
+  } catch (inspectionError) {
+    return formatDatabaseLockRefusal({
+      store: DB_PATH,
+      holder: {
+        unavailable: `lock-holder inspection failed: ${inspectionError instanceof Error ? inspectionError.message : String(inspectionError)}`,
+      },
+    })
+  }
+  return formatDatabaseLockRefusal({
+    store: DB_PATH,
+    holder:
+      report.supported && report.pid !== null
+        ? { pid: report.pid, command: report.command }
+        : {
+            unavailable: report.supported
+              ? 'the lock was released before its holder could be inspected'
+              : report.reason,
+          },
+  })
 }
 
 /** The exit code for a failure that escaped a command: Commander's own signals map to 0 or 2, everything else is 1. */
@@ -125,7 +178,7 @@ function exitCodeFor(error: unknown): number {
  */
 
 export function recordInvocationSession(argv: string[]): void {
-  if (isReadOnlyInvocation(argv)) return
+  if (invocationSkipsSessionStamp(argv)) return
   recordSessionHostPressure()
 }
 
@@ -133,13 +186,14 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
   setRawArgv(argv)
   applyPublicCommandPath(program, argv, invocation)
   try {
-    await program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
+    const parse = () =>
+      program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
+    await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
     await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
-    if (!(error instanceof CommanderError))
-      console.error(error instanceof Error ? error.message : String(error))
+    if (!(error instanceof CommanderError)) console.error(await lockedStoreMessage(error))
     return code
   }
 }

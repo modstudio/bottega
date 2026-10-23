@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { CLI_COMMANDS } from './args.ts'
 import { isHelpShapedInvocation, isStoreFreeInvocation, runCliEntryForTest } from './orch.ts'
-import { program } from './program.ts'
+import { lockedStoreMessage, program, usesReadOnlyStoreHandle } from './program.ts'
 
 test('the outer CLI classifies every informational invocation without consulting the store', () => {
   for (const argv of [
@@ -35,6 +35,28 @@ test('canon command recognition is pinned to the Commander registry', () => {
 
 test('the retired top-level probe spelling is not registered', () => {
   expect(program.commands.some((command) => command.name() === 'probe')).toBeFalse()
+})
+
+test('run query verbs use the read-only store handle', () => {
+  expect(usesReadOnlyStoreHandle(['runs', '--json'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['run', '01990000-0000-7000-8000-000000000001'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['result', '1'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['run', '--receipt', '42'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['result', '--quiet', '1'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['wait', '1'])).toBeFalse()
+  expect(usesReadOnlyStoreHandle(['run', 'wait', '1'])).toBeFalse()
+  expect(usesReadOnlyStoreHandle(['monitor'])).toBeFalse()
+})
+
+test('a failed holder inspection cannot hide the original database lock refusal', async () => {
+  const message = await lockedStoreMessage({ code: 'SQLITE_BUSY' }, async () => {
+    throw new Error('shared-memory file is unreadable')
+  })
+  expect(message).toContain('database write refused: database is locked')
+  expect(message).toContain(
+    'holder: unknown (lock-holder inspection failed: shared-memory file is unreadable)',
+  )
+  expect(message).toContain('then retry the command')
 })
 
 test('setup facts reaches the executable entry without creating or mutating a store', async () => {
