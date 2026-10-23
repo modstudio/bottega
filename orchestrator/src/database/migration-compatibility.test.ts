@@ -39,4 +39,14 @@ describe('in-flight migration compatibility', () => {
     expect(inFlightMigrationCompatibility(entries, 1, 3)).toBe('incompatible')
     expect(inFlightMigrationCompatibility(entries, 2, 4)).toBe('incompatible')
   })
+
+  test('a range past an all-additive journal is incompatible', () => {
+    const entries = [
+      { idx: 0, when: 1, tag: '0000', compatibility: 'additive' as const },
+      { idx: 1, when: 2, tag: '0001', compatibility: 'additive' as const },
+    ]
+    expect(inFlightMigrationCompatibility(entries, entries.length, entries.length + 2)).toBe(
+      'incompatible',
+    )
+  })
 })

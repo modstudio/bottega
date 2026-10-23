@@ -37,7 +37,7 @@ import {
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { upsertProject } from '../project/projects.ts'
 import { recordedCoordinatorCause } from '../run/run-coordinator-log.ts'
-import { enableRunSchemaReload } from '../run/run-migration-compatibility.ts'
+import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import {
   BRACE_EXPANSION_LIMIT,
   braceExpansionUpperBound,

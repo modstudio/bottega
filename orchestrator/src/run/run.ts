@@ -115,7 +115,6 @@ import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
 import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
-import * as runMigration from './run-migration-compatibility.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -130,6 +129,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
+import * as runMigration from './run-schema-reload-cause.ts'
 import {
   enforceRunStartupRefusal,
   recordNeverStartedRunFailure,
