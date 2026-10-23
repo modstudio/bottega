@@ -42,7 +42,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-transition.ts',
     './workflows.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-floor.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-floor.ts', [
+    '../../../shared/brand.ts',
+    './workflow-floor-refusal.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-self-ruling.ts', [
     '../../../shared/brand.ts',
     './autonomy.ts',
@@ -59,7 +63,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-run-binding.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', [
     '../branch/pull-request-view.ts',
+    './workflow-checkout-refusal.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-checkout-refusal.ts', []),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
     'bun:sqlite',
     '../branch/merged-pull-request.ts',
@@ -88,6 +94,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/run-identifier.ts',
     './workflow-floor.ts',
     './workflow-checkout-landing.ts',
+    './workflow-checkout-refusal.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-run-binding.ts',
     './workflow-text.ts',
