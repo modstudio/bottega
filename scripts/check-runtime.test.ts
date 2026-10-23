@@ -13,14 +13,14 @@ import {
 } from './check-runtime'
 
 describe('dependency installation', () => {
-  test('a worker uses provisioned dependencies when its lockfile matches main', () => {
-    expect(
-      dependencyInstallDecision({
-        workerRun: true,
-        nodeModulesPresent: true,
-        lockfileMatchesMain: true,
-      }),
-    ).toBe('skip-provisioned')
+  test("a worker keeps using its base when main's lockfile advances", () => {
+    const factsAfterMainAdvances = {
+      workerRun: true,
+      nodeModulesPresent: true,
+      provisioningSourceResolved: true,
+      lockfileMatchesProvisioningSource: true,
+    }
+    expect(dependencyInstallDecision(factsAfterMainAdvances)).toBe('skip-provisioned')
   })
 
   test('a worker refuses a lockfile change', () => {
@@ -28,7 +28,8 @@ describe('dependency installation', () => {
       dependencyInstallDecision({
         workerRun: true,
         nodeModulesPresent: true,
-        lockfileMatchesMain: false,
+        provisioningSourceResolved: true,
+        lockfileMatchesProvisioningSource: false,
       }),
     ).toBe('refuse-lockfile-change')
   })
@@ -38,9 +39,21 @@ describe('dependency installation', () => {
       dependencyInstallDecision({
         workerRun: true,
         nodeModulesPresent: false,
-        lockfileMatchesMain: true,
+        provisioningSourceResolved: true,
+        lockfileMatchesProvisioningSource: true,
       }),
     ).toBe('refuse-missing-node-modules')
+  })
+
+  test('a worker refuses when its provisioning source cannot be resolved', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: true,
+        provisioningSourceResolved: false,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('refuse-unresolved-provisioning-source')
   })
 
   test('a non-worker uses the normal install', () => {
@@ -48,7 +61,8 @@ describe('dependency installation', () => {
       dependencyInstallDecision({
         workerRun: false,
         nodeModulesPresent: false,
-        lockfileMatchesMain: false,
+        provisioningSourceResolved: false,
+        lockfileMatchesProvisioningSource: false,
       }),
     ).toBe('normal-install')
   })

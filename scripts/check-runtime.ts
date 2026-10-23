@@ -21,21 +21,28 @@ export type AttributedCommandCpu = { name: string; cpuMs: number; share: number 
 export type DependencyInstallFacts = {
   workerRun: boolean
   nodeModulesPresent: boolean
-  lockfileMatchesMain: boolean
+  provisioningSourceResolved: boolean
+  lockfileMatchesProvisioningSource: boolean
 }
 export type DependencyInstallDecision =
   | 'normal-install'
   | 'skip-provisioned'
   | 'refuse-lockfile-change'
   | 'refuse-missing-node-modules'
+  | 'refuse-unresolved-provisioning-source'
 
-/** Decide whether the gate may use dependencies provisioned before a worker entered its sandbox. */
+/**
+ * Decide whether the gate may use dependencies provisioned before a worker entered its sandbox.
+ * The gate resolves that source from Git structure instead of a worker environment marker because
+ * orchestration marker names are not part of the check's contract.
+ */
 export function dependencyInstallDecision(
   facts: DependencyInstallFacts,
 ): DependencyInstallDecision {
   if (!facts.workerRun) return 'normal-install'
   if (!facts.nodeModulesPresent) return 'refuse-missing-node-modules'
-  return facts.lockfileMatchesMain ? 'skip-provisioned' : 'refuse-lockfile-change'
+  if (!facts.provisioningSourceResolved) return 'refuse-unresolved-provisioning-source'
+  return facts.lockfileMatchesProvisioningSource ? 'skip-provisioned' : 'refuse-lockfile-change'
 }
 
 const CHECK_LEG_NAMES = CHECK_LEGS.map((leg) => leg.name)

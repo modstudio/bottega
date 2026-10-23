@@ -303,19 +303,42 @@ function printFailedLegTails(results: LegResult[]) {
 const lockfilePath = join(root, 'bun.lock')
 const nodeModulesPath = join(root, 'node_modules')
 
+function gitOutput(cwd: string, argv: string[]): Buffer | null {
+  const result = Bun.spawnSync(['git', ...argv], { cwd, stdout: 'pipe', stderr: 'ignore' })
+  return result.exitCode === 0 && result.stdout.length ? result.stdout : null
+}
+
+function provisionedLockfile(): Buffer | null {
+  const mainCheckout = mainCheckoutOf(root)
+  if (!mainCheckout) return null
+  const landingBranch = gitOutput(mainCheckout, ['symbolic-ref', '--short', 'HEAD'])
+    ?.toString()
+    .trim()
+  if (!landingBranch) return null
+  const remoteLanding = `origin/${landingBranch}`
+  const landingRef = gitOutput(root, ['rev-parse', '--verify', remoteLanding])
+    ? remoteLanding
+    : landingBranch
+  const base = gitOutput(root, ['merge-base', 'HEAD', landingRef])?.toString().trim()
+  if (!base) return null
+  // The tracked writer recipe runs bun install after creating the tree at this base. Reading the
+  // base commit keeps that provisioning source stable when the main checkout advances later.
+  return gitOutput(root, ['show', `${base}:bun.lock`])
+}
+
 async function installDependencies() {
   const workerRun = classifyCaller(process.env).kind === 'worker'
-  const mainCheckout = workerRun ? mainCheckoutOf(root) : null
+  const sourceLockfile = workerRun ? provisionedLockfile() : null
   const decision = dependencyInstallDecision({
     workerRun,
     nodeModulesPresent: existsSync(nodeModulesPath),
-    lockfileMatchesMain:
-      mainCheckout !== null &&
-      readFileSync(lockfilePath).equals(readFileSync(join(mainCheckout, 'bun.lock'))),
+    provisioningSourceResolved: sourceLockfile !== null,
+    lockfileMatchesProvisioningSource:
+      sourceLockfile !== null && readFileSync(lockfilePath).equals(sourceLockfile),
   })
   if (decision === 'normal-install') return inherit(['bun', 'install', '--silent'])
   if (decision === 'skip-provisioned') {
-    console.log('INSTALL: skipped; worker dependencies were provisioned from the main checkout')
+    console.log("INSTALL: skipped; worker dependencies match the tree's provisioning base")
     return 0
   }
   if (decision === 'refuse-missing-node-modules') {
@@ -324,8 +347,14 @@ async function installDependencies() {
     )
     return 1
   }
+  if (decision === 'refuse-unresolved-provisioning-source') {
+    console.error(
+      "INSTALL: refused; the worker's dependency provisioning source or its bun.lock could not be resolved; run the architect's gate to reprovision dependencies",
+    )
+    return 1
+  }
   console.error(
-    "INSTALL: refused; the worker's bun.lock differs from the main checkout's bun.lock; a lockfile change needs the architect's gate because a sandboxed worker has neither the Bun cache nor the network",
+    "INSTALL: refused; the worker's bun.lock differs from its provisioning base; a lockfile change needs the architect's gate because a sandboxed worker has neither the Bun cache nor the network",
   )
   return 1
 }
