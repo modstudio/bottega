@@ -101,6 +101,7 @@ export type ValidatedEvidence = {
     id: number
     command: string
     argv: string[] | null
+    commandIdentity?: BottegaCommandIdentity
     exitCode: number
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
@@ -344,6 +345,7 @@ export type PullRequestEvidenceFacts =
   | {
       kind: 'exec'
       argv: string[] | null
+      commandIdentity?: BottegaCommandIdentity
       exitCode: number
       sessionBound: boolean
       createdAfterStepActivation: boolean
@@ -367,17 +369,34 @@ function execOutputWithheld(facts: { withheld: boolean; output: string }): boole
   return facts.withheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
 }
 
-function commandBasename(value: string): string {
-  return value.split(/[\\/]/).at(-1) ?? ''
+export type BottegaCommandIdentity = {
+  resolvedExecutable: string | null
+  registeredExecutables: readonly string[]
 }
 
-export function pullRequestCreateArgv(argv: string[] | null): argv is string[] {
-  return (
-    argv !== null &&
-    commandBasename(argv[0] ?? '') === PLATFORM_SLUG &&
-    argv[1] === 'pr' &&
-    argv[2] === 'create'
+/** Matches one bottega verb after the adapter has resolved any path-shaped executable. */
+export function bottegaVerbArgv(
+  argv: string[] | null,
+  verb: readonly string[],
+  identity?: BottegaCommandIdentity,
+): argv is string[] {
+  if (argv === null) return false
+  const executable = argv[0] ?? ''
+  const registeredPath = Boolean(
+    identity?.resolvedExecutable &&
+      identity.registeredExecutables.includes(identity.resolvedExecutable),
   )
+  return (
+    (executable === PLATFORM_SLUG || registeredPath) &&
+    verb.every((part, index) => argv[index + 1] === part)
+  )
+}
+
+export function pullRequestCreateArgv(
+  argv: string[] | null,
+  identity?: BottegaCommandIdentity,
+): argv is string[] {
+  return bottegaVerbArgv(argv, ['pr', 'create'], identity)
 }
 
 export function githubPullRequestUrlIn(output: string): string | undefined {
@@ -387,7 +406,7 @@ export function githubPullRequestUrlIn(output: string): string | undefined {
 function decidePullRequestExec(
   facts: Extract<PullRequestEvidenceFacts, { kind: 'exec' }>,
 ): PullRequestEvidenceDecision {
-  if (!pullRequestCreateArgv(facts.argv))
+  if (!pullRequestCreateArgv(facts.argv, facts.commandIdentity))
     return { met: false, condition: `the recorded command is not ${PLATFORM_SLUG} pr create` }
   if (facts.argv.includes('-h') || facts.argv.includes('--help'))
     return { met: false, condition: 'the recorded command is a help invocation' }
@@ -461,6 +480,7 @@ function execPullRequestFacts(
   return {
     kind: 'exec',
     argv: exec.argv,
+    commandIdentity: exec.commandIdentity,
     exitCode: exec.exitCode,
     sessionBound: exec.sessionMatches || exec.sessionAdoptedCursor,
     createdAfterStepActivation: exec.createdAfterStepActivation,
