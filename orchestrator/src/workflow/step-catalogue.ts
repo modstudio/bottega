@@ -20,10 +20,14 @@ import type {
   StepCatalogueDefinition,
 } from './step-catalogue-definition.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
-import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
+import {
+  type WorkflowDefinition,
+  type WorkflowModeStep,
+  workflowsAfterReplacement,
+} from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
-import { workflowPromotionReport, workflowsAfterReplacement } from './workflow-shared-promotion.ts'
+import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
   type CataloguePromotionPorts,
   promoteSharedStepCatalogue,

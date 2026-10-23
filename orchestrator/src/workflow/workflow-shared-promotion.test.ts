@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { workflowsAfterReplacement } from './workflow-definition.ts'
 import {
+  preflightSharedWorkflowTargets,
   sharedWorkflowPromotionSpaces,
-  sharedWorkflowReachableSpaces,
   type WorkflowPromotionVersion,
-  workflowsAfterReplacement,
 } from './workflow-shared-promotion.ts'
 
 const shared = (
@@ -118,10 +118,66 @@ describe('shared workflow catalogue preflight inputs', () => {
     ])
   })
 
-  test('excludes a blocked local space from the write set without stringifying its key', () => {
-    expect(sharedWorkflowReachableSpaces([null, 'source', 'follower'], [null])).toEqual([
-      'source',
-      'follower',
+  test('uses the source catalogue for a follower and its production catalogue for an override', () => {
+    const sourceCatalogue = shared('source', 2, 'production', JSON.stringify({ plan: 'source' }))
+    const versions = [
+      shared('source', 1, 'retired', JSON.stringify({ plan: 'common' })),
+      sourceCatalogue,
+      shared('follower', 1, 'production', JSON.stringify({ plan: 'common' })),
+      shared('override', 1, 'production', JSON.stringify({ plan: 'override' })),
+    ]
+    const planned: [string | null, unknown][] = []
+
+    expect(
+      preflightSharedWorkflowTargets({
+        slug: 'shared',
+        definition: { title: 'incoming' },
+        sourceSpace: 'source',
+        spaces: ['follower', 'override'],
+        catalogueVersions: versions,
+        sourceCatalogue,
+        missingCatalogueRefusal: 'missing catalogue',
+        preflight: (_definition, spaceId, catalogue) => {
+          planned.push([spaceId, catalogue])
+          if (spaceId === 'override') throw new Error('does not carry workflow')
+        },
+      }),
+    ).toEqual([
+      {
+        spaceId: 'override',
+        disposition: 'override',
+        plannedVersion: 1,
+        reason: 'does not carry workflow',
+      },
     ])
+    expect(planned).toEqual([
+      ['follower', { plan: 'source' }],
+      ['override', { plan: 'override' }],
+    ])
+  })
+
+  test('refuses when a follower catalogue cannot carry the workflow', () => {
+    const sourceCatalogue = shared('source', 2, 'production', JSON.stringify({ plan: 'source' }))
+
+    expect(() =>
+      preflightSharedWorkflowTargets({
+        slug: 'shared',
+        definition: { title: 'incoming' },
+        sourceSpace: 'source',
+        spaces: ['follower'],
+        catalogueVersions: [
+          shared('source', 1, 'retired', JSON.stringify({ plan: 'common' })),
+          sourceCatalogue,
+          shared('follower', 1, 'production', JSON.stringify({ plan: 'common' })),
+        ],
+        sourceCatalogue,
+        missingCatalogueRefusal: 'missing catalogue',
+        preflight: () => {
+          throw new Error('does not carry workflow')
+        },
+      }),
+    ).toThrow(
+      'refusing shared workflow promotion for "shared": space follower catalogue follower planned version 2 cannot carry the workflow: does not carry workflow',
+    )
   })
 })

@@ -14,11 +14,13 @@ import {
 } from '../record/record-workflow-contract.ts'
 import type { WorkflowDefinition } from './workflow-definition.ts'
 import {
+  preflightSharedWorkflowTargets,
   SHARED_WORKFLOW_PROMOTION_REASON,
+  sharedPromotionRefusal,
+  sharedPromotionTarget,
   sharedWorkflowPromotionDisposition,
   sharedWorkflowPromotionSpaces,
   sharedWorkflowReachableSpaces,
-  type WorkflowCatalogueBlock,
   type WorkflowPromotionSpaceDecision,
   type WorkflowPromotionVersion,
 } from './workflow-shared-promotion.ts'
@@ -250,18 +252,6 @@ async function applySharedCataloguePromotion(
   })
 }
 
-const sharedPromotionTarget = (
-  spaceId: string | null,
-  disposition: 'follower' | 'override' | 'pinned',
-  plannedVersion: number | 'none',
-): string =>
-  `space ${spaceId ?? 'local'} catalogue ${disposition} planned version ${plannedVersion}`
-
-const sharedPromotionRefusal = (slug: string, target: string, reason: string): Error =>
-  new Error(
-    `refusing shared workflow promotion for "${slug}": ${target} cannot carry the workflow: ${reason}`,
-  )
-
 async function sharedPromotionState(slug: string, sourceSpace: string, d: Database) {
   const membershipList = await recordMemberships(recordApiClient())
   const spaceIds = membershipList.memberships.map((membership) => membership.spaceId)
@@ -326,50 +316,6 @@ async function promoteHostedWorkflowSpace(
   await applyWorkflowWriteResponse(d, 'workflow', result)
 }
 
-function preflightSharedWorkflowTargets(input: {
-  slug: string
-  definition: WorkflowDefinition
-  sourceSpace: string
-  spaces: readonly (string | null)[]
-  catalogueVersions: readonly StoredPromotionVersion[]
-  sourceCatalogue: StoredPromotionVersion
-  ports: Pick<PromotionPorts, 'preflight' | 'missingCatalogueRefusal'>
-}): (Omit<WorkflowCatalogueBlock, 'space'> & { spaceId: string | null })[] {
-  const blocked: (Omit<WorkflowCatalogueBlock, 'space'> & { spaceId: string | null })[] = []
-  for (const spaceId of input.spaces) {
-    const disposition = sharedWorkflowPromotionDisposition(
-      spaceId,
-      input.catalogueVersions,
-      input.sourceSpace,
-    )
-    const catalogue =
-      disposition === 'follower'
-        ? input.sourceCatalogue
-        : input.catalogueVersions.find(
-            (version) => version.spaceId === spaceId && version.status === 'production',
-          )
-    const target = sharedPromotionTarget(spaceId, disposition, catalogue?.n ?? 'none')
-    if (!catalogue)
-      throw sharedPromotionRefusal(input.slug, target, input.ports.missingCatalogueRefusal)
-    try {
-      input.ports.preflight(input.definition, spaceId, JSON.parse(catalogue.definition))
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      if (disposition !== 'follower') {
-        blocked.push({
-          spaceId,
-          disposition,
-          plannedVersion: catalogue.n,
-          reason,
-        })
-        continue
-      }
-      throw sharedPromotionRefusal(input.slug, target, reason)
-    }
-  }
-  return blocked
-}
-
 export async function promoteSharedWorkflow(
   slug: string,
   n: number,
@@ -399,14 +345,16 @@ export async function promoteSharedWorkflow(
   )
   if (!workflowTarget)
     throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${sourceSpace}`)
+  const workflowDefinition = JSON.parse(workflowTarget.definition) as WorkflowDefinition
   const blockedByCatalogue = preflightSharedWorkflowTargets({
     slug,
-    definition: JSON.parse(workflowTarget.definition) as WorkflowDefinition,
+    definition: workflowDefinition,
     sourceSpace,
     spaces: workflowDecision.changed,
     catalogueVersions,
     sourceCatalogue,
-    ports,
+    missingCatalogueRefusal: ports.missingCatalogueRefusal,
+    preflight: ports.preflight,
   })
   const blockedSpaces = blockedByCatalogue.map((blocked) => blocked.spaceId)
   const catalogueTargetSpaces = sharedWorkflowReachableSpaces(
@@ -422,7 +370,7 @@ export async function promoteSharedWorkflow(
     catalogueVersions,
     d,
     ports.catalogue,
-    { slug, definition: JSON.parse(workflowTarget.definition) as WorkflowDefinition },
+    { slug, definition: workflowDefinition },
   )
   const promoted = await promoteSharedWorkflowSpaces({
     slug,

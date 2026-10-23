@@ -11,17 +11,6 @@ export type WorkflowPromotionVersion = {
 
 export const SHARED_WORKFLOW_PROMOTION_REASON = 'shared promotion:'
 
-export function workflowsAfterReplacement<Definition>(
-  rows: readonly { slug: string; definition: string }[],
-  incomingSlug: string,
-  incomingDefinition: Definition,
-): { slug: string; definition: string }[] {
-  const definition = JSON.stringify(incomingDefinition)
-  if (!rows.some((row) => row.slug === incomingSlug))
-    return [...rows, { slug: incomingSlug, definition }]
-  return rows.map((row) => (row.slug === incomingSlug ? { slug: incomingSlug, definition } : row))
-}
-
 export const sharedWorkflowReachableSpaces = (
   spaces: readonly (string | null)[],
   blockedSpaces: readonly (string | null)[],
@@ -34,11 +23,15 @@ export type WorkflowPromotionSpaceDecision = {
   blockedByCatalogue?: WorkflowCatalogueBlock[]
 }
 
-export type WorkflowCatalogueBlock = {
+type WorkflowCatalogueBlock = {
   space: string
   disposition: 'override' | 'pinned'
   plannedVersion: number
   reason: string
+}
+
+export type WorkflowCatalogueBlockBySpace = Omit<WorkflowCatalogueBlock, 'space'> & {
+  spaceId: string | null
 }
 
 export type WorkflowPromotionReport = {
@@ -61,6 +54,18 @@ export const workflowPromotionReport = (
     ? { blockedByCatalogue: decision.blockedByCatalogue }
     : {}),
 })
+
+export const sharedPromotionTarget = (
+  spaceId: string | null,
+  disposition: 'follower' | 'override' | 'pinned',
+  plannedVersion: number | 'none',
+): string =>
+  `space ${spaceId ?? 'local'} catalogue ${disposition} planned version ${plannedVersion}`
+
+export const sharedPromotionRefusal = (slug: string, target: string, reason: string): Error =>
+  new Error(
+    `refusing shared workflow promotion for "${slug}": ${target} cannot carry the workflow: ${reason}`,
+  )
 
 const pinsSharedPromotion = (
   spaceId: string | null,
@@ -87,6 +92,50 @@ export const sharedWorkflowPromotionDisposition = (
   const rows = versions.filter((row) => row.spaceId === spaceId)
   if (rows.some((row) => sourceVersions.get(row.n) !== row.definition)) return 'override'
   return pinsSharedPromotion(spaceId, sourceSpace, rows) ? 'pinned' : 'follower'
+}
+
+export function preflightSharedWorkflowTargets<Definition>(input: {
+  slug: string
+  definition: Definition
+  sourceSpace: string
+  spaces: readonly (string | null)[]
+  catalogueVersions: readonly WorkflowPromotionVersion[]
+  sourceCatalogue: WorkflowPromotionVersion
+  missingCatalogueRefusal: string
+  preflight(definition: Definition, spaceId: string | null, catalogue: unknown): void
+}): WorkflowCatalogueBlockBySpace[] {
+  const blocked: WorkflowCatalogueBlockBySpace[] = []
+  for (const spaceId of input.spaces) {
+    const disposition = sharedWorkflowPromotionDisposition(
+      spaceId,
+      input.catalogueVersions,
+      input.sourceSpace,
+    )
+    const catalogue =
+      disposition === 'follower'
+        ? input.sourceCatalogue
+        : input.catalogueVersions.find(
+            (version) => version.spaceId === spaceId && version.status === 'production',
+          )
+    const target = sharedPromotionTarget(spaceId, disposition, catalogue?.n ?? 'none')
+    if (!catalogue) throw sharedPromotionRefusal(input.slug, target, input.missingCatalogueRefusal)
+    try {
+      input.preflight(input.definition, spaceId, JSON.parse(catalogue.definition))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      if (disposition !== 'follower') {
+        blocked.push({
+          spaceId,
+          disposition,
+          plannedVersion: catalogue.n,
+          reason,
+        })
+        continue
+      }
+      throw sharedPromotionRefusal(input.slug, target, reason)
+    }
+  }
+  return blocked
 }
 
 /** A space follows while every version it holds matches the source history. */
