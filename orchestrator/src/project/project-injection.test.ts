@@ -142,6 +142,7 @@ describe('project workflow injection', () => {
               { lens: 'craft', minTier: 2 },
             ],
             secondOpinion: { lens: 'craft', basis: 'escaped defect evidence' },
+            unscopedLenses: 'skip',
             risk: {
               paths: [{ pattern: '^shared/', tier: 3, reason: 'shared schema', basis: 'incident' }],
               unlisted: 1,
@@ -152,6 +153,11 @@ describe('project workflow injection', () => {
         { enabledLensIds: ['correctness', 'migration-safety', 'craft'] },
       ),
     ).toEqual([])
+    expect(
+      validateProjectSettings({
+        review: { lenses: [], unscopedLenses: 'sometimes' },
+      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([expect.stringContaining('review.unscopedLenses')])
     expect(
       validateProjectSettings({
         review: {

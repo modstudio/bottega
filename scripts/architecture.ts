@@ -320,6 +320,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './autonomy.ts',
+    './session-context-cache.ts',
     './step-catalogue.ts',
   ]),
   ...workflowCommandModules,
@@ -544,7 +545,10 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-declared-globs.ts', []),
-  module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
+  module('orchestrator/src/review/review-evidence-sql.ts', [
+    '../evidence/evidence-query.ts',
+    '../project/project-injection.ts',
+  ]),
   module('orchestrator/src/review/review-identifier.ts', [
     '../../../shared/record-id.ts',
     'bun:sqlite',

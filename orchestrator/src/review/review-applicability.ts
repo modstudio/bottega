@@ -13,6 +13,11 @@ const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
 }
 
+/** Lenses that remain relevant regardless of their declared path scope. */
+export function isAlwaysRelevantLens(lens: string): boolean {
+  return lens === 'correctness'
+}
+
 export type ApplicableReview = {
   lenses: string[]
   secondOpinion?: string
@@ -73,6 +78,8 @@ function selectedLensRules(
   const bases: Record<string, string> = {}
   for (const entry of declaration.lenses) {
     if (tier < (entry.minTier ?? 1)) continue
+    if (declaration.unscopedLenses === 'skip' && !isAlwaysRelevantLens(entry.lens) && !entry.paths)
+      continue
     if (entry.paths && !declaredGlobsMatch(changedPaths, entry.paths)) continue
     if (lenses.includes(entry.lens)) continue
     lenses.push(entry.lens)
@@ -99,6 +106,18 @@ export function applicableReview(
   const { lenses: selected, bases: lensBases } = selectedLensRules(declaration, tier, changedPaths)
   const secondOpinion = declaration.secondOpinion
   if (!secondOpinion || tier < (secondOpinion.minTier ?? 3)) {
+    return { lenses: selected, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
+  }
+  if (
+    declaration.unscopedLenses === 'skip' &&
+    !isAlwaysRelevantLens(secondOpinion.lens) &&
+    !declaration.lenses.some(
+      (entry) =>
+        entry.lens === secondOpinion.lens &&
+        entry.paths !== undefined &&
+        declaredGlobsMatch(changedPaths, entry.paths),
+    )
+  ) {
     return { lenses: selected, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
   }
   if (!selected.includes(secondOpinion.lens)) selected.push(secondOpinion.lens)

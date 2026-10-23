@@ -9,7 +9,7 @@ import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
-import { runArtifactsDir, runScratchDir } from '../artifact-paths.ts'
+import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
@@ -192,7 +192,7 @@ function runHasRecordedArtifacts(
     .get(runId)?.record_id
   if (!recordId) return false
   const artifacts = runArtifactsDir(recordId, runsDir)
-  const reply = join(runScratchDir(recordId, runsDir), 'reply.json')
+  const reply = runScratchReplyPath(recordId, runsDir)
   if (existsSync(reply)) return true
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }

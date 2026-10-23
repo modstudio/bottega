@@ -39,6 +39,7 @@ import {
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { attributedLaunchKey } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
+import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
@@ -61,7 +62,6 @@ import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
   prepareFiles,
-  runScratchDir,
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
@@ -509,7 +509,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       keepTree?.reason ?? null,
       claim.id,
     )
-  const scratchDir = runScratchDir(recordId)
+  const sandboxRoot = sandboxRootForRun(claim.id)
+  const { scratchDir, runtimeDir } = runOwnedPaths(recordId, sandboxRoot.record_id, runsDir)
   mkdirSync(scratchDir, { recursive: true })
   prompt = `${replyFileInstruction(replySchemaName, scratchDir)}\n\n${prompt}`
   writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
@@ -539,9 +540,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let mcpTrustGranted = false,
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
-  const sandboxRoot = sandboxRootForRun(claim.id)
-  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot.record_id}`)
-  const sandboxRunDirExisted = existsSync(sandboxRunDir)
+  const runtimeDirExisted = existsSync(runtimeDir)
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -923,8 +922,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       callerCwd,
       agent: a,
       agentName: name,
-      sandboxRunDir,
-      sandboxRunDirExisted,
+      runtimeDir,
+      runtimeDirExisted,
       sandboxRootId: sandboxRoot.record_id,
       runId: claim.id,
       runProjectId,
@@ -970,8 +969,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     mcpSetupHeader,
     mcpTrustGranted,
     grokMcpEnvironment,
-    sandboxRunDir,
-    sandboxRunDirExisted,
+    runtimeDir,
+    runtimeDirExisted,
     cwd,
     prompt,
     mcpConnection,

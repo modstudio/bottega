@@ -603,12 +603,18 @@ function startGateExecution(
     })
     return state.termination
   }
-  let completion!: Promise<void>
-  const unregister = registerActive(async () => {
-    await stop(GATE_CLOSE_REASON)
-    await completion
-  })
   let finishedAt: string | null = null
+  let completion!: Promise<void>
+  let unregister: () => void
+  try {
+    unregister = registerActive(async () => {
+      await stop(GATE_CLOSE_REASON)
+      await completion
+    })
+  } catch (error) {
+    onFinish?.({ executionId: request.id, at: nowIso() })
+    throw error
+  }
   completion = (async () => {
     mkdirSync(scratchDir, { recursive: true })
     const artifactPath = join(runArtifactsDir(request.run_record_id), `gate-${request.id}.log`)

@@ -75,6 +75,31 @@ export type RulingsResolution = {
   complete?: boolean
   unavailableReason?: string
 }
+
+export const HOSTED_AUTONOMY_SCOPE_NAMES = ['hosted user', 'hosted space'] as const
+const hostedAutonomyScopes = new Set<string>(HOSTED_AUTONOMY_SCOPE_NAMES)
+
+export function isHostedAutonomyScope(scope: string): boolean {
+  return (
+    hostedAutonomyScopes.has(scope) || hostedAutonomyScopes.has(scope.replace(/ \(stale\)$/, ''))
+  )
+}
+
+export function staleHostedScope(scope: string): string {
+  if (!isHostedAutonomyScope(scope) || scope.endsWith(' (stale)')) return scope
+  return `${scope} (stale)`
+}
+
+export function staleHostedAutonomyWinner<T extends { value: string; scope: string }>(
+  winner: T,
+): T {
+  if (!isHostedAutonomyScope(winner.scope)) return winner
+  return {
+    ...winner,
+    value: winner.value === 'auto' ? 'review' : winner.value,
+    scope: staleHostedScope(winner.scope),
+  } as T
+}
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const allowed = (value: unknown, values: readonly string[]) =>

@@ -302,4 +302,30 @@ describe('Drizzle migration journal', () => {
     expect(() => migrationJournal(dir)).toThrow('0001_later@300 then 0002_earlier@200')
     rmSync(dir, { recursive: true, force: true })
   })
+
+  test('a journal with an unknown compatibility label is refused at load', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-compatibility-invalid-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(
+      join(dir, 'meta', '_journal.json'),
+      JSON.stringify({
+        entries: [{ idx: 0, when: 100, tag: '0000_first', compatibility: 'breaking' }],
+      }),
+    )
+    expect(() => migrationJournal(dir)).toThrow('invalid migration compatibility for 0000_first')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a journal whose idx differs from its position is refused at load', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-index-invalid-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(
+      join(dir, 'meta', '_journal.json'),
+      JSON.stringify({ entries: [{ idx: 1, when: 100, tag: '0000_first' }] }),
+    )
+    expect(() => migrationJournal(dir)).toThrow(
+      'invalid migration journal index for 0000_first: expected 0, got 1',
+    )
+    rmSync(dir, { recursive: true, force: true })
+  })
 })

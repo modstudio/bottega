@@ -39,6 +39,11 @@ type ProbeTurnResult = {
   loadSessionAdvertised: boolean
 }
 
+const probeCwd = (input: ProbeTurnInput): string =>
+  input.writing?.cwd ?? join(input.scratch, 'repo')
+const probeScratchDir = (input: ProbeTurnInput): string =>
+  input.writing?.scratchDir ?? input.scratch
+
 function insertProbeTurn(input: ProbeTurnInput, started: number): string {
   const row = writableDb()
     .query(
@@ -51,7 +56,7 @@ function insertProbeTurn(input: ProbeTurnInput, started: number): string {
       new Date(started).toISOString(),
       input.name,
       `agent-probe-${input.id}`,
-      input.writing?.cwd ?? join(input.scratch, 'repo'),
+      probeCwd(input),
       createHash('sha256').update(input.prompt).digest('hex'),
       Buffer.byteLength(input.prompt),
       input.prompt.slice(0, 240),
@@ -108,10 +113,14 @@ async function collectTurn(
 export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResult> {
   const started = Date.now()
   const recordId = insertProbeTurn(input, started)
+  const cwd = probeCwd(input)
+  const scratchDir = probeScratchDir(input)
+  const environment = await probeEnvironment(input.agent, scratchDir)
+  if (input.writing) environment.HOME = input.writing.workerHomeDir
   try {
     const handle = await input.transport.start({
       agent: input.agent,
-      cwd: input.writing?.cwd ?? join(input.scratch, 'repo'),
+      cwd,
       prompt: input.prompt,
       outPath: join(input.scratch, `${input.id}.out`),
       schemaPath: input.schema,
@@ -120,19 +129,20 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
       startedAt: started,
       write: true,
       sandbox: 'workspace-write',
-      writableRoots: [input.scratch],
+      ...(input.writing ? {} : { writableRoots: [scratchDir] }),
       writingAcp: Boolean(input.writing),
+      home: input.writing?.workerHomeDir,
       session: input.session,
       ...(input.writing
         ? {
             srt: {
               profile: input.writing.profile,
-              runtimeDir: input.scratch,
+              runtimeDir: input.writing.runtimeDir,
             },
           }
         : {}),
       mcp: input.mcp ?? false,
-      env: await probeEnvironment(input.agent, input.scratch),
+      env: environment,
     })
     const draining = drainTransportEvents(handle.events())
     try {

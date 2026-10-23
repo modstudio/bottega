@@ -211,8 +211,8 @@ async function registrationWriterCapabilities(input: {
     path: input.path,
     environment: input.environment,
   }
-  const ports = writingProbePorts(({ cwd, prompt, profile }) =>
-    input.runOne('writing', prompt, { cwd, profile }),
+  const ports = writingProbePorts(({ prompt, ...confinement }) =>
+    input.runOne('writing', prompt, confinement),
   )
   return {
     writing: await probeAgentWrites(probeInput, ports),
