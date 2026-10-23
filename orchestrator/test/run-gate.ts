@@ -45,6 +45,8 @@ async function runTests(): Promise<GateTimings> {
     'bun',
     'test',
     'src',
+    'scripts',
+    'test',
     ...shardArguments,
     '--reporter=junit',
     `--reporter-outfile=${junitPath}`,

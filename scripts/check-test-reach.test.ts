@@ -43,6 +43,15 @@ test('the Python hook leg runs unittest discovery over its declared reach', () =
   })
 })
 
+test('the orchestrator gate collects source, script, and test-support tests', () => {
+  const orchestrator = CHECK_LEGS.find((leg) => leg.name === 'orchestrator')!
+  expect(orchestrator.testDirectories).toEqual([
+    'orchestrator/src',
+    'orchestrator/scripts',
+    'orchestrator/test',
+  ])
+})
+
 test('the hub data package is reached only by its own package leg', () => {
   const hub = CHECK_LEGS.find((leg) => leg.name === 'hub')!
   const data = CHECK_LEGS.find((leg) => leg.name === 'hub/data')!

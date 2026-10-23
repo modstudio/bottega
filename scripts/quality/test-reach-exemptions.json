@@ -1,13 +1,5 @@
 [
   {
-    "file": "orchestrator/scripts/acp-parity.test.ts",
-    "reason": "The orchestrator script tests are outside the src gate batch"
-  },
-  {
-    "file": "orchestrator/scripts/branch-store.test.ts",
-    "reason": "The orchestrator script tests are outside the src gate batch"
-  },
-  {
     "file": "orchestrator/src/postgres/postgres-import.test.ts",
     "reason": "DEV-1474"
   },
@@ -78,45 +70,5 @@
   {
     "file": "orchestrator/src/record/record-workflow-catalogue-postgres.test.ts",
     "reason": "DEV-1474"
-  },
-  {
-    "file": "orchestrator/test/fake-transport.test.ts",
-    "reason": "The orchestrator test-support tests are outside the src gate batch"
-  },
-  {
-    "file": "orchestrator/test/gate-timing-summary-decision.test.ts",
-    "reason": "The orchestrator test-support tests are outside the src gate batch"
-  },
-  {
-    "file": "orchestrator/test/preload.test.ts",
-    "reason": "The orchestrator test-support tests are outside the src gate batch"
-  },
-  {
-    "file": "orchestrator/test/record-gate-timings.test.ts",
-    "reason": "The orchestrator test-support tests are outside the src gate batch"
-  },
-  {
-    "file": "scripts/architecture-cruise.test.ts",
-    "reason": "The script test is not yet named in the root gate batch"
-  },
-  {
-    "file": "scripts/architecture-hub-data.test.ts",
-    "reason": "The script test is not yet named in the root gate batch"
-  },
-  {
-    "file": "scripts/architecture-ui-layers.test.ts",
-    "reason": "The script test is not yet named in the root gate batch"
-  },
-  {
-    "file": "scripts/architecture-violation-baseline.test.ts",
-    "reason": "The script test is not yet named in the root gate batch"
-  },
-  {
-    "file": "scripts/check-hub-ui-styles.test.ts",
-    "reason": "The script test is not yet named in the root gate batch"
-  },
-  {
-    "file": "scripts/check-record-project-space-ownership.test.ts",
-    "reason": "The script test is not yet named in the root gate batch"
   }
 ]
