@@ -76,6 +76,26 @@ test('records the selected cwd and its head commit', async () => {
   expect(d.query('SELECT cwd,head_commit FROM probe').get()).toEqual({ cwd, head_commit: head })
 })
 
+test('probe records the checkout head after the command finishes', async () => {
+  const d = database()
+  const preCommandHead = 'a'.repeat(40)
+  const postCommandHead = 'b'.repeat(40)
+  const heads = [preCommandHead, postCommandHead]
+
+  await recordWorkflowProbe(['true'], {
+    cwd: probeRepository,
+    d,
+    runner: () => ({ exitCode: 0, output: '' }),
+    resolveHeadCommit: () => heads.shift() ?? null,
+  })
+
+  expect(d.query('SELECT head_commit,pre_command_head_commit FROM probe').get()).toEqual({
+    head_commit: postCommandHead,
+    pre_command_head_commit: preCommandHead,
+  })
+  expect(heads).toEqual([])
+})
+
 test('probe output keeps a 40-hex sha line and a refusal line', async () => {
   initializeProbeRepository()
   const d = database()
@@ -254,6 +274,36 @@ test('exec records the checkout head after the command finishes', async () => {
       head_commit: rebasedTip,
       pre_command_head_commit: preRebaseHead,
       output_tail: preRebaseHead,
+    })
+    expect(heads).toEqual([])
+  } finally {
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec retains the pre-command head when the post-command cwd cannot be resolved', async () => {
+  const priorDepth = process.env.BOTTEGA_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.BOTTEGA_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    const preCommandHead = 'a'.repeat(40)
+    const heads: (string | null)[] = [preCommandHead, null]
+
+    await recordWorkflowExec(['remove', 'cwd'], {
+      cwd: probeRepository,
+      d,
+      runner: () => ({ exitCode: 0, output: '' }),
+      resolveHeadCommit: () => heads.shift() ?? null,
+    })
+
+    expect(d.query('SELECT head_commit,pre_command_head_commit FROM probe').get()).toEqual({
+      head_commit: preCommandHead,
+      pre_command_head_commit: preCommandHead,
     })
     expect(heads).toEqual([])
   } finally {
