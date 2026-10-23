@@ -17,6 +17,7 @@ export function parseGateInput(
     `worker gate refused: project ${JSON.stringify(projectName)} has invalid gateInput ${JSON.stringify(value)}; correct it with ${PLATFORM_SLUG} project set`,
   )
 }
+
 export type BrokerConfinement<Profile = unknown> =
   | { kind: 'host' }
   | { kind: 'srt'; profile: Profile }

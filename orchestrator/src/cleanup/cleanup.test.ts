@@ -286,6 +286,30 @@ test('a root held at close-out with the tree only on a child is no longer return
   }
 })
 
+test('discard of a tree already released by close-out names that release', async () => {
+  const id = addRun({
+    agent: 'codex',
+    job: 'review-lens',
+    status: 'stopped',
+    session: 'cleanup-test-session',
+  })
+  db()
+    .query(
+      `UPDATE run SET worktree=NULL, worktree_source='clone', close_out_outcome='released',
+         close_out_detail='released reader clone' WHERE record_id=?`,
+    )
+    .run(id)
+  const shown = presentation()
+  const lines: string[] = []
+  shown.log = (...values: unknown[]) => lines.push(values.join(' '))
+
+  await discardRun(id, { force: false, auditReason: null, presentation: shown })
+
+  expect(lines.join('\n')).toContain(
+    `run ${id}'s worktree was already released by stop or close-out`,
+  )
+})
+
 test('force discard refuses a kept review subject and releases only the reader pointer', async () => {
   const owner = addRun({
     agent: 'codex',

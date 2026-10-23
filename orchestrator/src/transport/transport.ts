@@ -162,6 +162,14 @@ export type NormalizedEvent =
     }
   | { kind: 'elicitation'; message: string }
   | { kind: 'error'; error: string }
+  | {
+      kind: 'throttled'
+      attempt: number
+      max: number
+      retryDelayMs: number | null
+      retryAt: string | null
+      httpStatus: 429
+    }
   | { kind: 'stop'; reason: string }
 
 type ParsedReply = {
@@ -240,6 +248,8 @@ export type TransportHandle = {
   pid: number | null
   /** Available once session/new or session/load has returned. */
   effectiveModel?: string | null
+  /** ACP capability observed from initialize; absent on transports without ACP. */
+  loadSessionAdvertised?: boolean
   kill(sig?: number | string): void
   prompt(text: string): Promise<void>
   events(): AsyncIterable<NormalizedEvent>

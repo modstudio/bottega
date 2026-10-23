@@ -20,9 +20,18 @@ import type {
   StepCatalogueDefinition,
 } from './step-catalogue-definition.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
-import type { WorkflowDefinition, WorkflowModeStep } from './workflow-definition.ts'
+import {
+  type WorkflowDefinition,
+  type WorkflowModeStep,
+  workflowsAfterReplacement,
+} from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { workflowPromotionReport } from './workflow-shared-promotion.ts'
+import {
+  type CataloguePromotionPorts,
+  promoteSharedStepCatalogue,
+} from './workflow-shared-promotion-store.ts'
 import {
   inspectWorkflowSteps,
   validateCatalogueSequences,
@@ -664,31 +673,23 @@ export function promoteStepCatalogue(
 ) {
   assertCatalogueWriteAllowed('promote step catalogue')
   return applyRecordWriteAuthority({
-    local: () => promoteStepCatalogueLocal(n, reason, author, d),
+    local: () => {
+      promoteStepCatalogueLocal(n, reason, author, d)
+      return workflowPromotionReport(n, { changed: [null], overrides: [], pinned: [] })
+    },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await activeSpace(),
-        target = selectedStepCatalogue(n, d, spaceId),
-        current = d
-          .query<{ n: number }, [string]>(
-            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
-          )
-          .get(spaceId)
-      cataloguePromotionPreflight(target.definition, d, spaceId)
-      const result = await recordApiClient().promoteWorkflow!(
-        {
-          kind: 'step_catalogue',
-          slug: CATALOGUE,
-          n,
-          expectedProductionVersion: current?.n ?? null,
-          author: writeAuthor(author),
-          reason: reason.trim(),
-          sessionId: sessionId(),
-        },
-        { destinationSpaceId: spaceId },
+        target = selectedStepCatalogue(n, d, spaceId)
+      if (target.status === 'retired') throw new Error(`step catalogue version ${n} is not a draft`)
+      const decision = await promoteSharedStepCatalogue(
+        n,
+        reason,
+        spaceId,
+        d,
+        sharedStepCataloguePromotionPorts(author, d),
       )
-      await applyWorkflowWriteResponse(d, 'step_catalogue', result)
-      return selectedStepCatalogue(n, d, spaceId)
+      return workflowPromotionReport(n, decision)
     },
   })
 }
@@ -706,6 +707,7 @@ function cataloguePromotionPreflight(
   definition: StepCatalogueDefinition,
   d: Database,
   spaceId: string | null,
+  replacement?: { slug: string; definition: WorkflowDefinition },
 ): void {
   const current = d
     .query<{ definition: string }, [string | null]>(
@@ -716,12 +718,15 @@ function cataloguePromotionPreflight(
   const currentSequences = current
     ? ((JSON.parse(current.definition) as StepCatalogueDefinition).sequences ?? [])
     : []
-  const rows = d
+  const currentWorkflowRows = d
     .query(
       `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
        WHERE v.status='production' AND w.space_id IS ?`,
     )
     .all(spaceId) as { slug: string; definition: string }[]
+  const rows = replacement
+    ? workflowsAfterReplacement(currentWorkflowRows, replacement.slug, replacement.definition)
+    : currentWorkflowRows
   const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
   if (missing.length)
     throw new Error(
@@ -737,6 +742,20 @@ function cataloguePromotionPreflight(
   if (refusal) throw new Error(refusal)
 }
 
+export function sharedStepCataloguePromotionPorts(
+  author: string | undefined,
+  d: Database,
+): CataloguePromotionPorts {
+  return {
+    draftLocal: (version) =>
+      importStepCatalogueLocal(JSON.parse(version.definition), version.reason, version.author, d).n,
+    promoteLocal: (version, reason) => promoteStepCatalogueLocal(version, reason, author, d),
+    preflight: (definition, spaceId, replacement) =>
+      cataloguePromotionPreflight(definition, d, spaceId, replacement),
+    author: () => writeAuthor(author),
+  }
+}
+
 export function importStepCatalogue(
   definition: unknown,
   reason: string | undefined,
@@ -748,6 +767,7 @@ export function importStepCatalogue(
   assertCatalogueWriteAllowed('import step catalogue')
   return catalogueDraft('import', definition, undefined, reason, author, d, project, onHostedWrite)
 }
+
 const importStepCatalogueLocal = (
   definition: unknown,
   reason: string | undefined,

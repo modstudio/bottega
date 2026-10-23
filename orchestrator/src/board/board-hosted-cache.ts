@@ -1,7 +1,7 @@
 // concern: hosted-board-read-cache
 /** Refreshes the hosted read cache and narrows visible rows to this machine's readers. */
 import type { Database } from 'bun:sqlite'
-import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { db, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -19,7 +19,11 @@ import {
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
-import { missingReaderStartWarning, selectPushNotices } from './board-push-policy.ts'
+import {
+  missingReaderStartWarning,
+  replySuccessorAddressing,
+  selectPushNotices,
+} from './board-push-policy.ts'
 import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
@@ -37,6 +41,7 @@ export const BOARD_CACHE_OWNER_KEY = 'board_hosted_cache_owner'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
 export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
+export const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 
 export type HostedCacheNotice = {
@@ -48,6 +53,7 @@ export type HostedCacheNotice = {
   createdAt: string
   expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
+  reportReplySuccessor?: boolean
 }
 
 type RefreshInput = {
@@ -454,6 +460,62 @@ const replyAddressesReader = (
   )
 }
 
+function hostedReplySuccessorPush(
+  message: HostedBoardMessage,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  const rootId = message.threadRootId
+  if (message.kind !== 'reply' || !rootId) return false
+  const root = cachedRows(database)
+    .map((item) => item.message)
+    .find((candidate) => candidate.id === rootId)
+  if (!root?.authorSession || !root.origin.project) return false
+  return replySuccessorAddressing({
+    presence: presenceFacts(database, clock),
+    reader,
+    rootAuthorSession: root.authorSession,
+    rootAuthorReceivedReply: wasDelivered(database, message.id, root.authorSession),
+    rootProject: root.origin.project,
+    readerIsParticipant: replyAddressesReader(message, reader, clock, database),
+    successorAlreadyReceived: Boolean(
+      database
+        .query(
+          `SELECT 1 AS ok FROM hosted_board_receipt_cache
+           WHERE message_id=? AND successor=1 AND delivered_at IS NOT NULL`,
+        )
+        .get(message.id),
+    ),
+    readerBeganAt: boardReaderBeganAt(reader, database),
+    replyPostedAt: message.createdAt,
+    now: clock,
+    liveWindowMs: SESSION_LIVE_MS,
+  })
+}
+
+function takeHostedReportReplySuccessor(
+  message: HostedBoardMessage,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  return writeTransaction(() => {
+    if (!hostedReplySuccessorPush(message, reader, clock, database)) return false
+    database
+      .query(
+        `INSERT INTO hosted_board_receipt_cache
+         (message_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
+         VALUES (?,?,0,1,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
+         successor=1,
+         pending_sync=1`,
+      )
+      .run(message.id, reader, new Date(clock).toISOString())
+    return true
+  }, database)
+}
+
 export function cachedMessageAddressed(
   row: { message: HostedBoardMessage; tags: BoardTag[] },
   reader: string,
@@ -461,7 +523,11 @@ export function cachedMessageAddressed(
   database: Database,
 ): boolean {
   const { message, tags } = row
-  if (message.kind === 'reply') return replyAddressesReader(message, reader, clock, database)
+  if (message.kind === 'reply')
+    return (
+      replyAddressesReader(message, reader, clock, database) ||
+      hostedReplySuccessorPush(message, reader, clock, database)
+    )
   if (!message.audience || !hostedMessageIsLive(message, clock)) return false
   const audience = parseAudience(message.audience)
   const signedIn = meta(database, BOARD_REFRESH_USER_KEY)
@@ -491,8 +557,8 @@ export function cachedMessageAddressed(
   return true
 }
 
-function delivered(database: Database, id: string, reader: string): boolean {
-  const receipt = database
+function receiptDelivery(database: Database, id: string, reader: string) {
+  return database
     .query(
       'SELECT delivered_at,acknowledged_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
     )
@@ -500,6 +566,14 @@ function delivered(database: Database, id: string, reader: string): boolean {
     delivered_at: string | null
     acknowledged_at: string | null
   } | null
+}
+
+function wasDelivered(database: Database, id: string, reader: string): boolean {
+  return Boolean(receiptDelivery(database, id, reader)?.delivered_at)
+}
+
+function delivered(database: Database, id: string, reader: string): boolean {
+  const receipt = receiptDelivery(database, id, reader)
   return Boolean(receipt?.delivered_at || receipt?.acknowledged_at)
 }
 
@@ -589,37 +663,42 @@ export function claimCachedHosted(
         cachedMessageAddressed(row, reader, clock, database) &&
         (all || !delivered(database, row.message.id, reader)),
     )
-    .map(({ message, tags }) => ({
-      id: message.id,
-      text: renderCached(message, tags, messages, reader.startsWith('run:')),
-      oneLine:
-        message.kind === 'reply'
-          ? renderBoardReplyDelivery({
-              origin: originText(message.origin),
-              rootId: message.threadRootId ?? 'unknown',
-              rootTitle:
-                messages.find((candidate) => candidate.id === message.threadRootId)?.title ?? '',
-              body: message.body,
-            })
-          : renderBoardNoticeOneLine({
-              id: message.id,
-              title: message.title ?? '',
-              sender: originText(message.origin),
-              ackRequired: message.ackRequired,
-            }),
-      ackRequired: message.ackRequired,
-      ackDeadline: message.ackDeadline,
-      createdAt: message.createdAt,
-      expiresAt: message.expiresAt,
-      purpose: message.purpose ?? 'information',
-    }))
+    .map(({ message, tags }) => {
+      const notice = {
+        id: message.id,
+        text: renderCached(message, tags, messages, reader.startsWith('run:')),
+        oneLine:
+          message.kind === 'reply'
+            ? renderBoardReplyDelivery({
+                origin: originText(message.origin),
+                rootId: message.threadRootId ?? 'unknown',
+                rootTitle:
+                  messages.find((candidate) => candidate.id === message.threadRootId)?.title ?? '',
+                body: message.body,
+              })
+            : renderBoardNoticeOneLine({
+                id: message.id,
+                title: message.title ?? '',
+                sender: originText(message.origin),
+                ackRequired: message.ackRequired,
+              }),
+        ackRequired: message.ackRequired,
+        ackDeadline: message.ackDeadline,
+        createdAt: message.createdAt,
+        expiresAt: message.expiresAt,
+        purpose: message.purpose ?? 'information',
+      }
+      return message.kind === 'reply' && hostedReplySuccessorPush(message, reader, clock, database)
+        ? { ...notice, reportReplySuccessor: true }
+        : notice
+    })
 }
 
 export function claimCachedHostedForPush(
   reader: string,
   all = false,
   clock = Date.now(),
-  database: Database = db(),
+  database: Database = writableDb(),
 ): { notices: HostedCacheNotice[]; withheldOlderCount: number; warning: string | null } {
   const beganAt =
     reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
@@ -628,8 +707,14 @@ export function claimCachedHostedForPush(
     claimCachedHosted(reader, all, clock, database),
     clock,
   )
+  const notices = selected.notices.filter((notice) => {
+    if (!notice.reportReplySuccessor) return true
+    const row = cachedRows(database).find((item) => item.message.id === notice.id)
+    return row !== undefined && takeHostedReportReplySuccessor(row.message, reader, clock, database)
+  })
   return {
-    ...selected,
+    notices,
+    withheldOlderCount: selected.withheldOlderCount,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

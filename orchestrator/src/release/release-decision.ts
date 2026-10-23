@@ -42,12 +42,14 @@ export function releaseCapturedText(text: string, secretShaped: boolean): string
   return secretShaped ? RELEASE_OUTPUT_WITHHELD : text
 }
 
-export function rollbackReasonDecision(secretShaped: boolean): Decision {
+export function releaseReasonDecision(
+  field: 'rollback' | 'behind-trunk',
+  secretShaped: boolean,
+): Decision {
   if (secretShaped) {
     return {
       ok: false,
-      message:
-        'rollback reason contains secret-shaped text; restate the reason without the credential, then retry',
+      message: `${field} reason contains secret-shaped text; restate the reason without the credential, then retry`,
     }
   }
   return { ok: true }
@@ -64,6 +66,37 @@ export type CheckoutFacts = {
 }
 
 export type Decision = { ok: true } | { ok: false; message: string }
+
+export type TrunkFreshnessDecision =
+  | { ok: true; overrideReason: string | null }
+  | { ok: false; message: string }
+
+/** Refuse only when a production branch has promoted nothing from trunk since its prior release. */
+export function trunkFreshnessDecision(facts: {
+  trunk: string
+  rungBranch: string
+  candidateTrunkBase: string | null
+  previousTrunkBase: string | null
+  commitsBehind: number
+  overrideReason?: string
+  rollback: boolean
+}): TrunkFreshnessDecision {
+  const reason = facts.overrideReason?.trim() || null
+  if (
+    facts.rungBranch === facts.trunk ||
+    facts.previousTrunkBase === null ||
+    facts.candidateTrunkBase !== facts.previousTrunkBase ||
+    facts.commitsBehind === 0 ||
+    facts.rollback
+  ) {
+    return { ok: true, overrideReason: reason }
+  }
+  if (reason) return { ok: true, overrideReason: reason }
+  return {
+    ok: false,
+    message: `release refused: ${facts.trunk} trunk base ${facts.candidateTrunkBase} is unchanged since the last successful ${facts.rungBranch} release; ${facts.trunk} has ${facts.commitsBehind} commits beyond that shared base not promoted into ${facts.rungBranch}; promote ${facts.trunk} into ${facts.rungBranch}, then retry, or, for an intentional hotfix, pass --behind-trunk "<reason>" to deploy ${facts.rungBranch} as it is`,
+  }
+}
 
 /** Require the checkout's reported version to be the version named by the release tag. */
 export function releaseTagVersionDecision(reportedVersion: string, tag: string): Decision {

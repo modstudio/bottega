@@ -12,6 +12,8 @@ export const cleanupBoundarySpecs = [
       '../cleanup/claim-reconciliation.ts',
       '../cleanup/cleanup.ts',
       '../close/close-out.ts',
+      '../close/close-out-in-flight.ts',
+      '../close/close-out-report.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
@@ -179,6 +181,14 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep the scheduled leftover adapter limited to the pure ruling, canonical evidence and chain facts, run paths, cleanup, and the shared storage walk.',
+  },
+  {
+    name: 'discard-worktree-absence-boundary',
+    file: 'orchestrator/src/cleanup/discard-worktree-absence.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep discard absence classification pure and independent of filesystems, stores, commands, and processes.',
   },
   {
     name: 'cleanup-sweep-decisions-boundary',

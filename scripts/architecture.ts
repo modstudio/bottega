@@ -108,6 +108,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/route/route-policy.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
     '../../../shared/repository-visibility.ts',
@@ -209,9 +210,21 @@ export const modules: ArchitectureModule[] = [
     'node:fs',
     '../database/db.ts',
     '../git/git-environment.ts',
+    '../landing-tree/landing-tree.ts',
     '../landing-tree/release-observation.ts',
     '../project/projects.ts',
     '../run/synthetic-lifecycle-job.ts',
+  ]),
+  module('orchestrator/src/close/close-out-report.ts', [
+    '../../../shared/brand.ts',
+    '../landing-tree/landing-tree.ts',
+    '../worktree/keep-tree-hold.ts',
+  ]),
+  module('orchestrator/src/close/close-out-in-flight.ts', [
+    'node:fs',
+    '../database/db.ts',
+    '../landing-tree/landing-tree.ts',
+    './close-out-report.ts',
   ]),
   module('orchestrator/src/close/reader-scratch-close-out.ts', [
     'node:fs',
@@ -225,6 +238,12 @@ export const modules: ArchitectureModule[] = [
     './reader-scratch-release.ts',
   ]),
   module('orchestrator/src/close/reader-scratch-release.ts', []),
+  module('orchestrator/src/close/close-out-stop-release.ts', [
+    '../cleanup/discard-worktree-absence.ts',
+    '../database/db.ts',
+    '../jobs/jobs.ts',
+    './close-out.ts',
+  ]),
   module('orchestrator/src/cleanup/cleanup-sweep-reclaim.ts', [
     'node:fs',
     '../branch/branches.ts',
@@ -320,6 +339,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './autonomy.ts',
+    './session-context-cache.ts',
     './step-catalogue.ts',
   ]),
   ...workflowCommandModules,
@@ -544,7 +564,10 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-declared-globs.ts', []),
-  module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
+  module('orchestrator/src/review/review-evidence-sql.ts', [
+    '../evidence/evidence-query.ts',
+    '../project/project-injection.ts',
+  ]),
   module('orchestrator/src/review/review-identifier.ts', [
     '../../../shared/record-id.ts',
     'bun:sqlite',
@@ -656,6 +679,18 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow/workflow-step-sequences.ts', [
     './step-catalogue-definition.ts',
     './workflow-definition.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-shared-promotion.ts', []),
+  module('orchestrator/src/workflow/workflow-shared-promotion-store.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../record/record-api-client.ts',
+    '../record/record-cache-workflow.ts',
+    '../record/record-space.ts',
+    '../record/record-workflow-contract.ts',
+    './step-catalogue-definition.ts',
+    './workflow-definition.ts',
+    './workflow-shared-promotion.ts',
   ]),
   module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
   module('orchestrator/src/workflow/workflow-tree.ts', [

@@ -25,6 +25,10 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/run/stopped-worktree-decision.ts',
+    allowed: [],
+  },
+  {
     file: 'orchestrator/src/run/run-number.ts',
     allowed: ['bun:sqlite', '../database/entity-number.ts'],
   },
@@ -37,6 +41,10 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/route/routing-refusal.ts',
+    allowed: ['../refusal-error.ts'],
+  },
+  {
     file: 'orchestrator/src/run/run-bootstrap.ts',
     allowed: ['./run-alive.ts'],
   },
@@ -46,6 +54,7 @@ export const runModuleSpecs = [
       'node:fs',
       'node:path',
       '../filesystem-identity-plan.ts',
+      '../route/routing-refusal.ts',
       '../../../shared/secret-shaped.ts',
       './run-artifacts.ts',
     ],
@@ -64,6 +73,7 @@ export const runModuleBoundarySpecs = [
       'node:fs',
       'node:path',
       '../filesystem-identity-plan.ts',
+      '../route/routing-refusal.ts',
       '../../../shared/secret-shaped.ts',
       './run-artifacts.ts',
     ],

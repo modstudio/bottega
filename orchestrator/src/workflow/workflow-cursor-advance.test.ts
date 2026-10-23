@@ -27,7 +27,12 @@ const testPorts = {
     commentIds: [],
   }),
   runHasArtifacts: () => true,
-  resolveCheckout: () => ({ project: 'fixture', branch: 'work', headIsTipOrAncestor: true }),
+  resolveCheckout: () => ({
+    project: 'fixture',
+    branch: 'work',
+    headIsTipOrAncestor: true,
+    landingBranch: 'main',
+  }),
   viewPullRequest: () => ({
     state: 'MERGED',
     mergedAt: '2026-10-20',
@@ -387,7 +392,7 @@ describe('ruling outcomes and bounded re-entry', () => {
 
     const failed = recordExec(1)
     expect(() => close(failed)).toThrow(
-      `command-exit evidence exec:${failed} command \`${PLATFORM_SLUG} pr create\` exited 1; rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
+      `command-exit floor expects exit code 0, but evidence exec:${failed} command \`${PLATFORM_SLUG} pr create\` exited 1; close with the outcome configured for exit code 1, or record a command that exits 0 with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
     )
     expect(close(recordExec(0))).toContain('is finished: 1 steps closed')
   })
@@ -436,7 +441,7 @@ describe('ruling outcomes and bounded re-entry', () => {
     install(residue, 'merge-residue')
     const exit20 = recordExec(residue, 20)
     expect(() => close(residue, 'merge-residue', exit20, 'merged')).toThrow(
-      `command-exit evidence exec:${exit20}`,
+      `command-exit floor expects exit code 0, but evidence exec:${exit20}`,
     )
     expect(close(residue, 'merge-residue', exit20, 'merged-with-residue')).toContain(
       'is finished: 1 steps closed',
@@ -447,8 +452,9 @@ describe('ruling outcomes and bounded re-entry', () => {
       const slug = `merge-failed-${outcome}`
       install(failed, slug)
       const exit1 = recordExec(failed, 1)
+      const expected = outcome === 'merged' ? 0 : 20
       expect(() => close(failed, slug, exit1, outcome)).toThrow(
-        `command-exit evidence exec:${exit1}`,
+        `command-exit floor expects exit code ${expected}, but evidence exec:${exit1}`,
       )
     }
   })

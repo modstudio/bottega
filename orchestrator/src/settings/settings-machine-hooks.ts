@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
+  BOARD_PRESENCE_REFRESH_SECONDS,
   BOARD_PUSH_REFRESH_SECONDS,
   BOARD_PUSH_REMIND_SECONDS,
   BOARD_PUSH_RETRY_SECONDS,
@@ -15,6 +16,7 @@ import { isPlainObject, type OwnedSettings } from './settings.ts'
 const SCRIPT_FILES = [
   'block-agent.py',
   'no-attribution.py',
+  'bun-cache-guard.py',
   'git-guard.py',
   'heartbeat-remind.py',
   'board-interrupt.py',
@@ -53,6 +55,7 @@ export type MachineProductHooksResult = {
 const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
+  { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
   {
     event: 'PreToolUse',
@@ -120,6 +123,7 @@ function boardCommand(file: ScriptFile, assetRoot: string, databasePath: string)
     `BOARD_PUSH_REFRESH_SECONDS=${BOARD_PUSH_REFRESH_SECONDS}`,
     `BOARD_PUSH_REMIND_SECONDS=${BOARD_PUSH_REMIND_SECONDS}`,
     `BOARD_PUSH_RETRY_SECONDS=${BOARD_PUSH_RETRY_SECONDS}`,
+    `BOARD_PRESENCE_REFRESH_SECONDS=${BOARD_PRESENCE_REFRESH_SECONDS}`,
     `BOARD_ACK_STOP_BLOCKS=${BOARD_ACK_STOP_BLOCKS}`,
     `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,
     `ORCH_DB=${shellQuote(databasePath)}`,

@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { runDetail } from '../state/serve.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
@@ -128,6 +129,53 @@ describe('run listing', () => {
     expect((await command({ json: true })).map(runJson).map((row) => row.record_id)).toEqual([root])
   })
 
+  test('runs --live includes an old chain whose latest turn is live before applying the limit', async () => {
+    const root = insert('asking')
+    const turn = insert('running')
+    db().query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?').run(root, turn)
+    for (let index = 0; index < 201; index++) insert('ok')
+
+    const rows = (await command({ live: true, json: true, limit: ['1'] })).map(runJson)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      record_id: root,
+      status: 'running',
+      live_member_id: turn,
+      live_member_number: runNumber(turn),
+    })
+  })
+
+  test('runs --live returns supported live lifecycle statuses and no terminal status', async () => {
+    const statuses = ['queued', 'reserved', 'attached', 'running', 'asking']
+    const live = ['running', 'asking'].map((status) => insert(status))
+    insert('ok')
+
+    const rows = (await command({ live: true, json: true })).map(runJson)
+    expect(rows.map((row) => row.record_id).sort()).toEqual(live.sort())
+    expect(rows.map((row) => row.live_member_status).sort()).toEqual(['asking', 'running'])
+    expect(
+      rows.every((row) => JSON.stringify(row.live_statuses) === JSON.stringify(statuses)),
+    ).toBe(true)
+  })
+
+  test('runs --live includes a chain with an earlier member still marked live', async () => {
+    const root = insert('running')
+    const terminalTurn = insert('ok')
+    db()
+      .query('UPDATE run SET parent_run_record_id=?,turn=2 WHERE record_id=?')
+      .run(root, terminalTurn)
+
+    const rows = (await command({ live: true, json: true })).map(runJson)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      record_id: root,
+      live_member_id: root,
+      live_member_status: 'running',
+    })
+  })
+
   test('runs JSON publishes the stalled live member', async () => {
     const observedAt = Date.parse('2026-09-22T12:30:00.000Z')
     const id = addRun({
@@ -167,6 +215,55 @@ describe('run listing', () => {
     })
     expect(row.stall).toBeString()
     expect((row.stall as string).length).toBeGreaterThan(0)
+  })
+
+  test('runs publish capacity waits and live throttle details instead of idle', async () => {
+    const waiting = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
+    appendRunEvent(waiting, {
+      ts: '2026-10-21T12:00:00.000Z',
+      type: 'capacity_wait',
+      waiting: true,
+    })
+    const throttled = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    appendRunEvent(throttled, {
+      ts: '2026-10-21T12:01:00.000Z',
+      type: 'throttled',
+      attempt: 1,
+      max: 5,
+      retryDelayMs: 225_000,
+      retryAt: '2026-10-21T12:04:45.000Z',
+      status: 429,
+      concurrency: 6,
+    })
+
+    const rows = (await command({ json: true, id: [waiting, throttled] })).map(runJson)
+    expect(rows.find((row) => row.record_id === waiting)).toMatchObject({
+      waiting_for_capacity: true,
+      capacity_wait_since: '2026-10-21T12:00:00.000Z',
+    })
+    expect(rows.find((row) => row.record_id === throttled)).toMatchObject({
+      throttled: {
+        attempt: 1,
+        max: 5,
+        retry_at: '2026-10-21T12:04:45.000Z',
+        status: 429,
+        concurrency: 6,
+      },
+    })
+    expect(runDetail(waiting)).toMatchObject({
+      live_status_detail: 'waiting for capacity since 2026-10-21T12:00:00.000Z',
+    })
+    expect(runDetail(throttled)).toMatchObject({
+      live_status_detail: 'throttled (429), retry 1/5 at 2026-10-21T12:04:45.000Z',
+      throttled: {
+        attempt: 1,
+        max: 5,
+        retry_delay_ms: 225_000,
+        retry_at: '2026-10-21T12:04:45.000Z',
+        status: 429,
+        concurrency: 6,
+      },
+    })
   })
 
   test('runs JSON and run detail publish all run resource fields', async () => {

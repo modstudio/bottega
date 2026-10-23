@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup/cleanup.ts'
+import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { db, writableDb } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
@@ -19,7 +19,6 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
-import { authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { recalibrate } from '../score/recalibration.ts'
 import type { CliFlags } from './support.ts'
@@ -190,7 +189,7 @@ export function register(program: Command): void {
     const given = (name: string) =>
       name === 'finding' || name === 'duplicate' ? flags.values(name).length > 0 : flags.has(name)
     if (scorePathForJob(rootJob(runId), given) === 'judge') {
-      const result = await judgeRun(
+      await judgeRun(
         runId,
         flags,
         {
@@ -202,14 +201,11 @@ export function register(program: Command): void {
         { log, error: console.error, pairHint },
       )
       if (flags.has('discard')) {
-        if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
-        discardWorktree(
-          result.row as CleanupRow,
-          'discarded',
-          false,
-          authorizeRunMutation(result.id, 'discard'),
-          { force: false, auditReason: auditReason(flags), presentation: cleanupPresentation },
-        )
+        await discardRun(runId, {
+          force: false,
+          auditReason: auditReason(flags),
+          presentation: cleanupPresentation,
+        })
       }
       return
     }

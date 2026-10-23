@@ -772,7 +772,21 @@ export function pruneProjectBranches(options: {
 /** Return the ordinary prune classifier's state for one recorded run branch. */
 export function classifyMintedBranch(project: string, branch: string): BranchStateDecision {
   const observed = branchesReport({ project })
+  return classifyMintedBranchFromReport(observed, project, branch)
+}
+
+/** Return one recorded run branch's state from an already gathered branch report. */
+export function classifyMintedBranchFromReport(
+  observed: BranchesReport,
+  project: string,
+  branch: string,
+): BranchStateDecision {
   const projectReport = observed.projects[0]!
+  if (projectReport.project !== project)
+    return {
+      state: 'unknown',
+      error: `branch report is for project ${projectReport.project}, not ${project}`,
+    }
   if (projectReport.error) return { state: 'unknown', error: projectReport.error }
   return (
     projectReport.keys.flatMap((key) => key.branches).find((row) => row.branch === branch) ?? {

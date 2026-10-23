@@ -1,20 +1,23 @@
-import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { classifyCaller } from '../shared/caller-classification'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
+import { mainCheckoutOf } from '../shared/git'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
-import { CHECK_LEGS, STATIC_OMIT_GROUPS } from './check-plan.ts'
+import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
   type CommandCpuSample,
   cpuBudgetMs,
   decideRuntimeBudget,
+  dependencyInstallDecision,
   HUNG_SUITE_TIMEOUT_MS,
   parseCheckArguments,
   runsRootSuiteTests,
@@ -26,7 +29,11 @@ import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
 
 type Command = { cwd: string; argv: string[]; category?: string }
-type Leg = { name: (typeof CHECK_LEGS)[number]['name']; typecheck: Command; suite: Command[] }
+type Leg = {
+  name: (typeof CHECK_LEGS)[number]['name']
+  typecheck: Command | null
+  suite: Command[]
+}
 type RunnableLeg = { name: string; commands: Command[] }
 type LegResult = GateStepResult & { tail: string[] }
 type StaticCheck = { name: string; argv: string[]; category?: string; reportPath?: string }
@@ -172,7 +179,7 @@ function track(
 
 const legs: Leg[] = CHECK_LEGS.map((leg) => ({
   name: leg.name,
-  typecheck: { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] },
+  typecheck: leg.typecheck ? { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] } : null,
   suite: leg.suite.map(({ argv, unitTests }) => ({
     cwd: `${root}${leg.directory}`,
     ...(unitTests ? { category: UNIT_TEST_CHECK_CATEGORY } : {}),
@@ -297,7 +304,66 @@ function printFailedLegTails(results: LegResult[]) {
   }
 }
 
-if ((await inherit(['bun', 'install', '--silent'])) !== 0) process.exit(1)
+const lockfilePath = join(root, 'bun.lock')
+const nodeModulesPath = join(root, 'node_modules')
+
+function gitOutput(cwd: string, argv: string[]): Buffer | null {
+  const result = Bun.spawnSync(['git', ...argv], { cwd, stdout: 'pipe', stderr: 'ignore' })
+  return result.exitCode === 0 && result.stdout.length ? result.stdout : null
+}
+
+function provisionedLockfile(): Buffer | null {
+  const mainCheckout = mainCheckoutOf(root)
+  if (!mainCheckout) return null
+  const landingBranch = gitOutput(mainCheckout, ['symbolic-ref', '--short', 'HEAD'])
+    ?.toString()
+    .trim()
+  if (!landingBranch) return null
+  const remoteLanding = `origin/${landingBranch}`
+  const landingRef = gitOutput(root, ['rev-parse', '--verify', remoteLanding])
+    ? remoteLanding
+    : landingBranch
+  const base = gitOutput(root, ['merge-base', 'HEAD', landingRef])?.toString().trim()
+  if (!base) return null
+  // The tracked writer recipe runs bun install after creating the tree at this base. Reading the
+  // base commit keeps that provisioning source stable when the main checkout advances later.
+  return gitOutput(root, ['show', `${base}:bun.lock`])
+}
+
+async function installDependencies() {
+  const workerRun = classifyCaller(process.env).kind === 'worker'
+  const sourceLockfile = workerRun ? provisionedLockfile() : null
+  const decision = dependencyInstallDecision({
+    workerRun,
+    nodeModulesPresent: existsSync(nodeModulesPath),
+    provisioningSourceResolved: sourceLockfile !== null,
+    lockfileMatchesProvisioningSource:
+      sourceLockfile !== null && readFileSync(lockfilePath).equals(sourceLockfile),
+  })
+  if (decision === 'normal-install') return inherit(['bun', 'install', '--silent'])
+  if (decision === 'skip-provisioned') {
+    console.log("INSTALL: skipped; worker dependencies match the tree's provisioning base")
+    return 0
+  }
+  if (decision === 'refuse-missing-node-modules') {
+    console.error(
+      "INSTALL: refused; the worker's node_modules is missing; run the architect's gate to provision dependencies because a sandboxed worker has neither the Bun cache nor the network",
+    )
+    return 1
+  }
+  if (decision === 'refuse-unresolved-provisioning-source') {
+    console.error(
+      "INSTALL: refused; the worker's dependency provisioning source or its bun.lock could not be resolved; run the architect's gate to reprovision dependencies",
+    )
+    return 1
+  }
+  console.error(
+    "INSTALL: refused; the worker's bun.lock differs from its provisioning base; a lockfile change needs the architect's gate because a sandboxed worker has neither the Bun cache nor the network",
+  )
+  return 1
+}
+
+if ((await installDependencies()) !== 0) process.exit(1)
 
 const dependencyAuditExitCode = await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
   check: 'dependency audit',
@@ -311,60 +377,7 @@ const rootTests = [
   // not providing.
   'bun',
   'test',
-  './scripts/check-machine-state.test.ts',
-  './scripts/check-legacy-names.test.ts',
-  './scripts/check-docker-workspaces.test.ts',
-  './scripts/check-dependency-audit.test.ts',
-  './scripts/check-runtime.test.ts',
-  './scripts/check-ci-workflow.test.ts',
-  './scripts/check-storybook.test.ts',
-  './scripts/check-outcome.test.ts',
-  './scripts/check-gitleaks-plan.test.ts',
-  './scripts/check-cascade-preservation.test.ts',
-  './scripts/identity-inventory.test.ts',
-  './scripts/check-outbox-payload-contracts.test.ts',
-  './scripts/postgres-migration-rls.test.ts',
-  './scripts/check-test-placement.test.ts',
-  './shared/change-view.test.ts',
-  './orchestrator/src/ratchet/biome-adapter.test.ts',
-  './orchestrator/src/ratchet/ratchet-plan.test.ts',
-  './scripts/check-file-ceiling.test.ts',
-  './scripts/command-descriptions.test.ts',
-  './scripts/command-reference.test.ts',
-  './scripts/check-cognitive-ceiling.test.ts',
-  './scripts/check-harness-mirror.test.ts',
-  './scripts/check-canon-drift.test.ts',
-  './scripts/check-postgres-array-bindings.test.ts',
-  './scripts/check-self-spawn.test.ts',
-  './scripts/check-source-root.test.ts',
-  './scripts/build-binary.test.ts',
-  './scripts/build-release.test.ts',
-  './scripts/build-release-artifacts.test.ts',
-  './scripts/publish-release.test.ts',
-  './cli/dispatch.test.ts',
-  './cli/routes.test.ts',
-  './cli/legacy-calls.test.ts',
-  './shared/self-spawn.test.ts',
-  './scripts/quality/dead-code.test.ts',
-  './scripts/architecture.test.ts',
-  './scripts/architecture-hub-packages.test.ts',
-  './scripts/import-scanner.test.ts',
-  './shared/test-substance/test-substance.test.ts',
-  './shared/test-substance/no-assertion.test.ts',
-  './shared/test-substance/test-substance-php.test.ts',
-  './shared/test-substance/self-comparison.test.ts',
-  './shared/ratchet.test.ts',
-  './shared/check-execution.test.ts',
-  './scripts/quality/test-timing-decision.test.ts',
-  './shared/file-kind.test.ts',
-  './shared/git.test.ts',
-  './shared/orch-contract.test.ts',
-  './shared/interval.test.ts',
-  './shared/trackers-protocols.test.ts',
-  './shared/shard.test.ts',
-  './scripts/test-focused.test.ts',
-  './scripts/check-sql-literal-schema.test.ts',
-  './scripts/check-hosted-sql-schema.test.ts',
+  ...ROOT_TEST_FILES.map((file) => `./${file}`),
 ]
 
 const selected = new Set(selectedCheckLegs(checkArguments))
@@ -374,7 +387,8 @@ const results = await Promise.all(
     .map((leg) =>
       runLeg({
         name: leg.name,
-        commands: checkArguments.mode === 'static' ? [leg.typecheck] : leg.suite,
+        commands:
+          checkArguments.mode === 'static' ? (leg.typecheck ? [leg.typecheck] : []) : leg.suite,
       }),
     ),
 )
@@ -459,6 +473,7 @@ if (checkArguments.mode === 'static') {
     },
     staticCheck('scripts/check-test-fixtures.ts'),
     staticCheck('scripts/check-test-placement.ts'),
+    staticCheck('scripts/check-test-reach.ts', [qualityMode]),
     staticCheck('scripts/check-test-spawns.ts'),
     staticCheck('scripts/check-dead-code.ts', [qualityMode], 'unused-exports', true),
     staticCheck('scripts/check-brand.ts'),

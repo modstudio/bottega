@@ -4,7 +4,7 @@ import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { classifyCaller } from '../caller-classification.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { reapHostedBoardCache } from './board-hosted-cache.ts'
 import {
@@ -15,7 +15,11 @@ import {
   parseAudience,
   requireRealSession,
 } from './board-policy.ts'
-import { missingReaderStartWarning, selectPushNotices } from './board-push-policy.ts'
+import {
+  missingReaderStartWarning,
+  replySuccessorAddressing,
+  selectPushNotices,
+} from './board-push-policy.ts'
 import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import {
   addressed,
@@ -31,6 +35,7 @@ import {
   originText,
   type PostNoticeInput,
   type PostNoticeResult,
+  presenceFacts,
   recipients,
   rowIsLive,
 } from './board-store.ts'
@@ -54,6 +59,7 @@ export function recordPresence(
   cwd = process.cwd(),
   env: Environment = process.env,
   at = nowIso(),
+  beganAt?: string,
 ): boolean {
   if (classifyCaller(env).kind === 'worker') return false
   if (
@@ -97,7 +103,7 @@ export function recordPresence(
       project.recordId,
       cwd,
       current?.launch_key ?? null,
-      at,
+      beganAt ?? at,
       at,
     )
   return true
@@ -131,11 +137,68 @@ export function runReader(runId: string, database = db()): string {
   return `run:${row.root_id}`
 }
 
-function wasDelivered(messageRecordId: string, reader: string, database = db()): boolean {
-  const receipt = database
+function receiptDelivery(messageRecordId: string, reader: string, database = db()) {
+  return database
     .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?')
     .get(messageRecordId, reader) as { delivered_at: string | null } | null
-  return Boolean(receipt?.delivered_at)
+}
+
+function wasDelivered(messageRecordId: string, reader: string, database = db()): boolean {
+  return Boolean(receiptDelivery(messageRecordId, reader, database)?.delivered_at)
+}
+
+function replySuccessorPush(
+  reply: MessageRow,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  if (reply.kind !== 'reply' || reply.thread_root_record_id === null) return false
+  const root = messageRows(database).find(
+    (candidate) => candidate.record_id === reply.thread_root_record_id,
+  )
+  if (!root?.author_session || !root.author_project) return false
+  return replySuccessorAddressing({
+    presence: presenceFacts(database, clock),
+    reader,
+    rootAuthorSession: root.author_session,
+    rootAuthorReceivedReply: wasDelivered(reply.record_id, root.author_session, database),
+    rootProject: root.author_project,
+    readerIsParticipant: hasReceipt(reply.record_id, reader, database),
+    successorAlreadyReceived: Boolean(
+      database
+        .query(
+          `SELECT 1 AS ok FROM board_receipt
+           WHERE message_record_id=? AND successor=1 AND delivered_at IS NOT NULL`,
+        )
+        .get(reply.record_id),
+    ),
+    readerBeganAt: boardReaderBeganAt(reader, database),
+    replyPostedAt: reply.created_at,
+    now: clock,
+    liveWindowMs: SESSION_LIVE_MS,
+  })
+}
+
+function takeReportReplySuccessor(
+  reply: MessageRow,
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  return writeTransaction(() => {
+    if (!replySuccessorPush(reply, reader, clock, database)) return false
+    database
+      .query(
+        `INSERT INTO board_receipt
+         (message_record_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,record_id)
+         VALUES (?,?,0,1,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
+         delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at),
+         successor=1`,
+      )
+      .run(reply.record_id, reader, new Date(clock).toISOString(), newRecordId())
+    return true
+  }, database)
 }
 
 export function deliverableTo(
@@ -145,7 +208,8 @@ export function deliverableTo(
   database = db(),
 ): boolean {
   return message.kind === 'reply'
-    ? hasReceipt(message.record_id, reader, database)
+    ? hasReceipt(message.record_id, reader, database) ||
+        replySuccessorPush(message, reader, clock, database)
     : addressed(message, reader, clock, database)
 }
 
@@ -326,6 +390,7 @@ export function claimNotices(
   createdAt: string
   expiresAt: string | null
   purpose: BoardPurpose
+  reportReplySuccessor?: boolean
 }[] {
   const reader = boardReader(env)
   const rows = messageRows(database).filter(
@@ -335,20 +400,25 @@ export function claimNotices(
       deliverableTo(row, reader, clock, database) &&
       (all || !wasDelivered(row.record_id, reader, database)),
   )
-  return rows.map((row) => ({
-    ...render(row, false, database),
-    ackRequired: row.ack_required === 1,
-    ackDeadline: row.ack_deadline,
-    createdAt: row.created_at,
-    expiresAt: row.expires_at,
-  }))
+  return rows.map((row) => {
+    const notice = {
+      ...render(row, false, database),
+      ackRequired: row.ack_required === 1,
+      ackDeadline: row.ack_deadline,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+    }
+    return row.kind === 'reply' && replySuccessorPush(row, reader, clock, database)
+      ? { ...notice, reportReplySuccessor: true }
+      : notice
+  })
 }
 
 export function claimPushNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-  database = db(),
+  database: Database = writableDb(),
 ): {
   notices: ReturnType<typeof claimNotices>
   withheldOlderCount: number
@@ -358,8 +428,14 @@ export function claimPushNotices(
   const beganAt =
     reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
   const selected = selectPushNotices(beganAt, claimNotices(all, env, clock, database), clock)
+  const notices = selected.notices.filter((notice) => {
+    if (!notice.reportReplySuccessor) return true
+    const row = messageRows(database).find((item) => item.record_id === notice.recordId)
+    return row !== undefined && takeReportReplySuccessor(row, reader, clock, database)
+  })
   return {
-    ...selected,
+    notices,
+    withheldOlderCount: selected.withheldOlderCount,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

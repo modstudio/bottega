@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RunIdentity } from '../../../shared/orch-contract.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
+import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
@@ -24,6 +25,8 @@ import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
 const FAILURE_KINDS_WITH_LISTED_ERROR = new Set(['contract', 'unevidenced', 'premature-final'])
+
+const RUN_LIVE_STATUSES = ['queued', 'reserved', 'attached', 'running', 'asking'] as const
 
 export function runIdentityMap(): RunIdentity[] {
   return db().query<RunIdentity, []>('SELECT number, record_id FROM run ORDER BY number').all()
@@ -243,12 +246,31 @@ function lifecyclePresentation(
   if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
   const status = outcome.line.split(' - ', 1)[0]!
   const hostWaitSince = row.host_wait_since as string | null
+  if (row.waiting_for_capacity === true)
+    return { status: 'waiting', detail: row.live_status_detail as string }
+  if (row.throttled) return { status: 'throttled', detail: row.live_status_detail as string }
   if (isFreshRunHostWait(String(row.status), hostWaitSince))
     return { status: 'waiting', detail: `waiting for host capacity since ${hostWaitSince}` }
   return {
     status,
     detail: row.status === 'asking' ? outcome.line.slice(status.length + 3) : null,
   }
+}
+
+function liveOperationalStatus(liveMemberId: string, live: boolean) {
+  const eventLog = live ? readEventLog(runEventsPath(liveMemberId)) : []
+  return liveOperationalStatusFromEvents(eventLog)
+}
+
+function addExactFilter(
+  where: string[],
+  args: Array<string | number>,
+  clause: 'r.job = ?' | 'r.agent = ?',
+  value: string | undefined,
+): void {
+  if (!value) return
+  where.push(clause)
+  args.push(value)
 }
 
 function resolveRequestedRunIds(values: string[]): { ids: string[]; unknown: string[] } {
@@ -281,6 +303,45 @@ function applyRequestedRunFilter(
        AND requested_turn.record_id IN (${marks})
   ))`)
   args.push(...requested.ids, ...requested.ids)
+}
+
+function liveStatusSql(): string {
+  return RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')
+}
+
+function liveListingClauses(enabled: boolean): string[] {
+  return enabled
+    ? [
+        `EXISTS (
+          SELECT 1 FROM run live_member
+           WHERE (live_member.record_id = r.record_id OR live_member.parent_run_record_id = r.record_id)
+             AND live_member.status IN (${liveStatusSql()})
+        )`,
+      ]
+    : []
+}
+
+function listingMemberJoin(rootAlias: string, live: boolean): string {
+  if (!live) return currentRunMemberJoin(rootAlias)
+  return `JOIN run current_run ON current_run.record_id = (
+    SELECT member.record_id FROM run member
+     WHERE member.record_id = ${rootAlias}.record_id OR member.parent_run_record_id = ${rootAlias}.record_id
+     ORDER BY CASE WHEN member.status IN (${liveStatusSql()}) THEN 0 ELSE 1 END,
+              member.turn DESC, member.number DESC LIMIT 1
+  )`
+}
+
+function listingLimit(value: string | undefined, json: boolean, live: boolean): number | null {
+  if (value === undefined && live) return null
+  return Number(value ?? (json ? 100000 : 20))
+}
+
+function listingLimitSql(limit: number | null): string {
+  return limit === null ? '' : ' LIMIT ?'
+}
+
+function listingLimitBindings(limit: number | null): number[] {
+  return limit === null ? [] : [limit]
 }
 
 function unscoredListingClauses(enabled: boolean, where: string[]): { cte: string; join: string } {
@@ -368,21 +429,14 @@ export async function runListingCommand(
   // satisfy the query signature, which is why this file never typechecked.
   const args: (string | number)[] = []
   const jobFlag = flag('job')
-  if (jobFlag) {
-    where.push('r.job = ?')
-    args.push(jobFlag)
-  }
+  addExactFilter(where, args, 'r.job = ?', jobFlag)
   const agentFlag = flag('agent')
-  if (agentFlag) {
-    where.push('r.agent = ?')
-    args.push(agentFlag)
-  }
+  addExactFilter(where, args, 'r.agent = ?', agentFlag)
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
   const requested = resolveRequestedRunIds(values('id'))
-  const requestedIds = requested.ids
-  const unknownRecordIds = requested.unknown
+  const { ids: requestedIds, unknown: unknownRecordIds } = requested
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child
   // turn, return that conversation rather than falsely reporting an existing run id as unknown.
   applyRequestedRunFilter(requested, sinceFlag, where, args)
@@ -403,14 +457,15 @@ export async function runListingCommand(
     )`)
     args.push(sinceFlag, sinceFlag, sinceFlag, sinceFlag)
   }
-  const limit = Number(flag('limit') ?? (json ? 100000 : 20))
+  where.push(...liveListingClauses(has('live')))
+  const limit = listingLimit(flag('limit'), json, has('live'))
   let rows = db()
     .query(
       `${unscoredCte}
      SELECT r.record_id, r.number, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
-            current_run.number AS live_member_number,
+            current_run.number AS live_member_number, current_run.status AS live_member_status,
             current_run.record_id AS live_member_id, current_run.record_id AS live_member_record_id,
             current_run.agent AS current_agent,
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
@@ -426,12 +481,12 @@ export async function runListingCommand(
             }
        FROM run r
        ${unscoredJoin}
-       ${currentRunMemberJoin('r')}
+       ${listingMemberJoin('r', has('live'))}
        LEFT JOIN score s ON s.run_record_id = r.record_id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY r.number DESC LIMIT ?`,
+      ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
-    .all(...args, limit) as Record<string, unknown>[]
+    .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
   rows = rows
     .map(withRetryRecordId)
     .flatMap((r) => listingConversation(r, json, costContext, chainIsStranded, strandedRecovery))
@@ -526,9 +581,11 @@ export async function runListingCommand(
     const reclaimed = r.failure_kind === 'idle' ? parseIdleReclaimedMs(String(r.error ?? '')) : null
     return {
       ...rest,
+      ...(has('live') ? { live_statuses: RUN_LIVE_STATUSES } : {}),
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
+      ...liveOperationalStatus(String(r.live_member_record_id), live),
       stall_state: stallObservation?.state ?? null,
       stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,
@@ -589,5 +646,4 @@ export async function runListingCommand(
   }
   for (const id of [...unknownIds, ...unknownRecordIds])
     log(`${String(id).padStart(4)}  unknown run id`)
-  return
 }

@@ -2,14 +2,14 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { runArtifactsDir, runScratchDir } from '../artifact-paths.ts'
+import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
+import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
@@ -19,8 +19,15 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
+import {
+  type CheckoutResolution,
+  checkoutOutsideChangeRefusal,
+  classifyCheckoutEvidence,
+} from './workflow-checkout-refusal.ts'
 import {
   type ArtifactRef,
+  type BottegaCommandIdentity,
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   type Floor,
@@ -75,30 +82,6 @@ export function openWorkflowObligations(cursorId: number, d: Database): OpenObli
         WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY id`,
     )
     .all(cursorId)
-}
-
-type CheckoutResolution = {
-  project: string | null
-  branch: string | null
-  headIsTipOrAncestor: boolean
-  landingCommit?: string | null
-  landingIsHeadOrAncestor?: boolean
-  headIsTrunkTipOrAncestor?: boolean
-}
-
-type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
-
-/** Decides whether a commit belongs to the change before or after its recorded landing. */
-export function classifyCheckoutEvidence(input: {
-  headIsTipOrAncestor: boolean
-  landingCommit: string | null
-  landingIsHeadOrAncestor: boolean
-  headIsTrunkTipOrAncestor: boolean
-}): CheckoutEvidenceLocation {
-  if (input.headIsTipOrAncestor) return 'branch'
-  if (input.landingCommit && input.landingIsHeadOrAncestor && input.headIsTrunkTipOrAncestor)
-    return 'post-landing'
-  return 'outside-change'
 }
 
 type HubTaskRead = {
@@ -193,7 +176,7 @@ function runHasRecordedArtifacts(
     .get(runId)?.record_id
   if (!recordId) return false
   const artifacts = runArtifactsDir(recordId, runsDir)
-  const reply = join(runScratchDir(recordId, runsDir), 'reply.json')
+  const reply = runScratchReplyPath(recordId, runsDir)
   if (existsSync(reply)) return true
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }
@@ -221,19 +204,6 @@ function cwdProject(cwd: string, identity: CursorIdentity, d: Database): string 
   return null
 }
 
-function recordedLandingCommit(project: string, branch: string | null, d: Database): string | null {
-  if (!branch) return null
-  return (
-    d
-      .query<{ merge_commit: string | null }, [string, string]>(
-        `SELECT merge_commit FROM branch_landing_record
-          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
-          ORDER BY merged_at DESC, pr_number DESC LIMIT 1`,
-      )
-      .get(project, branch)?.merge_commit ?? null
-  )
-}
-
 function productionResolveCheckout(
   cwd: string,
   headCommit: string | null,
@@ -251,27 +221,26 @@ function productionResolveCheckout(
   const headIsTipOrAncestor = Boolean(
     headCommit && tip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, tip]),
   )
-  const landingCommit = recordedLandingCommit(identity.project, expectedBranch, d)
-  const landingIsHeadOrAncestor = Boolean(
-    landingCommit &&
-      headCommit &&
-      gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+  const landingCommit = headIsTipOrAncestor
+    ? null
+    : checkoutLandingCommit(identity.project, expectedBranch, d)
+  const landingCommitAvailable = Boolean(
+    landingCommit && gitOk(cwd, ['cat-file', '-e', `${landingCommit}^{commit}`]),
   )
-  const trunk = projectByName(identity.project, d)?.settings.trunk?.trim()
-  const trunkTip = trunk
-    ? (gitText(cwd, ['rev-parse', '--verify', trunk]) ??
-      gitText(cwd, ['rev-parse', '--verify', `origin/${trunk}`]))
-    : null
-  const headIsTrunkTipOrAncestor = Boolean(
-    headCommit && trunkTip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, trunkTip]),
-  )
+  const landingIsHeadOrAncestor = landingCommitAvailable
+    ? Boolean(
+        landingCommit &&
+          headCommit &&
+          gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+      )
+    : undefined
   return {
     project,
     branch,
     headIsTipOrAncestor,
     landingCommit,
     landingIsHeadOrAncestor,
-    headIsTrunkTipOrAncestor,
+    landingBranch: projectByName(identity.project, d)?.settings.trunk ?? 'main',
   }
 }
 
@@ -462,14 +431,9 @@ function requireCheckout(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   requireOnBranch: boolean,
 ): CheckoutResolution {
-  const checkout = resolveCheckout?.(cwd, headCommit, identity.branch) ?? {
-    project: null,
-    branch: null,
-    headIsTipOrAncestor: false,
-    landingCommit: null,
-    landingIsHeadOrAncestor: false,
-    headIsTrunkTipOrAncestor: false,
-  }
+  if (!resolveCheckout)
+    throw new Error(`${flag} cwd project is unset, not this cursor's ${identity.project}`)
+  const checkout = resolveCheckout(cwd, headCommit, identity.branch)
   if (checkout.project !== identity.project)
     throw new Error(
       `${flag} cwd project is ${checkout.project ?? 'unset'}, not this cursor's ${identity.project}`,
@@ -478,7 +442,6 @@ function requireCheckout(
     headIsTipOrAncestor: checkout.headIsTipOrAncestor,
     landingCommit: checkout.landingCommit ?? null,
     landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
-    headIsTrunkTipOrAncestor: checkout.headIsTrunkTipOrAncestor ?? false,
   })
   if (
     requireOnBranch &&
@@ -490,7 +453,7 @@ function requireCheckout(
       `${flag} cwd is on ${checkout.branch ?? 'unset'}, not this cursor's ${identity.branch}`,
     )
   if (identity.branch && location === 'outside-change')
-    throw new Error(`${flag} head_commit is not the tip or an ancestor of ${identity.branch}`)
+    throw new Error(checkoutOutsideChangeRefusal(flag, identity.branch, cwd, checkout))
   return checkout
 }
 
@@ -844,6 +807,7 @@ function gatheredCommandEvidence(
     created_at: string
     output_tail: string
     withheld: number
+    command_withheld: number
   },
   identity: CursorIdentity,
   cursorId: number,
@@ -854,11 +818,15 @@ function gatheredCommandEvidence(
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
   const session = sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
   const argv = recordedArgv(row.command)
-  const url = pullRequestCreateArgv(argv) ? githubPullRequestUrlIn(row.output_tail) : undefined
+  const commandIdentity = bottegaCommandIdentity(argv?.[0], row.cwd, d)
+  const url = pullRequestCreateArgv(argv, commandIdentity)
+    ? githubPullRequestUrlIn(row.output_tail)
+    : undefined
   const exec: NonNullable<ValidatedEvidence['exec']> = {
     id,
     command: recordedCommand(row.command),
     argv,
+    commandIdentity,
     exitCode: row.exit_code,
     sessionMatches: session.sessionMatches,
     sessionAdoptedCursor: session.sessionAdoptedCursor,
@@ -867,7 +835,8 @@ function gatheredCommandEvidence(
     headCommit: row.head_commit,
     cursorBranch: identity.branch,
     output: row.output_tail,
-    withheld: row.withheld === 1,
+    outputWithheld: row.withheld === 1,
+    commandWithheld: row.command_withheld === 1,
   }
   if (!url) return { exec }
   try {
@@ -887,6 +856,32 @@ function gatheredCommandEvidence(
       },
     }
   }
+}
+
+function realpathIfPresent(path: string): string | null {
+  try {
+    return realpathSync(path)
+  } catch {
+    return null
+  }
+}
+
+export function bottegaCommandIdentity(
+  executable: string | undefined,
+  cwd: string,
+  d: Database,
+): BottegaCommandIdentity | undefined {
+  if (!executable) return undefined
+  const resolvedCandidate = realpathIfPresent(
+    isAbsolute(executable) ? executable : resolve(cwd, executable),
+  )
+  const mainCheckout = projectByName(PLATFORM_SLUG, d)?.path
+  const mainCheckoutExecutable = mainCheckout
+    ? realpathIfPresent(join(mainCheckout, 'bin', PLATFORM_SLUG))
+    : null
+  const installed = installedBottegaExecutable()
+  const installedExecutable = installed ? realpathIfPresent(installed) : null
+  return { resolvedCandidate, mainCheckoutExecutable, installedExecutable }
 }
 
 function recordedArgv(raw: string): string[] | null {
@@ -923,6 +918,7 @@ function gatherTreeEvidence(
 ): NonNullable<ValidatedEvidence['tree']> {
   return {
     project: identity.project,
+    worktree: identity.worktree,
     commit: identity.worktree
       ? invokeFloorEvidencePort(
           ports,
@@ -1000,10 +996,11 @@ export function gatherValidatedEvidence(input: {
             created_at: string
             output_tail: string
             withheld: number
+            command_withheld: number
           },
           [number]
         >(
-          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld FROM probe WHERE id=?',
+          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE id=?',
         )
         .get(parsed.id)!
       const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)

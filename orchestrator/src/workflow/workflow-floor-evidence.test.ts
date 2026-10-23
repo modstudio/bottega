@@ -4,8 +4,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
-  type CursorIdentity,
+  checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
+} from './workflow-checkout-refusal.ts'
+import {
+  type CursorIdentity,
   type FloorEvidencePorts,
   gatherValidatedEvidence,
   hubTaskReadRefusal,
@@ -34,31 +37,28 @@ test('checkout evidence accepts a commit from the cursor branch', () => {
       headIsTipOrAncestor: true,
       landingCommit: null,
       landingIsHeadOrAncestor: false,
-      headIsTrunkTipOrAncestor: false,
     }),
   ).toBe('branch')
 })
 
-test('checkout evidence accepts a trunk commit at or after the recorded landing', () => {
+test('checkout evidence accepts a squash landing commit contained by the checkout head', () => {
   expect(
     classifyCheckoutEvidence({
       headIsTipOrAncestor: false,
-      landingCommit: 'landing',
+      landingCommit: 'squash-landing',
       landingIsHeadOrAncestor: true,
-      headIsTrunkTipOrAncestor: true,
     }),
   ).toBe('post-landing')
 })
 
-test('checkout evidence refuses a later commit off trunk after the recorded landing', () => {
+test('checkout evidence accepts a checkout off trunk when it contains the landing commit', () => {
   expect(
     classifyCheckoutEvidence({
       headIsTipOrAncestor: false,
       landingCommit: 'landing',
       landingIsHeadOrAncestor: true,
-      headIsTrunkTipOrAncestor: false,
     }),
-  ).toBe('outside-change')
+  ).toBe('post-landing')
 })
 
 test('checkout evidence refuses a trunk commit before the recorded landing', () => {
@@ -67,20 +67,33 @@ test('checkout evidence refuses a trunk commit before the recorded landing', () 
       headIsTipOrAncestor: false,
       landingCommit: 'later-landing',
       landingIsHeadOrAncestor: false,
-      headIsTrunkTipOrAncestor: true,
     }),
   ).toBe('outside-change')
 })
 
-test('checkout evidence refuses an unrelated commit', () => {
+test('checkout evidence refuses an unrelated head with no landing commit', () => {
   expect(
     classifyCheckoutEvidence({
       headIsTipOrAncestor: false,
-      landingCommit: 'landing-on-trunk',
+      landingCommit: null,
       landingIsHeadOrAncestor: false,
-      headIsTrunkTipOrAncestor: false,
     }),
   ).toBe('outside-change')
+})
+
+test('an unavailable landing commit names the condition and pull remedy', () => {
+  const refusal = checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
+    project: 'fixture',
+    branch: 'main',
+    headIsTipOrAncestor: false,
+    landingCommit: 'dd3e2d8050120bf3d676f86257d0c92c0c5bff41',
+    landingIsHeadOrAncestor: undefined,
+    landingBranch: 'main',
+  })
+  expect(refusal).toContain(
+    'landing commit dd3e2d8050120bf3d676f86257d0c92c0c5bff41 is not available in /fixture/main',
+  )
+  expect(refusal).toContain('git pull --ff-only origin main')
 })
 
 const identity: CursorIdentity = {
@@ -107,6 +120,7 @@ const matchingCheckout = {
   project: 'fixture',
   branch: 'DEV-977-work',
   headIsTipOrAncestor: true,
+  landingBranch: 'main',
 }
 
 const ports: FloorEvidencePorts = {
@@ -465,6 +479,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
           project: 'other',
           branch: 'other-branch',
           headIsTipOrAncestor: true,
+          landingBranch: 'main',
         }),
       },
     ),
@@ -483,7 +498,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
   })
 })
 
-test('an architect gate whose commit is not an ancestor is refused', () => {
+test('an architect gate whose commit is outside the change is refused', () => {
   const d = database()
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
@@ -498,10 +513,13 @@ test('an architect gate whose commit is not an ancestor is refused', () => {
           project: 'fixture',
           branch: 'DEV-977-work',
           headIsTipOrAncestor: false,
+          landingBranch: 'main',
         }),
       },
     ),
-  ).toThrow('--gate 1 head_commit is not the tip or an ancestor of DEV-977-work')
+  ).toThrow(
+    "--gate 1 head_commit does not belong to DEV-977-work or its recorded landing; use evidence recorded from that change's checkout",
+  )
 })
 
 test('a foreign run is refused and a matching run is allowed', () => {
@@ -557,6 +575,7 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
           project: 'other',
           branch: 'other-branch',
           headIsTipOrAncestor: true,
+          landingBranch: 'main',
         }),
       },
     ),
@@ -587,6 +606,7 @@ test('exec evidence is branch-bound and carries its exit code', () => {
           project: 'other',
           branch: 'other-branch',
           headIsTipOrAncestor: true,
+          landingBranch: 'main',
         }),
       },
     ),
@@ -622,18 +642,6 @@ test('exec evidence is branch-bound and carries its exit code', () => {
     exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
     pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
   })
-})
-
-test('a withheld pr-create exec carries the withheld flag and no pull request', () => {
-  const d = database()
-  d.query(
-    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,withheld)
-     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'[withheld: secret-shaped content]','2026-09-01','exec',1)`,
-  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(gather(d, { artifact: 'exec:1' })).toMatchObject({
-    exec: { withheld: true, output: '[withheld: secret-shaped content]' },
-  })
-  expect(gather(d, { artifact: 'exec:1' }).pullRequest).toBeUndefined()
 })
 
 test('a pr-create exec whose output URL cannot be judged is gathered as a condition', () => {

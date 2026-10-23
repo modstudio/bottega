@@ -17,9 +17,11 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../mcp/mcp-probe.ts',
   'orch.ts',
   '../outcome.ts',
+  '../run-owned-paths.ts',
   '../run/question-open.ts',
   '../run/run-identifier.ts',
   '../collect/result-output.ts',
+  '../transport/codex-throttle.ts',
 ] as const
 const DEGRADED_HEAVY_MODULES = [
   'agents.ts',

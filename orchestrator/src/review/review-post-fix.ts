@@ -24,6 +24,7 @@ const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
 type CompletedReview = {
   number: number
   identity: string | null
+  launchKey: string | null
   runIds: string[]
 }
 
@@ -84,8 +85,19 @@ function latestCompletedReview(
   return {
     number: first.review_number,
     identity: reviewRoundIdentity(first).identity,
+    launchKey: first.launch_key,
     runIds: roundRows.map(({ run_id }) => run_id),
   }
+}
+
+function recordedReviewedTip(repo: string, to: string, review: CompletedReview): string | null {
+  for (const runId of review.runIds) {
+    const commit = git(repo, ['rev-parse', '--verify', `${pinRef(runId)}^{commit}`])
+    if (commit.ok && git(repo, ['merge-base', '--is-ancestor', commit.out, to]).ok) {
+      return commit.out
+    }
+  }
+  return null
 }
 
 function matchingReviewedTip(
@@ -95,10 +107,9 @@ function matchingReviewedTip(
   branch: string,
   review: CompletedReview,
 ): string | null {
+  const recorded = recordedReviewedTip(repo, to, review)
+  if (recorded) return recorded
   if (!review.identity) return null
-  if (!review.runIds.some((runId) => git(repo, ['rev-parse', '--verify', pinRef(runId)]).ok)) {
-    return null
-  }
   const history = git(repo, ['rev-list', '--reverse', to, '--not', trunkRef])
   if (!history.ok) return null
   let match: string | null = null
@@ -108,7 +119,7 @@ function matchingReviewedTip(
     const identity = measureChangeIdentity(repo, mergeBase.out, candidate)
     if (!identity) continue
     const candidateRound = reviewRoundIdentity({
-      launch_key: null,
+      launch_key: review.launchKey,
       branch,
       patch_id: identity.patchId,
       path_set: serializePathSet(identity.paths),
@@ -118,11 +129,74 @@ function matchingReviewedTip(
   return match
 }
 
+function branchFixFiles(
+  repo: string,
+  reviewedTip: string,
+  currentTip: string,
+  trunkRef: string,
+): ReviewTierFile[] {
+  const commits = git(repo, [
+    'rev-list',
+    '--reverse',
+    '--parents',
+    currentTip,
+    '--not',
+    reviewedTip,
+    trunkRef,
+  ])
+  if (!commits.ok) throw new Error(commits.err)
+  const files = new Map<string, ReviewTierFile>()
+  const addFiles = (changed: ReviewTierFile[]) => {
+    for (const file of changed) {
+      const previous = files.get(file.path)
+      files.set(file.path, {
+        path: file.path,
+        insertions: (previous?.insertions ?? 0) + file.insertions,
+        deletions: (previous?.deletions ?? 0) + file.deletions,
+      })
+    }
+  }
+  for (const row of commits.out.split('\n').filter(Boolean)) {
+    const [commit, firstParent, ...mergedParents] = row.split(' ')
+    if (!commit || !firstParent) throw new Error(`could not identify the parent of ${commit}`)
+    const mergesLandingBranch = mergedParents.some(
+      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
+    )
+    if (!mergesLandingBranch) {
+      addFiles(diffNumstat(repo, firstParent, commit))
+      continue
+    }
+    const landingParent = mergedParents.find(
+      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
+    )!
+    const automatic = git(repo, [
+      'merge-tree',
+      '--write-tree',
+      '--name-only',
+      '--no-messages',
+      firstParent,
+      landingParent,
+    ])
+    const [automaticTree, ...conflictedPaths] = automatic.out.split('\n').filter(Boolean)
+    if (!automaticTree || !git(repo, ['cat-file', '-e', `${automaticTree}^{tree}`]).ok) {
+      throw new Error(automatic.err)
+    }
+    const resolved = diffNumstat(repo, automaticTree, commit)
+    const resolvedPaths = new Set(resolved.map(({ path }) => path))
+    addFiles(resolved)
+    addFiles(
+      conflictedPaths
+        .filter((path) => !resolvedPaths.has(path))
+        .map((path) => ({ path, insertions: 0, deletions: 0 })),
+    )
+  }
+  return [...files.values()]
+}
+
 /** Gather repository and review-store evidence without making the review-policy decision. */
 export function gatherPostFixReviewFacts(input: {
   database: Database
   repo: string
-  from: string
   to: string
   trunkRef: string
   project: string
@@ -139,15 +213,10 @@ export function gatherPostFixReviewFacts(input: {
   )
   if (!reviewedTip) return { completed, reviewedTip: null, fixFiles: null }
   try {
-    const currentPaths = new Set(
-      diffNumstat(input.repo, input.from, input.to).map(({ path }) => path),
-    )
     return {
       completed,
       reviewedTip,
-      fixFiles: diffNumstat(input.repo, reviewedTip, input.to).filter(({ path }) =>
-        currentPaths.has(path),
-      ),
+      fixFiles: branchFixFiles(input.repo, reviewedTip, input.to, input.trunkRef),
     }
   } catch {
     return { completed, reviewedTip: null, fixFiles: null }

@@ -105,6 +105,7 @@ describe('harness health', () => {
     expect(report.classes.find((row) => row.kind === 'escaped')?.attribution).toEqual({
       lock_holder: 1,
       landing: 1,
+      tree_removal: 0,
       unattributed: 1,
     })
   })

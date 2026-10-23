@@ -1,27 +1,66 @@
 // concern: run-coordinator-log
 /** Owns detached coordinator log paths, reads, and durable diagnostic shaping. */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
+import {
+  AGENT_CAPACITY_ERROR_NAME,
+  ROUTING_REFUSAL_ERROR_NAME,
+  ROUTING_REFUSAL_MARKER,
+} from '../route/routing-refusal.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 
 const COORDINATOR_ERROR_TAIL_LIMIT = 2000
 const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
 
+function withoutRoutingRefusalMarker(value: string): string {
+  return value
+    .replaceAll(`${AGENT_CAPACITY_ERROR_NAME}: `, '')
+    .replaceAll(`${ROUTING_REFUSAL_ERROR_NAME}: `, '')
+}
+
+function routingRefusalSpan(output: string): { start: number; end: number } | null {
+  const start = output.indexOf(ROUTING_REFUSAL_MARKER)
+  if (start < 0) return null
+  const tail = output.slice(start)
+  const firstLineEnd = tail.indexOf('\n')
+  if (firstLineEnd < 0) return { start, end: output.length }
+  let boundary = firstLineEnd
+  for (const match of tail.slice(firstLineEnd).matchAll(/\n([A-Za-z][A-Za-z0-9_-]*: [^\n]*)/g)) {
+    if (firstLineEnd + match.index !== boundary) break
+    boundary += match[0].length
+  }
+  return { start, end: start + boundary }
+}
+
 function legacyCoordinatorLogNumber(name: string): string | null {
   return /^([1-9]\d*)\.coordinator\.log$/.exec(name)?.[1] ?? null
 }
 
-export type CoordinatorLogMigrationCandidate = { name: string; destinationExists: boolean }
+export type CoordinatorLogMigrationCandidate = {
+  name: string
+  destinationExists: boolean
+}
 
 export function planCoordinatorLogMigration(
   runsDirectory: string,
   candidates: readonly CoordinatorLogMigrationCandidate[],
   runs: ReadonlyMap<string, FilesystemIdentityRun>,
 ): FilesystemIdentityPlan {
-  const plan: FilesystemIdentityPlan = { mapped: [], collisions: [], unmapped: [] }
+  const plan: FilesystemIdentityPlan = {
+    mapped: [],
+    collisions: [],
+    unmapped: [],
+  }
   for (const candidate of candidates) {
     const number = legacyCoordinatorLogNumber(candidate.name)
     if (!number) continue
@@ -75,11 +114,32 @@ export function applyCoordinatorLogMigration(plan: FilesystemIdentityPlan): numb
 export const runCoordinatorLogPath = (runRecordId: string, runsDir = RUNS_DIR): string =>
   join(runsDir, runRecordId, 'coordinator.log')
 
+const runCoordinatorCausePath = (runRecordId: string, runsDir = RUNS_DIR): string =>
+  join(runsDir, runRecordId, 'coordinator-cause.txt')
+
+/** Preserve a failure that this process cannot write to a newly migrated store. */
+export function recordCoordinatorCause(runRecordId: string, cause: string): void {
+  mkdirSync(join(RUNS_DIR, runRecordId), { recursive: true })
+  writeFileSync(runCoordinatorCausePath(runRecordId), cause)
+}
+
+export function recordedCoordinatorCause(runRecordId: string): string | null {
+  try {
+    return readFileSync(runCoordinatorCausePath(runRecordId), 'utf8').trim() || null
+  } catch {
+    return null
+  }
+}
+
 /** Bound coordinator diagnostics only after checking the whole candidate tail for secrets. */
 export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
-  const trimmed = output.trim()
+  const refusal = routingRefusalSpan(output)
+  const outsideRoutingRefusal = refusal
+    ? `${output.slice(0, refusal.start)}${output.slice(refusal.end)}`
+    : output
+  const trimmed = (refusal ? withoutRoutingRefusalMarker(output) : output).trim()
   if (!trimmed) return '(no output)'
-  if (containsSecretShaped(trimmed)) return SECRET_SHAPED_OUTPUT
+  if (containsSecretShaped(outsideRoutingRefusal)) return SECRET_SHAPED_OUTPUT
   if (trimmed.length <= limit) return trimmed
   const marker = '… [earlier output omitted] …\n'
   if (limit <= marker.length) return trimmed.slice(-limit)

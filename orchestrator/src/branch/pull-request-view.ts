@@ -3,6 +3,7 @@
 export type PullRequestView = {
   state: string
   mergedAt: string | null
+  mergeCommit?: string | null
   headRefName: string
   baseRefName: string
   url: string

@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { branchForTaskKey, pullRequestNumberForBranch } from './task-key-pull-request.ts'
+import {
+  branchForTaskKey,
+  latestBranchLanding,
+  pullRequestNumberForBranch,
+} from './task-key-pull-request.ts'
 
 const database = testDatabaseFixture((d) => {
   d.query(
@@ -21,6 +25,10 @@ test('finds a landing whose branch starts with the task key', () => {
      VALUES (?,'fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc',12,'def','2026-09-01','2026-09-01')`,
   ).run(newRecordId())
   expect(branchForTaskKey('fixture', 'DEV-977', null, d)).toBe('DEV-977-work')
+  expect(latestBranchLanding('fixture', 'DEV-977-work', d)).toEqual({
+    mergeCommit: 'def',
+    pullRequestNumber: 12,
+  })
   expect(pullRequestNumberForBranch('fixture', 'DEV-977-work', d)).toBe(12)
 })
 

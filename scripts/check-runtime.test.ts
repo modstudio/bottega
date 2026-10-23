@@ -3,6 +3,7 @@ import {
   attributeCommandCpu,
   cpuBudgetMs,
   decideRuntimeBudget,
+  dependencyInstallDecision,
   HUNG_SUITE_TIMEOUT_MS,
   parseCheckArguments,
   runsRootSuiteTests,
@@ -10,6 +11,62 @@ import {
   SUITE_RUNTIME_BUDGET_MS,
   selectedCheckLegs,
 } from './check-runtime'
+
+describe('dependency installation', () => {
+  test("a worker keeps using its base when main's lockfile advances", () => {
+    const factsAfterMainAdvances = {
+      workerRun: true,
+      nodeModulesPresent: true,
+      provisioningSourceResolved: true,
+      lockfileMatchesProvisioningSource: true,
+    }
+    expect(dependencyInstallDecision(factsAfterMainAdvances)).toBe('skip-provisioned')
+  })
+
+  test('a worker refuses a lockfile change', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: true,
+        provisioningSourceResolved: true,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('refuse-lockfile-change')
+  })
+
+  test('a worker refuses when node_modules is missing', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: false,
+        provisioningSourceResolved: true,
+        lockfileMatchesProvisioningSource: true,
+      }),
+    ).toBe('refuse-missing-node-modules')
+  })
+
+  test('a worker refuses when its provisioning source cannot be resolved', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: true,
+        provisioningSourceResolved: false,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('refuse-unresolved-provisioning-source')
+  })
+
+  test('a non-worker uses the normal install', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: false,
+        nodeModulesPresent: false,
+        provisioningSourceResolved: false,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('normal-install')
+  })
+})
 
 describe('check mode arguments', () => {
   test('defaults to every static leg without a shard', () => {
@@ -19,9 +76,11 @@ describe('check mode arguments', () => {
       'cli',
       'orchestrator',
       'hub',
+      'hub/data',
       'hub/web',
       'hub/deploy/site',
       'retrieval',
+      'shared',
     ])
   })
 

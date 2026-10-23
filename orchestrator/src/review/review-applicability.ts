@@ -13,6 +13,11 @@ const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
 }
 
+/** Lenses that remain relevant regardless of their declared path scope. */
+export function isAlwaysRelevantLens(lens: string): boolean {
+  return lens === 'correctness'
+}
+
 export type ApplicableReview = {
   lenses: string[]
   secondOpinion?: string
@@ -23,6 +28,29 @@ export type ApplicableReview = {
 export type ReviewPlan = {
   tier: ReviewTier
   applicability: ApplicableReview
+}
+
+/** Keep only selected lenses and their attached applicability metadata. */
+export function selectReviewApplicability(
+  applicable: ApplicableReview,
+  lenses: string[],
+): ApplicableReview {
+  const selected = new Set(lenses)
+  const lensBases = Object.fromEntries(
+    Object.entries(applicable.lensBases ?? {}).filter(([lens]) => selected.has(lens)),
+  )
+  return {
+    lenses,
+    ...(applicable.secondOpinion && selected.has(applicable.secondOpinion)
+      ? { secondOpinion: applicable.secondOpinion }
+      : {}),
+    ...(Object.keys(lensBases).length ? { lensBases } : {}),
+    ...(applicable.secondOpinion &&
+    selected.has(applicable.secondOpinion) &&
+    applicable.secondOpinionBasis
+      ? { secondOpinionBasis: applicable.secondOpinionBasis }
+      : {}),
+  }
 }
 
 /** Classify one change and select its review lenses from those same file facts. */
@@ -50,12 +78,21 @@ function selectedLensRules(
   const bases: Record<string, string> = {}
   for (const entry of declaration.lenses) {
     if (tier < (entry.minTier ?? 1)) continue
+    if (declaration.unscopedLenses === 'skip' && !isAlwaysRelevantLens(entry.lens) && !entry.paths)
+      continue
     if (entry.paths && !declaredGlobsMatch(changedPaths, entry.paths)) continue
     if (lenses.includes(entry.lens)) continue
     lenses.push(entry.lens)
     if (entry.basis) bases[entry.lens] = entry.basis
   }
   return { lenses, bases }
+}
+
+/** Lenses whose declaration can select them from newly touched paths. */
+export function pathScopedLenses(review: ReviewSettings | undefined): string[] {
+  return (review ?? BUILT_IN_REVIEW).lenses
+    .filter(({ paths }) => paths !== undefined)
+    .map(({ lens }) => lens)
 }
 
 /** Decide the review opinions that apply, preserving lens declaration order. */
@@ -69,6 +106,18 @@ export function applicableReview(
   const { lenses: selected, bases: lensBases } = selectedLensRules(declaration, tier, changedPaths)
   const secondOpinion = declaration.secondOpinion
   if (!secondOpinion || tier < (secondOpinion.minTier ?? 3)) {
+    return { lenses: selected, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
+  }
+  if (
+    declaration.unscopedLenses === 'skip' &&
+    !isAlwaysRelevantLens(secondOpinion.lens) &&
+    !declaration.lenses.some(
+      (entry) =>
+        entry.lens === secondOpinion.lens &&
+        entry.paths !== undefined &&
+        declaredGlobsMatch(changedPaths, entry.paths),
+    )
+  ) {
     return { lenses: selected, ...(Object.keys(lensBases).length ? { lensBases } : {}) }
   }
   if (!selected.includes(secondOpinion.lens)) selected.push(secondOpinion.lens)

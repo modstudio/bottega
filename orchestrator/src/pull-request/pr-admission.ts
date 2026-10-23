@@ -17,6 +17,9 @@ import {
   serializePathSet,
   type TriageReviewRow,
 } from '../review/review-group.ts'
+import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
+import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
+import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -36,6 +39,7 @@ export type PullRequestChange = {
   group: ChangeGroup
   tier: 0 | 1 | 2 | 3
   applicability: ApplicableReview
+  roundApplicability?: ApplicableReview
 }
 
 const command = (cwd: string, argv: string[], label: string): string => {
@@ -74,6 +78,29 @@ export function resolvePullRequestChange(
   const tree = runGit(cwd, ['rev-parse', '--verify', `${tip}^{tree}`])
   const measured = measureChangeGroup(cwd, project, branch, tip)
   if (!measured) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
+  const trunk = project.settings.trunk!.trim()
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
+    trunk,
+    (args) =>
+      Bun.spawnSync(['git', ...args], {
+        cwd,
+        env: targetGitEnvironment(cwd),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }).exitCode === 0,
+  )
+  const postFix = postFixReviewDecision({
+    facts: gatherPostFixReviewFacts({
+      database,
+      repo: cwd,
+      to: tip,
+      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
+      project: project.name,
+      branch,
+    }),
+    tier: measured.tier.tier,
+    review: project.settings.review,
+  })
   return {
     project,
     branch,
@@ -82,6 +109,13 @@ export function resolvePullRequestChange(
     group: measured.group,
     tier: measured.tier.tier,
     applicability: measured.applicability,
+    roundApplicability: roundApplicabilityForChange({
+      database,
+      group: measured.group,
+      relevant: measured.applicability,
+      postFix,
+      review: project.settings.review,
+    }),
   }
 }
 
@@ -104,6 +138,7 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     tip: change.tip,
     tier: change.tier,
     applicableReview: change.applicability,
+    roundReview: change.roundApplicability,
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
     branchReviewGroups,
@@ -197,9 +232,12 @@ export function triageRefusal(
       `findings without a disposition: ${decision.undisposedFindings.map((finding) => `${finding.reviewNumber}/${finding.ordinal}`).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `${PLATFORM_SLUG} review triage ${finding.reviewNumber} ${finding.ordinal} <disposition>`).join('; ')}`,
     )
   }
-  for (const lens of decision.missingLenses) {
+  for (const { lens, recordedOnBranch } of decision.missingLenses) {
+    const condition = recordedOnBranch
+      ? 'has no recorded result for this change'
+      : 'has no recorded result on this branch'
     lines.push(
-      `applicable lens ${lens} has no recorded result on this branch; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+      `applicable lens ${lens} ${condition}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
     )
   }
   if (decision.missingSecondOpinion) {

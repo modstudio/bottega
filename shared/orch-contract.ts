@@ -550,11 +550,17 @@ export const HostLoadSchema = z.object({
   freeMem: z.number(),
 })
 
-export const AttributionKindSchema = z.enum(['lock_holder', 'landing', 'unattributed'])
+export const AttributionKindSchema = z.enum([
+  'lock_holder',
+  'landing',
+  'tree_removal',
+  'unattributed',
+])
 export const ConfinementClassSchema = z.enum([
   'overlapping',
   'non_overlapping',
   'edit_commit_cycle',
+  'removed',
 ])
 export type AttributionKind = z.infer<typeof AttributionKindSchema>
 export type ConfinementClass = z.infer<typeof ConfinementClassSchema>
@@ -576,6 +582,14 @@ export const HarnessHealthSchema = z.object({
   header: z.string(),
   days: z.number().int().positive(),
   from: z.iso.datetime(),
+  throttles: z
+    .array(
+      z.object({
+        concurrency: z.number().int().nonnegative(),
+        throttles: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
   classes: z.array(
     z.object({
       kind: z.string(),

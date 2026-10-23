@@ -30,7 +30,7 @@ import {
   monitorHistory,
 } from './monitor.ts'
 import {
-  claimMonitorNoticesWithHosted,
+  claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
 } from './monitor-notices.ts'
 import {
@@ -208,9 +208,7 @@ async function showNotices(
     throw new Error(
       `monitor notices require an identity; ${callerIdentityRefusal(callerIdentity(), 'read monitor notices')}`,
     )
-  const delivery = await claimMonitorNoticesWithHosted(sid, {
-    refreshBoard: !skipBoardRefresh,
-  })
+  const delivery = await claimMonitorNoticesForCommand(sid, { skipBoardRefresh })
   if (json) await presentation.write(`${JSON.stringify(delivery)}\n`)
   else {
     for (const condition of delivery.notices)

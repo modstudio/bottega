@@ -6,6 +6,7 @@ describe('categorizeFile', () => {
     ['orchestrator/src/doc/docs.ts', 'product'],
     ['hub/web/src/docs/page.tsx', 'product'],
     ['orchestrator/src/doc/docs-core.test.ts', 'test'],
+    ['orchestrator/hooks/test_score_reminder.py', 'test'],
     ['docs/guide.txt', 'docs'],
     ['packages/x/docs/notes.txt', 'docs'],
     ['orchestrator/src/doc/README.md', 'docs'],
