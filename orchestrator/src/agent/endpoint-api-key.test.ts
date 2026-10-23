@@ -84,8 +84,10 @@ test('endpoint key resolution succeeds after one transient failure without a rea
         throw new HostedSecretError('SEALED_KEY', 'hosted-failure', new Error('temporary'))
       return { SEALED_KEY: 'sealed-value' }
     },
-    async (delayMs) => {
-      delays.push(delayMs)
+    {
+      sleep: async (delayMs) => {
+        delays.push(delayMs)
+      },
     },
   )
 
@@ -107,7 +109,7 @@ test('an exhausted transient refusal safely names its cause and retry remedy', a
       async () => {
         throw error
       },
-      async () => {},
+      { sleep: async () => {} },
     )
   } catch (caught) {
     refusal = String((caught as Error).message)
@@ -118,4 +120,49 @@ test('an exhausted transient refusal safely names its cause and retry remedy', a
   expect(refusal).toContain('reason: response')
   expect(refusal).toContain(`cleared by: ${PLATFORM_SLUG} run retry <run>`)
   expect(refusal).not.toContain(sensitiveMarker)
+})
+
+test('a wrapped 403 refuses immediately with the access remedy', async () => {
+  let attempts = 0
+  const error = new HostedSecretError(
+    'SEALED_KEY',
+    'hosted-failure',
+    new ConfigClientError('response', '/v1/config/secrets/SEALED_KEY', 403),
+  )
+
+  await expect(
+    resolveEndpointApiKeyEnv(
+      { baseUrl: 'https://example.test/v1', apiKeySecret: 'SEALED_KEY' },
+      async () => {
+        attempts += 1
+        throw error
+      },
+      { sleep: async () => expect.unreachable() },
+    ),
+  ).rejects.toThrow('cleared by: restore hosted secret access, then retry')
+  expect(attempts).toBe(1)
+})
+
+test('a wrapped 503 retries and uses the caller supplied exhausted remedy', async () => {
+  let attempts = 0
+  const error = new HostedSecretError(
+    'SEALED_KEY',
+    'hosted-failure',
+    new ConfigClientError('response', '/v1/config/secrets/SEALED_KEY', 503),
+  )
+
+  await expect(
+    resolveEndpointApiKeyEnv(
+      { baseUrl: 'https://example.test/v1', apiKeySecret: 'SEALED_KEY' },
+      async () => {
+        attempts += 1
+        throw error
+      },
+      {
+        sleep: async () => {},
+        exhaustedRetryCommand: `${PLATFORM_SLUG} agent probe fixture`,
+      },
+    ),
+  ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} agent probe fixture`)
+  expect(attempts).toBe(ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS)
 })

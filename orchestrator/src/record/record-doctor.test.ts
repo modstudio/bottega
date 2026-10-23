@@ -1,9 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { ConfigClientError } from '../../../shared/config-client.ts'
+import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
+  agentSecretChecks,
   decideRecordDoctorChecks,
   localQuestionCountForSpace,
   recordDoctorExitCode,
@@ -272,5 +275,56 @@ describe('record doctor decisions', () => {
       }),
     ).toBe(1)
     database.close()
+  })
+})
+
+describe('record doctor agent secrets', () => {
+  test('checks each distinct enabled-agent secret once without reporting its value', async () => {
+    const calls: string[][] = []
+    const checks = await agentSecretChecks(
+      [
+        { enabled: true, apiKeySecret: 'SHARED_KEY' },
+        { enabled: true, apiKeySecret: 'SHARED_KEY' },
+        { enabled: false, apiKeySecret: 'DISABLED_KEY' },
+      ],
+      async (names) => {
+        calls.push([...names])
+        return { SHARED_KEY: 'SECRET_VALUE_MARKER' }
+      },
+    )
+
+    expect(calls).toEqual([['SHARED_KEY']])
+    expect(checks).toEqual([
+      {
+        name: 'agent API key secret SHARED_KEY',
+        status: 'pass',
+        section: 'customer',
+      },
+    ])
+    expect(JSON.stringify(checks)).not.toContain('SECRET_VALUE_MARKER')
+    expect(JSON.stringify(checks)).not.toContain('DISABLED_KEY')
+  })
+
+  test('classifies a wrapped service failure with only safe cause facts', async () => {
+    const sensitiveMarker = 'SECRET_RESPONSE_MARKER'
+    const cause = new ConfigClientError('response', '/v1/config/secrets/SEALED_KEY', 503)
+    cause.message = sensitiveMarker
+    const checks = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'SEALED_KEY' }],
+      async () => {
+        throw new HostedSecretError('SEALED_KEY', 'hosted-failure', cause)
+      },
+    )
+
+    expect(checks[0]).toMatchObject({
+      name: 'agent API key secret SEALED_KEY',
+      status: 'fail',
+      section: 'customer',
+    })
+    expect(checks[0]?.detail).toContain('transient')
+    expect(checks[0]?.detail).toContain('cause: ConfigClientError')
+    expect(checks[0]?.detail).toContain('status: 503')
+    expect(checks[0]?.detail).toContain('reason: response')
+    expect(checks[0]?.detail).not.toContain(sensitiveMarker)
   })
 })

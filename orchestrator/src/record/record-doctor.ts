@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
@@ -19,6 +20,12 @@ import {
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import { secretResolutionFailure } from '../../../shared/secret-resolution-failure.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
+import {
+  classifySecretResolutionFailure,
+  decideEndpointApiKeyRetry,
+} from '../agent/endpoint-api-key.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { machineId } from './machine-identity.ts'
@@ -58,6 +65,7 @@ export type RecordDoctorFacts = {
   quarantinedOutboxRows: readonly QuarantinedDoctorRow[]
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
+  agentSecretChecks?: readonly RecordDoctorCheck[]
 }
 
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
@@ -209,6 +217,8 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
         },
   )
 
+  checks.push(...(facts.agentSecretChecks ?? []))
+
   if (facts.operatorConnectionPresent)
     checks.push(
       ...(facts.operatorChecks ?? []).map((check) => ({
@@ -217,6 +227,45 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
       })),
     )
   return checks
+}
+
+/** Resolve each distinct enabled-agent secret once without exposing its value. */
+export async function agentSecretChecks(
+  agents: ReadonlyArray<{ enabled?: boolean; apiKeySecret?: string | null }>,
+  resolver: typeof readEnvValuesWithHosted = readEnvValuesWithHosted,
+): Promise<RecordDoctorCheck[]> {
+  const names = [
+    ...new Set(
+      agents
+        .filter((agent) => agent.enabled !== false)
+        .map((agent) => agent.apiKeySecret?.trim())
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ].sort()
+  return Promise.all(
+    names.map(async (name): Promise<RecordDoctorCheck> => {
+      try {
+        const resolved = (await resolver([name]))[name]
+        return resolved
+          ? { name: `agent API key secret ${name}`, status: 'pass', section: 'customer' }
+          : {
+              name: `agent API key secret ${name}`,
+              status: 'fail',
+              detail: 'permanent: secret is not set',
+              section: 'customer',
+            }
+      } catch (error) {
+        const classification = classifySecretResolutionFailure(error)
+        const transient = decideEndpointApiKeyRetry(classification, 1).retry
+        return {
+          name: `agent API key secret ${name}`,
+          status: 'fail',
+          detail: `${transient ? 'transient' : 'permanent'}: ${secretResolutionFailure(error) ?? 'secret could not be resolved'}`,
+          section: 'customer',
+        }
+      }
+    }),
+  )
 }
 
 export function unattributedShare(missing: number, total: number): string {
@@ -505,6 +554,7 @@ export async function diagnoseRecord(
   const database = db()
   const projects = input.projects ?? []
   const customer = await customerFacts(projects, database)
+  const secretChecks = await agentSecretChecks(Object.values(AGENTS))
   const recordUrl = input.recordUrl ?? process.env.BOTTEGA_RECORD_URL
   let operatorChecks: RecordDoctorCheck[] | undefined
   if (recordUrl) {
@@ -532,5 +582,6 @@ export async function diagnoseRecord(
     ...customerDecisionFacts,
     operatorConnectionPresent: Boolean(recordUrl),
     operatorChecks,
+    agentSecretChecks: secretChecks,
   })
 }

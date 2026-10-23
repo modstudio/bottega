@@ -2,12 +2,10 @@
 /** Decides endpoint authentication from an agent's stored reference and resolves that reference at launch. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { ConfigClientError, type ConfigClientErrorReason } from '../../../shared/config-client.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
-import {
-  classifySecretResolutionFailure,
-  type SecretResolutionFailureClassification,
-  secretResolutionFailure,
-} from '../../../shared/secret-resolution-failure.ts'
+import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
+import { secretResolutionFailure } from '../../../shared/secret-resolution-failure.ts'
 
 type EndpointKeyRow = {
   baseUrl?: string | null
@@ -25,6 +23,28 @@ export type EndpointApiKeyRetryDecision =
 export const ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS = 3
 /** Hosted slowness lasts seconds, so the retry window spans seconds rather than milliseconds. */
 const ENDPOINT_API_KEY_RESOLUTION_INITIAL_RETRY_DELAY_MS = 2_000
+
+export type SecretResolutionFailureClassification =
+  | { kind: 'hosted-failure' }
+  | { kind: 'config-client'; reason: ConfigClientErrorReason; status?: number }
+
+/** Reduce an exception to the non-sensitive facts endpoint policy and doctor need. */
+export function classifySecretResolutionFailure(
+  error: unknown,
+): SecretResolutionFailureClassification | null {
+  if (error instanceof HostedSecretError && error.reason === 'hosted-failure') {
+    if (error.cause instanceof ConfigClientError)
+      return {
+        kind: 'config-client',
+        reason: error.cause.reason,
+        status: error.cause.status,
+      }
+    return { kind: 'hosted-failure' }
+  }
+  if (error instanceof ConfigClientError)
+    return { kind: 'config-client', reason: error.reason, status: error.status }
+  return null
+}
 
 /** Pure policy: retry only transient hosted failures, up to the endpoint-key attempt bound. */
 export function decideEndpointApiKeyRetry(
@@ -50,6 +70,7 @@ async function resolveNamedEndpointApiKey(
   name: string,
   resolver: typeof readEnvValuesWithHosted,
   sleep: (delayMs: number) => Promise<void>,
+  exhaustedRetryCommand: string,
 ): Promise<string | undefined> {
   for (let attempt = 1; attempt <= ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -61,9 +82,7 @@ async function resolveNamedEndpointApiKey(
         continue
       }
       const failure = secretResolutionFailure(error, {
-        ...(retry.retriesExhausted
-          ? { exhaustedRetryCommand: `${PLATFORM_SLUG} run retry <run>` }
-          : {}),
+        ...(retry.retriesExhausted ? { exhaustedRetryCommand } : {}),
       })
       if (failure)
         throw new Error(`agent endpoint API key ${name} could not be resolved: ${failure}`)
@@ -92,10 +111,20 @@ export function decideEndpointApiKey(
 export async function resolveEndpointApiKeyEnv(
   row: EndpointKeyRow,
   resolver: typeof readEnvValuesWithHosted = readEnvValuesWithHosted,
-  sleep: (delayMs: number) => Promise<void> = Bun.sleep,
+  options: {
+    sleep?: (delayMs: number) => Promise<void>
+    exhaustedRetryCommand?: string
+  } = {},
 ): Promise<Record<string, string>> {
   const name = row.apiKeySecret?.trim() || null
-  const resolved = name ? await resolveNamedEndpointApiKey(name, resolver, sleep) : undefined
+  const resolved = name
+    ? await resolveNamedEndpointApiKey(
+        name,
+        resolver,
+        options.sleep ?? Bun.sleep,
+        options.exhaustedRetryCommand ?? `${PLATFORM_SLUG} run retry <run>`,
+      )
+    : undefined
   const decision = decideEndpointApiKey(row, resolved)
   if (!decision.ok) throw new Error(decision.refusal)
   return decision.env

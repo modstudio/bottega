@@ -1,25 +1,10 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import { ConfigClientError, type ConfigClientErrorReason } from './config-client.ts'
+import { ConfigClientError } from './config-client.ts'
 import { HostedSecretError } from './hosted-secrets.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 
 type SecretResolutionFailureOptions = {
   exhaustedRetryCommand?: string
-}
-
-export type SecretResolutionFailureClassification =
-  | { kind: 'hosted-failure' }
-  | { kind: 'config-client'; reason: ConfigClientErrorReason; status?: number }
-
-/** Reduce a secret-resolution exception to the non-sensitive facts retry policy needs. */
-export function classifySecretResolutionFailure(
-  error: unknown,
-): SecretResolutionFailureClassification | null {
-  if (error instanceof HostedSecretError && error.reason === 'hosted-failure')
-    return { kind: 'hosted-failure' }
-  if (error instanceof ConfigClientError)
-    return { kind: 'config-client', reason: error.reason, status: error.status }
-  return null
 }
 
 function hostedFailureCauseSummary(error: HostedSecretError): string {
@@ -40,6 +25,17 @@ function hostedFailureCauseSummary(error: HostedSecretError): string {
   }
 }
 
+function configClientRemedy(error: ConfigClientError, options: SecretResolutionFailureOptions) {
+  if (options.exhaustedRetryCommand) {
+    const diagnostic =
+      error.reason === 'unreachable' ? `\nchecked by: ${PLATFORM_SLUG} record doctor` : ''
+    return `${diagnostic}\ncleared by: ${options.exhaustedRetryCommand}`
+  }
+  if (error.reason === 'unreachable') return `\ncleared by: ${PLATFORM_SLUG} record doctor`
+  if (error.reason === 'not-configured') return `\ncleared by: ${RECORD_SIGN_IN_REMEDY}`
+  return '\ncleared by: restore hosted secret access, then retry'
+}
+
 /** Classify a sealed-store read failure without repeating sensitive exception details. */
 export function secretResolutionFailure(
   error: unknown,
@@ -50,16 +46,7 @@ export function secretResolutionFailure(
       error.reason === 'unreachable'
         ? 'hosted secret service is unreachable'
         : 'hosted secret service refused the request'
-    if (options.exhaustedRetryCommand) {
-      const diagnostic =
-        error.reason === 'unreachable' ? `\nchecked by: ${PLATFORM_SLUG} record doctor` : ''
-      return `${condition}${diagnostic}\ncleared by: ${options.exhaustedRetryCommand}`
-    }
-    if (error.reason === 'unreachable')
-      return `${condition}\ncleared by: ${PLATFORM_SLUG} record doctor`
-    if (error.reason === 'not-configured')
-      return `${condition}\ncleared by: ${RECORD_SIGN_IN_REMEDY}`
-    return `${condition}\ncleared by: restore hosted secret access, then retry`
+    return `${condition}${configClientRemedy(error, options)}`
   }
   if (!(error instanceof HostedSecretError)) return null
   const causeSummary = error.reason === 'hosted-failure' ? hostedFailureCauseSummary(error) : ''
@@ -74,6 +61,8 @@ export function secretResolutionFailure(
     case 'authentication-failed':
       return `${condition}\ncleared by: repair the sealed value from a trusted machine, then retry`
     case 'hosted-failure':
+      if (error.cause instanceof ConfigClientError)
+        return `${condition}${configClientRemedy(error.cause, options)}`
       return `${condition}\ncleared by: ${options.exhaustedRetryCommand ?? 'retry the command'}`
   }
 }
