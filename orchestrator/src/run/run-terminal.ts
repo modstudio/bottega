@@ -257,7 +257,18 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
-function checkpointTerminalWork(input: TerminalInput): string | null {
+type TerminalCheckpointInput = Pick<
+  TerminalInput,
+  | 'writesJob'
+  | 'claim'
+  | 'launchKey'
+  | 'scratchDir'
+  | 'gitConfigEnvironment'
+  | 'checkpointContainment'
+  | 'opts'
+> & { worktree: Pick<Worktree, 'path' | 'branch'> | null }
+
+export function checkpointTerminalWork(input: TerminalCheckpointInput): string | null {
   const shouldCheckpoint = shouldCheckpointAtTerminal({
     writesJob: input.writesJob,
     hasWorktree: Boolean(input.worktree),
@@ -346,7 +357,7 @@ export function terminalCheckpointHeader(input: {
   worktree: string
 }): string | null {
   if (input.error) {
-    return `Harness checkpoint failed: ${input.error}; uncommitted work remains in the worktree at ${input.worktree}.`
+    return `Harness checkpoint failed: ${input.error}; any uncommitted work is still in the worktree at ${input.worktree}.`
   }
   if (input.created) return `Harness checkpoint: committed uncommitted work as ${input.commit!}.`
   return null

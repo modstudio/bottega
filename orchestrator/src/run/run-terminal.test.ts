@@ -7,6 +7,7 @@ import { db } from '../database/db.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import {
   artifactPersistenceOutcome,
+  checkpointTerminalWork,
   finalizeTerminalChain,
   questionsToInsert,
   recordArtifactPersistenceFailure,
@@ -229,30 +230,28 @@ describe('terminal checkpoint decision', () => {
         worktree: '/worktrees/DEV-1647',
       }),
     ).toBe(
-      'Harness checkpoint failed: bun executable disappeared; uncommitted work remains in the worktree at /worktrees/DEV-1647.',
+      'Harness checkpoint failed: bun executable disappeared; any uncommitted work is still in the worktree at /worktrees/DEV-1647.',
     )
   })
 
-  test('preserves the created final checkpoint header', () => {
-    expect(
-      terminalCheckpointHeader({
-        created: true,
-        commit: 'checkpoint-sha',
-        error: null,
-        worktree: '/worktrees/DEV-1647',
-      }),
-    ).toBe('Harness checkpoint: committed uncommitted work as checkpoint-sha.')
-  })
+  test('the terminal checkpoint step surfaces a containment refusal', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    const worktree = '/worktrees/DEV-1647'
 
-  test('omits the final checkpoint header for a clean tree', () => {
     expect(
-      terminalCheckpointHeader({
-        created: false,
-        commit: null,
-        error: null,
-        worktree: '/worktrees/DEV-1647',
+      checkpointTerminalWork({
+        writesJob: true,
+        worktree: { path: worktree, branch: 'DEV-1647-test' },
+        claim: { id: runId, number: 1647 },
+        launchKey: 'DEV-1647',
+        scratchDir: '/scratch/DEV-1647',
+        gitConfigEnvironment: undefined,
+        checkpointContainment: { disableHooks: true, gitDir: null, hooksDir: null },
+        opts: { job: 'implement' },
       }),
-    ).toBeNull()
+    ).toBe(
+      `Harness checkpoint failed: checkpoint refused: writing ACP run has incomplete checkpoint containment; any uncommitted work is still in the worktree at ${worktree}.`,
+    )
   })
 })
 
