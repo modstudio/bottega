@@ -27,6 +27,7 @@ type ProbeTurnInput = {
   schema?: string
   mcp?: boolean
   writing?: WritingProbeConfinement
+  session?: string
 }
 
 type ProbeTurnResult = {
@@ -34,6 +35,8 @@ type ProbeTurnResult = {
   output: string
   parsed: TransportResult['parsed']
   events: NormalizedEvent[]
+  sessionId: string | null
+  loadSessionAdvertised: boolean
 }
 
 function insertProbeTurn(input: ProbeTurnInput, started: number): string {
@@ -119,6 +122,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
       sandbox: 'workspace-write',
       writableRoots: [input.scratch],
       writingAcp: Boolean(input.writing),
+      session: input.session,
       ...(input.writing
         ? {
             srt: {
@@ -145,7 +149,11 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
           outcome.status === 'ok' ? null : outcome.output,
           recordId,
         )
-      return outcome
+      return {
+        ...outcome,
+        sessionId: outcome.sessionId,
+        loadSessionAdvertised: handle.loadSessionAdvertised === true,
+      }
     } finally {
       try {
         handle.kill(9)
@@ -159,6 +167,13 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
     writableDb()
       .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?`)
       .run(Date.now() - started, detail, recordId)
-    return { status: 'failed', output: detail, parsed: null, events: [] as NormalizedEvent[] }
+    return {
+      status: 'failed',
+      output: detail,
+      parsed: null,
+      events: [] as NormalizedEvent[],
+      sessionId: null,
+      loadSessionAdvertised: false,
+    }
   }
 }
