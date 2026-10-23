@@ -34,7 +34,7 @@ export type AgentRow = {
   trains_on_inputs: number
 }
 
-export function rowLaunchEnvironment(row: AgentRow): Record<string, string> {
+function rowLaunchEnvironment(row: AgentRow): Record<string, string> {
   if (!row.base_url) return {}
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   return {
