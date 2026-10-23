@@ -25,10 +25,15 @@ export type PullRequestCiCounts = {
   flakeAttributedReruns: number
 }
 
+export type PullRequestCiCountsInput = Pick<
+  PullRequestCiAttempt,
+  'workflowRunId' | 'runAttempt' | 'conclusion'
+> & { headCommit: string | null }
+
 export function derivePullRequestCiCounts(
-  attempts: readonly PullRequestCiAttempt[],
+  attempts: readonly PullRequestCiCountsInput[],
 ): PullRequestCiCounts {
-  const runs = new Map<number, PullRequestCiAttempt[]>()
+  const runs = new Map<number, PullRequestCiCountsInput[]>()
   for (const attempt of attempts) {
     const values = runs.get(attempt.workflowRunId) ?? []
     values.push(attempt)
@@ -42,6 +47,7 @@ export function derivePullRequestCiCounts(
     flakeAttributedReruns += ordered.filter(
       (attempt, index) =>
         attempt.conclusion === 'failure' &&
+        attempt.headCommit !== null &&
         ordered
           .slice(index + 1)
           .some(

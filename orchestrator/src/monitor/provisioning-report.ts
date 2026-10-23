@@ -1,6 +1,7 @@
 // concern: provisioning report
 /** Provisioning history query and pure aggregation. */
 import type { Database } from 'bun:sqlite'
+import { nearestRankPercentile } from '../state/statistics.ts'
 import type { MonitorHostLoad } from './monitor-types.ts'
 import { type ReportFilterOptions, reportFilter } from './report-filter.ts'
 
@@ -16,11 +17,6 @@ export type ProvisioningObservation = {
 
 const PROVISIONING_COMPARABLE_MIN_RUNS = 5
 
-const percentile = (values: number[], p: number): number | null => {
-  if (!values.length) return null
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
-}
 const range = (values: number[]) => ({ min: Math.min(...values), max: Math.max(...values) })
 
 export function provisioningReport(rows: readonly ProvisioningObservation[]) {
@@ -44,18 +40,18 @@ export function provisioningReport(rows: readonly ProvisioningObservation[]) {
           failed: group.filter((row) => row.outcome === 'failed').length,
         },
         provisioningMs: {
-          median: percentile(
+          median: nearestRankPercentile(
             group.map((row) => row.durationMs),
             0.5,
           ),
-          p90: percentile(
+          p90: nearestRankPercentile(
             group.map((row) => row.durationMs),
             0.9,
           ),
         },
         entries: {
-          median: percentile(exactEntries, 0.5),
-          p90: percentile(exactEntries, 0.9),
+          median: nearestRankPercentile(exactEntries, 0.5),
+          p90: nearestRankPercentile(exactEntries, 0.9),
           limitedRuns: group.filter((row) => row.entriesLimited === true).length,
           unavailableRuns: group.filter((row) => row.entries === null).length,
         },

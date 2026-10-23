@@ -63,7 +63,7 @@ type BranchEvidence = {
   unclassifiableReviews: Set<string>
 }
 
-function eligibleRows(
+export function eligibleReviewRoundRows(
   database: Database,
   since?: string,
   target?: { project: string; branch: string },
@@ -103,7 +103,7 @@ function branchEvidence(
   target?: { project: string; branch: string },
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
-  for (const row of eligibleRows(database, since, target)) {
+  for (const row of eligibleReviewRoundRows(database, since, target)) {
     if (!row.branch) continue
     const key = branchKey(row.run_repo, row.branch)
     const branch = branches.get(key) ?? {

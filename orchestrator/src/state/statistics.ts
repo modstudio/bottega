@@ -14,3 +14,13 @@ export function median(xs: number[]): number | null {
   const mid = v.length >> 1
   return v.length % 2 ? v[mid]! : (v[mid - 1]! + v[mid]!) / 2
 }
+
+/** Returns the nearest-rank percentile of the supplied values. */
+export function nearestRankPercentile(
+  values: readonly number[],
+  proportion: number,
+): number | null {
+  if (!values.length) return null
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.max(0, Math.ceil(proportion * sorted.length) - 1)]!
+}

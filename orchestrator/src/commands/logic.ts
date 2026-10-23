@@ -56,6 +56,7 @@ import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
+import { efficiencyCommand } from './efficiency-command.ts'
 import { registerLensCommands } from './lens.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
@@ -187,6 +188,18 @@ function answerCommandDefinition(program: Command): Command {
 }
 
 function registerMachineAttentionCommands(program: Command): void {
+  program
+    .command('efficiency')
+    .description('report orchestration efficiency; median is nearest-rank 50th percentile')
+    .option('--since <duration>', 'limit the current window by age (default: 7d)')
+    .option('--json', 'write the report as JSON')
+    .allowExcessArguments(false)
+    .action((options) =>
+      efficiencyCommand(
+        { since: options.since, json: Boolean(options.json) },
+        { write: writeStdout },
+      ),
+    )
   program
     .command('provisioning')
     .description('report worker-tree provisioning cost or run resources')

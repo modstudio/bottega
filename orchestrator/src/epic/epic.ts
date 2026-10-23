@@ -7,6 +7,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
+import { utcMillis } from '../utc-millis.ts'
 export type EpicChild = { key: string; title?: string; status?: string | null }
 type NotRecorded = { metric: string; needed: string }
 type EpicTaskScore = {
@@ -146,10 +147,6 @@ export function attributedTaskKey(launchKey: string | null, branch: string | nul
   ].map((match) => match[1]!.toUpperCase())
   return keyInBranch(branch, candidates)
 }
-
-/** SQLite stores ISO text without timezone semantics; an absent offset means UTC here. */
-const utcMillis = (value: string): number =>
-  Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`)
 
 function epicEvidence(database: Database) {
   const runs = database

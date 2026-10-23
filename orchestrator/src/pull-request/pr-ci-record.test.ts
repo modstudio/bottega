@@ -124,6 +124,15 @@ test('recording the same run attempts updates their rows and outbox payloads', (
   database.close()
 })
 
+test('CI counts do not attribute a rerun as a flake without a head commit', () => {
+  expect(
+    derivePullRequestCiCounts([
+      { workflowRunId: 42, runAttempt: 1, headCommit: null, conclusion: 'failure' },
+      { workflowRunId: 42, runAttempt: 2, headCommit: null, conclusion: 'success' },
+    ]),
+  ).toEqual({ ciRuns: 1, reruns: 1, flakeAttributedReruns: 0 })
+})
+
 test('derives runs, reruns, and same-run same-head flakes', () => {
   expect(
     derivePullRequestCiCounts([

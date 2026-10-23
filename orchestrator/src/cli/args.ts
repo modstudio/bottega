@@ -420,6 +420,7 @@ export const CLI_COMMANDS = new Set([
   'doctor',
   'epic',
   'enforcement',
+  'efficiency',
   'guide',
   'health',
   'hub-import',
