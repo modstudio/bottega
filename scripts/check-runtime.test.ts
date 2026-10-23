@@ -4,12 +4,29 @@ import {
   cpuBudgetMs,
   decideRuntimeBudget,
   HUNG_SUITE_TIMEOUT_MS,
+  installNeeded,
   parseCheckArguments,
   runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
   selectedCheckLegs,
 } from './check-runtime'
+
+describe('dependency installation', () => {
+  test('an installed tree recorded for the current lockfile needs no install', () => {
+    expect(installNeeded('current', { lockfileHash: 'current', nodeModulesPresent: true })).toBe(
+      false,
+    )
+  })
+
+  test('a missing, unrecorded, or stale installed tree needs an install', () => {
+    expect(installNeeded('current', { lockfileHash: 'current', nodeModulesPresent: false })).toBe(
+      true,
+    )
+    expect(installNeeded('current', { lockfileHash: null, nodeModulesPresent: true })).toBe(true)
+    expect(installNeeded('current', { lockfileHash: 'stale', nodeModulesPresent: true })).toBe(true)
+  })
+})
 
 describe('check mode arguments', () => {
   test('defaults to every static leg without a shard', () => {

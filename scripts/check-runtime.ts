@@ -18,6 +18,18 @@ export type RuntimeBudgetVerdict = 'within' | 'over-informational' | 'over-fatal
 export type RuntimeMeasure = 'wall' | 'cpu'
 export type CommandCpuSample = { name: string; userMs: number; systemMs: number }
 export type AttributedCommandCpu = { name: string; cpuMs: number; share: number }
+export type InstalledDependencyState = {
+  lockfileHash: string | null
+  nodeModulesPresent: boolean
+}
+
+/** Decide whether the provisioned dependency tree still belongs to this lockfile. */
+export function installNeeded(
+  lockfileHash: string,
+  installedState: InstalledDependencyState,
+): boolean {
+  return !installedState.nodeModulesPresent || installedState.lockfileHash !== lockfileHash
+}
 
 const CHECK_LEG_NAMES = CHECK_LEGS.map((leg) => leg.name)
 type CheckLegName = (typeof CHECK_LEGS)[number]['name']
