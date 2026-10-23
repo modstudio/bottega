@@ -28,6 +28,10 @@ function releaseRow(row: Record<string, unknown>): RecordRelease {
     id: String(row.id),
     rung: String(row.rung),
     candidateCommit: String(row.candidate_commit),
+    trunk: row.trunk == null ? null : String(row.trunk),
+    trunkTip: row.trunk_tip == null ? null : String(row.trunk_tip),
+    commitsBehindTrunk: row.commits_behind_trunk == null ? null : Number(row.commits_behind_trunk),
+    behindTrunkReason: row.behind_trunk_reason == null ? null : String(row.behind_trunk_reason),
     liveCommitBefore: row.live_commit_before == null ? null : String(row.live_commit_before),
     liveCommitAfter: row.live_commit_after == null ? null : String(row.live_commit_after),
     rollback: row.rollback === true,
@@ -63,7 +67,8 @@ export async function listRecordReleases(input: ReleaseListInput): Promise<Recor
     const project = await tx`SELECT id FROM project WHERE id=${input.projectId}::uuid`
     if (!project[0]) return null
     const rows = await tx`
-      SELECT id, rung, candidate_commit, live_commit_before, live_commit_after, rollback,
+      SELECT id, rung, candidate_commit, trunk, trunk_tip, commits_behind_trunk,
+        behind_trunk_reason, live_commit_before, live_commit_after, rollback,
         rollback_reason, actor, session_id, started_at, finished_at, exit_code,
         live_matches_candidate, warning
       FROM release

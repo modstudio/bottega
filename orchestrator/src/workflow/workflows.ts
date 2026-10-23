@@ -545,13 +545,7 @@ export function promoteWorkflow(
         throw new Error(`workflow "${slug}" version ${n} is not a draft`)
       const decision = await promoteSharedWorkflow(slug, n, reasonValue, spaceId, d, {
         preflight: (definition, targetSpace, catalogue) =>
-          workflowPromotionPreflight(
-            slug,
-            definition,
-            d,
-            targetSpace,
-            catalogue as StepCatalogueDefinition,
-          ),
+          workflowPromotionPreflight(slug, definition, d, targetSpace, catalogue),
         catalogue: sharedStepCataloguePromotionPorts(authorValue, d),
         author: () => writeAuthor(authorValue),
         missingCatalogueRefusal: HOSTED_CATALOGUE_REFUSAL,

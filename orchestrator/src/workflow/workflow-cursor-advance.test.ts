@@ -27,7 +27,12 @@ const testPorts = {
     commentIds: [],
   }),
   runHasArtifacts: () => true,
-  resolveCheckout: () => ({ project: 'fixture', branch: 'work', headIsTipOrAncestor: true }),
+  resolveCheckout: () => ({
+    project: 'fixture',
+    branch: 'work',
+    headIsTipOrAncestor: true,
+    landingBranch: 'main',
+  }),
   viewPullRequest: () => ({
     state: 'MERGED',
     mergedAt: '2026-10-20',

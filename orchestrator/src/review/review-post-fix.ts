@@ -188,7 +188,6 @@ function branchFixFiles(
 export function gatherPostFixReviewFacts(input: {
   database: Database
   repo: string
-  from: string
   to: string
   trunkRef: string
   project: string

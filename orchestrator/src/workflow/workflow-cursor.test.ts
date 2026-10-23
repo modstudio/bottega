@@ -44,6 +44,11 @@ const database = testDatabaseFixture((d) => {
 
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
+const matchingCheckout = {
+  headIsTipOrAncestor: true,
+  landingBranch: 'main',
+  ...{ project: 'fixture', branch: args.branch },
+}
 
 const testPorts = {
   readTask: (key: string) => ({
@@ -53,11 +58,7 @@ const testPorts = {
     commentIds: [1],
   }),
   runHasArtifacts: () => true,
-  resolveCheckout: () => ({
-    project: 'fixture',
-    branch: 'DEV-822-work',
-    headIsTipOrAncestor: true,
-  }),
+  resolveCheckout: () => matchingCheckout,
   viewPullRequest: () => ({
     state: 'MERGED',
     mergedAt: '2026-09-01',
@@ -1015,7 +1016,7 @@ describe('workflow cursor adapter', () => {
         },
         resolveCheckout: () => {
           calls.push({ port: 'resolveCheckout', inTransaction: d.inTransaction })
-          return { project: 'fixture', branch: args.branch, headIsTipOrAncestor: true }
+          return matchingCheckout
         },
         resolveTreeCommit: () => {
           calls.push({ port: 'resolveTreeCommit', inTransaction: d.inTransaction })

@@ -3,10 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-type CommandExitEvidence = {
+type CommandExitBindingEvidence = {
   id: number
-  command: string
-  exitCode: number
   sessionMatches: boolean
   sessionAdoptedCursor: boolean
   createdAfterStepActivation: boolean
@@ -25,7 +23,9 @@ export function gateFloorRefusal(tree: {
   return `floor command-exit is unmet: ${condition}; pass \`--arg worktree=<tree>\` naming an existing tree`
 }
 
-export function commandExitBindingRefusal(exec: CommandExitEvidence | undefined): string | null {
+export function commandExitBindingRefusal(
+  exec: CommandExitBindingEvidence | undefined,
+): string | null {
   if (!exec) return null
   const remedy = `run the command again with \`${PLATFORM_SLUG} workflow exec -- <command>\` in this session after the step started`
   if (!exec.sessionMatches && !exec.sessionAdoptedCursor)

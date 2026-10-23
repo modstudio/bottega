@@ -9,9 +9,10 @@ import {
   releaseCommandEnvironment,
   releaseLockDecision,
   releaseProcessEnvironment,
+  releaseReasonDecision,
   releaseTagVersionDecision,
-  rollbackReasonDecision,
   selectReleaseRung,
+  trunkFreshnessDecision,
 } from './release-decision.ts'
 
 test('identifies the release to its deploy command', () => {
@@ -148,6 +149,48 @@ describe('forward-only release', () => {
     }))
 })
 
+describe('release freshness against trunk', () => {
+  const facts = {
+    trunk: 'develop',
+    rungBranch: 'master',
+    candidateTrunkBase: 'base-a',
+    previousTrunkBase: 'base-a',
+    commitsBehind: 337,
+    rollback: false,
+  }
+
+  test('nothing promoted since the last release refuses with the promotion remedy', () =>
+    expect(trunkFreshnessDecision(facts)).toEqual({
+      ok: false,
+      message:
+        'release refused: develop trunk base base-a is unchanged since the last successful master release; develop has 337 commits beyond that shared base not promoted into master; promote develop into master, then retry, or, for an intentional hotfix, pass --behind-trunk "<reason>" to deploy master as it is',
+    }))
+
+  test('a promotion followed by more trunk work is allowed and retains the lag', () =>
+    expect(trunkFreshnessDecision({ ...facts, candidateTrunkBase: 'base-b' })).toEqual({
+      ok: true,
+      overrideReason: null,
+    }))
+
+  test('a baseline is allowed', () =>
+    expect(trunkFreshnessDecision({ ...facts, previousTrunkBase: null })).toEqual({
+      ok: true,
+      overrideReason: null,
+    }))
+
+  test('an override allows an otherwise refused release and normalizes its reason', () =>
+    expect(trunkFreshnessDecision({ ...facts, overrideReason: ' intentional hotfix ' })).toEqual({
+      ok: true,
+      overrideReason: 'intentional hotfix',
+    }))
+
+  test('a rollback skips freshness while retaining the trunk facts', () =>
+    expect(trunkFreshnessDecision({ ...facts, rollback: true })).toEqual({
+      ok: true,
+      overrideReason: null,
+    }))
+})
+
 describe('release text policy', () => {
   test('withholds secret-shaped captured output', () =>
     expect(
@@ -159,11 +202,16 @@ describe('release text policy', () => {
       'deploying revision abc123\ndone',
     ))
 
-  test('refuses a secret-shaped rollback reason', () =>
-    expect(rollbackReasonDecision(true)).toEqual({
+  test('refuses secret-shaped release reasons with the flag name', () => {
+    expect(releaseReasonDecision('rollback', true)).toEqual({
       ok: false,
       message: expect.stringContaining('restate the reason without the credential'),
-    }))
+    })
+    expect(releaseReasonDecision('behind-trunk', true)).toEqual({
+      ok: false,
+      message: expect.stringContaining('behind-trunk reason'),
+    })
+  })
 })
 
 test('release lock names its holder', () => {
