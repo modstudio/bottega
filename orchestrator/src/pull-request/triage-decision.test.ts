@@ -92,6 +92,39 @@ describe('pull-request triage decision', () => {
     })
   })
 
+  test('an inline fix on already-reviewed paths with an exact architect read is admitted', () => {
+    const earlier = review({
+      reviewId: 3,
+      tier: 2,
+      lensIdentities: ['correctness'],
+      findings: [],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          reviews: [],
+          applicableReview: { lenses: ['correctness', 'architecture'] },
+          roundReview: { lenses: [] },
+          branchReviewGroups: [branchGroup([earlier])],
+          reads: [
+            {
+              recordId: 'record-inline',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: { admissionPath: 'architect_read', readRecordId: 'record-inline' },
+    })
+  })
+
   test('a post-review change needing a funnel round still requires its exact lens', () => {
     const earlier = review({
       reviewId: 3,

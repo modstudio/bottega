@@ -1,7 +1,7 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
-import type { ApplicableReview } from '../review/review-applicability.ts'
+import { type ApplicableReview, selectReviewApplicability } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
 import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
 
@@ -318,6 +318,27 @@ function exactReviewEvidence(evidence: TriageEvidence) {
   }
 }
 
+function funnelApplicableReview(
+  evidence: TriageEvidence,
+  roundReview: ApplicableReview,
+): ApplicableReview {
+  if (evidence.roundReview === undefined) return evidence.applicableReview
+  const completedBranchLenses = new Set(
+    evidence.branchReviewGroups.flatMap(({ reviews }) =>
+      reviews
+        .filter(({ completedAt }) => completedAt !== null)
+        .flatMap(({ lensIdentities }) => lensIdentities),
+    ),
+  )
+  const requiredAtTip = new Set(roundReview.lenses)
+  return selectReviewApplicability(
+    evidence.applicableReview,
+    evidence.applicableReview.lenses.filter(
+      (lens) => completedBranchLenses.has(lens) || requiredAtTip.has(lens),
+    ),
+  )
+}
+
 function incompleteTriageDecision(input: {
   exact: ReturnType<typeof exactReviewEvidence>
   composed: ComposedReviewEvidence
@@ -387,7 +408,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   }
   const composed = composedReviewEvidence(
     evidence.branchReviewGroups,
-    evidence.applicableReview,
+    funnelApplicableReview(evidence, creditedRoundReview),
     evidence.reviews,
     creditedRoundReview,
   )
@@ -408,6 +429,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   const finalTierRaised = Boolean(earlierRound && evidence.tier > earlierRound.tier)
   if (
     evidence.roundReview !== undefined &&
+    evidence.roundReview.lenses.length > 0 &&
     earlierRound &&
     !composed.coverageGaps.missingLenses.length &&
     !composed.coverageGaps.undisposedFindings.length &&
@@ -430,8 +452,11 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   }
   if (
     earlierRound &&
-    !finalTierRaised &&
+    (!finalTierRaised || evidence.roundReview !== undefined) &&
     exactRead &&
+    !composed.coverageGaps.missingLenses.length &&
+    !composed.coverageGaps.undisposedFindings.length &&
+    composed.coverageGaps.missingSecondOpinion === null &&
     !exact.currentPatch.unfinishedReviewNumbers.length &&
     !exact.currentPatch.undisposedFindings.length
   ) {

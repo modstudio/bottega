@@ -7,120 +7,87 @@ import { applicableRoundLensPlan, roundLensFacts, roundLensPlan } from './review
 describe('round lens plan', () => {
   test('an initial round lists every relevant lens', () => {
     expect(
-      roundLensPlan({
-        relevantLenses: ['correctness', 'craft', 'architecture'],
-        completedLenses: [],
-        latestAcceptedOrModifiedLenses: [],
-        newlyTouchedLenses: [],
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness', 'craft', 'architecture'] },
+        facts: {
+          reviewedPathsByLens: {},
+          latestAcceptedOrModifiedLenses: [],
+        },
+        postFix: { kind: 'no-completed-round' },
+        fixPathsByLens: {},
       }),
-    ).toEqual(['correctness', 'craft', 'architecture'])
+    ).toEqual({ lenses: ['correctness', 'craft', 'architecture'] })
   })
 
-  test('a later round keeps findings and newly touched concerns but drops a clean lens', () => {
+  test('an accepted-finding lens still re-runs', () => {
     expect(
       roundLensPlan({
         relevantLenses: ['correctness', 'craft', 'test-quality', 'architecture', 'safety'],
-        completedLenses: ['correctness', 'craft', 'test-quality', 'architecture', 'safety'],
         latestAcceptedOrModifiedLenses: ['correctness', 'craft', 'test-quality'],
         newlyTouchedLenses: ['safety'],
       }),
     ).toEqual(['correctness', 'craft', 'test-quality', 'safety'])
   })
 
-  test('a never-completed relevant lens remains in a later round', () => {
-    expect(
-      roundLensPlan({
-        relevantLenses: ['correctness', 'craft'],
-        completedLenses: ['correctness'],
-        latestAcceptedOrModifiedLenses: [],
-        newlyTouchedLenses: [],
-      }),
-    ).toEqual(['craft'])
-  })
-
-  test('a later round treats only path-scoped lenses as newly touched', () => {
+  test('a never-run lens is not selected when a fix only raises the tier', () => {
     expect(
       applicableRoundLensPlan({
-        relevant: {
-          lenses: [
-            'correctness',
-            'craft',
-            'test-quality',
-            'architecture',
-            'migration-safety',
-            'safety',
-          ],
-        },
+        relevant: { lenses: ['correctness', 'architecture'] },
         facts: {
-          completedLenses: [
-            'correctness',
-            'craft',
-            'test-quality',
-            'architecture',
-            'migration-safety',
-            'safety',
-          ],
-          latestAcceptedOrModifiedLenses: ['correctness', 'craft', 'test-quality'],
-        },
-        postFix: {
-          kind: 're-lens',
-          reviewNumber: 2,
-          reviewedTip: 'reviewed-tip',
-          tierThreePaths: ['orchestrator/src/review/review-round-lens-plan.ts'],
-          applicability: {
-            lenses: [
-              'correctness',
-              'craft',
-              'test-quality',
-              'architecture',
-              'migration-safety',
-              'safety',
-            ],
-          },
-        },
-        pathScopedLenses: ['migration-safety', 'safety'],
-      }),
-    ).toEqual({
-      lenses: ['correctness', 'craft', 'test-quality', 'migration-safety', 'safety'],
-    })
-  })
-
-  test('an unscoped lens that never completed is still listed', () => {
-    expect(
-      applicableRoundLensPlan({
-        relevant: { lenses: ['correctness', 'architecture', 'safety'] },
-        facts: {
-          completedLenses: ['correctness', 'safety'],
+          reviewedPathsByLens: { correctness: ['src/reviewed.ts'] },
           latestAcceptedOrModifiedLenses: [],
         },
         postFix: {
           kind: 're-lens',
           reviewNumber: 2,
           reviewedTip: 'reviewed-tip',
-          tierThreePaths: ['orchestrator/src/review/review-round-lens-plan.ts'],
-          applicability: { lenses: ['correctness', 'architecture', 'safety'] },
+          fixPaths: ['src/risky.ts'],
+          tierThreePaths: ['src/risky.ts'],
+          applicability: { lenses: ['correctness', 'architecture'] },
         },
-        pathScopedLenses: ['safety'],
+        fixPathsByLens: {},
       }),
-    ).toEqual({ lenses: ['architecture', 'safety'] })
+    ).toEqual({ lenses: [] })
   })
 
-  test('no newly risky paths still lists a relevant lens that never completed', () => {
+  test('a fix touching only paths a clean scoped lens already reviewed selects nothing', () => {
     expect(
       applicableRoundLensPlan({
-        relevant: { lenses: ['correctness', 'safety'] },
+        relevant: { lenses: ['safety'] },
         facts: {
-          completedLenses: ['correctness'],
-          latestAcceptedOrModifiedLenses: ['correctness'],
+          reviewedPathsByLens: { safety: ['src/risky.ts'] },
+          latestAcceptedOrModifiedLenses: [],
         },
         postFix: {
-          kind: 'no-round-needed',
-          reviewNumber: 1,
+          kind: 're-lens',
+          reviewNumber: 2,
           reviewedTip: 'reviewed-tip',
-          tierThreePaths: [],
-          applicability: { lenses: [] },
+          fixPaths: ['src/risky.ts'],
+          tierThreePaths: ['src/risky.ts'],
+          applicability: { lenses: ['safety'] },
         },
-        pathScopedLenses: ['safety'],
+        fixPathsByLens: { safety: ['src/risky.ts'] },
+      }),
+    ).toEqual({ lenses: [] })
+  })
+
+  test("a fix touching a new path inside a lens's scope selects that lens", () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['safety'] },
+        facts: {
+          reviewedPathsByLens: { safety: ['src/reviewed.ts'] },
+          latestAcceptedOrModifiedLenses: [],
+        },
+        postFix: {
+          kind: 're-lens',
+          reviewNumber: 2,
+          reviewedTip: 'reviewed-tip',
+          fixPaths: ['src/new.ts'],
+          tierThreePaths: ['src/new.ts'],
+          applicability: { lenses: ['safety'] },
+        },
+        fixPathsByLens: { safety: ['src/new.ts'] },
       }),
     ).toEqual({ lenses: ['safety'] })
   })
@@ -130,7 +97,7 @@ describe('round lens plan', () => {
       applicableRoundLensPlan({
         relevant: { lenses: ['correctness', 'safety'] },
         facts: {
-          completedLenses: ['correctness', 'safety'],
+          reviewedPathsByLens: { correctness: ['src/a.ts'], safety: ['src/a.ts'] },
           latestAcceptedOrModifiedLenses: ['correctness'],
         },
         postFix: {
@@ -140,7 +107,7 @@ describe('round lens plan', () => {
           tierThreePaths: [],
           applicability: { lenses: [] },
         },
-        pathScopedLenses: ['safety'],
+        fixPathsByLens: {},
       }),
     ).toEqual({ lenses: [] })
   })
@@ -159,11 +126,11 @@ describe('round lens plan', () => {
       applicableRoundLensPlan({
         relevant: { lenses: [...sixLenses] },
         facts: {
-          completedLenses: [...sixLenses],
+          reviewedPathsByLens: {},
           latestAcceptedOrModifiedLenses: [],
         },
         postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
-        pathScopedLenses: ['test-quality'],
+        fixPathsByLens: {},
       }),
     ).toEqual({ lenses: [] })
   })
@@ -173,11 +140,11 @@ describe('round lens plan', () => {
       applicableRoundLensPlan({
         relevant: { lenses: [...sixLenses] },
         facts: {
-          completedLenses: [...sixLenses],
+          reviewedPathsByLens: {},
           latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
         },
         postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
-        pathScopedLenses: ['test-quality'],
+        fixPathsByLens: {},
       }),
     ).toEqual({ lenses: ['correctness', 'craft'] })
   })
@@ -250,7 +217,12 @@ describe('round lens plan', () => {
       pathSet: ['a.ts'],
     }).branchReviews
     expect(roundLensFacts(branchReviews, { patchId: 'current', pathSet: '["a.ts"]' })).toEqual({
-      completedLenses: ['correctness', 'craft', 'architecture', 'safety'],
+      reviewedPathsByLens: {
+        correctness: ['a.ts'],
+        craft: ['a.ts'],
+        architecture: ['a.ts'],
+        safety: ['a.ts'],
+      },
       latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
     })
     database.close()
