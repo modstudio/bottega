@@ -1,6 +1,7 @@
 // concern: run resource report
 /** Run process-resource history query and pure aggregation. */
 import type { Database } from 'bun:sqlite'
+import { nearestRankPercentile } from '../state/statistics.ts'
 import { type ReportFilterOptions, reportFilter } from './report-filter.ts'
 
 export type RunResourceObservation = {
@@ -9,12 +10,6 @@ export type RunResourceObservation = {
   agent: string
   cpuMs: number | null
   peakRssBytes: number | null
-}
-
-const percentile = (values: number[], p: number): number | null => {
-  if (!values.length) return null
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!
 }
 
 type ResourceDimension = 'job' | 'agent' | 'project'
@@ -35,11 +30,11 @@ function resourceGroups(rows: readonly RunResourceObservation[], dimension: Reso
           peakRssBytes: number
         } => row.cpuMs !== null && row.peakRssBytes !== null,
       )
-      const cpuMedian = percentile(
+      const cpuMedian = nearestRankPercentile(
         measured.map((row) => row.cpuMs),
         0.5,
       )
-      const cpuP90 = percentile(
+      const cpuP90 = nearestRankPercentile(
         measured.map((row) => row.cpuMs),
         0.9,
       )
@@ -53,11 +48,11 @@ function resourceGroups(rows: readonly RunResourceObservation[], dimension: Reso
           p90: cpuP90 === null ? null : cpuP90 / 1_000,
         },
         peakRssBytes: {
-          median: percentile(
+          median: nearestRankPercentile(
             measured.map((row) => row.peakRssBytes),
             0.5,
           ),
-          p90: percentile(
+          p90: nearestRankPercentile(
             measured.map((row) => row.peakRssBytes),
             0.9,
           ),

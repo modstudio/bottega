@@ -229,6 +229,7 @@ export const ROUTES = (
       'monitor',
       'storage',
       'provisioning',
+      'efficiency',
       'sweep',
       'reclaim',
       'config',

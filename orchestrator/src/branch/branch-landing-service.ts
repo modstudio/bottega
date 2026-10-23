@@ -91,6 +91,21 @@ function localBranchTips(cwd: string): { branch: string; tip: string }[] {
     })
 }
 
+export type LandingTaskKeyDecision =
+  | { attributed: true; taskKey: string }
+  | { attributed: false; keys: string[] }
+
+/** Establishes the single task key carried by a landed branch. */
+export function decideLandingTaskKey(
+  recordedLaunchKeys: readonly string[],
+  branch: string,
+  keyPrefixes: readonly string[],
+): LandingTaskKeyDecision {
+  const named = taskKeyToken(branch, keyPrefixes)
+  const keys = [...new Set([...recordedLaunchKeys, ...(named ? [named] : [])])]
+  return keys.length === 1 ? { attributed: true, taskKey: keys[0]! } : { attributed: false, keys }
+}
+
 function mergeTaskKey(project: Project, taskBranch: string): string {
   const recorded = db()
     .query(
@@ -98,14 +113,17 @@ function mergeTaskKey(project: Project, taskBranch: string): string {
         WHERE project_record_id=? AND branch=? AND launch_key IS NOT NULL`,
     )
     .all(project.recordId, taskBranch) as { launch_key: string }[]
-  const named = taskKeyToken(taskBranch, project.settings.keyPrefixes ?? [])
-  const keys = new Set([...recorded.map((row) => row.launch_key), ...(named ? [named] : [])])
-  if (keys.size !== 1) {
+  const decision = decideLandingTaskKey(
+    recorded.map((row) => row.launch_key),
+    taskBranch,
+    project.settings.keyPrefixes ?? [],
+  )
+  if (!decision.attributed) {
     throw new Error(
-      `could not establish one task key for pull-request branch ${taskBranch}; found ${[...keys].join(', ') || 'none'}`,
+      `could not establish one task key for pull-request branch ${taskBranch}; found ${decision.keys.join(', ') || 'none'}`,
     )
   }
-  return [...keys][0]!
+  return decision.taskKey
 }
 
 function recordedTaskBranches(project: Project, taskKey: string): Set<string> {
