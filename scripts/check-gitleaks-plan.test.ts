@@ -63,7 +63,6 @@ describe('gitleaks scan decision', () => {
   test('passes a clean scan with an xcrun cache warning', () => {
     expect(
       decideGitleaksScan({
-        mode: 'history',
         exitCode: 0,
         log: [
           "git: error: couldn't create cache file '/var/folders/run/T/xcrun_db-abc' (errno=Operation not permitted)",
@@ -75,10 +74,22 @@ describe('gitleaks scan decision', () => {
     ).toEqual({ status: 'pass' })
   })
 
+  test('refuses an unrelated error-level line from an exit-zero scan', () => {
+    expect(
+      decideGitleaksScan({
+        exitCode: 0,
+        log: '12:00PM ERR failed to enumerate git objects',
+      }),
+    ).toEqual({
+      status: 'refused',
+      message:
+        'gitleaks reported an error-level log line: 12:00PM ERR failed to enumerate git objects. See its output above and run the printed gitleaks command directly.',
+    })
+  })
+
   test('refuses a reported leak', () => {
     expect(
       decideGitleaksScan({
-        mode: 'working-tree',
         exitCode: 1,
         log: '\x1b[33m12:00PM WRN leaks found: 1\x1b[0m',
       }),
@@ -92,7 +103,6 @@ describe('gitleaks scan decision', () => {
   test('refuses a scanner error', () => {
     expect(
       decideGitleaksScan({
-        mode: 'working-tree',
         exitCode: 1,
         log: '12:00PM ERR failed to load config',
       }),

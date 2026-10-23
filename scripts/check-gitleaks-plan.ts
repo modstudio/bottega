@@ -4,7 +4,6 @@ export type GitleaksScan = {
 }
 
 export type GitleaksScanCheck = {
-  mode: GitleaksScan['mode']
   exitCode: number
   log: string
 }
@@ -38,6 +37,10 @@ export function planGitleaksScans(input: GitleaksScanInput): GitleaksScan[] {
 }
 
 const LEAKS_FOUND = /(?:^|\s)WRN\s+leaks found:\s*\d+/
+const XCRUN_CACHE_WARNING =
+  /git: error: couldn't create cache file ['"][^'"]*xcrun_db-[^'"]*['"] \(errno=Operation not permitted\)/
+const STDERR_NOT_EMPTY = /(?:^|\s)ERR\s+error="stderr is not empty"(?:\s|$)/
+const ERROR_LEVEL = /(?:^|\s)ERR(?:\s|$)|(?:^|\s)error:\s/i
 
 export function decideGitleaksScan(check: GitleaksScanCheck): GitleaksScanDecision {
   const lines = Bun.stripANSI(check.log).split(/\r?\n/)
@@ -58,6 +61,22 @@ export function decideGitleaksScan(check: GitleaksScanCheck): GitleaksScanDecisi
         'gitleaks scanner failed with exit code ' +
         check.exitCode +
         '; see its output above and run the printed gitleaks command directly.',
+    }
+  }
+  const hasXcrunCacheWarning = lines.some((line) => XCRUN_CACHE_WARNING.test(line))
+  const errorLine = lines.find(
+    (line) =>
+      ERROR_LEVEL.test(line) &&
+      !XCRUN_CACHE_WARNING.test(line) &&
+      !(hasXcrunCacheWarning && STDERR_NOT_EMPTY.test(line)),
+  )
+  if (errorLine) {
+    return {
+      status: 'refused',
+      message:
+        'gitleaks reported an error-level log line: ' +
+        errorLine.trim() +
+        '. See its output above and run the printed gitleaks command directly.',
     }
   }
   return { status: 'pass' }
