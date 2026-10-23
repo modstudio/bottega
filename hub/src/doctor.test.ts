@@ -6,13 +6,13 @@ import { hubDoctorLines } from './doctor.ts'
 beforeAll(resetFixtureStore)
 
 describe(`${PLATFORM_SLUG} machine doctor`, () => {
-  const previousHostedUrl = process.env.HUB_HOSTED_URL
+  const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
   beforeAll(() => {
-    delete process.env.HUB_HOSTED_URL
+    delete process.env.BOTTEGA_HOSTED_URL
   })
   afterAll(() => {
-    if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-    else process.env.HUB_HOSTED_URL = previousHostedUrl
+    if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+    else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
   })
 
   test('reports the write mode of each registered project', async () => {

@@ -43,7 +43,7 @@ refuse() {
   exit 1
 }
 
-guarded_common=\${ORCH_GUARDED_GIT_COMMON_DIR:-}
+guarded_common=\${BOTTEGA_GUARDED_GIT_COMMON_DIR:-}
 [ -n "$guarded_common" ] || refuse "guarded repository is not named"
 
 current_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||

@@ -59,9 +59,9 @@ import {
 
 const recordSession = memoryRecordSession()
 
-const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
-const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
-const { ORCH_RECORD_URL: actorUrl, RECORD_AUTH_DATABASE_URL: authUrl } = process.env
+const container = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+const ownerUrl = process.env.BOTTEGA_RECORD_MIGRATE_URL
+const { BOTTEGA_RECORD_URL: actorUrl, RECORD_AUTH_DATABASE_URL: authUrl } = process.env
 const realPostgres = container && ownerUrl && actorUrl ? describe : describe.skip
 realPostgres('RLS proof against real Postgres', () => {
   const cliOutput: string[] = []
@@ -183,7 +183,7 @@ realPostgres('RLS proof against real Postgres', () => {
     `,
     )
 
-    if (process.env.ORCH_TEST_POSTGRES_FALSIFY === 'revoke-project-select') {
+    if (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY === 'revoke-project-select') {
       const revoked = psql(
         RECORD_OWNER_ROLE,
         'owner-password',
@@ -195,11 +195,11 @@ realPostgres('RLS proof against real Postgres', () => {
     apiServer = await startRecordApiServer({
       ...process.env,
       PORT: '0',
-      ORCH_RECORD_URL: actorUrl!,
+      BOTTEGA_RECORD_URL: actorUrl!,
       RECORD_AUTH_DATABASE_URL: authUrl!,
       RECORD_HUB_URL: process.env.RECORD_HUB_URL,
     })
-    process.env.ORCH_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
+    process.env.BOTTEGA_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
     installRecordApiClient(null)
     installRecordSessionRunner(recordSession.runner)
     const storedToken = () => recordSession.token()!
@@ -284,7 +284,7 @@ realPostgres('RLS proof against real Postgres', () => {
     delete process.env.BETTER_AUTH_URL
     delete process.env.RECORD_HUB_URL
     delete process.env.RECORD_AUTH_DATABASE_URL
-    delete process.env.ORCH_RECORD_API_URL
+    delete process.env.BOTTEGA_RECORD_API_URL
     if (!container) return
     psql(
       'postgres',
@@ -647,7 +647,7 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${newRecordId()}','${authSpaceA}','${ids.AUTH_EMAIL_HTTP}','${authUserA}',
          'member','pending',now() + interval '1 day',now());`,
     )
-    const origin = process.env.ORCH_RECORD_API_URL!
+    const origin = process.env.BOTTEGA_RECORD_API_URL!
     const signup = await fetch(`${origin}/api/auth/sign-up/email`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

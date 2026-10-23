@@ -10,14 +10,14 @@ import { getDoc, setDoc } from './docs.ts'
 let priorRecordApiUrl: string | undefined
 
 beforeEach(() => {
-  priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
 })
 
 afterEach(() => {
   installRecordApiClient(null)
-  if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
+  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
 })
 
 test('a hosted set that sends an article field refuses before the local commit', async () => {

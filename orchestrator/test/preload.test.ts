@@ -5,7 +5,7 @@ import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
 import { DB_PATH, db } from '../src/database/db.ts'
 
 const configHomeAtModuleLoad = process.env[CONFIG_HOME_ENV]
-const recordApiUrlAtModuleLoad = process.env.ORCH_RECORD_API_URL
+const recordApiUrlAtModuleLoad = process.env.BOTTEGA_RECORD_API_URL
 
 test('the preload isolates config before test modules are evaluated', () => {
   expect(realpathSync(configHomeAtModuleLoad!).startsWith(realpathSync(tmpdir()))).toBe(true)
@@ -20,7 +20,7 @@ test('the preload creates a store and never clears one', () => {
 })
 
 test('the suite runs against a store the preload minted under the temporary directory', () => {
-  expect(DB_PATH).toBe(process.env.ORCH_DB)
+  expect(DB_PATH).toBe(process.env.BOTTEGA_ORCHESTRATOR_DB)
   expect(realpathSync(DB_PATH).startsWith(realpathSync(tmpdir()))).toBe(true)
   db()
     .query('INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)')

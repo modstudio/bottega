@@ -53,7 +53,7 @@ export function trackerPresentation(project: TrackerProject): TrackerPresentatio
 
 /** The common parent of every main checkout, for numbered-clone attribution. */
 export function projectRoot(): string | null {
-  const overridden = process.env.HUB_PROJECT_ROOT
+  const overridden = process.env.BOTTEGA_PROJECT_ROOT
   if (overridden) return resolve(overridden)
   const paths = projects()
     .filter((project) => project.repository)

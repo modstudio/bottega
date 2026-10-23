@@ -32,7 +32,7 @@ export function checkPackBudget(): string[] {
   return failures
 }
 
-const READY = 'ORCH_PACK_BUDGET_READY'
+const READY = 'BOTTEGA_PACK_BUDGET_READY'
 
 function report(failures: string[]): never {
   if (failures.length) {
@@ -47,7 +47,7 @@ function report(failures: string[]): never {
 
 function runReady(store: string): number {
   const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url)], {
-    env: { ...process.env, ORCH_DB: store, [READY]: '1' },
+    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store, [READY]: '1' },
     stdout: 'inherit',
     stderr: 'inherit',
   })

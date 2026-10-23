@@ -5,8 +5,8 @@ import { JOBS } from './jobs.ts'
 
 describe('review discipline', () => {
   test('findings jobs have stable identities and the structured coverage contract', () => {
-    const priorDepth = process.env.ORCH_DEPTH
-    process.env.ORCH_DEPTH = '0'
+    const priorDepth = process.env.BOTTEGA_DEPTH
+    process.env.BOTTEGA_DEPTH = '0'
     try {
       for (const name of ['review-lens', 'review-lens-inline', 'safety', 'craft']) {
         expect(JOBS[name]!.findings).toBe(true)
@@ -26,8 +26,8 @@ describe('review discipline', () => {
         ),
       ).toThrow('--lens is only valid')
     } finally {
-      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-      else process.env.ORCH_DEPTH = priorDepth
+      if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+      else process.env.BOTTEGA_DEPTH = priorDepth
     }
     expect(REVIEW_SCHEMA.properties.provenance.required).toEqual([
       'reviewed_commit',

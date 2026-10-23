@@ -27,6 +27,7 @@ import {
   type Project,
   type ProjectSettings,
   projectByName,
+  projectRowByName,
   projects,
   pushProjects,
   registerBranchCheck,
@@ -273,6 +274,69 @@ async function addProjectCommand(
 export type FillAbsentProjectInput = {
   name: string
   fill: { stack?: string; settings: ProjectSettings }
+}
+
+/** Rewrite setup-owned tokens in every active project through the register write boundary. */
+export async function migrateProjectSettingsText(
+  rewrite: (settings: ProjectSettings) => { value: unknown; names: string[] },
+): Promise<Array<{ project: string; names: string[] }>> {
+  const changed: Array<{ project: string; names: string[] }> = []
+  const plans: Array<{
+    snapshot: Project
+    settings: ProjectSettings
+    names: string[]
+    destinationSpaceId?: string
+  }> = []
+  for (const snapshot of [...projects(), ...projects({ retired: true })]) {
+    const decision = rewrite(snapshot.settings)
+    if (decision.names.length === 0) continue
+    const settings = decision.value as ProjectSettings
+    const destination = await hostedProjectDestination(snapshot.name, snapshot.settings)
+    plans.push({
+      snapshot,
+      settings,
+      names: decision.names,
+      destinationSpaceId: destination?.destinationSpaceId,
+    })
+  }
+  for (const plan of plans) {
+    const { snapshot, settings } = plan
+    const candidate = { ...snapshot, settings }
+    const recordId = await writeHostedProject(candidate, plan.destinationSpaceId)
+    writeTransaction(() => {
+      const current = projectRowByName(snapshot.name)
+      if (!current || JSON.stringify(current.settings) !== JSON.stringify(snapshot.settings)) {
+        throw new Error(
+          `project ${snapshot.name} changed during environment migration; re-run the command`,
+        )
+      }
+      upsertProject({ ...candidate, recordId })
+    })
+    changed.push({ project: snapshot.name, names: plan.names })
+  }
+  return changed
+}
+
+export async function assertProjectSettingsMigrationWritable(
+  rewrite: (settings: ProjectSettings) => { value: unknown; names: string[] },
+): Promise<void> {
+  for (const project of [...projects(), ...projects({ retired: true })]) {
+    if (rewrite(project.settings).names.length === 0) continue
+    await hostedProjectDestination(project.name, project.settings)
+  }
+}
+
+export async function restoreMigratedProjectRows(rows: unknown[]): Promise<void> {
+  for (const value of rows) {
+    if (!value || typeof value !== 'object') throw new Error('invalid project row in setup backup')
+    const project = value as Project
+    if (typeof project.name !== 'string' || typeof project.path !== 'string') {
+      throw new Error('invalid project row in setup backup')
+    }
+    const destination = await hostedProjectDestination(project.name, project.settings)
+    const recordId = await writeHostedProject(project, destination?.destinationSpaceId)
+    writeTransaction(() => upsertProject({ ...project, recordId }))
+  }
 }
 
 const MAX_FILL_ABSENT_PROJECT_RESTARTS = 3

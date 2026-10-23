@@ -9,8 +9,8 @@ import {
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import { listRecordWorkflowCatalogue } from './record-workflow-catalogue.ts'
 
-const actorUrl = process.env.ORCH_TEST_CATALOGUE_IMPORT_URL
-const setupUrl = process.env.ORCH_TEST_CATALOGUE_IMPORT_SETUP_URL
+const actorUrl = process.env.BOTTEGA_TEST_CATALOGUE_IMPORT_URL
+const setupUrl = process.env.BOTTEGA_TEST_CATALOGUE_IMPORT_SETUP_URL
 const postgres = actorUrl && setupUrl ? describe : describe.skip
 
 postgres('hosted catalogue bulk imports', () => {

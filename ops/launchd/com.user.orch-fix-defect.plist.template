@@ -25,7 +25,7 @@
         <string>__HOME__</string>
         <key>__STATE_HOME_ENV__</key>
         <string>__STATE_HOME__</string>
-        <key>HUB_HOSTED_URL</key>
+        <key>BOTTEGA_HOSTED_URL</key>
         <string>__HUB_HOSTED_URL__</string>
     </dict>
     <key>StandardOutPath</key>

@@ -59,10 +59,10 @@ cd "$ROOT" 2>/dev/null || {
   exit 2
 }
 BOTTEGA="$ROOT/../bin/bottega"
-if [ -n "${ORCH_DB:-}" ]; then
-  case "$ORCH_DB" in
-    /*) DB_PATH="$ORCH_DB" ;;
-    *) DB_PATH="$CALLER_DIRECTORY/$ORCH_DB" ;;
+if [ -n "${BOTTEGA_ORCHESTRATOR_DB:-}" ]; then
+  case "$BOTTEGA_ORCHESTRATOR_DB" in
+    /*) DB_PATH="$BOTTEGA_ORCHESTRATOR_DB" ;;
+    *) DB_PATH="$CALLER_DIRECTORY/$BOTTEGA_ORCHESTRATOR_DB" ;;
   esac
 else
   DB_PATH=$(bun --no-env-file "$ROOT/../shared/state-directory.ts" orchestrator database) || {
@@ -70,7 +70,7 @@ else
     exit 2
   }
 fi
-export ORCH_DB="$DB_PATH"
+export BOTTEGA_ORCHESTRATOR_DB="$DB_PATH"
 
 SID="${1:?session id required (Claude session_id; bottega records it on every run)}"
 INTERVAL="${2:-60}"
@@ -273,9 +273,9 @@ for ((i = 1; i <= MAX; i++)); do
   # session. Read only the small session slice directly from the store; this is
   # part of health computation and therefore remains ahead of all supplemental
   # monitor-notice work.
-  landings_observed=$(SID="$SID" ORCH_DB_PATH="$DB_PATH" python3 -c '
+  landings_observed=$(SID="$SID" BOTTEGA_ORCHESTRATOR_DB_PATH="$DB_PATH" python3 -c '
 import datetime, json, os, sqlite3, sys
-path = os.environ["ORCH_DB_PATH"]
+path = os.environ["BOTTEGA_ORCHESTRATOR_DB_PATH"]
 if not os.path.exists(path):
     print("STATE", 0, "", "", sep="\t")
     raise SystemExit(0)
@@ -508,8 +508,8 @@ print(token)
         prev_cap_failure_state=""
         cap_failure_ticks=0
         if printf '%s\n' "$monitor_observed" | cut -f2- | awk 'length > 0'; then
-          export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
-          export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
+          export BOTTEGA_MONITOR_CAPABILITY_PATH="$CAP_PATH"
+          export BOTTEGA_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
           ack_timed_out=$(mktemp)
           CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
           ACTIVE_GUARDED_PID=$!
@@ -522,7 +522,7 @@ print(token)
           if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
           rm -f "$ack_timed_out"
           rm -rf "$CAP_DIR"
-          unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
+          unset BOTTEGA_MONITOR_CAPABILITY_PATH BOTTEGA_MONITOR_CAPABILITY_TOKEN
           if [ "$ack_rc" -ne 0 ]; then
             ack_failure_state="$ack_rc"
             ack_failure_ticks=$((ack_failure_ticks + 1))

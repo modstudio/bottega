@@ -11,17 +11,21 @@ import uuid
 
 
 def store_path() -> str:
-    return os.path.abspath(os.environ["ORCH_DB"])
+    value = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
+    return os.path.abspath(value) if value else ""
 
 
 def board_bin() -> str:
-    return os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
+    return os.environ.get("BOTTEGA_BOARD_BIN") or os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
     )
 
 
 def marker_path(kind: str, session: str) -> str:
-    root = os.path.abspath(os.environ["ORCH_BOARD_HOOK_STATE"])
+    value = os.environ.get("BOTTEGA_BOARD_HOOK_STATE")
+    if not value:
+        return ""
+    root = os.path.abspath(value)
     name = hashlib.sha256(session.encode()).hexdigest()
     return os.path.join(root, kind, name)
 
@@ -47,7 +51,10 @@ def read_marker(path: str):
 def write_marker(path: str, value) -> bool:
     temporary = None
     try:
-        base = os.path.abspath(os.environ["ORCH_BOARD_HOOK_STATE"])
+        environment_value = os.environ.get("BOTTEGA_BOARD_HOOK_STATE")
+        if not environment_value:
+            return False
+        base = os.path.abspath(environment_value)
         os.makedirs(base, mode=0o700, exist_ok=True)
         os.chmod(base, 0o700, follow_symlinks=False)
         root = os.path.dirname(path)

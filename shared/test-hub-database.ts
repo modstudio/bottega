@@ -43,7 +43,7 @@ export function testHubDatabasePathRefusal(
     return null
   }
   return (
-    `test process refuses hub database: HUB_DB resolved ${currentPath ?? '<unset>'}; preload minted ${mintedPath ?? '<none minted>'}\n` +
+    `test process refuses hub database: BOTTEGA_HUB_DB resolved ${currentPath ?? '<unset>'}; preload minted ${mintedPath ?? '<none minted>'}\n` +
     'invariant: A test suite never falls back to the live hub database.\n' +
     'cleared by: run the hub tests from hub/ so the package preload mints the store'
   )
@@ -69,7 +69,7 @@ export function testHubDatabaseAdoptionRefusal(
     return null
   }
   return (
-    `test process refuses hub database adoption: HUB_DB resolved ${adoptedPath ?? '<unset>'}${adoptedPath !== null && !adoptedExists ? ' (missing)' : ''}; temporary directory is ${temporaryDirectory}\n` +
+    `test process refuses hub database adoption: BOTTEGA_HUB_DB resolved ${adoptedPath ?? '<unset>'}${adoptedPath !== null && !adoptedExists ? ' (missing)' : ''}; temporary directory is ${temporaryDirectory}\n` +
     'invariant: A test suite never falls back to the live hub database.\n' +
     'cleared by: adopt only a caller-created hub store under the operating system temporary directory'
   )
@@ -83,7 +83,7 @@ export function mintTestHubDatabase(databaseFileName: string): MintedHubDatabase
   const directory = mkdtempSync(join(temporaryDirectory, 'hub-test-'))
   const database = join(directory, databaseFileName)
   mintedHubDatabase = { database: canonicalPath(database), directory, livePaths }
-  process.env.HUB_DB = database
+  process.env.BOTTEGA_HUB_DB = database
   return mintedHubDatabase
 }
 
@@ -113,7 +113,7 @@ export function adoptTestHubDatabase(configuredPath: string | undefined): void {
 /** Refuse a test store unless this process's preload minted that exact non-live path. */
 export function assertTestHubDatabasePath(): void {
   if (process.env.NODE_ENV !== 'test') return
-  const currentPath = process.env.HUB_DB ? canonicalPath(process.env.HUB_DB) : null
+  const currentPath = process.env.BOTTEGA_HUB_DB ? canonicalPath(process.env.BOTTEGA_HUB_DB) : null
   const refusal = testHubDatabasePathRefusal(
     mintedHubDatabase?.database ?? null,
     currentPath,

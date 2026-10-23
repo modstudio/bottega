@@ -8,10 +8,11 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
-import { postNotice } from '../board/board-service.ts'
+import { claimPushNotices, postNotice } from '../board/board-service.ts'
 import { renderBoardReplyDelivery } from '../board/board-thread-render.ts'
 import { askQuestion, replyToThread } from '../board/board-thread-service.ts'
-import { DB_PATH, db } from '../database/db.ts'
+import { DB_PATH, db, SESSION_LIVE_MS } from '../database/db.ts'
+import { projectAt } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
   claimMonitorNoticesForCommand,
@@ -21,11 +22,11 @@ import {
 const createdAt = new Date(Date.now() - 1_000).toISOString()
 
 beforeEach(() => {
-  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 })
 afterEach(() => {
   installRecordApiClient(null)
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 
 test('heartbeat delivery emits ordinary hosted beside local once with a failed-refresh warning', async () => {
@@ -185,6 +186,84 @@ test('notice claim succeeds while another connection holds the store writer', as
     writer.exec('ROLLBACK')
     writer.close()
   }
+})
+
+test('read-only notice claim defers a report reply successor with a reason', async () => {
+  const clock = Date.now()
+  const postedAt = clock - SESSION_LIVE_MS - 60_000
+  const replyAt = postedAt + 30_000
+  const postingCwd = resolve(import.meta.dir, '../../..')
+  db()
+    .query(
+      `INSERT INTO project(record_id,name,path,settings)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'monitor-successor-project',?,'{}')`,
+    )
+    .run(postingCwd)
+  const project = projectAt(postingCwd)
+  if (!project) throw new Error('monitor successor fixture project did not resolve')
+  const insertArchitect = db().query(
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test',?,?,?,NULL,?,?)`,
+  )
+  insertArchitect.run(
+    'monitor-successor-author',
+    project.name,
+    project.recordId,
+    postingCwd,
+    new Date(postedAt - 1_000).toISOString(),
+    new Date(postedAt).toISOString(),
+  )
+  const root = postNotice(
+    {
+      audience: 'session:monitor-successor-author',
+      title: 'Successor report',
+      body: 'The original session ended.',
+      purpose: 'request',
+    },
+    { CLAUDE_CODE_SESSION_ID: 'monitor-successor-author' },
+    postedAt,
+    postingCwd,
+  )
+  db()
+    .query('UPDATE presence SET last_seen=? WHERE session_id=?')
+    .run(new Date(postedAt).toISOString(), 'monitor-successor-author')
+  const reply = replyToThread(
+    root.recordId,
+    'The reply needs a successor.',
+    {},
+    replyAt,
+    postingCwd,
+  )
+  insertArchitect.run(
+    'monitor-successor-reader',
+    project.name,
+    project.recordId,
+    postingCwd,
+    new Date(replyAt + 1_000).toISOString(),
+    new Date(clock).toISOString(),
+  )
+  expect(
+    claimPushNotices(
+      false,
+      { CLAUDE_CODE_SESSION_ID: 'monitor-successor-reader' },
+      clock,
+      db(),
+      false,
+    ).deferredReplySuccessorCount,
+  ).toBe(1)
+  db().exec('PRAGMA wal_checkpoint(PASSIVE)')
+
+  const delivery = await claimMonitorNoticesForCommand('monitor-successor-reader', {
+    skipBoardRefresh: true,
+  })
+
+  expect(delivery.notices.map((notice) => notice.noticeId)).not.toContain(`board:${reply.number}`)
+  expect(delivery.warning).toContain('require a writable claim')
+  expect(
+    db()
+      .query('SELECT COUNT(*) count FROM board_receipt WHERE message_record_id=? AND successor=1')
+      .get(reply.recordId),
+  ).toEqual({ count: 0 })
 })
 
 test('heartbeat board notices use the shared reply delivery rendering', async () => {

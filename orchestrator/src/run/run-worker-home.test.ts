@@ -107,7 +107,7 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
   expect(readFileSync(join(reader, '.cursor', 'mcp.json'), 'utf8')).toContain('cursor-direct')
   expect(readerLaunch.environment.GROK_CURSOR_MCPS_ENABLED).toBe('0')
   expect(readerLaunch.environment.HOME).toBe(join(readerRun, 'home'))
-  expect(readerLaunch.environment.HUB_DB).toBe(operatorHub)
+  expect(readerLaunch.environment.BOTTEGA_HUB_DB).toBe(operatorHub)
 
   const writerRun = join(root, 'writer-run')
   const writer = join(root, 'writer')

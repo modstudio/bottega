@@ -78,7 +78,7 @@ function runOpenHooks(moment: keyof OpenHooks, database: Database): void {
 const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write run or project rows to the registered main store from a linked worktree\n' +
   'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
-  'cleared by: orch <command> with ORCH_DB_WRITE=1, or set ORCH_DB to a scratch copy'
+  'cleared by: orch <command> with BOTTEGA_ORCHESTRATOR_DB_WRITE=1, or set BOTTEGA_ORCHESTRATOR_DB to a scratch copy'
 
 /**
  * Two paths name one file when their real paths agree. The file may not exist
@@ -99,17 +99,17 @@ function sameStore(a: string, b: string): boolean {
 }
 
 /**
- * ORCH_DB used to authorize a linked-worktree binary to write whatever it named,
+ * BOTTEGA_ORCHESTRATOR_DB used to authorize a linked-worktree binary to write whatever it named,
  * and the dispatcher exports the live path to every worker. A worker's own test
  * leg therefore held a write handle on the live store from a tree whose binary
  * should only ever have read it. Location and write authority are separate:
  * a linked binary may read the main store under any name and never writes it.
- * ORCH_DB_WRITE=1 is the operator's explicit, recorded insistence.
+ * BOTTEGA_ORCHESTRATOR_DB_WRITE=1 is the operator's explicit, recorded insistence.
  */
 const restrictedLinkedWorktreeActor =
   DATABASE_RESOLUTION.linkedWorktreeBinary &&
-  process.env.ORCH_DB_WRITE !== '1' &&
-  (DATABASE_RESOLUTION.method !== 'ORCH_DB' ||
+  process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE !== '1' &&
+  (DATABASE_RESOLUTION.method !== 'BOTTEGA_ORCHESTRATOR_DB' ||
     sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
 
 function orchestratorStoreAccess(walOrShmSidecarPresent: boolean) {
@@ -183,7 +183,7 @@ function databaseWritable(d: Database): boolean {
 
 /**
  * Fixture-only: drop the process handle so the next db() opens whatever store
- * ORCH_DB names afresh. The test preload mints a new store per test and never
+ * BOTTEGA_ORCHESTRATOR_DB names afresh. The test preload mints a new store per test and never
  * clears one, which needs the cached handle released between tests.
  */
 export function closeDatabaseForFixture(): void {
@@ -297,7 +297,7 @@ export function db(writable = false): Database {
     DATABASE_RESOLUTION.linkedWorktreeBinary &&
       DATABASE_RESOLUTION.registeredPath &&
       sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
-      process.env.ORCH_DB_WRITE !== '1',
+      process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE !== '1',
   )
   if (!linkedWorktreeReadOnly && !registeredStoreWriteProtected && databaseWritable(d)) {
     d.exec(`

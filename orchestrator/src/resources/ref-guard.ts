@@ -36,8 +36,8 @@ export type SharedRefGuardEnvironment = {
   GIT_CONFIG_COUNT: string
   GIT_CONFIG_KEY_0: string
   GIT_CONFIG_VALUE_0: string
-  ORCH_GUARDED_GIT_COMMON_DIR: string
-  ORCH_ALLOWED_GIT_REF?: string
+  BOTTEGA_GUARDED_GIT_COMMON_DIR: string
+  BOTTEGA_ALLOWED_GIT_REF?: string
 }
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
@@ -53,7 +53,7 @@ function sharedRefGuardWrapper(
 ): string {
   const guardMarker = Buffer.from(guard).toString('base64')
   const originalMarker = Buffer.from(original).toString('base64')
-  return `#!/bin/sh\n${marker}# guard-hook-base64: ${guardMarker}\n# original-hook-base64: ${originalMarker}\nset -eu\nprotected_common=\${ORCH_GUARDED_GIT_COMMON_DIR:-}\n[ -n "$protected_common" ] || exit 0\ncurrent_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0\ncurrent_common=$(cd "$current_common" 2>/dev/null && pwd -P) || exit 0\n[ "$current_common" = "$protected_common" ] || exit 0\ninput=${shellQuote(join(hookDir, '.reference-transaction-input'))}.$$\ntrap 'rm -f "$input"' EXIT HUP INT TERM\ncat > "$input"\n${shellQuote(guard)} "$@" < "$input"\n${shellQuote(original)} "$@" < "$input"\n`
+  return `#!/bin/sh\n${marker}# guard-hook-base64: ${guardMarker}\n# original-hook-base64: ${originalMarker}\nset -eu\nprotected_common=\${BOTTEGA_GUARDED_GIT_COMMON_DIR:-}\n[ -n "$protected_common" ] || exit 0\ncurrent_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0\ncurrent_common=$(cd "$current_common" 2>/dev/null && pwd -P) || exit 0\n[ "$current_common" = "$protected_common" ] || exit 0\ninput=${shellQuote(join(hookDir, '.reference-transaction-input'))}.$$\ntrap 'rm -f "$input"' EXIT HUP INT TERM\ncat > "$input"\n${shellQuote(guard)} "$@" < "$input"\n${shellQuote(original)} "$@" < "$input"\n`
 }
 
 function pathEntryExists(path: string): boolean {
@@ -251,8 +251,8 @@ export function markedWorktreeRunId(cwd: string): string | null {
 }
 
 function refGuardCheckpoint(name: string): void {
-  if (process.env.ORCH_TEST_REF_GUARD_CHECKPOINT !== name) return
-  const ready = process.env.ORCH_TEST_REF_GUARD_READY
+  if (process.env.BOTTEGA_TEST_REF_GUARD_CHECKPOINT !== name) return
+  const ready = process.env.BOTTEGA_TEST_REF_GUARD_READY
   if (!ready) return
   writeFileSync(ready, `${name}\n`)
   for (;;) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000)
@@ -541,8 +541,8 @@ function sharedRefGuardEnvironment(
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'core.hooksPath',
     GIT_CONFIG_VALUE_0: hookDir,
-    ORCH_GUARDED_GIT_COMMON_DIR: paths.commonDir,
-    ...(allowedRef ? { ORCH_ALLOWED_GIT_REF: allowedRef } : {}),
+    BOTTEGA_GUARDED_GIT_COMMON_DIR: paths.commonDir,
+    ...(allowedRef ? { BOTTEGA_ALLOWED_GIT_REF: allowedRef } : {}),
   }
 }
 

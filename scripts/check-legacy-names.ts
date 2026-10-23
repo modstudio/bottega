@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // hub.db is already named for its concern and is the target state-file name, so only orch.db is legacy.
-// env is report-only until the environment slice because new code must still read existing ORCH_*/HUB_* variables.
+// Environment names are blocking at zero; prefix-sharing TypeScript constants are named exemptions.
 import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -41,7 +41,10 @@ const LEGACY_NAME_REGISTRY = {
       /\{[^{}]*\bname\s*:\s*['"]orch['"][^{}]*(?:command|target)\s*:/g,
     ],
   },
-  env: { blocking: false, detectors: [/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g] },
+  env: {
+    blocking: true,
+    detectors: [/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g, /['"`](?:ORCH|HUB)_['"`]/g],
+  },
   'state-file': { blocking: true, detectors: [/\borch\.db\b/g] },
 } as const satisfies Record<string, { blocking: boolean; detectors: readonly RegExp[] }>
 
@@ -149,10 +152,59 @@ function isExempt(path: string): boolean {
   )
 }
 
+const LEGACY_ENV_CONSTANT_EXEMPTIONS = [
+  'HUB_CHANGES_NOT_YET_READABLE',
+  'HUB_CHANGE_SOURCES',
+  'HUB_CHANGE_SOURCE_EXCLUSIONS',
+  'HUB_DATA_MODES',
+  'HUB_DATA_PACKAGE',
+  'HUB_DATA_ROOT',
+  'HUB_DEPLOY_SITE_PACKAGE',
+  'HUB_IDENTITY_SET_PAGE_SIZE',
+  'HUB_MIGRATION_BACKFILL_VALUES',
+  'HUB_PACKAGE_PREFIX',
+  'HUB_PROJECT_NAME_TABLES',
+  'HUB_SITE_PACKAGE',
+  'HUB_SITE_ROOT',
+  'HUB_UI_PACKAGE',
+  'HUB_UI_ROOT',
+  'HUB_UI_SOURCE_PREFIX',
+  'HUB_UTIL_ALLOWED_IMPORT_PATHS',
+  'HUB_UTIL_PACKAGE',
+  'HUB_UTIL_ROOT',
+  'HUB_VIEWS_PACKAGE',
+  'HUB_VIEWS_ROOT',
+  'HUB_WEB_ENTRY_FILES',
+  'HUB_WEB_PACKAGE',
+  'HUB_WEB_SOURCE_PREFIX',
+  'ORCH_CLI_ENTRYPOINT',
+  'ORCH_CLI_PAYLOAD',
+  'ORCH_CACHE_TTL_MS',
+  'ORCH_DO_OPTIONS',
+  'ORCH_ROUTING',
+  'ORCH_RUN_LABEL_KEY',
+  'ORCH_RUN_MARKER',
+] as const
+
 function textForLegacyScan(path: string, text: string): string {
-  if (path !== 'orchestrator/src/verdict/verdict-rules.ts') return text
+  let scanned = text
+  for (const name of LEGACY_ENV_CONSTANT_EXEMPTIONS) scanned = scanned.replaceAll(name, '')
+  if (
+    path === 'orchestrator/src/setup/setup-environment.ts' ||
+    path === 'orchestrator/src/setup/setup-environment.test.ts' ||
+    path === 'orchestrator/src/setup/environment-name-migration.ts'
+  ) {
+    scanned = scanned.replaceAll(/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g, '')
+  }
+  if (path === 'orchestrator/src/config/config-service.ts') {
+    scanned = scanned.replaceAll('ORCH_RECORD_URL', '').replaceAll('ORCH_RECORD_MIGRATE_URL', '')
+  }
+  if (path === 'orchestrator/src/config/config-service.test.ts') {
+    scanned = scanned.replaceAll('ORCH_RECORD_URL', '').replaceAll('ORCH_RECORD_MIGRATE_URL', '')
+  }
+  if (path !== 'orchestrator/src/verdict/verdict-rules.ts') return scanned
   // This exact value is persisted data and must remain readable by unvoid and hosted sync.
-  return text.replaceAll('voided with orch score --void', 'voided with frozen score --void')
+  return scanned.replaceAll('voided with orch score --void', 'voided with frozen score --void')
 }
 
 function scannedFiles(): string[] {

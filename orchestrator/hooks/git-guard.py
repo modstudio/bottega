@@ -125,8 +125,8 @@ def decide(decision, reason):
 
 def database_path():
     """Resolve the orchestrator store without making hook failure restrictive."""
-    if os.environ.get("ORCH_DB"):
-        return os.environ["ORCH_DB"]
+    if os.environ.get("BOTTEGA_ORCHESTRATOR_DB"):
+        return os.environ["BOTTEGA_ORCHESTRATOR_DB"]
     try:
         result = subprocess.run(
             [

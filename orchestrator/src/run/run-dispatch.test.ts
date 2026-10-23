@@ -5,14 +5,14 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
 
-const originalExecPath = process.env.ORCH_EXEC_PATH
-const originalDepth = process.env.ORCH_DEPTH
+const originalExecPath = process.env.BOTTEGA_EXEC_PATH
+const originalDepth = process.env.BOTTEGA_DEPTH
 afterEach(() => {
   mock.restore()
-  if (originalExecPath === undefined) delete process.env.ORCH_EXEC_PATH
-  else process.env.ORCH_EXEC_PATH = originalExecPath
-  if (originalDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = originalDepth
+  if (originalExecPath === undefined) delete process.env.BOTTEGA_EXEC_PATH
+  else process.env.BOTTEGA_EXEC_PATH = originalExecPath
+  if (originalDepth === undefined) delete process.env.BOTTEGA_DEPTH
+  else process.env.BOTTEGA_DEPTH = originalDepth
 })
 
 test('detached MCP preflight ensures the declared project stack before probing', async () => {
@@ -64,8 +64,8 @@ test('disposable-tree mutation: a registered project coordinator starts in the m
 })
 
 test('a post-insert launch failure marks the reserved row failed/harness', async () => {
-  process.env.ORCH_EXEC_PATH = `${dir}/missing-coordinator`
-  process.env.ORCH_DEPTH = '0'
+  process.env.BOTTEGA_EXEC_PATH = `${dir}/missing-coordinator`
+  process.env.BOTTEGA_DEPTH = '0'
 
   await expect(detach('summarize', 'detach handoff fixture', { cwd: dir })).rejects.toThrow()
 

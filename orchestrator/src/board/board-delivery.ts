@@ -79,7 +79,7 @@ const deliveryNotice = (notice: {
   purpose: notice.purpose,
 })
 
-const deliveryWarning = (...warnings: Array<string | null>): string | null => {
+export const deliveryWarning = (...warnings: Array<string | null>): string | null => {
   const unique = [...new Set(warnings.filter((warning): warning is string => warning !== null))]
   return unique.length ? unique.join(' ') : null
 }

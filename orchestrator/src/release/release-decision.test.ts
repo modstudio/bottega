@@ -17,24 +17,24 @@ import {
 
 test('identifies the release to its deploy command', () => {
   expect(releaseCommandEnvironment('project-name', 'hosted-api', 'abc123', false)).toEqual({
-    ORCH_RELEASE_PROJECT: 'project-name',
-    ORCH_RELEASE_RUNG: 'hosted-api',
-    ORCH_RELEASE_COMMIT: 'abc123',
+    BOTTEGA_RELEASE_PROJECT: 'project-name',
+    BOTTEGA_RELEASE_RUNG: 'hosted-api',
+    BOTTEGA_RELEASE_COMMIT: 'abc123',
   })
   expect(releaseCommandEnvironment('project-name', 'hosted-api', 'abc123', true)).toEqual({
-    ORCH_RELEASE_PROJECT: 'project-name',
-    ORCH_RELEASE_RUNG: 'hosted-api',
-    ORCH_RELEASE_COMMIT: 'abc123',
-    ORCH_RELEASE_ROLLBACK: '1',
+    BOTTEGA_RELEASE_PROJECT: 'project-name',
+    BOTTEGA_RELEASE_RUNG: 'hosted-api',
+    BOTTEGA_RELEASE_COMMIT: 'abc123',
+    BOTTEGA_RELEASE_ROLLBACK: '1',
   })
 })
 
 test('release variables reach only the deploy environment', () => {
   const stale = {
-    ORCH_RELEASE_PROJECT: 'stale-project',
-    ORCH_RELEASE_RUNG: 'stale-rung',
-    ORCH_RELEASE_COMMIT: 'stale-commit',
-    ORCH_RELEASE_ROLLBACK: '1',
+    BOTTEGA_RELEASE_PROJECT: 'stale-project',
+    BOTTEGA_RELEASE_RUNG: 'stale-rung',
+    BOTTEGA_RELEASE_COMMIT: 'stale-commit',
+    BOTTEGA_RELEASE_ROLLBACK: '1',
     UNRELATED: 'kept',
   }
   expect(releaseProcessEnvironment(stale)).toEqual({ UNRELATED: 'kept' })
@@ -45,9 +45,9 @@ test('release variables reach only the deploy environment', () => {
     ),
   ).toEqual({
     UNRELATED: 'kept',
-    ORCH_RELEASE_PROJECT: 'project-name',
-    ORCH_RELEASE_RUNG: 'rung',
-    ORCH_RELEASE_COMMIT: 'commit',
+    BOTTEGA_RELEASE_PROJECT: 'project-name',
+    BOTTEGA_RELEASE_RUNG: 'rung',
+    BOTTEGA_RELEASE_COMMIT: 'commit',
   })
 })
 

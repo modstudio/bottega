@@ -8,7 +8,10 @@ export function askServerFailurePath(scratchDir: string): string {
   return join(scratchDir, ASK_SERVER_FAILURE_FILE)
 }
 
-export function writeAskServerFailure(error: unknown, scratchDir = process.env.ORCH_SCRATCH): void {
+export function writeAskServerFailure(
+  error: unknown,
+  scratchDir = process.env.BOTTEGA_SCRATCH,
+): void {
   if (!scratchDir) return
   const line = (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, ' ')
   try {

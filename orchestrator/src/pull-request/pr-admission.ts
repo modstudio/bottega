@@ -311,8 +311,8 @@ function validatedOverrideReason(
   if (containsSecretShaped(validated)) {
     throw new Error('refusing triage override because its reason resembles a secret')
   }
-  if (process.env.ORCH_DEPTH !== undefined) {
-    throw new Error('triage overrides are reserved for architect sessions; ORCH_DEPTH is set')
+  if (process.env.BOTTEGA_DEPTH !== undefined) {
+    throw new Error('triage overrides are reserved for architect sessions; BOTTEGA_DEPTH is set')
   }
   return validated
 }

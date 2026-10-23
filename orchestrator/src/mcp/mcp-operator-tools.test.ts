@@ -12,16 +12,16 @@ let priorRunId: string | undefined
 
 beforeEach(() => {
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  priorRunId = process.env.ORCH_RUN_ID
+  priorRunId = process.env.BOTTEGA_RUN_ID
   process.env.CLAUDE_CODE_SESSION_ID = SESSION
-  delete process.env.ORCH_RUN_ID
+  delete process.env.BOTTEGA_RUN_ID
 })
 
 afterEach(() => {
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-  if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-  else process.env.ORCH_RUN_ID = priorRunId
+  if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+  else process.env.BOTTEGA_RUN_ID = priorRunId
 })
 
 async function withClient<T>(run: (client: Client) => Promise<T>): Promise<T> {
@@ -391,7 +391,7 @@ describe('operator MCP tools', () => {
          WHERE number=?`,
       )
       .run('Keep it.', new Date().toISOString(), SESSION, 'operator', 'cli', workerQuestionId)
-    process.env.ORCH_RUN_ID = 'mcp-worker'
+    process.env.BOTTEGA_RUN_ID = 'mcp-worker'
     const refused = await withClient((client) =>
       client.callTool({
         name: 'file_ruling',

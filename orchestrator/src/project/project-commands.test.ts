@@ -47,12 +47,12 @@ async function runProject(
 
 let priorRecordApiUrl: string | undefined
 beforeAll(() => {
-  priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
-  process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
+  priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
 })
 afterAll(() => {
-  if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
+  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
 })
 
 describe(`${PLATFORM_SLUG} project retire`, () => {

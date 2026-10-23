@@ -48,8 +48,8 @@ describe('shared git environment decisions', () => {
       GIT_CONFIG_GLOBAL: '/worker/global-config',
       GIT_CONFIG_SYSTEM: '/worker/system-config',
       GIT_CONFIG_NOSYSTEM: '1',
-      ORCH_GUARDED_GIT_COMMON_DIR: '/worker/common',
-      ORCH_ALLOWED_GIT_REF: 'refs/heads/worker',
+      BOTTEGA_GUARDED_GIT_COMMON_DIR: '/worker/common',
+      BOTTEGA_ALLOWED_GIT_REF: 'refs/heads/worker',
     }
     const scrubbed = scrubbedGitEnv(contaminated)
     expect(scrubbed.UNRELATED).toBe('preserved')
@@ -61,6 +61,9 @@ describe('shared git environment decisions', () => {
       'GIT_INDEX_FILE',
       'GIT_COMMON_DIR',
       'GIT_CONFIG',
+      'GIT_CONFIG_COUNT',
+      'BOTTEGA_GUARDED_GIT_COMMON_DIR',
+      'BOTTEGA_ALLOWED_GIT_REF',
     ]) {
       expect(scrubbed[variable]).toBeUndefined()
     }
@@ -71,8 +74,8 @@ describe('shared git environment decisions', () => {
     expect(scrubbed.GIT_CONFIG_NOSYSTEM).toBe('1')
     expect(scrubbed.GIT_CONFIG_KEY_0).toBeUndefined()
     expect(scrubbed.GIT_CONFIG_VALUE_0).toBeUndefined()
-    expect(scrubbed.ORCH_GUARDED_GIT_COMMON_DIR).toBeUndefined()
-    expect(scrubbed.ORCH_ALLOWED_GIT_REF).toBeUndefined()
+    expect(scrubbed.BOTTEGA_GUARDED_GIT_COMMON_DIR).toBeUndefined()
+    expect(scrubbed.BOTTEGA_ALLOWED_GIT_REF).toBeUndefined()
   })
 
   describe('project-code launch environment', () => {
@@ -95,16 +98,16 @@ describe('shared git environment decisions', () => {
         GIT_CONFIG_COUNT: '1',
         GIT_CONFIG_KEY_0: 'core.hooksPath',
         GIT_CONFIG_VALUE_0: '/guard/hooks',
-        ORCH_GUARDED_GIT_COMMON_DIR: '/guard/common',
-        ORCH_ALLOWED_GIT_REF: 'refs/heads/run',
+        BOTTEGA_GUARDED_GIT_COMMON_DIR: '/guard/common',
+        BOTTEGA_ALLOWED_GIT_REF: 'refs/heads/run',
       })
       expect(scrubbed.GIT_DIR).toBeUndefined()
       expect(scrubbed.GIT_INDEX_FILE).toBeUndefined()
       expect(scrubbed.GIT_CONFIG_COUNT).toBe('1')
       expect(scrubbed.GIT_CONFIG_KEY_0).toBe('core.hooksPath')
       expect(scrubbed.GIT_CONFIG_VALUE_0).toBe('/guard/hooks')
-      expect(scrubbed.ORCH_GUARDED_GIT_COMMON_DIR).toBe('/guard/common')
-      expect(scrubbed.ORCH_ALLOWED_GIT_REF).toBe('refs/heads/run')
+      expect(scrubbed.BOTTEGA_GUARDED_GIT_COMMON_DIR).toBe('/guard/common')
+      expect(scrubbed.BOTTEGA_ALLOWED_GIT_REF).toBe('refs/heads/run')
     })
   })
 })

@@ -11,15 +11,15 @@ let priorRunId: string | undefined
 let priorSession: string | undefined
 
 beforeEach(() => {
-  priorRunId = process.env.ORCH_RUN_ID
+  priorRunId = process.env.BOTTEGA_RUN_ID
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  delete process.env.ORCH_RUN_ID
+  delete process.env.BOTTEGA_RUN_ID
   process.env.CLAUDE_CODE_SESSION_ID = SESSION
 })
 
 afterEach(() => {
-  if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-  else process.env.ORCH_RUN_ID = priorRunId
+  if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+  else process.env.BOTTEGA_RUN_ID = priorRunId
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
 })
@@ -60,7 +60,7 @@ test('CLI ruling file --as doc allows an architect caller and refuses a worker c
   })
 
   const refused = answeredQuestion(project)
-  process.env.ORCH_RUN_ID = 'ruling-cli-worker'
+  process.env.BOTTEGA_RUN_ID = 'ruling-cli-worker'
   await expect(fileThroughCli(refused)).rejects.toThrow('a worker cannot file its ruling')
   expect(db().query('SELECT filed_as FROM question WHERE number=?').get(refused)).toEqual({
     filed_as: null,

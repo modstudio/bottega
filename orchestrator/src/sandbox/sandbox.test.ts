@@ -917,13 +917,13 @@ describe('readonly-lens sandbox profile', () => {
     expect(noRepo).toEqual({
       sandbox: 'host',
       profile: null,
-      reason: 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
+      reason: 'BOTTEGA_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
     })
     expect(noRepo.reason).not.toBe(repository.reason)
     expect(repository).toEqual({
       sandbox: 'host',
       profile: null,
-      reason: 'ORCH_SANDBOX=host',
+      reason: 'BOTTEGA_SANDBOX=host',
     })
   })
 

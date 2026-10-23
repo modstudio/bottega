@@ -5,7 +5,10 @@
  * homes, or the hosted record.
  */
 
-export const RECORD_CONNECTION_ENV_NAMES = new Set(['ORCH_RECORD_URL', 'ORCH_RECORD_MIGRATE_URL'])
+export const RECORD_CONNECTION_ENV_NAMES = new Set([
+  'BOTTEGA_RECORD_URL',
+  'BOTTEGA_RECORD_MIGRATE_URL',
+])
 
 export const RECORD_CONNECTION_WORKER_REFUSAL =
   'record database connections are withheld from workers; the architect session runs work that needs one'
@@ -20,7 +23,7 @@ const ALLOW_ENV_EXACT = new Set([
   'TMPDIR',
   'SSH_AUTH_SOCK',
 ])
-const ALLOW_ENV_PREFIX = /^(LC_|XDG_|OPENAI_|XAI_|GROK_|GEMINI_|GOOGLE_|CODEX_|QWEN_|ORCH_)/
+const ALLOW_ENV_PREFIX = /^(LC_|XDG_|OPENAI_|XAI_|GROK_|GEMINI_|GOOGLE_|CODEX_|QWEN_|BOTTEGA_)/
 
 /** Whether childEnv forwards this parent variable name into a vendor process. */
 export function isForwardedChildEnvName(name: string): boolean {
@@ -45,7 +48,7 @@ export function assertRecordConnectionResolutionAllowed(
   env: Record<string, string | undefined>,
 ): void {
   for (const name of names) {
-    const refusal = recordConnectionResolverRefusal(name, env.ORCH_DEPTH !== undefined)
+    const refusal = recordConnectionResolverRefusal(name, env.BOTTEGA_DEPTH !== undefined)
     if (refusal) throw new Error(refusal)
   }
 }

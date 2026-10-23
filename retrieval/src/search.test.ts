@@ -33,14 +33,17 @@ const addressedChunk = (
 test('refuses an unreachable embedding endpoint through an injected client', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'retrieval-index-test-'))
   const absent = new Error(
-    'embedding endpoint could not be established at http://embed/v1/embeddings: connection refused. Run `bin/retrieval-search --check` and retry. Configure the endpoints with ORCH_EMBED_URL and ORCH_RERANK_URL.',
+    'embedding endpoint could not be established at http://embed/v1/embeddings: connection refused. Run `bin/retrieval-search --check` and retry. Configure the endpoints with BOTTEGA_EMBED_URL and BOTTEGA_RERANK_URL.',
   )
   try {
     await expect(
       search('question', 1, {
         repositoryRoot: '/unused',
         databasePath: join(directory, 'retrieval.db'),
-        environment: { ORCH_EMBED_URL: 'http://embed/v1', ORCH_RERANK_URL: 'http://rerank/v1' },
+        environment: {
+          BOTTEGA_EMBED_URL: 'http://embed/v1',
+          BOTTEGA_RERANK_URL: 'http://rerank/v1',
+        },
         loadChunks: async () => [chunk('one')],
         clients: { embed: async () => Promise.reject(absent), rerank: async () => [] },
       }),

@@ -76,10 +76,12 @@ async function degradedCollection(argv: string[], error: unknown): Promise<numbe
   const reason = error instanceof Error ? error.message : String(error)
   console.error(`orch: degraded collection mode because the full CLI could not load: ${reason}`)
   try {
-    // ORCH_DB is always passed to detached workers. Keep that emergency seam
+    // BOTTEGA_ORCHESTRATOR_DB is always passed to detached workers. Keep that emergency seam
     // independent of the ordinary resolver so collection still works while a
     // neighboring source file is temporarily broken during an edit.
-    const path = process.env.ORCH_DB || (await import('../database/database-location.ts')).DB_PATH
+    const path =
+      process.env.BOTTEGA_ORCHESTRATOR_DB ||
+      (await import('../database/database-location.ts')).DB_PATH
     const database = new Database(path, { readonly: true })
     // The degraded path is deliberately only collection: output and status,
     // not scoring advice that would require loading the job/router graph.

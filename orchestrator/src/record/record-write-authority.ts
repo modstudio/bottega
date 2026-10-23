@@ -7,7 +7,7 @@ import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { readRecordInstallBinding, rememberHostedRecord } from './install-binding.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 export const BOUND_RECORD_WRITE_REFUSAL =
-  'this install is bound to a hosted record, but ORCH_RECORD_API_URL is not set in this environment\n' +
+  'this install is bound to a hosted record, but BOTTEGA_RECORD_API_URL is not set in this environment\n' +
   `cleared by: ${PLATFORM_SLUG} record use <address>`
 
 export function currentRecordWriteDecision(database?: Database): RecordWriteDecision {

@@ -126,8 +126,8 @@ function boardCommand(file: ScriptFile, assetRoot: string, databasePath: string)
     `BOARD_PRESENCE_REFRESH_SECONDS=${BOARD_PRESENCE_REFRESH_SECONDS}`,
     `BOARD_ACK_STOP_BLOCKS=${BOARD_ACK_STOP_BLOCKS}`,
     `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,
-    `ORCH_DB=${shellQuote(databasePath)}`,
-    `ORCH_BOARD_HOOK_STATE=${shellQuote(join(dirname(databasePath), 'board-hook-state'))}`,
+    `BOTTEGA_ORCHESTRATOR_DB=${shellQuote(databasePath)}`,
+    `BOTTEGA_BOARD_HOOK_STATE=${shellQuote(join(dirname(databasePath), 'board-hook-state'))}`,
     'python3',
     shellQuote(scriptPath(assetRoot, file)),
   ].join(' ')

@@ -17,7 +17,7 @@ import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/st
 const falsify = process.argv.includes('--falsify')
 const falsifyMode = falsify
   ? 'revoke-project-select'
-  : (process.env.ORCH_TEST_POSTGRES_FALSIFY ?? '')
+  : (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY ?? '')
 const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
@@ -249,8 +249,8 @@ try {
       'src/postgres/postgres-migrate-hosted-project-cleanup.test.ts',
     ],
     {
-      ORCH_TEST_HOSTED_PROJECT_CLEANUP_URL: hostedProjectCleanupMigrationUrl,
-      ORCH_TEST_HOSTED_PROJECT_CLEANUP_COLLISION_URL: hostedProjectCleanupCollisionUrl,
+      BOTTEGA_TEST_HOSTED_PROJECT_CLEANUP_URL: hostedProjectCleanupMigrationUrl,
+      BOTTEGA_TEST_HOSTED_PROJECT_CLEANUP_COLLISION_URL: hostedProjectCleanupCollisionUrl,
     },
   )
   if (hostedProjectCleanupMigration !== 0) throw new EarlyExit(hostedProjectCleanupMigration)
@@ -264,8 +264,8 @@ try {
       'src/postgres/postgres-migrate-board-shared-space.test.ts',
     ],
     {
-      ORCH_TEST_BOARD_SHARED_SPACE_MIGRATION_URL: boardSharedSpaceMigrationUrl,
-      ORCH_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL: boardSharedSpaceInvalidMigrationUrl,
+      BOTTEGA_TEST_BOARD_SHARED_SPACE_MIGRATION_URL: boardSharedSpaceMigrationUrl,
+      BOTTEGA_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL: boardSharedSpaceInvalidMigrationUrl,
     },
   )
   if (boardSharedSpaceMigration !== 0) throw new EarlyExit(boardSharedSpaceMigration)
@@ -273,21 +273,21 @@ try {
   const publicRoleMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-public-role.test.ts'],
     {
-      ORCH_TEST_PUBLIC_ROLE_MIGRATION_URL: publicRoleMigrationUrl,
-      ORCH_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL: publicRoleMigrationSuperuserUrl,
+      BOTTEGA_TEST_PUBLIC_ROLE_MIGRATION_URL: publicRoleMigrationUrl,
+      BOTTEGA_TEST_PUBLIC_ROLE_MIGRATION_SUPERUSER_URL: publicRoleMigrationSuperuserUrl,
     },
   )
   if (publicRoleMigration !== 0) throw new EarlyExit(publicRoleMigration)
 
   const recipientMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-recipients.test.ts'],
-    { ORCH_TEST_RECIPIENT_MIGRATION_URL: recipientMigrationUrl },
+    { BOTTEGA_TEST_RECIPIENT_MIGRATION_URL: recipientMigrationUrl },
   )
   if (recipientMigration !== 0) throw new EarlyExit(recipientMigration)
 
   const hostedTaskIdMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-hosted-task-ids.test.ts'],
-    { ORCH_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl },
+    { BOTTEGA_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl },
   )
   if (hostedTaskIdMigration !== 0) throw new EarlyExit(hostedTaskIdMigration)
 
@@ -299,7 +299,7 @@ try {
       '30000',
       'src/postgres/postgres-migrate-workflow-generation.test.ts',
     ],
-    { ORCH_TEST_WORKFLOW_GENERATION_MIGRATION_URL: workflowGenerationMigrationUrl },
+    { BOTTEGA_TEST_WORKFLOW_GENERATION_MIGRATION_URL: workflowGenerationMigrationUrl },
   )
   if (workflowGenerationMigration !== 0) throw new EarlyExit(workflowGenerationMigration)
 
@@ -311,7 +311,7 @@ try {
       '30000',
       'src/postgres/postgres-migrate-hub-project-identity.test.ts',
     ],
-    { ORCH_TEST_HUB_PROJECT_IDENTITY_MIGRATION_URL: hubProjectIdentityMigrationUrl },
+    { BOTTEGA_TEST_HUB_PROJECT_IDENTITY_MIGRATION_URL: hubProjectIdentityMigrationUrl },
   )
   if (hubProjectIdentityMigration !== 0) throw new EarlyExit(hubProjectIdentityMigration)
 
@@ -324,8 +324,8 @@ try {
       'src/postgres/postgres-migrate-doc-latest-revision.test.ts',
     ],
     {
-      ORCH_TEST_DOC_REVISION_MIGRATION_URL: docRevisionMigrationUrl,
-      ORCH_TEST_DOC_REVISION_MIGRATION_SUPERUSER_URL: docRevisionMigrationSuperuserUrl,
+      BOTTEGA_TEST_DOC_REVISION_MIGRATION_URL: docRevisionMigrationUrl,
+      BOTTEGA_TEST_DOC_REVISION_MIGRATION_SUPERUSER_URL: docRevisionMigrationSuperuserUrl,
     },
   )
   if (docRevisionMigration !== 0) throw new EarlyExit(docRevisionMigration)
@@ -339,23 +339,23 @@ try {
       'src/postgres/postgres-migrate-doc-revision-author.test.ts',
     ],
     {
-      ORCH_TEST_DOC_AUTHOR_MIGRATION_URL: docAuthorMigrationUrl,
-      ORCH_TEST_DOC_AUTHOR_MIGRATION_SUPERUSER_URL: docAuthorMigrationSuperuserUrl,
+      BOTTEGA_TEST_DOC_AUTHOR_MIGRATION_URL: docAuthorMigrationUrl,
+      BOTTEGA_TEST_DOC_AUTHOR_MIGRATION_SUPERUSER_URL: docAuthorMigrationSuperuserUrl,
     },
   )
   if (docAuthorMigration !== 0) throw new EarlyExit(docAuthorMigration)
 
   const workflowCatalogue = await run(
     ['bun', 'test', '--timeout', '30000', 'src/record/record-workflow-catalogue-postgres.test.ts'],
-    { ORCH_TEST_WORKFLOW_CATALOGUE_URL: workflowCatalogueUrl },
+    { BOTTEGA_TEST_WORKFLOW_CATALOGUE_URL: workflowCatalogueUrl },
   )
   const lensCatalogue = await run(
     ['bun', 'test', '--timeout', '30000', 'src/record/record-lens-catalogue-postgres.test.ts'],
-    { ORCH_TEST_LENS_CATALOGUE_URL: lensCatalogueUrl },
+    { BOTTEGA_TEST_LENS_CATALOGUE_URL: lensCatalogueUrl },
   )
   const portCatalogue = await run(
     ['bun', 'test', '--timeout', '30000', 'src/record/record-port-catalogue-postgres.test.ts'],
-    { ORCH_TEST_PORT_CATALOGUE_URL: portCatalogueUrl },
+    { BOTTEGA_TEST_PORT_CATALOGUE_URL: portCatalogueUrl },
   )
   if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)
     throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
@@ -363,11 +363,11 @@ try {
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {
-      ORCH_TEST_POSTGRES_CONTAINER: container,
-      ORCH_RECORD_MIGRATE_URL: ownerUrl,
-      ORCH_RECORD_URL: actorUrl,
+      BOTTEGA_TEST_POSTGRES_CONTAINER: container,
+      BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
+      BOTTEGA_RECORD_URL: actorUrl,
       RECORD_AUTH_DATABASE_URL: authUrl,
-      ORCH_TEST_POSTGRES_FALSIFY: falsifyMode,
+      BOTTEGA_TEST_POSTGRES_FALSIFY: falsifyMode,
     },
   )
   if (rls !== 0) process.exitCode = rls
@@ -375,15 +375,15 @@ try {
     const readOnlyMembership = await run(
       ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-read-only.test.ts'],
       {
-        ORCH_TEST_POSTGRES_CONTAINER: container,
-        ORCH_RECORD_MIGRATE_URL: ownerUrl,
-        ORCH_RECORD_URL: actorUrl,
+        BOTTEGA_TEST_POSTGRES_CONTAINER: container,
+        BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
+        BOTTEGA_RECORD_URL: actorUrl,
       },
     )
     if (readOnlyMembership !== 0) process.exitCode = readOnlyMembership
     else {
       const remigrate = await run(['bun', 'src/cli/orch.ts', 'record', 'migrate'], {
-        ORCH_RECORD_MIGRATE_URL: ownerUrl,
+        BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
       })
       if (remigrate !== 0) process.exitCode = remigrate
       else {
@@ -396,8 +396,8 @@ try {
             'src/record/record-catalogue-import-postgres.test.ts',
           ],
           {
-            ORCH_TEST_CATALOGUE_IMPORT_URL: actorUrl,
-            ORCH_TEST_CATALOGUE_IMPORT_SETUP_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+            BOTTEGA_TEST_CATALOGUE_IMPORT_URL: actorUrl,
+            BOTTEGA_TEST_CATALOGUE_IMPORT_SETUP_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
           },
         )
         if (catalogueImport !== 0) throw new EarlyExit(catalogueImport)
@@ -410,15 +410,15 @@ try {
             'src/postgres/postgres-migrate-jsonb-binding.test.ts',
           ],
           {
-            ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
-            ORCH_RECORD_URL: actorUrl,
+            BOTTEGA_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+            BOTTEGA_RECORD_URL: actorUrl,
           },
         )
         if (jsonbBinding !== 0) process.exitCode = jsonbBinding
         else {
           const evidence = await run(['bun', 'run', '--cwd', '../hub', 'test:postgres'], {
-            ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
-            ORCH_RECORD_URL: actorUrl,
+            BOTTEGA_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+            BOTTEGA_RECORD_URL: actorUrl,
             RECORD_AUTH_DATABASE_URL: authUrl,
           })
           if (evidence !== 0) process.exitCode = evidence
@@ -432,13 +432,13 @@ try {
                 'src/postgres/postgres-import.test.ts',
               ],
               {
-                ORCH_TEST_POSTGRES_CONTAINER: container,
-                ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
-                ORCH_RECORD_MIGRATE_URL: ownerUrl,
-                ORCH_RECORD_URL: actorUrl,
+                BOTTEGA_TEST_POSTGRES_CONTAINER: container,
+                BOTTEGA_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+                BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
+                BOTTEGA_RECORD_URL: actorUrl,
                 RECORD_AUTH_DATABASE_URL: authUrl,
-                ORCH_TEST_SOURCE_ORCH_DB: sourceOrchDb,
-                ORCH_TEST_SOURCE_HUB_DB: sourceHubDb,
+                BOTTEGA_TEST_SOURCE_ORCH_DB: sourceOrchDb,
+                BOTTEGA_TEST_SOURCE_HUB_DB: sourceHubDb,
               },
             )
         }

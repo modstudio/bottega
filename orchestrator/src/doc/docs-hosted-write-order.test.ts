@@ -16,7 +16,7 @@ test('a hosted document write failure leaves the local document unchanged', asyn
     delivery: 'demand',
     reason: 'create local fixture',
   })
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   const client = createMemoryRecordApiClient()
   installRecordApiClient({
     ...client,
@@ -38,7 +38,7 @@ test('a hosted document write failure leaves the local document unchanged', asyn
     ).rejects.toThrow('hosted write failed')
     expect(getDoc('global', null, 'hosted-write-failure')).toEqual(local)
   } finally {
-    delete process.env.ORCH_RECORD_API_URL
+    delete process.env.BOTTEGA_RECORD_API_URL
     installRecordApiClient(createMemoryRecordApiClient())
   }
 })

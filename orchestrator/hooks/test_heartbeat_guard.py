@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-os.environ.setdefault("ORCH_DB", os.path.join(tempfile.gettempdir(), "heartbeat-guard-test.db"))
+os.environ.setdefault("BOTTEGA_ORCHESTRATOR_DB", os.path.join(tempfile.gettempdir(), "heartbeat-guard-test.db"))
 SPEC = importlib.util.spec_from_file_location(
     "heartbeat_guard", Path(__file__).with_name("heartbeat-guard.py")
 )

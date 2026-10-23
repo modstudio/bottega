@@ -59,7 +59,7 @@ function seedBase() {
     settings: {
       permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`], ask: [], deny: [] },
       hooks: [{ event: 'PreToolUse', matcher: 'Bash', fingerprint: '123456abcdef' }],
-      envKeys: ['ORCH_TOKEN'],
+      envKeys: ['BOTTEGA_TOKEN'],
     },
     drift: {
       rules: {
@@ -82,10 +82,10 @@ test('managed settings never renders an env value from a crafted payload', () =>
   const seeded = queryClient.getQueryData(options.queryKey)!
   queryClient.setQueryData(options.queryKey, {
     ...seeded,
-    settings: { ...seeded.settings, env: { ORCH_TOKEN: 'ENV_VALUE_SENTINEL' } },
+    settings: { ...seeded.settings, env: { BOTTEGA_TOKEN: 'ENV_VALUE_SENTINEL' } },
   } as unknown as typeof seeded)
   const html = render()
-  expect(html).toContain('ORCH_TOKEN')
+  expect(html).toContain('BOTTEGA_TOKEN')
   expect(html).not.toContain('ENV_VALUE_SENTINEL')
 })
 

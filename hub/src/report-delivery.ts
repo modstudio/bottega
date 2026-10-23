@@ -394,9 +394,10 @@ async function sendRecipient(
 
 function requiredHostedOrigin(origin?: string) {
   const value = origin?.replace(/\/$/, '')
-  if (!value) throw new Error('HUB_HOSTED_URL is required for email-recipient unsubscribe links')
+  if (!value)
+    throw new Error('BOTTEGA_HOSTED_URL is required for email-recipient unsubscribe links')
   if (!value.startsWith('https://'))
-    throw new Error('HUB_HOSTED_URL must use https for email-recipient unsubscribe links')
+    throw new Error('BOTTEGA_HOSTED_URL must use https for email-recipient unsubscribe links')
   return value
 }
 

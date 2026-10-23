@@ -97,7 +97,7 @@ export type ArgvOpts = {
   writableRoots?: string[]
   /** Command-scoped git configuration enforced inside the worker's shell. */
   gitConfigEnvironment?: Record<string, string>
-  /** Tracked-recipe allocation values (ORCH_INDEX, ORCH_PORTS_*, ORCH_ALLOC_*) set inside the worker's shell. */
+  /** Tracked-recipe allocation values (BOTTEGA_INDEX, BOTTEGA_PORTS_*, BOTTEGA_ALLOC_*) set inside the worker's shell. */
   recipeEnvironment?: Record<string, string>
   /**
    * The conversation this turn belongs to.
@@ -352,7 +352,7 @@ function acpJobAllowed(
 
 export function resolveTransportName(
   explicit?: string | null,
-  env = process.env.ORCH_TRANSPORT,
+  env = process.env.BOTTEGA_TRANSPORT,
 ): TransportName {
   const raw = (explicit ?? env ?? 'cli').trim().toLowerCase()
   if (!raw || raw === 'cli') return 'cli'
@@ -363,7 +363,7 @@ export function resolveTransportName(
 /** Classify the effective transport pin with the same precedence as transport resolution. */
 export function classifyTransportPin(
   explicit?: string | null,
-  env = process.env.ORCH_TRANSPORT,
+  env = process.env.BOTTEGA_TRANSPORT,
 ): TransportPin {
   if (explicit !== undefined && explicit !== null) {
     return {
@@ -460,14 +460,14 @@ export function resolveCodexAcpBin(opts?: {
   exists?: (path: string) => boolean
   which?: (name: string) => string | null
 }): string {
-  const override = (opts?.env ?? process.env).ORCH_ACP_BIN
+  const override = (opts?.env ?? process.env).BOTTEGA_ACP_BIN
   if (override) return override
   const checkoutBin = opts?.checkoutBin ?? assetPath('node_modules', '.bin', 'codex-acp')
   if (checkoutBin && (opts?.exists ?? existsSync)(checkoutBin)) return checkoutBin
   const found = (opts?.which ?? ((name: string) => Bun.which(name)))('codex-acp')
   if (found) return found
   throw new Error(
-    `cannot find a codex-acp executable: ${checkoutBin ? `none at ${checkoutBin} and ` : ''}PATH lookup found nothing; set ORCH_ACP_BIN to its path, or install it so it is on PATH`,
+    `cannot find a codex-acp executable: ${checkoutBin ? `none at ${checkoutBin} and ` : ''}PATH lookup found nothing; set BOTTEGA_ACP_BIN to its path, or install it so it is on PATH`,
   )
 }
 

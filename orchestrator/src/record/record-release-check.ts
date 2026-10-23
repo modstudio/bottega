@@ -13,7 +13,7 @@ function hostedApp(value: string | undefined): HostedApp {
 }
 
 function appRecordUrl(app: HostedApp): { name: string; value: string } {
-  const name = app === 'api' ? 'ORCH_RECORD_URL' : 'HUB_RECORD_DATABASE_URL'
+  const name = app === 'api' ? 'BOTTEGA_RECORD_URL' : 'BOTTEGA_RECORD_DATABASE_URL'
   const value = process.env[name]
   if (!value) throw new Error(`${name} is required for the ${app} release check`)
   return { name, value }

@@ -137,7 +137,7 @@ export function terminalRunArtifactPaths(
 /**
  * Where prompt and output files live. By default they sit beside the resolved
  * database, so a worktree cannot strand its evidence when it is swept.
- * ORCH_RUNS remains the deliberate override used by the suite.
+ * BOTTEGA_RUNS remains the deliberate override used by the suite.
  */
 export const RUNS_DIR = resolveRunsDirectory(process.env)
 

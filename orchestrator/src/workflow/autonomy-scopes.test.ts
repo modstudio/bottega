@@ -28,7 +28,7 @@ const database = (settings = '{}') => {
 const missingConfig = { BOTTEGA_CONFIG_HOME: '/missing-fixture-config' }
 const timeoutClient = (signal: AbortSignal) =>
   configClient(
-    { ORCH_RECORD_API_URL: 'https://record.test' },
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     ((_url: string | URL | Request, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })

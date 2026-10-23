@@ -21,8 +21,8 @@ const WORKER_GATE_ENV_EXACT = new Set([
   'SHELL',
   'LANG',
   'TERM',
-  'ORCH_GUARDED_GIT_COMMON_DIR',
-  'ORCH_ALLOWED_GIT_REF',
+  'BOTTEGA_GUARDED_GIT_COMMON_DIR',
+  'BOTTEGA_ALLOWED_GIT_REF',
 ])
 
 export type FiledIssueCommandPlan = {

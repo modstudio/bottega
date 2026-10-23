@@ -22,7 +22,7 @@ const whoami = async () => ({
 })
 
 afterEach(() => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
 })
 
@@ -40,7 +40,7 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
     ownerId = newRecordId(),
     versionId = newRecordId(),
     setEventId = newRecordId()
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
@@ -329,7 +329,7 @@ test('hosted catalogue promotion does not call the API when it removes a live re
     updatedAt: at,
   })
   let calls = 0
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,

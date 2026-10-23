@@ -4,12 +4,12 @@ import type { RecordFetch } from '../../record-client.ts'
 import { recordRouter } from './record.ts'
 
 const originalFetch = globalThis.fetch
-const originalRecordApiUrl = process.env.HUB_RECORD_API_URL
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  if (originalRecordApiUrl === undefined) delete process.env.HUB_RECORD_API_URL
-  else process.env.HUB_RECORD_API_URL = originalRecordApiUrl
+  if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
 })
 
 const release = {
@@ -34,7 +34,7 @@ const release = {
 }
 
 function caller(fetch: RecordFetch) {
-  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   globalThis.fetch = fetch as typeof globalThis.fetch
   return recordRouter.createCaller({ authorization: 'Bearer token' })
 }

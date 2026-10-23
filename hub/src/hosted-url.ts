@@ -4,5 +4,5 @@ import { readEnvValues } from '../../shared/env-values.ts'
 export function resolveHostedUrl(
   environment: Record<string, string | undefined> = process.env,
 ): string | undefined {
-  return readEnvValues(['HUB_HOSTED_URL'], environment).HUB_HOSTED_URL
+  return readEnvValues(['BOTTEGA_HOSTED_URL'], environment).BOTTEGA_HOSTED_URL
 }

@@ -285,16 +285,16 @@ test('container, volume, and network inventory attribute project names from labe
 
 test('docker inventory timeout is configurable and defaults to 1s', () => {
   expect(dockerInventoryTimeoutMs({})).toBe(1_000)
-  expect(dockerInventoryTimeoutMs({ ORCH_DOCKER_INVENTORY_TIMEOUT_MS: '4000' })).toBe(4_000)
-  expect(dockerInventoryTimeoutMs({ ORCH_DOCKER_INVENTORY_TIMEOUT_MS: '0' })).toBe(1_000)
-  expect(dockerInventoryTimeoutMs({ ORCH_DOCKER_INVENTORY_TIMEOUT_MS: 'nope' })).toBe(1_000)
+  expect(dockerInventoryTimeoutMs({ BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS: '4000' })).toBe(4_000)
+  expect(dockerInventoryTimeoutMs({ BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS: '0' })).toBe(1_000)
+  expect(dockerInventoryTimeoutMs({ BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS: 'nope' })).toBe(1_000)
   expect(dockerRemovalTimeoutMs({})).toBe(10_000)
-  expect(dockerRemovalTimeoutMs({ ORCH_DOCKER_REMOVAL_TIMEOUT_MS: '25000' })).toBe(25_000)
+  expect(dockerRemovalTimeoutMs({ BOTTEGA_DOCKER_REMOVAL_TIMEOUT_MS: '25000' })).toBe(25_000)
 })
 
 test('a timed-out Docker inventory is unascertainable and discards partial rows', () => {
-  const prior = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
-  process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS = '25'
+  const prior = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+  process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS = '25'
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     if (args[1] === 'ps') return result('app-orch-41-web')
     return { ...result(''), exitedDueToTimeout: true }
@@ -305,14 +305,14 @@ test('a timed-out Docker inventory is unascertainable and discards partial rows'
       reason: 'docker volume ls inventory unavailable: timed out after 25ms',
     })
   } finally {
-    if (prior === undefined) delete process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
-    else process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS = prior
+    if (prior === undefined) delete process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+    else process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS = prior
   }
 })
 
 test('the default Docker inventory timeout retries once with the longer load bound', () => {
-  const prior = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
-  delete process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+  const prior = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+  delete process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
   const timeouts: number[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: { timeout?: number }) => {
     timeouts.push(options?.timeout ?? 0)
@@ -325,8 +325,8 @@ test('the default Docker inventory timeout retries once with the longer load bou
     expect(dockerRunResources()).toEqual({ ascertainable: true, resources: [] })
     expect(timeouts).toEqual([1_000, 10_000, 1_000, 1_000])
   } finally {
-    if (prior === undefined) delete process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
-    else process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS = prior
+    if (prior === undefined) delete process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+    else process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS = prior
   }
 })
 

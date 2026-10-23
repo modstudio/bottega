@@ -152,7 +152,7 @@ An agent is a row: harness, backend, and model. None of those is a capability de
 
 # Local model
 
-`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `bottega agent add`, then probe. `bottega machine doctor` prints the command when `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
+`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `bottega agent add`, then probe. `bottega machine doctor` prints the command when `BOTTEGA_MODEL_HOST_URL` and `BOTTEGA_MODEL_HOST_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
 
 `available()` is configuration; `bottega machine doctor` is reachability. The registration probe is the authority on file tools and structured output; `/v1/models` is the authority on the served window. `local-acp` must be served with a window of at least a deep job's `contextTokens` plus `OUTPUT_RESERVE`.
 

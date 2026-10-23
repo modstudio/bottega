@@ -46,7 +46,7 @@ describe('record doctor decisions', () => {
       'local outbox pending rows',
       'local outbox quarantined rows',
     ])
-    expect(JSON.stringify(checks)).not.toContain('ORCH_RECORD_URL')
+    expect(JSON.stringify(checks)).not.toContain('BOTTEGA_RECORD_URL')
     expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
   })
 
@@ -72,7 +72,7 @@ describe('record doctor decisions', () => {
       name: 'last run attribution resolution',
       status: 'fail',
       detail:
-        'record API: connection refused; check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+        'record API: connection refused; check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry',
       section: 'customer',
     })
   })
@@ -81,7 +81,8 @@ describe('record doctor decisions', () => {
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,
       apiReachable: false,
-      apiFailure: 'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+      apiFailure:
+        'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry',
       sessionAccepted: false,
       activeSpaceId: null,
       memberships: [],
@@ -89,7 +90,7 @@ describe('record doctor decisions', () => {
     expect(checks[1]).toEqual({
       name: 'hosted API reachable',
       status: 'fail',
-      detail: 'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+      detail: 'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry',
       section: 'customer',
     })
     expect(recordDoctorExitCode(checks)).toBe(1)

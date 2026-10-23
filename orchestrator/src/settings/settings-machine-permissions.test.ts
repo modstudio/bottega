@@ -53,7 +53,7 @@ test('machine permission writes retain the worker refusal', () => {
   expect(() =>
     editMachineSettingsPermission(
       { operation: 'add', list: 'allow', rule: 'Bash(git status)' },
-      { ORCH_RUN_ID: 'worker' },
+      { BOTTEGA_RUN_ID: 'worker' },
     ),
   ).toThrow('refusing machine permission write from an orchestrator worker run')
 })

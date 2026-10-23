@@ -4,11 +4,11 @@ import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { createDocsMcpServer } from './mcp.ts'
 
 describe('scoped operator docs', () => {
-  test.each(['ORCH_RUN_ID', 'ORCH_DEPTH'])(
+  test.each(['BOTTEGA_RUN_ID', 'BOTTEGA_DEPTH'])(
     `orch MCP note gives workers the fixed ${WORKER_MCP_SERVER_NAME} remedy for %s`,
     async (marker) => {
-      const prior = process.env.ORCH_RUN_ID
-      const priorDepth = process.env.ORCH_DEPTH
+      const prior = process.env.BOTTEGA_RUN_ID
+      const priorDepth = process.env.BOTTEGA_DEPTH
       process.env[marker] = '42'
       const server = createDocsMcpServer()
       const client = new Client({ name: 'orch-test', version: '1.0.0' })
@@ -22,10 +22,10 @@ describe('scoped operator docs', () => {
           `only through the ${WORKER_MCP_SERVER_NAME} note tool; do not retry`,
         )
       } finally {
-        if (prior === undefined) delete process.env.ORCH_RUN_ID
-        else process.env.ORCH_RUN_ID = prior
-        if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-        else process.env.ORCH_DEPTH = priorDepth
+        if (prior === undefined) delete process.env.BOTTEGA_RUN_ID
+        else process.env.BOTTEGA_RUN_ID = prior
+        if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+        else process.env.BOTTEGA_DEPTH = priorDepth
         await client.close()
         await server.close()
       }
@@ -33,10 +33,10 @@ describe('scoped operator docs', () => {
   )
 
   test('orch MCP note masks filing errors', async () => {
-    const priorRun = process.env.ORCH_RUN_ID
-    const priorDepth = process.env.ORCH_DEPTH
-    delete process.env.ORCH_RUN_ID
-    delete process.env.ORCH_DEPTH
+    const priorRun = process.env.BOTTEGA_RUN_ID
+    const priorDepth = process.env.BOTTEGA_DEPTH
+    delete process.env.BOTTEGA_RUN_ID
+    delete process.env.BOTTEGA_DEPTH
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -50,10 +50,10 @@ describe('scoped operator docs', () => {
       expect(filed.isError).toBe(true)
       expect((filed.content as { text: string }[])[0]!.text).toBe('The note was not filed.')
     } finally {
-      if (priorRun === undefined) delete process.env.ORCH_RUN_ID
-      else process.env.ORCH_RUN_ID = priorRun
-      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-      else process.env.ORCH_DEPTH = priorDepth
+      if (priorRun === undefined) delete process.env.BOTTEGA_RUN_ID
+      else process.env.BOTTEGA_RUN_ID = priorRun
+      if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+      else process.env.BOTTEGA_DEPTH = priorDepth
       await client.close()
       await server.close()
     }

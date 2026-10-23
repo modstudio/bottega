@@ -147,9 +147,9 @@ function architectGateTarget(input: {
   d?: Database
   topLevel?: ArchitectGateTopLevel
 }) {
-  if (process.env.ORCH_DEPTH !== undefined)
+  if (process.env.BOTTEGA_DEPTH !== undefined)
     throw new Error(
-      `${PLATFORM_SLUG} gate run is reserved for architect sessions; ORCH_DEPTH is set`,
+      `${PLATFORM_SLUG} gate run is reserved for architect sessions; BOTTEGA_DEPTH is set`,
     )
   const caller = sessionId()
   if (!caller)

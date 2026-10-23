@@ -12,7 +12,7 @@ import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 let scratch: string | null = null
 const originalGithubBase = process.env.GITHUB_BASE_REF
-const originalOrchDatabase = process.env.ORCH_DB
+const originalOrchDatabase = process.env.BOTTEGA_ORCHESTRATOR_DB
 let databaseScratch = ''
 let openReadOnlyDatabase: typeof import('../orchestrator/src/database/db.ts').openReadOnlyDatabase
 let branchChangedPaths: typeof import('./check-canon-drift.ts').branchChangedPaths
@@ -23,7 +23,7 @@ let readCanonGateInput: typeof import('./check-canon-drift.ts').readCanonGateInp
 
 beforeAll(async () => {
   databaseScratch = mkdtempSync(join(tmpdir(), 'canon-drift-database-'))
-  process.env.ORCH_DB = join(databaseScratch, 'orch.db')
+  process.env.BOTTEGA_ORCHESTRATOR_DB = join(databaseScratch, 'orch.db')
   ;({ openReadOnlyDatabase } = await import('../orchestrator/src/database/db.ts'))
   ;({
     branchChangedPaths,
@@ -35,8 +35,8 @@ beforeAll(async () => {
 })
 
 afterAll(() => {
-  if (originalOrchDatabase === undefined) delete process.env.ORCH_DB
-  else process.env.ORCH_DB = originalOrchDatabase
+  if (originalOrchDatabase === undefined) delete process.env.BOTTEGA_ORCHESTRATOR_DB
+  else process.env.BOTTEGA_ORCHESTRATOR_DB = originalOrchDatabase
   rmSync(databaseScratch, { recursive: true, force: true })
 })
 

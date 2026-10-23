@@ -154,7 +154,7 @@ cat <<EOF
 === done ===
 On the Mac:
   ssh -N -L ${PORT}:127.0.0.1:${PORT} <host-alias> &
-  export ORCH_MODEL_HOST_URL=http://127.0.0.1:${PORT}/v1
-  export ORCH_MODEL_HOST_MODEL='${MODEL}'
+  export BOTTEGA_MODEL_HOST_URL=http://127.0.0.1:${PORT}/v1
+  export BOTTEGA_MODEL_HOST_MODEL='${MODEL}'
   bottega machine doctor
 EOF

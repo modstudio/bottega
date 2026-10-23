@@ -96,7 +96,7 @@ export function runSetupCommand(
     const env = { ...process.env }
     delete env.CLAUDE_CODE_SESSION_ID
     delete env.CLAUDE_CODE_BRIDGE_SESSION_ID
-    env.ORCH_DB = process.platform === 'win32' ? 'NUL' : '/dev/null'
+    env.BOTTEGA_ORCHESTRATOR_DB = process.platform === 'win32' ? 'NUL' : '/dev/null'
     const child = Bun.spawnSync(argv, {
       stdout: 'pipe',
       stderr: 'pipe',

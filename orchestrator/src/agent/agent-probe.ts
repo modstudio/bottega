@@ -297,8 +297,8 @@ export async function probeAgent(
   const structured = await runOne(
     'schema',
     needs.schema
-      ? 'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then return a final message using the supplied schema.'
-      : 'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then reply with exactly: ok',
+      ? 'Write {"status":"ok"} to $BOTTEGA_SCRATCH/reply.json, then return a final message using the supplied schema.'
+      : 'Write {"status":"ok"} to $BOTTEGA_SCRATCH/reply.json, then reply with exactly: ok',
     needs.schema ? schemaPath : undefined,
   )
   const mcpRun =

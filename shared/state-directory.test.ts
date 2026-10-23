@@ -97,12 +97,19 @@ describe('state root resolution', () => {
   })
 
   test('per-file overrides resolve without HOME', () => {
-    expect(resolveOrchestratorDatabase({ ORCH_DB: '/tmp/orch.db' })).toBe('/tmp/orch.db')
-    expect(resolveHubDatabase({ HUB_DB: '/tmp/hub.db' })).toBe('/tmp/hub.db')
+    expect(resolveOrchestratorDatabase({ BOTTEGA_ORCHESTRATOR_DB: '/tmp/orch.db' })).toBe(
+      '/tmp/orch.db',
+    )
+    expect(resolveHubDatabase({ BOTTEGA_HUB_DB: '/tmp/hub.db' })).toBe('/tmp/hub.db')
   })
 
   test('empty per-file overrides are unset', () => {
-    const env = { [STATE_HOME_ENV]: '/state', ORCH_DB: '', ORCH_RUNS: '', HUB_DB: '' }
+    const env = {
+      [STATE_HOME_ENV]: '/state',
+      BOTTEGA_ORCHESTRATOR_DB: '',
+      BOTTEGA_RUNS: '',
+      BOTTEGA_HUB_DB: '',
+    }
     expect(resolveOrchestratorDatabase(env)).toBe('/state/orchestrator/orch.db')
     expect(resolveRunsDirectory(env)).toBe('/state/orchestrator/runs')
     expect(resolveHubDatabase(env)).toBe('/state/hub/hub.db')

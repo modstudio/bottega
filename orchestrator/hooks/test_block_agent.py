@@ -15,8 +15,8 @@ PATH = os.path.join(os.path.dirname(__file__), "block-agent.py")
 
 class SpawnIdentityTest(unittest.TestCase):
     def load_hook(self, database):
-        previous = os.environ.get("ORCH_DB")
-        os.environ["ORCH_DB"] = database
+        previous = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
+        os.environ["BOTTEGA_ORCHESTRATOR_DB"] = database
         try:
             spec = importlib.util.spec_from_file_location("block_agent", PATH)
             block_agent = importlib.util.module_from_spec(spec)
@@ -24,9 +24,9 @@ class SpawnIdentityTest(unittest.TestCase):
             return block_agent
         finally:
             if previous is None:
-                os.environ.pop("ORCH_DB", None)
+                os.environ.pop("BOTTEGA_ORCHESTRATOR_DB", None)
             else:
-                os.environ["ORCH_DB"] = previous
+                os.environ["BOTTEGA_ORCHESTRATOR_DB"] = previous
 
     def test_logged_spawn_has_version_seven_record_id(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -55,7 +55,7 @@ key restriction or network belong in machine docs:
 bottega doc list --scope machine
 ```
 
-`ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` must be available to
+`BOTTEGA_MODEL_HOST_URL` and `BOTTEGA_MODEL_HOST_MODEL` must be available to
 non-interactive shells, because that is how `bottega` runs.
 
 ## Docker preflight

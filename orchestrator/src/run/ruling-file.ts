@@ -135,7 +135,7 @@ function decideFiling(
     fromOperator: input.fromOperator,
     channel: input.channel,
     sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
-    depthPresent: process.env.ORCH_DEPTH !== undefined,
+    depthPresent: process.env.BOTTEGA_DEPTH !== undefined,
     dashboardAuthorized: input.dashboardAuthorized ?? dashboardCapabilityAuthorized(),
     runProject: row.repo,
     subject: input.subject,

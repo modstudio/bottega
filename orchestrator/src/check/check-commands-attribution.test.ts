@@ -105,7 +105,11 @@ describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
         'https://example.test/pr/1',
       ],
       {
-        env: { ...process.env, ORCH_DB: database, PATH: `${gh}:${process.env.PATH}` },
+        env: {
+          ...process.env,
+          BOTTEGA_ORCHESTRATOR_DB: database,
+          PATH: `${gh}:${process.env.PATH}`,
+        },
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: 'pipe',
@@ -137,7 +141,11 @@ describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
         'https://example.test/pr/1',
       ],
       {
-        env: { ...process.env, ORCH_DB: optedInDatabase, PATH: `${gh}:${process.env.PATH}` },
+        env: {
+          ...process.env,
+          BOTTEGA_ORCHESTRATOR_DB: optedInDatabase,
+          PATH: `${gh}:${process.env.PATH}`,
+        },
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: 'pipe',
@@ -174,7 +182,7 @@ describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
       {
         env: {
           ...process.env,
-          ORCH_DB: database,
+          BOTTEGA_ORCHESTRATOR_DB: database,
           PATH: `${bin}:${process.env.PATH}`,
           CHECK_SENTINEL: sentinel,
         },

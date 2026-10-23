@@ -25,7 +25,8 @@ export function answerAuthorityDecision(
     if (!input.fromOperator) return { kind: 'refuse', code: 'operator-attribution' }
     if (input.sessionIdPresent)
       return { kind: 'refuse', code: 'session-marker', actor: 'CLAUDE_CODE_SESSION_ID' }
-    if (input.depthPresent) return { kind: 'refuse', code: 'session-marker', actor: 'ORCH_DEPTH' }
+    if (input.depthPresent)
+      return { kind: 'refuse', code: 'session-marker', actor: 'BOTTEGA_DEPTH' }
     if (!input.dashboardAuthorized) return { kind: 'refuse', code: 'dashboard-capability' }
     return { kind: 'allow-as-operator', actor: 'operator:ui' }
   }

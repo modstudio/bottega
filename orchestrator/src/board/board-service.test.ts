@@ -911,7 +911,7 @@ test('status is limited to operator, author, or an addressed architect and refus
   expect(() =>
     noticeStatus(posted.recordId, { CLAUDE_CODE_SESSION_ID: 'status-stranger' }, clock + 1),
   ).toThrow(/not authored by or addressed/)
-  expect(() => noticeStatus(posted.recordId, { ORCH_RUN_ID: '123' })).toThrow(/workers cannot/)
+  expect(() => noticeStatus(posted.recordId, { BOTTEGA_RUN_ID: '123' })).toThrow(/workers cannot/)
 })
 
 test('reserved operator sentinel is refused on every session-aware board path', () => {

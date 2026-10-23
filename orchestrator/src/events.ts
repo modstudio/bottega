@@ -150,7 +150,7 @@ export function runEventsPath(id: string, runsDir = resolveRunsDirectory(process
 }
 
 export function idleWarnMs(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.ORCH_IDLE_WARN_MS
+  const raw = env.BOTTEGA_IDLE_WARN_MS
   if (raw === undefined || raw === '') return DEFAULT_IDLE_WARN_MS
   const n = Number(raw)
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_IDLE_WARN_MS

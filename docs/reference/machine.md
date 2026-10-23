@@ -60,6 +60,7 @@ upkeep of this machine
 - [bottega machine setup apply](#bottega-machine-setup-apply)
 - [bottega machine setup facts](#bottega-machine-setup-facts)
 - [bottega machine setup plan](#bottega-machine-setup-plan)
+- [bottega machine setup restore](#bottega-machine-setup-restore)
 - [bottega machine setup-ask](#bottega-machine-setup-ask)
 - [bottega machine storage](#bottega-machine-storage)
 - [bottega machine sweep](#bottega-machine-sweep)
@@ -854,6 +855,7 @@ inspect and configure this machine interactively
 - [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
 - [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
 - [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
+- [bottega machine setup restore](./machine.md#bottega-machine-setup-restore)
 
 ## bottega machine setup apply
 
@@ -896,6 +898,16 @@ plan recommended machine setup actions
 
 - `--in <folder>`: folder to inspect
 - `--json`: write the setup plan as compact JSON
+
+### Related
+
+- [bottega machine setup](./machine.md#bottega-machine-setup)
+
+## bottega machine setup restore
+
+**Synopsis:** `bottega machine setup restore <backup-dir>`
+
+restore a reversible environment migration backup
 
 ### Related
 

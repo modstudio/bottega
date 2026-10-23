@@ -7,10 +7,10 @@ import { authenticatedRecordApiClient } from './record-api-client.ts'
 
 test('the HTTP lens client rejects a malformed catalogue response at its decoding boundary', async () => {
   const previousEnvironment = process.env.NODE_ENV
-  const previousUrl = process.env.ORCH_RECORD_API_URL
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
   const originalFetch = globalThis.fetch
   process.env.NODE_ENV = 'development'
-  process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
   installRecordApiClient(null)
   globalThis.fetch = (async () =>
     Response.json({ items: [{ id: 1 }], nextCursor: null })) as unknown as typeof fetch
@@ -23,8 +23,8 @@ test('the HTTP lens client rejects a malformed catalogue response at its decodin
   } finally {
     globalThis.fetch = originalFetch
     process.env.NODE_ENV = previousEnvironment
-    if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-    else process.env.ORCH_RECORD_API_URL = previousUrl
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
     installRecordApiClient(createMemoryRecordApiClient())
   }
 })

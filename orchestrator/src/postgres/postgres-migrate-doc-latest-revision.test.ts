@@ -6,8 +6,8 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 
-const ownerUrl = process.env.ORCH_TEST_DOC_REVISION_MIGRATION_URL
-const superuserUrl = process.env.ORCH_TEST_DOC_REVISION_MIGRATION_SUPERUSER_URL
+const ownerUrl = process.env.BOTTEGA_TEST_DOC_REVISION_MIGRATION_URL
+const superuserUrl = process.env.BOTTEGA_TEST_DOC_REVISION_MIGRATION_SUPERUSER_URL
 const realPostgres = ownerUrl && superuserUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const repairMigration = '20260924201224_dev_917_doc_latest_revision_repair'

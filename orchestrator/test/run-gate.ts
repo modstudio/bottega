@@ -59,7 +59,7 @@ async function runTests(): Promise<GateTimings> {
     cwd: orchRoot,
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env, ORCH_GATE_TIMINGS: sidecarBase },
+    env: { ...process.env, BOTTEGA_GATE_TIMINGS: sidecarBase },
   })
   await Promise.all([pump(child.stdout, false), pump(child.stderr, true)])
   const exitCode = await child.exited

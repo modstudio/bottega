@@ -131,17 +131,20 @@ export function ensureHubLoginTokenDirectory(env: StateEnvironment): string {
 }
 
 export function resolveOrchestratorDatabase(env: StateEnvironment): string {
-  return env.ORCH_DB ? resolve(env.ORCH_DB) : resolveStatePaths(env).orchestratorDatabase
+  return env.BOTTEGA_ORCHESTRATOR_DB
+    ? resolve(env.BOTTEGA_ORCHESTRATOR_DB)
+    : resolveStatePaths(env).orchestratorDatabase
 }
 
 export function resolveRunsDirectory(env: StateEnvironment): string {
-  if (env.ORCH_RUNS) return resolve(env.ORCH_RUNS)
-  if (env.ORCH_DB) return join(dirname(resolve(env.ORCH_DB)), FROZEN_STATE_NAMES.runsDirectory)
+  if (env.BOTTEGA_RUNS) return resolve(env.BOTTEGA_RUNS)
+  if (env.BOTTEGA_ORCHESTRATOR_DB)
+    return join(dirname(resolve(env.BOTTEGA_ORCHESTRATOR_DB)), FROZEN_STATE_NAMES.runsDirectory)
   return resolveStatePaths(env).orchestratorRuns
 }
 
 export function resolveHubDatabase(env: StateEnvironment): string {
-  return env.HUB_DB ? resolve(env.HUB_DB) : resolveStatePaths(env).hubDatabase
+  return env.BOTTEGA_HUB_DB ? resolve(env.BOTTEGA_HUB_DB) : resolveStatePaths(env).hubDatabase
 }
 
 export function resolveRetrievalDatabase(env: StateEnvironment): string {

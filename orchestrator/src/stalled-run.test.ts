@@ -24,7 +24,7 @@ describe('stalled run decision', () => {
 
   test('the environment knob and operator line expose the measured default', () => {
     expect(idleStallMs({})).toBe(25 * 60_000)
-    expect(idleStallMs({ ORCH_IDLE_STALL_MS: '400' })).toBe(400)
+    expect(idleStallMs({ BOTTEGA_IDLE_STALL_MS: '400' })).toBe(400)
     expect(
       stalledRunDetail({
         id: 5406,

@@ -38,7 +38,7 @@ export function startupFailureDiagnostic(error: unknown): string {
 /** Record why this run never started, using as little of the codebase as possible. */
 async function recordStartupFailure(id: string, reason: string): Promise<void> {
   if (!id) return
-  const path = process.env.ORCH_DB
+  const path = process.env.BOTTEGA_ORCHESTRATOR_DB
   if (!path) return
   let changed = 0
   try {

@@ -534,7 +534,7 @@ describe('tracked recipe refusal rules', () => {
         create: [],
       }).join('\n'),
     ).toContain(
-      'allocation names "api-v2" and "api.v2" map to the same environment variable ORCH_PORTS_API_V2',
+      'allocation names "api-v2" and "api.v2" map to the same environment variable BOTTEGA_PORTS_API_V2',
     )
     expect(
       messages({
@@ -546,13 +546,13 @@ describe('tracked recipe refusal rules', () => {
         },
         create: [],
       }).join('\n'),
-    ).toContain('map to the same environment variable ORCH_DB_APP_V2')
+    ).toContain('map to the same environment variable BOTTEGA_ORCHESTRATOR_DB_APP_V2')
   })
 
   test('names allocation environment variables', () => {
-    expect(allocationEnvironmentVariable('ports', 'hub')).toBe('ORCH_PORTS_HUB')
-    expect(allocationEnvironmentVariable('ports', 'api-v2')).toBe('ORCH_PORTS_API_V2')
-    expect(allocationEnvironmentVariable('db', 'app-v2')).toBe('ORCH_DB_APP_V2')
+    expect(allocationEnvironmentVariable('ports', 'hub')).toBe('BOTTEGA_PORTS_HUB')
+    expect(allocationEnvironmentVariable('ports', 'api-v2')).toBe('BOTTEGA_PORTS_API_V2')
+    expect(allocationEnvironmentVariable('db', 'app-v2')).toBe('BOTTEGA_ORCHESTRATOR_DB_APP_V2')
   })
 
   test('accepts {db.app.url} only in env contents for a provisioned postgres allocation', () => {

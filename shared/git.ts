@@ -22,7 +22,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 
 let listedLocalEnvVars: string[] | undefined
 
-const ORCH_GIT_ROUTING = ['ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF'] as const
+const ORCH_GIT_ROUTING = ['BOTTEGA_GUARDED_GIT_COMMON_DIR', 'BOTTEGA_ALLOWED_GIT_REF'] as const
 
 function localEnvVarQueryEnv(): NodeJS.ProcessEnv {
   return { PATH: process.env.PATH ?? '/usr/bin:/bin' }

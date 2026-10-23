@@ -11,12 +11,23 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { applySetupActions } from './setup-apply.ts'
+import {
+  applySetupActions as applySetupActionsWithService,
+  type SetupEnvironmentService,
+  type SetupProjectService,
+} from './setup-apply.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
+
+const applySetupActions = (
+  actions: SetupAction[],
+  service: SetupProjectService,
+  runner?: Parameters<typeof applySetupActionsWithService>[3],
+  environment: SetupEnvironmentService = { migrateEnvironment: async () => null },
+) => applySetupActionsWithService(actions, service, environment, runner)
 
 const action = (name: string): SetupAction => ({
   kind: 'add',
@@ -195,6 +206,44 @@ test('stops at the first refusal and marks remaining actions not attempted', asy
   expect(attempted).toEqual(['one', 'two'])
   expect(results.map((result) => result.status)).toEqual(['applied', 'refused', 'not-attempted'])
   expect(results[1]?.message).toBe('service refused two')
+})
+
+test('applies the required environment migration before later actions and its refusal stops setup', async () => {
+  const attempted: string[] = []
+  const service: SetupProjectService = {
+    add: async (candidate: { name: string }) => {
+      attempted.push(candidate.name)
+    },
+    fillAbsent: async () => {},
+  }
+  const environment: SetupEnvironmentService = {
+    migrateEnvironment: async () => {
+      attempted.push('environment')
+      return 'migrated'
+    },
+  }
+  const results = await applySetupActions(
+    [{ kind: 'migrate-environment' }, action('project')],
+    service,
+    undefined,
+    environment,
+  )
+  expect(attempted).toEqual(['environment', 'project'])
+  expect(results.map(({ status }) => status)).toEqual(['applied', 'applied'])
+
+  attempted.length = 0
+  environment.migrateEnvironment = async () => {
+    attempted.push('environment')
+    throw new Error('environment refused')
+  }
+  const refused = await applySetupActions(
+    [{ kind: 'migrate-environment' }, action('project')],
+    service,
+    undefined,
+    environment,
+  )
+  expect(attempted).toEqual(['environment'])
+  expect(refused.map(({ status }) => status)).toEqual(['refused', 'not-attempted'])
 })
 
 test('applies an MCP configuration migration once and then reports unchanged', async () => {

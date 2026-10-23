@@ -9,7 +9,7 @@ export function registerHostedCanonProofs(
 ): void {
   registerOwnedCanonPrivacyProof(authIds, subjectFixture)
   test('canon import deletes an omitted existing row', async () => {
-    await proveCanonImports(process.env.ORCH_RECORD_API_URL!, {
+    await proveCanonImports(process.env.BOTTEGA_RECORD_API_URL!, {
       Authorization: `Bearer ${token()}`,
       'content-type': 'application/json',
     })
