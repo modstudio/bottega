@@ -215,28 +215,31 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   )
 }
 
-export function db(): Database {
-  if (databaseAccess.active()) {
-    if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
-    const legacyRefusal = legacyDatabaseRefusal()
-    if (legacyRefusal) throw new Error(legacyRefusal)
-    assertTestHubDatabasePath()
-    if (!existsSync(DB_PATH)) throw new Error(missingHubDatabaseMessage())
-    const access = hubStoreAccess(restrictedActor, DB_PATH)
-    const databasePath =
-      access.openMode === 'read-only-immutable'
-        ? `${pathToFileURL(DB_PATH).href}?immutable=1`
-        : DB_PATH
-    readOnlyHandle = new Database(databasePath, { readonly: true })
-    readOnlyHandle.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-    const refused = migrationRefusal(readOnlyHandle)
-    if (refused) {
-      readOnlyHandle.close()
-      readOnlyHandle = null
-      throw new Error(refused)
-    }
-    return readOnlyHandle
+/** The read-only command handle: the same legacy, test-path and migration refusals as a writable open. */
+function commandReadOnlyDatabase(): Database {
+  if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
+  assertTestHubDatabasePath()
+  if (!existsSync(DB_PATH)) throw new Error(missingHubDatabaseMessage())
+  const access = hubStoreAccess(restrictedActor, DB_PATH)
+  const databasePath =
+    access.openMode === 'read-only-immutable'
+      ? `${pathToFileURL(DB_PATH).href}?immutable=1`
+      : DB_PATH
+  const opened = new Database(databasePath, { readonly: true })
+  opened.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  const refused = migrationRefusal(opened)
+  if (refused) {
+    opened.close()
+    throw new Error(refused)
   }
+  readOnlyHandle = opened
+  return opened
+}
+
+export function db(): Database {
+  if (databaseAccess.active()) return commandReadOnlyDatabase()
   if (handle) return refuseOrReloadStaleSchema(handle, false)
   // bun test sets NODE_ENV=test; an unset BOTTEGA_HUB_DB must not fall back to the live store.
   assertTestHubDatabasePath()
