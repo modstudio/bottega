@@ -1,9 +1,14 @@
 import { describe, expect, test } from 'bun:test'
+import { readEventLog, runEventsPath } from '../events.ts'
 import {
   decideSharedGitConfigChanges,
   parseConfigList,
+  recordSharedGitConfigSnapshotFailure,
   sharedGitConfigRepairRefusal,
+  sharedGitConfigRepairValues,
+  sharedGitConfigRepairVerification,
   sharedGitConfigSnapshotPath,
+  shouldRemoveSharedGitConfigSnapshot,
   shouldSnapshotSharedGitConfig,
 } from './shared-git-config.ts'
 
@@ -126,6 +131,66 @@ describe('writing-run shared git config decision', () => {
   test('keeps the snapshot beside the run directory rather than in worker scratch', () => {
     expect(sharedGitConfigSnapshotPath('run-1', '/runs')).toBe(
       '/runs/run-1/shared-git-config-snapshot.json',
+    )
+  })
+
+  test('does not restore a baseline value that names the run tree', () => {
+    const action = {
+      kind: 'repair' as const,
+      change: 'changed' as const,
+      key: 'core.hookspath',
+      namesRunTree: true,
+      oldValues: [`${tree}/baseline-hooks`, '/projects/app/.githooks'],
+      newValues: [`${tree}/worker-hooks`],
+    }
+
+    expect(sharedGitConfigRepairValues(action, tree)).toEqual({
+      retained: [],
+      restore: ['/projects/app/.githooks'],
+      removed: [`${tree}/worker-hooks`],
+    })
+  })
+
+  test('verifies only removed and restored values while allowing a concurrent value', () => {
+    const action = {
+      kind: 'repair' as const,
+      change: 'changed' as const,
+      key: 'core.hookspath',
+      namesRunTree: true,
+      oldValues: ['/projects/app/.githooks'],
+      newValues: [`${tree}/worker-hooks`],
+    }
+
+    expect(
+      sharedGitConfigRepairVerification(action, tree, [
+        '/projects/concurrent/.githooks',
+        '/projects/app/.githooks',
+      ]),
+    ).toBeNull()
+    expect(sharedGitConfigRepairVerification(action, tree, [`${tree}/worker-hooks`])).toContain(
+      'removed run-tree',
+    )
+    expect(sharedGitConfigRepairVerification(action, tree, [])).toContain('restored config value')
+  })
+
+  test('keeps snapshots when comparison did not run and removes them after comparison', () => {
+    expect(shouldRemoveSharedGitConfigSnapshot(false)).toBe(false)
+    expect(shouldRemoveSharedGitConfigSnapshot(true)).toBe(true)
+  })
+
+  test('records a failed snapshot persist and the missing-check consequence', () => {
+    const runId = 'failed-snapshot-persist'
+    recordSharedGitConfigSnapshotFailure(runId, {
+      ok: false,
+      configPath: '/repo/.git/config',
+      error: 'could not persist shared git config snapshot: permission denied',
+    })
+
+    expect(readEventLog(runEventsPath(runId))).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        text: expect.stringContaining('no shared-config check for this run'),
+      }),
     )
   })
 })

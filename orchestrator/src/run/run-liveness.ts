@@ -7,7 +7,10 @@ import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
+import {
+  liveWorktreeSharers,
+  teardownTerminalRunResources,
+} from '../resources/resource-ownership.ts'
 import {
   closeRunChainQuestions,
   QUESTION_CLOSE_CHAIN_STALE,
@@ -472,6 +475,18 @@ function reapDeadRun(
     return true
   }, d)
   if (!claimed) return
+  const skipReason = vendorAlive
+    ? `shared git config check skipped: vendor pid ${row.agent_pid} is still alive`
+    : row.worktree && liveWorktreeSharers(d, { record_id: id, worktree: row.worktree }).length
+      ? `shared git config check skipped: another live run still claims ${row.worktree}`
+      : null
+  if (skipReason) {
+    writeTransaction(() => {
+      d.query("UPDATE run SET error=error || '\n' || ? WHERE record_id=?").run(skipReason, id)
+      enqueueRunRecord(d, id, localMachineId, finishedAt)
+    }, d)
+    return
+  }
   // The check spawns git, so it runs after the claim commits rather than holding the write lock.
   const header = checkSharedGitConfig({ runId: id, job: row.job, worktree: row.worktree })
   if (!header) return

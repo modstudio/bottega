@@ -161,6 +161,17 @@ export function snapshotWritingRunSharedGitConfig(input: {
   }
 }
 
+export function recordSharedGitConfigSnapshotFailure(
+  runId: string,
+  snapshot: SharedGitConfigSnapshot | null,
+): void {
+  if (snapshot?.ok !== false) return
+  recordRunWarning(
+    runId,
+    `shared git config snapshot persist failed: ${snapshot.error}; no shared-config check for this run`,
+  )
+}
+
 function validConfigValues(value: unknown): value is GitConfigValues {
   return (
     Boolean(value) &&
@@ -214,15 +225,43 @@ function missingOldValues(
   return missing
 }
 
+export function sharedGitConfigRepairValues(
+  action: SharedGitConfigAction,
+  worktree: string,
+): { retained: GitConfigValue[]; restore: GitConfigValue[]; removed: GitConfigValue[] } {
+  const retained = action.newValues.filter((value) => !namesRunTree(value, worktree))
+  return {
+    retained,
+    restore: missingOldValues(action, retained).filter((value) => !namesRunTree(value, worktree)),
+    removed: action.newValues.filter((value) => namesRunTree(value, worktree)),
+  }
+}
+
+/** Verify only values this repair handled, leaving concurrent unrelated values alone. */
+export function sharedGitConfigRepairVerification(
+  action: SharedGitConfigAction,
+  worktree: string,
+  actual: readonly GitConfigValue[],
+): string | null {
+  const { restore, removed } = sharedGitConfigRepairValues(action, worktree)
+  if (removed.some((value) => actual.includes(value)))
+    return 'a removed run-tree config value remained after repair'
+  const available = [...actual]
+  for (const value of restore) {
+    const index = available.indexOf(value)
+    if (index < 0) return 'a restored config value was absent after repair'
+    available.splice(index, 1)
+  }
+  return null
+}
+
 /** Name repairs that Git's config CLI cannot reproduce before making any mutation. */
 export function sharedGitConfigRepairRefusal(
   action: SharedGitConfigAction,
   worktree: string,
 ): string | null {
-  const retained = action.newValues.filter((value) => !namesRunTree(value, worktree))
-  return missingOldValues(action, retained).includes(null)
-    ? 'cannot restore a valueless config entry'
-    : null
+  const { restore } = sharedGitConfigRepairValues(action, worktree)
+  return restore.includes(null) ? 'cannot restore a valueless config entry' : null
 }
 
 function restoreKey(
@@ -230,11 +269,10 @@ function restoreKey(
   action: SharedGitConfigAction,
   worktree: string,
 ): string | null {
-  const retained = action.newValues.filter((value) => !namesRunTree(value, worktree))
-  const restore = missingOldValues(action, retained)
+  const { restore, removed } = sharedGitConfigRepairValues(action, worktree)
   const refusal = sharedGitConfigRepairRefusal(action, worktree)
   if (refusal) return refusal
-  const offending = new Set(action.newValues.filter((value) => namesRunTree(value, worktree)))
+  const offending = new Set(removed)
   for (const value of offending) {
     if (value === null) continue
     const removed = gitConfig(configPath, ['--unset-all', action.key, exactValuePattern(value)])
@@ -251,10 +289,7 @@ function restoreKey(
   } catch (error) {
     return String((error as Error)?.message ?? error)
   }
-  const expected = [...retained, ...restore]
-  if (!valuesEqual(verified[action.key] ?? [], expected))
-    return 'config values did not match after repair'
-  return null
+  return sharedGitConfigRepairVerification(action, worktree, verified[action.key] ?? [])
 }
 
 function actionDescription(action: SharedGitConfigAction, configPath: string): string {
@@ -265,41 +300,88 @@ function validatedTerminalConfigTarget(
   runId: string,
   worktree: string,
   storedPath: string,
-): string | null {
+): { target: string | null; reason: string | null } {
   const commonDir = commonGitDir(worktree)
   const target = commonDir ? join(commonDir, 'config') : null
   if (!target || target !== storedPath) {
-    recordRunWarning(
-      runId,
-      `shared git config check could not run: stored config path does not match the run worktree's common config`,
-    )
-    return null
+    const reason = `shared git config check could not run: stored config path does not match the run worktree's common config`
+    recordRunWarning(runId, reason)
+    return { target: null, reason }
   }
   try {
     if (lstatSync(target).isSymbolicLink()) {
-      recordRunWarning(runId, `shared git config check could not run: ${target} is a symlink`)
-      return null
+      const reason = `shared git config check could not run: ${target} is a symlink`
+      recordRunWarning(runId, reason)
+      return { target: null, reason }
     }
   } catch (error) {
-    recordRunWarning(
-      runId,
-      `shared git config check could not run: could not inspect ${target}: ${String((error as Error)?.message ?? error)}`,
-    )
-    return null
+    const reason = `shared git config check could not run: could not inspect ${target}: ${String((error as Error)?.message ?? error)}`
+    recordRunWarning(runId, reason)
+    return { target: null, reason }
   }
-  return target
+  return { target, reason: null }
 }
 
-function terminalConfigValues(runId: string, target: string): GitConfigValues | null {
+function terminalConfigValues(
+  runId: string,
+  target: string,
+): { values: GitConfigValues | null; reason: string | null } {
   try {
-    return readSharedGitConfig(target)
+    return { values: readSharedGitConfig(target), reason: null }
   } catch (error) {
-    recordRunWarning(
-      runId,
-      `shared git config check could not compare ${target}: ${String((error as Error)?.message ?? error)}`,
-    )
-    return null
+    const reason = `shared git config check could not compare ${target}: ${String((error as Error)?.message ?? error)}`
+    recordRunWarning(runId, reason)
+    return { values: null, reason }
   }
+}
+
+export function shouldRemoveSharedGitConfigSnapshot(comparisonRan: boolean): boolean {
+  return comparisonRan
+}
+
+function keptSnapshotHeader(snapshotPath: string, reason: string): string {
+  return `${reason}; shared git config snapshot kept for a later pass at ${snapshotPath}`
+}
+
+function loadTerminalComparison(input: { runId: string; worktree: string; snapshotPath: string }):
+  | {
+      ok: true
+      snapshot: Extract<SharedGitConfigSnapshot, { ok: true }>
+      target: string
+      after: GitConfigValues
+    }
+  | { ok: false; header: string } {
+  const snapshot = readSnapshotArtifact(input.snapshotPath)
+  if (!snapshot.ok) {
+    const reason = `shared git config check could not run: ${snapshot.error}`
+    recordRunWarning(input.runId, reason)
+    return { ok: false, header: keptSnapshotHeader(input.snapshotPath, reason) }
+  }
+  const targetResult = validatedTerminalConfigTarget(
+    input.runId,
+    input.worktree,
+    snapshot.configPath,
+  )
+  if (!targetResult.target) {
+    return {
+      ok: false,
+      header: keptSnapshotHeader(
+        input.snapshotPath,
+        targetResult.reason ?? 'shared git config check did not run',
+      ),
+    }
+  }
+  const afterResult = terminalConfigValues(input.runId, targetResult.target)
+  if (!afterResult.values) {
+    return {
+      ok: false,
+      header: keptSnapshotHeader(
+        input.snapshotPath,
+        afterResult.reason ?? 'shared git config check did not run',
+      ),
+    }
+  }
+  return { ok: true, snapshot, target: targetResult.target, after: afterResult.values }
 }
 
 /** Compare at terminal, repair only run-tree paths, and leave all other changes visible. */
@@ -311,16 +393,16 @@ export function terminalSharedGitConfigHeader(input: {
 }): string | null {
   if (!input.expected || !input.worktree) return null
   const snapshotPath = sharedGitConfigSnapshotPath(input.runId, input.runsDir)
+  let comparisonRan = false
   try {
-    const snapshot = readSnapshotArtifact(snapshotPath)
-    if (!snapshot.ok) {
-      recordRunWarning(input.runId, `shared git config check could not run: ${snapshot.error}`)
-      return null
-    }
-    const target = validatedTerminalConfigTarget(input.runId, input.worktree, snapshot.configPath)
-    if (!target) return null
-    const after = terminalConfigValues(input.runId, target)
-    if (!after) return null
+    const comparison = loadTerminalComparison({
+      runId: input.runId,
+      worktree: input.worktree,
+      snapshotPath,
+    })
+    if (!comparison.ok) return comparison.header
+    const { snapshot, target, after } = comparison
+    comparisonRan = true
     const headers: string[] = []
     for (const action of decideSharedGitConfigChanges(snapshot.values, after, input.worktree)) {
       const description = actionDescription(action, target)
@@ -341,14 +423,16 @@ export function terminalSharedGitConfigHeader(input: {
     }
     return headers.length ? headers.join('\n') : null
   } finally {
-    try {
-      unlinkSync(snapshotPath)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
-        recordRunWarning(
-          input.runId,
-          `shared git config snapshot cleanup failed for ${snapshotPath}`,
-        )
+    if (shouldRemoveSharedGitConfigSnapshot(comparisonRan)) {
+      try {
+        unlinkSync(snapshotPath)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+          recordRunWarning(
+            input.runId,
+            `shared git config snapshot cleanup failed for ${snapshotPath}`,
+          )
+      }
     }
   }
 }

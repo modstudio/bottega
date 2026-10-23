@@ -111,6 +111,48 @@ describe('reapStale', () => {
     ).toContain('shared git config changed: user.name')
   })
 
+  test('a stale run keeps shared config untouched while its vendor is alive', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, process.pid, '/trees/run', id)
+    let checks = 0
+
+    expect(
+      reapStale(db(), () => {
+        checks++
+        return null
+      }),
+    ).toBe(1)
+    expect(checks).toBe(0)
+    expect(
+      (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+    ).toContain(`vendor pid ${process.pid} is still alive`)
+  })
+
+  test('a stale run keeps shared config untouched while another live run claims its tree', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, 4194304, '/trees/shared', id)
+    db()
+      .query('UPDATE run SET pid=?, worktree=? WHERE record_id=?')
+      .run(process.pid, '/trees/shared', sharer)
+    let checks = 0
+
+    expect(
+      reapStale(db(), () => {
+        checks++
+        return null
+      }),
+    ).toBe(1)
+    expect(checks).toBe(0)
+    expect(
+      (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+    ).toContain('another live run still claims /trees/shared')
+  })
+
   test('a competing stale reaper does not run the shared config check after losing the status guard', () => {
     const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
     db()

@@ -281,6 +281,19 @@ test('stop appends and presents a shared git config result header', async () => 
   ).toBe(`stopped by architect\n${header}`)
 })
 
+test('abandon appends and presents a shared git config result header', async () => {
+  const id = insert('asking')
+  const header = 'shared git config repair failed for core.worktree in /repo/.git/config'
+
+  const result = await invoke('abandon', id, { checkSharedGitConfig: () => header })
+
+  expect(result.code).toBe(0)
+  expect(result.out).toContain(header)
+  expect(
+    (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+  ).toBe(`abandoned by architect\n${header}`)
+})
+
 test('stop records a setup run with no vendor and signals nothing', async () => {
   const id = insert('running')
   db().query('UPDATE run SET pid=? WHERE record_id=?').run(42402, id)
