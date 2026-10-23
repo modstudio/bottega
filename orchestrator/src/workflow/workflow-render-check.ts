@@ -4,6 +4,7 @@
 import { MissingWorkflowInjectionFactsError } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
+import { shipToRungNames } from './ship-to-reach.ts'
 import type { CatalogueStep, StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
 import { resolveWorkflowProjectFacts, stepNeedsCloseState } from './workflow-project-facts.ts'
@@ -114,12 +115,15 @@ function standInArguments(
 ): Record<string, string> {
   const release = project.settings.release
   return Object.fromEntries(
-    definition.arguments.map(({ name }) => {
-      if (name === 'key') return [name, 'DEV-1']
-      if (name === 'branch') return [name, 'render-check']
-      if (name === 'worktree') return [name, '/tmp/render-check']
-      if (name === 'depth' && release?.rungs[0]) return [name, release.rungs[0].name]
-      return [name, 'render-check']
+    definition.arguments.flatMap(({ name }) => {
+      if (name === 'key') return [[name, 'DEV-1']]
+      if (name === 'branch') return [[name, 'render-check']]
+      if (name === 'worktree') return [[name, '/tmp/render-check']]
+      if (name === 'depth') {
+        const rungName = shipToRungNames(release?.rungs ?? [])[0]
+        return rungName ? [[name, rungName]] : []
+      }
+      return [[name, 'render-check']]
     }),
   )
 }

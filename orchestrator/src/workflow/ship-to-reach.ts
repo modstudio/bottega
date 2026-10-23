@@ -7,6 +7,10 @@ export type ShipToReachDecision =
   | { allowed: true; mayMerge: boolean; reach: string[]; remaining: string[] }
   | { allowed: false; refusal: string }
 
+export function shipToRungNames(rungs: readonly { name: string; onDemand?: boolean }[]): string[] {
+  return rungs.filter(({ onDemand }) => !onDemand).map(({ name }) => name)
+}
+
 export function decideShipToReach(
   level: ShipToValue,
   rungs: readonly string[],

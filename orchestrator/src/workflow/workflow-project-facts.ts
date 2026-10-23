@@ -11,7 +11,7 @@ import {
 } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
-import { decideShipToReach } from './ship-to-reach.ts'
+import { decideShipToReach, shipToRungNames } from './ship-to-reach.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
 
@@ -80,11 +80,7 @@ function shipToFact(
     throw new Error(
       `ship-to depth "${depthRung.name}" names a rung released on demand with ${PLATFORM_SLUG} release run ${project.name} --rung ${depthRung.name} and cannot be a ship-to depth`,
     )
-  const decision = decideShipToReach(
-    autonomy.shipTo.value,
-    rungs.filter(({ onDemand }) => !onDemand).map(({ name }) => name),
-    args.depth,
-  )
+  const decision = decideShipToReach(autonomy.shipTo.value, shipToRungNames(rungs), args.depth)
   if (!decision.allowed) throw new Error(decision.refusal)
   const tracker = needsCloseState
     ? (projectFacts.tracker as {
