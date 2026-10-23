@@ -325,6 +325,22 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     ).toBe(project.recordId)
   })
 
+  test('a project with pull request CI evidence refuses removal', () => {
+    upsertProject({ recordId: newRecordId(), name: 'kept-ci', path: '/w/kept-ci' })
+    const project = projectByName('kept-ci')!
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO pull_request_ci
+         (record_id,project,project_record_id,pr_number,record_kind,complete,recorded_at)
+         VALUES (?, ?, ?, 42, 'collection', 1, 't')`,
+      )
+      .run(newRecordId(), project.name, project.recordId)
+    expect(() => removeProject(project.name)).toThrow(
+      'project kept-ci is referenced by 1 pull_request_ci(s)',
+    )
+  })
+
   test('a project with nothing referencing it still removes', () => {
     upsertProject({ recordId: newRecordId(), name: 'ephemeral', path: '/w/ephemeral' })
     expect(removeProject('ephemeral')).toBe(true)

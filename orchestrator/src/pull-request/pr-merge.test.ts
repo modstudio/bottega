@@ -63,7 +63,7 @@ function adapter(
       database: ReturnType<typeof db>,
     ) => string | null
     recordLandings?: () => void
-    recordCi?: () => void
+    recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
   } = {},
 ): PullRequestMergeAdapter {
@@ -164,10 +164,46 @@ test('a successful merge records CI evidence after the forge reports the merge',
         calls.push('merge')
         return 'merged-oid'
       },
-      recordCi: () => calls.push('record-ci'),
+      recordCi: () => {
+        calls.push('record-ci')
+        return undefined
+      },
     }),
   )
   expect(calls).toEqual(['merge', 'record-ci'])
+})
+
+test('an incomplete CI record is merge residue with the shared retry remedy', () => {
+  registerProject(['test'])
+  const incomplete = `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: 'check' }],
+      recordCi: () => incomplete,
+    }),
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain(incomplete)
+})
+
+test('a thrown CI fetch failure is merge residue with the shared retry remedy', () => {
+  registerProject(['test'])
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: 'check' }],
+      recordCi: () => {
+        throw new Error('workflow runs unavailable')
+      },
+    }),
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain(
+    `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`,
+  )
 })
 
 test('a cleanup failure reports its retry without undoing a successful merge', () => {

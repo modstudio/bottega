@@ -52,6 +52,7 @@ export function fakePostgres(
     id: PROJECT_ID,
     name: PLATFORM_NAME,
   },
+  evidenceCollisionId?: string,
 ): {
   sql: SQL
   statements: string[]
@@ -127,6 +128,13 @@ export function fakePostgres(
       parameters.push(values ?? [])
       if (source.includes('owned_reference'))
         return runReferenceAvailable ? [{ id: values?.[0] }] : []
+      if (
+        evidenceCollisionId &&
+        source.startsWith('SELECT id FROM pull_request_ci WHERE id=') &&
+        !source.includes('space_id=')
+      ) {
+        return [{ id: evidenceCollisionId }]
+      }
       if (source.toLowerCase().includes('insert into "run"')) {
         runWrites++
         await onRunWrite?.(runWrites)

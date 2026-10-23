@@ -28,6 +28,51 @@ import { syncRecord } from './record-sync.ts'
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
   OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
+const PULL_REQUEST_CI_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.pull_request_ci.columns
+
+function localPullRequestCiOutbox(): Database {
+  const local = new Database(':memory:')
+  local.exec(`CREATE TABLE outbox (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
+    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
+    quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
+  );
+  CREATE TABLE outbox_quarantine_audit (
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
+    error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
+    at TEXT NOT NULL, reason TEXT
+  ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
+  const payload = Object.fromEntries(
+    PULL_REQUEST_CI_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]),
+  )
+  Object.assign(payload, {
+    id: RECORD_ID,
+    spaceId: '01990000-0000-7000-8000-000000000001',
+    projectName: PLATFORM_SLUG,
+    projectId: PROJECT_ID,
+    machineId: MACHINE_ID,
+    prNumber: 1249,
+    recordKind: 'attempt',
+    workflowRunId: '39882868998',
+    runAttempt: 1,
+    workflowName: 'check',
+    event: 'pull_request',
+    headCommit: '088d0f087',
+    conclusion: 'success',
+    failedJobs: [],
+    workflowCreatedAt: STAMP,
+    workflowCompletedAt: STAMP,
+    recordedAt: STAMP,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  })
+  local
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'pull_request_ci',?,?,?)",
+    )
+    .run(newRecordId(), RECORD_ID, JSON.stringify(payload), STAMP)
+  return local
+}
 
 function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) => void): Database {
   const local = new Database(':memory:')
@@ -209,6 +254,43 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"')),
   ).toHaveLength(firstRunWrites)
   local.close()
+})
+
+test('pull request CI sync inserts, replays idempotently, and refuses another owner', async () => {
+  const local = localPullRequestCiOutbox()
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  local.query('UPDATE outbox SET synced_at=NULL').run()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(
+    remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "pull_request_ci"')),
+  ).toHaveLength(2)
+  local.close()
+
+  const collisionLocal = localPullRequestCiOutbox()
+  const collisionRemote = fakePostgres(
+    false,
+    RECORD_ACTOR_ROLE,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    RECORD_ID,
+  )
+  expect(await syncRecord(options(collisionLocal, collisionRemote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+  })
+  expect(
+    collisionLocal.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!
+      .last_error,
+  ).toContain('already owned by another machine or user')
+  expect(
+    collisionRemote.statements.some((sql) =>
+      sql.toLowerCase().includes('insert into "pull_request_ci"'),
+    ),
+  ).toBe(false)
+  collisionLocal.close()
 })
 
 test('run sync accepts a null resource source', async () => {
