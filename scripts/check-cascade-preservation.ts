@@ -33,6 +33,13 @@ type Migration = { tag: string; source: string }
 type AstNode = Node & Record<string, unknown>
 type ForeignKey = { parent: string; dependent: string }
 
+// These migrations insert dependents before their parents and rely on the migrator's foreign_keys=OFF.
+const MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF = new Set([
+  '0115_project_identity_contract',
+  '0117_project_uuid_key',
+  '0124_run_uuid_key',
+])
+
 const PROJECT_UUID_REBUILD_CASCADE_EDGES = [
   ['workflow_cursor', 'workflow_step_text'],
   ['run', 'question'],
@@ -675,12 +682,11 @@ function counts(database: Database): Map<string, number> {
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
   if (!stripSqlComments(ddl).trim()) return
-  const rebuildsRequiredProjectIdentity =
-    migration.tag === '0115_project_identity_contract' || migration.tag === '0117_project_uuid_key'
+  const replayWithForeignKeysOff = MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF.has(migration.tag)
   const legacyAlterTable = (
     database.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
   ).legacy_alter_table
-  if (rebuildsRequiredProjectIdentity)
+  if (replayWithForeignKeysOff)
     database.exec('PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=OFF')
   try {
     database.exec('BEGIN IMMEDIATE')
@@ -699,7 +705,7 @@ function execute(database: Database, migration: Migration): void {
     }
     throw error
   } finally {
-    if (rebuildsRequiredProjectIdentity) {
+    if (replayWithForeignKeysOff) {
       database.exec('PRAGMA foreign_keys=ON')
       database.exec(`PRAGMA legacy_alter_table=${legacyAlterTable}`)
     }

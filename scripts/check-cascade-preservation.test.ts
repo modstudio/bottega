@@ -214,6 +214,25 @@ test('execution probe observes a cascading row loss', () => {
   ])
 })
 
+test('execution probe disables foreign keys only for migrations applied that way by the migrator', () => {
+  const childBeforeParent = `
+    INSERT INTO child (id, parent_id) VALUES (1, 1);
+    INSERT INTO parent (id) VALUES (1);`
+
+  expect(
+    probeMigrations([
+      { tag: '0000_schema', source: schema },
+      { tag: '0124_run_uuid_key', source: childBeforeParent },
+    ]),
+  ).toEqual({ risks: [], unprobed: [] })
+  expect(() =>
+    probeMigrations([
+      { tag: '0000_schema', source: schema },
+      { tag: '0123_other_migration', source: childBeforeParent },
+    ]),
+  ).toThrow('FOREIGN KEY constraint failed')
+})
+
 test('execution probe chooses a value permitted by a CHECK constraint', () => {
   const result = probeMigrations([
     {
