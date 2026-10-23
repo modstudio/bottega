@@ -12,10 +12,13 @@ import {
   type AutonomyValue,
   autonomyStages,
   catalogueStepsForAutonomy,
+  isHostedAutonomyScope,
   type ShipTo,
   type StageAutonomyValue,
+  staleHostedAutonomyWinner,
+  staleHostedScope,
 } from './autonomy.ts'
-import { HOSTED_AUTONOMY_SCOPE_NAMES, resolveProjectAutonomy } from './autonomy-scopes.ts'
+import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
 import { showResolvedStepCatalogue } from './step-catalogue.ts'
 
@@ -117,8 +120,6 @@ function renderSlice(
   ].join('\n')
 }
 
-const hostedScopes = new Set<string>(HOSTED_AUTONOMY_SCOPE_NAMES)
-
 export function staleSessionContext(
   slice: Extract<ArchitectSessionContext, { registered: true }>,
   resolvedAt: string,
@@ -126,22 +127,22 @@ export function staleSessionContext(
 ): ArchitectSessionContext {
   let stale = false
   const staleScope = (scope: string) => {
-    if (!hostedScopes.has(scope)) return scope
-    stale = true
-    return `${scope} (stale)`
+    const marked = staleHostedScope(scope)
+    if (isHostedAutonomyScope(scope)) stale = true
+    return marked
   }
   const stages = slice.stages.map((stage): StageSlice => {
     if (stage.agreed)
       return {
         ...stage,
-        value: hostedScopes.has(stage.scope) && stage.value === 'auto' ? 'review' : stage.value,
+        ...staleHostedAutonomyWinner(stage),
         scope: staleScope(stage.scope),
       }
     return {
       ...stage,
       values: stage.values.map((item) => ({
         ...item,
-        value: hostedScopes.has(item.scope) && item.value === 'auto' ? 'review' : item.value,
+        ...staleHostedAutonomyWinner(item),
         scope: staleScope(item.scope),
       })),
     }

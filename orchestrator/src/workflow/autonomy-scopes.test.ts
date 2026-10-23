@@ -154,7 +154,15 @@ test('a timed-out hosted read resolves from the cached hosted copy and names its
       version: 1,
       resolvedAt: '2026-10-22T12:00:00.000Z',
       project: 'fixture',
-      hosted: { user: { rulings: 'agent', shipTo: 'trunk' }, space: {} },
+      hosted: {
+        user: {
+          rulings: 'agent',
+          shipTo: 'trunk',
+          stages: { ship: 'auto' },
+          steps: { verify: 'auto' },
+        },
+        space: {},
+      },
     },
     environment,
   )
@@ -169,13 +177,15 @@ test('a timed-out hosted read resolves from the cached hosted copy and names its
     database(),
     environment,
     10,
-    [],
+    ['ship'],
     undefined,
     () => new Date('2026-10-22T12:02:00.000Z'),
   )
 
-  expect(result.rulings).toEqual({ value: 'agent', scope: 'hosted user' })
-  expect(result.shipTo).toEqual({ value: 'trunk', scope: 'hosted user' })
+  expect(result.rulings).toEqual({ value: 'agent', scope: 'hosted user (stale)' })
+  expect(result.shipTo).toEqual({ value: 'trunk', scope: 'hosted user (stale)' })
+  expect(result.stages?.ship).toEqual({ value: 'review', scope: 'hosted user (stale)' })
+  expect(result.steps.verify).toEqual({ value: 'review', scope: 'hosted user (stale)' })
   expect(result.note).toBe(
     'hosted autonomy settings unavailable: timed out after 10 ms; resolved from cached hosted autonomy settings, local and project scopes (cache age 120000 ms)',
   )
@@ -284,6 +294,32 @@ test('answer refuses an unavailable hosted resolution without a cached copy or h
     10,
   )
   expect(answerRulingRefusal(rulings, false)).toStartWith('rulings could not be resolved:')
+})
+
+test('answer resolves an unavailable hosted read from the session-context cache', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'autonomy-answer-state-'))
+  const environment = { ...missingConfig, BOTTEGA_STATE_HOME: state }
+  writeSessionContextCache(
+    {
+      version: 1,
+      resolvedAt: '2026-10-22T12:00:00.000Z',
+      project: 'fixture',
+      hosted: { user: { rulings: 'agent' }, space: {} },
+    },
+    environment,
+  )
+
+  const rulings = await resolveAnswerRulings(
+    'fixture',
+    null,
+    timeoutClient,
+    database(),
+    environment,
+    10,
+  )
+
+  expect(rulings).toEqual({ value: 'agent', scope: 'hosted user (stale)' })
+  expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
 
 test('answer proceeds after unavailable hosted config when local project decides rulings', async () => {
