@@ -17,6 +17,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../mcp/mcp-probe.ts',
   'orch.ts',
   '../outcome.ts',
+  '../run-owned-paths.ts',
   '../run/question-open.ts',
   '../run/run-identifier.ts',
   '../collect/result-output.ts',

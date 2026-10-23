@@ -24,6 +24,8 @@ export function startWorkerExecutionBrokers(input: {
   scratchDir: string
   environment: Record<string, string>
   confinement: BrokerConfinement
+  onExecutionStart: () => void
+  onExecutionFinish: () => void
   onGateStart: (at: string) => void
   onGateFinish: (at: string) => void
 }): WorkerExecutionBrokers | null {
@@ -46,8 +48,22 @@ export function startWorkerExecutionBrokers(input: {
       environment,
       confinement: input.confinement,
       registerActive: registerLiveGate,
-      onExecutionStart: ({ at }) => input.onGateStart(at),
-      onExecutionFinish: ({ at }) => input.onGateFinish(at),
+      onExecutionStart: ({ at }) => {
+        input.onExecutionStart()
+        try {
+          input.onGateStart(at)
+        } catch (error) {
+          input.onExecutionFinish()
+          throw error
+        }
+      },
+      onExecutionFinish: ({ at }) => {
+        try {
+          input.onGateFinish(at)
+        } finally {
+          input.onExecutionFinish()
+        }
+      },
     }),
     focusedTests: input.writesRepo
       ? startFocusedTestBroker({
@@ -56,6 +72,8 @@ export function startWorkerExecutionBrokers(input: {
           environment,
           confinement: input.confinement,
           registerActive: registerLiveGate,
+          onExecutionStart: input.onExecutionStart,
+          onExecutionFinish: input.onExecutionFinish,
         })
       : null,
   }

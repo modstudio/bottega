@@ -26,8 +26,8 @@ export type ClaimResult = {
   mcpSetupHeader: string | null
   mcpTrustGranted: boolean
   grokMcpEnvironment: Record<string, string>
-  sandboxRunDir: string
-  sandboxRunDirExisted: boolean
+  runtimeDir: string
+  runtimeDirExisted: boolean
   cwd: string
   prompt: string
   mcpConnection: McpConnection | null

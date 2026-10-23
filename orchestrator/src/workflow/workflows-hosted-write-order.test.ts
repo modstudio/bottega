@@ -27,18 +27,19 @@ const whoami = async () => ({
   personalSpaceId: SPACE,
   memberships: [],
 })
-function installHostedCatalogue(): void {
+function installHostedCatalogue(): (table: string) => Record<string, unknown>[] {
   const local = db(),
     ownerId = newRecordId(),
     versionId = newRecordId()
-  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+  const identity = {
     id: ownerId,
     spaceId: SPACE,
     slug: 'shared',
+    generation: 1,
     createdAt: at,
     updatedAt: at,
-  })
-  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+  }
+  const version = {
     id: versionId,
     spaceId: SPACE,
     ownerId,
@@ -51,7 +52,14 @@ function installHostedCatalogue(): void {
     promotedAt: at,
     retiredAt: null,
     updatedAt: at,
-  })
+  }
+  applyWorkflowCatalogueRow(local, 'step_catalogue', identity)
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', version)
+  return (table) => {
+    if (table === 'step_catalogue') return [identity]
+    if (table === 'step_catalogue_version') return [version]
+    return []
+  }
 }
 afterEach(() => {
   delete process.env.ORCH_RECORD_API_URL
@@ -159,7 +167,7 @@ test('hosted set failure is inert and success adopts identity, version, and even
 })
 
 test('hosted promote failure leaves draft state and success adopts promoted status and event id', async () => {
-  installHostedCatalogue()
+  const hostedCatalogueItems = installHostedCatalogue()
   const local = db(),
     definition = productionWorkflows(local, null)[0]!.definition
   const ownerId = newRecordId(),
@@ -202,7 +210,7 @@ test('hosted promote failure leaves draft state and success adopts promoted stat
     if (table === 'workflow') return [identity]
     if (table === 'workflow_version') return [draftVersion]
     if (table === 'workflow_event') return [setEvent]
-    return []
+    return hostedCatalogueItems(table)
   }
   process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
@@ -291,6 +299,8 @@ type SharedFixtureSpace = {
   identity: RecordWorkflowWriteResponse['identity']
   versions: RecordWorkflowWriteResponse['versions']
   events: (RecordWorkflowWriteResponse['events'][number] & { updatedAt: string })[]
+  catalogueIdentity: RecordWorkflowWriteResponse['identity']
+  catalogueVersions: RecordWorkflowWriteResponse['versions']
 }
 
 function addSharedFixtureSpace(
@@ -355,36 +365,42 @@ function addSharedFixtureSpace(
       updatedAt: at,
     },
   ]
-  state.set(spaceId, { identity, versions, events })
   applyWorkflowCatalogueRow(local, 'workflow', identity)
   for (const version of versions) applyWorkflowCatalogueRow(local, 'workflow_version', version)
   for (const event of events) applyWorkflowCatalogueRow(local, 'workflow_event', event)
   const catalogueOwner = newRecordId()
-  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+  const catalogueIdentity = {
     id: catalogueOwner,
     spaceId,
     slug: 'shared',
     generation: 1,
     createdAt: at,
     updatedAt: at,
-  })
-  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
-    id: newRecordId(),
-    spaceId,
-    ownerId: catalogueOwner,
-    n: 1,
-    status: 'production',
-    definition: JSON.stringify(productionStepCatalogue(local).definition),
-    author: 'test',
-    reason: 'test',
-    createdAt: at,
-    promotedAt: at,
-    retiredAt: null,
-    updatedAt: at,
-  })
+  }
+  const catalogueVersions: RecordWorkflowWriteResponse['versions'] = [
+    {
+      id: newRecordId(),
+      spaceId,
+      ownerId: catalogueOwner,
+      n: 1,
+      status: 'production',
+      definition: JSON.stringify(productionStepCatalogue(local).definition),
+      author: 'test',
+      reason: 'test',
+      createdAt: at,
+      promotedAt: at,
+      retiredAt: null,
+      updatedAt: at,
+    },
+  ]
+  state.set(spaceId, { identity, versions, events, catalogueIdentity, catalogueVersions })
+  applyWorkflowCatalogueRow(local, 'step_catalogue', catalogueIdentity)
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', catalogueVersions[0]!)
 }
 
 function sharedFixtureItems(table: string, current: SharedFixtureSpace): Record<string, unknown>[] {
+  if (table === 'step_catalogue') return [current.catalogueIdentity]
+  if (table === 'step_catalogue_version') return current.catalogueVersions
   if (table === 'workflow') return [current.identity]
   if (table === 'workflow_version') return current.versions
   if (table === 'workflow_event') return current.events
@@ -393,6 +409,7 @@ function sharedFixtureItems(table: string, current: SharedFixtureSpace): Record<
 
 function installSharedPromotionFixture(
   options: {
+    catalogueAdvance?: boolean
     currentProduction?: boolean
     pinned?: boolean
     secondFollower?: boolean
@@ -453,6 +470,27 @@ function installSharedPromotionFixture(
       true,
     )
 
+  if (options.catalogueAdvance) {
+    const source = state.get(SPACE)!
+    source.catalogueVersions[0]!.status = 'retired'
+    source.catalogueVersions[0]!.retiredAt = at
+    const nextCatalogue = structuredClone(productionStepCatalogue(local).definition)
+    nextCatalogue.steps.push({ ...nextCatalogue.steps[0]!, slug: 'new-shared-step' })
+    source.catalogueVersions.push({
+      ...source.catalogueVersions[0]!,
+      id: newRecordId(),
+      n: 2,
+      status: 'production',
+      definition: JSON.stringify(nextCatalogue),
+      promotedAt: at,
+      retiredAt: null,
+    })
+    const sourceTarget = source.versions.find((version) => version.n === targetVersion)!
+    const targetDefinition = JSON.parse(sourceTarget.definition) as WorkflowDefinition
+    targetDefinition.modes[0]!.steps = ['new-shared-step']
+    sourceTarget.definition = JSON.stringify(targetDefinition)
+  }
+
   const calls: string[] = []
   process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
@@ -482,13 +520,16 @@ function installSharedPromotionFixture(
     async draftWorkflow(input, destination) {
       const spaceId = destination?.destinationSpaceId
       if (!spaceId) throw new Error('test expected a destination space')
-      calls.push(`draft:${spaceId}:${input.reason}`)
       const current = state.get(spaceId)!
+      const catalogue = input.kind === 'step_catalogue'
+      calls.push(`${catalogue ? 'catalogue-' : ''}draft:${spaceId}:${input.reason}`)
+      const versions = catalogue ? current.catalogueVersions : current.versions
+      const identity = catalogue ? current.catalogueIdentity : current.identity
       const version = {
         id: newRecordId(),
         spaceId,
-        ownerId: current.identity.id,
-        n: current.versions.length + 1,
+        ownerId: identity.id,
+        n: versions.length + 1,
         status: 'draft' as const,
         definition: input.definition!,
         author: input.author,
@@ -498,30 +539,33 @@ function installSharedPromotionFixture(
         retiredAt: null,
         updatedAt: at,
       }
-      current.versions.push(version)
-      return { identity: current.identity, versions: [version], events: [] }
+      versions.push(version)
+      return { identity, versions: [version], events: [] }
     },
     async promoteWorkflow(input, destination) {
       const spaceId = destination?.destinationSpaceId
       if (!spaceId) throw new Error('test expected a destination space')
-      calls.push(`promote:${spaceId}:${input.reason}`)
       const current = state.get(spaceId)!
-      for (const version of current.versions) {
+      const catalogue = input.kind === 'step_catalogue'
+      calls.push(`${catalogue ? 'catalogue-' : ''}promote:${spaceId}:${input.reason}`)
+      const versions = catalogue ? current.catalogueVersions : current.versions
+      const identity = catalogue ? current.catalogueIdentity : current.identity
+      for (const version of versions) {
         if (version.status === 'production') version.status = 'retired'
         if (version.n === input.n) version.status = 'production'
       }
       const event = {
         id: newRecordId(),
         spaceId,
-        ownerVersionId: current.versions.find((row) => row.n === input.n)!.id,
+        ownerVersionId: versions.find((row) => row.n === input.n)!.id,
         event: 'promote' as const,
         author: input.author,
         reason: input.reason,
         sessionId: null,
         at,
       }
-      current.events.push({ ...event, updatedAt: at })
-      return { identity: current.identity, versions: current.versions, events: [event] }
+      if (!catalogue) current.events.push({ ...event, updatedAt: at })
+      return { identity, versions, events: [event] }
     },
   })
   return { slug, calls, targetVersion, state }
@@ -540,6 +584,36 @@ test('shared hosted promotion reads every space, copies followers, and reports a
     `draft:${FOLLOWER_SPACE}:seed two`,
     `promote:${FOLLOWER_SPACE}:shared promotion: release`,
   ])
+})
+
+test('shared hosted promotion gives a follower the required catalogue before the workflow', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
+  expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
+    version: 2,
+    changedSpaces: ['local', SPACE, FOLLOWER_SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+  })
+  expect(fixture.calls).toEqual([
+    `catalogue-draft:${FOLLOWER_SPACE}:test`,
+    `catalogue-promote:${FOLLOWER_SPACE}:shared promotion: release`,
+    `promote:${SPACE}:shared promotion: release`,
+    `draft:${FOLLOWER_SPACE}:seed two`,
+    `promote:${FOLLOWER_SPACE}:shared promotion: release`,
+  ])
+})
+
+test('shared hosted promotion refuses before writing when a follower planned catalogue lacks a workflow step', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
+  const followerCatalogue = fixture.state.get(FOLLOWER_SPACE)!.catalogueVersions[0]!
+  const definition = JSON.parse(followerCatalogue.definition)
+  definition.steps[0].title = 'Follower override'
+  followerCatalogue.definition = JSON.stringify(definition)
+
+  await expect(promoteWorkflow(fixture.slug, 2, 'release')).rejects.toThrow(
+    'references missing step "new-shared-step"',
+  )
+  expect(fixture.calls).toEqual([])
 })
 
 test('shared hosted promotion keeps and reports a space-specific pin', async () => {

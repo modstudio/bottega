@@ -40,6 +40,7 @@ export const agentProbeModules = [
     '../../../shared/git.ts',
     './agents.ts',
     '../project/projects.ts',
+    '../run-owned-paths.ts',
     '../sandbox/sandbox.ts',
   ]),
   module('orchestrator/src/agent/agent-resume-probe.ts', [

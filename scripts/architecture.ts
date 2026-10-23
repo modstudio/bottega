@@ -320,6 +320,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './autonomy.ts',
+    './session-context-cache.ts',
     './step-catalogue.ts',
   ]),
   ...workflowCommandModules,

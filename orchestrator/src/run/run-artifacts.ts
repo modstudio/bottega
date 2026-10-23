@@ -25,6 +25,7 @@ import {
   runArtifactsDir as artifactDirectory,
   isPathAtOrBelow,
   namedArtifactPlan,
+  runSandboxDir as sandboxDirectory,
   runScratchDir as scratchDirectory,
 } from '../artifact-paths.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
@@ -285,7 +286,7 @@ export function noRepoIsolatePath(id: string, runsDir = RUNS_DIR): string {
 }
 
 export function runSandboxDir(id: string, runsDir = RUNS_DIR): string {
-  return join(runsDir, `sandbox-${id}`)
+  return sandboxDirectory(id, runsDir)
 }
 
 export const runArtifactsDir = (id: string, runsDir = RUNS_DIR): string =>

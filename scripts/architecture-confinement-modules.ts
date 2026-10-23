@@ -26,6 +26,7 @@ export const confinementModules: ConfinementModule[] = [
     '../no-follow-file.ts',
     '../project/projects.ts',
     '../resources/main-stack-network.ts',
+    '../run-owned-paths.ts',
     './sandbox-runtime.ts',
     './weaker-network-isolation.ts',
   ]),
