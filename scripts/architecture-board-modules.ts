@@ -46,6 +46,7 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
     '../record/record-api-client.ts',
     '../record/record-board-contract.ts',
+    './board-hosted-verification-policy.ts',
     './board-mode.ts',
     './board-policy.ts',
     './board-push-policy.ts',
@@ -54,6 +55,7 @@ export const boardModules: BoardModule[] = [
     './board-tags.ts',
     './board-thread-render.ts',
   ]),
+  module('orchestrator/src/board/board-hosted-verification-policy.ts', []),
   module('orchestrator/src/board/board-watch-decision.ts', []),
   module('orchestrator/src/board/board-watch-frames.ts', ['../record/record-board-stream.ts']),
   module('orchestrator/src/board/board-watch.ts', [

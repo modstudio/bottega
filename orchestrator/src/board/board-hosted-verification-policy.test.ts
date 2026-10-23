@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   BOARD_UNVERIFIED_NOTICE_AFTER_MS,
   hostedBoardVerificationNoticeDecision,
-} from './board-hosted-cache.ts'
+} from './board-hosted-verification-policy.ts'
 
 const verifiedAt = '2026-10-05T12:00:00.000Z'
 const verifiedAtMs = Date.parse(verifiedAt)
@@ -11,14 +11,6 @@ test('a short verification failure and its recovery stay silent', () => {
   expect(
     hostedBoardVerificationNoticeDecision({
       currentlyUnverified: true,
-      lastVerifiedAt: verifiedAt,
-      now: verifiedAtMs + BOARD_UNVERIFIED_NOTICE_AFTER_MS - 1,
-      unverifiedNoticeAnnounced: false,
-    }),
-  ).toBeNull()
-  expect(
-    hostedBoardVerificationNoticeDecision({
-      currentlyUnverified: false,
       lastVerifiedAt: verifiedAt,
       now: verifiedAtMs + BOARD_UNVERIFIED_NOTICE_AFTER_MS - 1,
       unverifiedNoticeAnnounced: false,

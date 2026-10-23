@@ -114,6 +114,9 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
     session,
     delivery.notices.map((row) => row.noticeId),
   )
+  const storedFailure = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: true })
+  expect(storedFailure.notices).toEqual([])
+  expect(storedFailure.warning).toBeNull()
   const measured = db()
     .query(
       `SELECT delivery_point,COUNT(DISTINCT emission_id) emissions,COUNT(*) messages
