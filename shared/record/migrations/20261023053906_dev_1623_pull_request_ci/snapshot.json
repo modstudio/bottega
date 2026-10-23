@@ -1,8 +1,8 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "5d690a5d-c591-4b45-9c6f-2c085ab2ccdb",
-  "prevIds": ["b5f4f7bf-f8df-47e5-8925-71508750e9e8", "bac5ecbf-369c-473e-a40d-a5b72964be4a"],
+  "id": "09d5de7b-eb84-4a98-b0c4-da52feec2d59",
+  "prevIds": ["ec2bd326-93c6-4f2d-8c19-f30b761896c6"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -4641,6 +4641,58 @@
       "generated": null,
       "identity": null,
       "name": "candidate_commit",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "release"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "trunk",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "release"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "trunk_tip",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "release"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "commits_behind_trunk",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "release"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "behind_trunk_reason",
       "entityType": "columns",
       "schema": "public",
       "table": "release"
