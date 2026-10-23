@@ -8,9 +8,9 @@ paths:
 
 # Disposable runs
 
-A repository job runs in its own throwaway worktree. Orch carries the caller's visible git state (committed, staged, unstaged, deletions, binaries, non-ignored untracked). Ignored runtime state is provisioned by the project's recipe, never copied from another checkout.
+A repo job runs in its own throwaway worktree. Orch carries the caller's visible git state (committed, staged, unstaged, deletions, binaries, non-ignored untracked). Ignored runtime state is provisioned by the project's recipe, never copied from another checkout.
 
-The worktree is the safety boundary. A repository agent gets workspace-write for its tree: a reader's clone with its own `.git`, or a writer's linked worktree and metadata. A reader never pushes; its guard's `pre-push` refuses from outside its writable roots. Every repository run carries `ORCH_MAIN_CHECKOUT`; project tooling reads it, never git layout, to find main. A writing worker also gets the common object store and the directories holding its own run-branch ref and reflog. The ref guard permits only that exact branch. Never use `CODEX_EXEC_SANDBOX` for a repository run. Inline jobs (`summarize`, `review-lens-inline`) create no worktree.
+The worktree is the safety boundary. A repository agent gets workspace-write for its tree: a reader's clone with its own `.git`, or a writer's linked worktree and metadata. A reader never pushes; its guard's `pre-push` refuses from outside its writable roots. A run carries `BOTTEGA_MAIN_CHECKOUT`; tooling reads it, not git layout, to find main. A writing worker also gets the common object store and the directories holding its own run-branch ref and reflog. The ref guard permits only that exact branch. Never use `CODEX_EXEC_SANDBOX` for a repository run. Inline jobs (`summarize`, `review-lens-inline`) create no worktree.
 
 **A registered main checkout stays clean.** Dispatch refreshes the main index and refuses tracked modifications, naming the dirty paths and the worktree (both anchored lines). Untracked files warn; ignored files are silent. Default on; opt out with `requireCleanMain` false. Resumes skip the check. Bare-main end state: `bottega doc show bare-main-end-state --scope project --subject bottega`.
 
@@ -26,7 +26,7 @@ A run: `reserved` → `attached` → `running` → `asking` → `ok` | `failed` 
 
 Two lock purposes, two files. Creation and resume attachment take `project-lock.ts:withWorktreeCreateLock` (`orch-create.lock`). Cleanup from discard, abandon, stop and sweep takes `project-lock.ts:withCleanupLock` (`orch-cleanup.lock`). **One lock per purpose.** Same-tree attachment and cleanup take `project-lock.ts:withWorktreeLease` first, purpose lock second, so they cannot interleave or deadlock.
 
-- **No limit loses staged work.** Writing runs checkpoint staged and modified tracked files every `DEFAULT_CHECKPOINT_MINUTES` and once more on wall, quota, context, cost, or operator stop. The checkpoint binds its commit to `$ORCH_SCRATCH/progress.json`; continuation receives that pointer. Stop keeps the worktree and branch.
+- **No limit loses staged work.** Writing runs checkpoint staged and modified tracked files every `DEFAULT_CHECKPOINT_MINUTES` and once more on wall, quota, context, cost, or operator stop. The checkpoint binds its commit to `$BOTTEGA_SCRATCH/progress.json`; continuation receives that pointer. Stop keeps the worktree and branch.
 - **The guard lives outside every root the worker can write.** Dispatch refuses a run whose guard path falls inside a writable root; it is published under the common git dir.
 - **Vendor trust changes only via `bottega machine reclaim trust`**: one recorded absent orchestrator worktree, never main.
 - **Every write transaction is `IMMEDIATE`.** A deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.
@@ -35,7 +35,7 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 - **Only an overlapping outside change blocks admission.** Overlap makes the run `escaped` and no pull request opens until the architect rules; otherwise the run completes with the event on its row. The detector never drops findings, scores, or the review. Root and trip-time tip are snapshotted so `bottega review confinement clear` needs no tip flag or hand seeding.
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check stops a new dispatch from stale input; it must never apply to a chain resuming in its own worktree, nor to a base/cwd that names a recorded run's tree. Exemption is explicit resume identity only (`dispatch-preflight.ts:namesRecordedRunTree`: realpath or commit, never a suffix or table scan). A stale new dispatch from some other run's recorded cwd is not exempt. Resume attachment takes the creation lock only for attribution, lease first.
 - **Only the main checkout's binary migrates the operator store; a linked-worktree binary may migrate a store only when its real path is inside the OS temporary directory.** The SQLite journal is ordered and checksummed; a behind store refuses before queries run, and `-- BACKFILL` blocks re-execute idempotently. After a merge, the main checkout pulls and runs `bottega machine migrate`. A terminal run row and its outbox row are one transaction. Review writes and outbox rows share a transaction; backfill mints parents first. Every other evidence kind follows the same outbox-only record rule. `bottega record push` idempotently upserts outbox rows by local id. `bottega record push --backfill` mints record ids for pre-outbox runs and enqueues their terminal rows through the same path; a run reaches the record only through the outbox.
-- **Linked worktrees and borrowed clones only read both stores; workers only read the hub store.** `store-access.ts:decideStoreAccess` decides it; `ORCH_DB_WRITE` is the operator's explicit insistence. Tests refuse any store their preload did not mint under the temporary directory.
+- **Linked worktrees and borrowed clones only read both stores; workers only read the hub store.** `store-access.ts:decideStoreAccess` decides it; `BOTTEGA_ORCHESTRATOR_DB_WRITE` is the operator's explicit insistence. Tests refuse any store their preload did not mint under the temporary directory.
 - **A lock waiter is served in arrival order** (`project-lock.ts:withProjectLock`, monotonic ticket under mkdir-atomic discipline).
 - **Every wait, refusal and invalidation on a shared resource is recorded where it happens** (`contention`, same transaction). `bottega machine health` prices the class. Never inferred later, never routing evidence.
 - **A reclaim removes exactly the acquisition it classified as stale, never a replacement** (`project-lock.ts:reclaimStaleProjectLock`, incarnation id after rename). Malformed or locale-dependent process output is unknown, never stale (`project-lock.ts:staleProjectLockHolder`, `project-lock.ts:processStartTime`).
@@ -44,7 +44,7 @@ Detach claims a reserved id before routing; the asking session still owns the ru
 
 # Delegating implementation
 
-Writing runs checkpoint on schedule and at limits or stop. Update `$ORCH_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` preserves the full diff against the immutable run base.
+Writing runs checkpoint on schedule and at limits or stop. Update `$BOTTEGA_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` preserves the full diff against the immutable run base.
 
 **Done describes the work, not the knowledge.** Consult a landed task's record instead of deriving it again.
 
@@ -58,7 +58,7 @@ Writing runs checkpoint on schedule and at limits or stop. Update `$ORCH_SCRATCH
 
 **`asking` is read before the success ladder.** Exit `0` with a reply looks like `ok`. A reply that does not parse is a failure.
 
-**Replies are files.** Contracts require schema-bound `$ORCH_SCRATCH/reply.json`, read before the final message; schema flags are supplemental. The registration probe writes and validates it before eligibility.
+**Replies are files.** Contracts require schema-bound `$BOTTEGA_SCRATCH/reply.json`, read before the final message; schema flags are supplemental. The registration probe writes and validates it before eligibility.
 
 **Writing replies order their diff.** `change_guide` puts decisions first and mechanical follow-ons last. Its steps partition changed repo-relative files; each explains its part and names one check. It guides reading without replacing the diff or summary. No file changes means null.
 
@@ -100,7 +100,7 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 # A delegated agent is not a trusted one
 
-**Delegation bottoms out at one level.** `ORCH_DEPTH` is set on every child; `bottega run start` refuses to start when it is already set.
+**Delegation bottoms out at one level.** `BOTTEGA_DEPTH` is set on every child; `bottega run start` refuses to start when it is already set.
 
 **The child does not inherit this session's identity, or an Anthropic key.** Every `CLAUDE_*` and `ANTHROPIC_*` variable is stripped.
 

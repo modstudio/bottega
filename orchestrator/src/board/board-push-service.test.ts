@@ -566,9 +566,9 @@ test('PostToolUse does not repair presence without a session start', () => {
 test('PostToolUse is silent for workers, malformed input, missing stores, and the cheap no-pending path', () => {
   const item = createHookFixture(hookOutput)
   for (const [payload, extra] of [
-    ['{}', { ORCH_RUN_ID: '9' }],
+    ['{}', { BOTTEGA_RUN_ID: '9' }],
     ['{', {}],
-    ['{}', { ORCH_DB: join(item.root, 'missing.db') }],
+    ['{}', { BOTTEGA_ORCHESTRATOR_DB: join(item.root, 'missing.db') }],
     [JSON.stringify({ session_id: 'reader' }), {}],
   ] as const) {
     const result = runHook(interruptHook, payload, item, extra)

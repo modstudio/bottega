@@ -26,7 +26,7 @@ import { settingsRenderCheckCommand } from './settings-commands.ts'
 const OWNER = '01990000-0000-7000-8000-000000000001'
 const priorHome = process.env.HOME
 const priorState = process.env.BOTTEGA_STATE_HOME
-const priorApiUrl = process.env.ORCH_RECORD_API_URL
+const priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
 let root = ''
 let claude = ''
 
@@ -36,7 +36,7 @@ beforeEach(() => {
   mkdirSync(claude)
   process.env.HOME = root
   process.env.BOTTEGA_STATE_HOME = join(root, 'state')
-  process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
   const session = memoryRecordSession()
   session.setToken('fixture-session')
   installRecordSessionRunner(session.runner)
@@ -47,8 +47,8 @@ afterEach(() => {
   else process.env.HOME = priorHome
   if (priorState === undefined) delete process.env.BOTTEGA_STATE_HOME
   else process.env.BOTTEGA_STATE_HOME = priorState
-  if (priorApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorApiUrl
+  if (priorApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorApiUrl
   installRecordSessionRunner(null)
   rmSync(root, { recursive: true, force: true })
 })
@@ -282,17 +282,17 @@ describe('worker settings apply refusals', () => {
   let priorRunId: string | undefined
 
   beforeEach(() => {
-    priorRunId = process.env.ORCH_RUN_ID
-    process.env.ORCH_RUN_ID = 'settings-apply-worker'
+    priorRunId = process.env.BOTTEGA_RUN_ID
+    process.env.BOTTEGA_RUN_ID = 'settings-apply-worker'
   })
 
   afterEach(() => {
-    if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-    else process.env.ORCH_RUN_ID = priorRunId
+    if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+    else process.env.BOTTEGA_RUN_ID = priorRunId
   })
 
   test('settings env-import allows an architect caller and refuses a worker caller', async () => {
-    delete process.env.ORCH_RUN_ID
+    delete process.env.BOTTEGA_RUN_ID
     await seedUser()
     writeFileSync(join(claude, 'settings.json'), JSON.stringify({ env: { FIRST: 'private' } }))
     await settingsEnvImportCommand(flags({ user: true }), shown().port, () => false)
@@ -328,7 +328,7 @@ describe('worker settings apply refusals', () => {
   })
 
   test('settings adopt allows an architect caller and refuses a worker caller', async () => {
-    delete process.env.ORCH_RUN_ID
+    delete process.env.BOTTEGA_RUN_ID
     await seedUser()
     const local = join(claude, 'settings.local.json')
     writeFileSync(local, JSON.stringify({ permissions: { allow: ['Bash(git status)'] } }))
@@ -341,7 +341,7 @@ describe('worker settings apply refusals', () => {
       local,
       JSON.stringify({ permissions: { allow: ['Bash(git status)', 'Bash(git diff)'] } }),
     )
-    process.env.ORCH_RUN_ID = 'settings-apply-worker'
+    process.env.BOTTEGA_RUN_ID = 'settings-apply-worker'
     await expect(
       settingsAdoptCommand(flags({ user: true, all: true }), [], shown().port),
     ).rejects.toThrow('refusing document store write from an orchestrator worker run')

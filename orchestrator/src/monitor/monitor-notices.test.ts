@@ -21,11 +21,11 @@ import {
 const createdAt = new Date(Date.now() - 1_000).toISOString()
 
 beforeEach(() => {
-  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 })
 afterEach(() => {
   installRecordApiClient(null)
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 
 test('heartbeat delivery emits ordinary hosted beside local once with a failed-refresh warning', async () => {

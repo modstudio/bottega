@@ -7,7 +7,7 @@ import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
-const migrationUrl = process.env.ORCH_TEST_HUB_PROJECT_IDENTITY_MIGRATION_URL
+const migrationUrl = process.env.BOTTEGA_TEST_HUB_PROJECT_IDENTITY_MIGRATION_URL
 const realPostgres = migrationUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const expandMigration = '20261015133608_dev_1214_hub_project_identity'

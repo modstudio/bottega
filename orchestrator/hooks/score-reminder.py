@@ -16,7 +16,7 @@ from score_reminder_decision import decide_held_tree
 GLOBAL_BUDGET_SECONDS = 20
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-DB = os.environ.get("ORCH_DB") or subprocess.check_output(
+DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()

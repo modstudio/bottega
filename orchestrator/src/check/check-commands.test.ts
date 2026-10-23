@@ -36,7 +36,7 @@ function fixtureDirectory(prefix: string): string {
 
 function run(database: string, ...argv: string[]) {
   return spawnFixtureSync(['bun', '--no-env-file', cli, 'check', '--enabled', ...argv], {
-    env: { ...process.env, ORCH_DB: database },
+    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: database },
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -127,7 +127,7 @@ describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
       {
         env: {
           ...process.env,
-          ORCH_DB: database,
+          BOTTEGA_ORCHESTRATOR_DB: database,
           PATH: `${bin}:${process.env.PATH}`,
           CHECK_SENTINEL: sentinel,
         },
@@ -162,7 +162,11 @@ describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
     const result = spawnFixtureSync(
       ['bun', '--no-env-file', cli, 'check', '--enabled', '--project', 'checks-american-english'],
       {
-        env: { ...process.env, ORCH_DB: database, PATH: `${bin}:${process.env.PATH}` },
+        env: {
+          ...process.env,
+          BOTTEGA_ORCHESTRATOR_DB: database,
+          PATH: `${bin}:${process.env.PATH}`,
+        },
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: 'pipe',

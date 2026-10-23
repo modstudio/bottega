@@ -90,11 +90,11 @@ async function createTaskCommand(options: TaskOptions): Promise<void> {
   const title = required(options, 'title')
   const body = taskBody(options)
   const override = options.allowDuplicate
-  const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
+  const delay = Number(process.env.BOTTEGA_TEST_DUPLICATE_DELAY_MS ?? 0)
   const afterDuplicateSearch =
     delay > 0
       ? () => {
-          const marker = process.env.HUB_TEST_DUPLICATE_MARKER
+          const marker = process.env.BOTTEGA_TEST_DUPLICATE_MARKER
           if (marker) writeFileSync(marker, '')
           Bun.sleepSync(delay)
         }

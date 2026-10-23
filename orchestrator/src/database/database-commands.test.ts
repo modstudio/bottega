@@ -174,7 +174,7 @@ afterEach(() => {
 
 function inspectStore<T>(read: (database: Database) => T): T {
   closeDatabaseForFixture()
-  const database = new Database(process.env.ORCH_DB!, {
+  const database = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!, {
     readwrite: true,
     create: false,
   })
@@ -224,11 +224,11 @@ test('pending conversion on a quiet machine converts files and advances through 
 test('the cutover write lock refuses a concurrent run insert before recording the fence', () => {
   const fixture = pendingFenceFixture('ok', true)
   const contenderId = '88888888-8888-4888-8888-888888888888'
-  const database = new Database(process.env.ORCH_DB!, {
+  const database = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!, {
     readwrite: true,
     create: false,
   })
-  const contender = new Database(process.env.ORCH_DB!, {
+  const contender = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!, {
     readwrite: true,
     create: false,
   })
@@ -334,7 +334,7 @@ test('an unreadable repository leaves the fence pending until the repository is 
   mkdirSync(join(savedGit, 'refs', 'heads'), { recursive: true })
   writeFileSync(join(savedGit, 'HEAD'), 'ref: refs/heads/main\n')
   writeFileSync(join(savedGit, 'config'), '[core]\n\trepositoryformatversion = 0\n\tbare = false\n')
-  const database = new Database(process.env.ORCH_DB!, {
+  const database = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB!, {
     readwrite: true,
     create: false,
   })

@@ -28,13 +28,13 @@ function git(cwd: string, ...args: string[]): string {
 let priorDepth: string | undefined
 let priorSession: string | undefined
 beforeEach(() => {
-  priorDepth = process.env.ORCH_DEPTH
+  priorDepth = process.env.BOTTEGA_DEPTH
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  process.env.ORCH_DEPTH = '1'
+  process.env.BOTTEGA_DEPTH = '1'
 })
 afterEach(() => {
-  if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = priorDepth
+  if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+  else process.env.BOTTEGA_DEPTH = priorDepth
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
 })
@@ -88,7 +88,7 @@ test('the latest architect read is selected for one project branch', () => {
 })
 
 test('the read command records the branch and tip from --cwd', () => {
-  delete process.env.ORCH_DEPTH
+  delete process.env.BOTTEGA_DEPTH
   process.env.CLAUDE_CODE_SESSION_ID = 'owner-session'
   const cwd = mkdtempSync(join(tmpdir(), 'orch-review-read-'))
   try {
@@ -177,7 +177,7 @@ test('the read command records the branch and tip from --cwd', () => {
 })
 
 test('a tip unreachable from the checked-out branch is refused without a review read', () => {
-  delete process.env.ORCH_DEPTH
+  delete process.env.BOTTEGA_DEPTH
   process.env.CLAUDE_CODE_SESSION_ID = 'owner-session'
   const d = new Database(':memory:')
   applyMigrations(d)

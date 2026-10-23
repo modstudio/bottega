@@ -322,7 +322,7 @@ export async function detach(
       // The child must not inherit this process's session id: the run row
       // already records the session that ASKED for the work, and run() would
       // otherwise re-stamp it from the child's environment.
-      env: { ...process.env, ORCH_DETACHED: '1' },
+      env: { ...process.env, BOTTEGA_DETACHED: '1' },
       stdio: ['ignore', coordinatorLogFd, coordinatorLogFd] as ['ignore', number, number],
       detached: true,
     }

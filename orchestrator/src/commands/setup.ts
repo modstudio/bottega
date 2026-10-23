@@ -3,7 +3,9 @@
 import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { restoreMigratedProjectRows } from '../project/project-commands.ts'
 import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
+import { restoreOperatorEnvironmentBackup } from '../setup/setup-environment.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts'
 import { planSetupActions, recommendedAnswers } from '../setup/setup-planner.ts'
@@ -47,6 +49,14 @@ export function register(program: Command): void {
       ) {
         process.exitCode = 1
       }
+    })
+  setup
+    .command('restore <backup-dir>')
+    .description('restore a reversible environment migration backup')
+    .allowExcessArguments(false)
+    .action(async (directory: string) => {
+      await restoreOperatorEnvironmentBackup(directory, restoreMigratedProjectRows)
+      log(`restored setup environment backup ${directory}`)
     })
   setup
     .command('facts')

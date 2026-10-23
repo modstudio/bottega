@@ -100,7 +100,7 @@ function ensureFocusedTestMainStack(
   plan: ReturnType<typeof focusedTestPlan>,
   environment: Record<string, string>,
 ): void {
-  const mainCheckout = environment.ORCH_MAIN_CHECKOUT
+  const mainCheckout = environment.BOTTEGA_MAIN_CHECKOUT
   if (!mainCheckout) throw new Error('focused test run has no recorded main checkout')
   ensureMainStackStarted({
     projectId: plan.projectId,

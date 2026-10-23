@@ -42,7 +42,7 @@ export type HostCapacityDecision = HostSlotDecision & { boundReached: boolean }
 const GATE_CONCURRENCY_LIMIT = 2
 /** Reservations cover the one-minute interval before admitted work appears in load average. */
 export const HOST_LOAD_RESERVATION_MS = 60_000
-export const HOST_SLOT_HELD_ENV = 'ORCH_HOST_SLOT_HELD'
+export const HOST_SLOT_HELD_ENV = 'BOTTEGA_HOST_SLOT_HELD'
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
 const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100

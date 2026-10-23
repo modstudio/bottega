@@ -46,7 +46,7 @@ test('a missing shared-memory file has no WAL write-lock holder', async () => {
 
 test('a free WAL store has no write-lock holder', () => {
   db()
-  const probe = probeWalWriteLock(process.env.ORCH_DB!)
+  const probe = probeWalWriteLock(process.env.BOTTEGA_ORCHESTRATOR_DB!)
   if (probe !== null && typeof probe === 'object') {
     expect(probe.reason).toContain('unsupported')
     return

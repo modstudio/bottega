@@ -73,14 +73,14 @@ function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | u
   const registration = registeredLocalAgent(agentRows(), baseUrl)
   const contextTokens = registration ? registeredContextTokens(registration) : null
   const lines = [
-    `\nlocal endpoint  ${baseUrl || '(ORCH_MODEL_HOST_URL unset)'}`,
+    `\nlocal endpoint  ${baseUrl || '(BOTTEGA_MODEL_HOST_URL unset)'}`,
     `local model     ${registration?.model || '(not registered)'}`,
   ]
   if (baseUrl && !registration) {
     lines.push(
       configuredModel
         ? `register        ${PLATFORM_SLUG} agent add qwen36-goose --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
-        : 'register        ORCH_MODEL_HOST_MODEL is required before registering qwen36-goose',
+        : 'register        BOTTEGA_MODEL_HOST_MODEL is required before registering qwen36-goose',
     )
   }
   if (registration && contextTokens === null) {

@@ -7,16 +7,16 @@ import { createTask, showTask } from './task.ts'
 
 const directory = mkdtempSync(join(tmpdir(), 'hub-task-body-file-'))
 const bodyFile = join(directory, 'body.md')
-const priorHostedUrl = process.env.HUB_HOSTED_URL
+const priorHostedUrl = process.env.BOTTEGA_HOSTED_URL
 
 beforeAll(() => {
-  delete process.env.HUB_HOSTED_URL
+  delete process.env.BOTTEGA_HOSTED_URL
   writeFileSync(bodyFile, 'Body read from a file.\n')
 })
 
 afterAll(() => {
-  if (priorHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-  else process.env.HUB_HOSTED_URL = priorHostedUrl
+  if (priorHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+  else process.env.BOTTEGA_HOSTED_URL = priorHostedUrl
   rmSync(directory, { recursive: true, force: true })
 })
 

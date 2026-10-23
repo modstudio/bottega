@@ -327,6 +327,58 @@ async function writeOwned(
   })
 }
 
+/** Migrate only names in the stored user settings body; values remain in settings.env. */
+export async function migrateStoredSettingsEnvironmentNames(
+  replacement: (name: string) => string | null,
+): Promise<string[]> {
+  const owner = await signedInDocOwner()
+  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  if (!row) return []
+  const owned = parseStoredOwnedSettings(row.body)
+  const current = owned.envKeys ?? []
+  const { names: migrated, changed } = settingsEnvironmentNamesDecision(current, replacement)
+  if (!changed.length) return []
+  owned.envKeys = migrated
+  await writeOwned(
+    targetAddress({ kind: 'user' }, owner),
+    owned,
+    'migrated legacy environment key names',
+    row.revision!,
+  )
+  return migrated.filter((name) => !current.includes(name))
+}
+
+function settingsEnvironmentNamesDecision(
+  current: string[],
+  replacement: (name: string) => string | null,
+): {
+  names: string[]
+  changed: string[]
+} {
+  const replacements = current.map((name) => replacement(name) ?? name)
+  for (const [index, name] of replacements.entries()) {
+    const prior = replacements.indexOf(name)
+    if (prior !== index && current[prior] !== current[index]) {
+      throw new Error(
+        `refusing settings environment migration: ${current[prior]} and ${current[index]} both map to ${name}; delete one stored env key, then re-run ${PLATFORM_SLUG} machine setup apply`,
+      )
+    }
+  }
+  return {
+    names: [...new Set(replacements)].sort(),
+    changed: current.filter((name, index) => name !== replacements[index]),
+  }
+}
+
+export async function assertStoredSettingsEnvironmentMigration(
+  replacement: (name: string) => string | null,
+): Promise<void> {
+  const owner = await signedInDocOwner()
+  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  if (!row) return
+  settingsEnvironmentNamesDecision(parseStoredOwnedSettings(row.body).envKeys ?? [], replacement)
+}
+
 function logWritePlan(
   target: Target,
   path: string,

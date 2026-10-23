@@ -276,8 +276,8 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
   if (!project) throw new Error(`cannot file note: no registered project contains ${cwd}`)
   const projectPath = projects().find((candidate) => candidate.name === project)?.path ?? cwd
   const files = deriveNoteFileAnchors(text, projectPath)
-  const runRecordId = env.ORCH_RUN_ID
-  const runNumber = Number(env.ORCH_RUN_NUMBER)
+  const runRecordId = env.BOTTEGA_RUN_ID
+  const runNumber = Number(env.BOTTEGA_RUN_NUMBER)
   return {
     id: newRecordId(),
     cwd,

@@ -13,7 +13,7 @@ import sys
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-DB_PATH = os.environ.get("ORCH_DB") or subprocess.check_output(
+DB_PATH = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()
@@ -48,8 +48,8 @@ def git(args, cwd):
         return None
     for key in listed.stdout.split():
         env.pop(key, None)
-    env.pop("ORCH_GUARDED_GIT_COMMON_DIR", None)
-    env.pop("ORCH_ALLOWED_GIT_REF", None)
+    env.pop("BOTTEGA_GUARDED_GIT_COMMON_DIR", None)
+    env.pop("BOTTEGA_ALLOWED_GIT_REF", None)
     # Inspection must not pick up a worker GIT_CONFIG_GLOBAL; git excludes
     # that name from --local-env-vars (it is global-behavior).
     env["GIT_CONFIG_GLOBAL"] = "/dev/null"

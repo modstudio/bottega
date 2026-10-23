@@ -40,7 +40,7 @@ export async function recalibrate(
   if (!/^\d+$/.test(rawN) || !Number.isInteger(n) || n < 1) {
     throw new Error('--n must be a positive integer')
   }
-  const scorer = flags.flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
+  const scorer = flags.flag('scorer') ?? process.env.BOTTEGA_SCORER ?? 'claude'
   const rows = db()
     .query(
       `SELECT r.record_id, r.number, r.job, r.output_path,

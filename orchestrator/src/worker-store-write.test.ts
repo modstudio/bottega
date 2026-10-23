@@ -31,31 +31,36 @@ let priorRunId: string | undefined
 let priorRecordUrl: string | undefined
 
 beforeEach(() => {
-  priorRunId = process.env.ORCH_RUN_ID
-  priorRecordUrl = process.env.ORCH_RECORD_API_URL
-  delete process.env.ORCH_RUN_ID
-  delete process.env.ORCH_RECORD_API_URL
+  priorRunId = process.env.BOTTEGA_RUN_ID
+  priorRecordUrl = process.env.BOTTEGA_RECORD_API_URL
+  delete process.env.BOTTEGA_RUN_ID
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 
 afterEach(() => {
-  if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-  else process.env.ORCH_RUN_ID = priorRunId
-  if (priorRecordUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorRecordUrl
+  if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+  else process.env.BOTTEGA_RUN_ID = priorRunId
+  if (priorRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordUrl
   installRecordApiClient(createMemoryRecordApiClient())
 })
 
 describe('worker shared-text store writes', () => {
-  test.each(['ORCH_RUN_ID', 'ORCH_DEPTH'] as const)('refuses when %s marks a worker', (marker) => {
-    const refusal = workerStoreWriteRefusal('workflow', `${PLATFORM_SLUG} workflow import`, {
-      [marker]: '42',
-    })
-    expect(refusal).toContain('refusing workflow store write from an orchestrator worker run')
-    expect(refusal).toContain('ORCH_RUN_ID or ORCH_DEPTH marks this process as a worker run')
-    expect(refusal).toContain('write the intended hydrated file in your tree')
-    expect(refusal).toContain('state the exact store change in your reply')
-    expect(refusal).toContain('architect apply it after review and before the final gate')
-  })
+  test.each(['BOTTEGA_RUN_ID', 'BOTTEGA_DEPTH'] as const)(
+    'refuses when %s marks a worker',
+    (marker) => {
+      const refusal = workerStoreWriteRefusal('workflow', `${PLATFORM_SLUG} workflow import`, {
+        [marker]: '42',
+      })
+      expect(refusal).toContain('refusing workflow store write from an orchestrator worker run')
+      expect(refusal).toContain(
+        'BOTTEGA_RUN_ID or BOTTEGA_DEPTH marks this process as a worker run',
+      )
+      expect(refusal).toContain('write the intended hydrated file in your tree')
+      expect(refusal).toContain('state the exact store change in your reply')
+      expect(refusal).toContain('architect apply it after review and before the final gate')
+    },
+  )
 
   test('allows an architect process', () => {
     expect(workerStoreWriteRefusal('document', `${PLATFORM_SLUG} doc set`, {})).toBeNull()
@@ -73,7 +78,7 @@ describe('worker shared-text store writes', () => {
     })
     expect(created.slug).toBe('worker-service-guard')
 
-    process.env.ORCH_RUN_ID = 'doc-service-worker'
+    process.env.BOTTEGA_RUN_ID = 'doc-service-worker'
     const refusal = 'refusing document store write from an orchestrator worker run'
     await expect(
       setDoc({
@@ -142,7 +147,7 @@ describe('worker shared-text store writes', () => {
     expect(architectCatalogue.status).toBe('draft')
     expect(architectWorkflow.status).toBe('draft')
 
-    process.env.ORCH_RUN_ID = 'workflow-service-worker'
+    process.env.BOTTEGA_RUN_ID = 'workflow-service-worker'
     const refusal = 'refusing workflow store write from an orchestrator worker run'
     const workflowWrites = [
       () => setWorkflow('worker-set', workflow.definition, 'worker fixture', 'worker', d),
@@ -166,7 +171,7 @@ describe('worker shared-text store writes', () => {
       () => retireStepCatalogue(catalogue.n, 'worker fixture', 'worker', d),
     ]
     for (const write of [...workflowWrites, ...catalogueWrites]) expect(write).toThrow(refusal)
-    process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     installRecordApiClient(createMemoryRecordApiClient())
     for (const write of [...workflowWrites, ...catalogueWrites]) expect(write).toThrow(refusal)
     d.close()

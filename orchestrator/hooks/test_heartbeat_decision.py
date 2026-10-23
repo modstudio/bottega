@@ -124,7 +124,7 @@ esac
             completed = subprocess.run(
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
+                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
                 timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
@@ -193,7 +193,7 @@ esac
             command = ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "2"]
             env = {
                 **os.environ,
-                "ORCH_DB": str(checkout / "absent.db"),
+                "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_SECOND_TICK": str(marker),
             }
 
@@ -249,7 +249,7 @@ esac
             completed = subprocess.run(
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
+                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
                 timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
@@ -318,7 +318,7 @@ esac
                 cwd=checkout,
                 env={
                     **os.environ,
-                    "ORCH_DB": str(checkout / "absent.db"),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "FAKE_UPDATED": str(checkout / "updated"),
                     "FAKE_HEARTBEAT_HELPER": str(helper),
                 },
@@ -371,7 +371,7 @@ esac
             completed = subprocess.run(
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
+                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
                 timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
@@ -468,7 +468,7 @@ esac
                 cwd=checkout,
                 env={
                     **os.environ,
-                    "ORCH_DB": str(checkout / "absent.db"),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
                 },
                 capture_output=True,
@@ -572,7 +572,7 @@ esac
             fake.chmod(0o755)
             env = {
                 **os.environ,
-                "ORCH_DB": str(checkout / "absent.db"),
+                "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_FIRST_LIVE": str(checkout / "first-live"),
                 "FAKE_FIRST_MISSING": str(checkout / "first-missing"),
                 "FAKE_SECOND_LIVE": str(checkout / "second-live"),
@@ -668,7 +668,7 @@ esac
                 cwd=checkout,
                 env={
                     **os.environ,
-                    "ORCH_DB": str(checkout / "absent.db"),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
                     "FAKE_UPDATED": str(checkout / "updated"),
                     "FAKE_OBSERVATION_HELPER": str(hooks / "heartbeat-run-observation.py"),
@@ -727,7 +727,7 @@ esac
             completed = subprocess.run(
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
+                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
                 timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
@@ -1002,7 +1002,7 @@ esac
                 fake.chmod(0o755)
                 environment = {
                     **os.environ,
-                    "ORCH_DB": str(checkout / "absent.db"),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "NOTICE_TIMEOUT_SECONDS": "30",
                     "FAKE_MONITOR_PID_FILE": str(monitor_pid_file),
                     "FAKE_WATCHDOG_PID_FILE": str(watchdog_pid_file),

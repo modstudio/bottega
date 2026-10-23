@@ -36,32 +36,32 @@ type MachineConfigEntry = {
  */
 export const MACHINE_CONFIG = {
   'projects.clone_root': {
-    environment: 'ORCH_CLONE_ROOT',
+    environment: 'BOTTEGA_CLONE_ROOT',
     type: 'string',
     default: '$HOME/Projects',
   },
   'hub.transcript_root': {
-    environment: 'HUB_TRANSCRIPT_ROOT',
+    environment: 'BOTTEGA_TRANSCRIPT_ROOT',
     type: 'string',
     default: '$HOME/.claude/projects',
   },
-  'hub.port': { environment: 'HUB_PORT', type: 'integer', default: 7778 },
+  'hub.port': { environment: 'BOTTEGA_HUB_PORT', type: 'integer', default: 7778 },
   'machine.id': { type: 'string', default: '' },
   'model_host.url': {
-    environment: 'ORCH_MODEL_HOST_URL',
-    legacyEnvironment: 'ORCH_LOCAL_BASE_URL',
+    environment: 'BOTTEGA_MODEL_HOST_URL',
+    legacyEnvironment: 'BOTTEGA_LOCAL_BASE_URL',
     type: 'string',
     default: '',
   },
   'model_host.model': {
-    environment: 'ORCH_MODEL_HOST_MODEL',
-    legacyEnvironment: 'ORCH_LOCAL_MODEL',
+    environment: 'BOTTEGA_MODEL_HOST_MODEL',
+    legacyEnvironment: 'BOTTEGA_LOCAL_MODEL',
     type: 'string',
     default: '',
   },
   'model_host.wol_mac': {
-    environment: 'ORCH_MODEL_HOST_WOL_MAC',
-    legacyEnvironment: 'ORCH_LOCAL_WOL_MAC',
+    environment: 'BOTTEGA_MODEL_HOST_WOL_MAC',
+    legacyEnvironment: 'BOTTEGA_LOCAL_WOL_MAC',
     type: 'string',
     default: '',
   },

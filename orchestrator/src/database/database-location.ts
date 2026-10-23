@@ -16,7 +16,7 @@ import {
   temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
 
-export type DatabaseResolutionMethod = 'ORCH_DB' | 'state-root'
+export type DatabaseResolutionMethod = 'BOTTEGA_ORCHESTRATOR_DB' | 'state-root'
 
 export type DatabaseResolution = {
   path: string
@@ -125,15 +125,15 @@ export function resolveDatabase(
       callerCwd = process.cwd()
     } catch (error) {
       callerCwd = missingWorkingDirectoryFallback(error, {
-        mainCheckout: env.ORCH_MAIN_CHECKOUT,
+        mainCheckout: env.BOTTEGA_MAIN_CHECKOUT,
         binaryRepositoryRoot: binaryRepository?.root ?? null,
         binaryRoot,
       })
     }
   }
   const path = resolveOrchestratorDatabase(env)
-  if (env.ORCH_DB) {
-    // ORCH_DB is independently sufficient. When HOME is available, retaining
+  if (env.BOTTEGA_ORCHESTRATOR_DB) {
+    // BOTTEGA_ORCHESTRATOR_DB is independently sufficient. When HOME is available, retaining
     // the default path lets linked-worktree binaries still recognize an
     // override that points back at the shared store.
     let mainStorePath = path
@@ -142,7 +142,7 @@ export function resolveDatabase(
     } catch {}
     return {
       path,
-      method: 'ORCH_DB',
+      method: 'BOTTEGA_ORCHESTRATOR_DB',
       tried: [path],
       registeredPath: null,
       repositoryRoot: null,
@@ -185,7 +185,7 @@ export function recoverMissingWorkingDirectory(): string {
     return process.cwd()
   } catch (error) {
     const recovered = missingWorkingDirectoryFallback(error, {
-      mainCheckout: process.env.ORCH_MAIN_CHECKOUT,
+      mainCheckout: process.env.BOTTEGA_MAIN_CHECKOUT,
       binaryRepositoryRoot:
         repositoryRootFromGit(ROOT)?.root ?? repositoryRootFromDotGit(ROOT)?.root ?? null,
       binaryRoot: ROOT,
@@ -201,11 +201,11 @@ export function decideOrchestratorDatabasePath(
   method: DatabaseResolutionMethod,
   resolvedPath: string,
 ): string {
-  if (isTestProcess && method !== 'ORCH_DB') {
+  if (isTestProcess && method !== 'BOTTEGA_ORCHESTRATOR_DB') {
     throw new Error(
-      `test process refuses orchestrator database: ORCH_DB resolved <unset>; live store is ${resolvedPath}\n` +
+      `test process refuses orchestrator database: BOTTEGA_ORCHESTRATOR_DB resolved <unset>; live store is ${resolvedPath}\n` +
         'invariant: A test suite never falls back to the live orchestrator database.\n' +
-        'cleared by: set ORCH_DB to a scratch store before importing orchestrator/src/database/db.ts',
+        'cleared by: set BOTTEGA_ORCHESTRATOR_DB to a scratch store before importing orchestrator/src/database/db.ts',
     )
   }
   return resolvedPath
@@ -221,8 +221,8 @@ export const DB_PATH = decideOrchestratorDatabasePath(
 export function missingDatabaseMessage(path = DB_PATH): string {
   return (
     `orchestrator database does not exist: ${path}\n` +
-    'invariant: An absent ORCH_DB path is a mistake, not a request to create a store.\n' +
-    'cleared by: unset ORCH_DB to use the installation store, or name an existing database'
+    'invariant: An absent BOTTEGA_ORCHESTRATOR_DB path is a mistake, not a request to create a store.\n' +
+    'cleared by: unset BOTTEGA_ORCHESTRATOR_DB to use the installation store, or name an existing database'
   )
 }
 
@@ -254,7 +254,7 @@ export function implicitDatabaseCreationRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
   path = resolution.path,
 ): string | null {
-  if (resolution.method === 'ORCH_DB') return missingDatabaseMessage(path)
+  if (resolution.method === 'BOTTEGA_ORCHESTRATOR_DB') return missingDatabaseMessage(path)
   if (resolution.linkedWorktreeBinary) {
     return linkedWorktreeMigrationAllowed(path)
       ? null
@@ -277,7 +277,7 @@ export function legacyDatabaseRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
   env: StateEnvironment = process.env as StateEnvironment,
 ): string | null {
-  if (resolution.method === 'ORCH_DB') return null
+  if (resolution.method === 'BOTTEGA_ORCHESTRATOR_DB') return null
   if (embeddedDistributionManifest()) return null
   const binaryRepository = repositoryRootFromGit(ROOT) ?? repositoryRootFromDotGit(ROOT)
   if (!binaryRepository) return null

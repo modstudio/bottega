@@ -23,7 +23,7 @@ afterEach(() => registerEmbeddedAssets(null))
 test('source entries preserve their current argv prefixes', () => {
   expect(bottegaEntryArgv(PLATFORM_SLUG)).toEqual([assetPath('bin', PLATFORM_SLUG)])
   expect(bottegaEntryArgv('run-exec')).toEqual([
-    process.env.ORCH_EXEC_PATH ?? process.execPath,
+    process.env.BOTTEGA_EXEC_PATH ?? process.execPath,
     '--no-env-file',
     assetPath('orchestrator', 'src', 'run', 'exec.ts'),
   ])

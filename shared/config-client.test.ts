@@ -13,14 +13,14 @@ test('missing URL or session is a typed not-configured error', () => {
       null,
     ),
   ).toThrow(ConfigClientError)
-  expect(() => configClient({ ORCH_RECORD_API_URL: 'https://record.test' }, fetch, null)).toThrow(
-    'hosted config is not configured',
-  )
+  expect(() =>
+    configClient({ BOTTEGA_RECORD_API_URL: 'https://record.test' }, fetch, null),
+  ).toThrow('hosted config is not configured')
 })
 
 test('config client names an unreachable route and response status without exposing bodies', async () => {
   const unreachable = configClient(
-    { ORCH_RECORD_API_URL: 'https://record.test' },
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     async () => {
       throw new Error('secret body')
     },
@@ -31,7 +31,7 @@ test('config client names an unreachable route and response status without expos
     route: '/v1/config/secrets?environment=default',
   })
   const refused = configClient(
-    { ORCH_RECORD_API_URL: 'https://record.test' },
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     async () => new Response('secret body', { status: 403 }),
     'test',
   )
@@ -48,7 +48,7 @@ test('config client names an unreachable route and response status without expos
 
 test('config client refuses a non-JSON response with its source and response facts', async () => {
   const client = configClient(
-    { ORCH_RECORD_API_URL: 'https://record.test' },
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
     async () =>
       new Response('<html>app</html>', {
         status: 200,
@@ -68,7 +68,7 @@ test('response diagnostics remove URL credentials, queries, and fragments', asyn
     'https://record.test?token=query-secret#fragment-secret',
   ]) {
     const client = configClient(
-      { ORCH_RECORD_API_URL: url },
+      { BOTTEGA_RECORD_API_URL: url },
       async () => new Response('html', { headers: { 'content-type': 'text/html' } }),
       'test',
     )

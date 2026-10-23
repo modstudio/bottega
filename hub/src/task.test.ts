@@ -349,13 +349,13 @@ describe('local task tracker', () => {
     let previousHostedUrl: string | undefined
 
     beforeEach(() => {
-      previousHostedUrl = process.env.HUB_HOSTED_URL
-      process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+      previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+      process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
     })
 
     afterEach(() => {
-      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-      else process.env.HUB_HOSTED_URL = previousHostedUrl
+      if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+      else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
     })
 
     test('comment authors may edit and delete while other record users are refused', async () => {
@@ -698,13 +698,13 @@ describe('local task tracker', () => {
       let previousHostedUrl: string | undefined
 
       beforeEach(() => {
-        previousHostedUrl = process.env.HUB_HOSTED_URL
-        delete process.env.HUB_HOSTED_URL
+        previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+        delete process.env.BOTTEGA_HOSTED_URL
       })
 
       afterEach(() => {
-        if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-        else process.env.HUB_HOSTED_URL = previousHostedUrl
+        if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+        else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
       })
 
       test('honors capability refusal', expectCapabilityRefusal)
@@ -714,13 +714,13 @@ describe('local task tracker', () => {
       let previousHostedUrl: string | undefined
 
       beforeEach(() => {
-        previousHostedUrl = process.env.HUB_HOSTED_URL
-        process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+        previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+        process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
       })
 
       afterEach(() => {
-        if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-        else process.env.HUB_HOSTED_URL = previousHostedUrl
+        if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+        else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
       })
 
       test('honors capability refusal', expectCapabilityRefusal)
@@ -789,14 +789,14 @@ describe('declared project space task writes', () => {
 })
 
 describe('local-authoritative task writes', () => {
-  const previousHostedUrl = process.env.HUB_HOSTED_URL
+  const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
   beforeAll(() => {
-    delete process.env.HUB_HOSTED_URL
+    delete process.env.BOTTEGA_HOSTED_URL
   })
   beforeEach(resetFixtureStore)
   afterAll(() => {
-    if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-    else process.env.HUB_HOSTED_URL = previousHostedUrl
+    if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+    else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
   })
 
   test('mints the next key, then update close and comment write hub.db', async () => {
@@ -895,7 +895,7 @@ describe('local-authoritative task writes', () => {
     )
   })
 
-  test('a hosted-bound install with HUB_HOSTED_URL unset refuses hub-protocol writes', async () => {
+  test('a hosted-bound install with BOTTEGA_HOSTED_URL unset refuses hub-protocol writes', async () => {
     writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
     await expect(
       createTask({ project: 'workshop', title: 'Must not mint locally on a bound install' }),

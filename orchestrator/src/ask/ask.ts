@@ -89,10 +89,10 @@ import { requestWorkerNote } from './worker-note-request.ts'
  * question into a killed process.
  */
 function boundedTimeout(): number {
-  const raw = Number(process.env.ORCH_ASK_TIMEOUT_MS ?? 10 * 60_000)
+  const raw = Number(process.env.BOTTEGA_ASK_TIMEOUT_MS ?? 10 * 60_000)
   // A non-finite or nonsense value would make the deadline unreachable, and an
   // unreachable deadline is precisely the hang this whole file exists to
-  // prevent — `ORCH_ASK_TIMEOUT_MS=Infinity` would restore it in one word.
+  // prevent — `BOTTEGA_ASK_TIMEOUT_MS=Infinity` would restore it in one word.
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000
 }
 const ASK_TIMEOUT_MS = boundedTimeout()
@@ -454,7 +454,7 @@ export async function ask(o: {
  * The run id comes from the ENVIRONMENT, not from the tool arguments. A worker
  * that had to name its own run could name someone else's, and in a fan-out that
  * is not hypothetical — several workers are alive at once and each one's idea
- * of "my run id" would be a guess. `ORCH_RUN_ID` is set by the process that
+ * of "my run id" would be a guess. `BOTTEGA_RUN_ID` is set by the process that
  * spawned the agent, which is the only party that actually knows.
  */
 type AskServerDependencies = {
@@ -550,7 +550,7 @@ export function createAskMcpServer(
    * WHETHER THIS PROCESS IS ACTUALLY THE WORKER IT CLAIMS TO BE.
    *
    * The server is registered globally with codex and grok, so ANY process on
-   * this machine can launch it with `ORCH_RUN_ID=42` and post questions that
+   * this machine can launch it with `BOTTEGA_RUN_ID=42` and post questions that
    * appear to come from run 42 — polluting its inbox and, worse, letting an
    * architect's ruling be shaped by a question the real worker never asked.
    * A run id is an identifier, not a credential, and it is printed in every
@@ -882,7 +882,7 @@ export async function startAskLoopback(runId: string, token: string): Promise<As
 async function proxyAsk(urlValue: string): Promise<void> {
   const url = new URL(urlValue)
   if (url.protocol !== 'tcp:' || url.hostname !== '127.0.0.1' || !url.port) {
-    throw new Error('ORCH_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
+    throw new Error('BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
   }
   const socket = createConnection({ host: '127.0.0.1', port: Number(url.port) })
   await new Promise<void>((resolve, reject) => {
@@ -898,11 +898,11 @@ async function proxyAsk(urlValue: string): Promise<void> {
 }
 
 export async function serveAsk(): Promise<void> {
-  const loopback = process.env.ORCH_ASK_URL
+  const loopback = process.env.BOTTEGA_ASK_URL
   if (loopback) return proxyAsk(loopback)
-  const runId = resolveRunIdentifier(db(), process.env.ORCH_RUN_ID ?? '')
+  const runId = resolveRunIdentifier(db(), process.env.BOTTEGA_RUN_ID ?? '')
   enableRunSchemaReload(runId)
-  const token = process.env.ORCH_RUN_TOKEN ?? ''
+  const token = process.env.BOTTEGA_RUN_TOKEN ?? ''
   serveStdio(() => createAskMcpServer(runId, token), {
     transport: observeAskTransport(new StdioServerTransport(), runId),
     onerror: writeAskServerFailure,

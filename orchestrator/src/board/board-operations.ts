@@ -367,7 +367,7 @@ export function hostedBoardStatusResult(
 function authorFacts(env: Environment, database = db()) {
   const actor = boardActor(env)
   const identity = architectIdentity(env)
-  const localRunId = env.ORCH_RUN_ID ? resolveRunIdentifier(database, env.ORCH_RUN_ID) : null
+  const localRunId = env.BOTTEGA_RUN_ID ? resolveRunIdentifier(database, env.BOTTEGA_RUN_ID) : null
   const run = localRunId
     ? database
         .query<{ record_id: string | null; session_id: string | null }, [string]>(

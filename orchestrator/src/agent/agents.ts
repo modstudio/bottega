@@ -401,7 +401,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
     // which the env_vars overlay and --strict-config were verified together.
     // https://developers.openai.com/codex/config-reference#mcp_serversidenv_vars
     minimumCliVersion: '0.153.4',
-    model: process.env.ORCH_CODEX_MODEL ?? 'gpt-5.6-sol',
+    model: process.env.BOTTEGA_CODEX_MODEL ?? 'gpt-5.6-sol',
     billing: 'subscription',
     operatedBy: 'vendor',
     // writesRepo VERIFIED: `-s workspace-write` in a scratch git repo created
@@ -511,7 +511,7 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
     name: 'grok',
     bin: 'grok',
     minimumCliVersion: '1.0.13',
-    model: process.env.ORCH_GROK_MODEL ?? 'grok-4.6',
+    model: process.env.BOTTEGA_GROK_MODEL ?? 'grok-4.6',
     billing: 'subscription',
     operatedBy: 'vendor',
     mcpToolNamePattern: '^[A-Za-z0-9_-]{1,64}$',

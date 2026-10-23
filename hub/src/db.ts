@@ -66,7 +66,7 @@ export const DB_PATH = livePath
 const RESTRICTED_ACTOR_WRITE_REFUSAL =
   'refusing to write hub rows to the shared store from a worker, linked worktree, or borrowed clone\n' +
   'invariant: A restricted process reads the shared hub store and never writes or migrates it.\n' +
-  'cleared by: run the command as an operator from the main checkout, or set HUB_DB to a temporary scratch copy'
+  'cleared by: run the command as an operator from the main checkout, or set BOTTEGA_HUB_DB to a temporary scratch copy'
 
 /** Gather hub-specific path and caller facts for the shared store-access decision. */
 export function hubStoreAccess(
@@ -93,7 +93,7 @@ function assertHubStoreWritable(): void {
 }
 
 function legacyDatabaseRefusal(): string | null {
-  if (process.env.HUB_DB || !legacyPath) return null
+  if (process.env.BOTTEGA_HUB_DB || !legacyPath) return null
   return legacyStoreRefusal(
     {
       store: existsSync(legacyPath),
@@ -115,8 +115,8 @@ function authorizedHubInstallation(): boolean {
 export function missingHubDatabaseMessage(path = DB_PATH): string {
   return (
     `hub database does not exist: ${path}\n` +
-    'invariant: An absent HUB_DB path is a mistake, not a request to create a store.\n' +
-    'cleared by: unset HUB_DB to use the installation store, or name an existing database'
+    'invariant: An absent BOTTEGA_HUB_DB path is a mistake, not a request to create a store.\n' +
+    'cleared by: unset BOTTEGA_HUB_DB to use the installation store, or name an existing database'
   )
 }
 
@@ -211,7 +211,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 
 export function db(): Database {
   if (handle) return refuseOrReloadStaleSchema(handle, false)
-  // bun test sets NODE_ENV=test; an unset HUB_DB must not fall back to the live store.
+  // bun test sets NODE_ENV=test; an unset BOTTEGA_HUB_DB must not fall back to the live store.
   assertTestHubDatabasePath()
   requireDatabase()
   const access = hubStoreAccess(restrictedActor, DB_PATH)
@@ -308,11 +308,17 @@ function openMigrationDatabase(): { database: Database; create: boolean } {
   if (refusal) throw new Error(refusal)
   const create = !existsSync(DB_PATH)
   const creationRefusal = create
-    ? implicitHubDatabaseCreationRefusal(Boolean(process.env.HUB_DB), authorizedHubInstallation())
+    ? implicitHubDatabaseCreationRefusal(
+        Boolean(process.env.BOTTEGA_HUB_DB),
+        authorizedHubInstallation(),
+      )
     : null
   if (creationRefusal) throw new Error(creationRefusal)
   const authorizationRefusal = !create
-    ? existingDefaultStoreMigrationRefusal(Boolean(process.env.HUB_DB), authorizedHubInstallation())
+    ? existingDefaultStoreMigrationRefusal(
+        Boolean(process.env.BOTTEGA_HUB_DB),
+        authorizedHubInstallation(),
+      )
     : null
   if (authorizationRefusal) throw new Error(authorizationRefusal)
   if (create) mkdirSync(dirname(DB_PATH), { recursive: true })

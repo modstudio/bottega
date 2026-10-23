@@ -14,8 +14,8 @@ beforeEach(() => {
   identityKeys = [
     ...Object.keys(process.env).filter((key) => /(?:SESSION_ID|THREAD_ID)$/.test(key)),
     'CLAUDE_CODE_SESSION_ID',
-    'ORCH_RUN_ID',
-    'ORCH_DEPTH',
+    'BOTTEGA_RUN_ID',
+    'BOTTEGA_DEPTH',
   ]
   identityEnvironment = Object.fromEntries(identityKeys.map((key) => [key, process.env[key]]))
   for (const key of identityKeys) delete process.env[key]
@@ -49,7 +49,7 @@ test('board_status MCP tool refuses worker callers', async () => {
     { audience: 'operator', title: 'MCP status guard', body: 'Workers cannot inspect status.' },
     {},
   )
-  process.env.ORCH_RUN_ID = 'mcp-board-worker'
+  process.env.BOTTEGA_RUN_ID = 'mcp-board-worker'
   try {
     const result = await withBoardClient((client) =>
       client.callTool({ name: 'board_status', arguments: { id: String(posted.recordId) } }),
@@ -59,7 +59,7 @@ test('board_status MCP tool refuses worker callers', async () => {
       expect.objectContaining({ text: expect.stringContaining('workers cannot use') }),
     ])
   } finally {
-    delete process.env.ORCH_RUN_ID
+    delete process.env.BOTTEGA_RUN_ID
   }
 })
 

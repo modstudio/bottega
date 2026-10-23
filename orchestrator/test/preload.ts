@@ -22,8 +22,8 @@ const discoveryEnv = Object.fromEntries(
   Object.entries(process.env).filter(
     ([key]) =>
       !key.startsWith('GIT_') &&
-      key !== 'ORCH_GUARDED_GIT_COMMON_DIR' &&
-      key !== 'ORCH_ALLOWED_GIT_REF',
+      key !== 'BOTTEGA_GUARDED_GIT_COMMON_DIR' &&
+      key !== 'BOTTEGA_ALLOWED_GIT_REF',
   ),
 )
 const commonDir = Bun.spawnSync(['git', 'rev-parse', '--git-common-dir'], {
@@ -45,7 +45,7 @@ export const REGISTERED_LIVE_STORE = resolve(
  *
  * The preload used to clear every table between tests with DELETE statements.
  * On 2026-09-07 those statements ran against the live orchestrator database:
- * the dispatcher exports ORCH_DB to every worker, and a worker's test leg from
+ * the dispatcher exports BOTTEGA_ORCHESTRATOR_DB to every worker, and a worker's test leg from
  * a linked worktree emptied 27 tables. A fixture that CREATES cannot be aimed at
  * the wrong target; a fixture that CLEARS can, and had been, so there is no
  * clearing statement left here to aim. db() caches one process-wide handle and
@@ -54,12 +54,12 @@ export const REGISTERED_LIVE_STORE = resolve(
  */
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
-const originalSandbox = process.env.ORCH_SANDBOX
+const originalSandbox = process.env.BOTTEGA_SANDBOX
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
-const originalRecordApiUrl = process.env.ORCH_RECORD_API_URL
-const originalRunId = process.env.ORCH_RUN_ID
-const originalDepth = process.env.ORCH_DEPTH
+const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+const originalRunId = process.env.BOTTEGA_RUN_ID
+const originalDepth = process.env.BOTTEGA_DEPTH
 const originalStateHome = process.env[STATE_HOME_ENV]
 const inheritedGitConfig: Record<string, string> = {}
 const gitConfigEnvironmentName = /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/
@@ -68,10 +68,10 @@ const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env[CONFIG_HOME_ENV] = configDir
 process.env[HARNESS_ENV_FILE_ENV] = ''
-delete process.env.ORCH_RECORD_API_URL
-process.env.ORCH_DB = store
+delete process.env.BOTTEGA_RECORD_API_URL
+process.env.BOTTEGA_ORCHESTRATOR_DB = store
 const { directory: hubDatabaseDir } = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
-process.env.ORCH_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
+process.env.BOTTEGA_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
 // A fixture landing runs a gate of its own. It must count only fixture gates:
 // with the machine's pid directory inherited, a landing spawned inside a gate
 // saw the outer gates and held for host capacity until its test expired (four
@@ -94,10 +94,10 @@ for (const bin of ['codex', 'codex-acp', 'grok', 'agy', 'qwen', 'goose']) {
   chmodSync(join(cleanDockerBin, bin), 0o755)
 }
 process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
-process.env.ORCH_SANDBOX = 'host'
-export const PRELOAD_STORE = process.env.ORCH_DB
-export const PRELOAD_RUNS = process.env.ORCH_RUNS
-mkdirSync(process.env.ORCH_RUNS)
+process.env.BOTTEGA_SANDBOX = 'host'
+export const PRELOAD_STORE = process.env.BOTTEGA_ORCHESTRATOR_DB
+export const PRELOAD_RUNS = process.env.BOTTEGA_RUNS
+mkdirSync(process.env.BOTTEGA_RUNS)
 
 const assertTestHubDatabase = createTestHubDatabaseGuard()
 assertTestHubDatabase()
@@ -113,7 +113,7 @@ const { registerStandardTransports } = await import('../src/runtime/standard-tra
 /**
  * The store db.ts resolved must be the one minted above, inside a directory
  * this preload created under the temporary directory. Anything else means an
- * import ran ahead of the environment or ORCH_DB was replaced, and the suite
+ * import ran ahead of the environment or BOTTEGA_ORCHESTRATOR_DB was replaced, and the suite
  * would be about to run against a store it does not own. Refuse before a single
  * test writes.
  */
@@ -129,7 +129,7 @@ function assertOwnedStore(): void {
     throw new Error(
       `test preload refuses to run: db.ts resolved ${DB_PATH}, not the fixture store ${store} under ${tmpdir()}\n` +
         'invariant: A test suite only ever writes a store its own preload created.\n' +
-        'cleared by: bun test from orchestrator/ with ORCH_DB unset',
+        'cleared by: bun test from orchestrator/ with BOTTEGA_ORCHESTRATOR_DB unset',
     )
   }
 }
@@ -211,7 +211,10 @@ beforeEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
   registerStandardTransports()
   assertTestHubDatabase()
-  if (process.env.ORCH_DB && resolve(process.env.ORCH_DB) === REGISTERED_LIVE_STORE) {
+  if (
+    process.env.BOTTEGA_ORCHESTRATOR_DB &&
+    resolve(process.env.BOTTEGA_ORCHESTRATOR_DB) === REGISTERED_LIVE_STORE
+  ) {
     throw new Error(`test process refuses registered live store: ${REGISTERED_LIVE_STORE}`)
   }
   assertOwnedStore()
@@ -272,17 +275,17 @@ function restoreEnvironment(name: string, value: string | undefined): void {
 
 afterAll(() => {
   closeDatabaseForFixture()
-  delete process.env.ORCH_DB
-  delete process.env.HUB_DB
-  delete process.env.ORCH_RUNS
+  delete process.env.BOTTEGA_ORCHESTRATOR_DB
+  delete process.env.BOTTEGA_HUB_DB
+  delete process.env.BOTTEGA_RUNS
   restoreEnvironment(STATE_HOME_ENV, originalStateHome)
   restoreEnvironment('PATH', originalPath)
-  restoreEnvironment('ORCH_SANDBOX', originalSandbox)
+  restoreEnvironment('BOTTEGA_SANDBOX', originalSandbox)
   restoreEnvironment(CONFIG_HOME_ENV, originalConfigHome)
   restoreEnvironment(HARNESS_ENV_FILE_ENV, originalHarnessEnvFile)
-  restoreEnvironment('ORCH_RECORD_API_URL', originalRecordApiUrl)
-  restoreEnvironment('ORCH_RUN_ID', originalRunId)
-  restoreEnvironment('ORCH_DEPTH', originalDepth)
+  restoreEnvironment('BOTTEGA_RECORD_API_URL', originalRecordApiUrl)
+  restoreEnvironment('BOTTEGA_RUN_ID', originalRunId)
+  restoreEnvironment('BOTTEGA_DEPTH', originalDepth)
   for (const key of Object.keys(process.env)) {
     if (gitConfigEnvironmentName.test(key)) delete process.env[key]
   }

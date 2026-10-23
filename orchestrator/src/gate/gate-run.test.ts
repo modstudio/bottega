@@ -15,14 +15,14 @@ let priorSession: string | undefined
 const headCommit = 'a'.repeat(40)
 const cleanGitState = () => ({ headCommit, porcelainPaths: [] })
 beforeEach(() => {
-  priorDepth = process.env.ORCH_DEPTH
+  priorDepth = process.env.BOTTEGA_DEPTH
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  delete process.env.ORCH_DEPTH
+  delete process.env.BOTTEGA_DEPTH
   process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
 })
 afterEach(() => {
-  if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = priorDepth
+  if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+  else process.env.BOTTEGA_DEPTH = priorDepth
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
 })
@@ -317,9 +317,9 @@ test('refuses a project without a registered gate', async () => {
 })
 
 test('refuses a worker session', async () => {
-  process.env.ORCH_DEPTH = '1'
+  process.env.BOTTEGA_DEPTH = '1'
   expect(runArchitectGate({ cwd: repositoryPath, d: database() })).rejects.toThrow(
-    'ORCH_DEPTH is set',
+    'BOTTEGA_DEPTH is set',
   )
 })
 

@@ -11,11 +11,11 @@ test('the process record endpoint wins over configured files', () => {
     const config = join(root, 'config')
     const harness = join(root, 'harness.env')
     mkdirSync(config)
-    writeFileSync(harness, 'ORCH_RECORD_API_URL=https://file.example.test\n')
+    writeFileSync(harness, 'BOTTEGA_RECORD_API_URL=https://file.example.test\n')
 
     expect(
       resolveRecordApiUrl({
-        ORCH_RECORD_API_URL: 'https://process.example.test',
+        BOTTEGA_RECORD_API_URL: 'https://process.example.test',
         [CONFIG_HOME_ENV]: config,
         [HARNESS_ENV_FILE_ENV]: harness,
       }),
@@ -31,7 +31,7 @@ test('the record endpoint falls back to configured files', () => {
     const config = join(root, 'config')
     const harness = join(root, 'harness.env')
     mkdirSync(config)
-    writeFileSync(harness, 'ORCH_RECORD_API_URL=https://file.example.test\n')
+    writeFileSync(harness, 'BOTTEGA_RECORD_API_URL=https://file.example.test\n')
 
     expect(
       resolveRecordApiUrl({

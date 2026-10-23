@@ -344,48 +344,48 @@ test('workflow inspection reads only the current project space and stays local o
   ).toBe(true)
 })
 
-test('workflow hydrate check resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
+test('workflow hydrate check resolves hosted production from the worktree without BOTTEGA_MAIN_CHECKOUT', async () => {
   const fixture = hostedWorkflowRepositoryFixture('hydrate')
   const project = 'hydrate-hosted-worktree'
   registerOwningProject(project, fixture.mainCheckout)
   expect(projectAt(fixture.worktree)?.name).toBe(project)
   installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
   publishStaleLocalWorkflow('hydrate-local-only')
-  const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
+  const priorMainCheckout = process.env.BOTTEGA_MAIN_CHECKOUT
   const result = outcomePresentation()
   try {
-    delete process.env.ORCH_MAIN_CHECKOUT
+    delete process.env.BOTTEGA_MAIN_CHECKOUT
     await workflowCommand(
       ['workflow', 'hydrate', '--check', '--cwd', fixture.worktree],
       result.presentation,
     )
   } finally {
-    if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
-    else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+    if (priorMainCheckout === undefined) delete process.env.BOTTEGA_MAIN_CHECKOUT
+    else process.env.BOTTEGA_MAIN_CHECKOUT = priorMainCheckout
     fixture.dispose()
   }
   expect(result.stdout).toEqual([])
   expect(result.exitCodes).toEqual([])
 })
 
-test('workflow import resolves hosted production from the worktree without ORCH_MAIN_CHECKOUT', async () => {
+test('workflow import resolves hosted production from the worktree without BOTTEGA_MAIN_CHECKOUT', async () => {
   const fixture = hostedWorkflowRepositoryFixture('import')
   const project = 'import-hosted-worktree'
   registerOwningProject(project, fixture.mainCheckout)
   expect(projectAt(fixture.worktree)?.name).toBe(project)
   installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
   publishStaleLocalWorkflow('import-local-only')
-  const priorMainCheckout = process.env.ORCH_MAIN_CHECKOUT
+  const priorMainCheckout = process.env.BOTTEGA_MAIN_CHECKOUT
   const lines: string[] = []
   try {
-    delete process.env.ORCH_MAIN_CHECKOUT
+    delete process.env.BOTTEGA_MAIN_CHECKOUT
     await workflowCommand(
       ['workflow', 'import', '--cwd', fixture.worktree, '--reason', 'unchanged hosted tree'],
       presentation(lines),
     )
   } finally {
-    if (priorMainCheckout === undefined) delete process.env.ORCH_MAIN_CHECKOUT
-    else process.env.ORCH_MAIN_CHECKOUT = priorMainCheckout
+    if (priorMainCheckout === undefined) delete process.env.BOTTEGA_MAIN_CHECKOUT
+    else process.env.BOTTEGA_MAIN_CHECKOUT = priorMainCheckout
     fixture.dispose()
   }
   expect(lines.join('\n')).toMatch(/^catalogue: no change\n(?:.+: no change\n?)+$/)
@@ -402,8 +402,8 @@ test('workflow tree project refusal is only required for a configured record wit
 })
 
 test('workflow hydrate and import refuse an unowned directory when a record is configured', async () => {
-  const priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   try {
     await expect(
       workflowCommand(
@@ -424,8 +424,8 @@ test('workflow hydrate and import refuse an unowned directory when a record is c
         "cleared by: run from a registered project's worktree, or pass --cwd for one",
     )
   } finally {
-    if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-    else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
+    if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
   }
 })
 
@@ -564,10 +564,10 @@ test('workflow child command invocation preserves an embedded separator in exec 
 })
 
 test('Commander refuses workflow exec without a separator before running the child', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const before = (db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n
     setRawArgv(['workflow', 'exec', '/usr/bin/printf', '%s', '--cwd', 'child-dir', '--json'])
@@ -590,8 +590,8 @@ test('Commander refuses workflow exec without a separator before running the chi
 
     expect((db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n).toBe(before)
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
@@ -641,10 +641,10 @@ test('workflow probe and exec preserve child options after the real argv separat
 })
 
 test('workflow exec service returns each child exit code after recording its row', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     upsertProject({
       recordId: newRecordId(),
@@ -674,8 +674,8 @@ test('workflow exec service returns each child exit code after recording its row
       { command: '["failing"]', exit_code: 7 },
     ])
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }

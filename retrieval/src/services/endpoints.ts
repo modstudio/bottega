@@ -16,8 +16,8 @@ type RetrievalEndpoints = { embedUrl: string; rerankUrl: string }
 
 export function endpointsFromEnvironment(environment: NodeJS.ProcessEnv): RetrievalEndpoints {
   return {
-    embedUrl: environment.ORCH_EMBED_URL ?? DEFAULT_EMBED_URL,
-    rerankUrl: environment.ORCH_RERANK_URL ?? DEFAULT_RERANK_URL,
+    embedUrl: environment.BOTTEGA_EMBED_URL ?? DEFAULT_EMBED_URL,
+    rerankUrl: environment.BOTTEGA_RERANK_URL ?? DEFAULT_RERANK_URL,
   }
 }
 
@@ -25,7 +25,7 @@ function refusal(kind: string, url: string, detail: string): Error {
   return new Error(
     `${kind} endpoint could not be established at ${url}: ${detail}. ` +
       'Run `bin/retrieval-search --check` and retry. ' +
-      'Configure the endpoints with ORCH_EMBED_URL and ORCH_RERANK_URL.',
+      'Configure the endpoints with BOTTEGA_EMBED_URL and BOTTEGA_RERANK_URL.',
   )
 }
 

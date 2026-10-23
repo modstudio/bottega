@@ -8,7 +8,7 @@ import { migrate } from 'drizzle-orm/bun-sql/migrator'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
-const migrationUrl = process.env.ORCH_TEST_RECIPIENT_MIGRATION_URL
+const migrationUrl = process.env.BOTTEGA_TEST_RECIPIENT_MIGRATION_URL
 const realPostgres = migrationUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const recipientMigration = '20260918160359_dev_803_report_recipients'

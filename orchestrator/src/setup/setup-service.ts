@@ -17,6 +17,7 @@ import {
   type SetupProjectService,
 } from './setup-apply.ts'
 import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts'
+import { setupEnvironmentService } from './setup-environment-runtime.ts'
 import { gatherSetupFacts } from './setup-facts.ts'
 import { captureLegacyPathSymlinks, pathDirectories } from './setup-legacy-path.ts'
 import { stableMcpServers } from './setup-mcp.ts'
@@ -126,7 +127,7 @@ export function applySetupPlan(actions: SetupAction[]): Promise<SetupActionResul
   if (actions.some((action) => action.kind === 'register-mcp')) {
     assertMcpRegistrationWriteAllowed()
   }
-  return applySetupActions(actions, setupProjectService())
+  return applySetupActions(actions, setupProjectService(), setupEnvironmentService)
 }
 
 export function createSetupService(adapters: SetupServiceAdapters): SetupService {

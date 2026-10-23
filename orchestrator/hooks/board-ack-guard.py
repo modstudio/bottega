@@ -42,7 +42,7 @@ def notice_summary(notices, stopping: bool = False) -> str:
 
 def main() -> int:
     try:
-        if os.environ.get("ORCH_RUN_ID"):
+        if os.environ.get("BOTTEGA_RUN_ID"):
             return 0
         payload = json.load(sys.stdin)
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")

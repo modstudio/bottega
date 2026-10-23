@@ -13,8 +13,8 @@ delivery:
 ```sh
 fly apps create bottega-hub-report-delivery --org bottega
 fly secrets set -a bottega-hub-report-delivery \
-  HUB_RECORD_DATABASE_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
-  HUB_HOSTED_URL='https://app.bottega.run' \
+  BOTTEGA_RECORD_DATABASE_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
+  BOTTEGA_HOSTED_URL='https://app.bottega.run' \
   SES_REGION='us-east-2' \
   SES_FROM_ADDRESS='<display name and verified sender address>' \
   SES_ACCESS_KEY_ID='<access-key-id>' \
@@ -22,7 +22,7 @@ fly secrets set -a bottega-hub-report-delivery \
 ```
 
 Keep every value above as a Fly secret. The image defaults to report delivery being disabled
-even when enabled subscriptions exist: without `HUB_REPORT_DELIVERY_ENABLED=true`, a
+even when enabled subscriptions exist: without `BOTTEGA_REPORT_DELIVERY_ENABLED=true`, a
 scheduled pass still prunes the change log, then exits successfully without reading
 subscriptions or sending mail.
 
@@ -55,14 +55,14 @@ fly machine run . \
 Enable only after the dry output and enabled subscription list are approved:
 
 ```sh
-fly secrets set -a bottega-hub-report-delivery HUB_REPORT_DELIVERY_ENABLED=true
+fly secrets set -a bottega-hub-report-delivery BOTTEGA_REPORT_DELIVERY_ENABLED=true
 ```
 
 To disable immediately, unset the flag and verify the next Machine log names the disabled
 state:
 
 ```sh
-fly secrets unset -a bottega-hub-report-delivery HUB_REPORT_DELIVERY_ENABLED
+fly secrets unset -a bottega-hub-report-delivery BOTTEGA_REPORT_DELIVERY_ENABLED
 ```
 
 ## Updating

@@ -189,7 +189,7 @@ describe('canon current reference rules', () => {
   test('placeholders and home- or variable-rooted paths are never candidates', () => {
     expect(
       inputRules(
-        '`src/<name>.ts`, `src/{name}.ts`, `<module>.test.ts`, `~/.claude.json` and `$ORCH_SCRATCH/reply.json`',
+        '`src/<name>.ts`, `src/{name}.ts`, `<module>.test.ts`, `~/.claude.json` and `$BOTTEGA_SCRATCH/reply.json`',
         'canon/reference-path',
         { trackedPaths: ['src/real.ts'] },
       ),
@@ -421,9 +421,9 @@ describe('canon current reference rules', () => {
 
   test('code references catch absent and shell-comment-only environment names', () => {
     expect(
-      inputRules('`ORCH_LOCAL_BASE_URL` `LOCAL_CONTEXT_TOKENS`', 'canon/reference-code', {
+      inputRules('`BOTTEGA_LOCAL_BASE_URL` `LOCAL_CONTEXT_TOKENS`', 'canon/reference-code', {
         sourceTexts: [
-          { path: 'src/env.ts', text: 'const current = ORCH_MODEL_HOST_URL' },
+          { path: 'src/env.ts', text: 'const current = BOTTEGA_MODEL_HOST_URL' },
           { path: 'bin/serve.sh', text: '# LOCAL_CONTEXT_TOKENS selects the window' },
         ],
       }),

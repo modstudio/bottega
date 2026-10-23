@@ -5,7 +5,7 @@ Run these commands from the repository root. Create the app directly; do not use
 ```sh
 fly apps create bottega-api --org bottega
 fly secrets set -a bottega-api \
-  ORCH_RECORD_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
+  BOTTEGA_RECORD_URL='postgres://record_actor:<password>@bottega-record.flycast:5432/record' \
   RECORD_AUTH_DATABASE_URL='postgres://record_auth:<password>@bottega-record.flycast:5432/record' \
   BETTER_AUTH_SECRET='<generated-secret>' \
   BETTER_AUTH_URL='https://api.bottega.run' \
@@ -21,11 +21,11 @@ fly certs add api.bottega.run -a bottega-api
 ```
 
 The app is deployed with `bottega release run bottega --rung hosted-api`; the deploy script refuses a
-direct call. The deploy script takes `ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one
+direct call. The deploy script takes `BOTTEGA_RECORD_MIGRATE_URL` from the environment, or reads that one
 variable from the operator's env file when the environment lacks it. It gives the value to the
 migration only, never to Fly, then migrates the record and confirms that applied migrations
 equal those shipped in the image before invoking Fly. The
-image's release command uses its low-privilege `ORCH_RECORD_URL` and refuses a release with
+image's release command uses its low-privilege `BOTTEGA_RECORD_URL` and refuses a release with
 pending migrations, so a bare `fly deploy` cannot run ahead of the record schema.
 The app serves `GET /version` with the commit it was built from; the deploy script supplies that
 commit as a build argument.
@@ -43,7 +43,7 @@ GRANT record_public TO record_actor WITH INHERIT FALSE, SET TRUE;
 The migration grants this role only the auth tables it needs and explicit access through RLS for
 spaces, memberships, and invitations. Put its connection URL in the
 `RECORD_AUTH_DATABASE_URL` Fly secret shown above. Application data continues to use
-`record_actor` through `ORCH_RECORD_URL`.
+`record_actor` through `BOTTEGA_RECORD_URL`.
 
 After migrating, designate a public document project with the signed-in record user and the
 migration-owner connection. The migrations ship no designation row. A space-only designation

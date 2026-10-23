@@ -6,7 +6,15 @@ import type { ConfigClient } from '../../../shared/config-client.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readTrustList } from '../../../shared/trust-list.ts'
-import { deleteEntry, machineInit, planRotation, setEntry } from './config-service.ts'
+import {
+  applyLegacyEnvironmentSecretMigration,
+  deleteEntry,
+  machineInit,
+  migrateLegacyEnvironmentSecrets,
+  planRotation,
+  secretEnvironmentDecision,
+  setEntry,
+} from './config-service.ts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -40,6 +48,92 @@ test('rotation plan re-seals only rows on older DEKs and retires each old DEK on
     reseal: [row('a', 'old-b'), row('c', 'old-a'), row('d', 'old-b')],
     retireDekIds: ['old-a', 'old-b'],
   })
+})
+
+test('sealed environment migration decision covers every resumable store state', () => {
+  expect(secretEnvironmentDecision('old', null)).toEqual({
+    kind: 'write-verify-delete',
+    value: 'old',
+  })
+  expect(secretEnvironmentDecision('same', 'same')).toEqual({ kind: 'delete-old' })
+  expect(secretEnvironmentDecision(null, 'new')).toEqual({ kind: 'done' })
+  expect(secretEnvironmentDecision('old', 'new')).toEqual({ kind: 'refuse' })
+})
+
+test('sealed environment migration verifies the decoded write before deleting the old name', async () => {
+  const values = new Map([['user:ORCH_RECORD_URL', 'secret-value']])
+  const calls: string[] = []
+  const store = {
+    scopes: async (oldName: string) => (oldName === 'ORCH_RECORD_URL' ? ['user' as const] : []),
+    read: async (name: string, scope: string) => values.get(`${scope}:${name}`) ?? null,
+    write: async (name: string, value: string, scope: string) => {
+      calls.push(`write ${scope}:${name}`)
+      values.set(`${scope}:${name}`, value)
+    },
+    delete: async (name: string, scope: string) => {
+      calls.push(`delete ${scope}:${name}`)
+      values.delete(`${scope}:${name}`)
+    },
+  }
+  await applyLegacyEnvironmentSecretMigration(store)
+  expect(calls).toEqual(['write user:BOTTEGA_RECORD_URL', 'delete user:ORCH_RECORD_URL'])
+
+  values.set('user:ORCH_RECORD_URL', 'secret-value')
+  values.delete('user:BOTTEGA_RECORD_URL')
+  calls.length = 0
+  store.write = async (name: string, _value: string, scope: string) => {
+    calls.push(`write ${scope}:${name}`)
+    values.set(`${scope}:${name}`, 'failed-readback')
+  }
+  await expect(applyLegacyEnvironmentSecretMigration(store)).rejects.toThrow('did not verify')
+  expect(calls).toEqual(['write user:BOTTEGA_RECORD_URL'])
+  expect(values.get('user:ORCH_RECORD_URL')).toBe('secret-value')
+})
+
+test('production sealed migration wires listed scopes, not-found reads, decoding, write verification, and delete order', async () => {
+  const values = new Map([['user:ORCH_RECORD_URL', new TextEncoder().encode('decoded-value')]])
+  const calls: string[] = []
+  const row = (key: string) => ({
+    key,
+    environment: 'default',
+    scope: 'user' as const,
+    dekId: 'dek',
+    rowVersion: 1,
+    updatedAt: '2026-10-23T00:00:00.000Z',
+  })
+  const client = {
+    listSecrets: async () => [row('ORCH_RECORD_URL')],
+    getSecret: async (name: string, scope: string) => {
+      if (!values.has(`${scope}:${name}`)) {
+        throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
+          'response',
+          '/v1/config/secrets',
+          404,
+        )
+      }
+      return row(name)
+    },
+  } as unknown as ConfigClient
+
+  const migrated = await migrateLegacyEnvironmentSecrets(client, {
+    plaintext: async (_client, secret) => values.get(`${secret.scope}:${secret.key}`)!,
+    write: async (name, value, scope) => {
+      calls.push(`write ${scope}:${name}=${value}`)
+      values.set(`${scope}:${name}`, new TextEncoder().encode(value))
+    },
+    delete: async (name, scope) => {
+      calls.push(`delete ${scope}:${name}`)
+      values.delete(`${scope}:${name}`)
+    },
+  })
+
+  expect(migrated).toEqual([
+    { oldName: 'ORCH_RECORD_URL', newName: 'BOTTEGA_RECORD_URL', scope: 'user' },
+  ])
+  expect(calls).toEqual([
+    'write user:BOTTEGA_RECORD_URL=decoded-value',
+    'delete user:ORCH_RECORD_URL',
+  ])
 })
 
 test('rotation plan retires an unreferenced old key and does so on a converged rerun', () => {

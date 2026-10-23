@@ -11,7 +11,7 @@ const DEFAULT_IDLE_STALL_MS = 25 * 60_000
 export type StalledRunState = 'healthy' | 'stalled' | 'unknown'
 
 export function idleStallMs(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.ORCH_IDLE_STALL_MS
+  const raw = env.BOTTEGA_IDLE_STALL_MS
   if (raw === undefined || raw === '') return DEFAULT_IDLE_STALL_MS
   const value = Number(raw)
   return Number.isFinite(value) && value >= 0 ? value : DEFAULT_IDLE_STALL_MS

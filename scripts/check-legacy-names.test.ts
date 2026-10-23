@@ -39,12 +39,19 @@ test('does not count concern paths and limits only hub to known verbs', () => {
   expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(1)
 })
 
-test('a report-only class can grow and is still printed', () => {
-  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB' })
-  const current = legacyNameCounts({ 'one.txt': 'ORCH_DB ORCH_PORT' })
+test('the environment class is blocking at zero', () => {
+  const baseline = legacyNameCounts({ 'one.txt': '' })
+  const current = legacyNameCounts({ 'one.txt': 'ORCH_PORT' })
 
-  expect(legacyNameGrowth(current, baseline)).toEqual([])
-  expect(legacyNameTotalLines(current)).toContain('legacy env 2')
+  expect(legacyNameGrowth(current, baseline)).toEqual([
+    'env total: 0 -> 1',
+    'env one.txt: 0 -> 1 (1 new occurrences)',
+  ])
+  expect(legacyNameTotalLines(current)).toContain('legacy env 1')
+})
+
+test('the environment class sees a bare legacy prefix string literal', () => {
+  expect(countLegacyNames(`const prefixes = ['ORCH_', "HUB_"]`).env).toBe(2)
 })
 
 test('a blocking per-file increase names its class, file, and new occurrences', () => {
@@ -57,8 +64,8 @@ test('a blocking per-file increase names its class, file, and new occurrences', 
 })
 
 test('a decrease passes and update lowers the baseline', () => {
-  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB ORCH_PORT' })
-  const current = legacyNameCounts({ 'one.txt': 'ORCH_DB' })
+  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_PORT' })
+  const current = legacyNameCounts({ 'one.txt': '' })
 
   expect(legacyNameGrowth(current, baseline)).toEqual([])
   expect(loweredLegacyNameBaseline(current, baseline)).toEqual(current)
@@ -74,7 +81,7 @@ test('update refuses an increase', () => {
 })
 
 test('baseline validation requires every class with numeric totals and file counts', () => {
-  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_DB' })
+  const baseline = legacyNameCounts({ 'one.txt': 'ORCH_PORT' })
   expect(validateLegacyNameBaseline(baseline)).toEqual(baseline)
 
   expect(() => validateLegacyNameBaseline({ ...baseline, env: { files: {} } })).toThrow(

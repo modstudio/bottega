@@ -237,14 +237,14 @@ printf '%s\\n' '{"registered":true,"project":"fixture","rulings":{"value":"agent
 `,
   )
   chmodSync(executable, 0o755)
-  const prior = process.env.HUB_ORCH
+  const prior = process.env.BOTTEGA_ORCH
   try {
-    process.env.HUB_ORCH = executable
+    process.env.BOTTEGA_ORCH = executable
     const result = await contextGet('/fixture')
     expect(result.registered && result.shipTo.landing).toBeNull()
   } finally {
-    if (prior === undefined) delete process.env.HUB_ORCH
-    else process.env.HUB_ORCH = prior
+    if (prior === undefined) delete process.env.BOTTEGA_ORCH
+    else process.env.BOTTEGA_ORCH = prior
     rmSync(root, { recursive: true, force: true })
   }
 })
@@ -257,15 +257,15 @@ test('settings check preserves an exit-one refusal with empty stdout', async () 
     `#!/bin/sh\nprintf '%s\\n' 'no signed-in record session; run ${PLATFORM_SLUG} record login' >&2\nexit 1\n`,
   )
   chmodSync(executable, 0o755)
-  const prior = process.env.HUB_ORCH
+  const prior = process.env.BOTTEGA_ORCH
   try {
-    process.env.HUB_ORCH = executable
+    process.env.BOTTEGA_ORCH = executable
     await expect(settingsCheck({ user: true })).rejects.toThrow(
       `no signed-in record session; run ${PLATFORM_SLUG} record login`,
     )
   } finally {
-    if (prior === undefined) delete process.env.HUB_ORCH
-    else process.env.HUB_ORCH = prior
+    if (prior === undefined) delete process.env.BOTTEGA_ORCH
+    else process.env.BOTTEGA_ORCH = prior
     rmSync(root, { recursive: true, force: true })
   }
 })
@@ -276,7 +276,7 @@ test('board calls remove worker and harness identity markers from the orchestrat
   writeFileSync(
     executable,
     `#!/bin/sh
-if env | grep -Eq '^(ORCH_RUN_ID|ORCH_DEPTH|CLAUDE_CODE_SESSION_ID|CODEX_THREAD_ID)='; then
+if env | grep -Eq '^(BOTTEGA_RUN_ID|BOTTEGA_DEPTH|CLAUDE_CODE_SESSION_ID|CODEX_THREAD_ID)='; then
   printf '%s\n' 'board child inherited a session or run marker' >&2
   exit 1
 fi
@@ -285,16 +285,16 @@ printf '%s\n' '{"messages":[],"warning":null}'
   )
   chmodSync(executable, 0o755)
   const prior = {
-    HUB_ORCH: process.env.HUB_ORCH,
-    ORCH_RUN_ID: process.env.ORCH_RUN_ID,
-    ORCH_DEPTH: process.env.ORCH_DEPTH,
+    BOTTEGA_ORCH: process.env.BOTTEGA_ORCH,
+    BOTTEGA_RUN_ID: process.env.BOTTEGA_RUN_ID,
+    BOTTEGA_DEPTH: process.env.BOTTEGA_DEPTH,
     CLAUDE_CODE_SESSION_ID: process.env.CLAUDE_CODE_SESSION_ID,
     CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
   }
   try {
-    process.env.HUB_ORCH = executable
-    process.env.ORCH_RUN_ID = '42'
-    process.env.ORCH_DEPTH = '1'
+    process.env.BOTTEGA_ORCH = executable
+    process.env.BOTTEGA_RUN_ID = '42'
+    process.env.BOTTEGA_DEPTH = '1'
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     process.env.CODEX_THREAD_ID = 'codex-thread'
     await expect(boardList({})).resolves.toEqual({ messages: [], warning: null })
@@ -535,26 +535,26 @@ test('orchestrator resolution accepts only executable files from override, check
   chmodSync(found, 0o755)
   const override = join(root, 'override-orch')
   mkdirSync(override)
-  const priorOrch = process.env.HUB_ORCH
+  const priorOrch = process.env.BOTTEGA_ORCH
   const priorPath = process.env.PATH
   const priorHome = process.env[INSTALL_HOME_ENV]
   try {
     process.env[INSTALL_HOME_ENV] = bundledRoot
-    process.env.HUB_ORCH = override
+    process.env.BOTTEGA_ORCH = override
     process.env.PATH = `${first}:${second}`
     const bundled = await import(`${built.outputs[0]!.path}?test=${Date.now()}`)
     expect(bundled.resolveOrchExecutable()).toBe(found)
 
     process.env.PATH = first
     expect(() => bundled.resolveOrchExecutable()).toThrow(
-      `HUB_ORCH override ${override}; checkout executable ${checkoutCandidate}; PATH lookup found nothing`,
+      `BOTTEGA_ORCH override ${override}; checkout executable ${checkoutCandidate}; PATH lookup found nothing`,
     )
-    delete process.env.HUB_ORCH
-    expect(() => bundled.resolveOrchExecutable()).toThrow('HUB_ORCH override unset')
+    delete process.env.BOTTEGA_ORCH
+    expect(() => bundled.resolveOrchExecutable()).toThrow('BOTTEGA_ORCH override unset')
     expect(() => bundled.resolveOrchExecutable()).not.toThrow(/at call time|restart|moved|renamed/)
   } finally {
-    if (priorOrch === undefined) delete process.env.HUB_ORCH
-    else process.env.HUB_ORCH = priorOrch
+    if (priorOrch === undefined) delete process.env.BOTTEGA_ORCH
+    else process.env.BOTTEGA_ORCH = priorOrch
     if (priorPath === undefined) delete process.env.PATH
     else process.env.PATH = priorPath
     if (priorHome === undefined) delete process.env[INSTALL_HOME_ENV]

@@ -40,7 +40,7 @@ function sourceArguments(
       return [assetPath('bin', PLATFORM_SLUG)]
     case 'run-exec':
       return [
-        process.env.ORCH_EXEC_PATH ?? process.execPath,
+        process.env.BOTTEGA_EXEC_PATH ?? process.execPath,
         '--no-env-file',
         assetPath('orchestrator', 'src', 'run', 'exec.ts'),
       ]

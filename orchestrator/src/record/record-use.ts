@@ -36,12 +36,12 @@ function lineEnding(text: string): string {
 /** Replace only the two hosted-address assignments, retaining all unrelated bytes. */
 export function rewriteRecordBindingEnv(text: string, addresses: RecordClientAddresses): string {
   const values = new Map([
-    ['ORCH_RECORD_API_URL', addresses.recordApiUrl],
-    ['HUB_HOSTED_URL', addresses.hubHostedUrl],
+    ['BOTTEGA_RECORD_API_URL', addresses.recordApiUrl],
+    ['BOTTEGA_HOSTED_URL', addresses.hubHostedUrl],
   ])
   const seen = new Set<string>()
   const rewritten = text.replace(
-    /(^|\r?\n)([ \t]*(?:export[ \t]+)?)(ORCH_RECORD_API_URL|HUB_HOSTED_URL)[ \t]*=[^\r\n]*/g,
+    /(^|\r?\n)([ \t]*(?:export[ \t]+)?)(BOTTEGA_RECORD_API_URL|BOTTEGA_HOSTED_URL)[ \t]*=[^\r\n]*/g,
     (_line, boundary: string, prefix: string, key: string) => {
       seen.add(key)
       return `${boundary}${prefix}${key}=${values.get(key)}`
@@ -94,11 +94,11 @@ export async function useHostedRecord(
   const path = resolvePlatformEnvFile(environment)
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, rewriteRecordBindingEnv(readBindingFile(path), addresses))
-  presentation.log(`wrote ORCH_RECORD_API_URL=${addresses.recordApiUrl} to ${path}`)
-  presentation.log(`wrote HUB_HOSTED_URL=${addresses.hubHostedUrl} to ${path}`)
+  presentation.log(`wrote BOTTEGA_RECORD_API_URL=${addresses.recordApiUrl} to ${path}`)
+  presentation.log(`wrote BOTTEGA_HOSTED_URL=${addresses.hubHostedUrl} to ${path}`)
   for (const [key, value] of [
-    ['ORCH_RECORD_API_URL', addresses.recordApiUrl],
-    ['HUB_HOSTED_URL', addresses.hubHostedUrl],
+    ['BOTTEGA_RECORD_API_URL', addresses.recordApiUrl],
+    ['BOTTEGA_HOSTED_URL', addresses.hubHostedUrl],
   ] as const) {
     if (environment[key] !== undefined && environment[key] !== value) {
       presentation.warn(`${key}=${environment[key]} from the environment wins for this shell`)

@@ -69,7 +69,7 @@ export function registerHostedConfigProofs(
          ('${spaceA}', 'AAAAAAAAAAAAAAAAAAAAAA', decode(repeat('00', 32), 'hex'), 'machine-a', now()),
          ('${spaceB}', 'BBBBBBBBBBBBBBBBBBBBBB', decode(repeat('11', 32), 'hex'), 'machine-b', now());`,
     )
-    if (process.env.ORCH_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select') {
+    if (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select') {
       succeeds('postgres', 'postgres', `GRANT SELECT ON config_secret TO ${RECORD_READER_ROLE};`)
     }
   })
@@ -107,7 +107,7 @@ export function registerHostedConfigProofs(
         has_table_privilege('${RECORD_READER_ROLE}', 'secret_dek_wrap', 'SELECT');`,
     )
     const falsifiesReaderGrant =
-      process.env.ORCH_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select'
+      process.env.BOTTEGA_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select'
     expect(facts).toBe(`t|t|t|t|f|t|${falsifiesReaderGrant ? 't' : 'f'}|f|f`)
   })
 
@@ -149,7 +149,7 @@ export function registerHostedConfigProofs(
       )
       if (
         table === 'config_secret' &&
-        process.env.ORCH_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select'
+        process.env.BOTTEGA_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select'
       ) {
         expect(result.code, result.stderr).toBe(0)
         expect(result.stdout).toBe('')

@@ -131,7 +131,7 @@ test('an srt deny list that does not cover the login keychain reports it as open
 
 test('record connection names in the parent environment are not listed as forwarded withheld-class names', () => {
   const reported = row(grok, 'reading', false, {
-    parentEnvNames: ['ORCH_RECORD_URL', 'ORCH_RECORD_MIGRATE_URL', 'ORCH_DB'],
+    parentEnvNames: ['BOTTEGA_RECORD_URL', 'BOTTEGA_RECORD_MIGRATE_URL', 'BOTTEGA_ORCHESTRATOR_DB'],
   })
   expect(reported.status).toBe('ok')
   if (reported.status !== 'ok') return
@@ -336,11 +336,11 @@ test('withheld-class names appear only as a warning line when any would be forwa
   const text = formatConfinementReport([reported], false)
   expect(text[0]).not.toContain('withheld')
   const warned = formatConfinementReport(
-    [{ ...reported, withheldForwarded: ['ORCH_RECORD_URL'] }],
+    [{ ...reported, withheldForwarded: ['BOTTEGA_RECORD_URL'] }],
     false,
   )
   expect(warned[0]).not.toContain('withheld')
-  expect(warned.some((line) => line.includes('warning') && line.includes('ORCH_RECORD_URL'))).toBe(
-    true,
-  )
+  expect(
+    warned.some((line) => line.includes('warning') && line.includes('BOTTEGA_RECORD_URL')),
+  ).toBe(true)
 })

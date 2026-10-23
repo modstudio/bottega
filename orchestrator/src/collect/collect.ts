@@ -44,7 +44,7 @@ export function thinOutputWarning(row: {
     !existsSync(row.output_path)
   )
     return null
-  if (process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT === row.output_path) {
+  if (process.env.BOTTEGA_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT === row.output_path) {
     unlinkSync(row.output_path)
   }
   let bytes: number

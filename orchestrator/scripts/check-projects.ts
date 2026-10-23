@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 
 function run(store?: string): number {
   const child = Bun.spawnSync([`${root}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled'], {
-    env: store ? { ...process.env, ORCH_DB: store } : process.env,
+    env: store ? { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store } : process.env,
     stdout: 'inherit',
     stderr: 'inherit',
   })

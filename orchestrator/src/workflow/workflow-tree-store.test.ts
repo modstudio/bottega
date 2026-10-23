@@ -33,7 +33,7 @@ const HOSTED_SPACE = '01990000-0000-7000-8000-000000000224'
 const hostedAt = '2026-10-20T12:00:00.000Z'
 
 afterEach(() => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
 })
 
@@ -435,7 +435,7 @@ describe('importWorkflowTree', () => {
     const catalogueVersionId = newRecordId()
     const catalogueEventId = newRecordId()
     let writes = 0
-    process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
       whoami: async () => ({

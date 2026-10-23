@@ -49,8 +49,8 @@ const gitEnvironmentVariables = Object.keys(process.env).filter((variable) =>
   variable.startsWith('GIT_'),
 )
 const orchestratorGitEnvironmentVariables = [
-  'ORCH_GUARDED_GIT_COMMON_DIR',
-  'ORCH_ALLOWED_GIT_REF',
+  'BOTTEGA_GUARDED_GIT_COMMON_DIR',
+  'BOTTEGA_ALLOWED_GIT_REF',
 ] as const
 
 const hermeticGitEnv = (extra: Record<string, string> = {}) => ({

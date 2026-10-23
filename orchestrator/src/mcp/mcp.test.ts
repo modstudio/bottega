@@ -571,8 +571,8 @@ describe('orch MCP', () => {
       )
       .get(newRecordId(), docRecordId, owner)!
     const session = memoryRecordSession()
-    const priorApiUrl = process.env.ORCH_RECORD_API_URL
-    process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
+    const priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
     session.setToken('fixture-session')
     installRecordSessionRunner(session.runner)
     const server = createDocsMcpServer()
@@ -600,8 +600,8 @@ describe('orch MCP', () => {
       await client.close()
       await server.close()
       installRecordSessionRunner(null)
-      if (priorApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = priorApiUrl
+      if (priorApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = priorApiUrl
     }
   })
 })

@@ -35,7 +35,7 @@ describe('run mailbox', () => {
         return { code: 0, out: JSON.stringify({ messages: rows }), err: '' }
       }
       if (args[0] === 'ask-server') {
-        const runId = String(extraEnv.ORCH_RUN_ID ?? '')
+        const runId = String(extraEnv.BOTTEGA_RUN_ID ?? '')
         if (!runId)
           return {
             code: 0,
@@ -304,8 +304,8 @@ describe('run mailbox', () => {
         .map((line) => JSON.stringify(line))
         .join('\n') + '\n'
     const result = mailboxOrchInput(['ask-server'], calls, {
-      ORCH_RUN_ID: String(root),
-      ORCH_RUN_TOKEN: 'mailbox-token',
+      BOTTEGA_RUN_ID: String(root),
+      BOTTEGA_RUN_TOKEN: 'mailbox-token',
     })
     expect(result.code).toBe(0)
     expect(messagesForRun(root)).toHaveLength(2)
@@ -346,7 +346,7 @@ describe('run mailbox', () => {
           arguments: {},
         },
       }) + '\n',
-      { ORCH_RUN_ID: '', ORCH_RUN_TOKEN: '' },
+      { BOTTEGA_RUN_ID: '', BOTTEGA_RUN_TOKEN: '' },
     )
     expect(unrecognized.code).toBe(0)
     expect(messagesForRun(root)[0]!.read_at).toBeNull()
@@ -362,7 +362,7 @@ describe('run mailbox', () => {
           arguments: {},
         },
       }) + '\n',
-      { ORCH_RUN_ID: String(child), ORCH_RUN_TOKEN: 'turn-token' },
+      { BOTTEGA_RUN_ID: String(child), BOTTEGA_RUN_TOKEN: 'turn-token' },
     )
     expect(resumed.code).toBe(0)
     expect(messagesForRun(root)[0]!.read_at).not.toBeNull()

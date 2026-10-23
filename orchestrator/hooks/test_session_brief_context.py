@@ -423,14 +423,14 @@ class InboxQuestions(unittest.TestCase):
 
 class WorkerSessionSkip(unittest.TestCase):
     def test_orch_run_id_marks_a_worker_session(self):
-        self.assertTrue(session_brief.orch_worker_session({"ORCH_RUN_ID": "12"}))
+        self.assertTrue(session_brief.orch_worker_session({"BOTTEGA_RUN_ID": "12"}))
         self.assertFalse(session_brief.orch_worker_session({}))
-        self.assertFalse(session_brief.orch_worker_session({"ORCH_RUN_ID": ""}))
+        self.assertFalse(session_brief.orch_worker_session({"BOTTEGA_RUN_ID": ""}))
 
     def test_main_emits_no_context_when_orch_run_id_is_set(self):
         stdin = io.StringIO(json.dumps({"cwd": "/tmp", "session_id": "s"}))
         stdout = io.StringIO()
-        with mock.patch.dict(session_brief.os.environ, {"ORCH_RUN_ID": "12"}):
+        with mock.patch.dict(session_brief.os.environ, {"BOTTEGA_RUN_ID": "12"}):
             with mock.patch.object(session_brief.sys, "stdin", stdin):
                 with mock.patch.object(session_brief.sys, "stdout", stdout):
                     code = session_brief.main()
