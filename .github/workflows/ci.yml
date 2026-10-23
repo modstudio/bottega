@@ -66,6 +66,24 @@ jobs:
           CI: "1"
         run: $SUITE_COMMAND --only=orchestrator --shard=${{ matrix.shard }}/${ORCHESTRATOR_SHARD_COUNT}
 
+  orchestrator-hooks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: bun install --silent
+      - name: Test
+        env:
+          CI: "1"
+        run: $SUITE_COMMAND --only=orchestrator/hooks
+
   cli:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -228,7 +246,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [secrets, static, cli, orchestrator, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root]
+    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

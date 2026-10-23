@@ -17,6 +17,32 @@ test('the shared leg uses a directory-anchored selector that collects only share
   expect(shared.testDirectories).toEqual(['shared'])
 })
 
+test('the Python hook leg runs unittest discovery over its declared reach', () => {
+  const hooks = CHECK_LEGS.find((leg) => leg.name === 'orchestrator/hooks')!
+  expect(hooks).toMatchObject({
+    directory: '.',
+    ciJob: 'orchestrator-hooks',
+    testDirectories: [],
+    testPatterns: ['orchestrator/hooks/test_*.py'],
+    typecheck: null,
+    suite: [
+      {
+        argv: [
+          'python3',
+          '-m',
+          'unittest',
+          'discover',
+          '-s',
+          'orchestrator/hooks',
+          '-p',
+          'test_*.py',
+        ],
+        unitTests: true,
+      },
+    ],
+  })
+})
+
 test('the hub data package is reached only by its own package leg', () => {
   const hub = CHECK_LEGS.find((leg) => leg.name === 'hub')!
   const data = CHECK_LEGS.find((leg) => leg.name === 'hub/data')!
@@ -54,6 +80,7 @@ test('reports tracked tests outside a leg or root batch unless exempted', () => 
       legs: [
         {
           testDirectories: ['orchestrator/src'],
+          testPatterns: [],
           excludedTestDirectories: [],
           excludedTestPatterns: [],
         },
@@ -65,6 +92,21 @@ test('reports tracked tests outside a leg or root batch unless exempted', () => 
   ).toEqual({
     unreached: ['orchestrator/hooks/test_guard.py', 'scripts/unreached.test.ts'],
     unexempted: ['scripts/unreached.test.ts'],
+    staleExemptions: [],
+  })
+})
+
+test('a nested Python hook test outside unittest discovery remains unreached', () => {
+  expect(
+    testReach({
+      tracked: ['orchestrator/hooks/test_top_level.py', 'orchestrator/hooks/nested/test_x.py'],
+      rootTests: [],
+      legs: CHECK_LEGS,
+      exemptions: [],
+    }),
+  ).toEqual({
+    unreached: ['orchestrator/hooks/nested/test_x.py'],
+    unexempted: ['orchestrator/hooks/nested/test_x.py'],
     staleExemptions: [],
   })
 })

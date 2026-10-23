@@ -1,37 +1,5 @@
 [
   {
-    "file": "orchestrator/hooks/test_block_agent.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
-    "file": "orchestrator/hooks/test_board_interrupt.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
-    "file": "orchestrator/hooks/test_bun_cache_guard.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
-    "file": "orchestrator/hooks/test_heartbeat_decision.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
-    "file": "orchestrator/hooks/test_heartbeat_guard.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
-    "file": "orchestrator/hooks/test_heartbeat_remind.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
-    "file": "orchestrator/hooks/test_score_reminder.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
-    "file": "orchestrator/hooks/test_session_brief_context.py",
-    "reason": "The Python hook tests do not yet have a gate leg"
-  },
-  {
     "file": "orchestrator/scripts/acp-parity.test.ts",
     "reason": "The orchestrator script tests are outside the src gate batch"
   },
