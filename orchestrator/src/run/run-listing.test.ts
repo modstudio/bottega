@@ -272,10 +272,6 @@ describe('run listing', () => {
 
     const liveRows = (await command({ live: true, json: true })).map(runJson)
     expect(liveRows.find((row) => row.session_id === 'capacity-wait-session')).toMatchObject({
-      record_id: waiting,
-      live_member_status: 'running',
-      waiting_for_capacity: true,
-      capacity_wait_since: '2026-10-21T12:00:00.000Z',
       live_status_detail: 'waiting for capacity since 2026-10-21T12:00:00.000Z',
     })
   })

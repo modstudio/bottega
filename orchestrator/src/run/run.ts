@@ -100,7 +100,7 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
-import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
+import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
 import {
   bindReviewInstructions,
@@ -192,6 +192,8 @@ export async function run(opts: {
   /** True only when the caller selected the agent rather than routing it. */
   agentExplicit?: boolean
   routedAgent?: { agent: string; reason: string }
+  /** True when detached foreground selection already completed MCP startup checks. */
+  dispatchMcpPreflighted?: boolean
   schemaPath?: string
   mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
@@ -502,14 +504,30 @@ export async function run(opts: {
       opts.probe,
       opts.lens,
     )
+  const selectFirstTurnAgent = async () => {
+    try {
+      return await selectAgentAndPreflightMcp({
+        select: () =>
+          selectAgentWithCapacityEvents({
+            runId: opts.reserveId,
+            select: pickSource,
+            noWait: opts.noWaitCapacity,
+          }),
+        mcpRequest,
+        cwd: callerCwd,
+        job: opts.job,
+        projectName: runProjectName ?? undefined,
+        alreadyPreflighted: opts.dispatchMcpPreflighted,
+      })
+    } catch (cause) {
+      recordRunStartupFailure(opts.reserveId, cause)
+      throw cause
+    }
+  }
   const source = resume.isFirstTurn
     ? {
         source: 'pick' as const,
-        ...(await selectAgentWithCapacityEvents({
-          runId: opts.reserveId,
-          select: pickSource,
-          noWait: opts.noWaitCapacity,
-        })),
+        ...(await selectFirstTurnAgent()),
       }
     : { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })

@@ -28,7 +28,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
-import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from '../mcp/mcp-preflight.ts'
+import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
@@ -36,7 +36,7 @@ import { runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
-import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
+import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
@@ -94,6 +94,32 @@ function detachedProject(cwd: string, spec: DetachSpec) {
   }
 }
 
+function preflightDetachMcp(
+  jobName: string,
+  spec: DetachSpec,
+  selectedAgent: string | undefined,
+): boolean {
+  const cwd = spec.cwd ?? process.cwd()
+  const mcpRequest: McpRequest | undefined = effectiveMcpRequest(spec.mcp, job(jobName))
+  const firstTurn = resumeFacts(
+    spec.resume?.kind ?? null,
+    '',
+    spec.resume?.parent ?? null,
+  ).isFirstTurn
+  // A resume keeps the agent that already started; it is not a new dispatch.
+  if (!firstTurn || !mcpRequest || !selectedAgent) return false
+  // Capacity-only selection completes in the coordinator; every other detached
+  // selection is knowable here and refuses before a placeholder row exists.
+  preflightDispatchMcp({
+    mcpRequest,
+    cwd,
+    job: jobName,
+    selectedAgent,
+    projectName: spec.repo,
+  })
+  return true
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -120,9 +146,6 @@ export async function detach(
   // A retry names the directory the original ran in; everything else is here.
   const cwd = spec.cwd ?? process.cwd()
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
-  // A RESUME skips preflight: its agent was chosen long ago, its worktree
-  // exists, and its seed was settled when that worktree was cut. Re-checking
-  // would demand a `--seed` for a database that is already there.
   const firstTurn = resumeFacts(
     spec.resume?.kind ?? null,
     '',
@@ -143,15 +166,7 @@ export async function detach(
         spec.carry,
         spec.repo,
       )
-  if (firstTurn && mcpRequest && selectedAgent) {
-    // Who will run is knowable here, and a proven-failed grok attach must not
-    // leave a placeholder for the child to fail. A capacity-only foreground
-    // result has no selected agent yet, so the coordinator performs this same
-    // setup after its capacity wait and records any refusal on the reserved run.
-    // Resume keeps the agent that already started; it is not a new dispatch.
-    ensureDispatchMcpMainStack({ mcpRequest, cwd, projectName: spec.repo })
-    preflightMcp({ mcp: mcpRequest, cwd, job: jobName, selectedAgent })
-  }
+  const dispatchMcpPreflighted = preflightDetachMcp(jobName, spec, selectedAgent)
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
   mkdirSync(runsDir, { recursive: true })
@@ -306,7 +321,7 @@ export async function detach(
       String(recordId),
       promptPath,
       jobName,
-      JSON.stringify({ ...spec, seed }),
+      JSON.stringify({ ...spec, seed, dispatchMcpPreflighted }),
     ]
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)

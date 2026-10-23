@@ -5,8 +5,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { DEFERRED_CWD_MCP_STEPS, decideDeferredCwdMcpPlan } from '../mcp/mcp-preflight.ts'
 import { upsertProject } from '../project/projects.ts'
+import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { provisionMcpConfig } from '../worktree/worktree-mcp.ts'
-import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
+import { waitForAgentSelection } from './run-agent-capacity.ts'
+import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
 
 const directories: string[] = []
 afterEach(() => {
@@ -81,6 +83,34 @@ test('foreground MCP preflight executes the declared main-stack step before prob
   expect(dockerCalls.filter((call) => call[1] === 'compose')).toEqual([
     ['docker', 'compose', 'ps', '--status', 'running', '--services', 'db'],
   ])
+})
+
+test('coordinator MCP preflight runs after its capacity wait selects an agent', async () => {
+  let attempts = 0
+  let now = 0
+  const order: string[] = []
+  const selected = await selectAgentAndPreflightMcp({
+    select: () =>
+      waitForAgentSelection({
+        select: () => {
+          attempts++
+          order.push(`select-${attempts}`)
+          if (attempts === 1) throw new AgentCapacityError('at capacity')
+          return { agent: 'codex', reason: 'capacity available' }
+        },
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms
+        },
+      }),
+    mcpRequest: 'require',
+    cwd: process.cwd(),
+    job: 'craft',
+    preflight: (input) => order.push(`preflight-${input.selectedAgent}-${input.mcpRequest}`),
+  })
+
+  expect(selected).toEqual({ agent: 'codex', reason: 'capacity available' })
+  expect(order).toEqual(['select-1', 'select-2', 'preflight-codex-require'])
 })
 
 test('worker MCP provisioning executes the final plan step against the worker tree', () => {

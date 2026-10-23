@@ -42,6 +42,8 @@ export type DetachSpec = {
   agentExplicit?: boolean
   /** Surface routing result; unlike agent, this is not a caller pin. */
   routedAgent?: { agent: string; reason: string }
+  /** The caller already completed MCP startup checks after foreground selection. */
+  dispatchMcpPreflighted?: boolean
   schema?: string
   mcp?: McpRequest
   model?: string
@@ -113,6 +115,7 @@ export function chainTransport(rootId: string): TransportName | null {
 const detachRouting = (spec: DetachSpec) => ({
   agentExplicit: spec.agentExplicit,
   routedAgent: spec.routedAgent,
+  dispatchMcpPreflighted: spec.dispatchMcpPreflighted,
 })
 
 export function detachedRunOptions(

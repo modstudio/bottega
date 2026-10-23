@@ -111,6 +111,7 @@ test('the detached spec mapping forwards every field to run', () => {
     detachedRunOptions('implement', 'prompt', 'run-record-id-42', {
       agent: 'codex',
       routedAgent: { agent: 'codex', reason: 'thompson; best' },
+      dispatchMcpPreflighted: true,
       schema: '/tmp/schema.json',
       mcp: true,
       model: 'model',
@@ -154,6 +155,7 @@ test('the detached spec mapping forwards every field to run', () => {
     reserveId: 'run-record-id-42',
     agent: 'codex',
     routedAgent: { agent: 'codex', reason: 'thompson; best' },
+    dispatchMcpPreflighted: true,
     schemaPath: '/tmp/schema.json',
     mcp: true,
     model: 'model',

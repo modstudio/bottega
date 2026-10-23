@@ -401,7 +401,7 @@ export function decidePreDetachSelection(input: {
   return 'foreground-refuse'
 }
 
-async function selectBeforeDetach(
+export async function selectBeforeDetach(
   jobName: string,
   text: string,
   spec: DispatchDetachSpec,
