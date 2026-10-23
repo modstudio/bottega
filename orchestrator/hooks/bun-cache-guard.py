@@ -17,9 +17,10 @@ RECURSIVE_CACHE_REMOVAL = re.compile(
 )
 
 REASON = (
-    "Refused: `bun pm cache rm` and `bun pm cache clean` remove the shared global store "
-    "that every isolated-linker node_modules links into. Run `bun install --force` in the "
-    "affected checkout, or remove only the one package's manifest from ~/.bun/install/cache."
+    "Refused: Bun cache-clear commands and common recursive removals of "
+    "~/.bun/install/cache empty the shared global store that every isolated-linker checkout "
+    "links into. In a worktree, run `bun install --force`; for a stale package manifest, "
+    "remove only that manifest file. Never clear the whole cache."
 )
 
 
