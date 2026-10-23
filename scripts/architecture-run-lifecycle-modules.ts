@@ -107,6 +107,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-preflight.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
+    '../run-owned-paths.ts',
     './run-claim-plan.ts',
     './run-claim-mcp.ts',
     './run-claim-inheritance.ts',

@@ -306,7 +306,7 @@ export type LiveInput = {
   mcpTrustGranted: boolean
   writableRoots: string[]
   gitConfigEnvironment: Record<string, string> | undefined
-  sandboxRunDir: string
+  runtimeDir: string
   recipeEnvironment: Record<string, string>
   launchEnvironment: Record<string, string>
   scratchDir: string
@@ -460,7 +460,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     mcpTrustGranted,
     writableRoots,
     gitConfigEnvironment,
-    sandboxRunDir,
+    runtimeDir,
     recipeEnvironment,
     launchEnvironment,
     scratchDir,
@@ -586,9 +586,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
-      srt: sandboxSelection.profile
-        ? { profile: sandboxSelection.profile, runtimeDir: sandboxRunDir }
-        : undefined,
+      srt: sandboxSelection.profile ? { profile: sandboxSelection.profile, runtimeDir } : undefined,
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
       env: liveChildEnv(

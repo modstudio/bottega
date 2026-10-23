@@ -16,10 +16,8 @@ const WRITING_PROBE_CONTENT = 'REGISTRATION_PROBE_WRITE_OK\n'
 
 export type WritingProbeResult = { ok: boolean | null; output: string }
 
-type WritingProbeLaunch = {
-  cwd: string
+type WritingProbeLaunch = CapabilityProbeConfinement & {
   prompt: string
-  profile: CapabilityProbeConfinement['profile']
 }
 export type WritingProbeConfinement = CapabilityProbeConfinement
 
@@ -54,12 +52,12 @@ export async function probeAgentWrites(
     return { ok: null, output: 'skipped: CLI transport never receives the writing check' }
   }
   try {
-    return await withCapabilityProbeSandbox(input, ports, async ({ cwd, profile }) => {
+    return await withCapabilityProbeSandbox(input, ports, async (confinement) => {
+      const { cwd } = confinement
       const target = join(cwd, WRITING_PROBE_FILE)
       const outcome = await ports.callAgent({
-        cwd,
+        ...confinement,
         prompt: `Create ${WRITING_PROBE_FILE} with exactly this content, including the final newline:\n${WRITING_PROBE_CONTENT}`,
-        profile,
       })
       const content = existsSync(target) ? readFileSync(target, 'utf8') : ''
       return {
