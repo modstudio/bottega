@@ -145,6 +145,10 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
   review
     .command('tier')
     .description('classify review tier and round budget for a branch, run, or range')
+    .addHelpText(
+      'after',
+      '\nan explicit range keeps its from; a branch or run target uses the merge-base with origin/<landing branch>',
+    )
     .allowExcessArguments(true)
     .argument('[target]', 'branch, run id, or from..to range')
     .option('--cwd <value>', 'resolve the target from this project checkout')

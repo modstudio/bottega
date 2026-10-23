@@ -10,6 +10,7 @@ import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { acpWriteAdmission, writeAcpFile } from './acp-fs-write.ts'
 import { establishAcpSession } from './acp-session.ts'
 import {
   type AcpTrace,
@@ -82,17 +83,37 @@ async function resolveWorkerRunId(value: string | undefined): Promise<string | n
   return resolveRunIdentifier(db(), value)
 }
 
+/**
+ * Resolve one permission request's edit locations through the same admission the
+ * write handler uses: each location must land in a root `acpWriteAdmission`
+ * admits (a writing run's worktree or scratch; a read-only run's scratch alone).
+ * The admitted roots are realpath-resolved so the caller compares like values.
+ */
 export function resolveAcpEditLocations(
-  scratch: string | undefined,
+  input: {
+    writing: boolean
+    worktree: string
+    scratch: string | undefined
+    denyWrite?: string[]
+  },
   locations: Array<{ path: string }> | null | undefined,
-): { scratchRoot: string; locations: string[] } | null {
-  if (!scratch || !locations?.length || locations.some((location) => !isAbsolute(location.path))) {
-    return null
+): { admittedRoots: string[]; locations: string[] } | null {
+  if (!locations?.length || locations.some((location) => !isAbsolute(location.path))) return null
+  const admittedRoots = new Set<string>()
+  for (const location of locations) {
+    const admission = acpWriteAdmission({
+      writing: input.writing,
+      worktree: input.worktree,
+      scratch: input.scratch,
+      path: location.path,
+      denyWrite: input.denyWrite,
+    })
+    if (!admission.admitted) return null
+    admittedRoots.add(admission.root)
   }
   try {
-    const scratchRoot = realpathSync(scratch)
     return {
-      scratchRoot,
+      admittedRoots: [...admittedRoots].map((root) => realpathSync(root)),
       locations: locations.map((location) => resolveFsPath(location.path)),
     }
   } catch {
@@ -613,6 +634,33 @@ function spawnAcpChild(launch: string[], opts: TransportStartOpts) {
   )
 }
 
+/**
+ * The permission decision for one ACP tool-call request, resolved through the
+ * same admission the write handler uses: a writing run's worktree or scratch, a
+ * read-only run's scratch alone. Extracted so the permission edge stays small
+ * and reads one decision with the write path.
+ */
+function acpPermissionDecision(
+  opts: Pick<TransportStartOpts, 'writingAcp' | 'cwd' | 'env'>,
+  toolCall: { kind?: string | null; locations?: Array<{ path: string }> | null },
+  options: Array<{ optionId: string; kind: string }>,
+): ReturnType<typeof decideAcpPermission> {
+  const editLocations = resolveAcpEditLocations(
+    {
+      writing: opts.writingAcp === true,
+      worktree: opts.cwd,
+      scratch: opts.env.BOTTEGA_SCRATCH,
+    },
+    toolCall.locations,
+  )
+  return decideAcpPermission(
+    toolCall.kind ?? undefined,
+    options,
+    editLocations?.locations,
+    editLocations?.admittedRoots,
+  )
+}
+
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
   const genericHarness = opts.agent.harness === 'opencode' || opts.agent.harness === 'goose'
@@ -654,21 +702,13 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     .client({ name: MCP_SERVER_NAME })
     .onRequest(acp.methods.client.session.requestPermission, (req) => {
       // orchestrator replies allow/reject here; the sandboxed child does not. Read-class
-      // tools and edits confined to run scratch may run. Gap: the architect never
-      // sees the prompt — the decision is the pilot policy, not a ruling.
+      // tools and edits admitted by the write handler's roots (a writing run's
+      // worktree or scratch; a read-only run's scratch alone) may run. Gap: the
+      // architect never sees the prompt — the decision is the pilot policy, not a ruling.
       const title = req.params.toolCall.title ?? 'tool'
       const toolKind = req.params.toolCall.kind ?? undefined
       const optionKinds = req.params.options.map((option) => option.kind)
-      const editLocations = resolveAcpEditLocations(
-        opts.env.BOTTEGA_SCRATCH,
-        req.params.toolCall.locations,
-      )
-      const decided = decideAcpPermission(
-        toolKind,
-        req.params.options,
-        editLocations?.locations,
-        editLocations?.scratchRoot,
-      )
+      const decided = acpPermissionDecision(opts, req.params.toolCall, req.params.options)
       const event: Extract<NormalizedEvent, { kind: 'permission' }> = {
         kind: 'permission',
         title,
@@ -736,12 +776,16 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       return { content }
     })
     .onRequest(acp.methods.client.fs.writeTextFile, (req) => {
-      // ACP has no result object. The one write it receives is the universal
-      // reply carrier, confined to the run's artifact scratch directory.
-      const scratch = opts.env.BOTTEGA_SCRATCH
-      if (!scratch) throw new Error('ACP fs.writeTextFile refused: BOTTEGA_SCRATCH is not set')
-      const confined = confineFsPath(req.params.path, scratch, 'writeTextFile')
-      writeFileSync(confined, req.params.content)
+      // ACP has no result object. A writing run writes in its run worktree as
+      // well as its scratch directory; a read-only run writes only the reply
+      // carrier into scratch. Both roots are confined by realpath prefix.
+      writeAcpFile({
+        writingAcp: opts.writingAcp === true,
+        worktree: opts.cwd,
+        scratch: opts.env.BOTTEGA_SCRATCH,
+        path: req.params.path,
+        content: req.params.content,
+      })
       return {}
     })
     .onNotification(acp.methods.client.session.update, observeUpdate)

@@ -42,6 +42,7 @@ export type EnvironmentFileDecision =
   | { kind: 'refuse-residue'; name: string; line: number }
 
 export type EnvironmentMigrationReport = {
+  processNamesRenamed: number
   files: Array<{ path: string; names: string[]; backup: string }>
   secrets: SecretEnvironmentMigration[]
   register: Array<{ project: string; names: string[] }>
@@ -492,6 +493,7 @@ export async function migrateOperatorEnvironment(
     backupRoot?: string
     registerBackup?: () => Promise<unknown[]>
     notes?: () => string[]
+    processNamesRenamed?: number
   },
 ): Promise<EnvironmentMigrationReport> {
   const sources = await environmentSources(home)
@@ -553,6 +555,7 @@ export async function migrateOperatorEnvironment(
     await writeManifest()
   } else await rm(backup.directory, { recursive: true })
   return {
+    processNamesRenamed: adapters.processNamesRenamed ?? 0,
     files,
     secrets,
     register,
@@ -567,8 +570,15 @@ export async function migrateOperatorEnvironment(
 }
 
 export function environmentMigrationMessage(report: EnvironmentMigrationReport): string | null {
-  const changes = report.files.map(
-    ({ path, names, backup }) => `${path}: ${names.join(', ')} (backup: ${backup})`,
+  const changes = report.processNamesRenamed
+    ? [
+        `${report.processNamesRenamed} environment name${report.processNamesRenamed === 1 ? '' : 's'} renamed in-process`,
+      ]
+    : []
+  changes.push(
+    ...report.files.map(
+      ({ path, names, backup }) => `${path}: ${names.join(', ')} (backup: ${backup})`,
+    ),
   )
   changes.push(
     ...report.secrets.map(

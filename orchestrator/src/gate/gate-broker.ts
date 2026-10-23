@@ -16,7 +16,7 @@ import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
-import { resolveReviewMergeBase } from '../review/review-target.ts'
+import { resolveReviewBase } from '../review/review-target.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
@@ -249,7 +249,7 @@ function changedGateTooling(
   let mergeBase: string | null = null
   try {
     if (!plan.trunk) throw new Error('the project has no registered trunk')
-    mergeBase = resolveReviewMergeBase(plan.worktree, 'HEAD', plan.trunk)
+    mergeBase = resolveReviewBase(plan.worktree, 'HEAD', plan.trunk)
     if (!mergeBase) throw new Error(`no merge-base with trunk ${plan.trunk}`)
   } catch (error) {
     const reason = (error instanceof Error ? error.message : String(error)).replaceAll('\n', ' ')

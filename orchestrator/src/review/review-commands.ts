@@ -12,7 +12,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
+import { type ReviewFunnelPlan, selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
@@ -24,9 +24,10 @@ import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-f
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
 import {
-  resolveReviewMergeBase,
+  resolveReviewBase,
   reviewRemoteTrunkRefExists,
   reviewTrunkRef,
+  spawnGitProbe,
 } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
@@ -46,9 +47,9 @@ function roundApplicabilityForTierOutput(input: {
   branch: string
   postFix: ReturnType<typeof postFixReviewDecision>
   review: Parameters<typeof reviewTierForRange>[3]
-}): ApplicableReview {
+}): ReviewFunnelPlan {
   const relevant = selectReviewApplicability(input.output, input.output.lenses)
-  if (!input.identity) return relevant
+  if (!input.identity) return { round: relevant, admissionRequired: relevant }
   return roundApplicabilityForChange({
     database: db(),
     group: {
@@ -124,16 +125,6 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   return resolution
 }
 
-function spawnGitProbe(repo: string): (args: string[]) => boolean {
-  return (args) =>
-    Bun.spawnSync(['git', ...args], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).exitCode === 0
-}
-
 function resolveTierTarget(
   value: string,
   cwd: string,
@@ -158,11 +149,9 @@ function resolveTierTarget(
       if (!row) throw new Error(`no run ${runId}`)
       const project = row.repo ? projectByName(row.repo) : null
       if (!project) throw new Error(`run ${runId} has no registered project`)
-      if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
-      // A writer run's input tree IS its base: what it built lives on its
-      // branch. Measure the branch tip when the branch still exists. A
-      // reader's input tree is the artifact it reviewed, so a reader keeps
-      // it even when a branch is recorded.
+      // Measure a live writer at its current branch tip. Otherwise retain the
+      // recorded input tree as the classified artifact while resolving its
+      // landing merge-base from the recorded head commit.
       const writer = (() => {
         try {
           return job(row.job).needs.writesRepo
@@ -181,27 +170,22 @@ function resolveTierTarget(
         }).exitCode === 0
       const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
       if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
-      if (!branchLive)
-        return {
-          repo: project.path,
-          from: row.base_commit,
-          to: reviewed,
-          branch: row.branch ?? reviewed,
-          project,
-        }
       const trunk = project.settings.trunk?.trim()
       if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+      const reviewedTip = branchLive ? reviewed : (row.head_commit ?? reviewed)
       const from = (() => {
         try {
-          return resolveReviewMergeBase(project.path, reviewed, trunk)
+          return resolveReviewBase(project.path, reviewedTip, trunk)
         } catch {
           return null
         }
       })()
       if (!from) {
-        throw new Error(`cannot find merge-base between branch ${row.branch} and trunk ${trunk}`)
+        throw new Error(
+          `cannot find merge-base between reviewed tip ${reviewedTip} and trunk ${trunk}`,
+        )
       }
-      return { repo: project.path, from, to: reviewed, branch: row.branch!, project }
+      return { repo: project.path, from, to: reviewed, branch: row.branch ?? reviewedTip, project }
     })()
   }
   const project = projectAt(cwd)
@@ -234,10 +218,11 @@ function resolveTierTarget(
   }
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
+  const from = resolveReviewBase(repo, value, trunk)
+  if (!from) throw new Error(`cannot find merge-base between branch ${value} and trunk ${trunk}`)
   return {
     repo,
-    ...resolveTierRangeInRepo(repo, reviewTrunkRef(remoteTrackingRefExists, trunk), value, trunk),
+    ...resolveTierRangeInRepo(repo, from, value, trunk),
     branch: value,
     project,
   }
@@ -271,7 +256,7 @@ function reviewTierOutput(value: string, cwd: string) {
     tier: output.tier,
     review: project.settings.review,
   })
-  const roundApplicability = roundApplicabilityForTierOutput({
+  const reviewPlan = roundApplicabilityForTierOutput({
     output,
     identity,
     project: project.name,
@@ -282,23 +267,23 @@ function reviewTierOutput(value: string, cwd: string) {
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,
     ...branchBudget,
-    roundNeeded: roundApplicability.lenses.length > 0,
+    roundNeeded: reviewPlan.round.lenses.length > 0 || Boolean(reviewPlan.round.secondOpinion),
   })
   return {
     ...output,
-    lenses: roundApplicability.lenses,
-    secondOpinion: roundApplicability.secondOpinion,
-    lensBases: roundApplicability.lensBases,
-    secondOpinionBasis: roundApplicability.secondOpinionBasis,
+    lenses: reviewPlan.round.lenses,
+    secondOpinion: reviewPlan.round.secondOpinion,
+    lensBases: reviewPlan.round.lensBases,
+    secondOpinionBasis: reviewPlan.round.secondOpinionBasis,
     post_fix: postFix,
     review_budget: {
       ...reviewBudget,
       eligibleReviewCount: branchBudget.eligibleReviewCount,
       unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
     },
-    lens_profiles: roundApplicability.lenses.map((id) => ({
+    lens_profiles: reviewPlan.round.lenses.map((id) => ({
       id,
-      basis: roundApplicability.lensBases?.[id] ?? null,
+      basis: reviewPlan.round.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
@@ -308,11 +293,7 @@ function printReviewRoundStatus(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): void {
-  if (
-    output.lenses.length === 0 &&
-    (output.post_fix.kind === 'no-round-needed' ||
-      output.post_fix.kind === 'reviewed-tip-unidentified')
-  ) {
+  if (!output.review_budget.startsNewRound && !output.review_budget.currentChangeCounted) {
     log('no round needed: the architect reads the fix and lands it')
     return
   }

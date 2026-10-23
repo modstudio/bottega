@@ -254,6 +254,32 @@ describe('setup MCP tools', () => {
     })
   })
 
+  test('setup_apply reports an applied action requiring operator follow-up', async () => {
+    const service = serviceFor(fixturePlan(), async (actions) =>
+      actions.map((action, index) => ({
+        ...action,
+        status: index === 0 ? 'follow-up' : 'applied',
+        message: index === 0 ? 'applied, follow-up required: reload the service' : null,
+      })),
+    )
+
+    const result = await withClient(service, (client) =>
+      client.callTool({
+        name: 'setup_apply',
+        arguments: { folders: [folder], answers: { [question.id]: 'ALPHA' } },
+      }),
+    )
+
+    expect(result.isError).not.toBe(true)
+    expect(result.structuredContent).toMatchObject({ refused: false })
+    expect((result.structuredContent as { actions: SetupActionResult[] }).actions[0]).toMatchObject(
+      {
+        status: 'follow-up',
+        message: 'applied, follow-up required: reload the service',
+      },
+    )
+  })
+
   test.each(['setup_plan', 'setup_apply'])('%s refuses a worker-marked caller', async (name) => {
     process.env.BOTTEGA_RUN_ID = '123'
     const toolArguments =

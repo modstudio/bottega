@@ -145,6 +145,17 @@ const DYNAMIC_ENVIRONMENT_NAME_FAMILIES = [
 
 export type LegacyEnvironmentNamePair = (typeof LEGACY_ENVIRONMENT_NAME_PAIRS)[number]
 
+type ProcessEnvironmentNameConflict = {
+  legacyNames: string[]
+  replacementName: string
+}
+
+export type ProcessEnvironmentNameMigration = {
+  set: Record<string, string>
+  unset: string[]
+  conflicts: ProcessEnvironmentNameConflict[]
+}
+
 /** The sealed subset is deliberately selected from the authority table, never restated. */
 export const LEGACY_ENVIRONMENT_SECRET_NAMES = LEGACY_ENVIRONMENT_NAME_PAIRS.filter(
   (
@@ -164,6 +175,41 @@ export function replacementEnvironmentName(name: string): string | null {
     }
   }
   return null
+}
+
+/** Decides the atomic rename of legacy names in one running process. */
+export function processEnvironmentNameMigration(
+  environment: Readonly<Record<string, string | undefined>>,
+): ProcessEnvironmentNameMigration {
+  const set: Record<string, string> = {}
+  const unset: string[] = []
+  const conflicts: ProcessEnvironmentNameConflict[] = []
+  const claims = new Map<string, { legacyName: string; value: string }>()
+  for (const [legacyName, legacyValue] of Object.entries(environment)) {
+    if (legacyValue === undefined) continue
+    const replacementName = replacementEnvironmentName(legacyName)
+    if (!replacementName) continue
+    const replacementValue = environment[replacementName]
+    if (replacementValue === undefined) {
+      const claim = claims.get(replacementName)
+      if (!claim) {
+        claims.set(replacementName, { legacyName, value: legacyValue })
+        set[replacementName] = legacyValue
+        unset.push(legacyName)
+      } else if (claim.value === legacyValue) {
+        unset.push(legacyName)
+      } else {
+        delete set[replacementName]
+        unset.splice(unset.indexOf(claim.legacyName), 1)
+        conflicts.push({ legacyNames: [claim.legacyName, legacyName], replacementName })
+      }
+    } else if (replacementValue === legacyValue) {
+      unset.push(legacyName)
+    } else {
+      conflicts.push({ legacyNames: [legacyName], replacementName })
+    }
+  }
+  return { set, unset, conflicts }
 }
 
 export type LegacyEnvironmentNameMatch = {

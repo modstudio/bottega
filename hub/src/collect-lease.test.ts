@@ -6,16 +6,20 @@
  */
 import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { db } from './db.ts'
 import type { HostedOutboxReport } from './outbox.ts'
+import { acquireStoredLeaseIntent, releaseStoredLease } from './store-lease.ts'
 import { hostedCreateTask } from './task-client.ts'
 
 const {
   COLLECT_LEASE_MS,
   acquireLease,
   collectFastHostedOutbox,
+  explicitRequestMayAcquire,
   releaseLease,
   leaseHolder,
   watch,
+  watcherMayStartCycle,
   withLease,
 } = await import('./collect.ts')
 
@@ -36,7 +40,116 @@ async function waitFor(check: () => boolean) {
   expect(check()).toBeTrue()
 }
 
+function intentHolder(): string | null {
+  const row = db()
+    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.lease.intent'`)
+    .get()
+  return row ? (JSON.parse(row.value) as { holder: string }).holder : null
+}
+
+describe('watch cycle start decision', () => {
+  const facts = {
+    leaseHolder: null,
+    intentHolder: null,
+    intentUntil: null,
+    now: 1_000,
+  }
+
+  test('starts without a waiter intent', () => {
+    expect(watcherMayStartCycle('watcher', facts)).toBeTrue()
+  })
+
+  test("does not start for another holder's live intent", () => {
+    expect(
+      watcherMayStartCycle('watcher', {
+        ...facts,
+        intentHolder: 'explicit',
+        intentUntil: 1_001,
+      }),
+    ).toBeFalse()
+  })
+
+  test('starts when another holder intent has expired', () => {
+    expect(
+      watcherMayStartCycle('watcher', {
+        ...facts,
+        intentHolder: 'explicit',
+        intentUntil: 1_000,
+      }),
+    ).toBeTrue()
+  })
+
+  test('starts for its own live intent', () => {
+    expect(
+      watcherMayStartCycle('watcher', {
+        ...facts,
+        intentHolder: 'watcher',
+        intentUntil: 1_001,
+      }),
+    ).toBeTrue()
+  })
+})
+
+describe('explicit request start decision', () => {
+  const facts = {
+    leaseHolder: 'watcher',
+    intentHolder: null,
+    intentUntil: null,
+    now: 1_000,
+  }
+
+  test('allows requests without a waiter intent', () => {
+    expect(explicitRequestMayAcquire('explicit', facts)).toBeTrue()
+  })
+
+  test("waits behind another holder's live intent", () => {
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'other-explicit',
+        intentUntil: 1_001,
+      }),
+    ).toBeFalse()
+  })
+
+  test('allows its own, expired, or invalid intent', () => {
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'explicit',
+        intentUntil: 1_001,
+      }),
+    ).toBeTrue()
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'other-explicit',
+        intentUntil: 1_000,
+      }),
+    ).toBeTrue()
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'other-explicit',
+        intentUntil: null,
+      }),
+    ).toBeTrue()
+  })
+})
+
 describe('collect lease', () => {
+  test('an expired stored waiter intent lets the watcher acquire', () => {
+    const intentKey = 'collect.lease.intent'
+    try {
+      expect(acquireStoredLeaseIntent(intentKey, 'abandoned-waiter', Date.now() - 1)).toBeTrue()
+      expect(acquireLease('watcher-after-abandoned-waiter')).toBeTrue()
+      expect(leaseHolder()).toBe('watcher-after-abandoned-waiter')
+    } finally {
+      releaseLease('watcher-after-abandoned-waiter')
+      releaseStoredLease(intentKey, 'abandoned-waiter')
+    }
+  })
+
   test('only one holder at a time', () => {
     expect(acquireLease('a')).toBe(true)
     expect(acquireLease('b')).toBe(false)
@@ -53,16 +166,19 @@ describe('collect lease', () => {
     // identical collects beside `bottega dashboard start` disagreed by two hours.
     acquireLease('watcher')
     let ran = false
-    const r = await withLease(
+    const pending = withLease(
       'one-shot',
       async () => {
         ran = true
       },
       300,
     )
+    expect(intentHolder()).toBe('one-shot')
+    const r = await pending
     expect(r.ran).toBe(false)
     expect(ran).toBe(false)
     if (!r.ran) expect(r.heldBy).toBe('watcher')
+    expect(intentHolder()).toBeNull()
     releaseLease('watcher')
   })
 
@@ -122,6 +238,69 @@ describe('collect lease', () => {
     expect(result.ran).toBeTrue()
     expect(explicitRan).toBeTrue()
     await stop()
+  })
+
+  test('a waiting explicit request takes the next turn from watch', async () => {
+    const callbacks: Array<() => void> = []
+    const interval = spyOn(globalThis, 'setInterval').mockImplementation(((
+      callback: () => void,
+    ) => {
+      callbacks.push(callback)
+      return callbacks.length as unknown as ReturnType<typeof setInterval>
+    }) as unknown as typeof setInterval)
+    let finishInitial!: () => void
+    const initialCanFinish = new Promise<void>((resolve) => (finishInitial = resolve))
+    let initialStarted!: () => void
+    const didStartInitial = new Promise<void>((resolve) => (initialStarted = resolve))
+    let finishExplicit!: () => void
+    const explicitCanFinish = new Promise<void>((resolve) => (finishExplicit = resolve))
+    let explicitStarted!: () => void
+    const didStartExplicit = new Promise<void>((resolve) => (explicitStarted = resolve))
+    let watcherCycles = 0
+    const stop = watch('turn-watch', undefined, {
+      initial: async () => {
+        watcherCycles++
+        initialStarted()
+        await initialCanFinish
+      },
+      fast: async () => {
+        watcherCycles++
+      },
+      slow: async () => {},
+    })
+    try {
+      await didStartInitial
+      const explicit = withLease(
+        'turn-explicit',
+        async () => {
+          expect(intentHolder()).toBeNull()
+          explicitStarted()
+          await explicitCanFinish
+        },
+        1_000,
+      )
+      expect(intentHolder()).toBe('turn-explicit')
+
+      finishInitial()
+      await waitFor(() => leaseHolder() === null)
+      callbacks[1]!()
+      await Bun.sleep(0)
+      expect(watcherCycles).toBe(1)
+
+      await didStartExplicit
+      expect(leaseHolder()).toBe('turn-explicit')
+      expect(watcherCycles).toBe(1)
+      finishExplicit()
+      expect((await explicit).ran).toBeTrue()
+
+      callbacks[1]!()
+      await waitFor(() => watcherCycles === 2)
+    } finally {
+      finishInitial()
+      finishExplicit()
+      await stop()
+      interval.mockRestore()
+    }
   })
 
   test('a long one-shot renews until its callback finishes', async () => {
