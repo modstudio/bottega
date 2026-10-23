@@ -10,7 +10,8 @@ import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { recordReview } from '../review/review-triage.ts'
-import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
+import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
+import { runScratchDir } from '../run-owned-paths.ts'
 import { runDetail, state } from './serve.ts'
 
 const trackResidue = trackedTestResidue()
@@ -96,8 +97,8 @@ describe('run detail', () => {
 
   test('reads an ask startup failure while live and after scratch is persisted', () => {
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    mkdirSync(runScratchDir(live), { recursive: true })
-    writeAskServerFailure(new Error('live startup failed'), runScratchDir(live))
+    mkdirSync(runScratchDir(live, RUNS_DIR), { recursive: true })
+    writeAskServerFailure(new Error('live startup failed'), runScratchDir(live, RUNS_DIR))
     expect(runDetail(live)!.ask_server).toMatchObject({ failure: 'live startup failed' })
 
     const finished = addRun({ agent: 'codex', job: 'implement' })

@@ -6,8 +6,6 @@
 import { basename, join, relative } from 'node:path'
 import { runScratchDir } from './run-owned-paths.ts'
 
-export { runSandboxDir, runScratchDir } from './run-owned-paths.ts'
-
 export function runArtifactsDir(id: string, runsDir: string): string {
   return join(runsDir, String(id), 'artifacts')
 }

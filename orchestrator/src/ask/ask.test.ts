@@ -17,7 +17,8 @@ import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
+import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
+import { runScratchDir } from '../run-owned-paths.ts'
 import { ask, createAskHttpHandler, createAskMcpServer } from './ask.ts'
 import { observeAskTransport } from './ask-lifecycle.ts'
 
@@ -462,7 +463,7 @@ describe('the live ask channel always answers', () => {
         .get(run) as {
         id: number
       }
-      expect(output).not.toContain(`${runScratchDir(run)}/gate-${execution.id}.log`)
+      expect(output).not.toContain(`${runScratchDir(run, RUNS_DIR)}/gate-${execution.id}.log`)
       expect(output).not.toContain(`${runArtifactsDir(run)}/gate-${execution.id}.log`)
     } finally {
       await connection.close()

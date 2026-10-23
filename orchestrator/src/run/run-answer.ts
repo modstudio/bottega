@@ -17,6 +17,7 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
 import { chainTransport, retryModelForAgent } from '../route/failover.ts'
+import { runScratchDir } from '../run-owned-paths.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -41,7 +42,7 @@ import {
 } from './question-vocabulary.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
-import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
+import { KEEP_RUN_FILES_DAYS, RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
@@ -517,8 +518,8 @@ export async function retryRun(
         commit: workspace.commit,
         taskPointer: previousAttemptTaskPointer({
           checkpoint: latestCheckpoint(db(), row.root_record_id)?.task_pointer ?? null,
-          latestScratch: readTaskPointer(runScratchDir(latestTurn.record_id)),
-          rootScratch: readTaskPointer(runScratchDir(row.root_record_id)),
+          latestScratch: readTaskPointer(runScratchDir(latestTurn.record_id, RUNS_DIR)),
+          rootScratch: readTaskPointer(runScratchDir(row.root_record_id, RUNS_DIR)),
         }),
       })
     : renderedRulings
