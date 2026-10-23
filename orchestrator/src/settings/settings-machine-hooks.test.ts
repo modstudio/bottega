@@ -26,7 +26,11 @@ const profileHooks = {
     { matcher: 'Agent|Task|Workflow', hooks: [handler('block-agent.py')] },
     {
       matcher: 'Bash',
-      hooks: [handler('no-attribution.py'), handler('git-guard.py', { if: 'Bash(git:*)' })],
+      hooks: [
+        handler('no-attribution.py'),
+        handler('bun-cache-guard.py'),
+        handler('git-guard.py', { if: 'Bash(git:*)' }),
+      ],
     },
   ],
   SubagentStart: [{ matcher: '*', hooks: [handler('block-agent.py')] }],
@@ -92,6 +96,24 @@ test('agent blocker logs spawn identities and fails open when minting fails', ()
   }).toEqual({ exitCode: 0, output: 'ok' })
 })
 
+test('Stop held-tree decisions list in-flight landing trees without blocking the turn', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_score_reminder.py', import.meta.url))
+  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+  expect({
+    exitCode: result.exitCode,
+    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+  }).toEqual({ exitCode: 0, output: 'ok' })
+})
+
+test('bun cache guard refuses destructive shared-cache commands', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_bun_cache_guard.py', import.meta.url))
+  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+  expect({
+    exitCode: result.exitCode,
+    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+  }).toEqual({ exitCode: 0, output: 'ok' })
+})
+
 test('typed profile hooks and an empty profile render the same canonical product hooks', () => {
   const fromProfile = render(profileHooks)
   const fromEmpty = render({})
@@ -101,7 +123,7 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(16)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(17)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(3)
@@ -164,6 +186,7 @@ test('superseded handlers name exactly the removed profile entries', () => {
   expect(render(profileHooks).superseded).toEqual([
     { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
+    { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
     { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
     ...Array.from({ length: 2 }, () => ({

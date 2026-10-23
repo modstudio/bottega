@@ -4,8 +4,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
-  type CursorIdentity,
+  checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
+} from './workflow-checkout-refusal.ts'
+import {
+  type CursorIdentity,
   type FloorEvidencePorts,
   gatherValidatedEvidence,
   hubTaskReadRefusal,
@@ -76,6 +79,21 @@ test('checkout evidence refuses an unrelated head with no landing commit', () =>
       landingIsHeadOrAncestor: false,
     }),
   ).toBe('outside-change')
+})
+
+test('an unavailable landing commit names the condition and pull remedy', () => {
+  const refusal = checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
+    project: 'fixture',
+    branch: 'main',
+    headIsTipOrAncestor: false,
+    landingCommit: 'dd3e2d8050120bf3d676f86257d0c92c0c5bff41',
+    landingIsHeadOrAncestor: undefined,
+    landingBranch: 'main',
+  })
+  expect(refusal).toContain(
+    'landing commit dd3e2d8050120bf3d676f86257d0c92c0c5bff41 is not available in /fixture/main',
+  )
+  expect(refusal).toContain('git pull --ff-only origin main')
 })
 
 const identity: CursorIdentity = {
@@ -478,7 +496,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
   })
 })
 
-test('an architect gate whose commit is not an ancestor is refused', () => {
+test('an architect gate whose commit is outside the change is refused', () => {
   const d = database()
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
@@ -496,7 +514,9 @@ test('an architect gate whose commit is not an ancestor is refused', () => {
         }),
       },
     ),
-  ).toThrow('--gate 1 head_commit is not the tip or an ancestor of DEV-977-work')
+  ).toThrow(
+    "--gate 1 head_commit does not belong to DEV-977-work or its recorded landing; use evidence recorded from that change's checkout",
+  )
 })
 
 test('a foreign run is refused and a matching run is allowed', () => {

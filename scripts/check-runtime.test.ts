@@ -3,13 +3,49 @@ import {
   attributeCommandCpu,
   cpuBudgetMs,
   decideRuntimeBudget,
+  dependencyInstallMode,
   HUNG_SUITE_TIMEOUT_MS,
+  installNeeded,
   parseCheckArguments,
   runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
   SUITE_RUNTIME_BUDGET_MS,
   selectedCheckLegs,
 } from './check-runtime'
+
+describe('dependency installation', () => {
+  test('uses the offline mode only for an orchestrator worker run', () => {
+    expect(dependencyInstallMode({ ci: false, linkedWorktree: true, workerRun: true })).toBe(
+      'worker-offline',
+    )
+  })
+
+  test('uses the normal mode for an architect linked worktree, CI, and the main checkout', () => {
+    expect(dependencyInstallMode({ ci: false, linkedWorktree: true, workerRun: false })).toBe(
+      'normal',
+    )
+    expect(dependencyInstallMode({ ci: true, linkedWorktree: false, workerRun: false })).toBe(
+      'normal',
+    )
+    expect(dependencyInstallMode({ ci: false, linkedWorktree: false, workerRun: false })).toBe(
+      'normal',
+    )
+  })
+
+  test('an installed tree recorded for the current lockfile needs no install', () => {
+    expect(installNeeded('current', { lockfileHash: 'current', nodeModulesPresent: true })).toBe(
+      false,
+    )
+  })
+
+  test('a missing, unrecorded, or stale installed tree needs an install', () => {
+    expect(installNeeded('current', { lockfileHash: 'current', nodeModulesPresent: false })).toBe(
+      true,
+    )
+    expect(installNeeded('current', { lockfileHash: null, nodeModulesPresent: true })).toBe(true)
+    expect(installNeeded('current', { lockfileHash: 'stale', nodeModulesPresent: true })).toBe(true)
+  })
+})
 
 describe('check mode arguments', () => {
   test('defaults to every static leg without a shard', () => {
