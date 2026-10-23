@@ -437,11 +437,11 @@ describe('work.task', () => {
         return { key: 'EXT-1', status: 'active' }
       }) as never,
     })
-    await router.createCaller({}).setStatus({ key: 'EXT-1', scope: {}, status: 'active' })
+    await router.createCaller({}).setStatus({ key: 'EXT-1', scope: {}, status: 'in_progress' })
     expect(seen).toEqual([
       'EXT-1',
       {},
-      { status: 'active' },
+      { status: 'in_progress' },
       expect.any(Object),
       { confirm: 'production' },
     ])

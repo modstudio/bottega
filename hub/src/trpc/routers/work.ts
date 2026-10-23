@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { TASK_STATUSES } from '../../../../shared/trackers.ts'
+import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
 import {
   commentTask,
@@ -100,12 +100,12 @@ function setBodyProcedure(deps: WorkDeps) {
 
 function setStatusProcedure(deps: WorkDeps) {
   return t.procedure
-    .input(z.object({ ...taskIdentityInput, status: z.enum(TASK_STATUSES) }))
+    .input(z.object({ ...taskIdentityInput, status: z.string().trim().min(1) }))
     .mutation(async ({ input: value }) => {
       const attribution = await deps.machineAttribution()
       return write(() =>
         deps.setTaskThroughTracker(value.key, value.scope, { status: value.status }, attribution, {
-          confirm: 'production',
+          confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
         }),
       )
     })

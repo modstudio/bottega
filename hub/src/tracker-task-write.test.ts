@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import type { RegisteredProject } from './projects.ts'
-import { showTask } from './task.ts'
+import { closeTask, showTask } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
 import {
   closeTaskThroughTracker,
@@ -23,7 +23,13 @@ const project = {
     envPrefix: 'ADANIM',
     tracker: {
       protocol: 'array-mcp',
-      states: { todo: 'open', in_progress: 'active', done: 'done' },
+      states: {
+        backlog: 'backlog',
+        todo: 'open',
+        in_progress: 'active',
+        done: 'done',
+        cancelled: 'dropped',
+      },
     },
   },
 } satisfies RegisteredProject
@@ -97,6 +103,41 @@ describe('array-mcp task writes', () => {
     expect(row).toMatchObject({ status: 'in_progress', status_category: 'active' })
   })
 
+  test('set maps a hub status to its single registered tracker state', async () => {
+    const calls: Record<string, unknown>[] = []
+    const row = await setTaskThroughTracker(
+      'ADN-1659',
+      {},
+      { status: 'active' },
+      UNATTRIBUTED,
+      { confirm: 'production' },
+      dependencies(async (_name, args) => {
+        calls.push(args)
+        return {}
+      }),
+    )
+
+    expect(calls).toEqual([{ id: taskId, status: 'in_progress', confirm: 'production' }])
+    expect(row).toMatchObject({ status: 'in_progress', status_category: 'active' })
+  })
+
+  test('set refuses a hub status with no tracker state and names valid states', async () => {
+    await expect(
+      setTaskThroughTracker(
+        'ADN-1659',
+        {},
+        { status: 'review' },
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        dependencies(async () => {
+          throw new Error('tracker must not be called')
+        }),
+      ),
+    ).rejects.toThrow(
+      'status review does not resolve to exactly one state for project adanim; valid states: backlog, todo, in_progress, done, cancelled',
+    )
+  })
+
   test('close writes the mapped done state through task_update', async () => {
     const calls: { name: string; args: Record<string, unknown> }[] = []
     const row = await closeTaskThroughTracker(
@@ -160,6 +201,44 @@ describe('array-mcp task writes', () => {
       status: 'todo',
       status_category: 'open',
     })
+  })
+
+  test('a reply without status observes the requested status', async () => {
+    const row = await setTaskThroughTracker(
+      'ADN-1659',
+      {},
+      { status: 'cancelled' },
+      UNATTRIBUTED,
+      { confirm: 'production' },
+      dependencies(async () => ({ id: taskId })),
+    )
+
+    expect(row).toMatchObject({ status: 'cancelled', status_category: 'dropped' })
+  })
+
+  test('a differing reply status is observed before the write refuses', async () => {
+    await expect(
+      setTaskThroughTracker(
+        'ADN-1659',
+        {},
+        { status: 'in_progress' },
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        dependencies(async () => ({ id: taskId, status: 'cancelled' })),
+      ),
+    ).rejects.toThrow(
+      'tracker answered with status cancelled after in_progress was requested for task ADN-1659',
+    )
+    expect(showTask('ADN-1659').task).toMatchObject({
+      status: 'cancelled',
+      status_category: 'dropped',
+    })
+  })
+
+  test('the local close service refuses a tracker row', async () => {
+    await expect(closeTask('ADN-1659', {}, UNATTRIBUTED)).rejects.toThrow(
+      'task ADN-1659 is not local',
+    )
   })
 
   test('an external set refuses mixed fields and names the separate-call remedy', async () => {

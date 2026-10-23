@@ -27,6 +27,13 @@ describe('task close decision', () => {
         'refusing to close a task with unlanded branch work:\n' +
         '  DEV-1027-worker: unlanded; 2 commits not on trunk\n' +
         'Land each branch, delete it, or pass --abandon "<reason>" to close and record why the work was abandoned.',
+      unlanded: {
+        facts:
+          'refusing to close a task with unlanded branch work:\n' +
+          '  DEV-1027-worker: unlanded; 2 commits not on trunk',
+        remedy:
+          'Land each branch, delete it, or pass --abandon "<reason>" to close and record why the work was abandoned.',
+      },
     })
   })
 

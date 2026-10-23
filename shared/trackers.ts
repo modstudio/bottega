@@ -16,6 +16,7 @@ const TRACKER_ACTIONS = [
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
 export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub'] as const
 export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
+export const ARRAY_MCP_STATUS_WRITE_CONFIRM = 'production'
 type TrackerActionName = { agent: string; wire?: string | null }
 
 /** The names agents and hub use for each protocol capability. */
@@ -197,6 +198,12 @@ export type TrackerProject = {
   }
 }
 
+export function trackerEnvPrefix(project: TrackerProject): string {
+  const env = project.settings.tracker?.envPrefix ?? project.settings.envPrefix
+  if (!env) throw new Error(`project ${project.name} tracker is missing envPrefix`)
+  return env
+}
+
 export const CURSOR_CREATE_REFUSAL =
   'cursor-mcp create refused: required projectId has no value in the tracker register'
 export const workspaceTeamRefusal = (project: TrackerProject): string =>
@@ -284,6 +291,8 @@ function categoryOf(
     states?.[normal(category)]
   return mapped === 'backlog' ? 'open' : (mapped ?? 'open')
 }
+
+export const trackerStatusCategory = categoryOf
 
 const ENTITIES: Record<string, string> = {
   '&amp;': '&',
@@ -659,10 +668,7 @@ export function trackerSourceFor(
       `project ${project.name} tracker has unrecognized protocol ${tracker.protocol ?? '(missing)'}`,
     )
   }
-  const env = tracker.envPrefix ?? project.settings.envPrefix
-  if (!env) {
-    throw new Error(`project ${project.name} tracker is missing envPrefix`)
-  }
+  const env = trackerEnvPrefix(project)
   const statuses = tracker.openStatuses ?? []
   if (tracker.protocol === 'workspace-mcp') {
     return workspaceSource(

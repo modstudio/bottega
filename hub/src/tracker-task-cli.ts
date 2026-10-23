@@ -1,10 +1,10 @@
-import { type ToolCaller, type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
+import { type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
 import { type LeaseGuard, withLease } from './collect.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import { DuplicateTaskError, duplicateCandidates, listTasks, showTask } from './task.ts'
-import { withTrackerConnection } from './tracker-connection.ts'
+import { type TrackerConnection, withTrackerConnection } from './tracker-connection.ts'
 import {
   createAdvertisedTrackerTaskKey,
   taskCreationDestination,
@@ -23,7 +23,7 @@ type FreshTaskDependencies = {
   registeredProjects?: () => RegisteredProject[]
   sourceFor?: (project: RegisteredProject) => TrackerSource | null
   readCredentials?: typeof credentials
-  connect?: (url: string, token: string) => Promise<ToolCaller & { close(): Promise<void> }>
+  connect?: (url: string, token: string) => Promise<TrackerConnection>
   observe?: typeof observeTrackerTask
   readBack?: typeof showTask
   lease?: typeof withLease

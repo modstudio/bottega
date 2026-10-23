@@ -28,6 +28,7 @@ import { machineAttribution } from './task-machine-attribution.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
 import {
+  ARRAY_MCP_STATUS_WRITE_CONFIRM,
   closeTaskThroughTracker,
   commentTaskThroughTracker,
   setTaskThroughTracker,
@@ -184,7 +185,7 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     Boolean(options.keepBranches),
     optional(options, 'abandon'),
     await machineAttribution(),
-    'production',
+    ARRAY_MCP_STATUS_WRITE_CONFIRM,
     { close: closeTaskThroughTracker },
   )
   printTaskRow(closed)
@@ -357,7 +358,7 @@ function registerTaskQueryCommands(task: Command): void {
       {
         force: Boolean(options.force),
         abandonReason: optional(options, 'abandon'),
-        confirm: 'production',
+        confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
       },
     )
     printTaskRow(row)

@@ -77,6 +77,14 @@ export type TaskComment = {
   deleted_at: string | null
 }
 
+export type TaskChanges = {
+  title?: string
+  status?: string
+  parent?: string | null
+  body?: string
+  assignee?: string | null
+}
+
 export type DuplicateCandidate = {
   key: string
   status: string | null
@@ -716,13 +724,7 @@ function assertLocalTaskBodyOverwrite(task: TaskRow, body: string | undefined, f
 function applyLocalTaskPatch(
   conn: Database,
   recordId: string,
-  changes: {
-    title?: string
-    status?: string
-    parent?: string | null
-    body?: string
-    assignee?: string | null
-  },
+  changes: TaskChanges,
   options: { force?: boolean },
   at: string,
   attribution: Attribution,
@@ -790,9 +792,9 @@ export async function prepareDoneTransition(
     options.externalAbandonRefusal
   ) {
     if (options.abandonReason) throw new Error(options.externalAbandonRefusal)
-    if (decision.action === 'refuse') {
+    if (decision.action === 'refuse' && decision.unlanded) {
       throw new Error(
-        `${decision.reason.replace(/Land each branch,[\s\S]*$/, 'Land each branch or delete it, then retry.')}\n${options.externalAbandonRefusal}`,
+        `${decision.unlanded.facts}\nLand each branch or delete it, then retry.\n${options.externalAbandonRefusal}`,
       )
     }
   }
@@ -811,13 +813,7 @@ export async function prepareDoneTransition(
 export async function setTask(
   key: string,
   scope: TaskScope,
-  changes: {
-    title?: string
-    status?: string
-    parent?: string | null
-    body?: string
-    assignee?: string | null
-  },
+  changes: TaskChanges,
   attribution: Attribution,
   options: { force?: boolean; hosted?: HostedOptions } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
@@ -871,6 +867,7 @@ export async function closeTask(
   options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
   const current = showTask(key, scope).task
+  if (current.source !== 'local') throw new Error(`task ${current.key} is not local`)
   if (current.status_category !== 'done') await prepareDoneTransition(current, attribution, options)
   const mode = writeMode(current.project, options.hosted)
   const hosted = mode === 'hosted-configured'

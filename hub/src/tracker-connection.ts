@@ -1,4 +1,4 @@
-import type { ToolCaller } from '../../shared/trackers.ts'
+import { type ToolCaller, trackerEnvPrefix } from '../../shared/trackers.ts'
 import { credentials, failureDetail, Mcp } from './mcp.ts'
 import type { RegisteredProject } from './projects.ts'
 
@@ -14,8 +14,7 @@ export async function withTrackerConnection<T>(
   operation: (client: TrackerConnection) => Promise<T>,
   dependencies: TrackerConnectionDependencies = {},
 ): Promise<T> {
-  const env = project.settings.tracker?.envPrefix ?? project.settings.envPrefix
-  if (!env) throw new Error(`project ${project.name} tracker is missing envPrefix`)
+  const env = trackerEnvPrefix(project)
   const auth = await (dependencies.readCredentials ?? credentials)(env)
   if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
   let client: TrackerConnection | null = null

@@ -1,7 +1,9 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   type StatusCategory,
+  TASK_STATUSES,
   type TrackerTask,
+  trackerStatusCategory,
   updateArrayMcpTaskStatus,
 } from '../../shared/trackers.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
@@ -13,12 +15,15 @@ import {
   prepareDoneTransition,
   setTask,
   showTask,
+  type TaskChanges,
   type TaskComment,
   type TaskRow,
 } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
 import { type TrackerConnectionDependencies, withTrackerConnection } from './tracker-connection.ts'
+
+export { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../shared/trackers.ts'
 
 type TrackerWriteDependencies = TrackerConnectionDependencies & {
   registeredProjects?: () => RegisteredProject[]
@@ -29,13 +34,6 @@ type TrackerWriteDependencies = TrackerConnectionDependencies & {
   localComment?: typeof commentTask
 }
 type TrackerWriteOptions = { force?: boolean; abandonReason?: string; confirm: string }
-export type TaskChanges = {
-  title?: string
-  status?: string
-  parent?: string | null
-  body?: string
-  assignee?: string | null
-}
 
 function registeredProjectFor(
   task: TaskRow,
@@ -48,16 +46,44 @@ function registeredProjectFor(
   return project
 }
 
-function arrayStatusCategory(project: RegisteredProject, status: string): StatusCategory {
-  if (project.settings.tracker?.protocol !== 'array-mcp') {
-    throw new Error(
-      `tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no status writer`,
-    )
+function requireArrayStatusWriter(task: TaskRow, project: RegisteredProject): void {
+  if (project.settings.tracker?.protocol === 'array-mcp') return
+  throw new Error(
+    `task ${task.key}'s tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no status writer`,
+  )
+}
+
+function validStateRefusal(project: RegisteredProject, status: string): Error {
+  const valid = Object.keys(project.settings.tracker?.states ?? {})
+  return new Error(
+    `status ${status} does not resolve to exactly one state for project ${project.name}; valid states: ${valid.join(', ') || '(none)'}`,
+  )
+}
+
+function resolveArrayStatus(
+  project: RegisteredProject,
+  requested: string,
+): { status: string; category: StatusCategory } {
+  const states = project.settings.tracker?.states ?? {}
+  if (requested in states) {
+    return {
+      status: requested,
+      category: trackerStatusCategory(requested, requested, states),
+    }
   }
-  const category = project.settings.tracker.states?.[status]
-  if (!category)
-    throw new Error(`status ${status} is not in project ${project.name}'s tracker vocabulary`)
-  return category === 'backlog' ? 'open' : category
+  if (!TASK_STATUSES.includes(requested as (typeof TASK_STATUSES)[number])) {
+    throw validStateRefusal(project, requested)
+  }
+  const matches = Object.entries(states).filter(([, category]) => category === requested)
+  if (matches.length !== 1) throw validStateRefusal(project, requested)
+  const [status] = matches[0]!
+  return { status, category: requested as StatusCategory }
+}
+
+function replyStatus(result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null
+  const status = (result as { status?: unknown }).status
+  return typeof status === 'string' && status.trim() ? status : null
 }
 
 async function writeExternalStatus(
@@ -69,22 +95,31 @@ async function writeExternalStatus(
   dependencies: TrackerWriteDependencies,
 ): Promise<TaskRow> {
   if (!task.external_id) throw new Error(`task ${task.key} has no external tracker id`)
-  await withTrackerConnection(
+  const result = await withTrackerConnection(
     project,
     (client) => updateArrayMcpTaskStatus(client, project, task.external_id!, status, confirm),
     dependencies,
   )
+  const reportedStatus = replyStatus(result)
+  const observedStatus = reportedStatus ?? status
   const observed: TrackerTask = {
     externalId: task.external_id,
     key: task.key,
     project: task.project,
     title: task.title ?? '',
-    status,
-    category,
+    status: observedStatus,
+    category: reportedStatus
+      ? trackerStatusCategory(reportedStatus, reportedStatus, project.settings.tracker?.states)
+      : category,
     updatedAt: null,
     assignee: task.assignee,
   }
   ;(dependencies.observe ?? observeTrackerTask)(observed)
+  if (observedStatus !== status) {
+    throw new Error(
+      `tracker answered with status ${observedStatus} after ${status} was requested for task ${task.key}`,
+    )
+  }
   return showTask(task.key, { recordId: task.record_id }).task
 }
 
@@ -114,11 +149,7 @@ export async function setTaskThroughTracker(
     return (dependencies.localSet ?? setTask)(key, scope, changes, attribution, options)
   }
   const project = registeredProjectFor(current, dependencies)
-  if (project.settings.tracker?.protocol !== 'array-mcp') {
-    throw new Error(
-      `task ${current.key}'s tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no status writer`,
-    )
-  }
+  requireArrayStatusWriter(current, project)
   const fields = Object.keys(changes)
   if (fields.length !== 1 || changes.status === undefined) {
     const unsupported = fields.filter((field) => field !== 'status').join(', ') || 'other fields'
@@ -126,18 +157,12 @@ export async function setTaskThroughTracker(
       `task ${current.key}'s external tracker can only set status; set ${unsupported} in a separate call where supported`,
     )
   }
-  const category = arrayStatusCategory(project, changes.status)
+  const resolved = resolveArrayStatus(project, changes.status)
+  const { status, category } = resolved
   if (category === 'done') {
     await prepareExternalDoneTransition(current, attribution, options.abandonReason, dependencies)
   }
-  return writeExternalStatus(
-    current,
-    project,
-    changes.status,
-    category,
-    options.confirm,
-    dependencies,
-  )
+  return writeExternalStatus(current, project, status, category, options.confirm, dependencies)
 }
 
 export async function closeTaskThroughTracker(
@@ -152,18 +177,17 @@ export async function closeTaskThroughTracker(
     return (dependencies.localClose ?? closeTask)(key, scope, attribution, options)
   }
   const project = registeredProjectFor(current, dependencies)
-  if (project.settings.tracker?.protocol !== 'array-mcp') {
-    throw new Error(
-      `task ${current.key}'s tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no status writer`,
-    )
-  }
+  requireArrayStatusWriter(current, project)
   await prepareExternalDoneTransition(current, attribution, options.abandonReason, dependencies)
-  const done = Object.entries(project.settings.tracker.states ?? {}).find(
-    ([, category]) => category === 'done',
-  )?.[0]
-  if (!done) throw new Error(`project ${project.name} tracker has no done state configured`)
-  const category = arrayStatusCategory(project, done)
-  return writeExternalStatus(current, project, done, category, options.confirm, dependencies)
+  const done = resolveArrayStatus(project, 'done')
+  return writeExternalStatus(
+    current,
+    project,
+    done.status,
+    done.category,
+    options.confirm,
+    dependencies,
+  )
 }
 
 export async function commentTaskThroughTracker(
