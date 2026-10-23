@@ -25,6 +25,10 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/run/stopped-worktree-decision.ts',
+    allowed: [],
+  },
+  {
     file: 'orchestrator/src/run/run-number.ts',
     allowed: ['bun:sqlite', '../database/entity-number.ts'],
   },

@@ -164,6 +164,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../worktree/worktree-remove.ts',
       '../worktree/worktree-types.ts',
       './branch-deletion-provenance.ts',
+      './discard-worktree-absence.ts',
     ],
     'Keep cleanup independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
