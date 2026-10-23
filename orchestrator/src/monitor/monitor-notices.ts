@@ -6,7 +6,6 @@ import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_READ_REFRESH_BUDGET_MS,
-  hostedBoardVerificationWarning,
   refreshHostedBoard,
   takeHostedBoardVerificationTransition,
 } from '../board/board-hosted-cache.ts'
@@ -288,10 +287,7 @@ async function claimMonitorNoticesWithHosted(
       database,
       claimReplySuccessors: false,
     })
-    const verification =
-      verificationSource.source === 'stored'
-        ? hostedBoardVerificationWarning(database)
-        : verificationSource.warning
+    const verification = verificationSource.source === 'refresh' ? verificationSource.warning : null
     const overflow = board.delivery.length ? board.overflow : null
     return {
       notices: [

@@ -12,6 +12,7 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
+import { hostedBoardVerificationNoticeDecision } from './board-hosted-verification-policy.ts'
 import { boardMode } from './board-mode.ts'
 import {
   messageCanBeReaped,
@@ -39,7 +40,7 @@ export const BOARD_REFRESH_OUTCOME_KEY = 'board_hosted_refresh_outcome'
 const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
 export const BOARD_CACHE_OWNER_KEY = 'board_hosted_cache_owner'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
-const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
+const BOARD_MONITOR_UNVERIFIED_ANNOUNCED_KEY = 'board_hosted_monitor_unverified_announced'
 export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
 export const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
@@ -240,7 +241,7 @@ const CACHE_VERIFICATION_KEYS = [
   BOARD_REFRESH_OUTCOME_KEY,
   BOARD_REFRESH_USER_KEY,
   BOARD_VERIFIED_AT_KEY,
-  BOARD_MONITOR_VERIFICATION_KEY,
+  BOARD_MONITOR_UNVERIFIED_ANNOUNCED_KEY,
 ]
 
 /** Returns true when a prior owner's cursor was discarded and revision zero must be fetched. */
@@ -734,13 +735,29 @@ export function hostedBoardVerificationWarning(database: Database = db()): strin
 
 export function takeHostedBoardVerificationTransition(
   database: Database = writableDb(),
+  now = Date.now(),
 ): string | null {
   const warning = hostedBoardVerificationWarning(database)
-  const current = warning ? 'failed' : 'verified'
-  const previous = meta(database, BOARD_MONITOR_VERIFICATION_KEY)
-  setMeta(database, BOARD_MONITOR_VERIFICATION_KEY, current)
-  if (warning && previous !== 'failed') return warning
-  if (!warning && previous === 'failed')
+  const currentlyUnverified = warning !== null
+  const unverifiedNoticeAnnounced =
+    meta(database, BOARD_MONITOR_UNVERIFIED_ANNOUNCED_KEY) === 'announced'
+  const decision = hostedBoardVerificationNoticeDecision({
+    currentlyUnverified,
+    lastVerifiedAt: meta(database, BOARD_VERIFIED_AT_KEY),
+    now,
+    unverifiedNoticeAnnounced,
+  })
+  writeTransaction(() => {
+    setMeta(
+      database,
+      BOARD_MONITOR_UNVERIFIED_ANNOUNCED_KEY,
+      currentlyUnverified && (unverifiedNoticeAnnounced || decision === 'announce-unverified')
+        ? 'announced'
+        : 'unannounced',
+    )
+  }, database)
+  if (decision === 'announce-unverified') return warning
+  if (decision === 'announce-recovered')
     return `Hosted board cache is verified again at ${meta(database, BOARD_VERIFIED_AT_KEY) ?? 'an unknown time'}.`
   return null
 }
