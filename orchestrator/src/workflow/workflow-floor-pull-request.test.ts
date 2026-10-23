@@ -9,6 +9,7 @@ import {
 
 const url = 'https://github.com/acme/app/pull/7'
 const withheldOutput = '[withheld: secret-shaped content]'
+const withheldLine = '[withheld line: provider-prefix]'
 const link = {
   kind: 'link' as const,
   repository: 'acme/app',
@@ -29,7 +30,7 @@ const exec = {
   headCommit: 'abc',
   cursorBranch: 'DEV-977-work',
   output: '',
-  withheld: false,
+  outputWithheld: false,
 }
 const pullRequestExit = {
   kind: 'command-exit' as const,
@@ -55,7 +56,7 @@ const matchingExecEvidence = {
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
     output: `opened ${url}`,
-    withheld: false,
+    outputWithheld: false,
   },
   pullRequest: { url, ...link },
 }
@@ -117,11 +118,21 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
     met: false,
     condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
   })
+  expect(decidePullRequestEvidence({ ...exec, output: withheldLine, link })).toEqual({
+    met: false,
+    condition: 'the recorded command output does not contain a GitHub pull-request URL',
+  })
   expect(
-    decidePullRequestEvidence({ ...exec, output: `opened ${url}`, withheld: true, link }),
+    decidePullRequestEvidence({
+      ...exec,
+      argv: null,
+      commandWithheld: true,
+      output: `opened ${url}`,
+      link,
+    }),
   ).toEqual({
     met: false,
-    condition: 'the recorded output was withheld, so the pull-request URL cannot be read',
+    condition: `the recorded command was withheld, so it cannot be identified as ${PLATFORM_SLUG} pr create`,
   })
   expect(
     decidePullRequestEvidence({ ...exec, output: `opened ${url}`, sessionBound: false, link }),
@@ -133,6 +144,12 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
     met: true,
   })
   expect(decide(matchingExecEvidence).action).toBe('allow')
+})
+
+test('a retained pull-request URL satisfies the floor when another output line is withheld', () => {
+  expect(
+    decidePullRequestEvidence({ ...exec, output: `opened ${url}\n${withheldLine}`, link }),
+  ).toEqual({ met: true })
 })
 
 test('a pr-create exec from another session is refused on every pull-request floor', () => {
@@ -166,7 +183,7 @@ test('a withheld pr-create exec names the pull-request link remedy', () => {
       exec: {
         ...matchingExecEvidence.exec,
         output: withheldOutput,
-        withheld: true,
+        outputWithheld: true,
       },
     },
     enforcement: 'floors',
