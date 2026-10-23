@@ -54,7 +54,7 @@ describe('task close decision', () => {
 describe('task close claim release', () => {
   test('releases claims after close even when branches are kept', async () => {
     let released = ''
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       close: async () => closedTask,
       releaseClaims: async (project, key) => {
         released = `${project}:${key}`
@@ -66,7 +66,7 @@ describe('task close claim release', () => {
   })
 
   test('surfaces a claim release error', async () => {
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       close: async () => closedTask,
       releaseClaims: async () => {
         throw new Error('orchestrator unavailable')
@@ -76,7 +76,7 @@ describe('task close claim release', () => {
   })
 
   test('returns the closed task when claim release fails', async () => {
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, {
+    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       close: async () => closedTask,
       releaseClaims: async () => {
         throw new Error('release failed')

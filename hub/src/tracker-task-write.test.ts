@@ -8,7 +8,7 @@ import { UNATTRIBUTED } from './task-attribution.ts'
 import {
   closeTaskThroughTracker,
   commentTaskThroughTracker,
-  setTaskStatusThroughTracker,
+  setTaskThroughTracker,
 } from './tracker-task-write.ts'
 
 const taskId = '01990000-0000-7000-8000-000000001659'
@@ -76,12 +76,12 @@ describe('array-mcp task writes', () => {
 
   test('set routes a raw registered status through task_update before updating the cache', async () => {
     const calls: { name: string; args: Record<string, unknown> }[] = []
-    const row = await setTaskStatusThroughTracker(
+    const row = await setTaskThroughTracker(
       'ADN-1659',
       {},
-      'in_progress',
+      { status: 'in_progress' },
       UNATTRIBUTED,
-      {},
+      { confirm: 'operator-confirmation' },
       dependencies(async (name, args) => {
         calls.push({ name, args })
         return { id: taskId, status: 'in_progress' }
@@ -91,7 +91,7 @@ describe('array-mcp task writes', () => {
     expect(calls).toEqual([
       {
         name: 'task_update',
-        args: { id: taskId, status: 'in_progress', confirm: 'production' },
+        args: { id: taskId, status: 'in_progress', confirm: 'operator-confirmation' },
       },
     ])
     expect(row).toMatchObject({ status: 'in_progress', status_category: 'active' })
@@ -103,7 +103,7 @@ describe('array-mcp task writes', () => {
       'ADN-1659',
       {},
       UNATTRIBUTED,
-      {},
+      { confirm: 'production' },
       dependencies(async (name, args) => {
         calls.push({ name, args })
         return { id: taskId, status: 'done' }
@@ -126,7 +126,7 @@ describe('array-mcp task writes', () => {
         'ADN-1659',
         {},
         UNATTRIBUTED,
-        {},
+        { confirm: 'production' },
         dependencies(async () => {
           throw new Error('tracker refused the transition')
         }),
@@ -144,12 +144,12 @@ describe('array-mcp task writes', () => {
 
   test('a failed set transition leaves the cached status unchanged', async () => {
     await expect(
-      setTaskStatusThroughTracker(
+      setTaskThroughTracker(
         'ADN-1659',
         {},
-        'in_progress',
+        { status: 'in_progress' },
         UNATTRIBUTED,
-        {},
+        { confirm: 'production' },
         dependencies(async () => {
           throw new Error('tracker refused the status')
         }),
@@ -160,6 +160,68 @@ describe('array-mcp task writes', () => {
       status: 'todo',
       status_category: 'open',
     })
+  })
+
+  test('an external set refuses mixed fields and names the separate-call remedy', async () => {
+    await expect(
+      setTaskThroughTracker(
+        'ADN-1659',
+        {},
+        { status: 'in_progress', body: 'new body' },
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        dependencies(async () => {
+          throw new Error('tracker must not be called')
+        }),
+      ),
+    ).rejects.toThrow('external tracker can only set status; set body in a separate call')
+  })
+
+  test('an unsupported tracker protocol refuses before interpreting its vocabulary', async () => {
+    const unsupported = {
+      ...project,
+      settings: {
+        ...project.settings,
+        tracker: { ...project.settings.tracker, protocol: 'workspace-mcp' as const },
+      },
+    }
+    await expect(
+      setTaskThroughTracker(
+        'ADN-1659',
+        {},
+        { status: 'not-in-vocabulary' },
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        { registeredProjects: () => [unsupported] },
+      ),
+    ).rejects.toThrow('tracker protocol workspace-mcp has no status writer')
+  })
+
+  test('an external done transition names a remedy that does not suggest unsupported abandon', async () => {
+    await expect(
+      closeTaskThroughTracker(
+        'ADN-1659',
+        {},
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        {
+          ...dependencies(async () => {
+            throw new Error('tracker must not be called')
+          }),
+          classify: async () => ({
+            ...branchClassification,
+            operator: [
+              {
+                branch: 'ADN-1659-work',
+                state: 'unlanded' as const,
+                commitsNotOnTrunk: 1,
+                command: 'git branch -D ADN-1659-work',
+              },
+            ],
+          }),
+        },
+      ),
+    ).rejects.toThrow('tracker has no comment writer, so --abandon cannot record its reason')
   })
 
   test('comment refuses with the workflow cursor remedy', async () => {

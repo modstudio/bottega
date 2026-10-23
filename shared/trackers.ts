@@ -774,16 +774,16 @@ export async function updateArrayMcpTaskStatus(
   project: TrackerProject,
   externalId: string,
   status: string,
+  confirm: string,
 ): Promise<unknown> {
   const tracker = project.settings.tracker
   if (tracker?.protocol !== 'array-mcp') {
     throw new Error(`project ${project.name} does not use the array-mcp tracker protocol`)
   }
-  assertKnownStatus(project, status)
   if (!externalId.trim()) throw new Error(`task in project ${project.name} has no external id`)
   return m.callTool(trackerWireAction('array-mcp', 'status'), {
     id: externalId,
     status,
-    confirm: 'production',
+    confirm,
   })
 }

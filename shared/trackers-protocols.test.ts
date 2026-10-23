@@ -29,14 +29,6 @@ describe('tracker action names', () => {
     )
   })
 
-  test(`array-mcp exposes ${PLATFORM_SLUG} write paths while keeping its wire status action`, () => {
-    expect(resolveTrackerAgentActions('array-mcp')).toMatchObject({
-      status: `${PLATFORM_SLUG} task set {key} --status`,
-      comment: `${PLATFORM_SLUG} workflow attach`,
-    })
-    expect(trackerWireAction('array-mcp', 'status')).toBe('task_update')
-  })
-
   test('agent action overrides replace defaults and add declared capabilities', () => {
     expect(
       resolveTrackerAgentActions('array-mcp', {
@@ -249,6 +241,7 @@ describe('tracker status protocols', () => {
       project('adanim', 'array-mcp'),
       '01990000-0000-7000-8000-000000001659',
       'done',
+      'fixture-confirmation',
     )
 
     expect(fixture.calls).toEqual([
@@ -257,7 +250,7 @@ describe('tracker status protocols', () => {
         args: {
           id: '01990000-0000-7000-8000-000000001659',
           status: 'done',
-          confirm: 'production',
+          confirm: 'fixture-confirmation',
         },
       },
     ])

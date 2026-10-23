@@ -173,6 +173,7 @@ type DoneTransitionOptions = {
   abandonReason?: string
   classify?: (project: string, key: string) => Promise<BranchPruneResult>
   comment?: typeof commentTask
+  externalAbandonRefusal?: string
 }
 
 const writeMode = taskWriteMode
@@ -765,16 +766,11 @@ function applyLocalTaskPatch(
   return row
 }
 
-async function prepareDoneTransition(
+export async function prepareDoneTransition(
   current: TaskRow,
   attribution: Attribution,
   options: { hosted?: HostedOptions } & DoneTransitionOptions,
 ): Promise<void> {
-  if (options.abandonReason && current.source !== 'local') {
-    throw new Error(
-      `cannot abandon unlanded work for task ${current.key}: task is not local and cannot take a comment`,
-    )
-  }
   let classification: ReturnType<typeof landingCheck>
   try {
     classification = landingCheck(
@@ -787,6 +783,19 @@ async function prepareDoneTransition(
     }
   }
   const decision = decideTaskClose(classification, options.abandonReason)
+  if (
+    current.source !== 'local' &&
+    classification.available &&
+    classification.unlanded.length > 0 &&
+    options.externalAbandonRefusal
+  ) {
+    if (options.abandonReason) throw new Error(options.externalAbandonRefusal)
+    if (decision.action === 'refuse') {
+      throw new Error(
+        `${decision.reason.replace(/Land each branch,[\s\S]*$/, 'Land each branch or delete it, then retry.')}\n${options.externalAbandonRefusal}`,
+      )
+    }
+  }
   if (decision.action === 'refuse') throw new Error(decision.reason)
   if (decision.comment !== null) {
     await (options.comment ?? commentTask)(

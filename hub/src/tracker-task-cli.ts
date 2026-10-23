@@ -1,9 +1,10 @@
 import { type ToolCaller, type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
 import { type LeaseGuard, withLease } from './collect.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
-import { credentials, failureDetail, Mcp } from './mcp.ts'
+import { credentials, Mcp } from './mcp.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import { DuplicateTaskError, duplicateCandidates, listTasks, showTask } from './task.ts'
+import { withTrackerConnection } from './tracker-connection.ts'
 import {
   createAdvertisedTrackerTaskKey,
   taskCreationDestination,
@@ -70,52 +71,33 @@ export async function refreshTrackerTask(
   if (!source.lookup)
     throw new Error(`project ${project.name} tracker has no single-task lookup for ${key}`)
 
-  const resolved = await (dependencies.readCredentials ?? credentials)(source.env)
-  if (!resolved) throw new Error(`credentials for ${project.name} tracker do not resolve`)
-  let client: (ToolCaller & { close(): Promise<void> }) | null = null
-  let result!: FreshTaskResult
-  let operationFailure: unknown
-  try {
-    client = dependencies.connect
-      ? await dependencies.connect(resolved.url, resolved.token)
-      : new Mcp(resolved.url, resolved.token)
-    if (!dependencies.connect) await (client as Mcp).initialize()
-    const holder = `fresh-task:${key.toUpperCase()}:${process.pid}`
-    const leased = await (dependencies.lease ?? withLease)(
-      holder,
-      async (guard: LeaseGuard) => {
-        const task = await source.lookup!(client!, key.toUpperCase())
-        if (!task)
-          throw new Error(
-            `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
-          )
-        guard.assertHeld()
-        ;(dependencies.observe ?? observeTrackerTask)(task)
-        guard.assertHeld()
-        return (dependencies.readBack ?? showTask)(task.key, { project: task.project })
-      },
-      dependencies.leaseWaitMs,
-    )
-    if (!leased.ran)
-      throw new Error(
-        `${leased.heldBy ?? 'another process'} holds the collect lease; fresh task read was not performed`,
+  return withTrackerConnection(
+    project,
+    async (client) => {
+      const holder = `fresh-task:${key.toUpperCase()}:${process.pid}`
+      const leased = await (dependencies.lease ?? withLease)(
+        holder,
+        async (guard: LeaseGuard) => {
+          const task = await source.lookup!(client, key.toUpperCase())
+          if (!task)
+            throw new Error(
+              `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
+            )
+          guard.assertHeld()
+          ;(dependencies.observe ?? observeTrackerTask)(task)
+          guard.assertHeld()
+          return (dependencies.readBack ?? showTask)(task.key, { project: task.project })
+        },
+        dependencies.leaseWaitMs,
       )
-    result = { trackerRead: true, commentsVerifiable: false, shown: leased.value }
-  } catch (error) {
-    operationFailure = error
-  }
-
-  let closeFailure: unknown
-  if (client) {
-    try {
-      await client.close()
-    } catch (error) {
-      closeFailure = error
-    }
-  }
-  const failure = operationFailure ?? closeFailure
-  if (failure !== undefined) throw new Error(failureDetail(failure, resolved.token))
-  return result
+      if (!leased.ran)
+        throw new Error(
+          `${leased.heldBy ?? 'another process'} holds the collect lease; fresh task read was not performed`,
+        )
+      return { trackerRead: true, commentsVerifiable: false, shown: leased.value }
+    },
+    dependencies,
+  )
 }
 
 export async function createTrackerOwnedTask(

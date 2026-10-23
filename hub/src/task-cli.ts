@@ -12,7 +12,6 @@ import {
   duplicateCandidates,
   editTaskComment,
   listTasks,
-  setTask,
   showTask,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
@@ -31,7 +30,7 @@ import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.t
 import {
   closeTaskThroughTracker,
   commentTaskThroughTracker,
-  setTaskStatusThroughTracker,
+  setTaskThroughTracker,
 } from './tracker-task-write.ts'
 
 type TaskOptions = {
@@ -185,10 +184,8 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     Boolean(options.keepBranches),
     optional(options, 'abandon'),
     await machineAttribution(),
-    {
-      close: (taskKey, scope, attribution, closeOptions) =>
-        closeTaskThroughTracker(taskKey, scope, attribution, closeOptions),
-    },
+    'production',
+    { close: closeTaskThroughTracker },
   )
   printTaskRow(closed)
   if (claimReleaseError) {
@@ -352,22 +349,17 @@ function registerTaskQueryCommands(task: Command): void {
     if (!Object.keys(changes).length)
       throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
     const attribution = await machineAttribution()
-    const row =
-      Object.keys(changes).length === 1 && changes.status !== undefined
-        ? await setTaskStatusThroughTracker(
-            key,
-            { project: options.project },
-            changes.status,
-            attribution,
-            {
-              force: Boolean(options.force),
-              abandonReason: optional(options, 'abandon'),
-            },
-          )
-        : await setTask(key, { project: options.project }, changes, attribution, {
-            force: Boolean(options.force),
-            abandonReason: optional(options, 'abandon'),
-          })
+    const row = await setTaskThroughTracker(
+      key,
+      { project: options.project },
+      changes,
+      attribution,
+      {
+        force: Boolean(options.force),
+        abandonReason: optional(options, 'abandon'),
+        confirm: 'production',
+      },
+    )
     printTaskRow(row)
   })
 }

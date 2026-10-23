@@ -252,6 +252,21 @@ describe('importWorkflowTree', () => {
         release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
       }),
     )
+    d.query(
+      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+    ).run(
+      'workspace-fixture',
+      '/workspace-fixture',
+      'bun',
+      JSON.stringify({
+        tracker: {
+          protocol: 'workspace-mcp',
+          team: 'fixture-team',
+          states: { todo: 'open', in_progress: 'active', done: 'done' },
+        },
+        release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
+      }),
+    )
     const args = { key: 'ADN-1659', branch: 'ADN-1659-test', worktree: '/fixture' }
     const selection = { mode: 'full' }
     const acceptance = getWorkflowStep(
@@ -284,10 +299,19 @@ describe('importWorkflowTree', () => {
       },
     )
 
-    expect(acceptance.body).toContain(`${PLATFORM_SLUG} workflow attach --cursor`)
-    expect(waiting.body).toContain(`${PLATFORM_SLUG} task set ADN-1659 --status`)
-    expect(waiting.body).toContain(`${PLATFORM_SLUG} workflow attach --cursor`)
-    expect(promote.body).toContain(`${PLATFORM_SLUG} workflow attach --cursor`)
+    const workspaceAcceptance = getWorkflowStep(
+      'ship-task',
+      'workspace-fixture',
+      'acceptance',
+      { ...args, key: 'WORK-1659' },
+      d,
+      selection,
+    )
+    expect(acceptance.body).toContain(`with \`${PLATFORM_SLUG} workflow attach\``)
+    expect(waiting.body).toContain(`with \`${PLATFORM_SLUG} task set ADN-1659 --status\``)
+    expect(promote.body).toContain(`with \`${PLATFORM_SLUG} workflow attach\``)
+    expect(workspaceAcceptance.body).toContain('with `create-task-comment-tool`')
+    expect(workspaceAcceptance.body).not.toContain(`with \`${PLATFORM_SLUG} workflow attach\`.`)
   })
 
   test('intake carries declared signals and leaves workflows without that need unaffected', async () => {
