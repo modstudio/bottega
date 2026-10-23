@@ -15,7 +15,7 @@ function git(repo: string, ...args: string[]): string {
   return result.stdout.toString().trim()
 }
 
-test('a completed review recorded with a launch key matches its reviewed tip after a later commit', () => {
+test('identifies an ancestor commit first and falls back to patch identity after a rebase', () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-key-'))
   const database = migratedTestDatabase()
   try {
@@ -55,7 +55,7 @@ test('a completed review recorded with a launch key matches its reviewed tip aft
         `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
          VALUES (?,1,'2026-10-22T00:00:00Z','2026-10-22T01:00:00Z',2,?,?)`,
       )
-      .run(reviewRecordId, identity.patchId, serializePathSet(identity.paths))
+      .run(reviewRecordId, 'identity-from-an-earlier-base', serializePathSet(identity.paths))
     database
       .query(
         `INSERT INTO review_lens
@@ -82,6 +82,70 @@ test('a completed review recorded with a launch key matches its reviewed tip aft
     expect(postFixReviewDecision({ facts, tier: 2, review: undefined }).kind).toBe(
       'no-round-needed',
     )
+    git(repo, 'checkout', 'main')
+    const rebasedBranch = `orch/${crypto.randomUUID()}`
+    git(repo, 'checkout', '-b', rebasedBranch)
+    writeFileSync(join(repo, 'change.txt'), 'reviewed\n')
+    git(repo, 'add', 'change.txt')
+    git(repo, 'commit', '-m', 'reviewed change')
+    const originalReviewed = git(repo, 'rev-parse', 'HEAD')
+    const originalBase = git(repo, 'merge-base', 'main', originalReviewed)
+    const rebasedIdentity = measureChangeIdentity(repo, originalBase, originalReviewed)
+    if (!rebasedIdentity) throw new Error('reviewed change has no identity')
+    const rebasedRunId = newRecordId()
+    const rebasedReviewRecordId = newRecordId()
+    database
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+            repo,project_record_id,branch,base_commit,input_tree,head_commit)
+         VALUES (?,2,'2026-10-22','codex','review-lens','sha',1,'head','ok',
+            'fixture',?,?,?,?,?)`,
+      )
+      .run(
+        rebasedRunId,
+        projectRecordId,
+        rebasedBranch,
+        originalBase,
+        originalReviewed,
+        originalReviewed,
+      )
+    database
+      .query(
+        `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+         VALUES (?,2,'2026-10-22T00:00:00Z','2026-10-22T01:00:00Z',2,?,?)`,
+      )
+      .run(rebasedReviewRecordId, rebasedIdentity.patchId, serializePathSet(rebasedIdentity.paths))
+    database
+      .query(
+        `INSERT INTO review_lens
+           (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,
+            commands_run,could_not_verify)
+         VALUES (?,?,?,'correctness','codex','[]','["change.txt"]','[]','[]')`,
+      )
+      .run(newRecordId(), rebasedReviewRecordId, rebasedRunId)
+    git(repo, 'update-ref', pinRef(rebasedRunId), originalReviewed)
+    git(repo, 'checkout', 'main')
+    writeFileSync(join(repo, 'trunk.txt'), 'advanced\n')
+    git(repo, 'add', 'trunk.txt')
+    git(repo, 'commit', '-m', 'advance trunk')
+    git(repo, 'checkout', rebasedBranch)
+    git(repo, 'rebase', 'main')
+    const rebasedReviewed = git(repo, 'rev-parse', 'HEAD')
+    expect(
+      spawnFixtureGitSync(['merge-base', '--is-ancestor', originalReviewed, rebasedReviewed], {
+        cwd: repo,
+      }).exitCode,
+    ).not.toBe(0)
+    const rebasedFacts = gatherPostFixReviewFacts({
+      database,
+      repo,
+      to: rebasedReviewed,
+      trunkRef: 'main',
+      project: 'fixture',
+      branch: rebasedBranch,
+    })
+    expect(rebasedFacts).toMatchObject({ reviewedTip: rebasedReviewed })
   } finally {
     database.close()
     rmSync(repo, { recursive: true, force: true })

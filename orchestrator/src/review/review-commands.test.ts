@@ -403,7 +403,7 @@ test('review tier lists a never-completed lens when no tier-three fix path was t
 })
 
 test('review tier re-lenses a tier-three branch commit after a trunk merge', async () => {
-  const { repo, branch, mergeTip } = postFixFixture({
+  const { repo, branch, reviewed } = postFixFixture({
     fixPath: 'critical/fix.ts',
     fixAfterMerge: true,
   })
@@ -421,7 +421,7 @@ test('review tier re-lenses a tier-three branch commit after a trunk merge', asy
     await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
     expect(JSON.parse(json[0]!).post_fix).toMatchObject({
       kind: 're-lens',
-      reviewedTip: mergeTip,
+      reviewedTip: reviewed,
       tierThreePaths: ['critical/fix.ts'],
     })
   } finally {
@@ -445,18 +445,18 @@ test('review tier re-lenses a conflict resolution in a trunk merge', async () =>
   }
 })
 
-test('review tier reports an unidentified reviewed tip and applies the funnel', async () => {
-  const { repo, branch, runId } = postFixFixture({ fixPath: 'src/fix.ts' })
+test('review tier falls back to patch identity when the reviewed commit pin is absent', async () => {
+  const { repo, branch, runId, reviewed } = postFixFixture({ fixPath: 'src/fix.ts' })
   try {
     git(repo, 'update-ref', '-d', pinRef(runId))
-    const output: string[] = []
-    await runReview(['review', 'tier', branch, '--cwd', repo], output)
+    const json: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
 
-    expect(output.some((line) => line.includes('tip could not be identified'))).toBeTrue()
-    expect(output.some((line) => line.includes('applying the review funnel'))).toBeTrue()
-    expect(output.some((line) => line.includes('falling back'))).toBeFalse()
-    expect(output.some((line) => line.startsWith('lens correctness'))).toBeFalse()
-    expect(output.some((line) => line.startsWith('lens craft'))).toBeTrue()
+    expect(JSON.parse(json[0]!).post_fix).toMatchObject({
+      kind: 'no-round-needed',
+      reviewedTip: reviewed,
+      tierThreePaths: [],
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

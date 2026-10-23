@@ -25,7 +25,7 @@ type CompletedReview = {
   number: number
   identity: string | null
   launchKey: string | null
-  runIds: string[]
+  runs: { id: string; reviewRef: string | null }[]
 }
 
 export type PostFixReviewFacts =
@@ -57,7 +57,7 @@ export type PostFixReviewDecision =
 type CompletedReviewEvidenceRow = Pick<
   ReviewRoundEvidenceRow,
   'review_record_id' | 'run_id' | 'launch_key' | 'branch' | 'patch_id' | 'path_set'
-> & { review_number: number }
+> & { review_number: number; review_ref: string | null }
 
 function latestCompletedReview(
   database: Database,
@@ -67,7 +67,7 @@ function latestCompletedReview(
   const rows = database
     .query<CompletedReviewEvidenceRow, [string, string]>(
       `SELECT r.record_id AS review_record_id,r.number AS review_number,
-              run.record_id AS run_id,run.launch_key,run.branch,r.patch_id,r.path_set
+              run.record_id AS run_id,run.launch_key,run.branch,run.review_ref,r.patch_id,r.path_set
          FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
@@ -86,8 +86,21 @@ function latestCompletedReview(
     number: first.review_number,
     identity: reviewRoundIdentity(first).identity,
     launchKey: first.launch_key,
-    runIds: roundRows.map(({ run_id }) => run_id),
+    runs: roundRows.map(({ run_id, review_ref }) => ({ id: run_id, reviewRef: review_ref })),
   }
+}
+
+function recordedReviewedTip(repo: string, to: string, review: CompletedReview): string | null {
+  for (const run of review.runs) {
+    for (const ref of [run.reviewRef, pinRef(run.id)]) {
+      if (!ref) continue
+      const commit = git(repo, ['rev-parse', '--verify', `${ref}^{commit}`])
+      if (commit.ok && git(repo, ['merge-base', '--is-ancestor', commit.out, to]).ok) {
+        return commit.out
+      }
+    }
+  }
+  return null
 }
 
 function matchingReviewedTip(
@@ -97,10 +110,9 @@ function matchingReviewedTip(
   branch: string,
   review: CompletedReview,
 ): string | null {
+  const recorded = recordedReviewedTip(repo, to, review)
+  if (recorded) return recorded
   if (!review.identity) return null
-  if (!review.runIds.some((runId) => git(repo, ['rev-parse', '--verify', pinRef(runId)]).ok)) {
-    return null
-  }
   const history = git(repo, ['rev-list', '--reverse', to, '--not', trunkRef])
   if (!history.ok) return null
   let match: string | null = null
