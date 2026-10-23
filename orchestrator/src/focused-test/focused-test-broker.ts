@@ -225,6 +225,7 @@ function startFocusedTest(input: {
   confinement: BrokerConfinement<SandboxRuntimeConfig>
   request: FocusedTestRequest
   registerActive: (terminate: () => Promise<void>) => () => void
+  onFinish: (() => void) | undefined
 }): ActiveFocusedTest {
   const state: FocusedTestProcessState = {
     child: null,
@@ -314,7 +315,9 @@ function startFocusedTest(input: {
       logName,
       logPath,
     })
-  })().finally(unregister)
+  })()
+    .finally(() => input.onFinish?.())
+    .finally(unregister)
   return { completion, cancel: stop }
 }
 
@@ -324,6 +327,8 @@ export function startFocusedTestBroker(input: {
   environment: Record<string, string>
   confinement: BrokerConfinement<SandboxRuntimeConfig>
   registerActive?: (terminate: () => Promise<void>) => () => void
+  onExecutionStart?: () => void
+  onExecutionFinish?: () => void
 }): FocusedTestBroker {
   ensureFocusedTestDirectory(input.scratchDir)
   let closed = false
@@ -351,11 +356,13 @@ export function startFocusedTestBroker(input: {
       return
     }
     if (!request) return
+    input.onExecutionStart?.()
     const execution = startFocusedTest({
       ...input,
       confinement: input.confinement,
       request,
       registerActive: input.registerActive ?? (() => () => {}),
+      onFinish: input.onExecutionFinish,
     })
     active = execution
     void execution.completion.then(

@@ -188,6 +188,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../ask/ask-lifecycle.ts',
     '../ask/worker-note-broker.ts',
     '../board/board-delivery.ts',
+    './checkpoint-schedule.ts',
     './checkpoint.ts',
     './question-open.ts',
     '../sandbox/codex-mcp-scope.ts',
@@ -216,6 +217,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
   ]),
+  module('orchestrator/src/run/checkpoint-schedule.ts', []),
   module('orchestrator/src/run/run-worker-brokers.ts', [
     '../focused-test/focused-test-broker.ts',
     '../gate/gate-broker.ts',
