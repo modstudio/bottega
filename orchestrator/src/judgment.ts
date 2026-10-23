@@ -81,6 +81,7 @@ type JudgeOptions = {
   notEvidence: readonly string[]
 }
 type ScoreOptions = JudgeOptions & { dashboardAuthorized: boolean }
+const ALL_CLOSE_OUT_FLAGS = ['finding', 'duplicate', ...REVIEW_GRADE_NAMES] as const
 type JudgmentPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
@@ -597,7 +598,8 @@ export async function judgeRun(
     const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))
     if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
   }
-  assertCloseOutFlagsAllowed(id, row.job, findingsJob, delivery, flags)
+  const closeOutRefusal = closeOutRefusalFor(id, row.job, delivery, flags, ALL_CLOSE_OUT_FLAGS)
+  if (closeOutRefusal) throw new Error(closeOutRefusal)
   if (comparison) {
     const expected = partners.map((partner) => partner.record_id).sort((a, b) => a.localeCompare(b))
     const actual = [...comparisonIds].sort((a, b) => a.localeCompare(b))
@@ -787,40 +789,23 @@ function suppliedReviewGrades(flags: JudgmentFlags): GivenScoreFlags['grades'] {
   ) as GivenScoreFlags['grades']
 }
 
-function assertCloseOutFlagsAllowed(
+function closeOutRefusalFor(
   id: string,
   jobName: string,
-  findingsJob: boolean,
   delivery: string | undefined,
   flags: JudgmentFlags,
-): void {
-  const refusal = findingsCloseOutRefusal({
-    runId: id,
-    jobName,
-    findingsJob,
-    delivery,
-    suppliedFlags: [
-      ...(flags.values('finding').length ? ['finding'] : []),
-      ...(flags.values('duplicate').length ? ['duplicate'] : []),
-      ...REVIEW_GRADE_NAMES.filter((name) => flags.flag(name) !== undefined),
-    ],
-  })
-  if (refusal) throw new Error(refusal)
-}
-
-function reviewGradeFlagRefusal(
-  id: string,
-  jobName: string,
-  findingsJob: boolean,
-  delivery: string | undefined,
-  flags: JudgmentFlags,
+  flagNames: readonly ('finding' | 'duplicate' | (typeof REVIEW_GRADE_NAMES)[number])[],
 ): string | null {
   return findingsCloseOutRefusal({
     runId: id,
     jobName,
-    findingsJob,
+    findingsJob: Boolean(job(jobName).findings),
     delivery,
-    suppliedFlags: REVIEW_GRADE_NAMES.filter((name) => flags.flag(name) !== undefined),
+    suppliedFlags: flagNames.filter((name) =>
+      name === 'finding' || name === 'duplicate'
+        ? flags.values(name).length > 0
+        : flags.flag(name) !== undefined,
+    ),
   })
 }
 
@@ -1001,7 +986,7 @@ export async function scoreRun(
     jobName: row.job,
   })
   if (initialRefusal) throw new Error(scoringHelp(initialRefusal, id, delivery, quality, row.job))
-  const gradeFlagRefusal = reviewGradeFlagRefusal(id, row.job, findingsJob, delivery, flags)
+  const gradeFlagRefusal = closeOutRefusalFor(id, row.job, delivery, flags, REVIEW_GRADE_NAMES)
   if (gradeFlagRefusal) throw new Error(gradeFlagRefusal)
   const scoredFidelity = needsFidelity ? fidelity : undefined
   let givenGrades = suppliedReviewGrades(flags)

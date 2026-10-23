@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record-id.ts'
+import { type FlagInput, flags } from '../test/fixtures/judgment.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun, dir, score as seedScore } from '../test/fixtures/store.ts'
@@ -18,23 +19,6 @@ import { refuseVerdict, VOID_EXCLUSION_REASON } from './verdict/verdict-rules.ts
 
 const trackResidue = trackedTestResidue()
 
-type FlagInput = Record<string, string | string[] | boolean>
-const flags = (input: FlagInput = {}) => ({
-  has: (name: string) =>
-    input[name] === true || typeof input[name] === 'string' || Array.isArray(input[name]),
-  flag: (name: string) =>
-    typeof input[name] === 'string'
-      ? (input[name] as string)
-      : Array.isArray(input[name])
-        ? (input[name] as string[])[0]
-        : undefined,
-  values: (name: string) =>
-    Array.isArray(input[name])
-      ? (input[name] as string[])
-      : typeof input[name] === 'string'
-        ? [input[name] as string]
-        : [],
-})
 const presentation = {
   log: (..._values: unknown[]) => {},
   error: (..._values: unknown[]) => {},
@@ -256,15 +240,19 @@ describe('score ruling', () => {
 
   test('score refuses review grades on a job that does not produce findings', async () => {
     const id = insert()
-    await expect(
-      score(id, ['full', 'right'], {
-        reproduced: 'all',
-        coverage: 'adequate',
-        limits: 'named',
-        overlap: 'unique',
-      }),
-    ).rejects.toThrow('not a findings-producing lens')
+    await expect(score(id, ['full', 'right'], { reproduced: 'all' })).rejects.toThrow(
+      'not a findings-producing lens',
+    )
     expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+  })
+
+  test('score refuses review grades when a findings job delivered none', async () => {
+    const id = insert('ok', 'review-lens')
+    await expect(score(id, ['none'], { reproduced: 'all' })).rejects.toThrow(
+      `review-lens run ${id} was scored delivery none, which takes no findings or review grades (--reproduced); if the lens delivered a review, score its delivery partial or full and grade it; otherwise drop these flags and put the facts in --note`,
+    )
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM review_lens WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('re-scoring keeps the old note and confirms every latest axis', async () => {
