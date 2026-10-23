@@ -389,9 +389,9 @@ Dispatch only what the funnel admits, not all `bottega review tier` lists.
 Otherwise the architect reads the fix and lands it. Fix real findings in
 their round; drop speculation in triage.
 
-A well-sized change leaves by its third round; the round ceiling only
-backstops an oversized change or fixes not converging. At it, stop and ask
-the operator.
+A well-sized change leaves by its third round. At the ceiling the architect
+rules: if no finding left can cause harm, land with test-only fixes and file
+the rest.
 
 Respect the review concurrency ceiling defined by the orchestration policy.
 When a gate cannot run, record why and land on the evidence available; do not
