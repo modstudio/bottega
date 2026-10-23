@@ -619,19 +619,26 @@ export function decideAcpPermission(
   toolKind: string | undefined,
   options: Array<{ optionId: string; kind: string }>,
   resolvedLocations?: string[],
-  resolvedScratchRoot?: string,
+  resolvedAdmittedRoots?: string[],
 ): {
   decision: 'allow' | 'reject'
   outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' }
 } {
   const allowRead = READ_PERMISSION_KINDS.has(toolKind ?? '')
-  const allowScratchEdit =
+  // The roots are the same ones the write handler admits through
+  // `acpWriteAdmission`: a writing run's worktree and scratch, a read-only
+  // run's scratch alone. An edit is allowed only when every location sits
+  // inside one of those roots.
+  const allowEdit =
     toolKind === 'edit' &&
-    resolvedScratchRoot !== undefined &&
+    resolvedAdmittedRoots !== undefined &&
+    resolvedAdmittedRoots.length > 0 &&
     resolvedLocations !== undefined &&
     resolvedLocations.length > 0 &&
-    resolvedLocations.every((path) => pathIsWithinRoot(path, resolvedScratchRoot))
-  if (allowRead || allowScratchEdit) {
+    resolvedLocations.every((path) =>
+      resolvedAdmittedRoots.some((root) => pathIsWithinRoot(path, root)),
+    )
+  if (allowRead || allowEdit) {
     const allow =
       options.find((option) => option.kind === 'allow_once') ??
       (allowRead ? options.find((option) => option.kind === 'allow_always') : undefined)
@@ -652,7 +659,8 @@ export function decideAcpPermission(
   return { decision: 'reject', outcome: { outcome: 'cancelled' } }
 }
 
-function pathIsWithinRoot(path: string, root: string): boolean {
+/** Lexical prefix test. Realpath enforcement is `confineFsPath`'s. */
+export function pathIsWithinRoot(path: string, root: string): boolean {
   const fromRoot = relative(root, path)
   return (
     fromRoot === '' ||
