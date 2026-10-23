@@ -51,6 +51,7 @@ import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
 import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
+import { spareModules } from './architecture-spare-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
 import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
@@ -632,6 +633,7 @@ export const modules: ArchitectureModule[] = [
     './setup-mcp.ts',
   ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),
+  ...spareModules,
   module('orchestrator/src/sandbox/sandbox-runtime.ts', [
     'node:fs',
     'node:path',

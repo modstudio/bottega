@@ -71,6 +71,13 @@ export const MACHINE_CONFIG = {
   'record.tunnel_app': { type: 'string', default: '' },
   'record.tunnel_local_port': { type: 'integer', default: 15432 },
   'record.tunnel_remote_port': { type: 'integer', default: 5432 },
+  // The spare-hands lane: best-effort nightly jobs for free-tier agents only.
+  // A task key that owns the lane's cost, so an operator can move it to a
+  // standing maintenance task without a code change.
+  'spare.task_key': { environment: 'BOTTEGA_SPARE_TASK_KEY', type: 'string', default: 'DEV-1676' },
+  // When the nightly runner may start, and the clock time it stops for the night.
+  'spare.start_time': { environment: 'BOTTEGA_SPARE_START_TIME', type: 'string', default: '22:00' },
+  'spare.stop_time': { environment: 'BOTTEGA_SPARE_STOP_TIME', type: 'string', default: '05:00' },
 } as const satisfies Record<string, MachineConfigEntry>
 
 export type MachineConfigKey = keyof typeof MACHINE_CONFIG

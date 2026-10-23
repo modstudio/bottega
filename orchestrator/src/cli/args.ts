@@ -466,6 +466,7 @@ export const CLI_COMMANDS = new Set([
   'settings',
   'setup',
   'setup-ask',
+  'spare',
   'spawns',
   'state',
   'stats',

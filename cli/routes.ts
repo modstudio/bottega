@@ -237,6 +237,7 @@ export const ROUTES = (
       'setup',
       'setup-ask',
       'reclassify-failures',
+      'spare',
     ].map((name) => route(`machine ${name}`, 'orch', name)),
     route('machine reclaim-fixture-questions', 'hub', 'reclaim-fixture-questions'),
     { command: ['machine', 'init-db'], owner: 'orch', argv: ['init-db'], hidden: true },
