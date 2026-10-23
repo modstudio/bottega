@@ -22,7 +22,7 @@ export function createHookFixture(
 ) {
   const root = mkdtempSync(join(tmpdir(), 'board-hooks-'))
   hookRoots.push(root)
-  const databasePath = join(root, 'orch.db')
+  const databasePath = join(root, 'board.db')
   const database = new Database(databasePath)
   database.exec(`
     CREATE TABLE board_message(record_id TEXT,number INTEGER,kind TEXT,ack_required INTEGER,withdrawn_at TEXT,expires_at TEXT,author_session TEXT);
