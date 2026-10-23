@@ -63,8 +63,6 @@ export type DetachSpec = {
   noWaitCapacity?: boolean
   carry?: boolean
   review?: string
-  /** Funnel selection reason for a findings lens run. */
-  selectionReason?: string
   ownerSession?: string | null
   deliverables?: string[]
   timeoutMinutes?: number
@@ -138,7 +136,6 @@ export function detachedRunOptions(
     noWaitCapacity,
     carry,
     review,
-    selectionReason,
     ownerSession,
     resume,
     deliverables,
@@ -170,7 +167,6 @@ export function detachedRunOptions(
     noWaitCapacity,
     carry,
     review,
-    selectionReason,
     ownerSession,
     resume,
     deliverables,
@@ -205,7 +201,6 @@ export function detachedRunOptions(
     noWaitCapacity,
     carry,
     review,
-    selectionReason,
     ownerSession,
     resume,
     deliverables,

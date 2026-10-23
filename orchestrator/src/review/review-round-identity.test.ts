@@ -53,7 +53,9 @@ describe('review round for recording', () => {
   test('uses the budget counting rule for the next review on a branch', () => {
     const project = newRecordId()
     db()
-      .query("INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')")
+      .query(
+        "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+      )
       .run(project)
     const addPrior = (at: string, patch: string) => {
       const review = newRecordId()
@@ -71,9 +73,7 @@ describe('review round for recording', () => {
         repo: 'fixture',
       })
       db()
-        .query(
-          'UPDATE run SET branch=?,launch_key=?,project_record_id=? WHERE record_id=?',
-        )
+        .query('UPDATE run SET branch=?,launch_key=?,project_record_id=? WHERE record_id=?')
         .run('DEV-1618-round', 'DEV-1618', project, run)
       db()
         .query(

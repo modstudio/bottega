@@ -21,12 +21,13 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-lens-selection.ts',
-    allowed: ['../run/run-artifacts.ts', './review-vocabulary.ts'],
+    allowed: ['node:fs', 'node:path', '../run/run-artifacts.ts', './review-vocabulary.ts'],
   },
   {
     file: 'orchestrator/src/review/review-lens-dispatch-reason.ts',
     allowed: [
       '../database/db.ts',
+      '../git/git-environment.ts',
       '../project/projects.ts',
       './review-applicability.ts',
       './review-pins.ts',

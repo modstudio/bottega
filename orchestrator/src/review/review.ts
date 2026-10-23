@@ -10,10 +10,9 @@ export { parseReviewOutput, parseReviewReply } from '../contract/contract.ts'
 
 import { job } from '../jobs/jobs.ts'
 import { currentCoverage, projectRecord, reviewBranchNames } from './review-coverage.ts'
-import { lensSelectionReasonFromDispatch } from './review-lens-selection.ts'
-import { reviewRoundForRecording } from './review-round-identity.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { measureReviewChange, serializePathSet } from './review-group.ts'
+import { lensSelectionReasonFromDispatch } from './review-lens-selection.ts'
 import {
   git,
   measureChangeIdentity,
@@ -23,6 +22,7 @@ import {
   reviewChangeRange,
   storedChangePathSet,
 } from './review-pins.ts'
+import { reviewRoundForRecording } from './review-round-identity.ts'
 import type {
   CoverageGitResult,
   ReviewListFilter,
@@ -486,6 +486,25 @@ function sharedProjectRecordId(runs: readonly RunRow[]): string | null {
     : null
 }
 
+function recordedChangeRound(
+  database: Database,
+  runs: readonly RunRow[],
+  measured: ReturnType<typeof measureReviewChange>,
+) {
+  const first = runs[0]!
+  const pathSet = measured ? serializePathSet(measured.pathSet) : null
+  return {
+    pathSet,
+    round: reviewRoundForRecording(database, {
+      project_record_id: first.project_record_id,
+      launch_key: first.launch_key,
+      branch: first.branch,
+      patch_id: measured?.patchId ?? null,
+      path_set: pathSet,
+    }),
+  }
+}
+
 function recordedReviewNumber(database: Database, runRecordId: string): number | null {
   const row = database
     .query(
@@ -495,12 +514,8 @@ function recordedReviewNumber(database: Database, runRecordId: string): number |
   return row?.number ?? null
 }
 
-export function recordReviews(
-  entries: { runId: string; output: ReviewReply }[],
-  database: Database = writableDb(),
-): string {
-  if (!entries.length) throw new Error('a review requires at least one lens run')
-  const runs = entries.map(({ runId }) => {
+function loadFindingsRuns(entries: { runId: string }[], database: Database): RunRow[] {
+  return entries.map(({ runId }) => {
     const run = database
       .query(
         `SELECT record_id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_record_id,
@@ -519,6 +534,14 @@ export function recordReviews(
     if (existing) throw new Error(`run ${runId} is already recorded in review ${existing}`)
     return run
   })
+}
+
+export function recordReviews(
+  entries: { runId: string; output: ReviewReply }[],
+  database: Database = writableDb(),
+): string {
+  if (!entries.length) throw new Error('a review requires at least one lens run')
+  const runs = loadFindingsRuns(entries, database)
   const projects = [...new Set(runs.map((run) => run.project_record_id))]
   if (projects.length > 1) {
     throw new Error(
@@ -549,17 +572,9 @@ export function recordReviews(
       run.head_commit,
     )
   })()
+  const { pathSet, round } = recordedChangeRound(database, runs, measured)
   const reviewRecordId = writeTransaction(() => {
     const tier = measured?.tier ?? null
-    const first = runs[0]!
-    const pathSet = measured ? serializePathSet(measured.pathSet) : null
-    const round = reviewRoundForRecording(database, {
-      project_record_id: first.project_record_id,
-      launch_key: first.launch_key,
-      branch: first.branch,
-      patch_id: measured?.patchId ?? null,
-      path_set: pathSet,
-    })
     const review = database
       .query(
         `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_record_id,

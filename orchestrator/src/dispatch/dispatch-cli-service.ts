@@ -31,6 +31,7 @@ import {
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
+import { writeLensSelectionReason } from '../review/review-lens-selection.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -372,6 +373,45 @@ const detachedMcpConstraints = (
   transportPinSource: spec.transportPinSource,
 })
 
+async function detachRoutedRun(
+  jobName: string,
+  text: string,
+  spec: DetachSpec,
+  cwd: string,
+): Promise<string> {
+  let selected: string | undefined
+  const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
+  if (!spec.resume && mcpRequest)
+    selected = pick(
+      jobName,
+      spec.agent,
+      text.length,
+      true,
+      stackAt(spec.cwd ?? cwd),
+      {
+        agents: spec.avoid,
+        models: spec.distinctModels,
+        model: spec.model,
+        ...detachedMcpConstraints(mcpRequest, spec, cwd),
+        project: spec.repo ?? null,
+      },
+      spec.probe,
+      spec.lens,
+    ).agent
+  const id = await dispatchDetached(jobName, text, spec, selected)
+  writeLensSelectionReason(
+    id,
+    reviewLensSelectionReasonForDispatch({
+      jobName,
+      lens: spec.lens,
+      review: spec.review,
+      cwd: spec.cwd ?? cwd,
+      repo: spec.repo,
+    }),
+  )
+  return id
+}
+
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
   const flag = (name: string) => flagValue(argv, name)
@@ -398,42 +438,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       mcp: parseRequestedMcp(argv),
     }
   }
-  const detach = async (jobName: string, text: string, spec: DetachSpec) => {
-    let selected: string | undefined
-    const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
-    if (!spec.resume && mcpRequest)
-      selected = pick(
-        jobName,
-        spec.agent,
-        text.length,
-        true,
-        stackAt(spec.cwd ?? presentation.cwd()),
-        {
-          agents: spec.avoid,
-          models: spec.distinctModels,
-          model: spec.model,
-          ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
-          project: spec.repo ?? null,
-        },
-        spec.probe,
-        spec.lens,
-      ).agent
-    return dispatchDetached(
-      jobName,
-      text,
-      {
-        ...spec,
-        selectionReason: reviewLensSelectionReasonForDispatch({
-          jobName,
-          lens: spec.lens,
-          review: spec.review,
-          cwd: spec.cwd ?? presentation.cwd(),
-          repo: spec.repo,
-        }),
-      },
-      selected,
-    )
-  }
+  const detach = (jobName: string, text: string, spec: DetachSpec) =>
+    detachRoutedRun(jobName, text, spec, presentation.cwd())
   await dispatchCommand(
     argv,
     { has, flag, values },

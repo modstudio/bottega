@@ -2,13 +2,13 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { median } from '../state/statistics.ts'
 import { applicableReview } from './review-applicability.ts'
-import { reviewRoundIdentity } from './review-round-identity.ts'
 import {
   parseStoredReviewPathSet,
   parseStoredReviewSettings,
   reviewRunEvidenceSql,
 } from './review-evidence-sql.ts'
 import { reviewLensGraded } from './review-group.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import { reviewTriageBag } from './review-triage.ts'
 import {
@@ -231,7 +231,6 @@ export function reviewYield(
 
   const missingPatch = rows.filter((row) => row.patch_id === null).length
   const pairs = lensPairs(rows)
-
   return {
     filters: {
       project: filters.project ?? null,
@@ -243,13 +242,21 @@ export function reviewYield(
     lenses: grouped(rows, displayLens),
     ...changeSlices(rows),
     lensPairs: pairs,
+    ...yieldGroupedViews(rows),
+    notRecorded: yieldNotRecorded(pairs.length, missingPatch),
+  }
+}
+
+function yieldGroupedViews(rows: ComputedLens[]) {
+  const withRound = rows.filter((row) => row.round !== null)
+  return {
     rounds: grouped(
-      rows.filter((row) => row.round !== null),
+      withRound,
       (row) => `round ${row.round}`,
       (_a, _b, aRows, bRows) => aRows[0]!.round! - bRows[0]!.round!,
     ),
     lensRounds: grouped(
-      rows.filter((row) => row.round !== null),
+      withRound,
       (row) => `${displayLens(row)} round ${row.round}`,
       (a, b) => a.localeCompare(b, undefined, { numeric: true }),
     ),
@@ -259,27 +266,33 @@ export function reviewYield(
     ),
     agents: grouped(rows, (row) => row.agent),
     models: grouped(rows, (row) => row.model ?? '(not recorded)'),
-    notRecorded: [
-      pairs.length
-        ? {
-            metric: 'finding-level overlap between duplicate lenses',
-            needed: 'only reviews with explicit --duplicate links are measured in finding overlap',
-          }
-        : {
-            metric: 'finding-level overlap between duplicate lenses',
-            needed: 'record matching findings while scoring with --duplicate N=<run>#<M>',
-          },
-      ...(missingPatch
-        ? [
-            {
-              metric: 'round change identity',
-              needed: 'record review.patch_id; rounds are not keyed on input_tree or head_commit',
-              count: missingPatch,
-            },
-          ]
-        : []),
-    ],
   }
+}
+
+function yieldNotRecorded(
+  pairCount: number,
+  missingPatch: number,
+): ReviewYieldReport['notRecorded'] {
+  return [
+    pairCount
+      ? {
+          metric: 'finding-level overlap between duplicate lenses',
+          needed: 'only reviews with explicit --duplicate links are measured in finding overlap',
+        }
+      : {
+          metric: 'finding-level overlap between duplicate lenses',
+          needed: 'record matching findings while scoring with --duplicate N=<run>#<M>',
+        },
+    ...(missingPatch
+      ? [
+          {
+            metric: 'round change identity',
+            needed: 'record review.patch_id; rounds are not keyed on input_tree or head_commit',
+            count: missingPatch,
+          },
+        ]
+      : []),
+  ]
 }
 
 const displayLens = (row: ComputedLens): string =>

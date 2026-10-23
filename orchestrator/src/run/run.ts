@@ -287,8 +287,6 @@ export async function run(opts: {
   keepTree?: KeepTreeExemption
   /** Immutable explicit-review target inherited only by automatic failover. */
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
-  /** Funnel selection reason for a findings lens run. */
-  selectionReason?: string
 }): Promise<RunResult> {
   writableDb()
   runMigration.enableRunSchemaReload(opts.reserveId)
@@ -301,10 +299,6 @@ export async function run(opts: {
     resume.workspaceSource === 'retained' ? readDispatchState(prior!.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
-  const selectionReason =
-    opts.selectionReason ??
-    inheritedDispatch?.selectionReason ??
-    (requestedJob.findings ? 'operator-ordered' : undefined)
   const [writesJob, repoJob] = [!!requestedJob.needs.writesRepo, !!requestedJob.needs.readsRepo]
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
@@ -658,7 +652,6 @@ export async function run(opts: {
     mcpConnection,
     mcpMode,
     declaredDeliverables,
-    selectionReason,
     timeoutMinutes,
     timeoutMs: boundMs,
     forbidsRepo,

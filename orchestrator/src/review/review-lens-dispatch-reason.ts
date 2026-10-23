@@ -2,16 +2,13 @@
 /** Computes the funnel selection reason at review-lens dispatch. */
 
 import { db } from '../database/db.ts'
+import { gitContext } from '../git/git-environment.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import type { ApplicableReview } from './review-applicability.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
-import {
-  reviewRemoteTrunkRefExists,
-  reviewTrunkRef,
-  resolveReviewTarget,
-} from './review-target.ts'
+import { resolveReviewTarget, reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
 import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
@@ -45,14 +42,10 @@ function funnelReasonForLens(input: {
   if (!target) return OPERATOR_ORDERED
   const trunk = project.settings.trunk?.trim()
   if (!trunk) return OPERATOR_ORDERED
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, (args) => {
-    const probed = Bun.spawnSync(['git', ...args], {
-      cwd: input.cwd,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    return probed.exitCode === 0
-  })
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
+    trunk,
+    (args) => gitContext(input.cwd, ...args) !== null,
+  )
   const output = reviewTierForRange(input.cwd, target.base, target.commit, project.settings.review)
   const identity = measureChangeIdentity(input.cwd, target.base, target.commit)
   if (!identity) return OPERATOR_ORDERED

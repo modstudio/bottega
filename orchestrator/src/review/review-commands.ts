@@ -22,6 +22,7 @@ import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
 import {
   resolveReviewMergeBase,
@@ -38,7 +39,6 @@ import {
   triageFinding,
 } from './review-triage.ts'
 import { REVIEW_SEVERITY } from './review-vocabulary.ts'
-import { reviewRoundIdentity } from './review-round-identity.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void }

@@ -18,9 +18,10 @@ const normalized = (value: string | null | undefined) => value?.trim().toLowerCa
  * A round is one canonical patch for one attributed task. Classification runs
  * before view filters, so every grouping and filtered view shares its ordinal.
  */
-export function reviewRoundIdentity(
-  row: ReviewRoundIdentityInput,
-): { task: string | null; identity: string | null } {
+export function reviewRoundIdentity(row: ReviewRoundIdentityInput): {
+  task: string | null
+  identity: string | null
+} {
   const task = attributedTaskKey(row.launch_key, row.branch)
   return {
     task,
@@ -30,9 +31,7 @@ export function reviewRoundIdentity(
 }
 
 /** Assign first-seen ordinals to classifiable identities; unclassifiable stay null. */
-export function reviewRoundOrdinals(
-  identities: readonly (string | null)[],
-): (number | null)[] {
+export function reviewRoundOrdinals(identities: readonly (string | null)[]): (number | null)[] {
   const seen = new Map<string, number>()
   return identities.map((identity) => {
     if (!identity) return null
@@ -55,7 +54,7 @@ type PriorRoundRow = {
 }
 
 /** Eligible prior identities on one branch, in the budget's recorded order. */
-export function priorRoundIdentities(
+function priorRoundIdentities(
   database: Database,
   projectRecordId: string | null,
   branch: string | null,

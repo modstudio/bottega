@@ -1,7 +1,9 @@
 // concern: review-lens-selection
-/** Reads the funnel selection reason carried on a run's dispatch metadata. */
+/** Reads and writes the funnel selection reason carried as dispatch metadata. */
 
-import { readDispatchState } from '../run/run-artifacts.ts'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
 import {
   REVIEW_LENS_SELECTION_REASON,
   type ReviewLensSelectionReason,
@@ -15,7 +17,17 @@ function asSelectionReason(value: string | null | undefined): ReviewLensSelectio
     : null
 }
 
+const selectionReasonPath = (runId: string) => join(RUNS_DIR, runId, 'selection-reason')
+
+/** Persist the funnel reason on the run so recordReviews can store it. */
+export function writeLensSelectionReason(runId: string, reason: string): void {
+  mkdirSync(join(RUNS_DIR, runId), { recursive: true })
+  writeFileSync(selectionReasonPath(runId), reason)
+}
+
 /** Reason stored on the run at dispatch; missing metadata is operator-ordered. */
 export function lensSelectionReasonFromDispatch(runId: string): ReviewLensSelectionReason {
-  return asSelectionReason(readDispatchState(runId).selectionReason) ?? OPERATOR_ORDERED
+  const path = selectionReasonPath(runId)
+  if (!existsSync(path)) return OPERATOR_ORDERED
+  return asSelectionReason(readFileSync(path, 'utf8').trim()) ?? OPERATOR_ORDERED
 }
