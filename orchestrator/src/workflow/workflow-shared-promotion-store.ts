@@ -122,10 +122,7 @@ async function hostedRows(spaceId: string, table: RecordWorkflowTable): Promise<
   }
 }
 
-async function hostedSnapshot(
-  spaceId: string,
-  slug: string | null,
-): Promise<HostedSpaceSnapshot> {
+async function hostedSnapshot(spaceId: string, slug: string | null): Promise<HostedSpaceSnapshot> {
   const rows = new Map<RecordWorkflowTable, HostedRow[]>()
   try {
     for (const table of RECORD_WORKFLOW_TABLES) rows.set(table, await hostedRows(spaceId, table))
@@ -134,7 +131,8 @@ async function hostedSnapshot(
       `refusing shared workflow promotion: could not read authoritative workflow state for space ${spaceId}: ${error instanceof Error ? error.message : String(error)}; refresh and retry`,
     )
   }
-  const identity = slug === null ? undefined : rows.get('workflow')!.find((row) => row.slug === slug)
+  const identity =
+    slug === null ? undefined : rows.get('workflow')!.find((row) => row.slug === slug)
   const catalogue = rows.get('step_catalogue')!.find((row) => row.slug === 'shared')
   const versionRows = identity
     ? rows.get('workflow_version')!.filter((row) => row.ownerId === identity.id)

@@ -21,6 +21,7 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
+  type CheckoutResolution,
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
 } from './workflow-checkout-refusal.ts'
@@ -39,7 +40,6 @@ import {
 } from './workflow-floor.ts'
 import {
   type FloorEvidencePorts,
-  type CheckoutResolution,
   invokeFloorEvidencePort,
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'

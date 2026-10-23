@@ -1,7 +1,14 @@
 // concern: workflow checkout evidence diagnostics
 /** Classifies checkout provenance and names an outside-change remedy. */
 
-import type { CheckoutResolution } from './workflow-floor-evidence-replay.ts'
+export type CheckoutResolution = {
+  project: string | null
+  branch: string | null
+  headIsTipOrAncestor: boolean
+  landingCommit?: string | null
+  landingIsHeadOrAncestor?: boolean
+  landingBranch: string
+}
 
 export type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
 
