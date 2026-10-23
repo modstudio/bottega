@@ -23,11 +23,7 @@ import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
-import {
-  resolveReviewMergeBase,
-  reviewRemoteTrunkRefExists,
-  reviewTrunkRef,
-} from './review-target.ts'
+import { resolveReviewBase, reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
@@ -158,11 +154,9 @@ function resolveTierTarget(
       if (!row) throw new Error(`no run ${runId}`)
       const project = row.repo ? projectByName(row.repo) : null
       if (!project) throw new Error(`run ${runId} has no registered project`)
-      if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
-      // A writer run's input tree IS its base: what it built lives on its
-      // branch. Measure the branch tip when the branch still exists. A
-      // reader's input tree is the artifact it reviewed, so a reader keeps
-      // it even when a branch is recorded.
+      // Measure a live writer at its current branch tip. Otherwise retain the
+      // recorded input tree as the classified artifact while resolving its
+      // landing merge-base from the recorded head commit.
       const writer = (() => {
         try {
           return job(row.job).needs.writesRepo
@@ -181,27 +175,22 @@ function resolveTierTarget(
         }).exitCode === 0
       const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
       if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
-      if (!branchLive)
-        return {
-          repo: project.path,
-          from: row.base_commit,
-          to: reviewed,
-          branch: row.branch ?? reviewed,
-          project,
-        }
       const trunk = project.settings.trunk?.trim()
       if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+      const reviewedTip = branchLive ? reviewed : (row.head_commit ?? reviewed)
       const from = (() => {
         try {
-          return resolveReviewMergeBase(project.path, reviewed, trunk)
+          return resolveReviewBase(project.path, reviewedTip, trunk, row.base_commit)
         } catch {
           return null
         }
       })()
       if (!from) {
-        throw new Error(`cannot find merge-base between branch ${row.branch} and trunk ${trunk}`)
+        throw new Error(
+          `cannot find merge-base between reviewed tip ${reviewedTip} and trunk ${trunk}`,
+        )
       }
-      return { repo: project.path, from, to: reviewed, branch: row.branch!, project }
+      return { repo: project.path, from, to: reviewed, branch: row.branch ?? reviewedTip, project }
     })()
   }
   const project = projectAt(cwd)
@@ -234,10 +223,11 @@ function resolveTierTarget(
   }
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
+  const from = resolveReviewBase(repo, value, trunk)
+  if (!from) throw new Error(`cannot find merge-base between branch ${value} and trunk ${trunk}`)
   return {
     repo,
-    ...resolveTierRangeInRepo(repo, reviewTrunkRef(remoteTrackingRefExists, trunk), value, trunk),
+    ...resolveTierRangeInRepo(repo, from, value, trunk),
     branch: value,
     project,
   }

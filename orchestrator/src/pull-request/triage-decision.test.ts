@@ -92,6 +92,66 @@ describe('pull-request triage decision', () => {
     })
   })
 
+  test('a post-review change needing no funnel round keeps the completed round admissible', () => {
+    const earlier = review({
+      reviewId: 3,
+      tier: 3,
+      lensIdentities: ['correctness', 'migration-safety', 'teardown-safety'],
+      lenses: [
+        { recordId: 'lens-correctness', lens: 'correctness', graded: true },
+        { recordId: 'lens-migration', lens: 'migration-safety', graded: true },
+        { recordId: 'lens-teardown', lens: 'teardown-safety', graded: true },
+      ],
+      findings: [],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          reviews: [],
+          applicableReview: {
+            lenses: ['correctness', 'migration-safety', 'teardown-safety'],
+          },
+          roundReview: { lenses: [] },
+          branchReviewGroups: [branchGroup([earlier])],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: { reviewRecordIds: ['review-3'], admissionPath: 'exact_review' },
+    })
+  })
+
+  test('a post-review change needing a funnel round still requires its exact lens', () => {
+    const earlier = review({
+      reviewId: 3,
+      tier: 3,
+      lensIdentities: ['correctness', 'migration-safety', 'teardown-safety'],
+      lenses: [
+        { recordId: 'lens-correctness', lens: 'correctness', graded: true },
+        { recordId: 'lens-migration', lens: 'migration-safety', graded: true },
+        { recordId: 'lens-teardown', lens: 'teardown-safety', graded: true },
+      ],
+      findings: [],
+    })
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          reviews: [],
+          applicableReview: {
+            lenses: ['correctness', 'migration-safety', 'teardown-safety'],
+          },
+          roundReview: { lenses: ['teardown-safety'] },
+          branchReviewGroups: [branchGroup([earlier])],
+        }),
+      ),
+    ).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'teardown-safety', recordedOnBranch: true }],
+    })
+  })
+
   test('path b credits a full pre-rebase round recorded as separate lens reviews', () => {
     const firstLens = review({
       reviewId: 3,

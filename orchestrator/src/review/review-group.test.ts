@@ -57,7 +57,7 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
   ).toEqual([])
 })
 
-test('a rebase credits the complete round from the same branch and never another branch', () => {
+test('a rebase credits the complete round from the same branch and never an explicit-range result', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
   const projectId = newRecordId()
@@ -92,7 +92,7 @@ test('a rebase credits the complete round from the same branch and never another
   }
   addReview('DEV-977', 20, 'correctness')
   addReview('DEV-977', 21, 'craft')
-  addReview('DEV-other', 22, 'foreign')
+  addReview('base..tip', 22, 'explicit-range')
 
   const selected = reviewsForTriage(database, {
     project: 'fixture',

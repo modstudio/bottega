@@ -407,7 +407,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     : undefined
   const finalTierRaised = Boolean(earlierRound && evidence.tier > earlierRound.tier)
   if (
-    creditedRoundReview.lenses.length > 0 &&
+    evidence.roundReview !== undefined &&
     earlierRound &&
     !composed.coverageGaps.missingLenses.length &&
     !composed.coverageGaps.undisposedFindings.length &&

@@ -8,6 +8,7 @@ import { db } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
+  decideReviewBase,
   emptyReviewRefusal,
   implicitReviewBranch,
   implicitReviewBranchFrom,
@@ -17,6 +18,12 @@ import {
 } from './review-target.ts'
 
 describe('review target', () => {
+  test('the landing merge-base wins over a stale recorded run base', () => {
+    expect(
+      decideReviewBase({ mergeBase: 'origin-merge-base', recordedBase: 'recorded-run-base' }),
+    ).toBe('origin-merge-base')
+  })
+
   test('implicit review branch excludes trunk and detached HEAD', () => {
     expect(implicitReviewBranch).toBeFunction()
     expect(implicitReviewBranchFrom('DEV-1147-branch', 'main')).toBe('DEV-1147-branch')

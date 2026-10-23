@@ -51,15 +51,39 @@ export function reviewRemoteTrunkRefExists(
   return probe(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`])
 }
 
-/** Trunk merge-base of a reviewed commit. Same resolution for --review and implicit lenses. */
-export function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): string | null {
+/** The live landing merge-base is authoritative; a run's recorded base is never a review base. */
+export function decideReviewBase(input: {
+  mergeBase: string | null
+  recordedBase: string | null
+}): string | null {
+  return input.mergeBase
+}
+
+/** Landing-branch merge-base of a reviewed tip. Shared by tier, dispatch, and admission. */
+export function resolveReviewBase(
+  cwd: string,
+  tip: string,
+  trunk: string,
+  recordedBase: string | null = null,
+): string | null {
   const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
     trunk,
-    (args) => gitContext(cwd, ...args) !== null,
+    (args) =>
+      Bun.spawnSync(['git', '-C', cwd, ...args], {
+        env: targetGitEnvironment(cwd),
+        stdout: 'ignore',
+        stderr: 'ignore',
+      }).exitCode === 0,
   )
   const trunkCommit = resolveBase(cwd, `${reviewTrunkRef(remoteTrackingRefExists, trunk)}^{commit}`)
-  return gitContext(cwd, 'merge-base', commit, trunkCommit)
+  return decideReviewBase({
+    mergeBase: gitContext(cwd, 'merge-base', tip, trunkCommit),
+    recordedBase,
+  })
 }
+
+/** Base adapter used by gate and issue-review callers. */
+export const resolveReviewMergeBase = resolveReviewBase
 
 export function emptyReviewRefusal(
   commit: string,
@@ -118,7 +142,7 @@ export function measureImplicitReviewTarget(
     const root = gitContext(cwd, 'rev-parse', '--show-toplevel')
     if (!root) return null
     const head = resolveBase(root, 'HEAD')
-    const base = resolveReviewMergeBase(root, head, trunk)
+    const base = resolveReviewBase(root, head, trunk)
     if (!base) return null
     const inputTree = carry ? contentTree(root) : head
     return {
@@ -140,7 +164,7 @@ function implicitReviewCoverageBase(cwd: string): string | null {
   if (!trunk) return null
   try {
     const commit = resolveBase(cwd, 'HEAD')
-    return resolveReviewMergeBase(cwd, commit, trunk)
+    return resolveReviewBase(cwd, commit, trunk)
   } catch {
     return null
   }
@@ -200,7 +224,7 @@ export function resolveReviewTarget(
     )
   }
   const commit = resolveBase(cwd, `${branch}^{commit}`)
-  const base = resolveReviewMergeBase(cwd, commit, trunk)
+  const base = resolveReviewBase(cwd, commit, trunk)
   if (!base) {
     throw new Error(`cannot find merge-base between review target ${branch} and trunk ${trunk}`)
   }
