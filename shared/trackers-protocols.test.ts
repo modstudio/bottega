@@ -9,6 +9,7 @@ import {
   trackerCreatedTaskKey,
   trackerSourceFor,
   trackerWireAction,
+  updateArrayMcpTaskStatus,
   WORKSPACE_LOOKUP_PAGE_SIZE,
 } from './trackers.ts'
 
@@ -26,6 +27,14 @@ describe('tracker action names', () => {
     expect(() => trackerWireAction('array-mcp', 'comment')).toThrow(
       'tracker protocol array-mcp has no comment action',
     )
+  })
+
+  test('array-mcp exposes bottega write paths while keeping its wire status action', () => {
+    expect(resolveTrackerAgentActions('array-mcp')).toMatchObject({
+      status: `${PLATFORM_SLUG} task set {key} --status`,
+      comment: `${PLATFORM_SLUG} workflow attach`,
+    })
+    expect(trackerWireAction('array-mcp', 'status')).toBe('task_update')
   })
 
   test('agent action overrides replace defaults and add declared capabilities', () => {
@@ -228,6 +237,30 @@ describe('tracker create protocols', () => {
       createTrackerTask(fixture.caller, project('future', 'future-mcp'), task),
     ).rejects.toThrow('tracker protocol future-mcp has no create support')
     expect(fixture.calls).toEqual([])
+  })
+})
+
+describe('tracker status protocols', () => {
+  test('array-mcp updates the immutable task id and acknowledges a production write', async () => {
+    const fixture = fixtureCaller()
+
+    await updateArrayMcpTaskStatus(
+      fixture.caller,
+      project('adanim', 'array-mcp'),
+      '01990000-0000-7000-8000-000000001659',
+      'done',
+    )
+
+    expect(fixture.calls).toEqual([
+      {
+        name: 'task_update',
+        args: {
+          id: '01990000-0000-7000-8000-000000001659',
+          status: 'done',
+          confirm: 'production',
+        },
+      },
+    ])
   })
 })
 

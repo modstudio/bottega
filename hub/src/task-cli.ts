@@ -6,7 +6,6 @@ import { requireDatabase } from './db.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects } from './projects.ts'
 import {
-  commentTask,
   createTask,
   DuplicateTaskError,
   deleteTaskComment,
@@ -29,6 +28,11 @@ import { importTasks } from './task-import.ts'
 import { machineAttribution } from './task-machine-attribution.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
+import {
+  closeTaskThroughTracker,
+  commentTaskThroughTracker,
+  setTaskStatusThroughTracker,
+} from './tracker-task-write.ts'
 
 type TaskOptions = {
   abandon?: string
@@ -181,7 +185,10 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     Boolean(options.keepBranches),
     optional(options, 'abandon'),
     await machineAttribution(),
-    {},
+    {
+      close: (taskKey, scope, attribution, closeOptions) =>
+        closeTaskThroughTracker(taskKey, scope, attribution, closeOptions),
+    },
   )
   printTaskRow(closed)
   if (claimReleaseError) {
@@ -344,12 +351,24 @@ function registerTaskQueryCommands(task: Command): void {
     }
     if (!Object.keys(changes).length)
       throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
-    printTaskRow(
-      await setTask(key, { project: options.project }, changes, await machineAttribution(), {
-        force: Boolean(options.force),
-        abandonReason: optional(options, 'abandon'),
-      }),
-    )
+    const attribution = await machineAttribution()
+    const row =
+      Object.keys(changes).length === 1 && changes.status !== undefined
+        ? await setTaskStatusThroughTracker(
+            key,
+            { project: options.project },
+            changes.status,
+            attribution,
+            {
+              force: Boolean(options.force),
+              abandonReason: optional(options, 'abandon'),
+            },
+          )
+        : await setTask(key, { project: options.project }, changes, attribution, {
+            force: Boolean(options.force),
+            abandonReason: optional(options, 'abandon'),
+          })
+    printTaskRow(row)
   })
 }
 
@@ -370,7 +389,7 @@ function registerTaskLifecycleCommands(task: Command): void {
     .option('--project <X>', 'resolve the task in this project')
     .action(async (key, text, _options, command) => {
       open()
-      const comment = await commentTask(
+      const comment = await commentTaskThroughTracker(
         key,
         { project: taskOptions(command).project },
         text,
