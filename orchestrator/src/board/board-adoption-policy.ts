@@ -38,7 +38,7 @@ export function isTerminalLedgerState(state: LedgerState | undefined): boolean {
   return state === 'uploaded' || state === 'refused'
 }
 
-export type UploadErrorKind = 'refused' | 'unreachable' | 'unexpected'
+export type UploadErrorKind = 'refused' | 'unreachable' | 'server' | 'unexpected'
 export type UploadErrorDisposition = 'rate' | 'machine' | 'lasting' | 'unexpected'
 
 export function uploadErrorDisposition(

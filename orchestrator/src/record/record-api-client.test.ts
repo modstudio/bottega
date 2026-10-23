@@ -74,6 +74,11 @@ describe('record HTTP authentication responses', () => {
     expect(recordAuthRefusal(429, {}, new Headers({ 'retry-after': '12' })).message).toBe(
       'record sign-in is rate limited; retry after 12',
     )
+    expect(recordAuthRefusal(503, { error: 'maintenance' }, new Headers())).toMatchObject({
+      kind: 'server',
+      status: 503,
+      message: `record API 503: maintenance\ncleared by: ${PLATFORM_SLUG} record doctor`,
+    })
   })
 
   test('validates and maps whoami identity at the HTTP edge', () => {
@@ -410,6 +415,41 @@ describe('record API client test safety', () => {
           expiresAt: '2026-10-06T00:00:00.000Z',
         }),
       ).rejects.toThrow('board post rate limit reached; retry after the ten-minute author window')
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordSessionRunner(null)
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
+  test('board server errors report the reached status and body with the doctor remedy', async () => {
+    const session = memoryRecordSession()
+    session.setToken('board-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      Response.json({ error: 'claim write failed' }, { status: 500 })) as unknown as typeof fetch
+    try {
+      await expect(
+        recordApiClient().takeBoardClaim({
+          id: newRecordId(),
+          project: PLATFORM_SLUG,
+          projectId: newRecordId(),
+          subject: 'task:DEV-1638',
+        }),
+      ).rejects.toMatchObject({
+        kind: 'server',
+        status: 500,
+        message: `record API 500: claim write failed\ncleared by: ${PLATFORM_SLUG} record doctor`,
+      })
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv

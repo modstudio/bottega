@@ -411,15 +411,21 @@ function injectedClient(): RecordApiClient | null {
 }
 
 export class RecordApiRequestError extends Error {
-  readonly kind: 'unreachable' | 'refused'
+  readonly kind: 'unreachable' | 'server' | 'refused'
   readonly status: number | null
 
-  constructor(message: string, kind: 'unreachable' | 'refused', status: number | null = null) {
+  constructor(
+    message: string,
+    kind: 'unreachable' | 'server' | 'refused',
+    status: number | null = null,
+  ) {
     super(message)
     this.kind = kind
     this.status = status
   }
 }
+
+const recordApiStatus = (status: number) => `record API ${status}`
 
 function recordApiUnreachable(error: unknown): Error {
   const detail = error instanceof Error ? error.message : String(error)
@@ -444,16 +450,22 @@ function responseMessage(body: unknown, fallback: string): string {
   )
 }
 
+function recordApiServerError(message: string, status: number): RecordApiRequestError {
+  const fallback = recordApiStatus(status)
+  const statusMessage = message === fallback ? message : `${fallback}: ${message}`
+  return new RecordApiRequestError(`${statusMessage}\n${RECORD_WRITE_REMEDY}`, 'server', status)
+}
+
 function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
   if (status === 401) return recordAuthRefusal(status, body, headers)
-  const message = responseMessage(body, `record API ${status}`)
+  const message = responseMessage(body, recordApiStatus(status))
   if (status === 429) return new RecordApiRequestError(message, 'refused', status)
   if (message === RECORD_ACTIVE_SPACE_REMEDY)
     return new RecordApiRequestError(message, 'refused', status)
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
     return new RecordApiRequestError(message, 'refused', status)
   if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused', status)
-  return recordApiUnreachable(new Error(message))
+  return recordApiServerError(message, status)
 }
 
 export function recordAuthToken(headers: Headers, body: unknown): string | null {
@@ -476,9 +488,9 @@ export function recordAuthRefusal(status: number, body: unknown, headers: Header
       'refused',
     )
   }
-  const message = responseMessage(body, `record API ${status}`)
+  const message = responseMessage(body, recordApiStatus(status))
   if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused')
-  return recordApiUnreachable(new Error(message))
+  return recordApiServerError(message, status)
 }
 
 async function recordEmailAuthRequest(
