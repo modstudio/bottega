@@ -54,7 +54,7 @@ export async function syncCommand(
     )
     const evidence = result.backfill.landingEvidence
     presentation.log(
-      `landing evidence backfill enqueued ${evidence.enqueuedLandings}, ${evidence.enqueuedOverrides}, ${evidence.enqueuedCarries}, ${evidence.enqueuedContentions}, ${evidence.enqueuedFlakes}`,
+      `landing evidence backfill enqueued ${evidence.enqueuedLandings}, ${evidence.enqueuedOverrides}, ${evidence.enqueuedCarries}, ${evidence.enqueuedContentions}, ${evidence.enqueuedFlakes}, ${evidence.enqueuedPullRequestCi}`,
     )
     presentation.log(`release backfill enqueued ${result.backfill.releases.enqueued}`)
   }

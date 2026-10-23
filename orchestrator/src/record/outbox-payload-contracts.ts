@@ -115,6 +115,10 @@ const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT = contract(
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
   { projectId: null, admissionPath: 'exact_review', readId: null },
 )
+const PULL_REQUEST_CI_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId projectId projectName machineId localId prNumber recordKind complete error workflowRunId runAttempt workflowName event headCommit conclusion failedJobs workflowCreatedAt workflowCompletedAt recordedAt withheldFields createdAt updatedAt',
+  { projectId: null, withheldFields: null },
+)
 const CONTENTION_RECORD_PAYLOAD_COLUMNS = columns(
   'id spaceId machineId localId at sessionId resourceKind resourceKey eventKind durationMs cause runId landingId withheldFields createdAt updatedAt',
 )
@@ -145,6 +149,7 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   landing_override: LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
   landing_review_carry: LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
   landing_triage_snapshot: LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
+  pull_request_ci: PULL_REQUEST_CI_RECORD_PAYLOAD_CONTRACT,
   contention: CONTENTION_RECORD_PAYLOAD_CONTRACT,
   test_flake: TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
   branch_disposal: BRANCH_DISPOSAL_RECORD_PAYLOAD_CONTRACT,

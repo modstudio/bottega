@@ -1,6 +1,15 @@
 // concern: postgres-schema-landing
 /** Knows the hosted landing and operational-evidence record shape. Must not know local execution or synchronization. */
-import { bigint, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import {
+  bigint,
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
@@ -109,6 +118,34 @@ export const landingTriageSnapshot = pgTable.withRLS(
     updatedAt: updatedAt(),
   },
   (table) => [...tenantPolicies('landing_triage_snapshot', table.spaceId)],
+)
+
+export const pullRequestCi = pgTable.withRLS(
+  'pull_request_ci',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    projectId: uuid('project_id').references(() => project.id),
+    machineId: machineIdentity(),
+    prNumber: integer('pr_number').notNull(),
+    recordKind: text('record_kind').notNull(),
+    complete: boolean(),
+    error: text(),
+    workflowRunId: text('workflow_run_id'),
+    runAttempt: integer('run_attempt'),
+    workflowName: text('workflow_name'),
+    event: text(),
+    headCommit: text('head_commit'),
+    conclusion: text(),
+    failedJobs: jsonb('failed_jobs'),
+    workflowCreatedAt: timestamp('workflow_created_at', { withTimezone: true }),
+    workflowCompletedAt: timestamp('workflow_completed_at', { withTimezone: true }),
+    recordedAt: recordedAt('recorded_at'),
+    withheldFields: jsonb('withheld_fields'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [...tenantPolicies('pull_request_ci', table.spaceId)],
 )
 
 export const contention = pgTable.withRLS(

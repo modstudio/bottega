@@ -2,11 +2,14 @@
 /** Registers the pull-request admission wrapper and its read-only pre-push check. */
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { writableDb } from '../database/db.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import {
   checkPushedTip,
   createPullRequest,
   recordTriageOverride,
 } from '../pull-request/pr-admission.ts'
+import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { mergePullRequest } from '../pull-request/pr-merge.ts'
 import { log } from './support.ts'
 
@@ -56,6 +59,36 @@ export function register(program: Command): void {
       const outcome = mergePullRequest(target, options.cwd ?? process.cwd())
       log(outcome.output)
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
+    })
+
+  pr.command('ci-record <number>')
+    .description('record GitHub Actions attempts for an already-merged pull request')
+    .option('--project <name>', 'record against this registered project')
+    .allowExcessArguments(false)
+    .action((target: string, options) => {
+      const database = writableDb()
+      const project = options.project
+        ? projectByName(options.project, database)
+        : projectAt(process.cwd(), database)
+      if (!project) {
+        throw new Error(
+          options.project
+            ? `no registered project ${options.project}`
+            : `cannot resolve a project for ${process.cwd()}; pass --project <name>`,
+        )
+      }
+      const result = recordPullRequestCi({
+        project,
+        target,
+        cwd: project.path,
+        database,
+      })
+      if (!result.complete) {
+        console.error(result.error)
+      }
+      log(
+        `PR #${result.prNumber}: ${result.counts.ciRuns} CI runs, ${result.counts.reruns} reruns, ${result.counts.flakeAttributedReruns} flake-attributed reruns`,
+      )
     })
 
   pr.command('override')

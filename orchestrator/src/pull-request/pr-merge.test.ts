@@ -63,6 +63,7 @@ function adapter(
       database: ReturnType<typeof db>,
     ) => string | null
     recordLandings?: () => void
+    recordCi?: () => void
     shipCleanup?: () => ShipCleanupReport
   } = {},
 ): PullRequestMergeAdapter {
@@ -84,6 +85,7 @@ function adapter(
     recordAdmission: (change, decision, prNumber, database) =>
       input.recordAdmission?.(change, decision, prNumber, database) ?? null,
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
+    ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
     queueState: () => ({
@@ -148,6 +150,24 @@ test('an injected forge adapter merges all-passing checks with the method, subje
   )
   expect(commit.output).toBe('merged-oid')
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
+})
+
+test('a successful merge records CI evidence after the forge reports the merge', () => {
+  registerProject(['test'])
+  const calls: string[] = []
+  mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: 'check' }],
+      merge: () => {
+        calls.push('merge')
+        return 'merged-oid'
+      },
+      recordCi: () => calls.push('record-ci'),
+    }),
+  )
+  expect(calls).toEqual(['merge', 'record-ci'])
 })
 
 test('a cleanup failure reports its retry without undoing a successful merge', () => {

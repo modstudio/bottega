@@ -1,0 +1,10 @@
+{
+  "id": 42,
+  "run_attempt": 2,
+  "name": "CI",
+  "event": "merge_group",
+  "head_sha": "abc",
+  "conclusion": "success",
+  "created_at": "2026-10-20T00:00:00Z",
+  "updated_at": "2026-10-20T00:01:00Z"
+}

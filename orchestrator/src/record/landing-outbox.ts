@@ -14,6 +14,7 @@ export type LandingEvidenceBackfillResult = {
   enqueuedTriageSnapshots: number
   enqueuedContentions: number
   enqueuedFlakes: number
+  enqueuedPullRequestCi: number
 }
 
 type LocalRow = Record<string, unknown>
@@ -176,6 +177,55 @@ function buildTestFlakeRecordPayload(row: LocalRow, machineId: string, at: strin
   }
 }
 
+function buildPullRequestCiPayload(row: LocalRow, machine: string, at: string) {
+  return {
+    id: row.record_id,
+    spaceId: PLATFORM_SPACE_ID,
+    projectId: row.project_record_id,
+    projectName: row.project_name,
+    machineId: machine,
+    localId: null,
+    prNumber: row.pr_number,
+    recordKind: row.record_kind,
+    complete: row.complete == null ? null : Boolean(row.complete),
+    error: row.error,
+    workflowRunId: row.workflow_run_id,
+    runAttempt: row.run_attempt,
+    workflowName: row.workflow_name,
+    event: row.event,
+    headCommit: row.head_commit,
+    conclusion: row.conclusion,
+    failedJobs: json(row.failed_jobs),
+    workflowCreatedAt: row.workflow_created_at,
+    workflowCompletedAt: row.workflow_completed_at,
+    recordedAt: row.recorded_at,
+    createdAt: row.recorded_at,
+    updatedAt: at,
+  }
+}
+
+export function enqueuePullRequestCi(database: Database, recordId: string, at = nowIso()): void {
+  const row = database
+    .query<LocalRow, [string]>(`SELECT ci.*,project.name AS project_name
+    FROM pull_request_ci ci LEFT JOIN project ON project.record_id=ci.project_record_id
+    WHERE ci.record_id=?`)
+    .get(recordId)
+  if (!row) throw new Error(`pull request CI record ${recordId} does not exist`)
+  const value = buildPullRequestCiPayload(row, machineId(), at)
+  const pending = database
+    .query<{ id: number }, [string]>(
+      "SELECT id FROM outbox WHERE kind='pull_request_ci' AND row_id=? AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id DESC LIMIT 1",
+    )
+    .get(recordId)
+  if (pending) {
+    database
+      .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
+      .run(stringifyOutboxPayload('pull_request_ci', value), at, pending.id)
+  } else {
+    enqueue(database, 'pull_request_ci', recordId, value, at)
+  }
+}
+
 function enqueueLanding(database: Database, recordId: string, at = nowIso()): void {
   const row = database
     .query<LocalRow, [string]>(
@@ -302,5 +352,8 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
       enqueueContention(database, id),
     ),
     enqueuedFlakes: backfill('test_flake', 'test_flake', (id) => enqueueTestFlake(database, id)),
+    enqueuedPullRequestCi: backfill('pull_request_ci', 'pull_request_ci', (id) =>
+      enqueuePullRequestCi(database, id),
+    ),
   }
 }
