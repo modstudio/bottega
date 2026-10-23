@@ -50,6 +50,7 @@ export type PostFixReviewDecision =
       kind: 're-lens'
       reviewNumber: number
       reviewedTip: string
+      fixPaths: string[]
       tierThreePaths: string[]
       applicability: ApplicableReview
     }
@@ -257,6 +258,7 @@ export function postFixReviewDecision(input: {
     kind: 're-lens',
     reviewNumber: completed.number,
     reviewedTip,
+    fixPaths: fixFiles.map(({ path }) => path),
     tierThreePaths,
     applicability: applicablePostFixReview(
       POST_FIX_RELENS_TIER,

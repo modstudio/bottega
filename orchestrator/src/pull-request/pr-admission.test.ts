@@ -229,7 +229,10 @@ test('a lens recorded on the branch is refused as missing for this change, not a
     tip: 'tip',
     tier: 2,
     applicableReview: { lenses: ['correctness', 'craft'] },
-    roundReview: { lenses: ['craft'] },
+    reviewPlan: {
+      round: { lenses: ['craft'] },
+      admissionRequired: { lenses: ['correctness', 'craft'] },
+    },
     branchOwnerSession: 'owner-session',
     reviews: [],
     branchReviewGroups: [{ reviews: [earlier] }],
@@ -416,6 +419,11 @@ test.each([
   [
     'a missing architect read',
     { finalTierRaised: false, architectReadRequired: true },
+    'review 93 can be credited only after an architect reads this exact tip',
+  ],
+  [
+    'a funnel plan after a tier rise',
+    { finalTierRaised: true, architectReadRequired: true },
     'review 93 can be credited only after an architect reads this exact tip',
   ],
 ] as const)(
