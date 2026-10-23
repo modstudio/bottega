@@ -12,11 +12,9 @@ import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
-  type CanonSource,
   NO_REPO_PREAMBLE,
   READONLY_PREAMBLE,
   type realQuestions,
-  replyFileBytes,
   resolveReplyDialect,
   type WorkerReply,
   workerPreamble,
@@ -58,7 +56,7 @@ import {
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick } from '../route/route.ts'
+import { pick, runningRunCountForAgent } from '../route/route.ts'
 import {
   type CodexMcpCatalogue,
   codexMcpSetupHeader,
@@ -84,13 +82,8 @@ import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
-import {
-  pruneRuns,
-  RUNS_DIR,
-  readDispatchState,
-  runFilePaths,
-  runScratchDir,
-} from './run-artifacts.ts'
+import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
+import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
@@ -123,6 +116,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
+import { routedPromptBytes } from './run-routing-input.ts'
 import * as runMigration from './run-schema-reload-cause.ts'
 import {
   enforceRunStartupRefusal,
@@ -170,15 +164,6 @@ function workerMcpLaunchScope(input: {
   }
 }
 
-const CANON_SOURCE_PROMPT_RESERVE_BYTES =
-  Math.max(
-    ...(['live database', 'mirror', 'unknown'] as CanonSource[]).map((source) =>
-      Buffer.byteLength(canonSourceInstruction(source)),
-    ),
-  ) + 2
-
-const PROMPT_SIZE_RUN_RECORD_ID = '00000000-0000-7000-8000-000000000000'
-
 function confinementSkipLines(failures: FreezeFailure[]): string[] {
   return failures.map(
     (failure) =>
@@ -199,12 +184,14 @@ function completeStartup(): true {
   return true
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
 export async function run(opts: {
   job: string
   prompt: string
   agent?: string
   /** True only when the caller selected the agent rather than routing it. */
   agentExplicit?: boolean
+  routedAgent?: { agent: string; reason: string }
   schemaPath?: string
   mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
@@ -302,9 +289,8 @@ export async function run(opts: {
   const [writesJob, repoJob] = [!!requestedJob.needs.writesRepo, !!requestedJob.needs.readsRepo]
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
-  const callerCwd = opts.cwd ?? process.cwd()
-  const runProjectName = opts.repo ?? repoOf(callerCwd)
-  const registeredWorktreeTool = toolFor(callerCwd)
+  const callerCwd = opts.cwd ?? process.cwd(),
+    runProjectName = opts.repo ?? repoOf(callerCwd)
   const seed = preflight(
     opts.job,
     callerCwd,
@@ -389,11 +375,9 @@ export async function run(opts: {
   // restating rules the agent is already operating under. A short reminder puts
   // the original plan back in view without storing another copy on every child.
   /**
-   * The worker is TOLD about the infrastructure it has, in the project's own
-   * words.
+   * The worker is TOLD about the infrastructure it has, in the project's own words.
    *
-   * A worker that does not know it can serve its own branch on its own port
-   * verifies against whatever is already running — a different branch's bundle
+   * A worker that does not know it can serve its branch on its own port verifies against another branch's bundle
    * — and that does not fail, it PASSES against the wrong tree. Which is worse
    * than failing, and is exactly the trap these projects wrote their worktree
    * scripts to close.
@@ -408,14 +392,13 @@ export async function run(opts: {
    * does know are stated on its behalf.
    */
   const infra = runInfrastructurePrompt({
-    tool: registeredWorktreeTool,
+    tool: toolFor(callerCwd),
     callerCwd,
     readsRepo: repoJob,
     writesRepo: writesJob,
     readOnlyBase,
   })
-  const originalPrompt = opts.prompt
-  const resolvedDialect = resolveReplyDialect(requestedJob)
+  const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
   const runProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
@@ -451,7 +434,11 @@ export async function run(opts: {
     }
   }
   const docsSection = operatorKnowledgeSection(pack ?? null)
-  const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
+  const dispatchKey = attributedLaunchKey({
+    writesJob,
+    key: opts.key,
+    cwd: callerCwd,
+  })
   const carriedRulings = taskRulingsForDispatch({
     resume: !resume.isFirstTurn,
     project: runProjectName,
@@ -499,10 +486,7 @@ export async function run(opts: {
     pick(
       opts.job,
       selectAgentForTransport(requestedTransport, opts.agent),
-      Buffer.byteLength(prompt) +
-        replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID)) +
-        (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
-        (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
+      routedPromptBytes(prompt, replySchemaName, requestedJob, requiresCanonSource),
       true,
       stackAt(callerCwd),
       {
@@ -513,19 +497,26 @@ export async function run(opts: {
         requiredMcp,
         ...transportPin,
         project: runProjectName,
+        routed: opts.routedAgent,
       },
       opts.probe,
       opts.lens,
     )
   const source = resume.isFirstTurn
-    ? { source: 'pick' as const, ...pickSource() }
+    ? {
+        source: 'pick' as const,
+        ...(await selectAgentWithCapacityEvents({
+          runId: opts.reserveId,
+          select: pickSource,
+          noWait: opts.noWaitCapacity,
+        })),
+      }
     : { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })
   const a = requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
-  const harnessName = workerHarnessName(a)
   const codexSandbox = decideCodexSandbox()
   const boundMs = resolveRunBound(requestedJob, a, timeoutMinutes, opts.reserveId)
   if (resume.isFirstTurn) {
@@ -677,7 +668,7 @@ export async function run(opts: {
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
-    ...workerHome.codexPrivateTempEnvironment(harnessName, repoJob, scratchDir),
+    ...workerHome.codexPrivateTempEnvironment(workerHarnessName(a), repoJob, scratchDir),
   }
   assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
@@ -724,7 +715,10 @@ export async function run(opts: {
         runNumber: claim.number,
         runRecordId: claim.recordId,
         runToken,
-        environment: { ...(gitConfigEnvironment ?? {}), ...(await resolveEndpointApiKeyEnv(a)) },
+        environment: {
+          ...(gitConfigEnvironment ?? {}),
+          ...(await resolveEndpointApiKeyEnv(a)),
+        },
         grokEnvironment: grokMcpEnvironment,
         includeStore: repoJob,
         codexMcpScope: mcpLaunch.codex,
@@ -1008,6 +1002,7 @@ export async function run(opts: {
       resolvedDialect,
       mcpSetupHeader,
       initialBoardNoticeIds: initialBoard.noticeIds,
+      throttleConcurrency: () => runningRunCountForAgent('codex'),
       askLoopback,
       ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
     }))

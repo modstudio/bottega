@@ -110,6 +110,7 @@ test('the detached spec mapping forwards every field to run', () => {
   expect(
     detachedRunOptions('implement', 'prompt', 'run-record-id-42', {
       agent: 'codex',
+      routedAgent: { agent: 'codex', reason: 'thompson; best' },
       schema: '/tmp/schema.json',
       mcp: true,
       model: 'model',
@@ -152,6 +153,7 @@ test('the detached spec mapping forwards every field to run', () => {
     prompt: 'prompt',
     reserveId: 'run-record-id-42',
     agent: 'codex',
+    routedAgent: { agent: 'codex', reason: 'thompson; best' },
     schemaPath: '/tmp/schema.json',
     mcp: true,
     model: 'model',
