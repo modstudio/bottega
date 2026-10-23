@@ -729,7 +729,13 @@ function execute(database: Database, migration: Migration): void {
     } catch {
       /* migration statement already ended the transaction */
     }
-    throw error
+    const message = error instanceof Error ? error.message : String(error)
+    if (!replayWithForeignKeysOff && /foreign key constraint failed/i.test(message))
+      throw new Error(
+        `${migration.tag} failed its probe replay: ${message}. Add ${migration.tag} to MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF if it inserts dependents before their parents, or fix its insert order.`,
+        { cause: error },
+      )
+    throw new Error(`${migration.tag} failed its probe replay: ${message}`, { cause: error })
   } finally {
     if (replayWithForeignKeysOff) {
       database.exec('PRAGMA foreign_keys=ON')
