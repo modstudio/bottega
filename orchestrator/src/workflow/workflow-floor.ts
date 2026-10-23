@@ -2,6 +2,11 @@
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  commandExitBindingRefusal,
+  commandExitMismatchRefusal,
+  gateFloorRefusal,
+} from './workflow-floor-refusal.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
@@ -133,7 +138,7 @@ export type ValidatedEvidence = {
   }
   deferReason?: string
   satisfy?: ValidatedSatisfy
-  tree?: { project: string; commit: string | null }
+  tree?: { project: string; worktree?: string | null; commit: string | null }
 }
 
 export type OpenObligation = {
@@ -613,10 +618,10 @@ function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): str
 function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
   if (floor.kind === 'ruling' && floor.operatorRuling)
     return `floor ruling is unmet: no operator answer on this step; record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
-  if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate') {
-    const commit = evidence.tree?.commit ?? '<current tree commit>'
-    return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
-  }
+  if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
+    return gateFloorRefusal(
+      evidence.tree ?? { project: 'this project', worktree: null, commit: null },
+    )
   const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest
   const existing =
@@ -637,17 +642,6 @@ function unmetMessage(floors: Floor[], evidence: ValidatedEvidence): string {
   return floors.map((floor) => floorUnmetMessage(floor, evidence)).join('; ')
 }
 
-function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
-  const exec = evidence.exec
-  if (!exec) return null
-  const remedy = `run the command again with \`${PLATFORM_SLUG} workflow exec -- <command>\` in this session after the step started`
-  if (!exec.sessionMatches && !exec.sessionAdoptedCursor)
-    return `command-exit evidence exec:${exec.id} belongs to another session; ${remedy}`
-  if (!exec.createdAfterStepActivation)
-    return `command-exit evidence exec:${exec.id} predates this step becoming active; ${remedy}`
-  return null
-}
-
 function commandExitFailureRefusal(
   floors: Floor[],
   evidence: ValidatedEvidence,
@@ -659,10 +653,12 @@ function commandExitFailureRefusal(
   if (met.some((floor) => floor.kind === 'command-exit')) return null
   const commandExit = floors.find((floor) => floor.kind === 'command-exit')
   if (!commandExit || exec.exitCode === commandExit.expectedExitCode) return null
-  return (
-    `command-exit evidence exec:${exec.id} command \`${exec.command}\` exited ${exec.exitCode}; ` +
-    `rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`
-  )
+  return commandExitMismatchRefusal({
+    id: exec.id,
+    command: exec.command,
+    actualExitCode: exec.exitCode,
+    expectedExitCode: commandExit.expectedExitCode,
+  })
 }
 
 function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
@@ -805,7 +801,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   )
   const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }
-  const bindingRefusal = commandExitBindingRefusal(input.evidence)
+  const bindingRefusal = commandExitBindingRefusal(input.evidence.exec)
   if (
     met.length === 0 &&
     bindingRefusal &&
