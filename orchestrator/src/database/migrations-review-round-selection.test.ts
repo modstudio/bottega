@@ -43,6 +43,7 @@ test('review round backfill numbers one task across branch names', () => {
   addReview(2, 'DEV-1618-reworked', null, 'two')
   addReview(3, 'DEV-1618-third', 'DEV-1618', 'one')
   addReview(4, 'DEV-999-other', null, 'other')
+  addReview(5, 'DEV-1618-empty-patch', 'DEV-1618', '   ')
 
   applyMigrations(database)
 
@@ -51,6 +52,11 @@ test('review round backfill numbers one task across branch names', () => {
     { number: 2, round: 2 },
     { number: 3, round: 1 },
     { number: 4, round: 1 },
+    { number: 5, round: null },
   ])
+
+  database.query('UPDATE review SET round=42 WHERE number=2').run()
+  applyMigrations(database)
+  expect(database.query('SELECT round FROM review WHERE number=2').get()).toEqual({ round: 42 })
   database.close()
 })

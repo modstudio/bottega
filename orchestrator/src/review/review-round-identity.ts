@@ -26,7 +26,9 @@ export function reviewRoundIdentity(row: ReviewRoundIdentityInput): {
   return {
     task,
     identity:
-      task && row.patch_id ? `${normalized(task)}\0${row.patch_id}\0${row.path_set ?? ''}` : null,
+      task && row.patch_id?.trim()
+        ? `${normalized(task)}\0${row.patch_id}\0${row.path_set ?? ''}`
+        : null,
   }
 }
 

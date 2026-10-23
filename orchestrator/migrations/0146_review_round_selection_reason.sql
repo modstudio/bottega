@@ -61,7 +61,7 @@ classified AS (
   WHERE evidence_ordinal=1
 )
 SELECT review_record_id,project_record_id,recorded_at,number,task,
-       CASE WHEN task IS NOT NULL AND patch_id IS NOT NULL
+       CASE WHEN task IS NOT NULL AND trim(COALESCE(patch_id,'')) != ''
             THEN lower(task) || char(0) || patch_id || char(0) || COALESCE(path_set,'') END
 FROM classified;
 
@@ -92,7 +92,8 @@ JOIN ordinals
 
 UPDATE review
 SET round=(SELECT round FROM review_round_backfill WHERE review_record_id=review.record_id)
-WHERE record_id IN (SELECT review_record_id FROM review_round_backfill);
+WHERE round IS NULL
+  AND record_id IN (SELECT review_record_id FROM review_round_backfill);
 
 DROP TABLE review_round_backfill;
 DROP TABLE review_round_source;

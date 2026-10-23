@@ -29,11 +29,12 @@ function funnelReasonForLens(input: {
 }): ReviewLensSelectionReason {
   const project = input.repo ? projectByName(input.repo) : projectAt(input.cwd)
   if (!project) return OPERATOR_ORDERED
-  const target = resolveReviewTarget('review-lens', input.cwd, input.review)
+  const checkout = input.repo ? project.path : input.cwd
+  const target = resolveReviewTarget('review-lens', checkout, input.review)
   if (!target) return OPERATOR_ORDERED
   const plan = roundPlanForReviewTarget({
     database: db(),
-    repo: input.cwd,
+    repo: checkout,
     project,
     branch: target.branch,
     from: target.base,

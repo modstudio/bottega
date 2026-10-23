@@ -52,6 +52,14 @@ describe('review round identity', () => {
         path_set: '["a.ts"]',
       }).identity,
     ).toBeNull()
+    expect(
+      reviewRoundIdentity({
+        launch_key: 'DEV-1618',
+        branch: 'DEV-1618-round',
+        patch_id: '   ',
+        path_set: '["a.ts"]',
+      }).identity,
+    ).toBeNull()
   })
 })
 
