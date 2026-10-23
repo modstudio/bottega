@@ -33,7 +33,6 @@ import { runningRunsByAgent } from './running-runs.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 export { AgentCapacityError } from './routing-refusal.ts'
-export { runningRunCountForAgent } from './running-runs.ts'
 
 export type Candidate = {
   agent: string

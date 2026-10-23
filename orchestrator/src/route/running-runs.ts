@@ -41,5 +41,5 @@ export function runningRunCountsForAgents(
 }
 
 export function runningRunCountForAgent(agent: string): number {
-  return runningRunsByAgent().get(agent)?.length ?? 0
+  return runningRunCountsForAgents([agent])[agent] ?? 0
 }
