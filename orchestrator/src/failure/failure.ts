@@ -170,7 +170,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // billing exhaustion with HTTP 429 and an `insufficient_quota` error type.
   [
     'billing',
-    /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|add more credits)\b/i,
+    /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|account with your provider to add more credits)\b/i,
   ],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   [

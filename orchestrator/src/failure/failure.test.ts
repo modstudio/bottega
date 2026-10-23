@@ -68,6 +68,7 @@ describe('billing classification', () => {
       ),
     ).toBe('billing')
     expect(classify('The closing credits list the film crew.')).not.toBe('billing')
+    expect(classify('The billing pattern now matches the phrase add more credits.')).not.toBe('billing')
   })
 
   test('does not treat an unrelated 402 number as a billing status', () => {
