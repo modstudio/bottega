@@ -27,6 +27,7 @@ import {
   existingDriftNote,
   localDay,
   minutesOfDay,
+  minutesUntilStop,
   type NightStopReason,
   pickSpareAgent,
   planDriftEffects,
@@ -36,7 +37,6 @@ import {
   spareNightLabel,
   spareNightSummary,
   spareWaitArgv,
-  spareWindowMinutes,
   writeFailureLine,
 } from './spare-decisions.ts'
 
@@ -266,6 +266,8 @@ const quiet = (lastFailureKind: string | null): ItemResult => ({
 
 /** Dispatch one document's run, wait for it, and record what it licensed. */
 async function workOneItem(item: DriftDocFacts, ctx: NightContext): Promise<ItemResult> {
+  // The commit the run audits is the one checked out when it is dispatched.
+  const auditedCommit = headCommit(item.path)
   const before = nightRuns(ctx.label).length
   const dispatch = spawnBottega(
     spareDispatchArgv({
@@ -292,6 +294,7 @@ async function workOneItem(item: DriftDocFacts, ctx: NightContext): Promise<Item
     // A refused `run start` that left no run: the free tier has no capacity.
     return {
       ...quiet('capacity'),
+      stop: 'budget',
       report:
         `spare: run start refused for ${item.slug} (exit ${dispatch.exitCode})` +
         '; stopping the night',
@@ -346,24 +349,26 @@ async function workOneItem(item: DriftDocFacts, ctx: NightContext): Promise<Item
     }
   }
 
-  return await recordOutcome(item, settled)
+  return await recordOutcome(item, settled, auditedCommit)
 }
 
 /** A write the runner could not make: the night reports it and stops. */
 const writeFailureResult = (item: DriftDocFacts, write: string, detail: string): ItemResult => ({
   lastFailureKind: null,
   writeFailed: true,
-  stop: null,
+  stop: 'write',
   report: writeFailureLine({ slug: item.slug, write, detail }),
 })
 
 /** Record the commit a document was checked against, or the write failure that hit. */
 async function recordCheckedCommit(
   item: DriftDocFacts,
+  commit: string | null,
   runNumber: number,
 ): Promise<ItemResult | null> {
-  const commit = headCommit(item.path)
-  if (!commit) return null
+  if (!commit) {
+    return writeFailureResult(item, 'the checked-against write', `no HEAD commit in ${item.path}`)
+  }
   try {
     await setCheckedAt(item, commit, runNumber)
     return null
@@ -406,14 +411,18 @@ async function fileDriftNoteOrFailure(
 }
 
 /** The effects a completed run is allowed to write, and what to say about them. */
-async function recordOutcome(item: DriftDocFacts, settled: NightRun | null): Promise<ItemResult> {
+async function recordOutcome(
+  item: DriftDocFacts,
+  settled: NightRun | null,
+  auditedCommit: string | null,
+): Promise<ItemResult> {
   const verdict = decideDriftVerdict(settled ? outputOf(settled) : '')
   const lookup = await driftNoteLookup(item, verdict)
   if (!lookup.ok) return lookup.failure
   const plan = planDriftEffects(verdict, lookup.note !== null)
 
   if (plan.markChecked && settled) {
-    const failure = await recordCheckedCommit(item, settled.number)
+    const failure = await recordCheckedCommit(item, auditedCommit, settled.number)
     if (failure) return failure
   }
 
@@ -490,17 +499,16 @@ function resolveSpareSetup(options: SpareRunOptions): SpareSetup {
     }
   }
 
-  let start: number
   let stop: number
   try {
-    start = minutesOfDay(readMachineValue('spare.start_time'))
     stop = minutesOfDay(options.until ?? readMachineValue('spare.stop_time'))
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     return { ok: false, code: 1, message: `spare: ${detail}; skipping the night` }
   }
 
-  const day = localDay(new Date())
+  const now = new Date()
+  const day = localDay(now)
   return {
     ok: true,
     job,
@@ -510,8 +518,8 @@ function resolveSpareSetup(options: SpareRunOptions): SpareSetup {
       agent,
       key,
       label: spareNightLabel(job, day),
-      startedAt: Date.now(),
-      windowMinutes: spareWindowMinutes(start, stop),
+      startedAt: now.getTime(),
+      windowMinutes: minutesUntilStop(now, stop),
     },
   }
 }

@@ -4,11 +4,11 @@ import {
   classifyWaitedRow,
   decideDriftVerdict,
   decideNightStop,
-  driftNoteOpening,
   driftOutcomeLine,
   existingDriftNote,
   localDay,
   minutesOfDay,
+  minutesUntilStop,
   orderDocsDriftQueue,
   pickSpareAgent,
   planDriftEffects,
@@ -19,7 +19,6 @@ import {
   spareNightLabel,
   spareNightSummary,
   spareWaitArgv,
-  spareWindowMinutes,
   writeFailureLine,
 } from './spare-decisions.ts'
 
@@ -112,9 +111,16 @@ describe('decideNightStop', () => {
 })
 
 describe('the window', () => {
-  test('wraps midnight', () => {
-    expect(spareWindowMinutes(minutesOfDay('22:00'), minutesOfDay('05:00'))).toBe(7 * 60)
-    expect(spareWindowMinutes(minutesOfDay('01:00'), minutesOfDay('04:30'))).toBe(210)
+  test('runs until the stop clock, wrapping midnight', () => {
+    const at = (hours: number, minutes: number) => new Date(2026, 9, 22, hours, minutes)
+    expect(minutesUntilStop(at(22, 0), minutesOfDay('05:00'))).toBe(7 * 60)
+    expect(minutesUntilStop(at(1, 0), minutesOfDay('04:30'))).toBe(210)
+  })
+
+  test('a late start still stops at the stop clock, and nothing is left at it', () => {
+    const at = (hours: number, minutes: number) => new Date(2026, 9, 22, hours, minutes)
+    expect(minutesUntilStop(at(2, 0), minutesOfDay('05:00'))).toBe(3 * 60)
+    expect(minutesUntilStop(at(5, 0), minutesOfDay('05:00'))).toBe(0)
   })
 
   test('rejects a clock value that is not HH:MM', () => {
@@ -447,9 +453,5 @@ describe('existing drift note', () => {
 
   test('another project with the same slug is not a match', () => {
     expect(existingDriftNote(notes, { slug: 'feature-flags', project: 'widget' })).toBeNull()
-  })
-
-  test('the opening names the slug and the project', () => {
-    expect(driftNoteOpening('feature-flags', 'acme')).toBe('docs-drift: feature-flags (acme)')
   })
 })

@@ -80,10 +80,14 @@ export function decideNightStop(input: {
   return { stop: false, reason: null }
 }
 
-/** Minutes in a night window, correctly wrapping midnight (22:00 to 05:00 is 420). */
-export function spareWindowMinutes(startMinutes: number, stopMinutes: number): number {
-  const span = stopMinutes - startMinutes
-  return span > 0 ? span : span + 24 * 60
+/**
+ * Minutes from the local clock now until the next occurrence of the stop clock,
+ * wrapping midnight (22:00 to 05:00 is 420). The stop is a clock time, so a night
+ * that starts late still stops at it; at the stop time itself nothing is left.
+ */
+export function minutesUntilStop(now: Date, stopMinutes: number): number {
+  const span = stopMinutes - (now.getHours() * 60 + now.getMinutes())
+  return span >= 0 ? span : span + 24 * 60
 }
 
 /** Parse an `HH:MM` machine-config clock value into minutes of day. */
