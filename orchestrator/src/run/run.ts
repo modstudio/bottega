@@ -184,6 +184,7 @@ function completeStartup(): true {
   return true
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
 export async function run(opts: {
   job: string
   prompt: string

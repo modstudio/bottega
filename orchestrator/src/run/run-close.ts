@@ -227,6 +227,7 @@ function notifyFailureRequiringHuman(input: {
     )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: terminal cleanup and failover share one claimed-run transaction boundary
 export async function closeRun(input: CloseInput): Promise<RunResult> {
   const {
     failureKind,

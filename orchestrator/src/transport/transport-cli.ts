@@ -164,6 +164,7 @@ async function cliLaunch(opts: TransportStartOpts) {
   return { launchArgv, stdinPrompt }
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const { launchArgv, stdinPrompt } = await cliLaunch(opts)
   const p = spawnCliChild(launchArgv, opts, stdinPrompt)

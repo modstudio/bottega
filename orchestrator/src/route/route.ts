@@ -21,11 +21,37 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
-import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
+import {
+  BETA_SCALE,
+  betaContribution,
+  type CurrentPolicySelection,
+  currentPolicySelection,
+  MIN_SAMPLE,
+  NOISE_BAND,
+  POSTERIOR_NOISE_BAND,
+  QUALITY_STEP,
+  STANDING_EXPLORE_RATE,
+  standingExploreRate,
+  thompsonRank,
+} from './route-policy.ts'
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
+import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 export { AgentCapacityError } from './routing-refusal.ts'
+export {
+  BETA_SCALE,
+  betaContribution,
+  type CurrentPolicySelection,
+  currentPolicySelection,
+  MIN_SAMPLE,
+  NOISE_BAND,
+  POSTERIOR_NOISE_BAND,
+  QUALITY_STEP,
+  STANDING_EXPLORE_RATE,
+  standingExploreRate,
+  thompsonRank,
+}
 
 export type Candidate = {
   agent: string
@@ -106,9 +132,6 @@ export function runningRunCountForAgent(agent: string): number {
  * finished after the most recent cooling failure.
  */
 export const COOLDOWN_MIN = 60
-
-/** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
-export const MIN_SAMPLE = 5
 
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
@@ -260,155 +283,6 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
 }
 
 /**
- * How often to spend a run on an agent that has not earned a score yet.
- *
- * Without this the first agent to reach MIN_SAMPLE is the only one that ever
- * scores again, so it owns the job for ever — no rival can be discovered and its
- * own decline cannot be noticed. Scoring exists to compare agents; a policy that
- * stops gathering comparisons defeats it.
- */
-const EXPLORE_RATE = 0.25
-
-/** Keep testing proven challengers so a leader cannot hold the route forever. */
-export const STANDING_EXPLORE_RATE = 0.1
-const STANDING_EXPLORE_FLOOR = 0.03
-
-/** The leader's cell evidence decays the standing draw, without retiring it. */
-export function standingExploreRate(leaderEvidence: number): number {
-  return Math.max(
-    STANDING_EXPLORE_FLOOR,
-    STANDING_EXPLORE_RATE / Math.sqrt(leaderEvidence / MIN_SAMPLE),
-  )
-}
-
-/**
- * The gap between two adjacent quality levels: right to mixed, mixed to wrong.
- *
- * Read off the matrix rather than written down, so it is still true if the
- * weights move.
- */
-export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
-
-/**
- * Score difference below which two agents are treated as equally good.
- *
- * One quality step over MIN_SAMPLE runs moves the mean by 0.5/5 = 0.1, so a gap
- * smaller than that is not even one judgment's worth of evidence. Ranking on it
- * would be ranking on noise, which is what lets the cheaper or faster agent win
- * a tie honestly.
- *
- * This was `WEIGHT_MAX / MIN_SAMPLE / 2`, which gives the same 0.1 — by
- * coincidence. WEIGHT_MAX/2 is 0.5 and one quality step is also 0.5, so the two
- * agreed on today's numbers and would have parted company the moment anyone
- * touched the matrix, with the comment above still confidently describing the
- * old behavior. A local review lens caught the smell and proposed scaling by
- * the full spread instead (−0.5 to 1, so 0.15); that is a different intent
- * again, and not the one written down. The band is one JUDGMENT'S worth, so it
- * is derived from a judgment step.
- */
-export const NOISE_BAND = QUALITY_STEP / MIN_SAMPLE
-
-/** Linear width of the judgment-weight range mapped onto a Beta probability. */
-export const BETA_SCALE = 1.5
-
-/**
- * The shrunk-score noise band expressed on the [0, 1] posterior scale.
- * betaContribution maps one score unit across BETA_SCALE probability units.
- */
-export const POSTERIOR_NOISE_BAND = NOISE_BAND / BETA_SCALE
-
-export function betaContribution(weight: number): {
-  successes: number
-  failures: number
-} {
-  // Map the judgment range [-0.5, 1] linearly onto [0, 1]: `none` is one
-  // whole failure and full/right is one whole success. Thus successes +=
-  // (w + 0.5) / 1.5 and failures += 1 - that for every judgment.
-  const successes = (weight + 0.5) / BETA_SCALE
-  return { successes, failures: 1 - successes }
-}
-
-function normal(rng: () => number): number {
-  const u = Math.max(rng(), Number.EPSILON)
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng())
-}
-
-/** Marsaglia-Tsang gamma draw, including the standard alpha < 1 transform. */
-function gamma(alpha: number, rng: () => number): number {
-  if (alpha < 1) return gamma(alpha + 1, rng) * Math.max(rng(), Number.EPSILON) ** (1 / alpha)
-  const d = alpha - 1 / 3
-  const c = 1 / Math.sqrt(9 * d)
-  while (true) {
-    const x = normal(rng)
-    const v0 = 1 + c * x
-    if (v0 <= 0) continue
-    const v = v0 ** 3
-    const u = rng()
-    if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v)))
-      return d * v
-  }
-}
-
-function beta(alpha: number, betaValue: number, rng: () => number): number {
-  const x = gamma(Math.max(alpha, Number.EPSILON), rng)
-  const y = gamma(Math.max(betaValue, Number.EPSILON), rng)
-  return x / (x + y)
-}
-
-type ThompsonCandidate = Pick<Candidate, 'agent' | 'evidence' | 'score' | 'free' | 'latencyMs'> & {
-  precision?: number | null
-}
-
-/** The one Thompson ranking used by every historical replay trajectory. */
-export function thompsonRank<T extends ThompsonCandidate>(
-  candidates: readonly T[],
-  draw = true,
-  rng: () => number = Math.random,
-): { chosen: T; expected: T; posteriorMean: number; tied: number } {
-  const field = candidates
-    .filter((candidate) => candidate.evidence >= MIN_SAMPLE && candidate.score !== null)
-    .map((candidate) => candidate.score!)
-  const priorWeight = field.length ? field.reduce((a, b) => a + b, 0) / field.length : 0.5
-  const priorSuccess = betaContribution(priorWeight).successes
-  const posterior = candidates.map((candidate) => {
-    const observed = betaContribution(candidate.score ?? 0)
-    const successes = priorSuccess * MIN_SAMPLE + observed.successes * candidate.evidence
-    const failures = (1 - priorSuccess) * MIN_SAMPLE + observed.failures * candidate.evidence
-    const mean = successes / (successes + failures)
-    return {
-      candidate,
-      mean,
-      sample: draw ? beta(successes, failures, rng) : mean,
-    }
-  })
-  const tie = (a: (typeof posterior)[number], b: (typeof posterior)[number]) =>
-    (a.candidate.precision === null || a.candidate.precision === undefined
-      ? b.candidate.precision === null || b.candidate.precision === undefined
-        ? 0
-        : 1
-      : b.candidate.precision === null || b.candidate.precision === undefined
-        ? -1
-        : b.candidate.precision - a.candidate.precision) ||
-    Number(b.candidate.free) - Number(a.candidate.free) ||
-    (a.candidate.latencyMs ?? Infinity) - (b.candidate.latencyMs ?? Infinity) ||
-    b.candidate.evidence - a.candidate.evidence ||
-    a.candidate.agent.localeCompare(b.candidate.agent)
-  const rank = (metric: 'mean' | 'sample') => {
-    const leader = [...posterior].sort((a, b) => b[metric] - a[metric])[0]!
-    const tied = posterior.filter((row) => leader[metric] - row[metric] <= POSTERIOR_NOISE_BAND)
-    return { row: tied.sort(tie)[0]!, tied: tied.length }
-  }
-  const expected = rank('mean')
-  const chosen = rank('sample')
-  return {
-    chosen: chosen.row.candidate,
-    expected: expected.row.candidate,
-    posteriorMean: chosen.row.mean,
-    tied: chosen.tied,
-  }
-}
-
-/**
  * Build the SQL scoring expression from WEIGHT, so editing the matrix actually
  * moves routing rather than only changing what the CLI prints.
  *
@@ -469,6 +343,7 @@ export function weightCase(): string {
  * outcome would have cost it, and no separate reliability term has to be
  * invented or tuned.
  */
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: one pass keeps candidate evidence and eligibility coherent
 export function candidates(
   jobName: string,
   promptBytes = 0,
@@ -944,26 +819,10 @@ function evidenceForPick(
   })
 }
 
-type CurrentPolicyCandidate = Pick<
-  Candidate,
-  'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
-> & { precision?: number | null }
-
 function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
   if (ev.level === 'lens') return `lens ${ev.lens} cell`
   if (ev.level === 'stack') return `stack ${ev.stack} cell`
   return 'job-wide cell'
-}
-
-/** Failure-only history has already answered whether another run is worthwhile. */
-function worthExploring(c: CurrentPolicyCandidate): boolean {
-  return !((c.scored === 0 && c.failures > 0) || (c.scored > 0 && c.none === c.scored))
-}
-
-export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = {
-  chosen: T
-  mode: 'challenger' | 'standing-challenger' | 'best' | 'preference' | 'only'
-  tied: number
 }
 
 function capacityRefusal(
@@ -1010,72 +869,70 @@ function namedCandidate(
   return candidate
 }
 
-/**
- * The incumbent ranking policy, independent of where its evidence came from.
- *
- * Candidate order is meaningful: equally unproven challengers retain it after
- * the stable evidence-only sort. Both live routing and historical replay call
- * this function so the diagnostic cannot grow a second ordering policy.
- */
-export function currentPolicySelection<T extends CurrentPolicyCandidate>(
-  candidates: readonly T[],
-  prefer: readonly string[],
-  explore = true,
-  rng: () => number = Math.random,
-  explorationExcluded: ReadonlySet<string> = new Set(),
-  declaredPreferences: ReadonlySet<string> = new Set(),
-): CurrentPolicySelection<T> {
-  const proven = candidates.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
-  const unproven = candidates.filter((c) => c.evidence < MIN_SAMPLE)
-
-  for (const name of prefer) {
-    if (!declaredPreferences.has(name)) continue
-    const preferred = unproven.find(
+function admittedCandidates(
+  jobName: string,
+  candidates: Candidate[],
+  constraints: RouteConstraints,
+): Candidate[] {
+  const requested = new Set(constraints.agents ?? [])
+  const models = new Set(constraints.models ?? [])
+  const blockedPreferred = candidates.find(
+    (candidate) =>
+      candidate.preferred &&
+      candidate.why.startsWith('at capacity') &&
+      candidate.maxConcurrent !== null &&
+      candidate.runningRunIds.length >= candidate.maxConcurrent,
+  )
+  if (blockedPreferred && !constraints.noWaitCapacity) {
+    throw new AgentCapacityError(
+      `${capacityRefusal(blockedPreferred)}\n` +
+        'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
+        'cleared by: wait for the named runs or pass --no-wait-capacity',
+    )
+  }
+  const eligible = candidates.filter((candidate) => candidate.eligible)
+  const excluded = candidates
+    .filter((candidate) => !candidate.eligible)
+    .map((candidate) => `${candidate.agent}: ${candidate.why}`)
+  if (!eligible.length) {
+    const capacityBlocked = candidates.filter(
       (candidate) =>
-        candidate.agent === name &&
-        worthExploring(candidate) &&
-        !explorationExcluded.has(candidate.agent),
+        candidate.why.startsWith('at capacity') &&
+        !requested.has(candidate.agent) &&
+        !models.has(AGENTS[candidate.agent]!.model),
     )
-    if (preferred) return { chosen: preferred, mode: 'preference', tied: 0 }
-  }
-
-  if (proven.length > 0) {
-    const worthTrying = unproven.filter(
-      (candidate) => worthExploring(candidate) && !explorationExcluded.has(candidate.agent),
+    if (capacityBlocked.length)
+      throw new AgentCapacityError(
+        `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
+      )
+    throw new RoutingRefusalError(
+      `no eligible agent for job "${jobName}"` +
+        (excluded.length ? `\n${excluded.join('\n')}` : ''),
     )
-    if (explore && worthTrying.length > 0 && rng() < EXPLORE_RATE) {
-      const challenger = [...worthTrying].sort((a, b) => a.evidence - b.evidence)[0]!
-      return { chosen: challenger, mode: 'challenger', tied: 0 }
-    }
-    const ranked = thompsonRank(proven, explore, rng)
-    const best = ranked.chosen
-    if (
-      explore &&
-      unproven.length === 0 &&
-      proven.length === candidates.length &&
-      rng() < standingExploreRate(best.evidence)
-    ) {
-      const challenger = [...proven]
-        .filter(
-          (c) => c.agent !== best.agent && worthExploring(c) && !explorationExcluded.has(c.agent),
-        )
-        .sort((a, b) => a.evidence - b.evidence)[0]
-      if (challenger)
-        return {
-          chosen: challenger,
-          mode: 'standing-challenger',
-          tied: ranked.tied,
-        }
-    }
-    return { chosen: best, mode: 'best', tied: ranked.tied }
   }
-  for (const name of prefer) {
-    const preferred = candidates.find((candidate) => candidate.agent === name)
-    if (preferred) return { chosen: preferred, mode: 'preference', tied: 0 }
-  }
-  return { chosen: candidates[0]!, mode: 'only', tied: 0 }
+  const constrained = eligible.filter(
+    (candidate) =>
+      !requested.has(candidate.agent) &&
+      !models.has(constraints.model ?? AGENTS[candidate.agent]!.model),
+  )
+  if (constrained.length || (!requested.size && !models.size))
+    return routeSurfaceSelection(constrained, constraints.routed)
+  const avoided = eligible.map((candidate) => {
+    const reasons = []
+    if (requested.has(candidate.agent)) reasons.push(`--avoid named ${candidate.agent}`)
+    if (models.has(constraints.model ?? AGENTS[candidate.agent]!.model))
+      reasons.push(`model ${constraints.model ?? AGENTS[candidate.agent]!.model} was excluded`)
+    return `${candidate.agent}: ${reasons.join(' and ')}`
+  })
+  throw new RoutingRefusalError(
+    `routing constraints leave no eligible agent for job "${jobName}"; ` +
+      `excluded by constraint: ${avoided.join('; ')}` +
+      (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
+      `. Widen --avoid or --distinct-from deliberately.`,
+  )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: routing presentation follows the pure admission and policy decisions
 export function pick(
   jobName: string,
   override?: string,
@@ -1113,63 +970,7 @@ export function pick(
       throw new RoutingRefusalError(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
-  const requested = new Set(avoid.agents ?? [])
-  const models = new Set(avoid.models ?? [])
-  const blockedPreferred = ev.cands.find(
-    (candidate) =>
-      candidate.preferred &&
-      candidate.why.startsWith('at capacity') &&
-      candidate.maxConcurrent !== null &&
-      candidate.runningRunIds.length >= candidate.maxConcurrent,
-  )
-  if (blockedPreferred && !avoid.noWaitCapacity) {
-    throw new AgentCapacityError(
-      `${capacityRefusal(blockedPreferred)}\n` +
-        'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
-        'cleared by: wait for the named runs or pass --no-wait-capacity',
-    )
-  }
-  let eligible = ev.cands.filter((c) => c.eligible)
-  const excluded = ev.cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`)
-  if (eligible.length === 0) {
-    const capacityBlocked = ev.cands.filter(
-      (candidate) =>
-        candidate.why.startsWith('at capacity') &&
-        !requested.has(candidate.agent) &&
-        !models.has(AGENTS[candidate.agent]!.model),
-    )
-    if (capacityBlocked.length) {
-      throw new AgentCapacityError(
-        `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
-      )
-    }
-    throw new RoutingRefusalError(
-      `no eligible agent for job "${jobName}"` +
-        (excluded.length ? `\n${excluded.join('\n')}` : ''),
-    )
-  }
-  /** Exclusions are instructions, not preferences. The caller must widen them. */
-  const constrained = eligible.filter(
-    (c) => !requested.has(c.agent) && !models.has(avoid.model ?? AGENTS[c.agent]!.model),
-  )
-  if (!constrained.length && (requested.size > 0 || models.size > 0)) {
-    const avoided = eligible.map((c) => {
-      const reasons = []
-      if (requested.has(c.agent)) reasons.push(`--avoid named ${c.agent}`)
-      if (models.has(avoid.model ?? AGENTS[c.agent]!.model)) {
-        reasons.push(`model ${avoid.model ?? AGENTS[c.agent]!.model} was excluded`)
-      }
-      return `${c.agent}: ${reasons.join(' and ')}`
-    })
-    throw new RoutingRefusalError(
-      `routing constraints leave no eligible agent for job "${jobName}"; ` +
-        `excluded by constraint: ${avoided.join('; ')}` +
-        (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
-        `. Widen --avoid or --distinct-from deliberately.`,
-    )
-  }
-  eligible = constrained
-  eligible = routeSurfaceSelection(eligible, avoid.routed)
+  let eligible = admittedCandidates(jobName, ev.cands, avoid)
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,

@@ -49,7 +49,6 @@ import {
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
-import { composeCodexThrottleNotice } from '../transport/codex-throttle.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -75,6 +74,7 @@ import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-ca
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
+import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
   appendGateExclusionToTimeoutError,
   currentExcludedGateMs,
@@ -106,26 +106,6 @@ function outputCeilingReached(
   return Boolean(
     reply && !reply.text.trim() && ceilingReason !== null && reply.stopReason === ceilingReason,
   )
-}
-
-export function firstThrottleObserver(cancel: () => void) {
-  const state: { first: Extract<StreamEvent, { kind: 'throttled' }> | null } = { first: null }
-  return {
-    state,
-    observe(event: StreamEvent) {
-      if (event.kind !== 'throttled' || state.first) return
-      state.first = event
-      cancel()
-    },
-  }
-}
-
-function throttleReplyError(
-  throttle: Extract<StreamEvent, { kind: 'throttled' }> | null,
-  replyError: string | null | undefined,
-  collectedError: string | null,
-): string | null {
-  return throttle ? composeCodexThrottleNotice(throttle) : (replyError ?? collectedError)
 }
 
 async function recordInitialDeliveries(

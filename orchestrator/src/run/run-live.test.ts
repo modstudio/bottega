@@ -7,7 +7,8 @@ import { decideOutcome } from '../outcome.ts'
 import { decideFailover } from '../route/failover.ts'
 import { candidates, isRoutingEvidence, pick } from '../route/route.ts'
 import { composeCodexThrottleNotice } from '../transport/codex-throttle.ts'
-import { firstThrottleObserver, replyFileFallbackError } from './run-live.ts'
+import { replyFileFallbackError } from './run-live.ts'
+import { firstThrottleObserver } from './run-throttle.ts'
 
 test('a missing reply file leaves a visible final-message fallback notice', () => {
   const path = '/var/tmp/orch/runs/42/scratch/reply.json'

@@ -108,6 +108,11 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/route/route-policy.ts', ['../score/score.ts']),
+  module('orchestrator/src/run/run-throttle.ts', [
+    '../events.ts',
+    '../transport/codex-throttle.ts',
+  ]),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
     '../../../shared/repository-visibility.ts',
