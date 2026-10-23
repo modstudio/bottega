@@ -5,6 +5,7 @@ import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { db } from '../database/db.ts'
 
 import {
+  BOARD_READ_REFRESH_BUDGET_MS,
   claimCachedHosted,
   claimCachedHostedForPush,
   hostedBoardVerificationWarning,
@@ -24,10 +25,10 @@ import {
   runReader,
 } from './board-service.ts'
 
-export const BOARD_READ_REFRESH_BUDGET_MS = 500
 export const BOARD_PUSH_REFRESH_SECONDS = 15
 export const BOARD_PUSH_REMIND_SECONDS = 300
 export const BOARD_PUSH_RETRY_SECONDS = 15
+export const BOARD_PRESENCE_REFRESH_SECONDS = 15
 export const BOARD_ACK_STOP_BLOCKS = 3
 export const BOARD_PUSH_SLOW_TIMEOUT_SECONDS = (BOARD_READ_REFRESH_BUDGET_MS + 2_000) / 1_000
 const BOARD_PROMPT_REFRESH_BUDGET_MS = 750

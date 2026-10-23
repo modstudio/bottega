@@ -3,8 +3,8 @@
 import { db } from '../database/db.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { BOARD_READ_REFRESH_BUDGET_MS } from './board-delivery.ts'
 import {
+  BOARD_READ_REFRESH_BUDGET_MS,
   cachedHostedBoardMessages,
   hostedBoardVerificationWarning,
   hostedMessageIsLive,

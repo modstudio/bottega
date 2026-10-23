@@ -4,12 +4,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
-import {
-  BOARD_READ_REFRESH_BUDGET_MS,
-  claimBoardNotices,
-  markBoardNoticesDelivered,
-  readBoardNotices,
-} from './board-delivery.ts'
+import { claimBoardNotices, markBoardNoticesDelivered, readBoardNotices } from './board-delivery.ts'
+import { BOARD_READ_REFRESH_BUDGET_MS } from './board-hosted-cache.ts'
 import { resolveLocalBoardMessageIdentifier } from './board-message-identifier.ts'
 import {
   boardAccept,
@@ -33,6 +29,15 @@ import { watchHostedBoard } from './board-watch.ts'
 const ARCHITECTS_AUDIENCE_HELP =
   'recipient; architects means this project, architects:all means every project, architects:<project> names one project'
 
+function parseIsoInstant(flag: string) {
+  return (value: string) => {
+    const parsed = new Date(value)
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value)
+      throw new Error(`${flag} must be an ISO 8601 UTC instant with milliseconds`)
+    return value
+  }
+}
+
 const BOARD_DESCRIPTIONS = {
   board: 'exchange messages and claims among architects',
   adopt: 'move eligible machine-local board records to the hosted board',
@@ -54,14 +59,14 @@ function registerBoardWatchCommand(board: Command): void {
   board
     .command('presence')
     .description('record this architect session as present')
-    .option('--started-at <instant>', 'session-start instant', (value: string) => {
-      const parsed = new Date(value)
-      if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value)
-        throw new Error('--started-at must be an ISO 8601 UTC instant with milliseconds')
-      return value
-    })
+    .option('--started-at <instant>', 'session-start instant', parseIsoInstant('--started-at'))
+    .option(
+      '--began-at <instant>',
+      'session start recorded on insert only',
+      parseIsoInstant('--began-at'),
+    )
     .action((options) => {
-      recordPresence(process.cwd(), process.env, options.startedAt)
+      recordPresence(process.cwd(), process.env, options.startedAt, options.beganAt)
     })
   board
     .command('watch')
