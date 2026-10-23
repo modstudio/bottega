@@ -12,6 +12,7 @@ import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
+import { resolvePullRequestChange } from '../pull-request/pr-admission.ts'
 import { serializePathSet } from './review-group.ts'
 import { pinRef } from './review-pins.ts'
 import { completeReview, recordReview, triageFinding } from './review-triage.ts'
@@ -173,6 +174,60 @@ function git(repo: string, ...args: string[]): string {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
   return result.stdout.toString().trim()
 }
+
+test('review tier and admission select the same migration and teardown lenses', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-lens-agreement-'))
+  const branch = `DEV-1644-${crypto.randomUUID()}`
+  try {
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'fixture@example.com')
+    git(repo, 'config', 'user.name', 'Fixture')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(repo, 'add', 'base.txt')
+    git(repo, 'commit', '-m', 'base')
+    const base = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'update-ref', 'refs/remotes/origin/main', base)
+    git(repo, 'checkout', '-b', branch)
+    mkdirSync(join(repo, 'database/migrations'), { recursive: true })
+    mkdirSync(join(repo, 'orchestrator/src'), { recursive: true })
+    writeFileSync(join(repo, 'database/migrations/one.sql'), 'SELECT 1;\n')
+    writeFileSync(join(repo, 'orchestrator/src/run-stop.ts'), 'export const stop = true\n')
+    git(repo, 'add', 'database/migrations/one.sql', 'orchestrator/src/run-stop.ts')
+    git(repo, 'commit', '-m', 'migration and teardown change')
+    const name = `lens-agreement-${crypto.randomUUID()}`
+    upsertProject({
+      recordId: newRecordId(),
+      name,
+      path: repo,
+      settings: {
+        trunk: 'main',
+        review: {
+          lenses: [
+            { lens: 'correctness' },
+            { lens: 'migration-safety', paths: ['database/migrations/**'] },
+            { lens: 'teardown-safety', paths: ['orchestrator/src/run-stop.ts'] },
+          ],
+          risk: {
+            paths: [
+              { pattern: '^database/migrations/', tier: 3, reason: 'migration' },
+              { pattern: '^orchestrator/src/run-stop\\.ts$', tier: 3, reason: 'teardown' },
+            ],
+            unlisted: 2,
+          },
+        },
+      },
+    })
+    const output: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], output)
+    const tier = JSON.parse(output[0]!) as { lenses: string[] }
+    const admission = resolvePullRequestChange(repo)
+
+    expect(tier.lenses).toEqual(['correctness', 'migration-safety', 'teardown-safety'])
+    expect(admission.roundApplicability?.lenses).toEqual(tier.lenses)
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
 
 function seedReviewedPathRename(repo: string, enabled: boolean): string[] {
   if (!enabled) return []
@@ -524,7 +579,7 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
   }
 })
 
-test('review tier reports stack and generic profile sources resolved for its project', async () => {
+test('review tier run target uses the landing merge-base instead of its recorded base', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-profiles-'))
   try {
     git(repo, 'init', '-b', 'main')
@@ -544,8 +599,14 @@ test('review tier reports stack and generic profile sources resolved for its pro
               {
                 pattern: '^orchestrator/hooks/',
                 tier: 3,
-                reason: 'repository hooks',
-                basis: 'hook incident evidence',
+                reason: 'recorded-base-only hook',
+                basis: 'stale recorded base evidence',
+              },
+              {
+                pattern: '^notes\\.md$',
+                tier: 3,
+                reason: 'reviewed source',
+                basis: 'reviewed source evidence',
               },
             ],
             unlisted: 2,
@@ -575,10 +636,14 @@ test('review tier reports stack and generic profile sources resolved for its pro
 
     await runReview(['review', 'tier', String(run.id)], output)
 
+    expect(FIXTURE_BASE).not.toBe(git(repo, 'merge-base', FIXTURE_WRITER_HEAD, 'origin/main'))
+    expect(output).toContain('tier 3')
+    expect(output).toContain('risk 3')
+    expect(output.some((line) => line.includes('recorded-base-only hook'))).toBeFalse()
     expect(output).toContain('risk map project declaration')
     expect(
       output.some(
-        (line) => line.includes('risk 3:') && line.includes('basis: hook incident evidence'),
+        (line) => line.includes('risk 3:') && line.includes('basis: reviewed source evidence'),
       ),
     ).toBeTrue()
     expect(output).toContain('lens correctness  basis: yield evidence  framework=stack')
@@ -590,7 +655,7 @@ test('review tier reports stack and generic profile sources resolved for its pro
     expect(output).toContain('current change would start a new round')
     const json: string[] = []
     await runReview(['review', 'tier', String(run.id), '--json'], json)
-    expect(JSON.parse(json[0]!).riskBasis).toBe('hook incident evidence')
+    expect(JSON.parse(json[0]!).riskBasis).toBe('reviewed source evidence')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

@@ -31,10 +31,12 @@ import { pruneOutboxTrace } from './outbox-trace.ts'
 import { applyProjectRegisterNames } from './project-record-id.ts'
 import { rollUpDays } from './query.ts'
 import {
-  acquireStoredLease,
+  acquireStoredLeaseIntent,
+  acquireStoredLeaseWhen,
   holdStoredLease,
   releaseStoredLease,
   type StoredLeaseGuard,
+  type StoredLeaseStartFacts,
   storedLeaseHolder,
 } from './store-lease.ts'
 import { hoursAgo } from './time.ts'
@@ -203,6 +205,7 @@ async function settleChangeLeg(
 export const COLLECT_LEASE_MS = 60_000
 const LEASE_RENEW_MS = 20_000
 const COLLECT_LEASE_KEY = 'collect.lease'
+const COLLECT_INTENT_KEY = 'collect.lease.intent'
 
 export type LeaseGuard = StoredLeaseGuard
 
@@ -238,9 +241,46 @@ async function holdAndRenewLease<T>(
  * database. Acquisition is a single conditional UPDATE, which SQLite settles
  * atomically; whoever wins renews it each cycle and the loser simply waits.
  * A holder that dies renews nothing and the lease expires on its own.
+ *
+ * This decision stays separate from the adapter that atomically applies it.
  */
+export function watcherMayStartCycle(watcherHolder: string, facts: StoredLeaseStartFacts): boolean {
+  if (facts.leaseHolder !== null && facts.leaseHolder !== watcherHolder) return false
+  if (facts.intentHolder === null) return true
+  if (facts.intentHolder === watcherHolder) return true
+  return facts.intentUntil !== null && facts.intentUntil <= facts.now
+}
+
 export function acquireLease(holder: string): boolean {
-  return acquireStoredLease(COLLECT_LEASE_KEY, holder, COLLECT_LEASE_MS)
+  return acquireStoredLeaseWhen(
+    COLLECT_LEASE_KEY,
+    COLLECT_INTENT_KEY,
+    holder,
+    COLLECT_LEASE_MS,
+    (facts) => watcherMayStartCycle(holder, facts),
+  )
+}
+
+export function explicitRequestMayAcquire(
+  requestHolder: string,
+  facts: StoredLeaseStartFacts,
+): boolean {
+  return (
+    facts.intentHolder === null ||
+    facts.intentHolder === requestHolder ||
+    facts.intentUntil === null ||
+    facts.intentUntil <= facts.now
+  )
+}
+
+function acquireExplicitLease(holder: string): boolean {
+  return acquireStoredLeaseWhen(
+    COLLECT_LEASE_KEY,
+    COLLECT_INTENT_KEY,
+    holder,
+    COLLECT_LEASE_MS,
+    (facts) => explicitRequestMayAcquire(holder, facts),
+  )
 }
 
 /**
@@ -280,12 +320,22 @@ export async function withLease<T>(
   renewEveryMs = LEASE_RENEW_MS,
 ): Promise<{ ran: true; value: T } | { ran: false; heldBy: string | null }> {
   const deadline = Date.now() + waitMs
-  while (!acquireLease(holder)) {
-    if (Date.now() >= deadline) return { ran: false, heldBy: leaseHolder() }
-    await new Promise((r) => setTimeout(r, 250))
+  let ownsIntent = false
+  try {
+    while (!acquireExplicitLease(holder)) {
+      if (!ownsIntent) ownsIntent = acquireStoredLeaseIntent(COLLECT_INTENT_KEY, holder, deadline)
+      if (Date.now() >= deadline) return { ran: false, heldBy: leaseHolder() }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    if (ownsIntent) {
+      releaseStoredLease(COLLECT_INTENT_KEY, holder)
+      ownsIntent = false
+    }
+    const result = await holdAndRenewLease(holder, fn, renewEveryMs)
+    return result.ran ? result : { ran: false, heldBy: result.heldBy }
+  } finally {
+    if (ownsIntent) releaseStoredLease(COLLECT_INTENT_KEY, holder)
   }
-  const result = await holdAndRenewLease(holder, fn, renewEveryMs)
-  return result.ran ? result : { ran: false, heldBy: result.heldBy }
 }
 
 export function leaseHolder(): string | null {
