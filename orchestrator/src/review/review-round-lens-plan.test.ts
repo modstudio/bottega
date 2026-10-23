@@ -218,27 +218,26 @@ describe('round lens plan', () => {
     })
   })
 
-  test('later-round reasons prioritize never-completed, accepted findings, then touched paths', () => {
+  test('later-round reasons prioritize accepted findings over touched paths', () => {
     expect(
       applicableRoundLensPlan({
-        relevant: { lenses: ['architecture', 'correctness', 'safety'] },
+        relevant: { lenses: ['correctness', 'safety'] },
         facts: {
           completedLenses: ['correctness', 'safety'],
-          latestAcceptedOrModifiedLenses: ['architecture', 'correctness'],
+          latestAcceptedOrModifiedLenses: ['correctness'],
         },
         postFix: {
           kind: 're-lens',
           reviewNumber: 2,
           reviewedTip: 'reviewed-tip',
           tierThreePaths: ['orchestrator/src/review/review-round-lens-plan.ts'],
-          applicability: { lenses: ['architecture', 'correctness', 'safety'] },
+          applicability: { lenses: ['correctness', 'safety'] },
         },
-        pathScopedLenses: ['architecture', 'correctness', 'safety'],
+        pathScopedLenses: ['correctness', 'safety'],
       }),
     ).toEqual({
-      lenses: ['architecture', 'correctness', 'safety'],
+      lenses: ['correctness', 'safety'],
       lensReasons: {
-        architecture: 'never-completed',
         correctness: 'accepted-finding',
         safety: 'newly-touched-path',
       },

@@ -250,3 +250,24 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
     enqueuedReads: reads.length,
   }
 }
+
+/** Re-enqueue reviews whose migration-computed round is absent from their latest snapshot. */
+export function enqueueChangedReviewRounds(database: Database): number {
+  const reviews = database
+    .query<{ record_id: string }, []>(
+      `SELECT review.record_id
+       FROM review
+       WHERE review.round IS NOT NULL
+         AND EXISTS (SELECT 1 FROM outbox WHERE kind='review' AND row_id=review.record_id)
+         AND COALESCE(
+           json_extract((SELECT payload FROM outbox
+                         WHERE kind='review' AND row_id=review.record_id
+                         ORDER BY id DESC LIMIT 1),'$.round'),
+           -1
+         ) <> review.round
+       ORDER BY review.number`,
+    )
+    .all()
+  for (const row of reviews) enqueueReview(database, row.record_id)
+  return reviews.length
+}

@@ -31,7 +31,6 @@ import {
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
-import { writeLensSelectionReason } from '../review/review-lens-selection.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -373,11 +372,12 @@ const detachedMcpConstraints = (
   transportPinSource: spec.transportPinSource,
 })
 
-async function detachRoutedRun(
+export async function detachRoutedRun(
   jobName: string,
   text: string,
   spec: DetachSpec,
   cwd: string,
+  spawnCoordinator?: Parameters<typeof dispatchDetached>[5],
 ): Promise<string> {
   let selected: string | undefined
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
@@ -398,21 +398,20 @@ async function detachRoutedRun(
       spec.probe,
       spec.lens,
     ).agent
-  const selectionReason = job(jobName).findings
-    ? reviewLensSelectionReasonForDispatch({
-        jobName,
-        lens: spec.lens,
-        review: spec.review,
-        cwd: spec.cwd ?? cwd,
-        repo: spec.repo,
-      })
-    : null
+  const selectionReason = reviewLensSelectionReasonForDispatch({
+    jobName,
+    lens: spec.lens,
+    review: spec.review,
+    cwd: spec.cwd ?? cwd,
+    repo: spec.repo,
+  })
   return dispatchDetached(
     jobName,
     text,
     spec,
     selected,
-    selectionReason ? (id) => writeLensSelectionReason(id, selectionReason) : undefined,
+    { selectionReason },
+    spawnCoordinator,
   )
 }
 

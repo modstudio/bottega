@@ -12,14 +12,12 @@ import type { ApplicableReview } from '../review/review-applicability.ts'
 import {
   branchRunOwnerSession,
   type ChangeGroup,
-  measureChangeGroup,
   reviewsForTriage,
   serializePathSet,
   type TriageReviewRow,
 } from '../review/review-group.ts'
-import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
-import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
-import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
+import { roundPlanForReviewTarget } from '../review/review-round-lens-service.ts'
+import { resolveReviewMergeBase } from '../review/review-target.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -76,47 +74,20 @@ export function resolvePullRequestChange(
     throw new Error(`${PLATFORM_SLUG} pr requires a checked-out branch, not detached HEAD`)
   const tip = runGit(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
   const tree = runGit(cwd, ['rev-parse', '--verify', `${tip}^{tree}`])
-  const measured = measureChangeGroup(cwd, project, branch, tip)
-  if (!measured) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
   const trunk = project.settings.trunk!.trim()
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
-    trunk,
-    (args) =>
-      Bun.spawnSync(['git', ...args], {
-        cwd,
-        env: targetGitEnvironment(cwd),
-        stdout: 'pipe',
-        stderr: 'pipe',
-      }).exitCode === 0,
-  )
-  const postFix = postFixReviewDecision({
-    facts: gatherPostFixReviewFacts({
-      database,
-      repo: cwd,
-      from: measured.base,
-      to: tip,
-      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
-      project: project.name,
-      branch,
-    }),
-    tier: measured.tier.tier,
-    review: project.settings.review,
-  })
+  const base = resolveReviewMergeBase(cwd, tip, trunk)
+  if (!base) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
+  const plan = roundPlanForReviewTarget({ database, repo: cwd, project, branch, from: base, to: tip })
+  if (!plan.group) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
   return {
     project,
     branch,
     tip,
     tree,
-    group: measured.group,
-    tier: measured.tier.tier,
-    applicability: measured.applicability,
-    roundApplicability: roundApplicabilityForChange({
-      database,
-      group: measured.group,
-      relevant: measured.applicability,
-      postFix,
-      review: project.settings.review,
-    }),
+    group: plan.group,
+    tier: plan.output.tier,
+    applicability: plan.output,
+    roundApplicability: plan.applicability,
   }
 }
 

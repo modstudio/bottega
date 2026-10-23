@@ -4,8 +4,7 @@ import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
-import { reviewRoundIdentity } from './review-round-identity.ts'
-import type { ReviewRoundEvidenceRow } from './review-yield.ts'
+import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
 export type ReviewTierNumber = 0 | 1 | 2 | 3
 
 export type ReviewRoundBudgetDecision = {

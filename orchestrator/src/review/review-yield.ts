@@ -9,6 +9,7 @@ import {
 } from './review-evidence-sql.ts'
 import { reviewLensGraded } from './review-group.ts'
 import { reviewRoundIdentity } from './review-round-identity.ts'
+export { reviewRoundIdentity } from './review-round-identity.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import { reviewTriageBag } from './review-triage.ts'
 import {

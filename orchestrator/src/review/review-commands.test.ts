@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, mock, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -10,9 +10,11 @@ import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
+import { detachRoutedRun } from '../dispatch/dispatch-cli-service.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { serializePathSet } from './review-group.ts'
+import { reviewLensSelectionReasonForDispatch } from './review-lens-dispatch-reason.ts'
 import { pinRef } from './review-pins.ts'
 import { completeReview, recordReview, triageFinding } from './review-triage.ts'
 
@@ -34,6 +36,88 @@ test('unknown review verb with options keeps the review-family refusal', async (
   await expect(runReview(['review', 'bogus', '--json'], output)).rejects.toThrow(
     `unknown: ${PLATFORM_SLUG} review bogus. Try `,
   )
+})
+
+test('review-lens dispatch stores its funnel reason and short-circuits operator orders', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-dispatch-reason-'))
+  try {
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'fixture@example.com')
+    git(repo, 'config', 'user.name', 'Fixture')
+    writeFileSync(join(repo, 'base.ts'), 'export const base = true\n')
+    git(repo, 'add', 'base.ts')
+    git(repo, 'commit', '-m', 'base')
+    const branch = `DEV-1618-${crypto.randomUUID()}`
+    git(repo, 'checkout', '-b', branch)
+    writeFileSync(join(repo, 'change.ts'), 'export const change = true\n')
+    git(repo, 'add', 'change.ts')
+    git(repo, 'commit', '-m', 'change')
+    const name = `dispatch-reason-${crypto.randomUUID()}`
+    upsertProject({
+      recordId: newRecordId(),
+      name,
+      path: repo,
+      settings: { trunk: 'main', review: { lenses: [{ lens: 'correctness' }] } },
+    })
+    const refuseSpawn = mock(() => {
+      throw new Error('fixture spawn refusal')
+    })
+
+    await expect(
+      detachRoutedRun(
+        'review-lens',
+        'dispatch initial fixture',
+        { cwd: repo, repo: name, key: 'DEV-1618', lens: 'correctness', review: branch },
+        repo,
+        refuseSpawn as never,
+      ),
+    ).rejects.toThrow('fixture spawn refusal')
+    expect(
+      db()
+        .query<{ selection_reason: string }, []>(
+          "SELECT selection_reason FROM run WHERE prompt_head='dispatch initial fixture' ORDER BY number DESC LIMIT 1",
+        )
+        .get(),
+    ).toEqual({ selection_reason: 'initial' })
+
+    await expect(
+      detachRoutedRun(
+        'summarize',
+        'dispatch operator fixture',
+        { cwd: repo, repo: name },
+        repo,
+        refuseSpawn as never,
+      ),
+    ).rejects.toThrow('fixture spawn refusal')
+    expect(
+      db()
+        .query<{ selection_reason: string }, []>(
+          "SELECT selection_reason FROM run WHERE prompt_head='dispatch operator fixture' ORDER BY number DESC LIMIT 1",
+        )
+        .get(),
+    ).toEqual({ selection_reason: 'operator-ordered' })
+
+    expect(
+      reviewLensSelectionReasonForDispatch({
+        jobName: 'review-lens',
+        lens: undefined,
+        review: branch,
+        cwd: repo,
+        repo: name,
+      }),
+    ).toBe('operator-ordered')
+    expect(
+      reviewLensSelectionReasonForDispatch({
+        jobName: 'summarize',
+        lens: 'correctness',
+        review: branch,
+        cwd: repo,
+        repo: name,
+      }),
+    ).toBe('operator-ordered')
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
 })
 
 test('review record runs through Commander and records the lens output', async () => {

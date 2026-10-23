@@ -9,18 +9,19 @@ import {
 } from './review-round-identity.ts'
 
 describe('review round identity', () => {
-  test('classifies a task and patch as one identity', () => {
-    expect(
-      reviewRoundIdentity({
+  test('equal task patches share an identity and different patches do not', () => {
+    const first = reviewRoundIdentity({
         launch_key: 'DEV-1618',
         branch: 'DEV-1618-round',
         patch_id: 'abc',
         path_set: '["a.ts"]',
-      }),
-    ).toEqual({
-      task: 'DEV-1618',
-      identity: 'dev-1618\0abc\0["a.ts"]',
     })
+    expect(first.identity).toBe(
+      reviewRoundIdentity({ ...first, launch_key: 'dev-1618', branch: null, patch_id: 'abc', path_set: '["a.ts"]' }).identity,
+    )
+    expect(first.identity).not.toBe(
+      reviewRoundIdentity({ launch_key: 'DEV-1618', branch: null, patch_id: 'def', path_set: '["a.ts"]' }).identity,
+    )
   })
 
   test('is unclassifiable without a task or patch', () => {
@@ -45,7 +46,16 @@ describe('review round identity', () => {
 
 describe('review round ordinals', () => {
   test('assigns first-seen ordinals and keeps the same identity on one round', () => {
-    expect(reviewRoundOrdinals(['a', 'a', 'b', null, 'c', 'b'])).toEqual([1, 1, 2, null, 3, 2])
+    expect(
+      reviewRoundOrdinals([
+        { task: 'DEV-1', identity: 'a' },
+        { task: 'DEV-1', identity: 'a' },
+        { task: 'DEV-2', identity: 'x' },
+        { task: null, identity: null },
+        { task: 'DEV-1', identity: 'b' },
+        { task: 'DEV-2', identity: 'y' },
+      ]),
+    ).toEqual([1, 1, 1, null, 2, 2])
   })
 })
 
@@ -57,7 +67,7 @@ describe('review round for recording', () => {
         "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
       )
       .run(project)
-    const addPrior = (at: string, patch: string) => {
+    const addPrior = (at: string, patch: string, branch = 'DEV-1618-round') => {
       const review = newRecordId()
       db()
         .query(
@@ -74,7 +84,7 @@ describe('review round for recording', () => {
       })
       db()
         .query('UPDATE run SET branch=?,launch_key=?,project_record_id=? WHERE record_id=?')
-        .run('DEV-1618-round', 'DEV-1618', project, run)
+        .run(branch, 'DEV-1618', project, run)
       db()
         .query(
           `INSERT INTO review_lens
@@ -85,6 +95,7 @@ describe('review round for recording', () => {
     }
     addPrior('2026-10-01T00:00:00Z', 'one')
     addPrior('2026-10-02T00:00:00Z', 'one')
+    addPrior('2026-10-03T00:00:00Z', 'two', 'DEV-1618-reworked')
     expect(
       reviewRoundForRecording(db(), {
         project_record_id: project,
@@ -103,6 +114,15 @@ describe('review round for recording', () => {
         path_set: '["change.ts"]',
       }),
     ).toBe(2)
+    expect(
+      reviewRoundForRecording(db(), {
+        project_record_id: project,
+        launch_key: 'DEV-1618',
+        branch: 'DEV-1618-third-branch',
+        patch_id: 'three',
+        path_set: '["change.ts"]',
+      }),
+    ).toBe(3)
     expect(
       reviewRoundForRecording(db(), {
         project_record_id: project,

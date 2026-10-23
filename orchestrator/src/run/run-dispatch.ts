@@ -42,19 +42,16 @@ import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 
-function writeDetachedPrompt(
-  recordId: string,
-  prompt: string,
-  beforeCoordinator: (recordId: string) => void,
-): string {
+function writeDetachedPrompt(recordId: string, prompt: string): string {
   const runsDir = RUNS_DIR
   const runDirectory = join(runsDir, recordId)
   mkdirSync(runDirectory, { recursive: true })
   const promptPath = join(runDirectory, 'prompt.txt')
   writeFileSync(promptPath, prompt)
-  beforeCoordinator(recordId)
   return promptPath
 }
+
+export type RunDispatchMetadata = { selectionReason?: string }
 
 function refuseLiveRetryOwner(spec: DetachSpec): void {
   if (spec.resume?.kind !== 'retry-root') return
@@ -105,7 +102,7 @@ export async function detach(
   prompt: string,
   spec: DetachSpec,
   selectedAgent?: string,
-  beforeCoordinator: (recordId: string) => void = () => {},
+  dispatch: RunDispatchMetadata = {},
   spawnCoordinator: typeof spawn = spawn,
 ): Promise<string> {
   writableDb()
@@ -180,8 +177,8 @@ export async function detach(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id, continuation_message_sha)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha, selection_reason)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -213,6 +210,7 @@ export async function detach(
         spec.resume?.session ?? null,
         startedByUserId,
         spec.resume?.continuationMessage?.sha256 ?? null,
+        dispatch.selectionReason ?? null,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
@@ -275,7 +273,7 @@ export async function detach(
   try {
     // The row now exists, so its id replaces that temporary random name and is
     // also stored on the row for run() to reuse rather than creating a second file.
-    const promptPath = writeDetachedPrompt(recordId, prompt, beforeCoordinator)
+    const promptPath = writeDetachedPrompt(recordId, prompt)
     handoffStep = 'record prompt artifact'
     db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, recordId)
     /**

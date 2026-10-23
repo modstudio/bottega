@@ -1,5 +1,5 @@
 // concern: review-round-identity
-/** Owns how a review round is identified and ordered on a branch. */
+/** Owns how a review round is identified and ordered for an attributed task. */
 
 import type { Database } from 'bun:sqlite'
 import { attributedTaskKey } from '../epic/epic.ts'
@@ -30,15 +30,20 @@ export function reviewRoundIdentity(row: ReviewRoundIdentityInput): {
   }
 }
 
-/** Assign first-seen ordinals to classifiable identities; unclassifiable stay null. */
-export function reviewRoundOrdinals(identities: readonly (string | null)[]): (number | null)[] {
-  const seen = new Map<string, number>()
-  return identities.map((identity) => {
-    if (!identity) return null
-    const existing = seen.get(identity)
+/** Assign first-seen ordinals per task; unclassifiable rows stay null. */
+export function reviewRoundOrdinals(
+  rows: readonly { task: string | null; identity: string | null }[],
+): (number | null)[] {
+  const ordinals = new Map<string, number>()
+  const counts = new Map<string, number>()
+  return rows.map(({ task, identity }) => {
+    const normalizedTask = normalized(task)
+    if (!normalizedTask || !identity) return null
+    const existing = ordinals.get(identity)
     if (existing !== undefined) return existing
-    const round = seen.size + 1
-    seen.set(identity, round)
+    const round = (counts.get(normalizedTask) ?? 0) + 1
+    counts.set(normalizedTask, round)
+    ordinals.set(identity, round)
     return round
   })
 }
@@ -53,41 +58,39 @@ type PriorRoundRow = {
   path_set: string | null
 }
 
-/** Eligible prior identities on one branch, in the budget's recorded order. */
-function priorRoundIdentities(
+/** Eligible prior reviews in their recorded order. */
+function priorRounds(
   database: Database,
   projectRecordId: string | null,
-  branch: string | null,
-): (string | null)[] {
-  if (!projectRecordId || !branch) return []
+): ReturnType<typeof reviewRoundIdentity>[] {
+  if (!projectRecordId) return []
   const rows = database
-    .query<PriorRoundRow, [string, string]>(
+    .query<PriorRoundRow, [string]>(
       `SELECT r.record_id AS review_record_id, r.recorded_at, r.number, r.patch_id, r.path_set,
               run.launch_key, run.branch
          FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
         WHERE run.project_record_id=?
-          AND run.branch=?
           AND ${reviewRunEvidenceSql('run', 'rl')}
         ORDER BY r.recorded_at,r.number,rl.record_id`,
     )
-    .all(projectRecordId, branch)
-  const identities: (string | null)[] = []
+    .all(projectRecordId)
+  const rounds: ReturnType<typeof reviewRoundIdentity>[] = []
   const seen = new Set<string>()
   for (const row of rows) {
     if (seen.has(row.review_record_id)) continue
     seen.add(row.review_record_id)
-    identities.push(reviewRoundIdentity(row).identity)
+    rounds.push(reviewRoundIdentity(row))
   }
-  return identities
+  return rounds
 }
 
-/** Ordinal of a review being recorded, using the same rule as the round budget. */
+/** Ordinal of a review being recorded in its task's cross-branch round ladder. */
 export function reviewRoundForRecording(
   database: Database,
   input: ReviewRoundIdentityInput & { project_record_id: string | null },
 ): number | null {
-  const prior = priorRoundIdentities(database, input.project_record_id, input.branch)
-  return reviewRoundOrdinals([...prior, reviewRoundIdentity(input).identity]).at(-1) ?? null
+  const prior = priorRounds(database, input.project_record_id)
+  return reviewRoundOrdinals([...prior, reviewRoundIdentity(input)]).at(-1) ?? null
 }

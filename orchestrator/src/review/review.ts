@@ -12,7 +12,6 @@ import { job } from '../jobs/jobs.ts'
 import { currentCoverage, projectRecord, reviewBranchNames } from './review-coverage.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { measureReviewChange, serializePathSet } from './review-group.ts'
-import { lensSelectionReasonFromDispatch } from './review-lens-selection.ts'
 import {
   git,
   measureChangeIdentity,
@@ -500,7 +499,7 @@ function loadFindingsRuns(entries: { runId: string }[], database: Database): Run
     const run = database
       .query(
         `SELECT record_id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_record_id,
-              base_commit, review_ref, changed_paths, branch, launch_key
+              base_commit, review_ref, changed_paths, branch, launch_key, selection_reason
          FROM run WHERE record_id=?`,
       )
       .get(runId) as RunRow | null
@@ -616,7 +615,7 @@ export function recordReviews(
         JSON.stringify(output.provenance.mcp_tools),
         JSON.stringify(output.provenance.docs_read),
         JSON.stringify(output.provenance.substitutes),
-        lensSelectionReasonFromDispatch(run.record_id),
+        run.selection_reason ?? 'operator-ordered',
       ) as { record_id: string }
       output.findings.forEach((finding) => {
         insert.run(

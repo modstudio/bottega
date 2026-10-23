@@ -12,25 +12,22 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
-import { measureChangeIdentity, reviewPins } from './review-pins.ts'
-import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
+import { reviewPins } from './review-pins.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { reviewRoundIdentity } from './review-round-identity.ts'
-import { roundApplicabilityForChange } from './review-round-lens-service.ts'
+import { roundPlanForReviewTarget } from './review-round-lens-service.ts'
 import {
   resolveReviewMergeBase,
   reviewRemoteTrunkRefExists,
   reviewTrunkRef,
 } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
-import { reviewTierForRange } from './review-tier-service.ts'
 import {
   completeReview,
   DISPOSITIONS,
@@ -44,30 +41,6 @@ type ReviewFlags = { has(name: string): boolean; flag(name: string): string | un
 type ReviewPresentation = { log(...values: unknown[]): void }
 const TIER_RUN_SQL =
   'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
-
-function roundApplicabilityForTierOutput(input: {
-  output: ReturnType<typeof reviewTierForRange>
-  identity: ReturnType<typeof measureChangeIdentity>
-  project: string
-  branch: string
-  postFix: ReturnType<typeof postFixReviewDecision>
-  review: Parameters<typeof reviewTierForRange>[3]
-}): ApplicableReview {
-  const relevant = selectReviewApplicability(input.output, input.output.lenses)
-  if (!input.identity) return relevant
-  return roundApplicabilityForChange({
-    database: db(),
-    group: {
-      project: input.project,
-      branch: input.branch,
-      patchId: input.identity.patchId,
-      pathSet: input.identity.paths,
-    },
-    relevant,
-    postFix: input.postFix,
-    review: input.review,
-  })
-}
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
@@ -251,11 +224,8 @@ function resolveTierTarget(
 
 function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
-  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-  if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
-  const output = reviewTierForRange(repo, from, to, project.settings.review)
-  const identity = measureChangeIdentity(repo, from, to)
+  const plan = roundPlanForReviewTarget({ database: db(), repo, project, branch, from, to })
+  const { output, identity, postFix, applicability: roundApplicability } = plan
   const currentRoundIdentity = identity
     ? reviewRoundIdentity({
         launch_key: null,
@@ -265,27 +235,6 @@ function reviewTierOutput(value: string, cwd: string) {
       }).identity
     : null
   const branchBudget = reviewBudgetForBranch(db(), project.name, branch, currentRoundIdentity)
-  const postFix = postFixReviewDecision({
-    facts: gatherPostFixReviewFacts({
-      database: db(),
-      repo,
-      from,
-      to,
-      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
-      project: project.name,
-      branch,
-    }),
-    tier: output.tier,
-    review: project.settings.review,
-  })
-  const roundApplicability = roundApplicabilityForTierOutput({
-    output,
-    identity,
-    project: project.name,
-    branch,
-    postFix,
-    review: project.settings.review,
-  })
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,
     ...branchBudget,

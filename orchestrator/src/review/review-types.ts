@@ -3,6 +3,7 @@
 import type { ChangeIdentityGitResult, ChangeIdentityGitRunner } from './change-identity.ts'
 import type {
   ReviewCoverage,
+  ReviewLensSelectionReason,
   ReviewLimits,
   ReviewOverlap,
   ReviewReproduced,
@@ -108,6 +109,7 @@ export type RunRow = {
   changed_paths: string | null
   branch: string | null
   launch_key: string | null
+  selection_reason: ReviewLensSelectionReason | null
 }
 
 export type ReviewChangeRange = { from: string; to: string; paths: string[] | null }

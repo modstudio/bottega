@@ -4,7 +4,6 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { recordReviews } from './review.ts'
-import { writeLensSelectionReason } from './review-lens-selection.ts'
 import { completeReview, gradeReviewLens, recordReview, triageFinding } from './review-triage.ts'
 
 describe('review discipline', () => {
@@ -167,7 +166,7 @@ describe('review discipline', () => {
       model: 'm',
       lens: 'correctness',
     })
-    writeLensSelectionReason(named, 'initial')
+    db().query("UPDATE run SET selection_reason='initial' WHERE record_id=?").run(named)
     const missing = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'craft' })
     recordReviews([
       { runId: named, output: reviewReply(0) },
