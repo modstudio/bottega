@@ -25,6 +25,7 @@ function unavailable(row: LandingTreeReleaseRow, detail: string): LandingTreeRel
   return {
     action: 'keep',
     reason: `landing tree held by ${owner}: landing status could not be established (${detail})`,
+    hold: 'other',
   }
 }
 

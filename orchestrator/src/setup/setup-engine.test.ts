@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -13,6 +14,8 @@ import type { SetupFacts } from './setup-facts.ts'
 import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
+
+const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
 
 function proposeSetup(
   facts: SetupFacts,
@@ -70,7 +73,7 @@ test('mentions record use when no hosted record address is configured', () => {
 
 const orchServer: McpServer = {
   name: MCP_SERVER_NAME,
-  command: '/bin/orch',
+  command: FRONT_DOOR,
   args: ['mcp'],
 }
 function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
@@ -482,7 +485,7 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     machineWithMcp('codex', {
       support: 'automatic',
       registrations: {
-        [MCP_SERVER_NAME]: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
+        [MCP_SERVER_NAME]: { status: 'registered', command: FRONT_DOOR, args: ['mcp'] },
       },
     }),
     [],
@@ -639,7 +642,7 @@ test('notices when an enabled built-in agent harness is absent', () => {
   expect(plan.notices).toEqual([
     {
       message: 'codex agent is enabled but the codex harness is not installed',
-      fix: `install codex, or ${PLATFORM_SLUG} agent show set codex --enabled false --reason "codex is not installed on this machine"`,
+      fix: `install codex, or ${PLATFORM_SLUG} agent set codex --enabled false --reason "codex is not installed on this machine"`,
     },
   ])
 })
@@ -654,7 +657,7 @@ test('notices when an enabled built-in agent harness is not signed in', () => {
   expect(plan.notices).toEqual([
     {
       message: 'grok agent is enabled but the grok harness is not signed in',
-      fix: `sign in to grok, or ${PLATFORM_SLUG} agent show set grok --enabled false --reason "grok is not signed in on this machine"`,
+      fix: `sign in to grok, or ${PLATFORM_SLUG} agent set grok --enabled false --reason "grok is not signed in on this machine"`,
     },
   ])
 })
@@ -694,7 +697,7 @@ test('notices when a ready built-in harness has a disabled agent', () => {
   expect(plan.notices).toEqual([
     {
       message: 'codex harness is installed and signed in but the codex agent is disabled',
-      fix: `${PLATFORM_SLUG} agent show set codex --enabled true`,
+      fix: `${PLATFORM_SLUG} agent set codex --enabled true`,
     },
   ])
 })
@@ -720,7 +723,7 @@ test('notices when an installed signed-in built-in has not passed its probe', ()
     {
       message:
         'codex harness is installed and signed in but the codex agent cannot take repository work until it is probed',
-      fix: `${PLATFORM_SLUG} agent show probe codex`,
+      fix: `${PLATFORM_SLUG} agent probe codex`,
     },
   ])
 })
@@ -740,7 +743,7 @@ test('notices an installed unregistered non-built-in harness without guessing a 
   expect(plan.notices).toEqual([
     {
       message: 'goose harness is installed but unregistered',
-      fix: `${PLATFORM_SLUG} agent show add <name> --harness goose --backend <backend> --model <model>`,
+      fix: `${PLATFORM_SLUG} agent add <name> --harness goose --backend <backend> --model <model>`,
     },
   ])
 })

@@ -2,6 +2,7 @@
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
 import type { BranchStateDecision } from '../branch/branch-state.ts'
+import { decideUnjudgedRunRemedy, type UnjudgedRunRemedy } from '../cleanup/unjudged-run-remedy.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
 const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -13,6 +14,7 @@ export type ShipCleanupRunFact = {
   record_id: string
   number: number
   root_record_id: string
+  rootNumber: number
   startedAt: string
   job: string
   status: string
@@ -20,15 +22,45 @@ export type ShipCleanupRunFact = {
   mintedBranch: string | null
   launchKey: string | null
   judged: boolean
+  rootFailureKind: string | null
   worktree: string | null
 }
 
+type ShipCleanupKeptOwner = 'caller-landing-tree' | 'other'
+
+export type ShipCleanupKeptItem = {
+  item: string
+  reason: string
+  reasonKind: ShipCleanupKeptReasonKind
+  owner: ShipCleanupKeptOwner
+  remedy?: string
+}
+
+export type ShipCleanupKeptFact = Omit<ShipCleanupKeptItem, 'owner'> & {
+  holdingPath: string | null
+}
+
+/** Assign ownership only when the item is held by the command's own landing tree. */
+export function decideShipCleanupKeptItem(
+  fact: ShipCleanupKeptFact,
+  callerLandingTreePath: string | null,
+): ShipCleanupKeptItem {
+  const { holdingPath, ...item } = fact
+  return {
+    ...item,
+    owner:
+      holdingPath !== null && holdingPath === callerLandingTreePath
+        ? 'caller-landing-tree'
+        : 'other',
+  }
+}
+
 export type ShipCleanupResidueReport = {
-  kept: readonly { item: string; reason: string; reasonKind: ShipCleanupKeptReasonKind }[]
+  kept: readonly ShipCleanupKeptItem[]
   errors: readonly unknown[]
 }
 
-export type ShipCleanupKeptReasonKind =
+type ShipCleanupKeptReasonKind =
   | 'command-tree'
   | 'live-run'
   | 'unjudged-run'
@@ -37,19 +69,19 @@ export type ShipCleanupKeptReasonKind =
   | 'cleanup-failure'
 
 export type ShipCleanupVerdict =
-  | { clean: true }
-  | { clean: false; reason: 'errors' | 'unexpected-kept-item' }
+  | { clean: true; residue: readonly ShipCleanupKeptItem[] }
+  | {
+      clean: false
+      reason: 'errors' | 'unexpected-kept-item'
+      residue: readonly ShipCleanupKeptItem[]
+    }
 
-/** Judge whether cleanup left residue, optionally allowing its one caller-owned landing tree. */
-export function decideShipCleanupVerdict(
-  report: ShipCleanupResidueReport,
-  allowCommandTree: boolean,
-): ShipCleanupVerdict {
-  if (report.errors.length > 0) return { clean: false, reason: 'errors' }
-  if (report.kept.length === 0) return { clean: true }
-  if (allowCommandTree && report.kept.length === 1 && report.kept[0]!.reasonKind === 'command-tree')
-    return { clean: true }
-  return { clean: false, reason: 'unexpected-kept-item' }
+/** Judge residue independently of items owned by the caller's landing tree. */
+export function decideShipCleanupVerdict(report: ShipCleanupResidueReport): ShipCleanupVerdict {
+  const residue = report.kept.filter((item) => item.owner === 'other')
+  if (report.errors.length > 0) return { clean: false, reason: 'errors', residue }
+  if (residue.length === 0) return { clean: true, residue }
+  return { clean: false, reason: 'unexpected-kept-item', residue }
 }
 
 /** Select proved task branches and report every unproved run-minted sibling. */
@@ -90,6 +122,7 @@ export type ShipCleanupRunDecision = ShipCleanupRunFact & {
   artifacts: 'remove' | 'keep' | 'ignore'
   worktreeAction: 'close' | 'keep' | 'ignore'
   reason: string
+  remedy?: UnjudgedRunRemedy
 }
 
 function startedByLanding(startedAt: string, landingMergedAt: string): boolean {
@@ -166,6 +199,9 @@ export function decideShipCleanup(
         artifacts: 'keep',
         worktreeAction: 'close',
         reason: 'run has no recorded verdict',
+        ...(run.record_id === run.root_record_id
+          ? { remedy: decideUnjudgedRunRemedy(run.rootFailureKind) }
+          : {}),
       }
     }
     return {

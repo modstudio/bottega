@@ -38,9 +38,23 @@ import {
   type StoreWriteLockReport,
   storeWriteLockReport,
 } from './monitor-store-write-lock.ts'
-import type { MonitorHostPressure, MonitorNotice } from './monitor-types.ts'
+import type {
+  MonitorHostLoad,
+  MonitorHostPressure,
+  MonitorNotice,
+  MonitorResult,
+} from './monitor-types.ts'
 
 const MONITOR_CAPABILITY_PS_TIMEOUT_MS = 10_000
+
+export function formatHostLoadLine(
+  hostLoad: MonitorHostLoad,
+  queue: MonitorResult['runHostCapacity'],
+): string {
+  const held = queue.heldOn.join('+') || 'none'
+  const behind = queue.waiting > 1 ? `; ${queue.waiting - 1} queued behind` : ''
+  return `host: load ${hostLoad.loadavg.toFixed(2)}/${hostLoad.ncpu} cpu; pressure ${hostLoad.pressure}; swap ${Math.round(hostLoad.swapUsed / 1024 / 1024)}/${Math.round(hostLoad.swapTotal / 1024 / 1024)} MiB; ${hostLoad.liveRuns} live run(s); ${hostLoad.waitingRequests} broker request(s) waiting, oldest ${hostLoad.oldestWaitMs}ms; ${queue.waiting} run(s) waiting for host capacity, oldest ${queue.oldestWaitMs}ms, held on ${held}${behind}`
+}
 
 export function formatHostPressureLine(report: MonitorHostPressure): string {
   if (!report.available)
@@ -200,7 +214,7 @@ async function showNotices(
   if (json) await presentation.write(`${JSON.stringify(delivery)}\n`)
   else {
     for (const condition of delivery.notices)
-      presentation.log(`MONITOR ${condition.kind} ${condition.subject}: ${condition.detail}`)
+      presentation.log(`MONITOR ${condition.kind} ${condition.label}: ${condition.detail}`)
     if (delivery.warning) presentation.log(delivery.warning)
   }
 }
@@ -254,7 +268,7 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
   else {
     const failing = failingCanonEvalSlugs(),
       lines = [
-        `host: load ${result.hostLoad.loadavg.toFixed(2)}/${result.hostLoad.ncpu} cpu; pressure ${result.hostLoad.pressure}; swap ${Math.round(result.hostLoad.swapUsed / 1024 / 1024)}/${Math.round(result.hostLoad.swapTotal / 1024 / 1024)} MiB; ${result.hostLoad.liveRuns} live run(s); ${result.hostLoad.waitingRequests} broker request(s) waiting, oldest ${result.hostLoad.oldestWaitMs}ms`,
+        formatHostLoadLine(result.hostLoad, result.runHostCapacity),
         formatHostPressureLine(result.hostPressure),
         `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
       ]

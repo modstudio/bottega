@@ -2,6 +2,21 @@
 /** Pure eligibility, concurrency, and result presentation for a registered worker gate. */
 
 import { isAbsolute, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
+export const GATE_INPUTS = ['staged', 'worktree', 'committed'] as const
+export type GateInput = (typeof GATE_INPUTS)[number]
+
+export function parseGateInput(
+  value: unknown,
+  projectName = 'this project',
+): GateInput | undefined {
+  if (value === undefined) return undefined
+  if ((GATE_INPUTS as readonly unknown[]).includes(value)) return value as GateInput
+  throw new Error(
+    `worker gate refused: project ${JSON.stringify(projectName)} has invalid gateInput ${JSON.stringify(value)}; correct it with ${PLATFORM_SLUG} project set`,
+  )
+}
 export type BrokerConfinement<Profile = unknown> =
   | { kind: 'host' }
   | { kind: 'srt'; profile: Profile }
@@ -25,6 +40,7 @@ export const GATE_COMMAND_TIMEOUT_MS = 20 * 60_000
 /** Stay below the shortest harness tool-call ceiling observed. */
 export const RUN_GATE_WAIT_MS = 4 * 60_000
 export const GATE_CLOSE_REASON = 'Gate run cancelled because the supervising run closed.'
+export const WORKER_GATE_BASE_ENV = 'ORCH_GATE_BASE_COMMIT'
 const GATE_TOOLING_PATH_NAMES = [
   'package.json',
   'bun.lock',
@@ -75,6 +91,19 @@ export function decideGateHeadCommit(input: {
   porcelainPaths: readonly string[]
 }): string | null {
   return input.headCommit && input.porcelainPaths.length === 0 ? input.headCommit : null
+}
+
+export function decideWorkerGateInput(
+  input: GateInput | undefined,
+  hasUncommittedTrackedChanges: boolean,
+): { kind: 'committed' } | { kind: 'synthetic-index' } | { kind: 'refused'; reason: string } {
+  if (input !== 'committed') return { kind: 'synthetic-index' }
+  if (!hasUncommittedTrackedChanges) return { kind: 'committed' }
+  return {
+    kind: 'refused',
+    reason:
+      'worker gate refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_gate again',
+  }
 }
 
 /** Prefer the live trunk merge-base so a rebased worker excludes trunk-only changes. */

@@ -19,7 +19,13 @@ import type {
 } from './question-vocabulary.ts'
 import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
+import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
+import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
+
+const FAILURE_KINDS_WITH_LISTED_ERROR = new Set(['contract', 'unevidenced', 'premature-final'])
+
+const RUN_LIVE_STATUSES = ['queued', 'reserved', 'attached', 'running', 'asking'] as const
 
 export function runIdentityMap(): RunIdentity[] {
   return db().query<RunIdentity, []>('SELECT number, record_id FROM run ORDER BY number').all()
@@ -76,6 +82,130 @@ type RunListingPresentation = {
     processStartTime(pid: number): string | null
   }
   clock(): number
+  subscriptionCost?: SubscriptionCostContext
+}
+
+function listedRunWithCost(
+  listed: Record<string, unknown>,
+  turns: unknown,
+  subscriptionCost: SubscriptionCostContext,
+) {
+  const pricedTurns = Array.isArray(turns)
+    ? turns.map((turn) => withReportedCost(turn as Record<string, unknown>, subscriptionCost))
+    : turns
+  const row = pricedTurns ? { ...listed, turns: pricedTurns } : listed
+  return withReportedCost(row, subscriptionCost)
+}
+
+function listingHumanCurrent(finalRecordId: string, json: boolean) {
+  if (json) return {}
+  return db()
+    .query(
+      `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path, branch, minted_branch
+         FROM run WHERE record_id=?`,
+    )
+    .get(finalRecordId) as {
+    status: string
+    latency_ms: number | null
+    vendor_tokens: number | null
+    route_reason: string | null
+    probe: number
+    output_path: string | null
+    branch: string | null
+    minted_branch: string | null
+  }
+}
+
+function listingTurns(recordId: string, json: boolean) {
+  if (!json) return undefined
+  return db()
+    .query(
+      `SELECT record_id, number, started_at, agent, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
+         FROM run WHERE record_id = ? OR parent_run_record_id = ?
+        ORDER BY turn, number`,
+    )
+    .all(recordId, recordId)
+}
+
+function listingQuestions(recordId: string, json: boolean) {
+  if (!json) return undefined
+  return (
+    db()
+      .query(
+        `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
+                      q.asked_at, q.answered_at, q.asked_via,
+                      q.answerer_kind, q.answer_channel, q.overturned_at,
+                      q.closed_at, q.close_reason
+         FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+        WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
+        ORDER BY q.number`,
+      )
+      .all(recordId, recordId) as {
+      number: number
+      record_id: string
+      run_record_id: string
+      run_number: number
+      asked_at: string
+      answered_at: string | null
+      asked_via: AskedVia | null
+      answerer_kind: AnswererKind | null
+      answer_channel: AnswerChannel | null
+      overturned_at: string | null
+      closed_at: string | null
+      close_reason: string | null
+    }[]
+  ).map((q) => ({
+    id: q.number,
+    record_id: q.record_id,
+    run_record_id: q.run_record_id,
+    run_number: q.run_number,
+    asked_at: q.asked_at,
+    answered_at: q.answered_at ?? null,
+    asked_via: q.asked_via ?? null,
+    answerer_kind: q.answerer_kind ?? null,
+    answer_channel: q.answer_channel ?? null,
+    overturned_at: q.overturned_at ?? null,
+    closed_at: q.closed_at ?? null,
+    close_reason: q.close_reason ?? null,
+    deliveries: questionDeliveries(q.record_id),
+  }))
+}
+
+function listingCostContext(
+  json: boolean,
+  subscriptionCost: SubscriptionCostContext | undefined,
+): SubscriptionCostContext | undefined {
+  if (!json) return undefined
+  return subscriptionCost ?? { facts: subscriptionCostFacts(), prices: {} }
+}
+
+function listingConversation(
+  r: Record<string, unknown>,
+  json: boolean,
+  subscriptionCost: SubscriptionCostContext | undefined,
+  chainIsStranded: (id: string) => boolean,
+  strandedRecovery: (id: string) => string,
+): Record<string, unknown>[] {
+  const chain = resolveFailover(db(), r.record_id as string)
+  const final = chain.attempts.at(-1)!
+  const recordId = String(r.record_id)
+  const questions = listingQuestions(recordId, json)
+  const listed = {
+    ...r,
+    ...listingHumanCurrent(final.record_id, json),
+    ...(questions ? { questions } : {}),
+    answer_agent: final.agent,
+    failover_chain: chain.attempts.map((attempt) => attempt.agent),
+    ...(chainIsStranded(recordId)
+      ? {
+          status: 'stranded',
+          stranded: true,
+          recovery_hint: strandedRecovery(recordId),
+        }
+      : {}),
+  }
+  if (!subscriptionCost) return [listed]
+  return [listedRunWithCost(listed, listingTurns(recordId, json), subscriptionCost)]
 }
 
 function processSamplesForRows(
@@ -155,6 +285,45 @@ function applyRequestedRunFilter(
   args.push(...requested.ids, ...requested.ids)
 }
 
+function liveStatusSql(): string {
+  return RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')
+}
+
+function liveListingClauses(enabled: boolean): string[] {
+  return enabled
+    ? [
+        `EXISTS (
+          SELECT 1 FROM run live_member
+           WHERE (live_member.record_id = r.record_id OR live_member.parent_run_record_id = r.record_id)
+             AND live_member.status IN (${liveStatusSql()})
+        )`,
+      ]
+    : []
+}
+
+function listingMemberJoin(rootAlias: string, live: boolean): string {
+  if (!live) return currentRunMemberJoin(rootAlias)
+  return `JOIN run current_run ON current_run.record_id = (
+    SELECT member.record_id FROM run member
+     WHERE member.record_id = ${rootAlias}.record_id OR member.parent_run_record_id = ${rootAlias}.record_id
+     ORDER BY CASE WHEN member.status IN (${liveStatusSql()}) THEN 0 ELSE 1 END,
+              member.turn DESC, member.number DESC LIMIT 1
+  )`
+}
+
+function listingLimit(value: string | undefined, json: boolean, live: boolean): number | null {
+  if (value === undefined && live) return null
+  return Number(value ?? (json ? 100000 : 20))
+}
+
+function listingLimitSql(limit: number | null): string {
+  return limit === null ? '' : ' LIMIT ?'
+}
+
+function listingLimitBindings(limit: number | null): number[] {
+  return limit === null ? [] : [limit]
+}
+
 function unscoredListingClauses(enabled: boolean, where: string[]): { cte: string; join: string } {
   if (!enabled) return { cte: '', join: '' }
   const owedWhere = UNSCORED_WHERE.replaceAll('r.', 'owed.').replaceAll('s.', 'owed_score.')
@@ -228,11 +397,12 @@ export async function runListingCommand(
     thinOutputWarning,
     processObservation,
     clock,
+    subscriptionCost,
   } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
-  const jsonV1 = options.jsonV1
-  const json = has('json') || jsonV1
+  const json = has('json') || options.jsonV1
+  const costContext = listingCostContext(json, subscriptionCost)
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
@@ -252,8 +422,7 @@ export async function runListingCommand(
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
   const requested = resolveRequestedRunIds(values('id'))
-  const requestedIds = requested.ids
-  const unknownRecordIds = requested.unknown
+  const { ids: requestedIds, unknown: unknownRecordIds } = requested
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child
   // turn, return that conversation rather than falsely reporting an existing run id as unknown.
   applyRequestedRunFilter(requested, sinceFlag, where, args)
@@ -274,14 +443,15 @@ export async function runListingCommand(
     )`)
     args.push(sinceFlag, sinceFlag, sinceFlag, sinceFlag)
   }
-  const limit = Number(flag('limit') ?? (json ? 100000 : 20))
+  where.push(...liveListingClauses(has('live')))
+  const limit = listingLimit(flag('limit'), json, has('live'))
   let rows = db()
     .query(
       `${unscoredCte}
      SELECT r.record_id, r.number, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
-            current_run.number AS live_member_number,
+            current_run.number AS live_member_number, current_run.status AS live_member_status,
             current_run.record_id AS live_member_id, current_run.record_id AS live_member_record_id,
             current_run.agent AS current_agent,
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
@@ -291,107 +461,21 @@ export async function runListingCommand(
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${
               json
-                ? ', r.cwd, r.session_id, r.started_by_user_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,' +
+                ? ', r.cwd, r.session_id, r.started_by_user_id, r.vendor_cost_usd, r.vendor_estimated_cost_usd, r.vendor_cost_source, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,' +
                   ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of_record_id, r.launch_key, r.evidence_excluded, r.resource_cpu_ms, r.resource_peak_rss_bytes, r.resource_samples, r.resource_source'
                 : ''
             }
        FROM run r
        ${unscoredJoin}
-       ${currentRunMemberJoin('r')}
+       ${listingMemberJoin('r', has('live'))}
        LEFT JOIN score s ON s.run_record_id = r.record_id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY r.number DESC LIMIT ?`,
+      ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
-    .all(...args, limit) as Record<string, unknown>[]
-  rows = rows.map(withRetryRecordId).flatMap((r) => {
-    const chain = resolveFailover(db(), r.record_id as string)
-    const final = chain.attempts.at(-1)!
-    const current = json
-      ? {}
-      : (db()
-          .query(
-            `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path, branch, minted_branch
-         FROM run WHERE record_id=?`,
-          )
-          .get(final.record_id) as {
-          status: string
-          latency_ms: number | null
-          vendor_tokens: number | null
-          route_reason: string | null
-          probe: number
-          output_path: string | null
-          branch: string | null
-          minted_branch: string | null
-        })
-    const turns = json
-      ? db()
-          .query(
-            `SELECT record_id, number, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
-         FROM run WHERE record_id = ? OR parent_run_record_id = ?
-        ORDER BY turn, number`,
-          )
-          .all(String(r.record_id), String(r.record_id))
-      : undefined
-    const questions = json
-      ? (
-          db()
-            .query(
-              `SELECT q.number,q.record_id,q.run_record_id,owner.number AS run_number,
-                      q.asked_at, q.answered_at, q.asked_via,
-                      q.answerer_kind, q.answer_channel, q.overturned_at,
-                      q.closed_at, q.close_reason
-         FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-        WHERE owner.record_id = ? OR owner.parent_run_record_id = ?
-        ORDER BY q.number`,
-            )
-            .all(String(r.record_id), String(r.record_id)) as {
-            number: number
-            record_id: string
-            run_record_id: string
-            run_number: number
-            asked_at: string
-            answered_at: string | null
-            asked_via: AskedVia | null
-            answerer_kind: AnswererKind | null
-            answer_channel: AnswerChannel | null
-            overturned_at: string | null
-            closed_at: string | null
-            close_reason: string | null
-          }[]
-        ).map((q) => ({
-          id: q.number,
-          record_id: q.record_id,
-          run_record_id: q.run_record_id,
-          run_number: q.run_number,
-          asked_at: q.asked_at,
-          answered_at: q.answered_at ?? null,
-          asked_via: q.asked_via ?? null,
-          answerer_kind: q.answerer_kind ?? null,
-          answer_channel: q.answer_channel ?? null,
-          overturned_at: q.overturned_at ?? null,
-          closed_at: q.closed_at ?? null,
-          close_reason: q.close_reason ?? null,
-          deliveries: questionDeliveries(q.record_id),
-        }))
-      : undefined
-    return [
-      {
-        ...r,
-        ...current,
-        ...(turns ? { turns } : {}),
-        ...(questions ? { questions } : {}),
-        answer_agent: final.agent,
-        failover_chain: chain.attempts.map((attempt) => attempt.agent),
-        ...(chainIsStranded(r.record_id as string)
-          ? {
-              status: 'stranded',
-              stranded: true,
-              recovery_hint: strandedRecovery(r.record_id as string),
-            }
-          : {}),
-      },
-    ]
-  })
+    .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
+  rows = rows
+    .map(withRetryRecordId)
+    .flatMap((r) => listingConversation(r, json, costContext, chainIsStranded, strandedRecovery))
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes
   // it). Omission and non-existence are different facts for machine callers.
@@ -483,6 +567,7 @@ export async function runListingCommand(
     const reclaimed = r.failure_kind === 'idle' ? parseIdleReclaimedMs(String(r.error ?? '')) : null
     return {
       ...rest,
+      ...(has('live') ? { live_statuses: RUN_LIVE_STATUSES } : {}),
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
@@ -498,7 +583,7 @@ export async function runListingCommand(
   // how two concerns quietly become one.
   if (json) {
     const publish = (data: unknown) =>
-      JSON.stringify(jsonV1 ? data : { schema_version: 2, kind: 'run', data })
+      JSON.stringify(options.jsonV1 ? data : { schema_version: 2, kind: 'run', data })
     for (const r of rows) log(publish(r))
     publishUnknownRuns({ ids: unknownIds, recordIds: unknownRecordIds, publish, log })
     return
@@ -523,7 +608,7 @@ export async function runListingCommand(
         (r.idle ? `  ${r.idle}` : ''),
     )
     if (lifecycle.detail) log(`      ${lifecycle.detail}`)
-    if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
+    if (FAILURE_KINDS_WITH_LISTED_ERROR.has(String(r.failure_kind))) {
       log(
         `      ${failureReason(
           r as {
@@ -546,5 +631,4 @@ export async function runListingCommand(
   }
   for (const id of [...unknownIds, ...unknownRecordIds])
     log(`${String(id).padStart(4)}  unknown run id`)
-  return
 }

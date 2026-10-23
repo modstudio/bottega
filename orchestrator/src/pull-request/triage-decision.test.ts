@@ -191,6 +191,117 @@ describe('pull-request triage decision', () => {
     })
   })
 
+  test('path b ignores an unfinished earlier review when a later round covers every lens', () => {
+    const unfinished = review({
+      reviewId: 2,
+      completedAt: null,
+      patchId: 'patch-first',
+      lensIdentities: ['correctness'],
+      findings: [],
+    })
+    const correctness = review({
+      reviewId: 3,
+      tier: 2,
+      completedAt: '2026-09-25T01:00:00Z',
+      patchId: 'patch-second',
+      lensIdentities: ['correctness'],
+      findings: [],
+    })
+    const craft = review({
+      reviewId: 4,
+      tier: 2,
+      completedAt: '2026-09-25T01:30:00Z',
+      patchId: 'patch-second',
+      lensIdentities: ['craft'],
+      findings: [],
+    })
+
+    expect(
+      decideTriage(
+        evidence({
+          tier: 2,
+          applicableReview: { lenses: ['correctness', 'craft'] },
+          reviews: [],
+          branchReviewGroups: [branchGroup([correctness, craft]), branchGroup([unfinished])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: {
+        admissionPath: 'architect_read',
+        reviewRecordIds: ['review-3', 'review-4'],
+      },
+    })
+  })
+
+  test('a satisfied correctness second opinion plus a missing safety lens reports only safety', () => {
+    const correctness = (reviewId: number, model: string, completedAt: string) =>
+      review({
+        reviewId,
+        tier: 3,
+        completedAt,
+        lensIdentities: ['correctness'],
+        lenses: [
+          {
+            recordId: `lens-${reviewId}`,
+            runId: `run-${reviewId}`,
+            lens: 'correctness',
+            model,
+            graded: true,
+          },
+        ],
+        findings: [],
+      })
+
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          applicableReview: {
+            lenses: ['correctness', 'safety'],
+            secondOpinion: 'correctness',
+          },
+          reviews: [],
+          branchReviewGroups: [
+            branchGroup([
+              correctness(2, 'model-b', '2026-09-25T02:00:00Z'),
+              correctness(1, 'model-a', '2026-09-25T01:00:00Z'),
+            ]),
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'safety', recordedOnBranch: false }],
+      missingSecondOpinion: null,
+      undisposedFindings: [],
+    })
+  })
+
+  test('a completed lens with an undisposed finding reports the finding, not a missing lens', () => {
+    const incomplete = review({
+      patchId: 'patch-a',
+      completedAt: '2026-09-25T01:00:00Z',
+      findings: [{ recordId: 'finding-1', ordinal: 1, disposition: null }],
+    })
+
+    expect(decideTriage(evidence({ reviews: [incomplete] }))).toMatchObject({
+      complete: false,
+      missingLenses: [],
+      undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
+    })
+  })
+
   test('path b refuses when the latest completed run of a lens has an undisposed finding', () => {
     const olderClean = review({
       reviewId: 3,
@@ -247,7 +358,7 @@ describe('pull-request triage decision', () => {
     ).toMatchObject({
       complete: false,
       earlierReviewNumber: null,
-      missingLenses: expect.arrayContaining(['craft']),
+      missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
     })
   })
 
@@ -322,6 +433,15 @@ describe('pull-request triage decision', () => {
     ).toMatchObject({ complete: false, finalTierRaised: true, earlierReviewTier: 1 })
   })
 
+  test('a never-reviewed branch names its missing lenses instead of a generic no-round gap', () => {
+    expect(decideTriage(evidence({ reviews: [], branchReviewGroups: [] }))).toMatchObject({
+      complete: false,
+      missingReview: true,
+      missingLenses: [{ lens: 'correctness', recordedOnBranch: false }],
+      noCompleteReviewRound: false,
+    })
+  })
+
   test('the same lens twice does not satisfy a tier-two exact review', () => {
     const first = review({
       reviewId: 3,
@@ -344,7 +464,10 @@ describe('pull-request triage decision', () => {
           reviews: [first, second],
         }),
       ),
-    ).toMatchObject({ complete: false, missingLenses: ['craft'] })
+    ).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
+    })
   })
 
   test('an unfinished review blocks an otherwise complete identical patch group', () => {
@@ -498,7 +621,11 @@ describe('pull-request triage decision', () => {
       complete: false,
       unfinishedReviewNumbers: [4],
       undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
-      missingLenses: ['correctness', 'craft', 'safety'],
+      missingLenses: [
+        { lens: 'correctness', recordedOnBranch: false },
+        { lens: 'craft', recordedOnBranch: false },
+        { lens: 'safety', recordedOnBranch: false },
+      ],
     })
   })
 
@@ -522,7 +649,56 @@ describe('pull-request triage decision', () => {
           reviews: [required],
         }),
       ),
-    ).toMatchObject({ complete: false, missingLenses: ['craft'] })
+    ).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
+    })
+  })
+
+  test('a later round admits required exact lenses and credits a clean earlier lens', () => {
+    const earlier = review({
+      reviewId: 3,
+      tier: 3,
+      patchId: 'patch-before-fix',
+      lensIdentities: ['correctness', 'craft', 'test-quality', 'architecture'],
+      lenses: [
+        { recordId: 'lens-correctness-old', lens: 'correctness', graded: true },
+        { recordId: 'lens-craft-old', lens: 'craft', graded: true },
+        { recordId: 'lens-test-old', lens: 'test-quality', graded: true },
+        { recordId: 'lens-architecture-old', lens: 'architecture', graded: true },
+      ],
+    })
+    const current = review({
+      reviewId: 4,
+      tier: 3,
+      patchId: 'patch-a',
+      lensIdentities: ['correctness', 'craft', 'test-quality'],
+      lenses: [
+        { recordId: 'lens-correctness-new', lens: 'correctness', graded: true },
+        { recordId: 'lens-craft-new', lens: 'craft', graded: true },
+        { recordId: 'lens-test-new', lens: 'test-quality', graded: true },
+      ],
+    })
+
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          applicableReview: {
+            lenses: ['correctness', 'craft', 'test-quality', 'architecture'],
+          },
+          roundReview: { lenses: ['correctness', 'craft', 'test-quality'] },
+          reviews: [current],
+          branchReviewGroups: [branchGroup([current]), branchGroup([earlier])],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: {
+        admissionPath: 'exact_review',
+        reviewRecordIds: ['review-3', 'review-4'],
+      },
+    })
   })
 
   test('a second opinion requires two completed runs on different models', () => {

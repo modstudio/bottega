@@ -1,15 +1,17 @@
 // concern: agent-probe
 /** Owns registration capability probes and their persistence. Must not know CLI grammar. */
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { nextRunNumber } from '../run/run-number.ts'
+import { runProbeTurn } from './agent-probe-turn.ts'
 import {
+  type AgentRow,
   agentRows,
   HARNESSES,
   type Harness,
@@ -17,8 +19,16 @@ import {
   refreshAgents,
   rowAgent,
 } from './agent-registry.ts'
+import { probeAgentResumesInSandbox, resumeCapabilityPolicy } from './agent-resume-probe.ts'
+import {
+  probeAgentWrites,
+  type WritingProbeConfinement,
+  type WritingProbeInput,
+  type WritingProbePorts,
+  writingCapabilityPolicy,
+  writingProbePorts,
+} from './agent-writing-probe.ts'
 import type { Caps } from './capabilities.ts'
-import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
 import { localReachable } from './model-host.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
@@ -28,9 +38,10 @@ export function registrationProbeRequirements(declaredJobs: string[] | null): {
   tool: boolean
   schema: boolean
   mcp: boolean
+  resumable: boolean
   file: true
 } {
-  const needs = { tool: false, schema: false, mcp: false, file: true as const }
+  const needs = { tool: false, schema: false, mcp: false, resumable: false, file: true as const }
   const declared = declaredJobs !== null
   const jobNames = declaredJobs ?? Object.keys(JOBS)
   for (const name of jobNames) {
@@ -39,70 +50,15 @@ export function registrationProbeRequirements(declaredJobs: string[] | null): {
     if (job.needs.readsRepo) needs.tool = true
     if (job.needs.writesRepo || job.findings) needs.schema = true
     if (job.needs.mcp) needs.mcp = true
+    if (job.needs.resumable) needs.resumable = true
   }
   if (!declared) {
     needs.tool = true
     needs.schema = true
     needs.mcp = true
+    needs.resumable = true
   }
   return needs
-}
-
-function insertProbeRun(input: {
-  started: number
-  name: string
-  id: string
-  scratch: string
-  prompt: string
-  model?: string
-  transport: string
-}): { record_id: string } {
-  return writableDb()
-    .query(
-      `INSERT INTO run (record_id,number,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
-    )
-    .get(
-      newRecordId(),
-      nextRunNumber(writableDb()),
-      new Date(input.started).toISOString(),
-      input.name,
-      `agent-probe-${input.id}`,
-      join(input.scratch, 'repo'),
-      createHash('sha256').update(input.prompt).digest('hex'),
-      Buffer.byteLength(input.prompt),
-      input.prompt.slice(0, 240),
-      1,
-      'running',
-      input.model ?? null,
-      input.transport,
-    ) as { record_id: string }
-}
-
-async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
-  try {
-    for await (const _event of events) {
-      /* consuming the stream lets transports finish their event lifecycle */
-    }
-  } catch {
-    /* event observation never replaces the probe outcome */
-  }
-}
-
-async function probeEnvironment(
-  agent: ReturnType<typeof rowAgent>,
-  scratch: string,
-): Promise<Record<string, string>> {
-  return {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
-    ),
-    ...(agent.env?.() ?? {}),
-    ...(await resolveEndpointApiKeyEnv(agent)),
-    ORCH_SCRATCH: scratch,
-  }
 }
 
 function namesProbeFile(value: string): boolean {
@@ -146,12 +102,16 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
   const row = agentRows().find((candidate) => candidate.name === name)
   if (!row) throw new Error(`unknown agent "${name}"`)
   const prior = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
+  const writing = writingCapabilityPolicy(row.transport, result.writing?.ok)
+  const resuming = resumeCapabilityPolicy(row.transport, result.resuming?.ok)
   const caps = {
     ...prior,
     ...(result.tool.ok !== null ? { readsRepo: result.tool.ok } : {}),
     ...(result.schema.ok !== null ? { schema: result.schema.ok } : {}),
     ...(result.mcp?.verifiable != null ? { mcp: result.mcp.verifiable } : {}),
     ...(result.file?.ok != null ? { replyFile: result.file.ok } : {}),
+    ...(writing.writesRepo !== null ? { writesRepo: writing.writesRepo } : {}),
+    ...(resuming.resumable !== null ? { resumable: resuming.resumable } : {}),
     ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
   }
   writableDb()
@@ -165,18 +125,136 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
   refreshAgents()
 }
 
+/** Record the overall successful registration probe as operational availability evidence. */
+export function recordSuccessfulRegistrationProbe(name: string): void {
+  const row = agentRows().find((candidate) => candidate.name === name)
+  if (!row) throw new Error(`unknown agent "${name}"`)
+  const prompt = 'registration probe passed'
+  writableDb()
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,probe,status,latency_ms,exit_code,output_bytes,model,transport)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(
+      newRecordId(),
+      nextRunNumber(writableDb()),
+      nowIso(),
+      name,
+      'agent-probe',
+      createHash('sha256').update(prompt).digest('hex'),
+      Buffer.byteLength(prompt),
+      prompt,
+      1,
+      'ok',
+      0,
+      0,
+      0,
+      row.model,
+      row.transport,
+    )
+}
+
 /** Prove capabilities before routing spends a worktree discovering them. */
-export async function probeAgent(name: string): Promise<RegistrationProbeResult> {
+export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment }
+
+export function registrationProbeCacheReusable(
+  transport: 'cli' | 'acp',
+  previous: RegistrationProbeResult | null,
+  replyFile: boolean | undefined,
+  resumableRequired: boolean,
+): boolean {
+  return Boolean(
+    previous?.ok === true &&
+      previous.file?.ok === true &&
+      replyFile === true &&
+      writingCapabilityPolicy(transport, previous.writing?.ok).jobSuccess &&
+      (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess),
+  )
+}
+
+async function registrationResumeProbe(input: {
+  transport: 'cli' | 'acp'
+  probeInput: WritingProbeInput
+  ports: WritingProbePorts
+  runOne: (
+    prompt: string,
+    confinement: WritingProbeConfinement,
+    session?: string,
+  ) => ReturnType<typeof runProbeTurn>
+}) {
+  return probeAgentResumesInSandbox(
+    input.probeInput,
+    input.ports,
+    randomUUID(),
+    ({ prompt, session }, confinement) => input.runOne(prompt, confinement, session),
+  )
+}
+
+async function registrationWriterCapabilities(input: {
+  transport: 'cli' | 'acp'
+  scratch: string
+  agent: import('./agents.ts').Agent
+  path?: string
+  environment: ConfigEnvironment
+  runOne: (
+    id: string,
+    prompt: string,
+    confinement: WritingProbeConfinement,
+    session?: string,
+  ) => ReturnType<typeof runProbeTurn>
+}) {
+  const probeInput = {
+    transport: input.transport,
+    scratch: input.scratch,
+    agent: input.agent,
+    path: input.path,
+    environment: input.environment,
+  }
+  const ports = writingProbePorts(({ prompt, ...confinement }) =>
+    input.runOne('writing', prompt, confinement),
+  )
+  return {
+    writing: await probeAgentWrites(probeInput, ports),
+    resuming: await registrationResumeProbe({
+      transport: input.transport,
+      probeInput,
+      ports,
+      runOne: (prompt, confinement, session) =>
+        input.runOne('resuming', prompt, confinement, session),
+    }),
+  }
+}
+
+async function probeContextWindow(row: AgentRow, prior: Caps & { contextTokens?: number | null }) {
+  let contextTokens = Object.hasOwn(prior, 'contextTokens') ? (prior.contextTokens ?? null) : null
+  let contextSource: RegistrationProbeResult['contextSource'] = contextTokens ? 'declared' : null
+  if (row.base_url) {
+    const health = await localReachable(4000, row.base_url)
+    if (health.contextTokens) {
+      contextTokens = health.contextTokens
+      contextSource = 'harness'
+    }
+  }
+  return { contextTokens, contextSource }
+}
+
+export async function probeAgent(
+  name: string,
+  inputs: AgentProbeInputs,
+): Promise<RegistrationProbeResult> {
   const row = agentRows().find((candidate) => candidate.name === name)
   if (!row) throw new Error(`unknown agent "${name}"`)
   const priorCaps = JSON.parse(row.caps) as Caps
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
-  if (previous?.ok === true && previous?.file?.ok === true && priorCaps.replyFile === true)
+  const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
+  const needs = registrationProbeRequirements(declared)
+  if (registrationProbeCacheReusable(row.transport, previous, priorCaps.replyFile, needs.resumable))
     return previous as RegistrationProbeResult
   if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
   const agent = rowAgent(row)
-  if (which(agent.bin, { PATH: process.env.PATH }) === null)
+  if (which(agent.bin, { PATH: inputs.path }) === null)
     throw new Error(`${agent.harness} harness is not installed`)
   const scratch = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'orch-agent-probe-'))
   mkdirSync(join(scratch, 'repo'))
@@ -191,87 +269,18 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       properties: { status: { type: 'string', enum: ['ok'] } },
     }),
   )
-  const { transportFor, valueMatchesStrictSchema, withTransportDeadline } = await import(
-    '../transport/transport.ts'
-  )
+  const { transportFor, valueMatchesStrictSchema } = await import('../transport/transport.ts')
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   mintStdioPingServer(join(scratch, 'repo'))
-  const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
-  const needs = registrationProbeRequirements(declared)
   const transport = transportFor(agent.defaultTransport)
-  const runOne = async (id: string, prompt: string, schema?: string, mcp = false) => {
-    const started = Date.now()
-    const inserted = insertProbeRun({
-      started,
-      name,
-      id,
-      scratch,
-      prompt,
-      model: agent.model,
-      transport: agent.defaultTransport,
-    })
-    try {
-      const handle = await transport.start({
-        agent,
-        cwd: join(scratch, 'repo'),
-        prompt,
-        outPath: join(scratch, `${id}.out`),
-        schemaPath: schema,
-        model: agent.model,
-        modelExplicit: true,
-        startedAt: Date.now(),
-        write: true,
-        sandbox: 'workspace-write',
-        writableRoots: [scratch],
-        mcp,
-        env: await probeEnvironment(agent, scratch),
-      })
-      const draining = drainTransportEvents(handle.events())
-      try {
-        const outcome = await withTransportDeadline({
-          operation: (async () => {
-            await transport.prompt(handle, prompt)
-            return handle.collect()
-          })(),
-          operationName: `${agent.harness} agent probe prompt and collection; inspect harness logs and rerun ${PLATFORM_SLUG} agent show probe ${name}`,
-          timeoutMs: agent.timeoutMs,
-          onTimeout: () => transport.cancel(handle),
-        })
-        await draining
-        writableDb()
-          .query(
-            `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=? WHERE record_id=?`,
-          )
-          .run(
-            outcome.status === 'ok' ? 'ok' : 'failed',
-            Date.now() - started,
-            outcome.status === 'ok' ? 0 : 1,
-            Buffer.byteLength(outcome.output),
-            outcome.status === 'ok' ? null : outcome.output,
-            inserted.record_id,
-          )
-        return outcome
-      } finally {
-        try {
-          handle.kill(9)
-        } catch {
-          /* exited */
-        }
-        void draining
-      }
-    } catch (error) {
-      const detail = String((error as Error).message ?? error)
-      writableDb()
-        .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?`)
-        .run(Date.now() - started, detail, inserted.record_id)
-      return {
-        status: 'failed' as const,
-        output: detail,
-        parsed: null,
-        events: [] as import('../transport/transport.ts').NormalizedEvent[],
-      }
-    }
-  }
+  const runOne = (
+    id: string,
+    prompt: string,
+    schema?: string,
+    mcp = false,
+    writing?: WritingProbeConfinement,
+    session?: string,
+  ) => runProbeTurn({ name, scratch, agent, transport, id, prompt, schema, mcp, writing, session })
   const reply = await runOne('reply', 'Reply with exactly: ok')
   const tool = needs.tool
     ? await runOne(
@@ -305,6 +314,17 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
           output: 'skipped: not required for declared jobs',
           events: [] as import('../transport/transport.ts').NormalizedEvent[],
         }
+  const { writing, resuming } = await registrationWriterCapabilities({
+    transport: row.transport,
+    scratch,
+    agent,
+    path: inputs.path,
+    environment: inputs.environment,
+    runOne: (id, prompt, writing, session) =>
+      runOne(id, prompt, undefined, false, writing, session),
+  })
+  const writingPolicy = writingCapabilityPolicy(row.transport, writing.ok)
+  const resumingPolicy = resumeCapabilityPolicy(row.transport, resuming.ok)
   const parsedSchema = (() => {
     try {
       return JSON.parse(structured.parsed?.text ?? structured.output)
@@ -323,15 +343,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   const prior = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const previousProbe = row.probe_result ? JSON.parse(row.probe_result) : null
   const attempts = Array.isArray(previousProbe?.attempts) ? previousProbe.attempts : []
-  let contextTokens = Object.hasOwn(prior, 'contextTokens') ? (prior.contextTokens ?? null) : null
-  let contextSource: RegistrationProbeResult['contextSource'] = contextTokens ? 'declared' : null
-  if (row.base_url) {
-    const health = await localReachable(4000, row.base_url)
-    if (health.contextTokens) {
-      contextTokens = health.contextTokens
-      contextSource = 'harness'
-    }
-  }
+  const { contextTokens, contextSource } = await probeContextWindow(row, prior)
   const mcpVerifiable = needs.mcp ? mcpToolCallsObservable(mcpRun.events, mcpRun.output) : null
   const replyOk = reply.status === 'ok' && reply.output.trim().toLowerCase() === 'ok'
   const toolOk = needs.tool
@@ -348,6 +360,8 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
           reply: replyOk,
           ...(job?.needs.readsRepo ? { tool: toolOk } : {}),
           ...(job?.needs.writesRepo || job?.findings ? { schema: schemaOk } : {}),
+          ...(job?.needs.writesRepo ? { writing: writingPolicy.jobSuccess } : {}),
+          ...(job?.needs.resumable ? { resuming: resumingPolicy.jobSuccess } : {}),
           ...(job?.needs.mcp ? { mcp: mcpVerifiable } : {}),
         },
       ]
@@ -371,6 +385,8 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     schema: { ok: schemaOk, output: structured.output },
     file: { ok: fileOk, output: fileOutput },
     mcp: { verifiable: mcpVerifiable, output: mcpRun.output },
+    writing,
+    resuming,
     jobs: perJob,
     contextTokens,
     contextSource,
@@ -384,6 +400,8 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     fileOk === true &&
     (!needs.schema || schemaOk === true) &&
     (!needs.mcp || mcpVerifiable === true) &&
+    writingPolicy.jobSuccess &&
+    (!needs.resumable || resumingPolicy.jobSuccess) &&
     (contextTokens !== null || !row.base_url)
   recordAgentProbe(name, result)
   return result

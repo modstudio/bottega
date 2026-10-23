@@ -29,6 +29,22 @@ type RunningRepositoryFacts = {
   hasOlderWaiter: boolean
 }
 
+type RunHostCapacityWaiter = {
+  record_id: string
+  host_wait_since: string
+}
+
+/** Admission's FIFO waiter set: running repository rows still waiting on host capacity. */
+function runHostCapacityWaiters(database: Database): RunHostCapacityWaiter[] {
+  return database
+    .query(
+      `SELECT record_id, host_wait_since FROM run
+        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NOT NULL
+        ORDER BY host_wait_since ASC, record_id ASC`,
+    )
+    .all() as RunHostCapacityWaiter[]
+}
+
 function runningRepositoryFacts(
   database: Database,
   runId: string,
@@ -40,27 +56,14 @@ function runningRepositoryFacts(
         WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`,
     )
     .all(runId) as { agent_start_time: string | null }[]
-  const self = database.query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
-    host_wait_since: string | null
-  } | null
-  const older = self?.host_wait_since
-    ? database
-        .query(
-          `SELECT record_id FROM run
-            WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NOT NULL
-              AND record_id<>?
-              AND (host_wait_since < ? OR (host_wait_since = ? AND record_id < ?))
-            LIMIT 1`,
-        )
-        .get(runId, self.host_wait_since, self.host_wait_since, runId)
-    : null
   return {
     running: rows.length,
     recentAdmissions: rows.filter((row) => {
       const admittedAt = Date.parse(row.agent_start_time ?? '')
       return Number.isFinite(admittedAt) && now - admittedAt < HOST_LOAD_RESERVATION_MS
     }).length,
-    hasOlderWaiter: older !== null,
+    hasOlderWaiter:
+      runHostCapacityWaiters(database).findIndex((waiter) => waiter.record_id === runId) > 0,
   }
 }
 
@@ -95,6 +98,39 @@ function capacityDecision(input: {
     maxWaitMs: RUN_HOST_WAIT_MAX_MS,
     hasOlderWaiter: repositories.hasOlderWaiter,
   })
+}
+
+export type RunHostCapacityQueue = {
+  waiting: number
+  oldestWaitMs: number
+  heldOn: HostHoldCondition[]
+}
+
+/** Read-only snapshot of runs waiting on host capacity, using the same admission facts as the wait loop. */
+export function runHostCapacityQueue(
+  database: Database,
+  now = Date.now(),
+  deps: {
+    env?: NodeJS.ProcessEnv
+    platform?: NodeJS.Platform
+    measure?: typeof measureHostLoad
+  } = {},
+): RunHostCapacityQueue {
+  const waiters = runHostCapacityWaiters(database)
+  if (!waiters.length) return { waiting: 0, oldestWaitMs: 0, heldOn: [] }
+  const head = waiters[0]!
+  const started = Date.parse(head.host_wait_since)
+  const oldestWaitMs = Number.isFinite(started) ? Math.max(0, now - started) : 0
+  const decision = capacityDecision({
+    database,
+    runId: head.record_id,
+    at: now,
+    started: Number.isFinite(started) ? started : now,
+    env: deps.env ?? process.env,
+    platform: deps.platform ?? process.platform,
+    measure: deps.measure ?? measureHostLoad,
+  })
+  return { waiting: waiters.length, oldestWaitMs, heldOn: decision.heldOn }
 }
 
 function waitCause(

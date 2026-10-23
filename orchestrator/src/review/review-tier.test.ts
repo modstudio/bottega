@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  classifyReviewTier,
   parseTierRange,
   resolveTierRange,
   type TierRangeEndpoint,
   type TierRangeFacts,
-  tierThreeRiskPaths,
 } from './review-tier.ts'
+import { classifyReviewTier, tierThreeRiskPaths } from './review-tier-classifier.ts'
 
 describe('tier range parsing', () => {
   test.each([
@@ -279,7 +278,7 @@ describe('review tier classification', () => {
     expect(actual.reasons[0]).not.toContain('cross-concern shared code')
   })
 
-  test('excluded paths stay excluded regardless of the declared map', () => {
+  test('an excluded path keeps the risk named by the declared map', () => {
     const actual = classifyReviewTier({
       files: [{ path: 'src/value.test.ts', insertions: 500, deletions: 0 }],
       risk: {
@@ -287,7 +286,7 @@ describe('review tier classification', () => {
         unlisted: 2,
       },
     })
-    expect(actual).toMatchObject({ risk: 0, size: 0, tier: 0 })
+    expect(actual).toMatchObject({ risk: 3, size: 0, tier: 3 })
   })
 
   test('names only paths whose surface risk is tier three', () => {
@@ -306,7 +305,7 @@ describe('review tier classification', () => {
           unlisted: 1,
         },
       ),
-    ).toEqual(['src/security.ts'])
+    ).toEqual(['src/security.ts', 'src/security.test.ts'])
   })
 
   const precedenceCases: {

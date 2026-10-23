@@ -286,8 +286,13 @@ test.each([
   const decision = decide({ floors: [{ ...commandExit, commandEvidence: 'gate' }], evidence })
   expect(decision.action).toBe(allowed ? 'allow' : 'refuse')
   if (!allowed && decision.action === 'refuse') {
-    expect(decision.message).toContain(`commit ${evidence.tree?.commit ?? '<current tree commit>'}`)
-    expect(decision.message).toContain(`${PLATFORM_SLUG} gate run`)
+    if (evidence.tree?.commit) {
+      expect(decision.message).toContain(`commit ${evidence.tree.commit}`)
+      expect(decision.message).toContain(`${PLATFORM_SLUG} gate run`)
+    } else {
+      expect(decision.message).toContain('no recorded worktree')
+      expect(decision.message).toContain('--arg worktree=<tree>')
+    }
   }
 })
 
@@ -360,7 +365,7 @@ test('a failed exec cannot use the recorded-artifact alternative on a command-ex
     }),
   ).toEqual({
     action: 'refuse',
-    message: `command-exit evidence exec:4 command \`${PLATFORM_SLUG} pr create\` exited 1; rerun the command successfully with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
+    message: `command-exit floor expects exit code 0, but evidence exec:4 command \`${PLATFORM_SLUG} pr create\` exited 1; close with the outcome configured for exit code 1, or record a command that exits 0 with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass the new exec id`,
   })
 })
 

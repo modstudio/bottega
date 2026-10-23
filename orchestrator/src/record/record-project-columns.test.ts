@@ -8,11 +8,13 @@ import {
 } from './record-project-columns.ts'
 
 const samples = {
+  visibility: { setting: 'public', column: 'visibility', value: 'public' },
   color: { setting: '#fff', column: 'color', value: '#fff' },
   colorDark: { setting: '#000', column: 'colorDark', value: '#000' },
   docs: { setting: { path: 'docs' }, column: 'docs', value: { path: 'docs' } },
   envPrefix: { setting: 'PROBE', column: 'envPrefix', value: 'PROBE' },
   gate: { setting: 'bun run check', column: 'gate', value: 'bun run check' },
+  gateInput: { setting: 'worktree', column: 'gateInput', value: 'worktree' },
   focusedTests: {
     setting: { command: 'scripts/test-focused', args: ['--ci'] },
     column: 'focusedTests',

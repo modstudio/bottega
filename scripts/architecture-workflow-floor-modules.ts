@@ -42,7 +42,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-transition.ts',
     './workflows.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-floor.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-floor.ts', [
+    '../../../shared/brand.ts',
+    './workflow-floor-refusal.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-self-ruling.ts', [
     '../../../shared/brand.ts',
     './autonomy.ts',
@@ -59,6 +63,14 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-run-binding.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', [
     '../branch/pull-request-view.ts',
+    './workflow-checkout-refusal.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-checkout-refusal.ts', []),
+  module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
+    'bun:sqlite',
+    '../branch/merged-pull-request.ts',
+    '../branch/task-key-pull-request.ts',
+    '../project/projects.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
@@ -67,6 +79,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/docs.ts',
+    '../../../shared/github-repository.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
     '../artifact-paths.ts',
@@ -80,6 +93,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../review/review-identifier.ts',
     '../run/run-identifier.ts',
     './workflow-floor.ts',
+    './workflow-checkout-landing.ts',
+    './workflow-checkout-refusal.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-run-binding.ts',
     './workflow-text.ts',

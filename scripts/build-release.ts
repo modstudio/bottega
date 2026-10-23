@@ -141,8 +141,6 @@ export async function buildRelease(tag: string): Promise<string> {
 
   for (const [name, entrypoint, argumentsPrefix] of [
     [PLATFORM_SLUG, PRODUCT_CLI_ENTRYPOINT, ''],
-    ['orch', PRODUCT_CLI_ENTRYPOINT, 'orch '],
-    ['hub', PRODUCT_CLI_ENTRYPOINT, 'hub '],
     ['retrieval-search', 'retrieval/src/search-cli.ts', ''],
   ] as const) {
     const path = join(payloadRoot, 'bin', name)

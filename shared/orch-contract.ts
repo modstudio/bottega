@@ -247,6 +247,8 @@ const OrchTurnSchema = z
     latency_ms: nullableNumber,
     vendor_tokens: nullableNumber,
     vendor_cost_usd: nullableNumber,
+    cost_usd: nullableNumber.optional(),
+    cost_source: nullableString.optional(),
     status: z.string(),
     turn: z.number().int().optional(),
   })
@@ -335,6 +337,8 @@ export const OrchRunSchema = z
     latency_ms: nullableNumber,
     vendor_tokens: nullableNumber,
     vendor_cost_usd: nullableNumber,
+    cost_usd: nullableNumber.optional(),
+    cost_source: nullableString.optional(),
     prompt_head: z.string(),
     prompt_path: nullableString.optional(),
     branch: nullableString.optional(),
@@ -546,11 +550,17 @@ export const HostLoadSchema = z.object({
   freeMem: z.number(),
 })
 
-export const AttributionKindSchema = z.enum(['lock_holder', 'landing', 'unattributed'])
+export const AttributionKindSchema = z.enum([
+  'lock_holder',
+  'landing',
+  'tree_removal',
+  'unattributed',
+])
 export const ConfinementClassSchema = z.enum([
   'overlapping',
   'non_overlapping',
   'edit_commit_cycle',
+  'removed',
 ])
 export type AttributionKind = z.infer<typeof AttributionKindSchema>
 export type ConfinementClass = z.infer<typeof ConfinementClassSchema>
@@ -674,6 +684,8 @@ export const OrchRunDetailSchema = z
     project: nullableString,
     latency_ms: nullableNumber,
     vendor_tokens: nullableNumber,
+    cost_usd: nullableNumber.optional(),
+    cost_source: nullableString.optional(),
     status: z.string(),
     failure_kind: nullableString,
     probe: z.union([z.boolean(), z.number()]),

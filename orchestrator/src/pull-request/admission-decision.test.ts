@@ -16,12 +16,13 @@ const incomplete: TriageDecision = {
   missingReview: true,
   unfinishedReviewNumbers: [],
   undisposedFindings: [],
-  missingLenses: ['correctness'],
+  missingLenses: [{ lens: 'correctness', recordedOnBranch: false }],
   missingSecondOpinion: null,
   architectReadRequired: false,
   earlierReviewNumber: null,
   earlierReviewTier: null,
   finalTierRaised: false,
+  noCompleteReviewRound: true,
 }
 
 const change = {

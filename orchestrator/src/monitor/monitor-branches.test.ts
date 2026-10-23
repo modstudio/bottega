@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { branchInventoryDecision, existingBranchesWithoutWorktrees } from './monitor-branches.ts'
+import {
+  branchInventoryDecision,
+  branchMonitorConditions,
+  existingBranchesWithoutWorktrees,
+} from './monitor-branches.ts'
 
 test('selects only existing local branches without worktrees, including slash-bearing names', () => {
   const candidates = [
@@ -33,4 +37,21 @@ test('a failed local branch inventory selects nothing and reports the project er
     branches: [],
     errors: ['sample branch inventory: git for-each-ref failed'],
   })
+})
+
+test('uses the adapter-provided refusal for an out-of-scope candidate', () => {
+  const action =
+    'reported; reclaim refused by monitor scope: sample is outside invoked project other'
+  expect(
+    branchMonitorConditions(
+      'sample',
+      [{ branch: 'candidate', started_at: '2026-09-30T10:00:00.000Z' }],
+      new Map([['candidate', action]]),
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      subject: 'sample:candidate',
+      action,
+    }),
+  ])
 })

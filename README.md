@@ -88,8 +88,8 @@ cache. In hosted mode, each project belongs to the space declared by
 `settings.space`. When a hosted-bound project has no declared space, it belongs
 to the identity's active space.
 
-`hub` reaches `orch` through its binary rather than its database. A database
-shared between two concerns makes the concerns one.
+Hub reaches the orchestrator through the `bottega` binary rather than its
+database. A database shared between two concerns makes the concerns one.
 
 | concern | what it is |
 |---|---|

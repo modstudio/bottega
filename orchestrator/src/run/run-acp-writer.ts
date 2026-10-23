@@ -1,9 +1,10 @@
 // concern: writing-ACP git contract, writable roots, checkpoint containment, and host ask endpoint
 
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { type AskLoopback, startAskHttpEndpoint } from '../ask/ask.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
+import { runCheckpointHooksDir } from '../run-owned-paths.ts'
+import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
 import { writingAcpWritableRoots } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CheckpointContainment } from './checkpoint.ts'
@@ -16,17 +17,30 @@ export function bindContract(prompt: string, writingAcp: boolean): string {
   return writingAcp ? `${prompt}\n\n${WRITING_ACP_GIT_INSTRUCTION}` : prompt
 }
 
-export function writableRoots(
+export function runRoots(
   worktree: Worktree | null,
   writesRepo: boolean,
   writingAcp: boolean,
   scratchDir: string,
+  runtimeDir: string,
 ): string[] {
   if (writingAcp) {
     if (!worktree) throw new Error('writing ACP confinement requires a run worktree')
-    return writingAcpWritableRoots(worktree.path, scratchDir)
+    return writingAcpWritableRoots(worktree.path, scratchDir, runtimeDir)
   }
   return [scratchDir, ...provisionWriterSharedGitRoots(worktree, writesRepo && !writingAcp)]
+}
+
+export function confinementRoots(
+  srtProfile: { filesystem: { allowWrite: string[] } } | null,
+  agent: string,
+  cwd: string,
+  extraRoots: string[],
+  tmpDir: string | undefined,
+  codexSandbox: 'read-only' | 'workspace-write' | 'danger-full-access',
+): string[] | null {
+  if (srtProfile) return srtProfile.filesystem.allowWrite
+  return agent === 'codex' ? codexWritableRoots(codexSandbox, cwd, extraRoots, tmpDir) : null
 }
 
 /** Pure per-run facts used by every host checkpoint path. */
@@ -38,7 +52,7 @@ export function checkpointContainment(
   return writingAcp && gitDir
     ? {
         gitDir,
-        hooksDir: join(runDir, 'checkpoint-hooks'),
+        hooksDir: runCheckpointHooksDir(runDir),
         disableHooks: true,
       }
     : { gitDir: null, hooksDir: null, disableHooks: false }

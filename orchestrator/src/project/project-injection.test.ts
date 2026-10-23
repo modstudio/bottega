@@ -100,7 +100,14 @@ describe('project workflow injection', () => {
   })
 
   test('valid release and docs settings pass while unknown keys are refused', () => {
-    expect(validateProjectSettings({ release, docs, gate: 'bun run check' })).toEqual([])
+    expect(
+      validateProjectSettings({ release, docs, gate: 'bun run check', gateInput: 'worktree' }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({ gateInput: 'unknown' } as unknown as Parameters<
+        typeof validateProjectSettings
+      >[0]),
+    ).toContain('gateInput must be staged, worktree, or committed')
 
     expect(
       validateProjectSettings({
@@ -135,6 +142,7 @@ describe('project workflow injection', () => {
               { lens: 'craft', minTier: 2 },
             ],
             secondOpinion: { lens: 'craft', basis: 'escaped defect evidence' },
+            unscopedLenses: 'skip',
             risk: {
               paths: [{ pattern: '^shared/', tier: 3, reason: 'shared schema', basis: 'incident' }],
               unlisted: 1,
@@ -145,6 +153,11 @@ describe('project workflow injection', () => {
         { enabledLensIds: ['correctness', 'migration-safety', 'craft'] },
       ),
     ).toEqual([])
+    expect(
+      validateProjectSettings({
+        review: { lenses: [], unscopedLenses: 'sometimes' },
+      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([expect.stringContaining('review.unscopedLenses')])
     expect(
       validateProjectSettings({
         review: {

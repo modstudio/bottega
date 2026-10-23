@@ -362,6 +362,7 @@ export function pickCommand(
   // about a job IN A CONTEXT, and reporting it without the context invites
   // reading a php verdict as a node one.
   const { jobName, stack, avoid, distinctModels, lens, selectedAgent } = options
+  const project = projectAt(process.cwd())?.name ?? null
   // explore=false: a report that spent the exploration coin would name a
   // different agent each time it was read.
   const p = pick(
@@ -370,13 +371,13 @@ export function pickCommand(
     0,
     false,
     stack,
-    { agents: avoid, models: distinctModels },
+    { agents: avoid, models: distinctModels, project },
     false,
     lens,
   )
-  const ev = evidenceFor(jobName, 0, stack, undefined, lens)
+  const ev = evidenceFor(jobName, 0, stack, { lens, project })
   if (lens) {
-    const resolved = resolveLens(lens, projectAt(process.cwd())?.name ?? null)
+    const resolved = resolveLens(lens, project)
     log(
       `selected profiles: ${resolved ? resolved.profiles.map((profile) => formatLensProfileSource(profile, 'resolved')).join(', ') : 'free-form (no catalogue row)'}`,
     )

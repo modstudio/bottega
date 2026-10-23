@@ -174,12 +174,11 @@ describe('terminal question deduplication decision', () => {
 })
 
 describe('terminal checkpoint decision', () => {
-  test('rejects omitting an ok writing turn from terminal checkpointing', () => {
+  test('checkpoints an ok writing turn even when it has no task key', () => {
     expect(
       shouldCheckpointAtTerminal({
         writesJob: true,
         hasWorktree: true,
-        launchKey: 'DEV-623',
       }),
     ).toBe(true)
   })
@@ -189,7 +188,6 @@ describe('terminal checkpoint decision', () => {
       shouldCheckpointAtTerminal({
         writesJob: false,
         hasWorktree: true,
-        launchKey: 'DEV-623',
       }),
     ).toBe(false)
   })

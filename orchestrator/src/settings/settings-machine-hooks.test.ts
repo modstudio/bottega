@@ -14,6 +14,7 @@ import { withMachineProductHooks } from './settings-machine-hooks.ts'
 const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orch.db'
 const OLD_ROOT = '/Users/operator/Projects/bottega'
+const HEARTBEAT_SUITE_TIMEOUT_MS = 20_000
 const command = (file: string) => `python3 ${OLD_ROOT}/orchestrator/hooks/${file}`
 const handler = (file: string, extra: Record<string, unknown> = {}) => ({
   type: 'command',
@@ -26,7 +27,11 @@ const profileHooks = {
     { matcher: 'Agent|Task|Workflow', hooks: [handler('block-agent.py')] },
     {
       matcher: 'Bash',
-      hooks: [handler('no-attribution.py'), handler('git-guard.py', { if: 'Bash(git:*)' })],
+      hooks: [
+        handler('no-attribution.py'),
+        handler('bun-cache-guard.py'),
+        handler('git-guard.py', { if: 'Bash(git:*)' }),
+      ],
     },
   ],
   SubagentStart: [{ matcher: '*', hooks: [handler('block-agent.py')] }],
@@ -38,8 +43,6 @@ const profileHooks = {
         handler('heartbeat-remind.py', {
           if: `Bash(${OLD_ROOT}/bin/${PLATFORM_SLUG} run start:*)`,
         }),
-        handler('heartbeat-remind.py', { if: 'Bash(orch do:*)' }),
-        handler('heartbeat-remind.py', { if: `Bash(${OLD_ROOT}/bin/orch do:*)` }),
       ],
     },
   ],
@@ -68,8 +71,25 @@ test('heartbeat reminder recognizes detached dispatch commands', () => {
   }).toEqual({ exitCode: 0, output: 'ok' })
 })
 
-test('heartbeat decisions match the canonical hook behavior', () => {
-  const hookTest = fileURLToPath(new URL('../../hooks/test_heartbeat_decision.py', import.meta.url))
+// This suite drives real heartbeat processes; moving those cases out of the gate is follow-up work.
+test(
+  'heartbeat decisions match the canonical hook behavior',
+  () => {
+    const hookTest = fileURLToPath(
+      new URL('../../hooks/test_heartbeat_decision.py', import.meta.url),
+    )
+    const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+    expect({
+      exitCode: result.exitCode,
+      output:
+        result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+    }).toEqual({ exitCode: 0, output: 'ok' })
+  },
+  HEARTBEAT_SUITE_TIMEOUT_MS,
+)
+
+test('agent blocker logs spawn identities and fails open when minting fails', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_block_agent.py', import.meta.url))
   const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
   expect({
     exitCode: result.exitCode,
@@ -77,8 +97,17 @@ test('heartbeat decisions match the canonical hook behavior', () => {
   }).toEqual({ exitCode: 0, output: 'ok' })
 })
 
-test('agent blocker logs spawn identities and fails open when minting fails', () => {
-  const hookTest = fileURLToPath(new URL('../../hooks/test_block_agent.py', import.meta.url))
+test('Stop held-tree decisions list in-flight landing trees without blocking the turn', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_score_reminder.py', import.meta.url))
+  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+  expect({
+    exitCode: result.exitCode,
+    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+  }).toEqual({ exitCode: 0, output: 'ok' })
+})
+
+test('bun cache guard refuses destructive shared-cache commands', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_bun_cache_guard.py', import.meta.url))
   const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
   expect({
     exitCode: result.exitCode,
@@ -95,16 +124,15 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(19)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(17)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
-  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(6)
+  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(3)
   expect(commands).toContain(`Bash(${PLATFORM_SLUG} run start:*)`)
   expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} run start:*)`)
   expect(commands).toContain(`Bash(${ASSET_ROOT}/bin/${PLATFORM_SLUG} run start:*)`)
-  expect(commands).toContain('Bash(orch do:*)')
-  expect(commands).toContain('Bash(./bin/orch do:*)')
-  expect(commands).toContain(`Bash(${ASSET_ROOT}/bin/orch do:*)`)
+  expect(commands).not.toContain('Bash(orch')
+  expect(commands).not.toContain(['bin', 'orch'].join('/'))
 })
 
 test('unrelated profile handlers survive unchanged and in place', () => {
@@ -159,9 +187,10 @@ test('superseded handlers name exactly the removed profile entries', () => {
   expect(render(profileHooks).superseded).toEqual([
     { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
+    { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
     { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
-    ...Array.from({ length: 4 }, () => ({
+    ...Array.from({ length: 2 }, () => ({
       event: 'PostToolUse',
       matcher: 'Bash',
       script: 'heartbeat-remind.py' as const,

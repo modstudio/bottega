@@ -7,6 +7,7 @@ import {
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
+import { AGENT_COMMAND_VERBS } from '../agent/agent-commands.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
 import { register as registerCleanup } from '../commands/cleanup.ts'
@@ -81,12 +82,18 @@ registerSetup(program)
 registerSync(program)
 registerTestSubstance(program)
 
+program.commands
+  .find((command) => command.name() === 'agent')!
+  .addHelpText('after', `\nValid verbs: ${AGENT_COMMAND_VERBS.join(', ')}`)
+
+export { AGENT_COMMAND_VERBS }
+
 const READ_ONLY_COMMANDS = new Set(['mcp-reader-proxy', 'migrate', 'ratchet'])
 
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
-    review: ['coverage-audit', 'yield'],
+    review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],
     setup: ['facts', 'plan'],
   }

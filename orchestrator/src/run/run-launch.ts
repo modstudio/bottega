@@ -12,6 +12,16 @@ export type RunLaunchRuling = {
   useRequestedTransport: boolean
 }
 
+function isRunTransportPinned(
+  facts: Pick<RunLaunchFacts, 'explicitTransport' | 'envTransport'>,
+): boolean {
+  return facts.explicitTransport || facts.envTransport
+}
+
+export function runTransportPin(explicit?: string | null, environment?: string) {
+  return classifyTransportPin(explicit, environment)
+}
+
 export function decideRunLaunch(facts: RunLaunchFacts): RunLaunchRuling {
   // A resumed turn stays with the vendor session that owns the conversation.
   const selected =
@@ -25,8 +35,7 @@ export function decideRunLaunch(facts: RunLaunchFacts): RunLaunchRuling {
       : { agent: facts.agent, reason: facts.reason }
   return {
     ...selected,
-    useRequestedTransport:
-      facts.source === 'resume' || facts.explicitTransport || facts.envTransport,
+    useRequestedTransport: facts.source === 'resume' || isRunTransportPinned(facts),
   }
 }
 
@@ -42,4 +51,8 @@ export function resolveRunTransport(opts: {
 }
 
 import { chainTransport } from '../route/failover.ts'
-import { resolveTransportName, type TransportName } from '../transport/transport.ts'
+import {
+  classifyTransportPin,
+  resolveTransportName,
+  type TransportName,
+} from '../transport/transport.ts'

@@ -20,13 +20,17 @@ import {
   builtInAutonomyPreset,
   builtInAutonomyScope,
   combineRulingsSnapshots,
+  HOSTED_AUTONOMY_SCOPE_NAMES,
   parseStoredAutonomy,
   resolveAutonomy,
+  staleHostedAutonomyWinner,
+  staleHostedScope,
 } from './autonomy.ts'
+import { type CachedSessionContext, readSessionContextCache } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
-export const HOSTED_AUTONOMY_SCOPE_NAMES = ['hosted user', 'hosted space'] as const
+
 type HostedEntry = Awaited<ReturnType<ConfigClient['listEntries']>>[number]
 const hostedSettings = (rows: HostedEntry[], scope: 'user' | 'space') =>
   parseStoredAutonomy(
@@ -96,7 +100,8 @@ export async function resolveProjectAutonomy(
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
   stages: readonly AutonomyStage[] = [],
-  hostedFallback?: { user: AutonomySettings; space: AutonomySettings },
+  hostedFallback?: CachedSessionContext,
+  now: () => Date = () => new Date(),
 ): Promise<AutonomyResolution> {
   if (session.shipTo !== undefined) {
     throw new Error(
@@ -107,9 +112,13 @@ export async function resolveProjectAutonomy(
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
+  const cached =
+    hosted.status === 'unavailable'
+      ? (hostedFallback ?? readSessionContextCache(project, env))
+      : null
   const hostedSettings =
-    hosted.status === 'unavailable' && hostedFallback
-      ? hostedFallback
+    hosted.status === 'unavailable' && cached
+      ? cached.hosted
       : { user: hosted.user, space: hosted.space }
   const resolved = resolveAutonomy(
     steps,
@@ -143,6 +152,31 @@ export async function resolveProjectAutonomy(
       note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
       session,
     }
+  if (cached) {
+    const ageMs = Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))
+    return {
+      ...resolution,
+      steps: Object.fromEntries(
+        Object.entries(resolution.steps).map(([slug, winner]) => [
+          slug,
+          staleHostedAutonomyWinner(winner),
+        ]),
+      ),
+      stages: resolution.stages
+        ? Object.fromEntries(
+            Object.entries(resolution.stages).map(([stage, winner]) => [
+              stage,
+              staleHostedAutonomyWinner(winner),
+            ]),
+          )
+        : undefined,
+      rulings: { ...resolution.rulings, scope: staleHostedScope(resolution.rulings.scope) },
+      shipTo: { ...resolution.shipTo, scope: staleHostedScope(resolution.shipTo.scope) },
+      hosted: { status: hosted.status, reason: hosted.reason },
+      note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from cached hosted autonomy settings, local and project scopes (cache age ${ageMs} ms)`,
+      session,
+    }
+  }
   return {
     ...resolution,
     rulings: {

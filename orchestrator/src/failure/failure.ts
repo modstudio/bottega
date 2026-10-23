@@ -18,6 +18,8 @@ export const FAILURE_KINDS = [
    * plan quota, stale authentication, or a refusal to serve the prompt.
    */
   'capacity',
+  /** The provider's daily allowance is exhausted and resets at the next UTC day. */
+  'daily_quota',
   'quota',
   'auth',
   /**
@@ -67,6 +69,8 @@ export const FAILURE_KINDS = [
   'contract',
   /** A clean review reply that does not establish it reviewed the dispatched change. */
   'unevidenced',
+  /** The agent ended its turn with only an opening plan and no work. */
+  'premature-final',
   'abandoned',
   'other',
 ] as const
@@ -157,6 +161,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
     'capacity',
     /\b(?:at capacity|overloaded|server is busy|capacity constraints|(?:model|engine)\b[\s\S]{0,80}\btemporarily unavailable|temporarily unavailable\b[\s\S]{0,80}\b(?:model|engine))\b/i,
   ],
+  ['daily_quota', /\b(?:free-models-per-day|daily (?:allowance|limit)|per day limit)\b/i],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   [
     'quota',
@@ -344,17 +349,19 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
  * serving again stayed out of routing for the rest of the hour, which defeats
  * the point of waking it at all.
  */
-export const COOLS_DOWN: FailureKind[] = ['quota', 'auth', 'entitlement']
+export const COOLS_DOWN: FailureKind[] = ['daily_quota', 'quota', 'auth', 'entitlement']
 
 /** Failures where another vendor should receive the same prompt immediately. */
 export const FAILS_OVER: FailureKind[] = [
   'capacity',
+  'daily_quota',
   'quota',
   'auth',
   'entitlement',
   'content_refusal',
   'contract',
   'unevidenced',
+  'premature-final',
 ]
 
 /**
@@ -376,6 +383,7 @@ export const FAILS_OVER: FailureKind[] = [
  */
 export const NOT_EVIDENCE: FailureKind[] = [
   'capacity',
+  'daily_quota',
   'quota',
   'auth',
   'entitlement',
@@ -393,6 +401,14 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'harness',
   'abandoned',
 ]
+
+/** Whether a run failure is ineligible for a recorded evidence verdict. */
+export function isNotEvidenceFailure(failureKind: string | null): boolean {
+  return (
+    failureKind === 'unevidenced' ||
+    (failureKind !== null && NOT_EVIDENCE.includes(failureKind as FailureKind))
+  )
+}
 
 /**
  * Raise a macOS banner. Detached and never awaited: a notification that could

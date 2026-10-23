@@ -1,6 +1,8 @@
 // concern: monitor
 /** Constructs the completed monitor result without adding more shape work to the frozen pass. */
 
+import { db } from '../database/db.ts'
+import { runHostCapacityQueue } from '../run/run-host-capacity.ts'
 import type {
   MonitorCondition,
   MonitorHostLoad,
@@ -19,5 +21,18 @@ export function finishMonitorResult(
   hostLoad: MonitorHostLoad,
   hostPressure: MonitorHostPressure,
 ): MonitorResult {
-  return { id, startedAt, finishedAt, trigger, conditions, errors, canon, hostLoad, hostPressure }
+  return {
+    id,
+    startedAt,
+    finishedAt,
+    trigger,
+    conditions,
+    errors,
+    canon,
+    hostLoad,
+    hostPressure,
+    runHostCapacity: runHostCapacityQueue(db(), Date.parse(finishedAt), {
+      measure: () => hostLoad,
+    }),
+  }
 }

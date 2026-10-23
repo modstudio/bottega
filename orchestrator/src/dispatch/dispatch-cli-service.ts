@@ -5,7 +5,7 @@ import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { resumePromptByteLimit } from '../agent/agents.ts'
+import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
 import {
   resolveTaskBranch,
@@ -22,7 +22,12 @@ import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { branchOf } from '../git/git-environment.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
+import {
+  effectiveMcpRequest,
+  type McpRequest,
+  parseRequestedMcp,
+  requiredMcpServer,
+} from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
@@ -42,6 +47,7 @@ import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   assertAcpReady,
+  classifyTransportPin,
   resolveTransportName,
   selectAgentForTransport,
   type TransportName,
@@ -340,6 +346,30 @@ const selectedAgentOptions = (transport: TransportName, agent: string | undefine
   agent: selectAgentForTransport(transport, agent),
   agentExplicit: Boolean(agent),
 })
+export const transportSelection = (
+  flag: string | undefined,
+  selected: Agent | undefined,
+  environment = process.env.ORCH_TRANSPORT,
+) => {
+  const pin = classifyTransportPin(flag, environment)
+  return {
+    transport:
+      pin.pinnedTransport ??
+      selected?.defaultTransport ??
+      resolveTransportName(undefined, undefined),
+    transportExplicit: Boolean(pin.pinnedTransport),
+    transportPinSource: pin.transportPinSource,
+  }
+}
+const detachedMcpConstraints = (
+  request: McpRequest | undefined,
+  spec: DetachSpec,
+  cwd: string,
+) => ({
+  requiredMcp: requiredMcpServer(request, spec.cwd ?? cwd, spec.repo),
+  pinnedTransport: spec.transport,
+  transportPinSource: spec.transportPinSource,
+})
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
   await ensureLocalHealth()
@@ -347,27 +377,22 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   const has = (name: string) =>
     argv.includes(`--${name}`) || argv.some((arg) => arg.startsWith(`--${name}=`))
   const values = (name: string) => flagValues(argv, name)
-  const positional = doPositionals(argv)
   const prompt = async () =>
     (await readMessageText({
       missing: 'no prompt: pass it as an argument, via --file, or on stdin',
       optional: Boolean(JOBS[argv[1] ?? '']?.findings && flag('lens')),
-      sources: { commandFile: flag('file'), positionals: positional },
+      sources: { commandFile: flag('file'), positionals: doPositionals(argv) },
     })) ?? ''
   const resolveOptions = async (jobName: string) => {
-    const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined,
-      transportFlag = flag('transport'),
-      explicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT),
-      transport =
-        !explicit && selected ? selected.defaultTransport : resolveTransportName(transportFlag)
-    if (transport === 'acp') {
+    const selected = flag('agent') ? AGENTS[flag('agent')!] : undefined
+    const transport = transportSelection(flag('transport'), selected)
+    if (transport.transport === 'acp') {
       assertAcpPolicyAllowed(jobName, flag('agent'), selected, Boolean(flag('agent')), true)
       assertAcpReady(flag('agent') ?? 'codex', selected)
     }
     return {
-      ...selectedAgentOptions(transport, flag('agent')),
-      transport,
-      transportExplicit: explicit,
+      ...selectedAgentOptions(transport.transport, flag('agent')),
+      ...transport,
       ...(await routeConstraints(argv, flag('agent'))),
       mcp: parseRequestedMcp(argv),
     }
@@ -386,7 +411,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
           agents: spec.avoid,
           models: spec.distinctModels,
           model: spec.model,
-          requiredMcp: requiredMcpServer(mcpRequest, spec.cwd ?? presentation.cwd(), spec.repo),
+          ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
+          project: spec.repo ?? null,
         },
         spec.probe,
         spec.lens,

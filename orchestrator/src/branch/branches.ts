@@ -87,7 +87,11 @@ export type BranchPruneReport = {
   dryRun: boolean
   deleted: string[]
   wouldDelete: string[]
-  kept: { branch: string; reason: import('./branch-state.ts').BranchPruneKeptReason }[]
+  kept: {
+    branch: string
+    reason: import('./branch-state.ts').BranchPruneKeptReason
+    holdingPath?: string | null
+  }[]
   operator: {
     branch: string
     state: 'unlanded' | 'unknown'
@@ -189,13 +193,19 @@ function remoteBranches(project: Project): Set<string> {
   return branches
 }
 
-function checkedOutBranches(project: Project): Set<string> {
-  const checkedOut = new Set<string>()
+function checkedOutBranchPaths(project: Project): Map<string, string> {
+  const checkedOut = new Map<string, string>()
+  let worktree: string | null = null
   for (const line of git(project.path, 'worktree', 'list', '--porcelain').split('\n')) {
-    if (line.startsWith('branch refs/heads/'))
-      checkedOut.add(line.slice('branch refs/heads/'.length))
+    if (line.startsWith('worktree ')) worktree = line.slice('worktree '.length)
+    if (line.startsWith('branch refs/heads/') && worktree)
+      checkedOut.set(line.slice('branch refs/heads/'.length), worktree)
   }
   return checkedOut
+}
+
+function checkedOutBranches(project: Project): Set<string> {
+  return new Set(checkedOutBranchPaths(project).keys())
 }
 
 function repairBranchLandings(input: {
@@ -619,7 +629,8 @@ function deleteAndSettleBranch(
     withWorktreeCreateLock(project.path, () => {
       if (keepLiveBaseClaim(project, row.branch, report)) return
       const currentTip = localBranches(project).get(row.branch)
-      const checkedOut = checkedOutBranches(project).has(row.branch)
+      const holdingPath = checkedOutBranchPaths(project).get(row.branch) ?? null
+      const checkedOut = holdingPath !== null
       const liveRun = projectRuns(project).some(
         (run) =>
           run.minted_branch === row.branch && (run.status === 'running' || run.status === 'asking'),
@@ -631,7 +642,11 @@ function deleteAndSettleBranch(
         tipMoved: currentTip !== row.tip,
       })
       if (!eligibility.eligible) {
-        report.kept.push({ branch: row.branch, reason: eligibility.reason })
+        report.kept.push({
+          branch: row.branch,
+          reason: eligibility.reason,
+          ...(eligibility.reason === 'checked-out' ? { holdingPath } : {}),
+        })
         return
       }
       writableDb()
@@ -757,7 +772,21 @@ export function pruneProjectBranches(options: {
 /** Return the ordinary prune classifier's state for one recorded run branch. */
 export function classifyMintedBranch(project: string, branch: string): BranchStateDecision {
   const observed = branchesReport({ project })
+  return classifyMintedBranchFromReport(observed, project, branch)
+}
+
+/** Return one recorded run branch's state from an already gathered branch report. */
+export function classifyMintedBranchFromReport(
+  observed: BranchesReport,
+  project: string,
+  branch: string,
+): BranchStateDecision {
   const projectReport = observed.projects[0]!
+  if (projectReport.project !== project)
+    return {
+      state: 'unknown',
+      error: `branch report is for project ${projectReport.project}, not ${project}`,
+    }
   if (projectReport.error) return { state: 'unknown', error: projectReport.error }
   return (
     projectReport.keys.flatMap((key) => key.branches).find((row) => row.branch === branch) ?? {

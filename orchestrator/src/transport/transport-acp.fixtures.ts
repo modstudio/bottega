@@ -221,6 +221,15 @@ export const ACP_FIXTURE_REFUSAL = {
   stopReason: 'refusal' as const,
 }
 
+/** Redacted Goose/OpenRouter provider error delivered as the failed ACP prompt payload. */
+export const ACP_FIXTURE_RATE_LIMIT = {
+  sessionId: 'sess_goose_rate_limit',
+  updates: [],
+  stopReason: null,
+  error:
+    '{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-day limit reached"}}',
+}
+
 export const ACP_FIXTURE_EDIT_PERMISSION = {
   toolKind: 'edit' as const,
   title: 'Edit src/run.ts',

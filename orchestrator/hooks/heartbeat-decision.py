@@ -14,6 +14,8 @@ import json
 from enum import Enum, auto
 from typing import NamedTuple
 
+from inbox_question_decision import decide_inbox_questions
+
 NOTICE_REASON_MAX_BYTES = 4096
 NOTICE_REASON_MAX_CHARS = 240
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS = 0
@@ -86,7 +88,7 @@ class HeartbeatState(Enum):
 
 def heartbeat_decision(
     timestamp: str,
-    asking: int,
+    inbox: list[dict],
     run_count: int,
     landing_count: int,
     stalled_count: int,
@@ -95,13 +97,15 @@ def heartbeat_decision(
 ) -> HeartbeatDecision:
     product = "bottega"
     lines = []
+    inbox_decision = decide_inbox_questions(inbox)
+    asking = inbox_decision.answerable_now
     if asking > 0 and stalled_count > 0:
         state = HeartbeatState.BLOCKED_STALLED
     elif asking > 0:
         state = HeartbeatState.BLOCKED
     elif stalled_count > 0:
         state = HeartbeatState.STALLED
-    elif run_count > 0 or landing_count > 0:
+    elif run_count > 0 or landing_count > 0 or inbox_decision.parked_here > 0:
         state = HeartbeatState.WAITING
     else:
         state = HeartbeatState.CLEAR
@@ -114,9 +118,15 @@ def heartbeat_decision(
     if state in (HeartbeatState.STALLED, HeartbeatState.BLOCKED_STALLED):
         lines.append(f"[{timestamp}] STALLED - {stalled_count} run(s): {stalled_detail}")
     elif state == HeartbeatState.WAITING:
+        parked = (
+            f" and {inbox_decision.parked_here} parked workflow ruling(s)"
+            if inbox_decision.parked_here
+            else ""
+        )
+        detail = f": {waiting_detail}" if waiting_detail else ""
         lines.append(
-            f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s), "
-            f"nothing needed from you: {waiting_detail}"
+            f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s){parked}, "
+            f"nothing needed from you{detail}"
         )
     return HeartbeatDecision(lines=lines, should_exit=state == HeartbeatState.CLEAR)
 
@@ -136,9 +146,10 @@ def monitor_failure_reason(data: bytes) -> str:
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["tick"]:
+        inbox = json.load(sys.stdin)
         decision = heartbeat_decision(
             os.environ["HEARTBEAT_TIMESTAMP"],
-            int(os.environ["HEARTBEAT_ASKING"]),
+            inbox,
             int(os.environ["HEARTBEAT_RUNS"]),
             int(os.environ["HEARTBEAT_LANDINGS"]),
             int(os.environ["HEARTBEAT_STALLED"]),
@@ -153,5 +164,8 @@ if __name__ == "__main__":
             if decision.should_exit
             else HEARTBEAT_KEEP_LOOP_EXIT_STATUS
         )
+    elif sys.argv[1:] == ["inbox"]:
+        decision = decide_inbox_questions(json.load(sys.stdin))
+        print(decision.state_key)
     else:
         print(monitor_failure_reason(sys.stdin.buffer.read()))

@@ -48,6 +48,21 @@ describe('failure classification', () => {
     })
   })
 
+  test('premature finals fail over and count against the agent', () => {
+    expect(FAILS_OVER).toContain('premature-final')
+    expect(NEEDS_HUMAN).not.toContain('premature-final')
+    expect(COOLS_DOWN).not.toContain('premature-final')
+    expect(NOT_EVIDENCE).not.toContain('premature-final')
+
+    addRun({ agent: 'grok', job: 'understand', status: 'failed', kind: 'premature-final' })
+    expect(candidates('understand').find((item) => item.agent === 'grok')).toMatchObject({
+      failures: 1,
+      evidence: 1,
+      score: WEIGHT.none,
+      cooling: null,
+    })
+  })
+
   test("OpenAI's invalid response schema is a harness failure", () => {
     expect(
       classify(
@@ -91,6 +106,11 @@ describe('failure classification', () => {
 
   test('quota and auth are separated, because only one is fixed by waiting', () => {
     expect(classify('HTTP 429: rate limit exceeded')).toBe('quota')
+    expect(
+      classify(
+        '{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-day limit reached"}}',
+      ),
+    ).toBe('daily_quota')
     expect(classify('HTTP 402')).toBe('quota')
     expect(classify('balance exhausted')).toBe('quota')
     expect(classify('401 unauthorized')).toBe('auth')
@@ -182,6 +202,7 @@ describe('failure classification', () => {
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
       'capacity',
+      'daily_quota',
       'quota',
       'auth',
       'entitlement',
@@ -276,7 +297,7 @@ describe('failure classification', () => {
     // costs the whole recovery window.
     expect(NEEDS_HUMAN).toContain('unreachable')
     expect(COOLS_DOWN).not.toContain('unreachable')
-    expect(COOLS_DOWN).toEqual(['quota', 'auth', 'entitlement'])
+    expect(COOLS_DOWN).toEqual(['daily_quota', 'quota', 'auth', 'entitlement'])
   })
 
   test('a peer that reset stays a timeout — it answered before it stopped', () => {
@@ -394,6 +415,63 @@ describe('routing counts failures as evidence', () => {
     expect(c.eligible).toBe(false)
     expect(c.why).toContain('vendor quota')
     expect(c.why).toContain(`run '${PLATFORM_SLUG} agent probe codex' to clear it`)
+  })
+
+  test('probe sub-turns do not affect cooldown while a successful registration probe clears it', () => {
+    const base = Date.now() - 10 * 60_000
+    addRun({
+      agent: 'codex',
+      job: 'agent-probe-child',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(base).toISOString(),
+    })
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+
+    addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(base + 60_000).toISOString(),
+    })
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toContain('quota')
+
+    addRun({
+      agent: 'codex',
+      job: 'agent-probe',
+      startedAt: new Date(base + 2 * 60_000).toISOString(),
+    })
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+  })
+
+  test('daily quota cools only through its UTC day while minute quota uses the ordinary cooldown', () => {
+    const run = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'failed',
+      kind: 'daily_quota',
+    })
+    db()
+      .query("UPDATE run SET started_at=datetime('now','start of day') WHERE record_id=?")
+      .run(run)
+    const daily = candidates('craft').find((x) => x.agent === 'codex')!
+    expect(daily.cooling).toContain('daily_quota')
+    expect(daily.why).toContain('next UTC day')
+
+    db()
+      .query("UPDATE run SET started_at=datetime('now','start of day','-1 day') WHERE record_id=?")
+      .run(run)
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+
+    db()
+      .query(
+        "UPDATE run SET failure_kind='quota',started_at=datetime('now','-61 minutes') WHERE record_id=?",
+      )
+      .run(run)
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
+    db().query("UPDATE run SET started_at=datetime('now','-5 minutes') WHERE record_id=?").run(run)
+    expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toContain('quota')
   })
 
   test('a later-id success finishing before quota failures does not mask them', () => {

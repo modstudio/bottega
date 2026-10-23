@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decideShipCleanup,
+  decideShipCleanupKeptItem,
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
   type ShipCleanupRunFact,
@@ -10,6 +11,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   record_id: '1',
   number: 1,
   root_record_id: '1',
+  rootNumber: 1,
   startedAt: '2026-10-18T00:00:00Z',
   job: 'implement',
   status: 'ok',
@@ -17,6 +19,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   mintedBranch: 'DEV-1392-c3',
   launchKey: 'DEV-1392',
   judged: true,
+  rootFailureKind: null,
   worktree: '/trees/1',
   ...overrides,
 })
@@ -59,6 +62,36 @@ describe('ship cleanup decision', () => {
     })
   })
 
+  test.each([
+    ['unevidenced', 'void'],
+    ['other', 'score'],
+  ] as const)('names one root remedy for an unjudged %s chain', (failureKind, remedy) => {
+    const decisions = decide([
+      run({
+        record_id: 'root',
+        number: 41,
+        root_record_id: 'root',
+        rootNumber: 41,
+        judged: false,
+        rootFailureKind: failureKind,
+      }),
+      run({
+        record_id: 'turn',
+        number: 42,
+        root_record_id: 'root',
+        rootNumber: 41,
+        judged: false,
+        rootFailureKind: failureKind,
+      }),
+    ])
+
+    expect(
+      decisions.flatMap((decision) =>
+        decision.remedy ? [{ remedy: decision.remedy, rootNumber: decision.rootNumber }] : [],
+      ),
+    ).toEqual([{ remedy, rootNumber: 41 }])
+  })
+
   test('skips a live run', () => {
     expect(decide([run({ status: 'asking' })])[0]).toMatchObject({
       artifacts: 'keep',
@@ -99,22 +132,61 @@ describe('ship cleanup decision', () => {
   })
 })
 
-test('cleanup verdict permits only the command tree during merge cleanup', () => {
-  expect(decideShipCleanupVerdict({ kept: [], errors: [] }, false)).toEqual({ clean: true })
-  const selfHold = {
+test('cleanup verdict excludes only items owned by the caller landing tree', () => {
+  expect(decideShipCleanupVerdict({ kept: [], errors: [] })).toEqual({ clean: true, residue: [] })
+  const selfTree = {
     item: 'run 7 worktree',
-    reason: 'copy can change without policy coupling',
+    reason: 'the command runs from this tree',
     reasonKind: 'command-tree' as const,
+    owner: 'caller-landing-tree' as const,
   }
-  expect(decideShipCleanupVerdict({ kept: [selfHold], errors: [] }, true)).toEqual({ clean: true })
-  expect(decideShipCleanupVerdict({ kept: [selfHold], errors: [] }, false)).toEqual({
+  const selfBranch = {
+    item: 'branch DEV-1392-c3',
+    reason: 'checked-out',
+    reasonKind: 'safety-hold' as const,
+    owner: 'caller-landing-tree' as const,
+  }
+  const foreignTree = {
+    item: 'run 8 worktree',
+    reason: 'held by another session',
+    reasonKind: 'safety-hold' as const,
+    owner: 'other' as const,
+  }
+  expect(decideShipCleanupVerdict({ kept: [selfTree, selfBranch], errors: [] })).toEqual({
+    clean: true,
+    residue: [],
+  })
+  expect(decideShipCleanupVerdict({ kept: [foreignTree], errors: [] })).toEqual({
     clean: false,
     reason: 'unexpected-kept-item',
+    residue: [foreignTree],
   })
-  expect(decideShipCleanupVerdict({ kept: [], errors: [{}] }, true)).toEqual({
+  expect(
+    decideShipCleanupVerdict({ kept: [selfTree, foreignTree, selfBranch], errors: [] }),
+  ).toEqual({
+    clean: false,
+    reason: 'unexpected-kept-item',
+    residue: [foreignTree],
+  })
+  expect(decideShipCleanupVerdict({ kept: [], errors: [{}] })).toEqual({
     clean: false,
     reason: 'errors',
+    residue: [],
   })
+})
+
+test('kept-item ownership requires the holding path to match the caller landing tree', () => {
+  const fact = {
+    item: 'branch DEV-1392-c3',
+    reason: 'checked-out',
+    reasonKind: 'safety-hold' as const,
+  }
+  expect(
+    decideShipCleanupKeptItem({ ...fact, holdingPath: '/trees/landing' }, '/trees/landing'),
+  ).toEqual({ ...fact, owner: 'caller-landing-tree' })
+  expect(
+    decideShipCleanupKeptItem({ ...fact, holdingPath: '/trees/sibling' }, '/trees/landing'),
+  ).toEqual({ ...fact, owner: 'other' })
 })
 
 test('task branch pruning accepts squash, recorded PR head, and containment proof but keeps unique work', () => {

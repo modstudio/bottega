@@ -6,6 +6,25 @@ export type BranchCandidate = {
   started_at: string
 }
 
+function branchReclaimAction(branch: string, actions: ReadonlyMap<string, string>): string {
+  return actions.get(branch)!
+}
+
+export function branchMonitorConditions(
+  project: string,
+  candidates: readonly BranchCandidate[],
+  actions: ReadonlyMap<string, string>,
+) {
+  return candidates.map((candidate) => ({
+    kind: 'branch-without-worktree' as const,
+    subject: `${project}:${candidate.branch}`,
+    since: candidate.started_at,
+    detail: `${project} branch ${candidate.branch} has no worktree`,
+    action: branchReclaimAction(candidate.branch, actions),
+    affectedProject: project,
+  }))
+}
+
 export function branchInventoryDecision(
   project: string,
   candidates: readonly BranchCandidate[],

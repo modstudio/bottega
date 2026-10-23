@@ -23,6 +23,6 @@ const entries = {
     (await import('../orchestrator/src/check/check-strict-schema.ts')).checkStrictSchemaMain(),
 }
 
-process.exitCode = await dispatchBinary(process.argv.slice(2), process.argv0, entries, () =>
+process.exitCode = await dispatchBinary(process.argv.slice(2), entries, () =>
   installationVersionText(import.meta.dir, process.env),
 )

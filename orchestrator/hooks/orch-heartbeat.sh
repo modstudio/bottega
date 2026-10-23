@@ -8,9 +8,9 @@
 # whether it needs a wake or is genuinely waiting. That ambiguity is the whole
 # reason this exists: it collapses to four states, two of which are actionable.
 #
-#   BLOCKED  a worker asked a question; the session must rule and resume it
+#   BLOCKED  question_is_answerable_now accepts a question; the session must act
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
-#   WAITING  runs or landings still going, elapsed shown so a hung one is visible
+#   WAITING  runs or landings still going, or a workflow ruling was parked here
 #   CLEAR    no runs, no landings, nothing asked, and nothing stalled -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
@@ -26,10 +26,9 @@
 # and a lower interval is what actually gets a blocked worker noticed sooner -
 # the poll can be frequent precisely because only transitions are expensive.
 #
-# The state key is (asking-count, run-count, sorted run ids with each run's
-# liveness class, landing-count, sorted landing ids). A run changing liveness
-# class is a state change even when the ids are unchanged. Elapsed time never
-# enters the key.
+# The state key is the inbox identity set, plus sorted run ids with each run's
+# liveness class and sorted landing ids. A run changing liveness class is a
+# state change even when the ids are unchanged. Elapsed time never enters the key.
 #
 # CLEAR is silent so this stays cheap to run often: the answer to "should this
 # session still be waiting" is only worth a notification when it is yes, or when
@@ -46,7 +45,12 @@
 set -uo pipefail
 
 CALLER_DIRECTORY="$PWD"
-ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd -P) || {
+SCRIPT_DIRECTORY=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || {
+  echo "DEGRADED: launch directory removed; re-arm from the main checkout"
+  exit 2
+}
+SCRIPT_PATH="$SCRIPT_DIRECTORY/$(basename "$0")"
+ROOT=$(cd "$SCRIPT_DIRECTORY/.." 2>/dev/null && pwd -P) || {
   echo "DEGRADED: launch directory removed; re-arm from the main checkout"
   exit 2
 }
@@ -76,17 +80,32 @@ NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS=0
 HEARTBEAT_CLEAR_EXIT_STATUS=10
 
-prev_key=""
-since_emit=0
+prev_key="${HEARTBEAT_PREVIOUS_STATE_KEY:-}"
+since_emit="${HEARTBEAT_SINCE_EMIT:-0}"
 prev_monitor_failure_key=""
 monitor_failure_ticks=0
 prev_cap_failure_state=""
 cap_failure_ticks=0
 prev_ack_failure_state=""
 ack_failure_ticks=0
-reported_ids=""
+reported_ids="${HEARTBEAT_REPORTED_IDS:-}"
+previous_live_roots="${HEARTBEAT_PREVIOUS_LIVE_ROOTS:-}"
+live_statuses_csv="${HEARTBEAT_LIVE_STATUSES:-}"
+unset HEARTBEAT_PREVIOUS_STATE_KEY HEARTBEAT_SINCE_EMIT HEARTBEAT_REPORTED_IDS
+unset HEARTBEAT_PREVIOUS_LIVE_ROOTS HEARTBEAT_LIVE_STATUSES
 ACTIVE_GUARDED_PID=""
 ACTIVE_WATCHDOG_PID=""
+
+heartbeat_source_fingerprint() {
+  cksum "$SCRIPT_PATH" "$ROOT/hooks/heartbeat-decision.py" \
+    "$ROOT/hooks/heartbeat-run-observation.py" \
+    "$ROOT/hooks/inbox_question_decision.py" 2>/dev/null
+}
+
+heartbeat_start_fingerprint=$(heartbeat_source_fingerprint) || {
+  echo "DEGRADED: cannot fingerprint heartbeat sources; re-arm from the main checkout"
+  exit 2
+}
 
 start_watchdog() {
   local watchdog_target_pid="$1"
@@ -176,6 +195,17 @@ for ((i = 1; i <= MAX; i++)); do
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2
   fi
+  heartbeat_current_fingerprint=$(heartbeat_source_fingerprint) || heartbeat_current_fingerprint="unreadable"
+  if [ "$heartbeat_current_fingerprint" != "$heartbeat_start_fingerprint" ]; then
+    echo "heartbeat updated on disk; restarting"
+    export HEARTBEAT_PREVIOUS_STATE_KEY="$prev_key"
+    export HEARTBEAT_SINCE_EMIT="$since_emit"
+    export HEARTBEAT_PREVIOUS_LIVE_ROOTS="$previous_live_roots"
+    export HEARTBEAT_REPORTED_IDS="$reported_ids"
+    export HEARTBEAT_LIVE_STATUSES="$live_statuses_csv"
+    remaining_ticks=$((MAX - i + 1))
+    exec "$SCRIPT_PATH" "$SID" "$INTERVAL" "$remaining_ticks"
+  fi
   (cd "$CALLER_DIRECTORY" && CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" board presence) >/dev/null 2>&1 || true
   # The heartbeat is session-scoped, not checkout-scoped. Ask for the complete
   # visible set, and make the explicit SID the identity used to derive
@@ -188,138 +218,53 @@ for ((i = 1; i <= MAX; i++)); do
   # "bottega said nothing" from "bottega did not answer".
   inbox_err=$(mktemp)
   runs_err=$(mktemp)
-  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --json 2>"$inbox_err"); inbox_rc=$?
-  runs_raw=$("$BOTTEGA" run list --limit 200 --json 2>"$runs_err"); runs_rc=$?
+  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --active --json 2>"$inbox_err"); inbox_rc=$?
+  runs_raw=$("$BOTTEGA" run list --live --json 2>"$runs_err"); runs_rc=$?
   rm -f "$inbox_err" "$runs_err"
   if [ ! -d "$ROOT" ]; then
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2
   fi
 
-  asking=$(printf '%s' "$inbox_raw" | python3 -c '
-import sys, json
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(2)
-if not isinstance(d, list):
-    raise SystemExit(2)
-if not all(isinstance(item, dict) and isinstance(item.get("can_answer"), bool) for item in d):
-    raise SystemExit(2)
-print(sum(item["can_answer"] for item in d))
-' 2>/dev/null); inbox_parse_rc=$?
+  inbox_ids=$(printf '%s' "$inbox_raw" | python3 "$ROOT/hooks/heartbeat-decision.py" inbox 2>/dev/null); inbox_parse_rc=$?
 
-  observed=$(printf '%s' "$runs_raw" | SID="$SID" INTERVAL="$INTERVAL" python3 -c '
-import sys, json, os, datetime
-sid = os.environ["SID"]
-now = datetime.datetime.now(datetime.timezone.utc)
-recent_seconds = max(2 * float(os.environ["INTERVAL"]), 600)
-out, ids, events, stalled, stalled_subjects = [], [], [], [], []
-saw = False
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    saw = True
-    try:
-        d = json.loads(line)
-    except Exception:
-        raise SystemExit(2)
-    if not isinstance(d, dict):
-        raise SystemExit(2)
-    if "schema_version" in d:
-        d = d.get("data")
-        if not isinstance(d, dict):
-            raise SystemExit(2)
-    if not isinstance(d.get("record_id"), str) or not isinstance(d.get("number"), int) or not isinstance(d.get("job"), str):
-        raise SystemExit(2)
-    if not isinstance(d.get("agent"), str) or not isinstance(d.get("status"), str):
-        raise SystemExit(2)
-    if d.get("session_id") is not None and not isinstance(d.get("session_id"), str):
-        raise SystemExit(2)
-    if not isinstance(d.get("started_at"), str):
-        raise SystemExit(2)
-    if d.get("latency_ms") is not None and not isinstance(d.get("latency_ms"), (int, float)):
-        raise SystemExit(2)
-    if d.get("failure_kind") is not None and not isinstance(d.get("failure_kind"), str):
-        raise SystemExit(2)
-    if d.get("session_id") != sid:
-        continue
-    status = d.get("status")
-    if status == "ok" or status in ("failed", "stale", "stopped", "abandoned"):
-        timing = d
-        if d.get("turns") is not None:
-            if not isinstance(d["turns"], list):
-                raise SystemExit(2)
-            if d["turns"]:
-                timing = d["turns"][-1]
-                if not isinstance(timing, dict):
-                    raise SystemExit(2)
-                if not isinstance(timing.get("started_at"), str):
-                    raise SystemExit(2)
-                if timing.get("latency_ms") is not None and not isinstance(timing.get("latency_ms"), (int, float)):
-                    raise SystemExit(2)
-        latency = timing.get("latency_ms")
-        try:
-            started = datetime.datetime.fromisoformat(timing["started_at"].replace("Z", "+00:00"))
-            terminal = started if latency is None else started + datetime.timedelta(milliseconds=latency)
-            recent = (now - terminal).total_seconds() <= recent_seconds
-        except Exception:
-            raise SystemExit(2)
-        if latency is None:
-            duration = "?"
-        elif latency < 60000:
-            duration = "%.1fs" % (latency / 1000)
-        else:
-            seconds = round(latency / 1000)
-            duration = "%dm%02ds" % (seconds // 60, seconds % 60)
-        events.append((str(d["number"]), "1" if recent else "0", status, d["job"], d["agent"],
-                       d.get("failure_kind") or "-", duration))
-    # `asking` counts as live. A heartbeat that watches only `running` reports
-    # CLEAR while a worker sits blocked - the exact failure this file prevents.
-    if status not in ("running", "asking"):
-        continue
-    try:
-        started = datetime.datetime.fromisoformat(d["started_at"].replace("Z", "+00:00"))
-        el = int((now - started).total_seconds())
-        age = "%dm%02ds" % (el // 60, el % 60)
-    except Exception:
-        age = "?"
-    idle = d.get("idle")
-    idle_note = ""
-    if isinstance(idle, str) and idle.startswith("idle "):
-        idle_note = " " + idle
-    stall_state = d.get("stall_state")
-    host_wait_since = d.get("host_wait_since")
-    if host_wait_since is not None and not isinstance(host_wait_since, str):
-        raise SystemExit(2)
-    waiting_for_host_capacity = d.get("waiting_for_host_capacity")
-    if not isinstance(waiting_for_host_capacity, bool):
-        raise SystemExit(2)
-    if waiting_for_host_capacity and host_wait_since is None:
-        raise SystemExit(2)
-    if status == "running" and stall_state not in ("healthy", "stalled", "unknown"):
-        raise SystemExit(2)
-    stall = d.get("stall")
-    if stall_state == "stalled":
-        if not isinstance(stall, str) or not stall:
-            raise SystemExit(2)
-        stalled.append(stall.replace("\t", " ").replace("\r", " ").replace("\n", " "))
-        member_id = d.get("live_member_id")
-        if not isinstance(member_id, str):
-            raise SystemExit(2)
-        stalled_subjects.append("run:" + str(member_id))
-    ids.append(str(d.get("record_id")) + ("s" if stall_state == "stalled" else ("i" if idle_note else "")))
-    display = ("waiting for host capacity since " + host_wait_since) if waiting_for_host_capacity else (str(d.get("status")) + " " + age + idle_note)
-    out.append("%s/%s %s %s" % (d.get("number"), d.get("job"), d.get("agent"), display))
-if not saw:
-    raise SystemExit(2)
-# count \t detail \t state-key (ids only - elapsed must never enter the key)
-print("STATE", len(out), " | ".join(out), ",".join(sorted(ids)), len(stalled),
-      ",".join(sorted(stalled_subjects)), " | ".join(stalled), sep="\t")
-for event in events:
-    print("EVENT", *event, sep="\t")
-') ; runs_parse_rc=$?
+  observed=$(printf '%s' "$runs_raw" | \
+    python3 "$ROOT/hooks/heartbeat-run-observation.py" live "$SID" 2>/dev/null); runs_parse_rc=$?
+
+  # `--live` deliberately contains no terminal rows. Compare its exact chain
+  # ids with the prior tick and look up only chains that disappeared, by id and
+  # without a status filter, so completion notices never depend on recency.
+  completion_observed=""
+  completion_rc=0
+  completion_parse_rc=0
+  current_live_roots=""
+  if [ "$runs_rc" -eq 0 ] && [ "$runs_parse_rc" -eq 0 ]; then
+    current_live_roots=$(printf '%s\n' "$observed" | awk -F '\t' '$1 == "STATE" {print $8; exit}')
+    observed_live_statuses=$(printf '%s\n' "$observed" | awk -F '\t' '$1 == "STATE" {print $9; exit}')
+    if [ -n "$observed_live_statuses" ]; then live_statuses_csv="$observed_live_statuses"; fi
+    missing_live_roots=""
+    if [ -n "$previous_live_roots" ]; then
+      IFS=',' read -r -a prior_roots <<< "$previous_live_roots"
+      for root_id in "${prior_roots[@]}"; do
+        [ -n "$root_id" ] || continue
+        case ",$current_live_roots," in
+          *",$root_id,"*) ;;
+          *) missing_live_roots="${missing_live_roots}${missing_live_roots:+,}$root_id" ;;
+        esac
+      done
+    fi
+    if [ -n "$missing_live_roots" ]; then
+      completion_args=(run list --json)
+      IFS=',' read -r -a missing_roots <<< "$missing_live_roots"
+      for root_id in "${missing_roots[@]}"; do
+        completion_args+=(--id "$root_id")
+      done
+      completion_raw=$("$BOTTEGA" "${completion_args[@]}" 2>/dev/null); completion_rc=$?
+      completion_observed=$(printf '%s' "$completion_raw" | \
+        python3 "$ROOT/hooks/heartbeat-run-observation.py" completion \
+          "$missing_live_roots" "$live_statuses_csv" 2>/dev/null); completion_parse_rc=$?
+    fi
+  fi
 
   # A landing is deliberately not a run, but it is live work owned by the same
   # session. Read only the small session slice directly from the store; this is
@@ -363,25 +308,28 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
 
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
      [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ] || \
+     [ "$completion_rc" -ne 0 ] || [ "$completion_parse_rc" -ne 0 ] || \
      [ "$landings_parse_rc" -ne 0 ]; then
     key="degraded"
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
+      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
   fi
 
-  asking=${asking:-0}
   state=${observed%%$'\n'*}
   state=${state#*$'\t'}
   n=${state%%$'\t'*}; rest=${state#*$'\t'}
   detail=${rest%%$'\t'*}; rest=${rest#*$'\t'}
   ids=${rest%%$'\t'*}; rest=${rest#*$'\t'}
   stalled_n=${rest%%$'\t'*}; rest=${rest#*$'\t'}
-  stalled_subjects=${rest%%$'\t'*}; stalled_detail=${rest#*$'\t'}
+  stalled_subjects=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+  stalled_detail=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+  live_roots=${rest%%$'\t'*}; parsed_live_statuses=${rest#*$'\t'}
+  if [ -n "$parsed_live_statuses" ]; then live_statuses_csv="$parsed_live_statuses"; fi
   n=${n:-0}
   stalled_n=${stalled_n:-0}
   landing_state=${landings_observed%%$'\n'*}
@@ -390,23 +338,23 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   landing_detail=${landing_rest%%$'\t'*}; landing_ids=${landing_rest#*$'\t'}
   landing_n=${landing_n:-0}
 
-  while IFS=$'\t' read -r record id recent status job agent failure_kind latency; do
+  while IFS=$'\t' read -r record record_id terminal_id id outcome job agent failure_kind latency; do
     [ "$record" = "EVENT" ] || continue
     case " $reported_ids " in
-      *" $id "*) continue ;;
+      *" $terminal_id "*) continue ;;
     esac
-    reported_ids="$reported_ids $id"
-    [ "$recent" = "1" ] || continue
-    if [ "$status" = "ok" ]; then
+    reported_ids="$reported_ids $terminal_id"
+    if [ "$outcome" = "FINISHED" ]; then
       echo "FINISHED $id/$job $agent $latency"
-    elif [ "$failure_kind" = "harness" ]; then
+    elif [ "$outcome" = "HARNESS-REFUSED" ]; then
       echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     else
       echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     fi
-  done <<< "$observed"
+  done <<< "$completion_observed"
+  previous_live_roots="$live_roots"
 
-  key="$asking|$n|$ids|$landing_n|$landing_ids"
+  key="$inbox_ids|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
   direct_stalled_subjects=""
   combined_detail="$detail"
@@ -414,11 +362,12 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
     combined_detail="$combined_detail$landing_detail"
   fi
-  decision_output=$(HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
-    HEARTBEAT_ASKING="$asking" HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
+  decision_err=$(mktemp)
+  decision_output=$(printf '%s' "$inbox_raw" | HEARTBEAT_TIMESTAMP=$(date +%H:%M:%S) \
+    HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
-      python3 "$ROOT/hooks/heartbeat-decision.py" tick)
+      python3 "$ROOT/hooks/heartbeat-decision.py" tick 2>"$decision_err")
   decision_rc=$?
   if [ "$decision_rc" -eq "$HEARTBEAT_CLEAR_EXIT_STATUS" ]; then
     should_exit=1
@@ -426,8 +375,11 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     should_exit=0
   else
     should_exit=0
-    echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc; continuing to watch."
+    decision_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$decision_err" 2>/dev/null)
+    [ -n "$decision_reason" ] || decision_reason="stderr screening failed"
+    echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc: $decision_reason; continuing to watch."
   fi
+  rm -f "$decision_err"
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
     [ -z "$decision_output" ] || printf '%s\n' "$decision_output"
@@ -484,15 +436,15 @@ for row in rows:
         raise SystemExit(2)
     if source not in ("condition", "landing", "board") or separator != ":" or not (numeric or hosted):
         raise SystemExit(2)
-    if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "detail")):
+    if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "label", "detail")):
         raise SystemExit(2)
     if row.get("ownerSession") != os.environ["SID"]:
         raise SystemExit(2)
     values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
-              for key in ("kind", "subject", "detail")]
+              for key in ("kind", "subject", "label", "detail")]
     directly_reported = set(filter(None, os.environ["STALLED_SUBJECTS"].split(",")))
-    message = "" if values[0] == "stalled-run" and values[1] in directly_reported else (values[2] if values[0].startswith("landing-") else (
-        "MONITOR " + values[0] + " " + values[1] + ": " + values[2]
+    message = "" if values[0] == "stalled-run" and values[1] in directly_reported else (values[3] if values[0].startswith("landing-") else (
+        "MONITOR " + values[0] + " " + values[2] + ": " + values[3]
     ))
     print(str(row["noticeId"]) + "\t" + message)
 ' 2>/dev/null); monitor_parse_rc=$?

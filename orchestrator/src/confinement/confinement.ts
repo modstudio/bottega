@@ -10,6 +10,11 @@ import {
   emptyAttribution,
 } from '../../../shared/orch-contract.ts'
 import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
+import {
+  type CheckoutToWatch,
+  checkoutPathsOverlap,
+  checkoutPathsSame,
+} from '../git/checkout-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
 const UNTRUSTED_INDEX_WINDOW_MS = 1000
@@ -17,9 +22,9 @@ const UNTRUSTED_RETRY_WAIT_MS = 1100
 
 export type { AttributionKind }
 
-export type FrozenCheckout = {
-  project: string
-  path: string
+export type FrozenCheckout = CheckoutToWatch & {
+  caller?: boolean
+  writeExcluded?: boolean
   status: string
   head: string | null
   expectedHead: string | null
@@ -44,6 +49,8 @@ export type ConfinementEvent = {
   lockHolder: ConfinementLockHolder | null
   landingSession: string | null
   landingId: string | null
+  removalSession?: string | null
+  removalRun?: string | null
   divergentPaths: string[]
   overlappingPaths: string[]
   chainRoot: string | null
@@ -52,9 +59,34 @@ export type ConfinementEvent = {
   after: FrozenCheckout[]
 }
 
-export type CheckoutToWatch = { project: string; path: string; expectedHead?: string | null }
+export type { CheckoutToWatch } from '../git/checkout-identity.ts'
+export type FreezeFailure = CheckoutToWatch & {
+  error: string
+  missing?: boolean
+  caller?: boolean
+  writeExcluded?: boolean
+}
 
-export type FreezeFailure = CheckoutToWatch & { error: string }
+export type CallerCheckoutWatch = {
+  callerPath: string | null
+  writableRoots: string[] | null
+  writeExcluded?: boolean
+}
+
+export type CheckoutRemovalAttribution = {
+  attribution: Extract<AttributionKind, 'tree_removal' | 'unattributed'>
+  removalSession: string | null
+  removalRun: string | null
+}
+
+function checkoutIsMissing(path: string): boolean {
+  try {
+    statSync(path)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+  }
+}
 
 function git(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr: string } {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -143,7 +175,12 @@ function samplePorcelain(
 
 function freezeCheckout(
   checkout: CheckoutToWatch,
-  opts: { now?: number; wait?: (ms: number) => void } = {},
+  opts: {
+    now?: number
+    wait?: (ms: number) => void
+    caller?: boolean
+    writeExcluded?: boolean
+  } = {},
 ): FrozenCheckout {
   const now = opts.now ?? Date.now()
   let untrusted = indexIsUntrusted(checkout.path, now)
@@ -163,26 +200,63 @@ function freezeCheckout(
     untrackedHash: untrackedPathHash(checkout.path),
     headOid: headOid(checkout.path),
     untrusted,
+    caller: opts.caller,
+    writeExcluded: opts.writeExcluded,
   }
 }
 
 export function freezeCheckouts(
   watched: CheckoutToWatch[],
-  opts: { now?: number; wait?: (ms: number) => void } = {},
+  opts: {
+    now?: number
+    wait?: (ms: number) => void
+    callerWatch?: CallerCheckoutWatch
+  } = {},
 ): { snapshots: FrozenCheckout[]; failures: FreezeFailure[] } {
   const snapshots: FrozenCheckout[] = []
   const failures: FreezeFailure[] = []
   for (const checkout of watched) {
+    const callerPath = opts.callerWatch?.callerPath
+    const caller = Boolean(
+      callerPath &&
+        (opts.callerWatch?.writeExcluded === undefined
+          ? checkoutPathsSame(checkout.path, callerPath)
+          : checkout.path === callerPath),
+    )
+    const overlaps = caller
+      ? opts.callerWatch?.writableRoots?.map((root) => checkoutPathsOverlap(checkout.path, root))
+      : undefined
+    const writeExcluded = caller
+      ? (opts.callerWatch?.writeExcluded ??
+        Boolean(overlaps?.every((overlap) => overlap === false)))
+      : undefined
     try {
-      snapshots.push(freezeCheckout(checkout, opts))
+      snapshots.push(freezeCheckout(checkout, { ...opts, caller, writeExcluded }))
     } catch (error) {
       failures.push({
         ...checkout,
+        caller,
+        writeExcluded,
         error: error instanceof Error ? error.message : String(error),
+        missing: checkoutIsMissing(checkout.path),
       })
     }
   }
   return { snapshots, failures }
+}
+
+export function callerCheckoutWatch(
+  callerPath: string | null,
+  writableRoots: string[] | null,
+): CallerCheckoutWatch {
+  return { callerPath, writableRoots }
+}
+
+export function classifyRemovedCallerCheckout(
+  failure: FreezeFailure,
+): 'removed' | 'unverified' | null {
+  if (!failure.missing || !failure.caller) return null
+  return failure.writeExcluded ? 'removed' : 'unverified'
 }
 
 const CONFINEMENT_LOCK_LSOF_TIMEOUT_MS = 10_000
@@ -331,6 +405,7 @@ export function classifyDivergence(input: {
   const divergentPaths: string[] = []
   const overlappingPaths: string[] = []
   const strength: Record<ConfinementClass, number> = {
+    removed: 0,
     non_overlapping: 1,
     edit_commit_cycle: 2,
     overlapping: 3,
@@ -391,10 +466,109 @@ export function classifyDivergence(input: {
   }
 }
 
+export function removedCallerCheckoutError(
+  path: string,
+  removal: CheckoutRemovalAttribution,
+): string {
+  const attribution = `; attribution: ${divergenceAttributionLabel({
+    ...removal,
+    lockHolderObservation: 'complete',
+    lockHolder: null,
+    landingSession: null,
+  })}`
+  return `caller checkout ${path} was removed during the run and this run could have written it; confinement cannot be verified${attribution}`
+}
+
+export function freezeAfterCheckouts(input: {
+  watched: CheckoutToWatch[]
+  before: FrozenCheckout[]
+  removal: CheckoutRemovalAttribution
+}): {
+  snapshots: FrozenCheckout[]
+  failures: FreezeFailure[]
+  removedCaller: FrozenCheckout | null
+} {
+  const caller = input.before.find((snapshot) => snapshot.caller)
+  const after = freezeCheckouts(input.watched, {
+    callerWatch: caller
+      ? {
+          callerPath: caller.path,
+          writableRoots: null,
+          writeExcluded: caller.writeExcluded ?? false,
+        }
+      : undefined,
+  })
+  const failures: FreezeFailure[] = []
+  let removedCaller: FrozenCheckout | null = null
+  for (const failure of after.failures) {
+    const classification = classifyRemovedCallerCheckout(failure)
+    if (classification === 'removed') {
+      removedCaller = input.before.find((snapshot) => snapshot.path === failure.path) ?? null
+      continue
+    }
+    failures.push({
+      ...failure,
+      error:
+        classification === 'unverified'
+          ? removedCallerCheckoutError(failure.path, input.removal)
+          : `after snapshot: ${failure.error}`,
+    })
+  }
+  return { snapshots: after.snapshots, failures, removedCaller }
+}
+
+export function removedCheckoutEvent(input: {
+  checkout: FrozenCheckout
+  freeze: FrozenCheckout[]
+  after: FrozenCheckout[]
+  chainRoot: string | null
+  removal: CheckoutRemovalAttribution
+}): ConfinementEvent {
+  return {
+    classification: 'removed',
+    checkout: input.checkout.path,
+    attribution: input.removal.attribution,
+    lockHolderObservation: 'complete',
+    lockHolder: null,
+    landingSession: null,
+    landingId: null,
+    removalSession: input.removal.removalSession,
+    removalRun: input.removal.removalRun,
+    divergentPaths: [],
+    overlappingPaths: [],
+    chainRoot: input.chainRoot,
+    tripTip: null,
+    freeze: input.freeze,
+    after: input.after,
+  }
+}
+
+export function classifyCheckoutChanges(input: {
+  before: FrozenCheckout[]
+  after: FrozenCheckout[]
+  removedCaller: FrozenCheckout | null
+  ownDiffPaths: string[]
+  chainRoot: string | null
+  database: Database
+  startedAt: string
+  removal: CheckoutRemovalAttribution
+}): ConfinementEvent | null {
+  const divergence = classifyDivergence(input)
+  return divergence || !input.removedCaller
+    ? divergence
+    : removedCheckoutEvent({
+        checkout: input.removedCaller,
+        freeze: input.before,
+        after: input.after,
+        chainRoot: input.chainRoot,
+        removal: input.removal,
+      })
+}
+
 export function divergenceAttributionLabel(
   event: Pick<
     ConfinementEvent,
-    'attribution' | 'lockHolderObservation' | 'lockHolder' | 'landingSession'
+    'attribution' | 'lockHolderObservation' | 'lockHolder' | 'landingSession' | 'removalSession'
   >,
 ): string {
   return event.attribution === 'lock_holder'
@@ -403,9 +577,11 @@ export function divergenceAttributionLabel(
         (event.lockHolder?.command ? ` (${event.lockHolder.command})` : '')
     : event.attribution === 'landing'
       ? `landing session ${event.landingSession ?? 'unknown'}`
-      : event.lockHolderObservation === 'unknown'
-        ? 'unattributed (lock holder unknown)'
-        : 'unattributed'
+      : event.attribution === 'tree_removal'
+        ? `tree removal session ${event.removalSession ?? 'unknown'}`
+        : event.lockHolderObservation === 'unknown'
+          ? 'unattributed (lock holder unknown)'
+          : 'unattributed'
 }
 
 export function overlappingError(event: ConfinementEvent): string {
