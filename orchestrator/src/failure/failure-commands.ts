@@ -8,7 +8,7 @@ type FailureFlags = { has(name: string): boolean }
 type FailurePresentation = { log(...values: unknown[]): void }
 
 /**
- * Re-run only the quota/auth signatures over old, unclassified
+ * Re-run only the quota/billing/auth signatures over old, unclassified
  * failures. This is deliberately not a general reclassification: a stored
  * failure is evidence, and changing its meaning on anything less than that
  * row's own vendor error would rewrite the agent's record.
@@ -40,7 +40,7 @@ export function reclassifyFailuresCommand(
   const matched = all.flatMap((row) => {
     if ((row.failure_kind !== 'other' && row.failure_kind !== null) || !row.error) return []
     const kind = classify(row.error)
-    return kind === 'quota' || kind === 'auth' ? [{ row, kind }] : []
+    return kind === 'quota' || kind === 'billing' || kind === 'auth' ? [{ row, kind }] : []
   })
 
   const counts = (rows: { agent: string; failure_kind: string | null }[]): CountRow[] => {
