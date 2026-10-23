@@ -35,6 +35,7 @@ async function invoke(
     checkpoint?: (name: string) => void
     plan?: () => RunProcessTerminationPlan
     terminate?: () => TerminateRunProcessesResult
+    checkSharedGitConfig?: () => string | null
   } = {},
 ) {
   const shown = presentation()
@@ -44,6 +45,7 @@ async function invoke(
       lifecycleCheckpoint: opts.checkpoint ?? (() => {}),
       planRunProcessTermination: opts.plan ?? (() => ({ outcome: 'no-pid' as const })),
       terminateRunProcesses: opts.terminate ?? (() => ({ outcome: 'no-pid' as const })),
+      checkSharedGitConfig: opts.checkSharedGitConfig ?? (() => null),
     }
     if (action === 'stop') await stopRun(id, options, helpers)
     else await abandonRun(id, options, helpers)
@@ -264,6 +266,19 @@ test('stop calls terminate only after the row already reads stopped', async () =
   expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
     status: 'stopped',
   })
+})
+
+test('stop appends and presents a shared git config result header', async () => {
+  const id = insert('running')
+  const header = 'shared git config repair failed for core.worktree in /repo/.git/config'
+
+  const result = await invoke('stop', id, { checkSharedGitConfig: () => header })
+
+  expect(result.code).toBe(0)
+  expect(result.out).toContain(header)
+  expect(
+    (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+  ).toBe(`stopped by architect\n${header}`)
 })
 
 test('stop records a setup run with no vendor and signals nothing', async () => {

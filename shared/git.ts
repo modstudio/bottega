@@ -20,9 +20,9 @@ import { basename, dirname, join, resolve } from 'node:path'
  * this invocation, not a cleanliness verdict.
  */
 
-const ORCH_ROUTING = ['BOTTEGA_GUARDED_GIT_COMMON_DIR', 'BOTTEGA_ALLOWED_GIT_REF'] as const
-
 let listedLocalEnvVars: string[] | undefined
+
+const REF_GUARD_ROUTING = ['BOTTEGA_GUARDED_GIT_COMMON_DIR', 'BOTTEGA_ALLOWED_GIT_REF'] as const
 
 function localEnvVarQueryEnv(): NodeJS.ProcessEnv {
   return { PATH: process.env.PATH ?? '/usr/bin:/bin' }
@@ -63,7 +63,19 @@ function localEnvVarNames(): string[] {
 export function scrubbedGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = { ...base }
   for (const name of localEnvVarNames()) delete env[name]
-  for (const name of ORCH_ROUTING) delete env[name]
+  for (const name of Object.keys(env)) {
+    if (/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(name)) delete env[name]
+  }
+  for (const name of REF_GUARD_ROUTING) delete env[name]
+  return env
+}
+
+/** Child environment for project code: remove repository location without disabling its guard. */
+export function projectCodeGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...base }
+  for (const name of localEnvVarNames()) {
+    if (!name.startsWith('GIT_CONFIG_')) delete env[name]
+  }
   return env
 }
 

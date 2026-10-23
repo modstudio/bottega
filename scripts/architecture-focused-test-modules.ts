@@ -42,6 +42,7 @@ export const focusedTestModules: ArchitectureModule[] = [
     './focused-test-decision.ts',
   ]),
   module('orchestrator/src/focused-test/focused-test-broker.ts', [
+    '../../../shared/git.ts',
     'node:child_process',
     'node:fs',
     'node:path',

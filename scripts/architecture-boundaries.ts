@@ -957,6 +957,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../evidence/evidence-query.ts',
       '../run/run-liveness.ts',
+      '../run/shared-git-config-run.ts',
       '../workflow/workflow-seeds.ts',
       '../lens/lens-seeds.ts',
     ],

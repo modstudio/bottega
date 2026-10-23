@@ -4,14 +4,18 @@ import { ensureMachineIdentity, registerOpenHooks } from '../database/db.ts'
 import { excludeSharedOutputRuns } from '../evidence/evidence-query.ts'
 import { seedLenses } from '../lens/lens-seeds.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { seedWorkflows } from '../workflow/workflow-seeds.ts'
 
 let registered = false
 
+const reapStaleRuns = (database: Parameters<typeof reapStale>[0]) =>
+  reapStale(database, terminalSharedGitConfigForRecordedRun)
+
 export function registerStandardHooks(): void {
   if (registered) return
   registerOpenHooks({
-    afterWritableOpen: [ensureMachineIdentity, excludeSharedOutputRuns, reapStale],
+    afterWritableOpen: [ensureMachineIdentity, excludeSharedOutputRuns, reapStaleRuns],
     afterInitialize: [ensureMachineIdentity, excludeSharedOutputRuns, seedLenses, seedWorkflows],
   })
   registered = true
