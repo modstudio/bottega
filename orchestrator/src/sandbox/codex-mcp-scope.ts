@@ -7,13 +7,12 @@ import { join } from 'node:path'
 /** Parent environment names Codex may forward into the bottega-ask subprocess. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import type { McpServerConfig } from '../mcp/mcp-probe.ts'
 import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
 import {
+  mergeMcpSetupHeader,
   type ProjectMcpSelection,
   type ProjectMcpServer,
   projectMcpWithheldLine,
-  selectDirectProjectMcpServers,
 } from './project-mcp-scope.ts'
 export const CODEX_ASK_ENV_VARS = [
   'BOTTEGA_RUN_ID',
@@ -86,16 +85,6 @@ function codexServers(servers: Record<string, ProjectMcpServer>): Record<string,
   return rendered
 }
 
-/** Select project MCP launch definitions that are safe to expose on argv. */
-export function codexProjectServers(
-  config: Record<string, McpServerConfig>,
-  allowed: string[] | undefined,
-  cwd: string,
-): CodexMcpScope {
-  const selection = selectDirectProjectMcpServers(config, allowed, cwd)
-  return { servers: codexServers(selection.servers), withheld: selection.withheld }
-}
-
 /**
  * Render the launch's already-decided project selection as Codex argv entries.
  * A Codex CLI run reports its own scope in its setup header, so it never
@@ -115,7 +104,7 @@ export function codexProjectServersFromSelection(
 /** Append the visible reason when project MCP definitions cannot enter argv. */
 export function codexMcpSetupHeader(
   header: string | null,
-  scope: ReturnType<typeof codexProjectServers> | null,
+  scope: CodexMcpScope | null,
   catalogues: CodexMcpCatalogue[] = [],
 ): string | null {
   const withheldLine = projectMcpWithheldLine('codex', scope?.withheld ?? [])
@@ -133,8 +122,7 @@ export function codexMcpSetupHeader(
       `MCP scope: codex sees only the first ${result.seen} of ${result.total} ${catalogue.server} tools; withheld: ${result.withheld.join(', ')}`,
     )
   }
-  if (!lines.length) return header
-  return [header, ...lines].filter(Boolean).join('\n')
+  return lines.reduce<string | null>((merged, line) => mergeMcpSetupHeader(merged, line), header)
 }
 
 /** Configuration every Codex CLI turn receives before its subcommand. */

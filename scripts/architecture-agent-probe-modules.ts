@@ -24,6 +24,7 @@ export const agentProbeModules = [
     '../database/db.ts',
     '../jobs/jobs.ts',
     './model-host.ts',
+    '../mcp/mcp-native-attachment.ts',
     '../mcp/mcp-probe.ts',
     '../run/run-number.ts',
     '../transport/transport.ts',

@@ -38,7 +38,7 @@ export type ProjectMcpSelection =
   | { kind: 'direct'; servers: Record<string, ProjectMcpServer>; withheld: string[] }
 
 /** Select project MCP launch definitions that are safe to expose without inline credentials. */
-export function selectDirectProjectMcpServers(
+function selectDirectProjectMcpServers(
   config: Record<string, McpServerConfig>,
   allowed: string[] | undefined,
   cwd: string,

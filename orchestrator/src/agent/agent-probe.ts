@@ -8,6 +8,7 @@ import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { runProbeTurn } from './agent-probe-turn.ts'
 import {
@@ -71,7 +72,7 @@ export function registrationProbeNeedsMcp(
   declared: boolean,
   harness: string,
 ): boolean {
-  return needsMcp || !declared || harness === 'goose'
+  return needsMcp || !declared || acpHarnessProjectServersConfirmable(harness)
 }
 
 function namesProbeFile(value: string): boolean {

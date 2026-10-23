@@ -6,6 +6,7 @@ import * as acp from '@agentclientprotocol/sdk'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
+import { acpHarnessAttachesProjectServers } from '../mcp/mcp-native-attachment.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
@@ -568,7 +569,7 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
  * its project servers. Grok reaches its servers through the per-run config.
  */
 export function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
-  if (opts.agent.name === 'grok') return []
+  if (!acpHarnessAttachesProjectServers(opts.agent.harness ?? opts.agent.name)) return []
   return [...acpWorkerChannel(opts), ...acpProjectMcpServers(opts.projectMcpSelection)]
 }
 

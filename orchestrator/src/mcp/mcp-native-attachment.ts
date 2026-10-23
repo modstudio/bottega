@@ -7,6 +7,26 @@ type NativeMcpAttachmentPrediction = {
   reason: string | null
 }
 
+/**
+ * The ACP harnesses whose session attaches the launch's project selection.
+ * Grok is the exception: it reaches its project servers through the per-run
+ * config instead, so it attaches none.
+ */
+const ACP_HARNESSES_ATTACHING_PROJECT_SERVERS = ['goose', 'codex', 'opencode'] as const
+
+/** The subset of those whose native attachment a registration probe can confirm. */
+const ACP_HARNESSES_CONFIRMABLE_PROJECT_SERVERS = ['goose'] as const
+
+/** Whether this ACP harness's session attaches the launch's project selection. */
+export function acpHarnessAttachesProjectServers(harness: string): boolean {
+  return (ACP_HARNESSES_ATTACHING_PROJECT_SERVERS as readonly string[]).includes(harness)
+}
+
+/** Whether a registration probe can confirm this ACP harness's project-server attachment. */
+export function acpHarnessProjectServersConfirmable(harness: string): boolean {
+  return (ACP_HARNESSES_CONFIRMABLE_PROJECT_SERVERS as readonly string[]).includes(harness)
+}
+
 export type McpTransportPinFacts = {
   pinnedTransport?: 'cli' | 'acp'
   transportPinSource?: 'explicit' | 'environment'
@@ -28,7 +48,7 @@ function predictNativeMcpAttachment(input: {
   // An ACP session launches with the launch's project selection, so a goose
   // ACP worker reaches the project servers the way a Codex CLI worker does.
   if (input.transport === 'acp') {
-    if (harness === 'goose') return { confirmable: true, reason: null }
+    if (acpHarnessProjectServersConfirmable(harness)) return { confirmable: true, reason: null }
     return {
       confirmable: false,
       reason: `native project MCP attachment is unconfirmable: ${harness} ACP launch has no verified project-server attachment`,
