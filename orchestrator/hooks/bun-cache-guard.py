@@ -6,11 +6,13 @@ import re
 import sys
 
 
-COMMAND = re.compile(
-    r"(?:^|&&|[;|])\s*"
-    r"(?:(?:[^\s;&|]*/)?bunx\s+(?:--bun\s+)?(?:[^\s;&|]*/)?bun\s+|"
-    r"(?:[^\s;&|]*/)?bun\s+)"
-    r"pm\s+cache\s+(?:rm|clean)(?=$|\s|[;&|])"
+BUN_CACHE_COMMAND = re.compile(
+    r"(?<![\w-])bun\s+pm\s+cache\s+(?:rm|clean)(?![\w-])"
+)
+RECURSIVE_CACHE_REMOVAL = re.compile(
+    r"(?<![\w-])rm\s+-[^\s;&|]*r[^\s;&|]*\s+[^;&|\n]*"
+    r"(?:(?:~|\$HOME|\$\{HOME\})/|/(?:[^\s\"';&|]+/)+)"
+    r"\.bun/install/cache(?:/links)?(?=$|[/\s\"';&|])"
 )
 
 REASON = (
@@ -26,7 +28,9 @@ def main() -> int:
         if payload.get("tool_name") != "Bash":
             return 0
         command = payload.get("tool_input", {}).get("command", "")
-        if not isinstance(command, str) or not COMMAND.search(command):
+        if not isinstance(command, str) or not (
+            BUN_CACHE_COMMAND.search(command) or RECURSIVE_CACHE_REMOVAL.search(command)
+        ):
             return 0
         json.dump(
             {

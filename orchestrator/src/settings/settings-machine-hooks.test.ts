@@ -96,6 +96,15 @@ test('agent blocker logs spawn identities and fails open when minting fails', ()
   }).toEqual({ exitCode: 0, output: 'ok' })
 })
 
+test('bun cache guard refuses destructive shared-cache commands', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_bun_cache_guard.py', import.meta.url))
+  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+  expect({
+    exitCode: result.exitCode,
+    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+  }).toEqual({ exitCode: 0, output: 'ok' })
+})
+
 test('typed profile hooks and an empty profile render the same canonical product hooks', () => {
   const fromProfile = render(profileHooks)
   const fromEmpty = render({})
