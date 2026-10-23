@@ -3,12 +3,12 @@
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
@@ -18,7 +18,6 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
   type ArtifactRef,
@@ -191,7 +190,7 @@ function runHasRecordedArtifacts(
     .get(runId)?.record_id
   if (!recordId) return false
   const artifacts = runArtifactsDir(recordId, runsDir)
-  const reply = join(runScratchDir(recordId, runsDir), 'reply.json')
+  const reply = runScratchReplyPath(recordId, runsDir)
   if (existsSync(reply)) return true
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }

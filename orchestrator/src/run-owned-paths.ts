@@ -5,7 +5,6 @@ import { join } from 'node:path'
 export function runScratchDir(id: string, runsDir: string): string {
   return join(runsDir, String(id), 'scratch')
 }
-
 export const runHarnessStateDir = (runtimeDir: string): string => join(runtimeDir, 'harness')
 export const runWorkerHomeDir = (runtimeDir: string): string => join(runtimeDir, 'home')
 export const runCheckpointHooksDir = (runtimeDir: string): string =>
@@ -21,8 +20,4 @@ export function runOwnedPaths(runId: string, sandboxRootId: string, runsDir: str
     workerHomeDir: runWorkerHomeDir(runtimeDir),
     checkpointHooksDir: runCheckpointHooksDir(runtimeDir),
   }
-}
-
-export function runSandboxDir(id: string, runsDir: string): string {
-  return runOwnedPaths(id, id, runsDir).runtimeDir
 }

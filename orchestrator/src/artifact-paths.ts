@@ -10,6 +10,10 @@ export function runArtifactsDir(id: string, runsDir: string): string {
   return join(runsDir, String(id), 'artifacts')
 }
 
+export function runScratchReplyPath(id: string, runsDir: string): string {
+  return join(runScratchDir(id, runsDir), 'reply.json')
+}
+
 export function isPathAtOrBelow(path: string, directory: string): boolean {
   return path === directory || path.startsWith(`${directory}/`)
 }

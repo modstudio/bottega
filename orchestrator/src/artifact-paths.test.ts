@@ -6,9 +6,10 @@ import {
   persistedRunArtifactPath,
   rewriteScratchDirPaths,
   runArtifactsDir,
+  runScratchReplyPath,
 } from './artifact-paths.ts'
-import { runOwnedPaths } from './run-owned-paths.ts'
 import { runScratchDir } from './run/run-artifacts.ts'
+import { runOwnedPaths } from './run-owned-paths.ts'
 
 test('one owned-path layout names run scratch, harness state, home, and host hooks', () => {
   expect(runOwnedPaths('turn', 'root', '/runs')).toEqual({
@@ -24,6 +25,10 @@ test('path containment accepts only the directory itself and slash descendants',
   expect(isPathAtOrBelow('/runs/42/artifacts', '/runs/42/artifacts')).toBe(true)
   expect(isPathAtOrBelow('/runs/42/artifacts/report.md', '/runs/42/artifacts')).toBe(true)
   expect(isPathAtOrBelow('/runs/42/artifacts-old/report.md', '/runs/42/artifacts')).toBe(false)
+})
+
+test('the scratch reply path follows the canonical run-owned layout', () => {
+  expect(runScratchReplyPath('turn', '/runs')).toBe('/runs/turn/scratch/reply.json')
 })
 
 test('named artifact plans resolve sources, destinations, and already-persisted entries', () => {
