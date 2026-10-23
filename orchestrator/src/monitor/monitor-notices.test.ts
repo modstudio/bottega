@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
@@ -10,10 +11,10 @@ import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
 import { renderBoardReplyDelivery } from '../board/board-thread-render.ts'
 import { askQuestion, replyToThread } from '../board/board-thread-service.ts'
-import { db } from '../database/db.ts'
+import { DB_PATH, db } from '../database/db.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
-  claimMonitorNoticesWithHosted,
+  claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
 } from './monitor-notices.ts'
 
@@ -100,7 +101,7 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
       throw new Error('receipt offline')
     },
   })
-  const delivery = await claimMonitorNoticesWithHosted(session)
+  const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
   expect(delivery.notices.map((row) => row.noticeId)).toEqual([
     `board:${local.number}`,
     `board:${hosted.id}`,
@@ -119,20 +120,22 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
     )
     .get()
   expect(measured).toEqual({ delivery_point: 'heartbeat-monitor', emissions: 1, messages: 2 })
-  const repeatedFailure = await claimMonitorNoticesWithHosted(session)
+  const repeatedFailure = await claimMonitorNoticesForCommand(session, {
+    skipBoardRefresh: false,
+  })
   expect(repeatedFailure.notices).toEqual([])
   expect(repeatedFailure.warning).toBeNull()
   refreshFails = false
-  const recovery = await claimMonitorNoticesWithHosted(session)
+  const recovery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
   expect(recovery.notices).toEqual([])
   expect(recovery.warning).toContain('Hosted board cache is verified again')
-  const verified = await claimMonitorNoticesWithHosted(session)
+  const verified = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
   expect(verified.notices).toEqual([])
   expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 2 })
   expect(verified.warning).toBeNull()
 })
 
-test('session-start monitor skips hosted refresh while the heartbeat monitor refreshes', async () => {
+test('notice claim is read-only and hosted refresh is an explicit write step', async () => {
   const session = 'monitor-refresh-reader'
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   db()
@@ -149,10 +152,39 @@ test('session-start monitor skips hosted refresh while the heartbeat monitor ref
       return { userId: newRecordId(), items: [], highestRevision: null }
     },
   })
-  await claimMonitorNoticesWithHosted(session, { refreshBoard: false })
+  await claimMonitorNoticesForCommand(session, { skipBoardRefresh: true })
   expect(changesCalls).toBe(0)
-  await claimMonitorNoticesWithHosted(session)
+  await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
   expect(changesCalls).toBe(1)
+})
+
+test('notice claim succeeds while another connection holds the store writer', async () => {
+  const session = 'monitor-reader-during-writer'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
+  const local = postNotice(
+    {
+      audience: `session:${session}`,
+      title: 'Available during writer',
+      body: 'read-only claim body',
+      ackRequired: false,
+    },
+    {},
+    Date.now(),
+  )
+  const writer = new Database(DB_PATH, { readwrite: true })
+  writer.exec('BEGIN IMMEDIATE')
+  try {
+    const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: true })
+    expect(delivery.notices.map((notice) => notice.noticeId)).toContain(`board:${local.number}`)
+  } finally {
+    writer.exec('ROLLBACK')
+    writer.close()
+  }
 })
 
 test('heartbeat board notices use the shared reply delivery rendering', async () => {
@@ -193,7 +225,7 @@ test('heartbeat board notices use the shared reply delivery rendering', async ()
     postingCwd,
   )
 
-  const delivery = await claimMonitorNoticesWithHosted(reader, { refreshBoard: false })
+  const delivery = await claimMonitorNoticesForCommand(reader, { skipBoardRefresh: true })
   const replyNotice = delivery.notices.find((notice) => notice.noticeId === `board:${reply.number}`)
   expect(replyNotice?.detail).toBe(
     renderBoardReplyDelivery({

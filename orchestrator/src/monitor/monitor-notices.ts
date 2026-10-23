@@ -1,15 +1,18 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
+import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  BOARD_READ_REFRESH_BUDGET_MS,
   hostedBoardVerificationWarning,
+  refreshHostedBoard,
   takeHostedBoardVerificationTransition,
 } from '../board/board-hosted-cache.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from '../board/board-push-service.ts'
 import { requireRealSession } from '../board/board-service.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { db, nowIso, openReadOnlyDatabase, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import {
   abandonedBootstrapConditions,
@@ -77,31 +80,34 @@ function landingNoticeDetail(row: {
 function recordStalledRunSubjects(
   kinds: Set<string>,
   record: (kind: string, subjects: string[]) => void,
+  database: Database,
 ): void {
   if (!kinds.has('stalled-run')) return
   record(
     'stalled-run',
-    stalledRunConditions().map((condition) => condition.subject),
+    stalledRunConditions(Date.now(), {}, database).map((condition) => condition.subject),
   )
 }
 
 function recordAbandonedBootstrapSubjects(
   kinds: Set<string>,
   record: (kind: string, subjects: string[]) => void,
+  database: Database,
 ): void {
   if (!kinds.has('abandoned-bootstrap')) return
   record(
     'abandoned-bootstrap',
-    abandonedBootstrapConditions().map((condition) => condition.subject),
+    abandonedBootstrapConditions(Date.now(), database).map((condition) => condition.subject),
   )
 }
 
 function recordIdleDetectorSubjects(
   kinds: Set<string>,
   record: (kind: string, subjects: string[]) => void,
+  database: Database,
 ): void {
   if (!kinds.has('idle') && !kinds.has('stuck-host-wait')) return
-  const detected = idleRunConditions()
+  const detected = idleRunConditions(Date.now(), database)
   if (kinds.has('idle')) {
     record(
       'idle',
@@ -120,7 +126,10 @@ function recordIdleDetectorSubjects(
   }
 }
 
-function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {
+function currentAddressedSubjects(
+  kinds: Set<string>,
+  database: Database,
+): Map<string, Set<string>> {
   for (const kind of kinds) {
     if (!(kind in MONITOR_NOTICE_DELIVERY_POLICY)) {
       throw new Error(`monitor notice kind ${kind} has no delivery-currentness policy`)
@@ -129,21 +138,21 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
 
   const current = new Map<string, Set<string>>()
   const record = (kind: string, subjects: string[]) => current.set(kind, new Set(subjects))
-  recordAbandonedBootstrapSubjects(kinds, record)
+  recordAbandonedBootstrapSubjects(kinds, record, database)
   if (kinds.has('asking-run')) {
     record(
       'asking-run',
-      askingRuns().map((run) => `run:${run.record_id}`),
+      askingRuns(database).map((run) => `run:${run.record_id}`),
     )
   }
   if (kinds.has('dead-running-process')) {
     record(
       'dead-running-process',
-      deadRunningProcessConditions().map((condition) => condition.subject),
+      deadRunningProcessConditions(Date.now(), database).map((condition) => condition.subject),
     )
   }
-  recordIdleDetectorSubjects(kinds, record)
-  recordStalledRunSubjects(kinds, record)
+  recordIdleDetectorSubjects(kinds, record, database)
+  recordStalledRunSubjects(kinds, record, database)
   if (kinds.has('task-waiting-on-ruling')) {
     record(
       'task-waiting-on-ruling',
@@ -151,7 +160,7 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
     )
   }
   if (kinds.has('terminal-close-out-held') || kinds.has('terminal-close-out-failed')) {
-    const closeOuts = terminalCloseOutRuns()
+    const closeOuts = terminalCloseOutRuns(database)
     for (const outcome of ['held', 'failed'] as const) {
       const kind = `terminal-close-out-${outcome}`
       if (kinds.has(kind)) {
@@ -167,16 +176,19 @@ function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> 
   if (kinds.has('unscored-run')) {
     record(
       'unscored-run',
-      unscoredRuns().map((run) => `run:${run.record_id}`),
+      unscoredRuns(database).map((run) => `run:${run.record_id}`),
     )
   }
   return current
 }
 
 /** Read addressed findings without consuming them. A failed consumer gets them again. */
-export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
+export function claimMonitorNotices(
+  ownerSession: string,
+  database: Database = db(),
+): MonitorNotice[] {
   requireRealSession(ownerSession, 'monitor notices')
-  const rows = db()
+  const rows = database
     .query(
       `SELECT c.id, c.kind, c.subject, c.condition_since, c.age_ms,
               c.issue_key, c.severity, c.owner_session_id,
@@ -206,7 +218,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     run_project: string | null
   }[]
   const kinds = new Set(rows.map((row) => row.kind))
-  const current = currentAddressedSubjects(kinds)
+  const current = currentAddressedSubjects(kinds, database)
   const conditions = rows
     .filter(
       (row) =>
@@ -225,7 +237,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
       severity: row.severity,
       ownerSession: row.owner_session_id,
     }))
-  const landings = db()
+  const landings = database
     .query(
       `SELECT record_id, branch, status, started_at, finished_at, session_id
        FROM landing
@@ -258,37 +270,57 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   ]
 }
 
-export async function claimMonitorNoticesWithHosted(
+type HostedVerificationSource = { source: 'stored' } | { source: 'refresh'; warning: string | null }
+
+async function claimMonitorNoticesWithHosted(
   ownerSession: string,
-  input: { refreshBoard?: boolean } = {},
+  verificationSource: HostedVerificationSource,
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
-  const board = await pendingBoardDelivery({
-    session: ownerSession,
-    budgetMs: input.refreshBoard === false ? 0 : 500,
-  })
-  const verification =
-    input.refreshBoard === false
-      ? hostedBoardVerificationWarning()
-      : takeHostedBoardVerificationTransition()
-  const overflow = board.delivery.length ? board.overflow : null
-  return {
-    notices: [
-      ...claimMonitorNotices(ownerSession),
-      ...board.delivery.map(
-        (notice): MonitorNotice => ({
-          noticeId: `board:${notice.id}`,
-          kind: 'board-notice',
-          subject: `board:${notice.id}`,
-          label: noticeLabel(`board:${notice.id}`),
-          since: null,
-          ageMs: null,
-          detail: notice.text,
-          ownerSession,
-        }),
-      ),
-    ],
-    warning: [overflow, verification].filter(Boolean).join(' ') || null,
+  const database = openReadOnlyDatabase()
+  try {
+    const board = await pendingBoardDelivery({ session: ownerSession, budgetMs: 0, database })
+    const verification =
+      verificationSource.source === 'stored'
+        ? hostedBoardVerificationWarning(database)
+        : verificationSource.warning
+    const overflow = board.delivery.length ? board.overflow : null
+    return {
+      notices: [
+        ...claimMonitorNotices(ownerSession, database),
+        ...board.delivery.map(
+          (notice): MonitorNotice => ({
+            noticeId: `board:${notice.id}`,
+            kind: 'board-notice',
+            subject: `board:${notice.id}`,
+            label: noticeLabel(`board:${notice.id}`),
+            since: null,
+            ageMs: null,
+            detail: notice.text,
+            ownerSession,
+          }),
+        ),
+      ],
+      warning: [overflow, verification].filter(Boolean).join(' ') || null,
+    }
+  } finally {
+    database.close()
   }
+}
+
+/** Refresh when requested, then claim notices through a separate read-only store handle. */
+export async function claimMonitorNoticesForCommand(
+  ownerSession: string,
+  input: { skipBoardRefresh: boolean },
+): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
+  let verificationSource: HostedVerificationSource = { source: 'stored' }
+  if (!input.skipBoardRefresh) {
+    await refreshHostedBoard({ budgetMs: BOARD_READ_REFRESH_BUDGET_MS })
+    verificationSource = {
+      source: 'refresh',
+      warning: takeHostedBoardVerificationTransition(),
+    }
+  }
+  return claimMonitorNoticesWithHosted(ownerSession, verificationSource)
 }
 
 /** Acknowledge only rows the hook has already emitted to its consumer. */
