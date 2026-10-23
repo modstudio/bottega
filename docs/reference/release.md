@@ -50,7 +50,7 @@ list recorded releases for a project
 
 ## bottega release run
 
-**Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--json]`
+**Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--behind-trunk <reason>] [--json]`
 
 run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH_RELEASE_COMMIT set, plus ORCH_RELEASE_ROLLBACK set to 1 on a deliberate rollback
 
@@ -58,6 +58,7 @@ run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH
 
 - `--rung <name>`: release rung to run
 - `--rollback <reason>`: reason for deploying the prior live commit
+- `--behind-trunk <reason>`: reason for deploying a branch behind the project trunk
 - `--json`: write the release result as JSON
 
 ### Related

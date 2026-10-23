@@ -94,7 +94,7 @@ export const sharedWorkflowPromotionDisposition = (
   return pinsSharedPromotion(spaceId, sourceSpace, rows) ? 'pinned' : 'follower'
 }
 
-export function preflightSharedWorkflowTargets<Definition>(input: {
+export function preflightSharedWorkflowTargets<Definition, CatalogueDefinition>(input: {
   slug: string
   definition: Definition
   sourceSpace: string
@@ -102,7 +102,7 @@ export function preflightSharedWorkflowTargets<Definition>(input: {
   catalogueVersions: readonly WorkflowPromotionVersion[]
   sourceCatalogue: WorkflowPromotionVersion
   missingCatalogueRefusal: string
-  preflight(definition: Definition, spaceId: string | null, catalogue: unknown): void
+  preflight(definition: Definition, spaceId: string | null, catalogue: CatalogueDefinition): void
 }): WorkflowCatalogueBlockBySpace[] {
   const blocked: WorkflowCatalogueBlockBySpace[] = []
   for (const spaceId of input.spaces) {

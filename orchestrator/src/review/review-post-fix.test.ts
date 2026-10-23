@@ -72,7 +72,6 @@ test('a completed review recorded with a launch key matches its reviewed tip aft
     const facts = gatherPostFixReviewFacts({
       database,
       repo,
-      from: mergeBase,
       to,
       trunkRef: 'main',
       project: 'fixture',

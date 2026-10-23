@@ -93,7 +93,6 @@ export function resolvePullRequestChange(
     facts: gatherPostFixReviewFacts({
       database,
       repo: cwd,
-      from: measured.base,
       to: tip,
       trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
       project: project.name,
