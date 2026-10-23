@@ -30,6 +30,10 @@ function started(database: Database): number {
     live: 'before-sha',
     rollback: false,
     reason: null,
+    trunk: 'main',
+    trunkTip: 'candidate-sha',
+    commitsBehindTrunk: 0,
+    behindTrunkReason: null,
   })
 }
 
@@ -55,6 +59,9 @@ test('release writes and evolves one whole-row pending payload without deploy ou
     projectName: PLATFORM_SLUG,
     rung: 'production',
     candidateCommit: 'candidate-sha',
+    trunk: 'main',
+    trunkTip: 'candidate-sha',
+    commitsBehindTrunk: 0,
     liveCommitBefore: 'before-sha',
     finishedAt: null,
     exitCode: null,
@@ -151,26 +158,30 @@ test('release ledger and outbox mutations roll back together', () => {
   ).toEqual({ finished_at: null, exit_code: null, output_tail: '' })
 })
 
-test('release sanitizer withholds warning and rollback reason while local values stay intact', () => {
+test('release sanitizer withholds warning and release reasons while local values stay intact', () => {
   const database = fixture()
   const secret = 'Authorization: Bearer top-secret-value'
   const id = database
-    .query<{ id: number }, [string, string, string]>(
+    .query<{ id: number }, [string, string, string, string]>(
       `INSERT INTO release_ledger
-       (record_id,project,rung,candidate_commit,rollback,rollback_reason,actor,started_at,warning)
-       VALUES ('01990000-0000-7000-8000-000000000077',?,'production','sha',1,?,'operator','2026-10-12T00:00:00.000Z',?)
+       (record_id,project,rung,candidate_commit,rollback,rollback_reason,behind_trunk_reason,actor,started_at,warning)
+       VALUES ('01990000-0000-7000-8000-000000000077',?,'production','sha',1,?,?,'operator','2026-10-12T00:00:00.000Z',?)
        RETURNING id`,
     )
-    .get(PLATFORM_SLUG, secret, secret)!.id
+    .get(PLATFORM_SLUG, secret, secret, secret)!.id
   enqueueReleaseRecord(database, id)
   const payload = JSON.parse(
     database.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload,
   ) as Record<string, unknown>
   expect(payload.rollbackReason).toBe(WITHHELD_SECRET_SHAPED)
+  expect(payload.behindTrunkReason).toBe(WITHHELD_SECRET_SHAPED)
   expect(payload.warning).toBe(WITHHELD_SECRET_SHAPED)
-  expect(payload.withheldFields).toEqual(['rollback_reason', 'warning'])
-  expect(database.query('SELECT rollback_reason,warning FROM release_ledger').get()).toEqual({
+  expect(payload.withheldFields).toEqual(['rollback_reason', 'behind_trunk_reason', 'warning'])
+  expect(
+    database.query('SELECT rollback_reason,behind_trunk_reason,warning FROM release_ledger').get(),
+  ).toEqual({
     rollback_reason: secret,
+    behind_trunk_reason: secret,
     warning: secret,
   })
 })
