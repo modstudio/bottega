@@ -20,6 +20,7 @@ const RULES: [FileKind, RegExp][] = [
   ['test', /(^|\/)__tests__\//],
   ['test', /(^|\/)tests?\//i],
   ['test', /Test\.php$/],
+  ['test', /(^|\/)test_[^/]+\.py$/],
   ['test', /_test\.(go|py|rb)$/],
   ['test', /(^|\/)(cypress|e2e|playwright)\//],
   ['docs', /\.mdx?$/],
