@@ -49,7 +49,7 @@ process.stdin.on('data', (chunk) => {
   writeFileSync(
     join(dir, '.mcp.json'),
     JSON.stringify({
-      mcpServers: { minted: { command: process.execPath, args: [server] } },
+      mcpServers: { minted: { command: Bun.which('bun') ?? process.execPath, args: [server] } },
     }),
   )
   return server

@@ -24,7 +24,17 @@ export function installedBottegaExecutable(): string | null {
   return readDistributionManifest(installRoot()) ? assetPath('bin', PLATFORM_SLUG) : null
 }
 
-function sourceArguments(entry: BottegaEntry): string[] {
+/** Resolve source-mode Bun through PATH so generated commands survive package upgrades. */
+export function sourceBunExecutable(
+  which: (executable: string) => string | null = (executable) => Bun.which(executable),
+): string {
+  return which('bun') ?? process.execPath
+}
+
+function sourceArguments(
+  entry: BottegaEntry,
+  whichSourceBun?: (executable: string) => string | null,
+): string[] {
   switch (entry) {
     case PLATFORM_SLUG:
       return [assetPath('bin', PLATFORM_SLUG)]
@@ -38,7 +48,7 @@ function sourceArguments(entry: BottegaEntry): string[] {
       return [assetPath('bin', PLATFORM_SLUG), 'mcp', 'ask-server']
     case 'ask-proxy':
       return [
-        Bun.which('bun') ?? process.execPath,
+        sourceBunExecutable(whichSourceBun),
         '--no-env-file',
         assetPath('orchestrator', 'src', 'ask', 'ask-proxy.ts'),
         'ask-server',
@@ -49,13 +59,13 @@ function sourceArguments(entry: BottegaEntry): string[] {
       return [assetPath('bin', 'retrieval-search')]
     case 'check-attribution':
       return [
-        process.execPath,
+        sourceBunExecutable(whichSourceBun),
         '--no-env-file',
         assetPath('orchestrator', 'src', 'check', 'check-attribution.ts'),
       ]
     case 'schema-check':
       return [
-        process.execPath,
+        sourceBunExecutable(whichSourceBun),
         '--no-env-file',
         assetPath('orchestrator', 'src', 'check', 'check-strict-schema.ts'),
       ]
@@ -66,11 +76,12 @@ function sourceArguments(entry: BottegaEntry): string[] {
 export function bottegaEntryArgv(
   entry: BottegaEntry,
   sourceExecutable?: string | (() => string),
+  whichSourceBun?: (executable: string) => string | null,
 ): string[] {
   if (embeddedDistributionManifest()) {
     return [process.execPath, ...BOTTEGA_ENTRY_PROTOCOL[entry].compiledArguments]
   }
-  const argv = sourceArguments(entry)
+  const argv = sourceArguments(entry, whichSourceBun)
   if (sourceExecutable) {
     argv[0] = typeof sourceExecutable === 'function' ? sourceExecutable() : sourceExecutable
   }

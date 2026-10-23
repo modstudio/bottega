@@ -282,7 +282,12 @@ function checkpointTerminalWork(input: TerminalInput): string | null {
   }
   if (checkpoint.error)
     console.error(`orch: run ${input.claim.id} checkpoint failed: ${checkpoint.error}`)
-  return checkpoint.created ? terminalCheckpointHeader(checkpoint.commit!) : null
+  return terminalCheckpointHeader({
+    created: checkpoint.created,
+    commit: checkpoint.commit,
+    error: checkpoint.error,
+    worktree: input.worktree!.path,
+  })
 }
 
 function terminalAfterCheckouts(
@@ -333,8 +338,18 @@ export function shouldCheckpointAtTerminal(input: {
   return input.writesJob && input.hasWorktree
 }
 
-function terminalCheckpointHeader(commit: string): string {
-  return `Harness checkpoint: committed uncommitted work as ${commit}.`
+/** Describe the final checkpoint result without changing the worker outcome. */
+export function terminalCheckpointHeader(input: {
+  created: boolean
+  commit: string | null
+  error: string | null
+  worktree: string
+}): string | null {
+  if (input.error) {
+    return `Harness checkpoint failed: ${input.error}; uncommitted work remains in the worktree at ${input.worktree}.`
+  }
+  if (input.created) return `Harness checkpoint: committed uncommitted work as ${input.commit!}.`
+  return null
 }
 
 /** Artifact copy faults retain the worker outcome while remaining visible on the run. */
