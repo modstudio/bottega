@@ -8,7 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
+import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutRemovalAttribution,
@@ -23,7 +23,7 @@ import {
 import type { ReaderReply, ReviewReply, realQuestions, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
-import { type classify, FAILS_OVER } from '../failure/failure.ts'
+import { billingHoldForFailure, type classify, FAILS_OVER } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -76,6 +76,23 @@ type TerminalOptions = {
     parent: string
     turn: number
   }
+}
+
+function writeTerminalOperationalState(
+  database: Database,
+  runId: string,
+  resourceUsage: RunResourceUsage | null,
+  failureKind: ReturnType<typeof classify> | null,
+  agent: string,
+): void {
+  const hold = billingHoldForFailure(failureKind, agent)
+  if (hold) {
+    database
+      .query('UPDATE agent SET enabled=?,disabled_reason=? WHERE name=?')
+      .run(hold.enabled, hold.disabledReason, agent)
+    refreshAgents()
+  }
+  writeTerminalRunResourceUsage(database, runId, resourceUsage)
 }
 
 function closeTerminalQuestions(
@@ -807,10 +824,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           claim.id,
         )
 
-      writeTerminalRunResourceUsage(db(), claim.id, resourceUsage)
-
+      writeTerminalOperationalState(db(), claim.id, resourceUsage, failureKind, name)
       recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
-
       /**
        * The facts, recorded without anyone's opinion.
        *

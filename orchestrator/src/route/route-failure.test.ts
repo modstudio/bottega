@@ -5,6 +5,7 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import {
+  billingHoldForFailure,
   COOLS_DOWN,
   classify,
   FAILS_OVER,
@@ -104,23 +105,38 @@ describe('failure classification', () => {
     expect(classify(refusal)).toBe('content_refusal')
   })
 
-  test('quota and auth are separated, because only one is fixed by waiting', () => {
+  test('rate quota, billing exhaustion, and auth remain distinct', () => {
     expect(classify('HTTP 429: rate limit exceeded')).toBe('quota')
     expect(
       classify(
         '{"error":{"code":429,"message":"Rate limit exceeded: free-models-per-day limit reached"}}',
       ),
     ).toBe('daily_quota')
-    expect(classify('HTTP 402')).toBe('quota')
-    expect(classify('balance exhausted')).toBe('quota')
+    expect(
+      classify('API error (status 402 Payment Required): Grok Build usage balance exhausted'),
+    ).toBe('billing')
+    expect(classify('insufficient credits')).toBe('billing')
+    expect(classify('{"error":{"type":"insufficient_quota"}}')).toBe('billing')
     expect(classify('401 unauthorized')).toBe('auth')
     expect(NEEDS_HUMAN).toEqual([
       'quota',
+      'billing',
       'auth',
       'unreachable',
       'escaped',
       'confinement_unverified',
     ])
+  })
+
+  test('billing creates an operator-cleared hold rather than a probe-cleared cooldown', () => {
+    expect(COOLS_DOWN).not.toContain('billing')
+    expect(FAILS_OVER).toContain('billing')
+    expect(NOT_EVIDENCE).toContain('billing')
+    expect(billingHoldForFailure('quota', 'grok')).toBeNull()
+    expect(billingHoldForFailure('billing', 'grok')).toEqual({
+      enabled: 0,
+      disabledReason: `billing hold — restore the vendor balance or billing limit, then run '${PLATFORM_SLUG} agent set grok --enabled true'`,
+    })
   })
 
   test('a missing product entitlement fails over, cools down and is not agent evidence', () => {
@@ -204,6 +220,7 @@ describe('failure classification', () => {
       'capacity',
       'daily_quota',
       'quota',
+      'billing',
       'auth',
       'entitlement',
       'unreachable',

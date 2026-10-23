@@ -1,12 +1,11 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isCodexThrottleNotice } from '../transport/codex-throttle.ts'
 
 /**
  * Why a run failed, and whether a human needs to know.
  *
- * Two kinds of failure need a person: the plan is out of tokens, and the login
- * has gone stale. Both stop an agent working until someone acts, and neither
- * announces itself - without this a quota-exhausted agent keeps being routed to
- * and keeps failing, silently, until the failures are noticed by accident.
+ * Some failures need a person because retrying cannot restore service. They
+ * must announce themselves or routing keeps spending runs on the same outage.
  *
  * Grok's HTTP 402 / exhausted-balance response is observed in real runs. The
  * remaining strings are deliberately generic shapes. That is why `other` is
@@ -23,6 +22,8 @@ export const FAILURE_KINDS = [
   /** The provider's daily allowance is exhausted and resets at the next UTC day. */
   'daily_quota',
   'quota',
+  /** The vendor account cannot spend until its balance or billing limit is restored. */
+  'billing',
   'auth',
   /**
    * The vendor will not serve this account for the product. Neither waiting nor
@@ -164,10 +165,17 @@ const PATTERNS: [FailureKind, RegExp][] = [
     /\b(?:at capacity|overloaded|server is busy|capacity constraints|(?:model|engine)\b[\s\S]{0,80}\btemporarily unavailable|temporarily unavailable\b[\s\S]{0,80}\b(?:model|engine))\b/i,
   ],
   ['daily_quota', /\b(?:free-models-per-day|daily (?:allowance|limit)|per day limit)\b/i],
+  // A balance or billing limit cannot recover through request pacing or a
+  // capability probe. Keep these before quota because some providers report
+  // billing exhaustion with HTTP 429 and an `insufficient_quota` error type.
+  [
+    'billing',
+    /\b(?:402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached))\b/i,
+  ],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   [
     'quota',
-    /\b(402|429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|balance (?:exhausted|depleted)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i,
+    /\b(429|quota|usage limit|rate.?limit|too many requests|out of tokens|insufficient quota|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i,
   ],
   // Licensing text can also tell the user to sign in again, so entitlement must
   // win before `auth`. Match the licensing vocabulary, never a bare error code.
@@ -318,6 +326,7 @@ export function classify(
 /** Failures a person has to act on: nothing downstream can route around them. */
 export const NEEDS_HUMAN: FailureKind[] = [
   'quota',
+  'billing',
   'auth',
   'unreachable',
   'escaped',
@@ -333,6 +342,7 @@ export const NEEDS_HUMAN: FailureKind[] = [
  */
 export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
   quota: (a) => `${a} is out of quota`,
+  billing: (a) => `${a} billing is exhausted`,
   auth: (a) => `${a} needs re-authenticating`,
   unreachable: (a) => `${a}'s endpoint is unreachable`,
   escaped: (a) => `outside change observed during ${a} run`,
@@ -361,6 +371,7 @@ export const FAILS_OVER: FailureKind[] = [
   'capacity',
   'daily_quota',
   'quota',
+  'billing',
   'auth',
   'entitlement',
   'content_refusal',
@@ -390,6 +401,7 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'capacity',
   'daily_quota',
   'quota',
+  'billing',
   'auth',
   'entitlement',
   'unreachable',
@@ -406,6 +418,22 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'harness',
   'abandoned',
 ]
+
+export type BillingHold = { enabled: 0; disabledReason: string }
+
+/** A durable routing hold whose only release is the named operator action. */
+export function billingHoldForFailure(
+  failureKind: FailureKind | null,
+  agent: string,
+): BillingHold | null {
+  if (failureKind !== 'billing') return null
+  return {
+    enabled: 0,
+    disabledReason:
+      `billing hold — restore the vendor balance or billing limit, then run ` +
+      `'${PLATFORM_SLUG} agent set ${agent} --enabled true'`,
+  }
+}
 
 /** Whether a run failure is ineligible for a recorded evidence verdict. */
 export function isNotEvidenceFailure(failureKind: string | null): boolean {

@@ -215,9 +215,13 @@ function notifyFailureRequiringHuman(input: {
   runId: string
 }): void {
   if (input.failureKind && NEEDS_HUMAN.includes(input.failureKind)) {
+    const routingRemedy =
+      input.failureKind === 'billing'
+        ? `Routing will avoid it until the billing hold is cleared with '${PLATFORM_SLUG} agent set ${input.name} --enabled true'.`
+        : 'Routing will avoid it until it succeeds again.'
     notify(
       NEEDS_HUMAN_TITLE[input.failureKind]?.(input.name) ?? `${input.name} needs attention`,
-      `${input.job} failed. Routing will avoid it until it succeeds again.`,
+      `${input.job} failed. ${routingRemedy}`,
     )
   }
   if (input.idleUnkillable)
