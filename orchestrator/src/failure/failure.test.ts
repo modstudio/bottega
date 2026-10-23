@@ -61,6 +61,15 @@ describe('billing classification', () => {
     expect(classify('402 Payment Required')).toBe('billing')
   })
 
+  test('classifies the recorded OpenRouter credit exhaustion without matching unrelated credits', () => {
+    expect(
+      classify(
+        'Please check your account with your provider to add more credits, then resend your message to continue.',
+      ),
+    ).toBe('billing')
+    expect(classify('The closing credits list the film crew.')).not.toBe('billing')
+  })
+
   test('does not treat an unrelated 402 number as a billing status', () => {
     expect(classify('orchestrator/src/x.ts:402')).not.toBe('billing')
     expect(classify('processed 402 files')).not.toBe('billing')
