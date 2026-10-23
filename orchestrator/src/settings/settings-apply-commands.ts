@@ -330,7 +330,7 @@ async function writeOwned(
 /** Migrate only names in the stored user settings body; values remain in settings.env. */
 export async function migrateStoredSettingsEnvironmentNames(
   replacement: (name: string) => string | null,
-): Promise<string[]> {
+): Promise<Array<{ oldName: string; newName: string }>> {
   const owner = await signedInDocOwner()
   const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
   if (!row) return []
@@ -345,7 +345,46 @@ export async function migrateStoredSettingsEnvironmentNames(
     'migrated legacy environment key names',
     row.revision!,
   )
-  return migrated.filter((name) => !current.includes(name))
+  return current.flatMap((oldName) => {
+    const newName = replacement(oldName)
+    return newName && newName !== oldName ? [{ oldName, newName }] : []
+  })
+}
+
+/** Reverse only the stored settings key renames recorded by setup's backup manifest. */
+export async function restoreStoredSettingsEnvironmentNames(
+  migrations: ReadonlyArray<{ oldName: string; newName: string }>,
+): Promise<void> {
+  if (!migrations.length) return
+  const owner = await signedInDocOwner()
+  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  if (!row) {
+    throw new Error(
+      `refusing setup restore: stored user settings are absent; restore the settings document, then re-run ${PLATFORM_SLUG} machine setup restore`,
+    )
+  }
+  const owned = parseStoredOwnedSettings(row.body)
+  const current = owned.envKeys ?? []
+  for (const { oldName, newName } of migrations) {
+    if (current.includes(oldName)) {
+      throw new Error(
+        `refusing setup restore: stored settings already contain ${oldName}; delete that stored env key, then re-run ${PLATFORM_SLUG} machine setup restore`,
+      )
+    }
+    if (!current.includes(newName)) {
+      throw new Error(
+        `refusing setup restore: stored settings do not contain ${newName}; restore that stored env key, then re-run ${PLATFORM_SLUG} machine setup restore`,
+      )
+    }
+  }
+  const reverse = new Map(migrations.map(({ oldName, newName }) => [newName, oldName]))
+  owned.envKeys = current.map((name) => reverse.get(name) ?? name).sort()
+  await writeOwned(
+    targetAddress({ kind: 'user' }, owner),
+    owned,
+    'restored legacy environment key names',
+    row.revision!,
+  )
 }
 
 function settingsEnvironmentNamesDecision(

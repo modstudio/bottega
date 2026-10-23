@@ -389,8 +389,83 @@ test('apply then restore recovers every rewritten home file byte for byte', asyn
     },
   })
 
-  await restoreOperatorEnvironmentBackup(report.backupDirectory!, async () => {})
+  await restoreOperatorEnvironmentBackup(report.backupDirectory!, {
+    restoreRegister: async () => {},
+    restoreSecrets: async () => {},
+    restoreSettings: async () => {},
+  })
   expect(readFileSync(environment)).toEqual(beforeEnvironment)
   expect(readFileSync(settings)).toEqual(beforeSettings)
   expect(() => statSync(`${environment}.${PLATFORM_SLUG}-env-backup`)).toThrow()
+})
+
+test('restore reverses the sealed-secret and stored-settings names recorded by migration', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'setup-environment-services-'))
+  temporary.push(home)
+  const secrets = new Set(['ORCH_RECORD_URL'])
+  const settings = new Set(['ORCH_RECORD_MIGRATE_URL'])
+  const secretMigration = {
+    oldName: 'ORCH_RECORD_URL',
+    newName: 'BOTTEGA_RECORD_URL',
+    scope: 'user' as const,
+  }
+  const settingMigration = {
+    oldName: 'ORCH_RECORD_MIGRATE_URL',
+    newName: 'BOTTEGA_RECORD_MIGRATE_URL',
+  }
+  const report = await migrateOperatorEnvironment(home, {
+    ...adapters(),
+    migrateSecrets: async () => {
+      secrets.delete(secretMigration.oldName)
+      secrets.add(secretMigration.newName)
+      return [secretMigration]
+    },
+    migrateSettings: async () => {
+      settings.delete(settingMigration.oldName)
+      settings.add(settingMigration.newName)
+      return [settingMigration]
+    },
+  })
+
+  await restoreOperatorEnvironmentBackup(report.backupDirectory!, {
+    restoreRegister: async () => {},
+    restoreSecrets: async (migrations) => {
+      expect(migrations).toEqual([secretMigration])
+      secrets.delete(secretMigration.newName)
+      secrets.add(secretMigration.oldName)
+    },
+    restoreSettings: async (migrations) => {
+      expect(migrations).toEqual([settingMigration])
+      settings.delete(settingMigration.newName)
+      settings.add(settingMigration.oldName)
+    },
+  })
+
+  expect([...secrets]).toEqual(['ORCH_RECORD_URL'])
+  expect([...settings]).toEqual(['ORCH_RECORD_MIGRATE_URL'])
+})
+
+test('a follow-up-only run retains no backup and offers no restore', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'setup-environment-follow-up-only-'))
+  temporary.push(home)
+  const root = join(import.meta.dir, '../../..')
+  const template = ['hub', 'ops']
+    .flatMap((concern) =>
+      readdirSync(join(root, concern, 'launchd')).map((name) => ({ concern, name })),
+    )
+    .find(({ name }) => name.endsWith('.plist.template'))!
+  const text = readFileSync(join(root, template.concern, 'launchd', template.name), 'utf8')
+  const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)![1]!
+  const agents = join(home, 'Library', 'LaunchAgents')
+  mkdirSync(agents, { recursive: true })
+  writeFileSync(
+    join(agents, `${label}.plist`),
+    '<key>EnvironmentVariables</key><dict><key>HUB_HOSTED_URL</key></dict>',
+  )
+
+  const report = await migrateOperatorEnvironment(home, adapters())
+
+  expect(report.followUps).toHaveLength(1)
+  expect(report.backupDirectory).toBeNull()
+  expect(report.restoreCommand).toBeNull()
 })

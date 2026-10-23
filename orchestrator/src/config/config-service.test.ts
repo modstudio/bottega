@@ -12,6 +12,7 @@ import {
   machineInit,
   migrateLegacyEnvironmentSecrets,
   planRotation,
+  restoreLegacyEnvironmentSecrets,
   secretEnvironmentDecision,
   setEntry,
 } from './config-service.ts'
@@ -134,6 +135,51 @@ test('production sealed migration wires listed scopes, not-found reads, decoding
     'write user:BOTTEGA_RECORD_URL=decoded-value',
     'delete user:ORCH_RECORD_URL',
   ])
+})
+
+test('sealed-secret restore renames only recorded names back without persisting plaintext', async () => {
+  const values = new Map([['user:BOTTEGA_RECORD_URL', new TextEncoder().encode('decoded-value')]])
+  const calls: string[] = []
+  const row = (key: string) => ({
+    key,
+    environment: 'default',
+    scope: 'user' as const,
+    dekId: 'dek',
+    rowVersion: 1,
+    updatedAt: '2026-10-23T00:00:00.000Z',
+  })
+  const client = {
+    getSecret: async (name: string, scope: string) => {
+      if (!values.has(`${scope}:${name}`)) {
+        throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
+          'response',
+          '/v1/config/secrets',
+          404,
+        )
+      }
+      return row(name)
+    },
+  } as unknown as ConfigClient
+
+  await restoreLegacyEnvironmentSecrets(
+    [{ oldName: 'ORCH_RECORD_URL', newName: 'BOTTEGA_RECORD_URL', scope: 'user' }],
+    client,
+    {
+      plaintext: async (_client, secret) => values.get(`${secret.scope}:${secret.key}`)!,
+      write: async (name, value, scope) => {
+        calls.push(`write ${scope}:${name}`)
+        values.set(`${scope}:${name}`, new TextEncoder().encode(value))
+      },
+      delete: async (name, scope) => {
+        calls.push(`delete ${scope}:${name}`)
+        values.delete(`${scope}:${name}`)
+      },
+    },
+  )
+
+  expect(calls).toEqual(['write user:ORCH_RECORD_URL', 'delete user:BOTTEGA_RECORD_URL'])
+  expect(values.has('user:ORCH_RECORD_URL')).toBe(true)
+  expect(values.has('user:BOTTEGA_RECORD_URL')).toBe(false)
 })
 
 test('rotation plan retires an unreferenced old key and does so on a converged rerun', () => {

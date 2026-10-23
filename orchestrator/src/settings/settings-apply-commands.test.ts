@@ -16,6 +16,8 @@ import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { parseStoredOwnedSettings, serializeOwnedSettings } from './settings.ts'
 import {
+  migrateStoredSettingsEnvironmentNames,
+  restoreStoredSettingsEnvironmentNames,
   settingsAdoptCommand,
   settingsEnvImportCommand,
   settingsRenderWriteCommand,
@@ -92,6 +94,37 @@ async function seedUser() {
     reason: 'fixture',
   })
 }
+
+test('stored settings environment migration can be restored from its recorded name pairs', async () => {
+  const oldName = ['ORCH', 'RECORD', 'MIGRATE', 'URL'].join('_')
+  const newName = 'BOTTEGA_RECORD_MIGRATE_URL'
+  await seedUser()
+  const row = getDoc('settings', null, 'settings', OWNER)!
+  await setDoc({
+    scope: 'settings',
+    subject: null,
+    owner: OWNER,
+    slug: 'settings',
+    title: 'settings',
+    body: serializeOwnedSettings({
+      permissions: {},
+      hooks: {},
+      envKeys: [oldName],
+    }),
+    delivery: 'demand',
+    reason: 'legacy fixture',
+    expectedRevision: row.revision!,
+  })
+
+  const migrations = await migrateStoredSettingsEnvironmentNames((name) =>
+    name === oldName ? newName : null,
+  )
+  expect(migrations).toEqual([{ oldName, newName }])
+  await restoreStoredSettingsEnvironmentNames(migrations)
+  expect(
+    parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body).envKeys,
+  ).toEqual([oldName])
+})
 
 describe('settings env import', () => {
   test('never sends or prints a sentinel value', async () => {

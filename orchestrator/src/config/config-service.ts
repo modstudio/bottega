@@ -463,6 +463,7 @@ async function applySecretEnvironmentDecision(
 
 export async function applyLegacyEnvironmentSecretMigration(
   store: SecretEnvironmentStore,
+  onMigrated: (migration: SecretEnvironmentMigration) => Promise<void> = async () => {},
 ): Promise<SecretEnvironmentMigration[]> {
   const migrations: SecretEnvironmentMigration[] = []
   for (const [oldName, newName] of LEGACY_ENVIRONMENT_SECRET_NAMES) {
@@ -472,7 +473,9 @@ export async function applyLegacyEnvironmentSecretMigration(
       const decision = secretEnvironmentDecision(oldValue, newValue)
       if (decision.kind === 'done') continue
       await applySecretEnvironmentDecision(store, oldName, newName, scope, decision)
-      migrations.push({ oldName, newName, scope })
+      const migration = { oldName, newName, scope }
+      migrations.push(migration)
+      await onMigrated(migration)
     }
   }
   return migrations
@@ -490,6 +493,7 @@ export async function migrateLegacyEnvironmentSecrets(
       client: ConfigClient,
     ) => Promise<unknown>
     delete?: (name: string, scope: ConfigScope, client: ConfigClient) => Promise<unknown>
+    migrated?: (migration: SecretEnvironmentMigration) => Promise<void>
   } = {},
 ): Promise<SecretEnvironmentMigration[]> {
   const initial = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
@@ -504,20 +508,77 @@ export async function migrateLegacyEnvironmentSecrets(
     const plaintext = adapters.plaintext ?? rowPlaintext
     return new TextDecoder('utf-8', { fatal: true }).decode(await plaintext(client, row))
   }
-  return applyLegacyEnvironmentSecretMigration({
-    scopes: async (oldName, newName) => [
-      ...new Set(
-        initial.filter((row) => row.key === oldName || row.key === newName).map((row) => row.scope),
-      ),
-    ],
-    read,
-    write: async (name, value, scope) => {
-      await (adapters.write ?? setSecret)(name, value, scope, client)
+  return applyLegacyEnvironmentSecretMigration(
+    {
+      scopes: async (oldName, newName) => [
+        ...new Set(
+          initial
+            .filter((row) => row.key === oldName || row.key === newName)
+            .map((row) => row.scope),
+        ),
+      ],
+      read,
+      write: async (name, value, scope) => {
+        await (adapters.write ?? setSecret)(name, value, scope, client)
+      },
+      delete: async (name, scope) => {
+        await (adapters.delete ?? deleteSecret)(name, scope, client)
+      },
     },
-    delete: async (name, scope) => {
-      await (adapters.delete ?? deleteSecret)(name, scope, client)
-    },
-  })
+    adapters.migrated,
+  )
+}
+
+/** Reverse only the sealed-secret renames recorded by setup, without persisting plaintext. */
+export async function restoreLegacyEnvironmentSecrets(
+  migrations: ReadonlyArray<SecretEnvironmentMigration>,
+  client = configClient(),
+  adapters: {
+    plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
+    write?: (
+      name: string,
+      value: string,
+      scope: ConfigScope,
+      client: ConfigClient,
+    ) => Promise<unknown>
+    delete?: (name: string, scope: ConfigScope, client: ConfigClient) => Promise<unknown>
+  } = {},
+): Promise<void> {
+  const plaintext = adapters.plaintext ?? rowPlaintext
+  const read = async (name: string, scope: ConfigScope): Promise<string | null> => {
+    try {
+      const row = await client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT)
+      return new TextDecoder('utf-8', { fatal: true }).decode(await plaintext(client, row))
+    } catch (error) {
+      if (isNotFound(error)) return null
+      throw error
+    }
+  }
+  const planned: Array<SecretEnvironmentMigration & { value: string }> = []
+  for (const { oldName, newName, scope } of migrations) {
+    const oldValue = await read(oldName, scope)
+    const newValue = await read(newName, scope)
+    if (oldValue !== null) {
+      throw new Error(
+        `refusing setup restore: sealed secret ${oldName} already exists in ${scope} scope; run \`${PLATFORM_SLUG} machine config secret delete ${oldName} --scope ${scope}\`, then re-run ${PLATFORM_SLUG} machine setup restore`,
+      )
+    }
+    if (newValue === null) {
+      throw new Error(
+        `refusing setup restore: sealed secret ${newName} is absent in ${scope} scope; restore it, then re-run ${PLATFORM_SLUG} machine setup restore`,
+      )
+    }
+    planned.push({ oldName, newName, scope, value: newValue })
+  }
+  for (const { oldName, newName, scope, value } of planned) {
+    await (adapters.write ?? setSecret)(oldName, value, scope, client)
+    if ((await read(oldName, scope)) !== value) {
+      throw new Error(
+        `refusing setup restore: sealed secret ${oldName} did not verify after write in ${scope} scope; re-run ${PLATFORM_SLUG} machine setup restore`,
+      )
+    }
+    await (adapters.delete ?? deleteSecret)(newName, scope, client)
+  }
 }
 
 export async function getEntry(key: string, scope: ConfigScope, client = configClient()) {

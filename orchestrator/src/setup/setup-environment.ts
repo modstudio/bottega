@@ -2,8 +2,6 @@
 /** Decides and applies the one-time operator environment-name migration. */
 
 import {
-  chmod,
-  copyFile,
   mkdir,
   open,
   readdir,
@@ -47,7 +45,7 @@ export type EnvironmentMigrationReport = {
   files: Array<{ path: string; names: string[]; backup: string }>
   secrets: SecretEnvironmentMigration[]
   register: Array<{ project: string; names: string[] }>
-  settings: string[]
+  settings: Array<{ oldName: string; newName: string }>
   followUps: Array<{ path: string; command: string; names: string[] }>
   backupDirectory: string | null
   restoreCommand: string | null
@@ -303,6 +301,43 @@ type EnvironmentBackupManifest = {
     { path: string; existed: true; backup: string; mode: number } | { path: string; existed: false }
   >
   register: unknown[]
+  secrets: SecretEnvironmentMigration[]
+  settings: Array<{ oldName: string; newName: string }>
+}
+
+async function createModeRestrictedCopy(
+  source: string,
+  destination: string,
+  mode: number,
+): Promise<void> {
+  const handle = await open(destination, 'wx', mode & 0o7777)
+  try {
+    await handle.writeFile(await readFile(source))
+    await handle.chmod(mode & 0o7777)
+  } catch (error) {
+    await handle.close()
+    await rm(destination, { force: true })
+    throw error
+  }
+  await handle.close()
+}
+
+async function atomicModeRestrictedCopy(
+  source: string,
+  destination: string,
+  mode: number,
+): Promise<void> {
+  const temporary = join(
+    dirname(destination),
+    `.${PLATFORM_SLUG}-restore-${crypto.randomUUID()}.tmp`,
+  )
+  try {
+    await createModeRestrictedCopy(source, temporary, mode)
+    await rename(temporary, destination)
+  } catch (error) {
+    await rm(temporary, { force: true })
+    throw error
+  }
 }
 
 async function createMigrationBackup(
@@ -325,11 +360,16 @@ async function createMigrationBackup(
     }
     const backup = `${index}.file`
     const mode = (await stat(path)).mode & 0o7777
-    await copyFile(path, join(directory, backup))
-    await chmod(join(directory, backup), mode)
+    await createModeRestrictedCopy(path, join(directory, backup), mode)
     files.push({ path, existed: true, backup, mode })
   }
-  const manifest: EnvironmentBackupManifest = { version: 1, files, register }
+  const manifest: EnvironmentBackupManifest = {
+    version: 1,
+    files,
+    register,
+    secrets: [],
+    settings: [],
+  }
   await writeFile(join(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, {
     mode: 0o600,
   })
@@ -338,7 +378,11 @@ async function createMigrationBackup(
 
 export async function restoreOperatorEnvironmentBackup(
   directory: string,
-  restoreRegister: (rows: unknown[]) => Promise<void>,
+  adapters: {
+    restoreRegister: (rows: unknown[]) => Promise<void>
+    restoreSecrets: (migrations: SecretEnvironmentMigration[]) => Promise<void>
+    restoreSettings: (migrations: Array<{ oldName: string; newName: string }>) => Promise<void>
+  },
 ): Promise<void> {
   const manifest = JSON.parse(
     await readFile(join(directory, 'manifest.json'), 'utf8'),
@@ -346,7 +390,9 @@ export async function restoreOperatorEnvironmentBackup(
   if (
     manifest.version !== 1 ||
     !Array.isArray(manifest.files) ||
-    !Array.isArray(manifest.register)
+    !Array.isArray(manifest.register) ||
+    !Array.isArray(manifest.secrets) ||
+    !Array.isArray(manifest.settings)
   ) {
     throw new Error(`refusing setup restore: malformed manifest in ${directory}`)
   }
@@ -355,10 +401,11 @@ export async function restoreOperatorEnvironmentBackup(
       await rm(file.path, { force: true })
       continue
     }
-    await copyFile(join(directory, file.backup), file.path)
-    await chmod(file.path, file.mode)
+    await atomicModeRestrictedCopy(join(directory, file.backup), file.path, file.mode)
   }
-  await restoreRegister(manifest.register)
+  await adapters.restoreSecrets(manifest.secrets)
+  await adapters.restoreSettings(manifest.settings)
+  await adapters.restoreRegister(manifest.register)
   await rm(directory, { recursive: true })
 }
 
@@ -384,8 +431,7 @@ async function preserveFirstBackup(
 ): Promise<{ path: string; kept: boolean }> {
   const backup = `${path}.${PLATFORM_SLUG}-env-backup`
   try {
-    await copyFile(path, backup, 1)
-    await chmod(backup, mode & 0o7777)
+    await createModeRestrictedCopy(path, backup, mode)
     return { path: backup, kept: false }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
@@ -436,9 +482,11 @@ async function migrateRequiredSecrets(
 export async function migrateOperatorEnvironment(
   home: string,
   adapters: {
-    migrateSecrets: () => Promise<SecretEnvironmentMigration[]>
+    migrateSecrets: (
+      record: (migration: SecretEnvironmentMigration) => Promise<void>,
+    ) => Promise<SecretEnvironmentMigration[]>
     migrateRegister: () => Promise<Array<{ project: string; names: string[] }>>
-    migrateSettings: () => Promise<string[]>
+    migrateSettings: () => Promise<Array<{ oldName: string; newName: string }>>
     rerenderSettings: () => Promise<boolean>
     preflight: () => Promise<void>
     backupRoot?: string
@@ -474,18 +522,36 @@ export async function migrateOperatorEnvironment(
     ],
     registerBackup,
   )
+  const writeManifest = async () => {
+    await writeFile(
+      join(backup.directory, 'manifest.json'),
+      `${JSON.stringify(backup.manifest, null, 2)}\n`,
+      { mode: 0o600 },
+    )
+  }
   const files = await applyEnvironmentFilePlan(sources, filePlan)
-  const secrets = await migrateRequiredSecrets(adapters.migrateSecrets)
+  const secrets = await migrateRequiredSecrets(() =>
+    adapters.migrateSecrets(async (migration) => {
+      backup.manifest.secrets.push(migration)
+      await writeManifest()
+    }),
+  )
+  backup.manifest.secrets = secrets
+  await writeManifest()
   const register = await adapters.migrateRegister()
   const settings = await adapters.migrateSettings()
+  backup.manifest.settings = settings
+  await writeManifest()
   const settingsRendered = await adapters.rerenderSettings()
   const reversibleChange =
     files.length > 0 ||
+    secrets.length > 0 ||
     register.length > 0 ||
     settings.length > 0 ||
-    settingsRendered ||
-    followUps.length > 0
-  if (!reversibleChange) await rm(backup.directory, { recursive: true })
+    settingsRendered
+  if (reversibleChange) {
+    await writeManifest()
+  } else await rm(backup.directory, { recursive: true })
   return {
     files,
     secrets,
@@ -512,7 +578,11 @@ export function environmentMigrationMessage(report: EnvironmentMigrationReport):
   changes.push(
     ...report.register.map(({ project, names }) => `${project} register: ${names.join(', ')}`),
   )
-  if (report.settings.length) changes.push(`settings env: ${report.settings.join(', ')}`)
+  if (report.settings.length) {
+    changes.push(
+      `settings env: ${report.settings.map(({ oldName, newName }) => `${oldName} -> ${newName}`).join(', ')}`,
+    )
+  }
   changes.push(...report.notes)
   if (report.backupDirectory) {
     changes.push(

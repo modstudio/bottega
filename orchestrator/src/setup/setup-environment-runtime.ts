@@ -4,16 +4,21 @@
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
-import { migrateLegacyEnvironmentSecrets } from '../config/config-service.ts'
+import {
+  migrateLegacyEnvironmentSecrets,
+  restoreLegacyEnvironmentSecrets,
+} from '../config/config-service.ts'
 import {
   assertProjectSettingsMigrationWritable,
   migrateProjectSettingsText,
+  restoreMigratedProjectRows,
 } from '../project/project-commands.ts'
 import { projects } from '../project/projects.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   assertStoredSettingsEnvironmentMigration,
   migrateStoredSettingsEnvironmentNames,
+  restoreStoredSettingsEnvironmentNames,
 } from '../settings/settings-apply-commands.ts'
 import { applyMachineSettings } from '../settings/settings-machine-apply.ts'
 import { replacementEnvironmentName } from './environment-name-migration.ts'
@@ -22,7 +27,17 @@ import {
   environmentMigrationMessage,
   environmentSettingsDecision,
   migrateOperatorEnvironment,
+  restoreOperatorEnvironmentBackup,
 } from './setup-environment.ts'
+
+export async function restoreSetupEnvironment(directory: string): Promise<void> {
+  await restoreOperatorEnvironmentBackup(directory, {
+    restoreSecrets: (migrations) =>
+      migrations.length ? restoreLegacyEnvironmentSecrets(migrations) : Promise.resolve(),
+    restoreSettings: (migrations) => restoreStoredSettingsEnvironmentNames(migrations),
+    restoreRegister: restoreMigratedProjectRows,
+  })
+}
 
 export const setupEnvironmentService: SetupEnvironmentService = {
   migrateEnvironment: async () => {
@@ -30,7 +45,7 @@ export const setupEnvironmentService: SetupEnvironmentService = {
     const home = homedir()
     const report = await migrateOperatorEnvironment(home, {
       backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
-      migrateSecrets: async () => {
+      migrateSecrets: async (record) => {
         const authority = currentRecordWriteDecision()
         if (authority === 'local-authoritative') {
           notes.push('no hosted record: nothing to migrate')
@@ -41,7 +56,7 @@ export const setupEnvironmentService: SetupEnvironmentService = {
             `sealed-secret environment migration did not run: configured record is unreachable; run ${PLATFORM_SLUG} record use <address>, then re-run ${PLATFORM_SLUG} machine setup apply`,
           )
         }
-        return migrateLegacyEnvironmentSecrets()
+        return migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
       },
       migrateRegister: () => migrateProjectSettingsText(environmentSettingsDecision),
       migrateSettings: () => migrateStoredSettingsEnvironmentNames(replacementEnvironmentName),
