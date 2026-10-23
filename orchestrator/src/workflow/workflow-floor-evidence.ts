@@ -431,13 +431,9 @@ function requireCheckout(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   requireOnBranch: boolean,
 ): CheckoutResolution {
-  const checkout = resolveCheckout?.(cwd, headCommit, identity.branch) ?? {
-    project: null,
-    branch: null,
-    headIsTipOrAncestor: false,
-    landingCommit: null,
-    landingIsHeadOrAncestor: false,
-  }
+  if (!resolveCheckout)
+    throw new Error(`${flag} cwd project is unset, not this cursor's ${identity.project}`)
+  const checkout = resolveCheckout(cwd, headCommit, identity.branch)
   if (checkout.project !== identity.project)
     throw new Error(
       `${flag} cwd project is ${checkout.project ?? 'unset'}, not this cursor's ${identity.project}`,
@@ -873,22 +869,17 @@ export function bottegaCommandIdentity(
   cwd: string,
   d: Database,
 ): BottegaCommandIdentity | undefined {
-  if (!executable || executable === PLATFORM_SLUG) return undefined
-  const resolvedExecutable = realpathIfPresent(
+  if (!executable) return undefined
+  const resolvedCandidate = realpathIfPresent(
     isAbsolute(executable) ? executable : resolve(cwd, executable),
   )
-  const registeredExecutables = new Set<string>()
   const mainCheckout = projectByName(PLATFORM_SLUG, d)?.path
-  if (mainCheckout) {
-    const mainExecutable = realpathIfPresent(join(mainCheckout, 'bin', PLATFORM_SLUG))
-    if (mainExecutable) registeredExecutables.add(mainExecutable)
-  }
+  const mainCheckoutExecutable = mainCheckout
+    ? realpathIfPresent(join(mainCheckout, 'bin', PLATFORM_SLUG))
+    : null
   const installed = installedBottegaExecutable()
-  if (installed) {
-    const installedExecutable = realpathIfPresent(installed)
-    if (installedExecutable) registeredExecutables.add(installedExecutable)
-  }
-  return { resolvedExecutable, registeredExecutables: [...registeredExecutables] }
+  const installedExecutable = installed ? realpathIfPresent(installed) : null
+  return { resolvedCandidate, mainCheckoutExecutable, installedExecutable }
 }
 
 function recordedArgv(raw: string): string[] | null {
