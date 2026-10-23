@@ -16,6 +16,16 @@ export const reviewModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/review/review-round-lens-plan.ts',
+    allowed: ['./review-applicability.ts'],
+    typeOnlyAllowed: ['./review-group.ts', './review-post-fix.ts'],
+  },
+  {
+    file: 'orchestrator/src/review/review-round-lens-service.ts',
+    allowed: ['./review-applicability.ts', './review-group.ts', './review-round-lens-plan.ts'],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', './review-post-fix.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-yield.ts',
     allowed: [
       'bun:sqlite',
@@ -36,6 +46,28 @@ export const reviewModuleSpecs = [
     file: 'orchestrator/src/review/review-yield-slice.ts',
     allowed: ['./review-declared-globs.ts', './review-vocabulary.ts'],
     typeOnlyAllowed: ['../project/project-injection.ts'],
+  },
+  {
+    file: 'orchestrator/src/review/review-scope-proposal.ts',
+    allowed: [
+      './review-applicability.ts',
+      './review-declared-globs.ts',
+      './review-tier-classifier.ts',
+      './review-yield-slice.ts',
+    ],
+    typeOnlyAllowed: ['../../../shared/file-kind.ts', '../project/project-injection.ts'],
+  },
+  {
+    file: 'orchestrator/src/review/review-scope-proposal-command.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/file-kind.ts',
+      'bun:sqlite',
+      'node:fs',
+      '../database/database-location.ts',
+      './review-evidence-sql.ts',
+      './review-scope-proposal.ts',
+    ],
   },
   {
     file: 'orchestrator/src/review/review-command-cwd.ts',
@@ -73,6 +105,33 @@ export const reviewModuleSpecs = [
 ] as const
 
 export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
+  {
+    name: 'review-scope-proposal-boundary',
+    file: 'orchestrator/src/review/review-scope-proposal.ts',
+    allowed: [
+      './review-applicability.ts',
+      './review-declared-globs.ts',
+      './review-tier-classifier.ts',
+      './review-yield-slice.ts',
+    ],
+    typeOnlyAllowed: ['../../../shared/file-kind.ts', '../project/project-injection.ts'],
+    reason: 'Keep path-scope proposals as a pure decision over recorded paths and review policy.',
+  },
+  {
+    name: 'review-scope-proposal-command-boundary',
+    file: 'orchestrator/src/review/review-scope-proposal-command.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/file-kind.ts',
+      'bun:sqlite',
+      'node:fs',
+      '../database/database-location.ts',
+      './review-evidence-sql.ts',
+      './review-scope-proposal.ts',
+    ],
+    reason:
+      'Keep the scope-proposal adapter limited to local evidence and repository layout facts.',
+  },
   {
     name: 'review-yield-boundary',
     file: 'orchestrator/src/review/review-yield.ts',
@@ -186,6 +245,8 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-pins.ts',
       './review-post-fix.ts',
       './review-round-budget.ts',
+      './review-round-lens-plan.ts',
+      './review-round-lens-service.ts',
       './review-target.ts',
       './review-tier.ts',
       './review-tier-service.ts',
@@ -211,6 +272,20 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts'],
     reason:
       'Keep post-fix re-lens selection within completed review pins and declared review policy.',
+  },
+  {
+    name: 'review-round-lens-plan-boundary',
+    file: 'orchestrator/src/review/review-round-lens-plan.ts',
+    allowed: ['./review-applicability.ts'],
+    typeOnlyAllowed: ['./review-group.ts', './review-post-fix.ts'],
+    reason: 'Keep round lens selection independent of stores, repositories, processes, and clocks.',
+  },
+  {
+    name: 'review-round-lens-service-boundary',
+    file: 'orchestrator/src/review/review-round-lens-service.ts',
+    allowed: ['./review-applicability.ts', './review-group.ts', './review-round-lens-plan.ts'],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', './review-post-fix.ts'],
+    reason: 'Keep round lens fact gathering in one review service around the pure plan.',
   },
   {
     name: 'review-round-budget-boundary',

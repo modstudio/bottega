@@ -36,6 +36,7 @@ import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
+import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -202,7 +203,7 @@ function refuseProtectedOverlap(
   label: string,
   protectedDenies: readonly string[],
   worktree: string,
-  runsDir: string,
+  runtimeDir: string,
 ): void {
   for (const denied of protectedDenies) {
     if (isAtOrBelow(denied, worktree) || isAtOrBelow(worktree, denied)) {
@@ -210,12 +211,12 @@ function refuseProtectedOverlap(
         `${label} sandbox refusal: a registered secret path cannot be inside the worktree (${denied})`,
       )
     }
-    if (isAtOrBelow(denied, runsDir)) {
+    if (isAtOrBelow(denied, runtimeDir)) {
       throw new Error(
         `${label} sandbox refusal: a registered secret path cannot be inside the run directory (${denied})`,
       )
     }
-    if (isAtOrBelow(runsDir, denied)) {
+    if (isAtOrBelow(runtimeDir, denied)) {
       throw new Error(
         `${label} sandbox refusal: a registered secret path cannot contain the run directory (${denied})`,
       )
@@ -258,8 +259,9 @@ function linkedNodeModules(worktree: string): string[] {
 
 export function readonlyLensProfile(input: {
   worktree: string
-  runsDir: string
+  runtimeDir: string
   scratchDir?: string
+  allowWrite?: string[]
   project: Project | null
   agent: string
   path?: string
@@ -276,14 +278,21 @@ export function readonlyLensProfile(input: {
   const vendorDomains =
     input.agent === 'grok' ? ['cli-chat-proxy.grok.com', 'auth.x.ai', 'api.x.ai'] : []
   const worktree = resolve(input.worktree)
-  const runsDir = resolve(input.runsDir)
+  const runtimeDir = resolve(input.runtimeDir)
   const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
+  const allowWrite = [
+    ...new Set(
+      (input.allowWrite ?? [worktree, runtimeDir, ...(scratchDir ? [scratchDir] : [])]).map(
+        (path) => resolve(path),
+      ),
+    ),
+  ]
   const protectedDenies = protectedDenyPaths(input.project, environment)
-  refuseProtectedOverlap('readonly-lens', protectedDenies, worktree, runsDir)
+  refuseProtectedOverlap('readonly-lens', protectedDenies, worktree, runtimeDir)
   const candidateAllows = [
     ...new Set([
       worktree,
-      runsDir,
+      runtimeDir,
       ...toolchain,
       ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
       join(homedir(), '.claude.json'),
@@ -319,7 +328,7 @@ export function readonlyLensProfile(input: {
       filesystem: {
         denyRead: [...protectedDenies, ...READONLY_LENS_DENY_SOCKETS],
         allowWithinDeny,
-        allowWrite: [...new Set([worktree, runsDir, ...(scratchDir ? [scratchDir] : [])])],
+        allowWrite,
         denyWrite: [],
       },
     },
@@ -334,14 +343,18 @@ export function isWritingAcpRun(transport: 'cli' | 'acp', writesRepo: boolean): 
 }
 
 /** The complete filesystem write grant for one untrusted ACP writer. */
-export function writingAcpWritableRoots(worktree: string, scratchDir: string): string[] {
-  return [resolve(worktree), resolve(scratchDir)]
+export function writingAcpWritableRoots(
+  worktree: string,
+  scratchDir: string,
+  runtimeDir: string,
+): string[] {
+  return [resolve(worktree), resolve(scratchDir), resolve(runHarnessStateDir(runtimeDir))]
 }
 
 /** Read-only visibility with writes limited to one writing run's owned paths. */
 export function writerProfile(input: {
   worktree: string
-  runsDir: string
+  runtimeDir: string
   scratchDir: string
   askAddress: string
   project: Project
@@ -353,12 +366,13 @@ export function writerProfile(input: {
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)
-  const allowWrite = writingAcpWritableRoots(worktree, scratchDir)
+  const allowWrite = writingAcpWritableRoots(worktree, scratchDir, input.runtimeDir)
   const gateAddresses = mainStackGateAddresses(input.project)
   const profile = readonlyLensProfile({
     ...input,
     worktree,
     scratchDir,
+    allowWrite,
   })
   const broadLoopback = new Set<string>(LOOPBACK_DOMAINS)
   return {
@@ -512,7 +526,7 @@ export function selectReadonlySandbox(input: {
   readsRepo: boolean
   writesRepo: boolean
   worktree: string | null
-  runsDir: string
+  runtimeDir: string
   scratchDir?: string
   project: Project | null
   override?: string
@@ -555,7 +569,7 @@ export function selectReadonlySandbox(input: {
       reason: isolation.enabled ? isolation.reason : kind.reason,
       profile: writerProfile({
         worktree: input.worktree!,
-        runsDir: input.runsDir,
+        runtimeDir: input.runtimeDir,
         scratchDir: input.scratchDir,
         askAddress: input.askAddress,
         project: input.project,
@@ -571,7 +585,7 @@ export function selectReadonlySandbox(input: {
     reason: isolation.enabled ? isolation.reason : kind.reason,
     profile: readonlyLensProfile({
       worktree: input.worktree!,
-      runsDir: input.runsDir,
+      runtimeDir: input.runtimeDir,
       scratchDir: input.scratchDir,
       project: input.project,
       agent: input.agent,
@@ -994,6 +1008,11 @@ export function prepareSandboxHome(
       if (existsSync(source) && !existsSync(target)) symlinkSync(source, target)
     }
     return { HOME: runDir }
+  }
+  if (sandbox === 'srt') {
+    const home = runWorkerHomeDir(runDir)
+    ensurePrivateDirectory(home)
+    return { HOME: home }
   }
   ensurePrivateDirectory(runDir)
   return {}

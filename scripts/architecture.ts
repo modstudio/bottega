@@ -332,6 +332,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './autonomy.ts',
+    './session-context-cache.ts',
     './step-catalogue.ts',
   ]),
   ...workflowCommandModules,
@@ -556,7 +557,10 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-declared-globs.ts', []),
-  module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
+  module('orchestrator/src/review/review-evidence-sql.ts', [
+    '../evidence/evidence-query.ts',
+    '../project/project-injection.ts',
+  ]),
   module('orchestrator/src/review/review-identifier.ts', [
     '../../../shared/record-id.ts',
     'bun:sqlite',
@@ -668,6 +672,17 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow/workflow-step-sequences.ts', [
     './step-catalogue-definition.ts',
     './workflow-definition.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-shared-promotion.ts', []),
+  module('orchestrator/src/workflow/workflow-shared-promotion-store.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../record/record-api-client.ts',
+    '../record/record-cache-workflow.ts',
+    '../record/record-space.ts',
+    '../record/record-workflow-contract.ts',
+    './workflow-definition.ts',
+    './workflow-shared-promotion.ts',
   ]),
   module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
   module('orchestrator/src/workflow/workflow-tree.ts', [

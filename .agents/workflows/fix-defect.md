@@ -41,6 +41,7 @@ modes:
       - sequence: sync
       - run-gate
       - sequence: land
+      - finish-ship-cleanup
       - sequence: release
   - slug: cohort
     title: Fix a root-cause cohort
@@ -60,6 +61,7 @@ modes:
       - sequence: sync
       - run-gate
       - sequence: land
+      - finish-ship-cleanup
       - promote-release
       - observe-release
       - close-task

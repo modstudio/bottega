@@ -51,7 +51,7 @@ export function register(program: Command): void {
   setup
     .command('facts')
     .description('inspect machine setup facts')
-    .requiredOption('--json', 'write the setup facts as JSON')
+    .option('--json', 'write the setup facts as JSON')
     .allowExcessArguments(false)
     .action(async () => log(JSON.stringify(await gatherSetupFacts())))
   setup

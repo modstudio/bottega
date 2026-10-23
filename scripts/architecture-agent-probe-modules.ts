@@ -27,14 +27,25 @@ export const agentProbeModules = [
     '../run/run-number.ts',
     '../transport/transport.ts',
     './agent-writing-probe.ts',
+    './agent-resume-probe.ts',
     './agent-probe-turn.ts',
   ]),
   module('orchestrator/src/agent/agent-writing-probe.ts', [
+    './agent-capability-probe-policy.ts',
+    './agent-capability-probe-sandbox.ts',
+  ]),
+  module('orchestrator/src/agent/agent-capability-probe-policy.ts', []),
+  module('orchestrator/src/agent/agent-capability-probe-sandbox.ts', [
     '../../../shared/config-directory.ts',
     '../../../shared/git.ts',
     './agents.ts',
     '../project/projects.ts',
+    '../run-owned-paths.ts',
     '../sandbox/sandbox.ts',
+  ]),
+  module('orchestrator/src/agent/agent-resume-probe.ts', [
+    './agent-capability-probe-policy.ts',
+    './agent-capability-probe-sandbox.ts',
   ]),
   module('orchestrator/src/agent/agent-probe-turn.ts', [
     '../../../shared/brand.ts',
