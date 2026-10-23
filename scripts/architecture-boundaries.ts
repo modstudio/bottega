@@ -562,6 +562,7 @@ export const importBoundaries: ImportBoundary[] = [
       './run/run-outbox.ts',
       './run/synthetic-lifecycle-job.ts',
       './score/score.ts',
+      './score/score-missing.ts',
       './score/score-outbox.ts',
       './verdict/verdict-rules.ts',
     ],
@@ -938,6 +939,12 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/score/score.ts',
     [],
     'Enforce the score concern boundary.',
+  ),
+  boundary(
+    'score-missing-boundary',
+    'orchestrator/src/score/score-missing.ts',
+    ['../../../shared/brand.ts', '../review/review-vocabulary.ts', './score.ts'],
+    'Keep the missing-score decision independent of adapters and state.',
   ),
   ...setupModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),

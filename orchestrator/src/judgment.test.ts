@@ -301,6 +301,28 @@ describe('score ruling', () => {
     ).toEqual({ winner_run_record_id: a, loser_run_record_id: b })
   })
 
+  test('a paired lens without a comparison is refused once and records no score', async () => {
+    const [partner, id] = [insert('ok', 'review-lens'), insert('ok', 'review-lens')]
+    db()
+      .query(
+        "UPDATE run SET lens='correctness',model='m',spec_sha='same',input_tree='tree' WHERE record_id IN (?,?)",
+      )
+      .run(partner, id)
+    seedScore(partner, 'full', 'right')
+    recordReview(id, reviewReply(1, 'high'), db())
+    const expected = /--better-than[\s\S]*--worse-than[\s\S]*--same-as[\s\S]*--same-as/
+    await expect(
+      judge(id, ['full', 'right'], {
+        reproduced: 'all',
+        coverage: 'adequate',
+        limits: 'named',
+        overlap: 'unique',
+        finding: '1=accepted:high',
+      }),
+    ).rejects.toThrow(expected)
+    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+  })
+
   test('--same-as marks a scored pair compared without adding a duel', async () => {
     const a = insert()
     const b = insert()

@@ -20,23 +20,15 @@ import { enqueueReview, enqueueReviewFinding } from './review/review-outbox.ts'
 import {
   assertRunReviewFindingIntegrity,
   completeReview,
-  type Disposition,
-  FINDING_DETAIL_RULE,
-  FINDING_VALUE,
   gradeReviewLens,
   type ReviewGrades,
   triageFinding,
 } from './review/review-triage.ts'
 import {
-  REVIEW_COVERAGE,
-  REVIEW_LIMITS,
-  REVIEW_OVERLAP,
-  REVIEW_REPRODUCED,
+  type Disposition,
+  REVIEW_GRADE_NAMES,
+  REVIEW_GRADE_VALUES,
   REVIEW_SEVERITY,
-  type ReviewCoverage,
-  type ReviewLimits,
-  type ReviewOverlap,
-  type ReviewReproduced,
   type ReviewSeverity,
 } from './review/review-vocabulary.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_VOIDED } from './run/question-close.ts'
@@ -60,6 +52,13 @@ import {
   type Quality,
   weigh,
 } from './score/score.ts'
+import {
+  type GivenScoreFlags,
+  missingScoreRefusal,
+  missingScoreRequirements,
+  type ScoreRequirementJob,
+  workingScoreForm,
+} from './score/score-missing.ts'
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import {
   refuseChildTurnVoid,
@@ -427,19 +426,15 @@ function recordDuplicateFindingLink(currentRunId: string, link: ParsedDuplicateF
   enqueueReviewFinding(db(), current!.record_id)
 }
 
-const REVIEW_GRADE_VALUES = {
-  reproduced: REVIEW_REPRODUCED,
-  coverage: REVIEW_COVERAGE,
-  limits: REVIEW_LIMITS,
-  overlap: REVIEW_OVERLAP,
-} as const
-
-function missingReviewGradeFlag(name: keyof typeof REVIEW_GRADE_VALUES): string {
-  return `--${name} ${REVIEW_GRADE_VALUES[name].join(' | ')}`
-}
-
-function missingReviewFindingFlag(ordinal: number): string {
-  return `--finding ${ordinal}=${FINDING_VALUE} (${FINDING_DETAIL_RULE})`
+function throwIfMissingScore(
+  id: string,
+  jobRequirements: ScoreRequirementJob,
+  given: GivenScoreFlags,
+): void {
+  const missing = missingScoreRequirements(jobRequirements, given)
+  if (missing.length) {
+    throw new Error(missingScoreRefusal(id, missing, workingScoreForm(id, jobRequirements, given)))
+  }
 }
 
 function completeReviewWithoutFindings(reviewRecordId: string, scoredAt: string): void {
@@ -523,39 +518,24 @@ export async function judgeRun(
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
   const fidelity = words[2] as Fidelity | undefined
-  const missing: string[] = []
-  if (!delivery) missing.push(`<${DELIVERY.join('|')}>`)
-  else if (!DELIVERY.includes(delivery)) {
+  if (delivery && !DELIVERY.includes(delivery)) {
     throw new Error(`delivery must be: ${DELIVERY.join(' | ')}`)
   }
   if (delivery === 'none' && quality) throw new Error("delivery 'none' takes no quality")
-  if (delivery !== 'none' && !quality) missing.push(`<${QUALITY.join('|')}>`)
-  else if (quality && !QUALITY.includes(quality)) {
+  if (quality && !QUALITY.includes(quality)) {
     throw new Error(`quality must be: ${QUALITY.join(' | ')}`)
   }
   const writes = Boolean(JOBS[row.job]?.needs.writesRepo)
-  if (writes && delivery !== 'none' && !fidelity) missing.push(`<${FIDELITY.join('|')}>`)
-  else if (fidelity && !FIDELITY.includes(fidelity)) {
+  if (fidelity && !FIDELITY.includes(fidelity)) {
     throw new Error(`fidelity must be: ${FIDELITY.join(' | ')}`)
   }
   if (!writes && fidelity) throw new Error(`${row.job} is judged on two axes only`)
   const findingsJob = Boolean(job(row.job).findings)
-  const gradeNames = ['reproduced', 'coverage', 'limits', 'overlap'] as const
-  const suppliedGrades = {
-    reproduced: flags.flag('reproduced'),
-    coverage: flags.flag('coverage'),
-    limits: flags.flag('limits'),
-    overlap: flags.flag('overlap'),
-  }
-  for (const name of gradeNames) {
-    const value = suppliedGrades[name]
-    if (value !== undefined && !(REVIEW_GRADE_VALUES[name] as readonly string[]).includes(value)) {
-      throw new Error(`--${name} must be: ${REVIEW_GRADE_VALUES[name].join(' | ')}`)
-    }
-  }
+  const suppliedGrades = suppliedReviewGrades(flags)
+  refuseInvalidReviewGrades(suppliedGrades)
   let parsedOutput: ReturnType<typeof parseReviewOutput> = null
   let reviewRecordId: string | null = null
-  let storedGrades: Partial<Record<(typeof gradeNames)[number], string>> = {}
+  let storedGrades: Partial<Record<(typeof REVIEW_GRADE_NAMES)[number], string>> = {}
   let reviewFindings: { ordinal: number; disposition: string | null }[] = []
   if (findingsJob) {
     const lens = db()
@@ -563,7 +543,7 @@ export async function judgeRun(
         'SELECT review_record_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_record_id=?',
       )
       .get(id) as
-      | ({ review_record_id: string } & Record<(typeof gradeNames)[number], string | null>)
+      | ({ review_record_id: string } & Record<(typeof REVIEW_GRADE_NAMES)[number], string | null>)
       | null
     reviewRecordId = lens?.review_record_id ?? null
     assertRunReviewFindingIntegrity(id)
@@ -577,14 +557,14 @@ export async function judgeRun(
         )
     } else if (delivery !== 'none') {
       storedGrades = Object.fromEntries(
-        gradeNames.flatMap((name) => (lens?.[name] ? [[name, lens[name]]] : [])),
+        REVIEW_GRADE_NAMES.flatMap((name) => (lens?.[name] ? [[name, lens[name]]] : [])),
       )
       reviewFindings = storedReviewFindings(reviewRecordId!)
     }
   }
   const gradeValues = Object.fromEntries(
-    gradeNames.map((name) => [name, suppliedGrades[name] ?? storedGrades[name]]),
-  ) as Record<(typeof gradeNames)[number], string | undefined>
+    REVIEW_GRADE_NAMES.map((name) => [name, suppliedGrades[name] ?? storedGrades[name]]),
+  ) as Record<(typeof REVIEW_GRADE_NAMES)[number], string | undefined>
   const parsedFindings = parseFindingFlags(flags)
   const parsedDuplicates = flags.values('duplicate').map(parseDuplicateFinding)
   if (new Set(parsedDuplicates.map((link) => link.ordinal)).size !== parsedDuplicates.length) {
@@ -598,9 +578,8 @@ export async function judgeRun(
   }
   const comparison = suppliedComparisons[0]
   const comparisonIds = comparison ? parseRunIds(flags.flag(comparison)!, `--${comparison}`) : []
+  const requiredFindings: number[] = []
   if (findingsJob && delivery !== 'none') {
-    for (const name of gradeNames)
-      if (!gradeValues[name]) missing.push(missingReviewGradeFlag(name))
     const allowed = reviewRecordId
       ? reviewFindings.map((finding) => finding.ordinal)
       : parsedOutput!.findings.map((_, index) => index + 1)
@@ -611,23 +590,16 @@ export async function judgeRun(
       : allowed
     for (const ordinal of expected) {
       if (!parsedFindings.some((finding) => finding.ordinal === ordinal)) {
-        missing.push(missingReviewFindingFlag(ordinal))
+        requiredFindings.push(ordinal)
       }
     }
     const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))
     if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
   } else if (
     [parsedFindings.length, parsedDuplicates.length].some(Boolean) ||
-    gradeNames.some((name) => suppliedGrades[name])
+    REVIEW_GRADE_NAMES.some((name) => suppliedGrades[name])
   ) {
     throw new Error(`${row.job} does not take findings close-out flags`)
-  }
-  if (partners.length && !comparison) {
-    missing.push(
-      `--better-than ${partners.map((partner) => partner.record_id).join(',')} | ` +
-        `--worse-than ${partners.map((partner) => partner.record_id).join(',')} | ` +
-        `--same-as ${partners.map((partner) => partner.record_id).join(',')}`,
-    )
   }
   if (comparison) {
     const expected = partners.map((partner) => partner.record_id).sort((a, b) => a.localeCompare(b))
@@ -641,11 +613,17 @@ export async function judgeRun(
       )
     }
   }
-  if (missing.length) {
-    throw new Error(
-      `${PLATFORM_SLUG} score ${id} is missing:\n${missing.map((item) => `  ${item}`).join('\n')}`,
-    )
-  }
+  throwIfMissingScore(
+    id,
+    { writesRepo: writes, producesFindings: findingsJob },
+    givenScoreFlags(delivery, quality, fidelity, gradeValues, {
+      requiredFindings,
+      findingFlags: flags.values('finding'),
+      duplicateFlags: flags.values('duplicate'),
+      comparison: comparison ? { name: comparison, value: flags.flag(comparison)! } : undefined,
+      requiredComparisonIds: partners.map((partner) => partner.record_id),
+    }),
+  )
   const note = options.note
   let authority = runMutationActor(id)
   const scoredAt = nowIso()
@@ -679,8 +657,6 @@ export async function judgeRun(
   )
   return { id, row, reviewId: reviewRecordId, comparison }
 }
-const REVIEW_GRADE_FLAGS = ['reproduced', 'coverage', 'limits', 'overlap'] as const
-
 /** Review grades belong to a findings lens that produced output to grade. */
 function refuseReviewGradeFlags(
   flags: JudgmentFlags,
@@ -688,7 +664,7 @@ function refuseReviewGradeFlags(
   delivery: string | undefined,
   jobName: string,
 ): string | null {
-  if (!REVIEW_GRADE_FLAGS.some((name) => flags.flag(name) !== undefined)) return null
+  if (!REVIEW_GRADE_NAMES.some((name) => flags.flag(name) !== undefined)) return null
   if (!findingsJob) {
     return `${jobName} is not a findings-producing lens; review grade flags are not valid for this job`
   }
@@ -805,6 +781,114 @@ function assertVoidTargetsRoot(requestedId: string, rootId: string, voidRequeste
   if (refusal) throw new Error(refusal)
 }
 
+function filledPresentAxes(
+  delivery: string | undefined,
+  quality: string | undefined,
+  fidelity: string | undefined,
+  writesRepo: boolean,
+): {
+  delivery: string
+  quality: string | undefined
+  fidelity: string | undefined
+  unusedFidelity: boolean
+} {
+  const needsFidelity = writesRepo && delivery !== 'none'
+  return {
+    delivery: delivery ?? 'full',
+    quality: delivery === 'none' ? quality : (quality ?? 'right'),
+    fidelity: needsFidelity ? (fidelity ?? 'faithful') : undefined,
+    unusedFidelity: !needsFidelity && Boolean(fidelity),
+  }
+}
+
+function suppliedReviewGrades(flags: JudgmentFlags): GivenScoreFlags['grades'] {
+  return Object.fromEntries(
+    REVIEW_GRADE_NAMES.map((name) => [name, flags.flag(name)]),
+  ) as GivenScoreFlags['grades']
+}
+
+function givenScoreFlags(
+  delivery: string | undefined,
+  quality: string | undefined,
+  fidelity: string | undefined,
+  grades: GivenScoreFlags['grades'],
+  closeout: Partial<
+    Pick<
+      GivenScoreFlags,
+      | 'requiredFindings'
+      | 'findingFlags'
+      | 'duplicateFlags'
+      | 'comparison'
+      | 'requiredComparisonIds'
+    >
+  > = {},
+): GivenScoreFlags {
+  return {
+    delivery,
+    quality,
+    fidelity,
+    grades,
+    requiredFindings: [],
+    findingFlags: [],
+    duplicateFlags: [],
+    comparison: undefined,
+    requiredComparisonIds: [],
+    ...closeout,
+  }
+}
+
+function refuseInvalidReviewGrades(grades: GivenScoreFlags['grades']): void {
+  for (const name of REVIEW_GRADE_NAMES) {
+    const value = grades[name]
+    if (value !== undefined && !(REVIEW_GRADE_VALUES[name] as readonly string[]).includes(value)) {
+      throw new Error(`--${name} must be: ${REVIEW_GRADE_VALUES[name].join(' | ')}`)
+    }
+  }
+}
+
+function loadScoreReviewOutput(
+  id: string,
+  outputPath: string | null,
+): { output: ReturnType<typeof parseReviewOutput>; findings: number } {
+  const existing = db()
+    .query(
+      `SELECT rl.record_id, COUNT(rf.record_id) AS findings
+       FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
+      WHERE rl.run_record_id=? GROUP BY rl.record_id`,
+    )
+    .get(id) as { record_id: string; findings: number } | null
+  if (existing) return { output: null, findings: existing.findings }
+  if (!outputPath || !existsSync(outputPath)) {
+    throw new Error(`run ${id} has no recorded output to capture as a review`)
+  }
+  const output = parseReviewOutput(readFileSync(outputPath, 'utf8'))
+  if (!output) throw new Error(`run ${id} output does not satisfy the review contract`)
+  const evidence = cleanReviewEvidence(id, output)
+  if (evidence.failure) throw new Error(`run ${id} cannot be scored: ${evidence.failure}`)
+  return { output, findings: output.findings.length }
+}
+
+function defaultEmptyLensGrades(grades: GivenScoreFlags['grades'], findings: number): void {
+  if (findings !== 0) return
+  grades.reproduced ??= 'none'
+  grades.overlap ??= 'none'
+  if (grades.reproduced !== 'none' || grades.overlap !== 'none') {
+    throw new Error('a lens with findings:[] has --reproduced none and --overlap none')
+  }
+}
+
+function scoreReviewGrades(
+  id: string,
+  outputPath: string | null,
+  flags: JudgmentFlags,
+): { output: ReturnType<typeof parseReviewOutput>; grades: GivenScoreFlags['grades'] } {
+  const grades = suppliedReviewGrades(flags)
+  const loaded = loadScoreReviewOutput(id, outputPath)
+  defaultEmptyLensGrades(grades, loaded.findings)
+  refuseInvalidReviewGrades(grades)
+  return { output: loaded.output, grades }
+}
+
 export async function scoreRun(
   requestedId: string,
   flags: JudgmentFlags,
@@ -892,76 +976,31 @@ export async function scoreRun(
   const findingsJob = Boolean(job(row.job).findings)
   assertRunReviewFindingIntegrity(id)
   const needsFidelity = writesRepo && delivery !== 'none'
+  const present = filledPresentAxes(delivery, quality, fidelity, writesRepo)
   const initialRefusal = refuseAxesEarly(presentation, {
-    delivery,
-    quality,
-    fidelity: needsFidelity ? fidelity : undefined,
+    ...present,
     writesRepo,
     failureKind: row.failure_kind,
     jobName: row.job,
-    unusedFidelity: !needsFidelity && Boolean(fidelity),
   })
   if (initialRefusal) throw new Error(scoringHelp(initialRefusal, id, delivery, quality, row.job))
-  const scoredDelivery = delivery as Delivery
   const gradeFlagRefusal = refuseReviewGradeFlags(flags, findingsJob, delivery, row.job)
   if (gradeFlagRefusal) throw new Error(gradeFlagRefusal)
   const scoredFidelity = needsFidelity ? fidelity : undefined
+  let givenGrades = suppliedReviewGrades(flags)
   let reviewGrade: { output: ReturnType<typeof parseReviewOutput>; grades: ReviewGrades } | null =
     null
   if (findingsJob && delivery !== 'none') {
-    const existing = db()
-      .query(
-        `SELECT rl.record_id, COUNT(rf.record_id) AS findings
-       FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
-      WHERE rl.run_record_id=? GROUP BY rl.record_id`,
-      )
-      .get(id) as { record_id: string; findings: number } | null
-    let output: ReturnType<typeof parseReviewOutput> = null
-    if (!existing) {
-      if (!row.output_path || !existsSync(row.output_path)) {
-        throw new Error(`run ${id} has no recorded output to capture as a review`)
-      }
-      output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
-      if (!output) throw new Error(`run ${id} output does not satisfy the review contract`)
-      const evidence = cleanReviewEvidence(id, output)
-      if (evidence.failure) {
-        throw new Error(`run ${id} cannot be scored: ${evidence.failure}`)
-      }
-    }
-    const findings = existing?.findings ?? output!.findings.length
-    const raw: Record<keyof ReviewGrades, string | undefined> = {
-      reproduced: flags.flag('reproduced'),
-      coverage: flags.flag('coverage'),
-      limits: flags.flag('limits'),
-      overlap: flags.flag('overlap'),
-    }
-    if (findings === 0) {
-      raw.reproduced ??= 'none'
-      raw.overlap ??= 'none'
-      if (raw.reproduced !== 'none' || raw.overlap !== 'none') {
-        throw new Error('a lens with findings:[] has --reproduced none and --overlap none')
-      }
-    }
-    const valid =
-      raw.reproduced &&
-      REVIEW_REPRODUCED.includes(raw.reproduced as ReviewReproduced) &&
-      raw.coverage &&
-      REVIEW_COVERAGE.includes(raw.coverage as ReviewCoverage) &&
-      raw.limits &&
-      REVIEW_LIMITS.includes(raw.limits as ReviewLimits) &&
-      raw.overlap &&
-      REVIEW_OVERLAP.includes(raw.overlap as ReviewOverlap)
-    if (!valid) {
-      throw new Error(
-        `${row.job} grading requires architect review fields:\n` +
-          `  --reproduced ${REVIEW_REPRODUCED.join(' | ')}\n` +
-          `  --coverage   ${REVIEW_COVERAGE.join(' | ')}\n` +
-          `  --limits     ${REVIEW_LIMITS.join(' | ')}\n` +
-          `  --overlap    ${REVIEW_OVERLAP.join(' | ')}`,
-      )
-    }
-    reviewGrade = { output, grades: raw as ReviewGrades }
+    const captured = scoreReviewGrades(id, row.output_path, flags)
+    givenGrades = captured.grades
+    reviewGrade = { output: captured.output, grades: captured.grades as ReviewGrades }
   }
+  throwIfMissingScore(
+    id,
+    { writesRepo, producesFindings: findingsJob },
+    givenScoreFlags(delivery, quality, fidelity, givenGrades),
+  )
+  const scoredDelivery = delivery as Delivery
   const refusal = refuseVerdict({
     delivery: scoredDelivery,
     quality: quality ?? null,
