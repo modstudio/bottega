@@ -22,36 +22,16 @@ import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
 import {
-  BETA_SCALE,
-  betaContribution,
-  type CurrentPolicySelection,
-  currentPolicySelection,
-  MIN_SAMPLE,
-  NOISE_BAND,
-  POSTERIOR_NOISE_BAND,
-  QUALITY_STEP,
-  STANDING_EXPLORE_RATE,
-  standingExploreRate,
-  thompsonRank,
+  type PolicyCandidate,
+  type PolicySelection,
+  rankThompson,
+  selectCurrentPolicy,
 } from './route-policy.ts'
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 export { AgentCapacityError } from './routing-refusal.ts'
-export {
-  BETA_SCALE,
-  betaContribution,
-  type CurrentPolicySelection,
-  currentPolicySelection,
-  MIN_SAMPLE,
-  NOISE_BAND,
-  POSTERIOR_NOISE_BAND,
-  QUALITY_STEP,
-  STANDING_EXPLORE_RATE,
-  standingExploreRate,
-  thompsonRank,
-}
 
 export type Candidate = {
   agent: string
@@ -132,6 +112,9 @@ export function runningRunCountForAgent(agent: string): number {
  * finished after the most recent cooling failure.
  */
 export const COOLDOWN_MIN = 60
+
+/** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
+export const MIN_SAMPLE = 5
 
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
@@ -280,6 +263,46 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
     )
     .slice(0, EVIDENCE_WINDOW)
   return { rows: modelRows, evidenceModel: currentModel }
+}
+
+/** How often to spend a run on an agent that has not earned a score yet. */
+const EXPLORE_RATE = 0.25
+
+/** Keep testing proven challengers so a leader cannot hold the route forever. */
+export const STANDING_EXPLORE_RATE = 0.1
+const STANDING_EXPLORE_FLOOR = 0.03
+
+/** The leader's cell evidence decays the standing draw, without retiring it. */
+export function standingExploreRate(leaderEvidence: number): number {
+  return Math.max(
+    STANDING_EXPLORE_FLOOR,
+    STANDING_EXPLORE_RATE / Math.sqrt(leaderEvidence / MIN_SAMPLE),
+  )
+}
+
+/** One adjacent quality step in the current judgment matrix. */
+export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
+export const NOISE_BAND = QUALITY_STEP / MIN_SAMPLE
+/** Linear width of the judgment-weight range mapped onto a Beta probability. */
+export const BETA_SCALE = 1.5
+export const POSTERIOR_NOISE_BAND = NOISE_BAND / BETA_SCALE
+
+export function betaContribution(weight: number): { successes: number; failures: number } {
+  const successes = (weight + 0.5) / BETA_SCALE
+  return { successes, failures: 1 - successes }
+}
+
+type ThompsonCandidate = Pick<Candidate, 'agent' | 'evidence' | 'score' | 'free' | 'latencyMs'> & {
+  precision?: number | null
+}
+
+/** The one Thompson ranking used by every historical replay trajectory. */
+export function thompsonRank<T extends ThompsonCandidate>(
+  candidates: readonly T[],
+  draw = true,
+  rng: () => number = Math.random,
+): { chosen: T; expected: T; posteriorMean: number; tied: number } {
+  return rankThompson(candidates, draw, rng, MIN_SAMPLE, betaContribution, POSTERIOR_NOISE_BAND)
 }
 
 /**
@@ -823,6 +846,34 @@ function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
   if (ev.level === 'lens') return `lens ${ev.lens} cell`
   if (ev.level === 'stack') return `stack ${ev.stack} cell`
   return 'job-wide cell'
+}
+
+type CurrentPolicyCandidate = PolicyCandidate
+export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = PolicySelection<T>
+
+/** The incumbent ranking policy, independent of where its evidence came from. */
+export function currentPolicySelection<T extends CurrentPolicyCandidate>(
+  candidates: readonly T[],
+  prefer: readonly string[],
+  explore = true,
+  rng: () => number = Math.random,
+  explorationExcluded: ReadonlySet<string> = new Set(),
+  declaredPreferences: ReadonlySet<string> = new Set(),
+): CurrentPolicySelection<T> {
+  return selectCurrentPolicy(
+    candidates,
+    prefer,
+    explore,
+    rng,
+    explorationExcluded,
+    declaredPreferences,
+    {
+      minSample: MIN_SAMPLE,
+      exploreRate: EXPLORE_RATE,
+      standingExploreRate,
+      rank: thompsonRank,
+    },
+  )
 }
 
 function capacityRefusal(

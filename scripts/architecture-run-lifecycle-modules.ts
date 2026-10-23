@@ -213,12 +213,17 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-board-prompt.ts',
     './run-reply-source.ts',
     './run-resume-kind.ts',
+    './run-throttle.ts',
     './run-wall-deadline.ts',
     './run-worker-brokers.ts',
     '../sandbox/sandbox.ts',
     '../transport/codex-throttle.ts',
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
+  ]),
+  module('orchestrator/src/run/run-throttle.ts', [
+    '../events.ts',
+    '../transport/codex-throttle.ts',
   ]),
   module('orchestrator/src/run/checkpoint-schedule.ts', []),
   module('orchestrator/src/run/run-worker-brokers.ts', [
