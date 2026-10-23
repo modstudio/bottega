@@ -88,25 +88,3 @@ test('a completed review recorded with a launch key matches its reviewed tip aft
     rmSync(repo, { recursive: true, force: true })
   }
 })
-
-test('a Python test-only fix does not require a post-fix round', () => {
-  const decision = postFixReviewDecision({
-    facts: {
-      completed: { number: 1, identity: 'review', launchKey: null, runIds: [] },
-      reviewedTip: 'reviewed',
-      fixFiles: [
-        { path: 'orchestrator/hooks/test_score_reminder.py', insertions: 1, deletions: 1 },
-      ],
-    },
-    tier: 3,
-    review: {
-      lenses: [{ lens: 'safety', paths: ['orchestrator/hooks/**'] }],
-      risk: {
-        paths: [{ pattern: '^orchestrator/hooks/', tier: 3, reason: 'repository hooks' }],
-        unlisted: 2,
-      },
-    },
-  })
-
-  expect(decision.kind).toBe('no-round-needed')
-})

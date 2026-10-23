@@ -20,7 +20,6 @@ import {
 import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
 
 const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
-const PYTHON_TEST_PATH = /(^|\/)test_[^/]+\.py$/
 
 type CompletedReview = {
   number: number
@@ -138,14 +137,8 @@ function branchFixFiles(
   ])
   if (!commits.ok) throw new Error(commits.err)
   const files = new Map<string, ReviewTierFile>()
-  for (const row of commits.out.split('\n').filter(Boolean)) {
-    const [commit, firstParent, ...mergedParents] = row.split(' ')
-    if (!commit || !firstParent) throw new Error(`could not identify the parent of ${commit}`)
-    const mergesLandingBranch = mergedParents.some(
-      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
-    )
-    if (mergesLandingBranch) continue
-    for (const file of diffNumstat(repo, firstParent, commit)) {
+  const addFiles = (changed: ReviewTierFile[]) => {
+    for (const file of changed) {
       const previous = files.get(file.path)
       files.set(file.path, {
         path: file.path,
@@ -153,6 +146,40 @@ function branchFixFiles(
         deletions: (previous?.deletions ?? 0) + file.deletions,
       })
     }
+  }
+  for (const row of commits.out.split('\n').filter(Boolean)) {
+    const [commit, firstParent, ...mergedParents] = row.split(' ')
+    if (!commit || !firstParent) throw new Error(`could not identify the parent of ${commit}`)
+    const mergesLandingBranch = mergedParents.some(
+      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
+    )
+    if (!mergesLandingBranch) {
+      addFiles(diffNumstat(repo, firstParent, commit))
+      continue
+    }
+    const landingParent = mergedParents.find(
+      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
+    )!
+    const automatic = git(repo, [
+      'merge-tree',
+      '--write-tree',
+      '--name-only',
+      '--no-messages',
+      firstParent,
+      landingParent,
+    ])
+    const [automaticTree, ...conflictedPaths] = automatic.out.split('\n').filter(Boolean)
+    if (!automaticTree || !git(repo, ['cat-file', '-e', `${automaticTree}^{tree}`]).ok) {
+      throw new Error(automatic.err)
+    }
+    const resolved = diffNumstat(repo, automaticTree, commit)
+    const resolvedPaths = new Set(resolved.map(({ path }) => path))
+    addFiles(resolved)
+    addFiles(
+      conflictedPaths
+        .filter((path) => !resolvedPaths.has(path))
+        .map((path) => ({ path, insertions: 0, deletions: 0 })),
+    )
   }
   return [...files.values()]
 }
@@ -199,10 +226,7 @@ export function postFixReviewDecision(input: {
   if (!reviewedTip || !fixFiles) {
     return { kind: 'reviewed-tip-unidentified', reviewNumber: completed.number }
   }
-  const tierThreePaths = tierThreeRiskPaths(
-    fixFiles.filter(({ path }) => !PYTHON_TEST_PATH.test(path)),
-    input.review?.risk,
-  )
+  const tierThreePaths = tierThreeRiskPaths(fixFiles, input.review?.risk)
   if (input.tier !== POST_FIX_RELENS_TIER || tierThreePaths.length === 0) {
     return {
       kind: 'no-round-needed',

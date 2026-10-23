@@ -223,11 +223,16 @@ M 100644 :5 notes.md
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
-function postFixFixture(fixPath: string | null): {
+function postFixFixture(options: {
+  fixPath?: string
+  fixAfterMerge?: boolean
+  resolveConflict?: boolean
+}): {
   repo: string
   branch: string
   runId: string
   reviewed: string
+  mergeTip: string
 } {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-'))
   git(repo, 'init', '-b', 'main')
@@ -243,8 +248,10 @@ function postFixFixture(fixPath: string | null): {
   git(repo, 'checkout', '-b', branch)
   mkdirSync(join(repo, 'src'), { recursive: true })
   writeFileSync(join(repo, 'src/large.ts'), 'export const line = 1\n'.repeat(401))
-  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
-  git(repo, 'add', 'src/large.ts', 'critical/shared.ts')
+  if (options.resolveConflict) {
+    writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
+  }
+  git(repo, 'add', 'src/large.ts', ...(options.resolveConflict ? ['critical/shared.ts'] : []))
   git(repo, 'commit', '-m', 'reviewed change')
   const reviewed = git(repo, 'rev-parse', 'HEAD')
   const name = `post-fix-${crypto.randomUUID()}`
@@ -283,45 +290,43 @@ function postFixFixture(fixPath: string | null): {
     .get(name, name, branch, base, reviewed, reviewed)!.id
   const reviewId = recordReview(runId, reviewReply(0), db())
   completeReview(reviewId, db())
-  if (fixPath) {
-    const absoluteFix = join(repo, fixPath)
+  if (options.fixPath && !options.fixAfterMerge) {
+    const absoluteFix = join(repo, options.fixPath)
     mkdirSync(join(absoluteFix, '..'), { recursive: true })
     writeFileSync(absoluteFix, 'export const fix = true\n')
-    git(repo, 'add', fixPath)
+    git(repo, 'add', options.fixPath)
     git(repo, 'commit', '-m', 'apply review fix')
   }
   git(repo, 'checkout', 'main')
-  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "trunk"\n')
+  if (options.resolveConflict) {
+    writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "trunk"\n')
+  }
   writeFileSync(join(repo, 'critical/trunk.ts'), 'export const trunk = true\n')
-  git(repo, 'add', 'critical/shared.ts', 'critical/trunk.ts')
+  git(repo, 'add', 'critical/trunk.ts', ...(options.resolveConflict ? ['critical/shared.ts'] : []))
   git(repo, 'commit', '-m', 'advance trunk')
   git(repo, 'checkout', branch)
-  const merge = spawnFixtureGitSync(['merge', '--no-edit', 'main'], { cwd: repo })
-  expect(merge.exitCode).not.toBe(0)
-  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "combined"\n')
-  git(repo, 'add', 'critical/shared.ts')
-  git(repo, 'commit', '--no-edit')
-  return { repo, branch, runId, reviewed }
+  if (options.resolveConflict) {
+    const merge = spawnFixtureGitSync(['merge', '--no-edit', 'main'], { cwd: repo })
+    expect(merge.exitCode).not.toBe(0)
+    writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "combined"\n')
+    git(repo, 'add', 'critical/shared.ts')
+    git(repo, 'commit', '--no-edit')
+  } else {
+    git(repo, 'merge', '--no-edit', 'main')
+  }
+  const mergeTip = git(repo, 'rev-parse', 'HEAD')
+  if (options.fixPath && options.fixAfterMerge) {
+    const absoluteFix = join(repo, options.fixPath)
+    mkdirSync(join(absoluteFix, '..'), { recursive: true })
+    writeFileSync(absoluteFix, 'export const fix = true\n')
+    git(repo, 'add', options.fixPath)
+    git(repo, 'commit', '-m', 'apply review fix after trunk merge')
+  }
+  return { repo, branch, runId, reviewed, mergeTip }
 }
 
-test('review tier needs no round when the only post-review commit is a trunk merge', async () => {
-  const { repo, branch, reviewed } = postFixFixture(null)
-  try {
-    const json: string[] = []
-    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
-
-    expect(JSON.parse(json[0]!).post_fix).toMatchObject({
-      kind: 'no-round-needed',
-      reviewedTip: reviewed,
-      tierThreePaths: [],
-    })
-  } finally {
-    rmSync(repo, { recursive: true, force: true })
-  }
-})
-
 test('review tier lists a never-completed lens when no tier-three fix path was touched', async () => {
-  const { repo, branch, reviewed } = postFixFixture('src/fix.ts')
+  const { repo, branch, reviewed } = postFixFixture({ fixPath: 'src/fix.ts' })
   try {
     const output: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
@@ -343,8 +348,11 @@ test('review tier lists a never-completed lens when no tier-three fix path was t
   }
 })
 
-test('review tier re-lenses only the tier-three path touched by the fix after a trunk merge', async () => {
-  const { repo, branch, reviewed } = postFixFixture('critical/fix.ts')
+test('review tier re-lenses a tier-three branch commit after a trunk merge', async () => {
+  const { repo, branch, mergeTip } = postFixFixture({
+    fixPath: 'critical/fix.ts',
+    fixAfterMerge: true,
+  })
   try {
     const output: string[] = []
     await runReview(['review', 'tier', branch, '--cwd', repo], output)
@@ -359,7 +367,7 @@ test('review tier re-lenses only the tier-three path touched by the fix after a 
     await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
     expect(JSON.parse(json[0]!).post_fix).toMatchObject({
       kind: 're-lens',
-      reviewedTip: reviewed,
+      reviewedTip: mergeTip,
       tierThreePaths: ['critical/fix.ts'],
     })
   } finally {
@@ -367,8 +375,24 @@ test('review tier re-lenses only the tier-three path touched by the fix after a 
   }
 })
 
+test('review tier re-lenses a conflict resolution in a trunk merge', async () => {
+  const { repo, branch, reviewed } = postFixFixture({ resolveConflict: true })
+  try {
+    const json: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
+
+    expect(JSON.parse(json[0]!).post_fix).toMatchObject({
+      kind: 're-lens',
+      reviewedTip: reviewed,
+      tierThreePaths: ['critical/shared.ts'],
+    })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
 test('review tier reports an unidentified reviewed tip and applies the funnel', async () => {
-  const { repo, branch, runId } = postFixFixture('src/fix.ts')
+  const { repo, branch, runId } = postFixFixture({ fixPath: 'src/fix.ts' })
   try {
     git(repo, 'update-ref', '-d', pinRef(runId))
     const output: string[] = []
