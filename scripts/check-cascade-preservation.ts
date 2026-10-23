@@ -33,6 +33,13 @@ type Migration = { tag: string; source: string }
 type AstNode = Node & Record<string, unknown>
 type ForeignKey = { parent: string; dependent: string }
 
+// These migrations insert dependents before their parents and rely on the migrator's foreign_keys=OFF.
+const MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF = new Set([
+  '0115_project_identity_contract',
+  '0117_project_uuid_key',
+  '0124_run_uuid_key',
+])
+
 const PROJECT_UUID_REBUILD_CASCADE_EDGES = [
   ['workflow_cursor', 'workflow_step_text'],
   ['run', 'question'],
@@ -607,6 +614,30 @@ function nullSelfReferences(
   }
 }
 
+function preserveLogicalSeedRelationships(
+  database: Database,
+  table: string,
+  values: Map<string, ProbeValue>,
+): void {
+  if (
+    table !== 'board_reach_delivery' ||
+    values.get('message_source') !== 'local' ||
+    !values.has('message_id')
+  )
+    return
+  // A local board delivery names an existing board message despite its polymorphic message_id column.
+  const message = database.query('SELECT id FROM board_message ORDER BY id LIMIT 1').get() as {
+    id: number
+  } | null
+  if (!message) throw new Error('local board delivery requires an existing board message')
+  values.set('message_id', String(message.id))
+}
+
+function preserveLogicalJsonSeeds(table: string, values: Map<string, ProbeValue>): void {
+  // Later migrations read canon_pack.doc_revisions with json_each though its schema has no JSON CHECK.
+  if (table === 'canon_pack' && values.has('doc_revisions')) values.set('doc_revisions', '[]')
+}
+
 function seedTables(database: Database, migration: string): CascadeProbe['unprobed'] {
   const names = tableNames(database)
   const targetRows = probeTargetRows(database, names)
@@ -641,6 +672,8 @@ function seedTables(database: Database, migration: string): CascadeProbe['unprob
         assertSeedableSelfReferences(table, columns, foreignKeys)
         const values = constrainedValues(database, required, checks, choices)
         nullSelfReferences(table, foreignKeys, values)
+        preserveLogicalSeedRelationships(database, table, values)
+        preserveLogicalJsonSeeds(table, values)
         database.query(sql).run(...required.map((column) => values.get(column.name) ?? null))
         const count = rowCount(database, table)
         if (count >= (targetRows.get(table) ?? 1)) pending.delete(table)
@@ -675,12 +708,11 @@ function counts(database: Database): Map<string, number> {
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
   if (!stripSqlComments(ddl).trim()) return
-  const rebuildsRequiredProjectIdentity =
-    migration.tag === '0115_project_identity_contract' || migration.tag === '0117_project_uuid_key'
+  const replayWithForeignKeysOff = MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF.has(migration.tag)
   const legacyAlterTable = (
     database.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
   ).legacy_alter_table
-  if (rebuildsRequiredProjectIdentity)
+  if (replayWithForeignKeysOff)
     database.exec('PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=OFF')
   try {
     database.exec('BEGIN IMMEDIATE')
@@ -697,9 +729,15 @@ function execute(database: Database, migration: Migration): void {
     } catch {
       /* migration statement already ended the transaction */
     }
-    throw error
+    const message = error instanceof Error ? error.message : String(error)
+    if (!replayWithForeignKeysOff && /foreign key constraint failed/i.test(message))
+      throw new Error(
+        `${migration.tag} failed its probe replay: ${message}. Add ${migration.tag} to MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF if it inserts dependents before their parents, or fix its insert order.`,
+        { cause: error },
+      )
+    throw new Error(`${migration.tag} failed its probe replay: ${message}`, { cause: error })
   } finally {
-    if (rebuildsRequiredProjectIdentity) {
+    if (replayWithForeignKeysOff) {
       database.exec('PRAGMA foreign_keys=ON')
       database.exec(`PRAGMA legacy_alter_table=${legacyAlterTable}`)
     }
