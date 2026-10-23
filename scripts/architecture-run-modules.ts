@@ -45,6 +45,10 @@ export const runModuleSpecs = [
     allowed: ['../refusal-error.ts'],
   },
   {
+    file: 'orchestrator/src/route/running-runs.ts',
+    allowed: ['bun:sqlite', '../database/db.ts'],
+  },
+  {
     file: 'orchestrator/src/run/run-bootstrap.ts',
     allowed: ['./run-alive.ts'],
   },
