@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
-type WorkspacePackage = { directory: string; hasTestScript: boolean }
+type WorkspacePackage = { directory: string }
 
 /** The root package's declared workspaces are the package boundaries; no tree walk, no node_modules. */
 function workspacePackages(): WorkspacePackage[] {
@@ -17,14 +17,7 @@ function workspacePackages(): WorkspacePackage[] {
     ...(rootManifest.workspaces ?? []).map((workspace) => resolve(root, workspace)),
   ])
   return [...directories]
-    .map((directory) => {
-      const manifest = resolve(directory, 'package.json')
-      if (!existsSync(manifest)) return { directory, hasTestScript: false }
-      const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as {
-        scripts?: { test?: unknown }
-      }
-      return { directory, hasTestScript: typeof parsed.scripts?.test === 'string' }
-    })
+    .map((directory) => ({ directory }))
     .sort((left, right) => left.directory.localeCompare(right.directory))
 }
 
@@ -76,10 +69,10 @@ function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup 
       ? ['--path-ignore-patterns', `${relative(directory, candidate.directory)}/**`]
       : [],
   )
-  const entryPoint = packages.find((candidate) => candidate.directory === directory)?.hasTestScript
-    ? ['bun', 'run', 'test', '--']
-    : ['bun', 'test']
-  return { directory, paths, argv: [...entryPoint, ...nestedPackageIgnores, ...paths] }
+  // Plain `bun test` from the package directory loads that package's bunfig.toml and preload.
+  // A package's own `test` script cannot be used: several embed a path operand (`bun test src`),
+  // which bun ORs with the selected paths, so the run would not narrow.
+  return { directory, paths, argv: ['bun', 'test', ...nestedPackageIgnores, ...paths] }
 }
 
 export function groupFocusedTestPaths(paths: readonly string[]): FocusedTestGroup[] {
