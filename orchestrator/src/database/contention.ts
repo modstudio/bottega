@@ -156,7 +156,8 @@ export function loadContentionWaits(d: Database, from: string, until: string): C
   const rows = d
     .query(
       `SELECT at,resource_kind,resource_key,duration_ms FROM contention
-       WHERE event_kind='wait' AND at>=? AND at<? ORDER BY at,record_id`,
+       WHERE event_kind='wait' AND datetime(at)>=datetime(?) AND datetime(at)<datetime(?)
+       ORDER BY at,record_id`,
     )
     .all(from, until) as Pick<
     ContentionRow,
