@@ -476,6 +476,7 @@ function hostedReplySuccessorPush(
     presence: presenceFacts(database, clock),
     reader,
     rootAuthorSession: root.authorSession,
+    rootAuthorReceivedReply: wasDelivered(database, message.id, root.authorSession),
     rootProject: root.origin.project,
     readerIsParticipant: replyAddressesReader(message, reader, clock, database),
     successorAlreadyReceived: Boolean(
@@ -487,6 +488,7 @@ function hostedReplySuccessorPush(
         .get(message.id),
     ),
     readerBeganAt: boardReaderBeganAt(reader, database),
+    replyPostedAt: message.createdAt,
     now: clock,
     liveWindowMs: SESSION_LIVE_MS,
   })
@@ -555,8 +557,8 @@ export function cachedMessageAddressed(
   return true
 }
 
-function delivered(database: Database, id: string, reader: string): boolean {
-  const receipt = database
+function receiptDelivery(database: Database, id: string, reader: string) {
+  return database
     .query(
       'SELECT delivered_at,acknowledged_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
     )
@@ -564,6 +566,14 @@ function delivered(database: Database, id: string, reader: string): boolean {
     delivered_at: string | null
     acknowledged_at: string | null
   } | null
+}
+
+function wasDelivered(database: Database, id: string, reader: string): boolean {
+  return Boolean(receiptDelivery(database, id, reader)?.delivered_at)
+}
+
+function delivered(database: Database, id: string, reader: string): boolean {
+  const receipt = receiptDelivery(database, id, reader)
   return Boolean(receipt?.delivered_at || receipt?.acknowledged_at)
 }
 
