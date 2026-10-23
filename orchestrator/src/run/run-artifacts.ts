@@ -445,7 +445,9 @@ export function readDispatchState(id: string): DispatchState {
         : []
     const timeoutMinutes = typeof value.timeoutMinutes === 'number' ? value.timeoutMinutes : null
     const selectionReason = typeof value.selectionReason === 'string' ? value.selectionReason : null
-    return { deliverables, timeoutMinutes, selectionReason }
+    return selectionReason
+      ? { deliverables, timeoutMinutes, selectionReason }
+      : { deliverables, timeoutMinutes }
   } catch {
     return { deliverables: [], timeoutMinutes: null }
   }

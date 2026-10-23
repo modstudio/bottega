@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { writeDispatchState } from '../run/run-artifacts.ts'
 import { recordReviews } from './review.ts'
 import { completeReview, gradeReviewLens, recordReview, triageFinding } from './review-triage.ts'
 
@@ -158,6 +159,32 @@ describe('review discipline', () => {
         },
       ]),
     ).toThrow(`run ${third}: 2222222222222222222222222222222222222222`)
+  })
+  test('stores dispatch selection reason and operator-ordered when metadata is absent', () => {
+    const named = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'correctness',
+    })
+    writeDispatchState(named, {
+      deliverables: [],
+      timeoutMinutes: null,
+      selectionReason: 'initial',
+    })
+    const missing = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'craft' })
+    recordReviews([
+      { runId: named, output: reviewReply(0) },
+      { runId: missing, output: reviewReply(0) },
+    ])
+    expect(
+      db()
+        .query('SELECT lens, selection_reason FROM review_lens ORDER BY lens')
+        .all(),
+    ).toEqual([
+      { lens: 'correctness', selection_reason: 'initial' },
+      { lens: 'craft', selection_reason: 'operator-ordered' },
+    ])
   })
   test('an unregistered project warns after recording and does not block later grading', () => {
     const runId = addRun({

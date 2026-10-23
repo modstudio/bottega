@@ -144,8 +144,6 @@ type ComputedLens = ReviewRoundEvidenceRow & {
 
 const normalized = (value: string | null | undefined) => value?.trim().toLowerCase() ?? null
 
-export { reviewRoundIdentity } from './review-round-identity.ts'
-
 function classifyTasks(
   rows: ReviewRoundEvidenceRow[],
 ): Map<string, { task: string | null; round: number | null }> {

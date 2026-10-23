@@ -9,13 +9,14 @@ function addReview(
   patchId: string | null,
   completed = true,
   pathSet: string | null = null,
+  round: number | null = null,
 ): string {
   const recordId = newRecordId()
   db()
     .query(
-      'INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,path_set) VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?)',
+      'INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,path_set,round) VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?,?)',
     )
-    .run(recordId, recordedAt, completed ? recordedAt : null, patchId, pathSet)
+    .run(recordId, recordedAt, completed ? recordedAt : null, patchId, pathSet, round)
   return recordId
 }
 
@@ -30,6 +31,7 @@ function addLens(
     launchKey?: string | null
     branch?: string | null
     probe?: boolean
+    selectionReason?: string | null
   },
 ): string {
   const lensRecordId = newRecordId()
@@ -50,9 +52,18 @@ function addLens(
     )
   db()
     .query(`INSERT INTO review_lens
-    (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap)
-    VALUES (?,?,?,?,?,?,'[]','[]','[]','[]',?)`)
-    .run(lensRecordId, reviewId, runId, input.lens, input.agent, input.model, input.overlap ?? null)
+    (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap,selection_reason)
+    VALUES (?,?,?,?,?,?,'[]','[]','[]','[]',?,?)`)
+    .run(
+      lensRecordId,
+      reviewId,
+      runId,
+      input.lens,
+      input.agent,
+      input.model,
+      input.overlap ?? null,
+      input.selectionReason ?? null,
+    )
   return lensRecordId
 }
 
@@ -74,7 +85,7 @@ function addFinding(
 }
 
 function fixture() {
-  const first = addReview('2026-09-08T10:00:00Z', 'patch-1')
+  const first = addReview('2026-09-08T10:00:00Z', 'patch-1', true, null, 1)
   const firstCorrectness = addLens(first, {
     lens: 'correctness',
     agent: 'codex',
@@ -89,7 +100,7 @@ function fixture() {
     minutes: 20,
     overlap: 'unique',
   })
-  const firstCraftReview = addReview('2026-09-08T10:01:00Z', 'patch-1')
+  const firstCraftReview = addReview('2026-09-08T10:01:00Z', 'patch-1', true, null, 1)
   const firstCraft = addLens(firstCraftReview, {
     lens: 'craft',
     agent: 'codex',
@@ -102,7 +113,7 @@ function fixture() {
   addFinding(first, secondCorrectness, 3, 'critical', 'modified', 'critical')
   addFinding(firstCraftReview, firstCraft, 1, 'medium', 'skipped', 'medium')
 
-  const second = addReview('2026-09-08T11:00:00Z', 'patch-2')
+  const second = addReview('2026-09-08T11:00:00Z', 'patch-2', true, null, 2)
   const secondA = addLens(second, {
     lens: 'correctness',
     agent: 'codex',
@@ -110,7 +121,7 @@ function fixture() {
     minutes: 40,
     overlap: 'alone',
   })
-  const secondCraftReview = addReview('2026-09-08T11:01:00Z', 'patch-2', false)
+  const secondCraftReview = addReview('2026-09-08T11:01:00Z', 'patch-2', false, null, 2)
   const secondB = addLens(secondCraftReview, {
     lens: 'craft',
     agent: 'grok',
@@ -121,7 +132,7 @@ function fixture() {
   addFinding(second, secondA, 1, 'medium', 'accepted', 'high')
   addFinding(secondCraftReview, secondB, 1, 'low', null)
 
-  const third = addReview('2026-09-08T12:00:00Z', 'patch-3')
+  const third = addReview('2026-09-08T12:00:00Z', 'patch-3', true, null, 3)
   addLens(third, {
     lens: 'correctness',
     agent: 'codex',
@@ -129,7 +140,7 @@ function fixture() {
     minutes: 60,
     overlap: 'none',
   })
-  const thirdCraftReview = addReview('2026-09-08T12:01:00Z', 'patch-3')
+  const thirdCraftReview = addReview('2026-09-08T12:01:00Z', 'patch-3', true, null, 3)
   const thirdB = addLens(thirdCraftReview, {
     lens: 'craft',
     agent: 'grok',
@@ -202,6 +213,47 @@ describe('review yield', () => {
       findings: 4,
     })
     expect(report.notRecorded[0]?.metric).toContain('finding-level overlap')
+    expect(report.lensRounds.map((row) => row.key)).toEqual([
+      'correctness round 1',
+      'correctness round 2',
+      'correctness round 3',
+      'craft round 1',
+      'craft round 2',
+      'craft round 3',
+    ])
+    expect(report.lensRounds.find((row) => row.key === 'correctness round 1')?.runs).toBe(2)
+  })
+
+  test('groups recorded selection reasons and omits unrecorded ones', () => {
+    const first = addReview('2026-09-08T20:00:00Z', 'reason-1', true, null, 1)
+    addLens(first, {
+      lens: 'correctness',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 10,
+      selectionReason: 'initial',
+    })
+    const later = addReview('2026-09-08T20:01:00Z', 'reason-2', true, null, 2)
+    const accepted = addLens(later, {
+      lens: 'craft',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 10,
+      selectionReason: 'accepted-finding',
+    })
+    addFinding(later, accepted, 1, 'high', 'accepted', 'high')
+    addLens(later, {
+      lens: 'architecture',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 10,
+    })
+    const report = reviewYield({ task: 'DEV-YIELD' }, db())
+    expect(report.selectionReasons.map((row) => row.key)).toEqual(['accepted-finding', 'initial'])
+    expect(report.selectionReasons.find((row) => row.key === 'accepted-finding')).toMatchObject({
+      runs: 1,
+      mediumPlusAccepted: 1,
+    })
   })
 
   test('excludes probes, voided runs and delivery-none scores from the recorded population', () => {
@@ -235,7 +287,7 @@ describe('review yield', () => {
   })
 
   test('uses branch attribution for filtering and patch identity for rounds', () => {
-    const first = addReview('2026-09-08T14:00:00Z', 'same-patch', true, '["a.ts"]')
+    const first = addReview('2026-09-08T14:00:00Z', 'same-patch', true, '["a.ts"]', 1)
     addLens(first, {
       lens: 'correctness',
       agent: 'codex',
@@ -244,7 +296,7 @@ describe('review yield', () => {
       launchKey: null,
       branch: 'technical/DEV-424-first',
     })
-    const same = addReview('2026-09-08T14:01:00Z', 'same-patch', true, '["a.ts"]')
+    const same = addReview('2026-09-08T14:01:00Z', 'same-patch', true, '["a.ts"]', 1)
     addLens(same, {
       lens: 'craft',
       agent: 'grok',
@@ -253,7 +305,7 @@ describe('review yield', () => {
       launchKey: null,
       branch: 'technical/DEV-424-second',
     })
-    const changedPaths = addReview('2026-09-08T14:02:00Z', 'same-patch', true, '["b.ts"]')
+    const changedPaths = addReview('2026-09-08T14:02:00Z', 'same-patch', true, '["b.ts"]', 2)
     addLens(changedPaths, {
       lens: 'correctness',
       agent: 'codex',
@@ -645,6 +697,8 @@ describe('review yield text table', () => {
       byArea: [row('craft / test-quality')],
       lensPairs: [],
       rounds: [],
+      lensRounds: [],
+      selectionReasons: [],
       agents: [],
       models: [],
       notRecorded: [],

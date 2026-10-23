@@ -82,6 +82,13 @@ describe('round lens plan', () => {
       }),
     ).toEqual({
       lenses: ['correctness', 'craft', 'test-quality', 'migration-safety', 'safety'],
+      lensReasons: {
+        correctness: 'accepted-finding',
+        craft: 'accepted-finding',
+        'test-quality': 'accepted-finding',
+        'migration-safety': 'newly-touched-path',
+        safety: 'newly-touched-path',
+      },
     })
   })
 
@@ -102,7 +109,13 @@ describe('round lens plan', () => {
         },
         pathScopedLenses: ['safety'],
       }),
-    ).toEqual({ lenses: ['architecture', 'safety'] })
+    ).toEqual({
+      lenses: ['architecture', 'safety'],
+      lensReasons: {
+        architecture: 'never-completed',
+        safety: 'newly-touched-path',
+      },
+    })
   })
 
   test('no newly risky paths still lists a relevant lens that never completed', () => {
@@ -122,7 +135,10 @@ describe('round lens plan', () => {
         },
         pathScopedLenses: ['safety'],
       }),
-    ).toEqual({ lenses: ['safety'] })
+    ).toEqual({
+      lenses: ['safety'],
+      lensReasons: { safety: 'never-completed' },
+    })
   })
 
   test('no newly risky paths needs no round when every relevant lens completed', () => {
@@ -143,6 +159,20 @@ describe('round lens plan', () => {
         pathScopedLenses: ['safety'],
       }),
     ).toEqual({ lenses: [] })
+  })
+
+  test('an initial round marks every relevant lens initial', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness', 'craft'] },
+        facts: { completedLenses: [], latestAcceptedOrModifiedLenses: [] },
+        postFix: { kind: 'no-completed-round' },
+        pathScopedLenses: [],
+      }),
+    ).toEqual({
+      lenses: ['correctness', 'craft'],
+      lensReasons: { correctness: 'initial', craft: 'initial' },
+    })
   })
 
   const sixLenses = [
@@ -179,7 +209,39 @@ describe('round lens plan', () => {
         postFix: { kind: 'reviewed-tip-unidentified', reviewNumber: 1 },
         pathScopedLenses: ['test-quality'],
       }),
-    ).toEqual({ lenses: ['correctness', 'craft'] })
+    ).toEqual({
+      lenses: ['correctness', 'craft'],
+      lensReasons: {
+        correctness: 'unidentified-tip-funnel',
+        craft: 'unidentified-tip-funnel',
+      },
+    })
+  })
+
+  test('accepted-finding wins over newly-touched-path on a later round', () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness', 'safety'] },
+        facts: {
+          completedLenses: ['correctness', 'safety'],
+          latestAcceptedOrModifiedLenses: ['correctness'],
+        },
+        postFix: {
+          kind: 're-lens',
+          reviewNumber: 2,
+          reviewedTip: 'reviewed-tip',
+          tierThreePaths: ['orchestrator/src/review/review-round-lens-plan.ts'],
+          applicability: { lenses: ['correctness', 'safety'] },
+        },
+        pathScopedLenses: ['correctness', 'safety'],
+      }),
+    ).toEqual({
+      lenses: ['correctness', 'safety'],
+      lensReasons: {
+        correctness: 'accepted-finding',
+        safety: 'newly-touched-path',
+      },
+    })
   })
 
   test('facts use the latest prior round and attribute accepted and modified findings by lens', () => {

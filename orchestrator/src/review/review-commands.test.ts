@@ -581,8 +581,10 @@ test('review tier reports stack and generic profile sources resolved for its pro
         (line) => line.includes('risk 3:') && line.includes('basis: hook incident evidence'),
       ),
     ).toBeTrue()
-    expect(output).toContain('lens correctness  basis: yield evidence  framework=stack')
-    expect(output).toContain('lens craft  framework=generic')
+    expect(output).toContain(
+      'lens correctness  basis: yield evidence  framework=stack  reason: initial',
+    )
+    expect(output).toContain('lens craft  framework=generic  reason: initial')
     expect(output).toContain(
       'second opinion correctness  basis: escaped defect evidence: dispatch this lens a second time on a different model with --distinct-from <the first run of correctness on this tip>',
     )
