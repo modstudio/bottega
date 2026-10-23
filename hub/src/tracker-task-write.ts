@@ -23,8 +23,6 @@ import type { Attribution } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
 import { type TrackerConnectionDependencies, withTrackerConnection } from './tracker-connection.ts'
 
-export { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../shared/trackers.ts'
-
 type TrackerWriteDependencies = TrackerConnectionDependencies & {
   registeredProjects?: () => RegisteredProject[]
   observe?: typeof observeTrackerTask

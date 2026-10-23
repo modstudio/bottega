@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../shared/trackers.ts'
 import { PresenceOption } from './cli-command.ts'
 import { requireDatabase } from './db.ts'
 import { credentials, Mcp } from './mcp.ts'
@@ -28,7 +29,6 @@ import { machineAttribution } from './task-machine-attribution.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
 import {
-  ARRAY_MCP_STATUS_WRITE_CONFIRM,
   closeTaskThroughTracker,
   commentTaskThroughTracker,
   setTaskThroughTracker,
