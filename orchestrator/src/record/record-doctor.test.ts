@@ -1,9 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { ConfigClientError } from '../../../shared/config-client.ts'
+import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
+  agentSecretChecks,
   decideRecordDoctorChecks,
   localQuestionCountForSpace,
   recordDoctorExitCode,
@@ -30,6 +33,22 @@ describe('record doctor decisions', () => {
     quarantinedOutboxRows: [],
     operatorConnectionPresent: false,
   } as const
+
+  test('agent credential rows reach the doctor report and fail it', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      agentCredentialChecks: [
+        { name: 'agent API key secret MISSING_KEY', status: 'fail', section: 'customer' },
+      ],
+    })
+
+    expect(checks).toContainEqual({
+      name: 'agent API key secret MISSING_KEY',
+      status: 'fail',
+      section: 'customer',
+    })
+    expect(recordDoctorExitCode(checks)).toBe(1)
+  })
 
   test('a healthy customer machine needs no operator connection or secret', () => {
     const checks = decideRecordDoctorChecks(healthyFacts)
@@ -272,5 +291,99 @@ describe('record doctor decisions', () => {
       }),
     ).toBe(1)
     database.close()
+  })
+})
+
+describe('record doctor agent secrets', () => {
+  test('distinguishes a missing secret from a set-but-empty secret', async () => {
+    const missing = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'MISSING_KEY' }],
+      async () => ({ MISSING_KEY: undefined }),
+    )
+    const empty = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'EMPTY_KEY' }],
+      async () => ({ EMPTY_KEY: '' }),
+    )
+
+    expect(missing[0]?.detail).toBe(
+      `permanent: secret is not set\ncleared by: ${PLATFORM_SLUG} machine config secret set MISSING_KEY`,
+    )
+    expect(empty[0]?.detail).toBe(
+      `permanent: secret is set but empty\ncleared by: ${PLATFORM_SLUG} machine config secret set EMPTY_KEY`,
+    )
+  })
+
+  test('checks each distinct enabled-agent secret once without reporting its value', async () => {
+    const calls: string[][] = []
+    const checks = await agentSecretChecks(
+      [
+        { enabled: true, apiKeySecret: 'SHARED_KEY' },
+        { enabled: true, apiKeySecret: 'SHARED_KEY' },
+        { enabled: false, apiKeySecret: 'DISABLED_KEY' },
+      ],
+      async (names) => {
+        calls.push([...names])
+        return { SHARED_KEY: 'SECRET_VALUE_MARKER' }
+      },
+    )
+
+    expect(calls).toEqual([['SHARED_KEY']])
+    expect(checks).toEqual([
+      {
+        name: 'agent API key secret SHARED_KEY',
+        status: 'pass',
+        section: 'customer',
+      },
+    ])
+    expect(JSON.stringify(checks)).not.toContain('SECRET_VALUE_MARKER')
+    expect(JSON.stringify(checks)).not.toContain('DISABLED_KEY')
+  })
+
+  test('classifies a wrapped service failure with only safe cause facts', async () => {
+    const sensitiveMarker = 'SECRET_RESPONSE_MARKER'
+    const cause = new ConfigClientError('response', '/v1/config/secrets/SEALED_KEY', 503)
+    cause.message = sensitiveMarker
+    const checks = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'SEALED_KEY' }],
+      async () => {
+        throw new HostedSecretError('SEALED_KEY', 'hosted-failure', cause)
+      },
+    )
+
+    expect(checks[0]).toMatchObject({
+      name: 'agent API key secret SEALED_KEY',
+      status: 'fail',
+      section: 'customer',
+    })
+    expect(checks[0]?.detail).toContain('transient')
+    expect(checks[0]?.detail).toContain('cause: ConfigClientError')
+    expect(checks[0]?.detail).toContain('status: 503')
+    expect(checks[0]?.detail).toContain('reason: response')
+    expect(checks[0]?.detail).not.toContain(sensitiveMarker)
+  })
+
+  test('an unreachable hosted record clears by waiting, not by running the doctor again as a fix', async () => {
+    const checks = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'SEALED_KEY' }],
+      async () => {
+        throw new ConfigClientError('unreachable', '/v1/config/secrets/SEALED_KEY')
+      },
+    )
+
+    expect(checks[0]?.detail).toContain('transient')
+    expect(checks[0]?.detail).toContain('cleared by: wait for the hosted record to recover')
+    expect(checks[0]?.detail).not.toContain('checked by:')
+  })
+
+  test('a hosted failure without a service cause names a command, not a vague retry', async () => {
+    const checks = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'SEALED_KEY' }],
+      async () => {
+        throw new HostedSecretError('SEALED_KEY', 'hosted-failure', new Error('transport'))
+      },
+    )
+
+    expect(checks[0]?.detail).toContain('cleared by: wait for the hosted record to recover')
+    expect(checks[0]?.detail).not.toContain('retry the command')
   })
 })

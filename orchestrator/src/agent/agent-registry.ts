@@ -7,6 +7,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
+
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
 const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
 export type Harness = (typeof HARNESSES)[number]

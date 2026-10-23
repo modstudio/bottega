@@ -12,6 +12,7 @@ export const agentProbeModules = [
   module('orchestrator/src/agent/endpoint-api-key.ts', [
     '../../../shared/brand.ts',
     '../../../shared/env-source.ts',
+    '../../../shared/record-remedies.ts',
     '../../../shared/secret-resolution-failure.ts',
   ]),
   module('orchestrator/src/agent/agent-probe.ts', [

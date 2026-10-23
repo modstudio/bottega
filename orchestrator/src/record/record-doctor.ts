@@ -1,9 +1,10 @@
 // concern: record-doctor
-/** Diagnoses customer record access through the hosted API and optional operator connections. */
+/** Diagnoses customer record access, agent credentials, and optional operator connections. */
 
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
@@ -19,6 +20,13 @@ import {
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import {
+  classifySecretResolutionFailure,
+  isTransientSecretResolutionFailure,
+  secretResolutionFailure,
+} from '../../../shared/secret-resolution-failure.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
+import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { machineId } from './machine-identity.ts'
@@ -58,6 +66,7 @@ export type RecordDoctorFacts = {
   quarantinedOutboxRows: readonly QuarantinedDoctorRow[]
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
+  agentCredentialChecks?: readonly RecordDoctorCheck[]
 }
 
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
@@ -209,6 +218,8 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
         },
   )
 
+  checks.push(...(facts.agentCredentialChecks ?? []))
+
   if (facts.operatorConnectionPresent)
     checks.push(
       ...(facts.operatorChecks ?? []).map((check) => ({
@@ -217,6 +228,59 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
       })),
     )
   return checks
+}
+
+/** A transient doctor failure clears by waiting; the doctor never names itself as the diagnostic. */
+const DOCTOR_TRANSIENT_REMEDY = {
+  exhaustedRetryCommand: `wait for the hosted record to recover, then re-run ${PLATFORM_SLUG} record doctor`,
+  omitDoctorDiagnostic: true,
+}
+
+/** Resolve each distinct enabled-agent secret once without exposing its value. */
+export async function agentSecretChecks(
+  agents: ReadonlyArray<Pick<Agent, 'enabled' | 'apiKeySecret'>>,
+  resolver: typeof readEnvValuesWithHosted = readEnvValuesWithHosted,
+): Promise<RecordDoctorCheck[]> {
+  const names = [
+    ...new Set(
+      agents
+        .filter((agent) => agent.enabled !== false)
+        .map((agent) => agent.apiKeySecret?.trim())
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ].sort()
+  return Promise.all(
+    names.map(async (name): Promise<RecordDoctorCheck> => {
+      try {
+        const resolved = (await resolver([name]))[name]
+        const remedy = `\ncleared by: ${PLATFORM_SLUG} machine config secret set ${name}`
+        return resolved !== undefined
+          ? resolved.length > 0
+            ? { name: `agent API key secret ${name}`, status: 'pass', section: 'customer' }
+            : {
+                name: `agent API key secret ${name}`,
+                status: 'fail',
+                detail: `permanent: secret is set but empty${remedy}`,
+                section: 'customer',
+              }
+          : {
+              name: `agent API key secret ${name}`,
+              status: 'fail',
+              detail: `permanent: secret is not set${remedy}`,
+              section: 'customer',
+            }
+      } catch (error) {
+        const classification = classifySecretResolutionFailure(error)
+        const transient = isTransientSecretResolutionFailure(classification)
+        return {
+          name: `agent API key secret ${name}`,
+          status: 'fail',
+          detail: `${transient ? 'transient' : 'permanent'}: ${secretResolutionFailure(error, transient ? DOCTOR_TRANSIENT_REMEDY : {}) ?? 'secret could not be resolved'}`,
+          section: 'customer',
+        }
+      }
+    }),
+  )
 }
 
 export function unattributedShare(missing: number, total: number): string {
@@ -505,6 +569,7 @@ export async function diagnoseRecord(
   const database = db()
   const projects = input.projects ?? []
   const customer = await customerFacts(projects, database)
+  const credentialChecks = await agentSecretChecks(Object.values(AGENTS))
   const recordUrl = input.recordUrl ?? process.env.BOTTEGA_RECORD_URL
   let operatorChecks: RecordDoctorCheck[] | undefined
   if (recordUrl) {
@@ -532,5 +597,6 @@ export async function diagnoseRecord(
     ...customerDecisionFacts,
     operatorConnectionPresent: Boolean(recordUrl),
     operatorChecks,
+    agentCredentialChecks: credentialChecks,
   })
 }
