@@ -99,7 +99,7 @@ describe('required MCP routing', () => {
 
       expect(routed.find((candidate) => candidate.agent === 'grok')).toMatchObject({
         eligible: false,
-        why: 'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp',
+        why: 'native project MCP attachment is unconfirmable: grok ACP launch has no verified project-server attachment; re-dispatch on an agent that attaches natively (--agent codex) or drop --mcp',
       })
       expect(
         requiredMcpIneligibility({ name: 'codex', defaultTransport: 'cli' }, required),
@@ -124,8 +124,73 @@ describe('required MCP routing', () => {
           transportPinSource: 'explicit',
         }),
       ).toThrow(
-        /no eligible agent for job "understand"[\s\S]*codex: native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; re-dispatch with --transport cli or drop --mcp[\s\S]*grok: native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers; re-dispatch with --transport cli or drop --mcp/,
+        /no eligible agent for job "understand"[\s\S]*codex: native project MCP attachment is unconfirmable: codex ACP launch has no verified project-server attachment; re-dispatch with --transport cli or drop --mcp[\s\S]*grok: native project MCP attachment is unconfirmable: grok ACP launch has no verified project-server attachment; re-dispatch with --transport cli or drop --mcp/,
       )
+    } finally {
+      restoreAgents(rows)
+    }
+  })
+
+  test('a goose ACP row is admitted for a required project server, and a required-MCP job still needs the capability', () => {
+    // The native-attachment prediction no longer excludes a goose ACP row.
+    expect(
+      requiredMcpIneligibility(
+        { name: 'goose', harness: 'goose', defaultTransport: 'acp' },
+        required,
+      ),
+    ).toBeNull()
+    expect(
+      requiredMcpIneligibility(
+        { name: 'goose', harness: 'goose', defaultTransport: 'acp' },
+        {
+          ...required,
+          mode: 'prefer',
+        },
+      ),
+    ).toBeNull()
+
+    // A job whose needs include MCP still excludes an agent without the probed
+    // capability. mcp-query is outside the ACP pilot allowlist, so the row that
+    // reaches this branch is the CLI one the suite already registers.
+    const rows = db().query('SELECT name,caps,transport FROM agent').all() as AgentRow[]
+    try {
+      for (const row of rows) {
+        if (row.name !== 'codex') continue
+        const caps = JSON.parse(row.caps) as Record<string, unknown>
+        db()
+          .query('UPDATE agent SET caps=? WHERE name=?')
+          .run(JSON.stringify({ ...caps, mcp: true, contextTokens: 200_000 }), row.name)
+      }
+      refreshAgents()
+      const codex = () =>
+        candidates(
+          'mcp-query',
+          0,
+          null,
+          undefined,
+          undefined,
+          null,
+          undefined,
+          undefined,
+          undefined,
+          'codex',
+        ).find((row) => row.agent === 'codex')!
+      expect(codex()).toMatchObject({ eligible: true })
+
+      db()
+        .query('UPDATE agent SET caps=? WHERE name=?')
+        .run(
+          JSON.stringify({
+            ...(JSON.parse(
+              (db().query('SELECT caps FROM agent WHERE name=?').get('codex') as { caps: string })
+                .caps,
+            ) as Record<string, unknown>),
+            mcp: false,
+          }),
+          'codex',
+        )
+      refreshAgents()
+      expect(codex()).toMatchObject({ eligible: false, why: 'lacks mcp' })
     } finally {
       restoreAgents(rows)
     }

@@ -195,6 +195,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './checkpoint.ts',
     './question-open.ts',
     '../sandbox/codex-mcp-scope.ts',
+    '../sandbox/project-mcp-scope.ts',
     '../confinement/confinement.ts',
     '../contract/contract.ts',
     '../database/db.ts',

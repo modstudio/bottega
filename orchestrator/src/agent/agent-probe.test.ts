@@ -3,6 +3,7 @@ import { db, writableDb } from '../database/db.ts'
 import {
   recordAgentProbe,
   registrationProbeCacheReusable,
+  registrationProbeNeedsMcp,
   registrationProbeRequirements,
 } from './agent-probe.ts'
 import {
@@ -21,6 +22,18 @@ test('a file-question registration probe always requires the reply file but not 
     resumable: false,
     file: true,
   })
+})
+
+test('the registration probe verifies MCP for goose and for any job that asks for it', () => {
+  // A goose ACP worker carries project servers in its session, so it is probed.
+  expect(registrationProbeNeedsMcp(false, true, 'goose')).toBe(true)
+  // Another harness whose declared jobs never asked for MCP keeps the skip.
+  expect(registrationProbeNeedsMcp(false, true, 'codex')).toBe(false)
+  // A declared job that asks for MCP is verified on every harness.
+  expect(registrationProbeNeedsMcp(true, true, 'codex')).toBe(true)
+  expect(registrationProbeNeedsMcp(true, true, 'goose')).toBe(true)
+  // No declared jobs means every capability is verified.
+  expect(registrationProbeNeedsMcp(false, false, 'codex')).toBe(true)
 })
 
 function result(
@@ -94,10 +107,27 @@ test('a CLI probe with no writing observation preserves an existing writing capa
 
 test('cache reuse requires observed ACP capabilities only when the declared jobs need them', () => {
   const previous = result(null)
-  expect(registrationProbeCacheReusable('acp', previous, true, true)).toBe(false)
-  expect(registrationProbeCacheReusable('cli', previous, true, true)).toBe(true)
+  expect(registrationProbeCacheReusable('acp', previous, true, true, false)).toBe(false)
+  expect(registrationProbeCacheReusable('cli', previous, true, true, false)).toBe(true)
   const failedResume = result(true, false)
-  expect(registrationProbeCacheReusable('acp', failedResume, true, false)).toBe(true)
+  expect(registrationProbeCacheReusable('acp', failedResume, true, false, false)).toBe(true)
+})
+
+test('a cached probe that skipped the MCP turn is not reused once that turn is required', () => {
+  const skipped = {
+    ...result(true),
+    mcp: { verifiable: null, output: 'skipped: not required for declared jobs' },
+  }
+  // A goose row whose declared jobs never asked for MCP still requires the turn.
+  const gooseNeedsMcp = registrationProbeNeedsMcp(false, true, 'goose')
+  expect(gooseNeedsMcp).toBe(true)
+  expect(registrationProbeCacheReusable('acp', skipped, true, false, gooseNeedsMcp)).toBe(false)
+  // A harness whose declared jobs keep the skip still reuses the cached row.
+  expect(registrationProbeCacheReusable('acp', skipped, true, false, false)).toBe(true)
+  // A stored MCP verdict is an answer, so it is reusable.
+  expect(registrationProbeCacheReusable('acp', result(true), true, false, true)).toBe(true)
+  const negative = { ...result(true), mcp: { verifiable: false, output: 'no ping tool call' } }
+  expect(registrationProbeCacheReusable('acp', negative, true, false, true)).toBe(true)
 })
 
 test('changing an agent identity resets a probed writing capability', () => {

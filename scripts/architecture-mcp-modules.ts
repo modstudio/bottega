@@ -91,6 +91,11 @@ export const mcpModules: McpModule[] = [
     '../../../shared/self-spawn.ts',
     '../mcp/mcp-probe.ts',
   ]),
+  module('orchestrator/src/sandbox/project-mcp-scope.ts', [
+    'node:path',
+    '../mcp/mcp-probe.ts',
+    './mcp-reader-scope.ts',
+  ]),
   module('orchestrator/src/sandbox/grok-reader-mcp-home.ts', [
     '../../../shared/brand.ts',
     'node:fs',

@@ -4,7 +4,7 @@ import { basename } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
-import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
+import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
@@ -32,13 +32,7 @@ import {
   requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
-import {
-  mcpConfigAllowlist,
-  namesSeenAt,
-  probeMcpServer,
-  readMcpConfig,
-  storedMcpProbe,
-} from '../mcp/mcp-probe.ts'
+import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
@@ -58,12 +52,9 @@ import {
 import type { ResolvedTaskBranch } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { runningRunCountForAgent } from '../route/running-runs.ts'
-import {
-  type CodexMcpCatalogue,
-  codexMcpSetupHeader,
-  codexProjectServersForRun,
-} from '../sandbox/codex-mcp-scope.ts'
+import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
+import { mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
 import {
   isWritingAcpRun,
   removeNewSandboxHomeAfterFailure,
@@ -101,8 +92,13 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
+import {
+  projectSelectionForLaunch,
+  withheldScopeLine,
+  workerMcpLaunchScope,
+} from './run-mcp-launch-scope.ts'
+
 import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
-import { codexMcpMode } from './run-mcp-mode.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -134,40 +130,6 @@ import {
 } from './shared-git-config.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
-
-function workerMcpLaunchScope(input: {
-  agent: Agent
-  transport: string
-  usingMcp: boolean
-  writesJob: boolean
-  callerCwd: string
-  cwd: string
-  connection: { server: string } | null
-}) {
-  const config = readMcpConfig(input.cwd)
-  const project = projectAt(input.callerCwd)
-  return {
-    config,
-    codex: codexProjectServersForRun(
-      input.agent.name,
-      input.transport,
-      codexMcpMode(input.usingMcp, input.writesJob),
-      config,
-      project,
-      input.cwd,
-    ),
-    grok: workerHome.grokReaderServersForRun(
-      input.agent,
-      input.usingMcp,
-      input.writesJob,
-      config,
-      project,
-      input.cwd,
-    ),
-    serverName: workerHome.projectMcpServerName(input.connection, project),
-    allowlist: mcpConfigAllowlist(config),
-  }
-}
 
 function confinementSkipLines(failures: FreezeFailure[]): string[] {
   return failures.map(
@@ -759,6 +721,10 @@ export async function run(opts: {
       throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
     }
     mcpSetupHeader = codexMcpSetupHeader(mcpSetupHeader, mcpLaunch.codex, codexMcpCatalogues)
+    mcpSetupHeader = mergeMcpSetupHeader(
+      mcpSetupHeader,
+      withheldScopeLine(transportName, workerHarnessName(a), mcpLaunch.projectSelection),
+    )
     const sandboxRouteReason = sandboxSelection.reason
       ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
       : reason
@@ -1010,6 +976,7 @@ export async function run(opts: {
       usingMcp,
       mcpServerName,
       codexMcpScope: mcpLaunch.codex,
+      projectMcpSelection: projectSelectionForLaunch(usingMcp, mcpLaunch.projectSelection),
       mcpTrustGranted,
       writableRoots,
       gitConfigEnvironment,

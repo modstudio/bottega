@@ -61,6 +61,19 @@ export function registrationProbeRequirements(declaredJobs: string[] | null): {
   return needs
 }
 
+/**
+ * Whether the probe's MCP turn must run. A goose ACP worker can carry project
+ * servers in its session, so it is verified even when its declared jobs never
+ * asked for MCP.
+ */
+export function registrationProbeNeedsMcp(
+  needsMcp: boolean,
+  declared: boolean,
+  harness: string,
+): boolean {
+  return needsMcp || !declared || harness === 'goose'
+}
+
 function namesProbeFile(value: string): boolean {
   const normalized = value.replaceAll('\\', '/')
   return (
@@ -158,18 +171,26 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
 /** Prove capabilities before routing spends a worktree discovering them. */
 export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment }
 
+/**
+ * Whether a stored probe already answers every capability the declared jobs
+ * need. A stored result whose MCP turn was skipped carries no MCP verdict, so
+ * it is never reused once the MCP turn is required: otherwise re-probing a
+ * goose row keeps returning the cached row and `caps.mcp` never changes.
+ */
 export function registrationProbeCacheReusable(
   transport: 'cli' | 'acp',
   previous: RegistrationProbeResult | null,
   replyFile: boolean | undefined,
   resumableRequired: boolean,
+  mcpRequired: boolean,
 ): boolean {
   return Boolean(
     previous?.ok === true &&
       previous.file?.ok === true &&
       replyFile === true &&
       writingCapabilityPolicy(transport, previous.writing?.ok).jobSuccess &&
-      (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess),
+      (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess) &&
+      (!mcpRequired || previous.mcp?.verifiable != null),
   )
 }
 
@@ -239,6 +260,31 @@ async function probeContextWindow(row: AgentRow, prior: Caps & { contextTokens?:
   return { contextTokens, contextSource }
 }
 
+type ProbeTurn = Awaited<ReturnType<typeof runProbeTurn>>
+
+/** Run the MCP step only for a row that must prove MCP; the skip keeps its recorded wording. */
+async function registrationMcpProbeTurn(
+  runOne: (
+    id: string,
+    prompt: string,
+    schema: string | undefined,
+    mcp: boolean,
+  ) => Promise<ProbeTurn>,
+  required: boolean,
+): Promise<ProbeTurn> {
+  if (!required) {
+    return {
+      status: 'ok',
+      output: 'skipped: not required for declared jobs',
+      parsed: null,
+      events: [],
+      sessionId: null,
+      loadSessionAdvertised: false,
+    }
+  }
+  return runOne('mcp', 'Call the ping MCP tool and reply with exactly its result.', undefined, true)
+}
+
 export async function probeAgent(
   name: string,
   inputs: AgentProbeInputs,
@@ -249,7 +295,16 @@ export async function probeAgent(
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)
-  if (registrationProbeCacheReusable(row.transport, previous, priorCaps.replyFile, needs.resumable))
+  const mcpProbeRequired = registrationProbeNeedsMcp(needs.mcp, declared !== null, row.harness)
+  if (
+    registrationProbeCacheReusable(
+      row.transport,
+      previous,
+      priorCaps.replyFile,
+      needs.resumable,
+      mcpProbeRequired,
+    )
+  )
     return previous as RegistrationProbeResult
   if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
@@ -301,19 +356,7 @@ export async function probeAgent(
       : 'Write {"status":"ok"} to $BOTTEGA_SCRATCH/reply.json, then reply with exactly: ok',
     needs.schema ? schemaPath : undefined,
   )
-  const mcpRun =
-    needs.mcp || !declared
-      ? await runOne(
-          'mcp',
-          'Call the ping MCP tool and reply with exactly its result.',
-          undefined,
-          true,
-        )
-      : {
-          status: 'ok' as const,
-          output: 'skipped: not required for declared jobs',
-          events: [] as import('../transport/transport.ts').NormalizedEvent[],
-        }
+  const mcpRun = await registrationMcpProbeTurn(runOne, mcpProbeRequired)
   const { writing, resuming } = await registrationWriterCapabilities({
     transport: row.transport,
     scratch,
@@ -344,7 +387,9 @@ export async function probeAgent(
   const previousProbe = row.probe_result ? JSON.parse(row.probe_result) : null
   const attempts = Array.isArray(previousProbe?.attempts) ? previousProbe.attempts : []
   const { contextTokens, contextSource } = await probeContextWindow(row, prior)
-  const mcpVerifiable = needs.mcp ? mcpToolCallsObservable(mcpRun.events, mcpRun.output) : null
+  const mcpVerifiable = mcpProbeRequired
+    ? mcpToolCallsObservable(mcpRun.events, mcpRun.output)
+    : null
   const replyOk = reply.status === 'ok' && reply.output.trim().toLowerCase() === 'ok'
   const toolOk = needs.tool
     ? tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output)

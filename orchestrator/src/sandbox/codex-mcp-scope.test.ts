@@ -10,10 +10,29 @@ import {
   CODEX_REASONING_EFFORT,
   codexMcpSetupHeader,
   codexProjectServers,
-  codexProjectServersForRun,
+  codexProjectServersFromSelection,
   codexScopeArgs,
   codexWithheldTools,
 } from './codex-mcp-scope.ts'
+import { selectProjectMcpServers } from './project-mcp-scope.ts'
+
+// Codex renders the launch's single selection; compose it here the way
+// run-mcp-launch-scope.ts does so the argv under test is the launch's argv.
+function scopeForRun(
+  agent: string,
+  transport: string,
+  mcp: false | 'reader' | 'writer',
+  treeConfig: Record<string, Parameters<typeof selectProjectMcpServers>[1][string]>,
+  project: Parameters<typeof selectProjectMcpServers>[2],
+  cwd: string,
+) {
+  if (mcp === false) return null
+  return codexProjectServersFromSelection(
+    selectProjectMcpServers(mcp, treeConfig, project, cwd),
+    agent,
+    transport,
+  )
+}
 
 const page = (...names: string[]) => ({ tools: names.map((name) => ({ name })) })
 
@@ -115,7 +134,7 @@ test('project server overlay takes the place of the mcp-run definition for the s
 })
 
 test('reading-job project overlays all use the credential-free reader proxy', () => {
-  const scope = codexProjectServersForRun(
+  const scope = scopeForRun(
     'codex',
     'cli',
     'reader',
@@ -151,7 +170,7 @@ test('reading-job project overlays all use the credential-free reader proxy', ()
 })
 
 test('reading job without a registered project receives no project servers', () => {
-  const scope = codexProjectServersForRun(
+  const scope = scopeForRun(
     'codex',
     'cli',
     'reader',

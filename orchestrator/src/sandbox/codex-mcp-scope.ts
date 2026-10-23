@@ -3,13 +3,18 @@
  * Knows the fixed Codex CLI configuration pins and the MCP servers granted to
  * one run. Must not know dispatch, project lookup, transports, or credentials.
  */
-import { isAbsolute, join, resolve } from 'node:path'
+import { join } from 'node:path'
 /** Parent environment names Codex may forward into the bottega-ask subprocess. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { disabledProjectMcpServers, type McpServerConfig } from '../mcp/mcp-probe.ts'
+import type { McpServerConfig } from '../mcp/mcp-probe.ts'
 import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
-import { mcpConfigForRun, projectReaderProxyServers } from './mcp-reader-scope.ts'
+import {
+  type ProjectMcpSelection,
+  type ProjectMcpServer,
+  projectMcpWithheldLine,
+  selectDirectProjectMcpServers,
+} from './project-mcp-scope.ts'
 export const CODEX_ASK_ENV_VARS = [
   'BOTTEGA_RUN_ID',
   'BOTTEGA_RUN_TOKEN',
@@ -70,59 +75,41 @@ export function codexAskServerCommand(): string[] {
   return bottegaEntryArgv('ask-server')
 }
 
+function codexServers(servers: Record<string, ProjectMcpServer>): Record<string, CodexMcpServer> {
+  const rendered: Record<string, CodexMcpServer> = {}
+  for (const [name, server] of Object.entries(servers)) {
+    rendered[name] =
+      'url' in server
+        ? { url: server.url }
+        : { command: server.command, args: server.args, cwd: server.cwd }
+  }
+  return rendered
+}
+
 /** Select project MCP launch definitions that are safe to expose on argv. */
 export function codexProjectServers(
   config: Record<string, McpServerConfig>,
   allowed: string[] | undefined,
   cwd: string,
 ): CodexMcpScope {
-  const disabled = new Set(disabledProjectMcpServers(Object.keys(config), allowed))
-  const servers: Record<string, CodexMcpServer> = {}
-  const withheld: string[] = []
-  for (const [name, entry] of Object.entries(config)) {
-    if (disabled.has(name)) continue
-    if (Object.keys(entry.env ?? {}).length || Object.keys(entry.headers ?? {}).length) {
-      withheld.push(name)
-    } else if (entry.url) {
-      servers[name] = { url: entry.url }
-    } else if (entry.command) {
-      const command =
-        entry.command.includes('/') && !isAbsolute(entry.command)
-          ? resolve(cwd, entry.command)
-          : entry.command
-      servers[name] = { command, args: entry.args ?? [], cwd }
-    } else {
-      withheld.push(name)
-    }
-  }
-  return { servers, withheld }
+  const selection = selectDirectProjectMcpServers(config, allowed, cwd)
+  return { servers: codexServers(selection.servers), withheld: selection.withheld }
 }
 
 /**
- * Select project servers only for MCP-enabled Codex CLI runs. `.mcp.json` is
- * usually gitignored, so a worker tree cut from git lacks it; the project's
- * registered checkout then supplies the definitions.
+ * Render the launch's already-decided project selection as Codex argv entries.
+ * A Codex CLI run reports its own scope in its setup header, so it never
+ * renders anything a non-Codex harness or an ACP session renders instead.
  */
-export function codexProjectServersForRun(
+export function codexProjectServersFromSelection(
+  selection: ProjectMcpSelection | null,
   agent: string,
   transport: string,
-  mcp: false | 'reader' | 'writer',
-  treeConfig: Record<string, McpServerConfig>,
-  project: {
-    name: string
-    path: string
-    settings: { workerMcpServers?: string[]; mcpServer?: string }
-  } | null,
-  cwd: string,
-): ReturnType<typeof codexProjectServers> | null {
-  if (agent !== 'codex' || transport !== 'cli' || mcp === false) return null
-  const config = mcpConfigForRun(treeConfig, project)
-  const scope = codexProjectServers(config, project?.settings.workerMcpServers, cwd)
-  if (mcp === 'writer') return scope
-  return {
-    servers: projectReaderProxyServers(config, project, cwd),
-    withheld: [],
-  }
+): CodexMcpScope | null {
+  if (agent !== 'codex' || transport !== 'cli' || !selection) return null
+  if (selection.kind === 'reader')
+    return { servers: selection.servers, withheld: selection.withheld }
+  return { servers: codexServers(selection.servers), withheld: selection.withheld }
 }
 
 /** Append the visible reason when project MCP definitions cannot enter argv. */
@@ -131,11 +118,8 @@ export function codexMcpSetupHeader(
   scope: ReturnType<typeof codexProjectServers> | null,
   catalogues: CodexMcpCatalogue[] = [],
 ): string | null {
-  const lines = scope?.withheld.length
-    ? [
-        `MCP scope: codex withheld ${scope.withheld.join(', ')} (inline env/headers or no launch definition)`,
-      ]
-    : []
+  const withheldLine = projectMcpWithheldLine('codex', scope?.withheld ?? [])
+  const lines = withheldLine ? [withheldLine] : []
   for (const catalogue of catalogues) {
     if (catalogue.error !== undefined) {
       lines.push(
