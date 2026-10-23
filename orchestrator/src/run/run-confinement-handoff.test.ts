@@ -12,9 +12,11 @@ import {
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
+import { type ClaimInput, claimRun as productionClaimRun } from './run-claim.ts'
 import type { LiveInput, LiveResult } from './run-live.ts'
 
 const directories: string[] = []
+const originalClaimRun = productionClaimRun
 let classified: ConfinementEvent | null = null
 let runLiveFixture: ((input: LiveInput) => Promise<LiveResult>) | null = null
 let runUnderTest: typeof import('./run.ts').run
@@ -22,14 +24,8 @@ let caller: string
 
 async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
   mock.module('./run-claim.ts', () => ({
-    claimRun: async (input: {
-      prompt: string
-      callerCwd: string
-      runProjectName: string | null
-      runProjectId: string | null
-      usingMcp: boolean
-      mcpConnection: null
-    }) => {
+    claimRun: async (input: ClaimInput) => {
+      if (input.callerCwd !== caller) return originalClaimRun(input)
       const id = newRecordId()
       const started = Date.now()
       db()
