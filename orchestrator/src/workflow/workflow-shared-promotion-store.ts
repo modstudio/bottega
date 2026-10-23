@@ -27,7 +27,16 @@ type StoredPromotionVersion = WorkflowPromotionVersion & {
 type PromotionPorts = {
   draftLocal(version: StoredPromotionVersion): number
   promoteLocal(reason: string): void
-  preflight(definition: WorkflowDefinition, spaceId: string): void
+  preflight(definition: WorkflowDefinition, spaceId: string | null, catalogue: unknown): void
+  catalogue: CataloguePromotionPorts
+  author(): string
+  missingCatalogueRefusal: string
+}
+
+export type CataloguePromotionPorts = {
+  draftLocal(version: StoredPromotionVersion): number
+  promoteLocal(version: number, reason: string): void
+  preflight(definition: unknown, spaceId: string | null): void
   author(): string
 }
 
@@ -36,6 +45,7 @@ type HostedSpaceSnapshot = {
   spaceId: string
   rows: Map<RecordWorkflowTable, HostedRow[]>
   versions: StoredPromotionVersion[]
+  catalogueVersions: StoredPromotionVersion[]
 }
 
 type SharedWorkflowPromotionInput<Row extends WorkflowPromotionVersion> = {
@@ -83,6 +93,13 @@ const storedVersions = (slug: string, d: Database): StoredPromotionVersion[] =>
     )
     .all(slug)
 
+const storedCatalogueVersions = (d: Database): StoredPromotionVersion[] =>
+  d
+    .query<StoredPromotionVersion, []>(
+      `SELECT c.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' ORDER BY c.space_id,v.n`,
+    )
+    .all()
+
 async function hostedRows(spaceId: string, table: RecordWorkflowTable): Promise<HostedRow[]> {
   const rows: HostedRow[] = []
   let cursor: string | undefined
@@ -108,19 +125,27 @@ async function hostedSnapshot(spaceId: string, slug: string): Promise<HostedSpac
     )
   }
   const identity = rows.get('workflow')!.find((row) => row.slug === slug)
-  if (!identity) return { spaceId, rows, versions: [] }
-  const versionRows = rows.get('workflow_version')!.filter((row) => row.ownerId === identity.id)
-  return {
-    spaceId,
-    rows,
-    versions: versionRows.map((row) => ({
+  const catalogue = rows.get('step_catalogue')!.find((row) => row.slug === 'shared')
+  const versionRows = identity
+    ? rows.get('workflow_version')!.filter((row) => row.ownerId === identity.id)
+    : []
+  const catalogueVersionRows = catalogue
+    ? rows.get('step_catalogue_version')!.filter((row) => row.ownerId === catalogue.id)
+    : []
+  const versionsFor = (items: HostedRow[]): StoredPromotionVersion[] =>
+    items.map((row) => ({
       spaceId,
       n: Number(row.n),
       status: String(row.status) as StoredPromotionVersion['status'],
       author: String(row.author),
       definition: String(row.definition),
       reason: String(row.reason),
-    })),
+    }))
+  return {
+    spaceId,
+    rows,
+    versions: versionsFor(versionRows),
+    catalogueVersions: versionsFor(catalogueVersionRows),
   }
 }
 
@@ -129,10 +154,11 @@ async function draftHosted(
   spaceId: string,
   version: StoredPromotionVersion,
   d: Database,
+  kind: 'workflow' | 'step_catalogue' = 'workflow',
 ): Promise<number> {
   const result = await recordApiClient().draftWorkflow!(
     {
-      kind: 'workflow',
+      kind,
       slug,
       event: 'import',
       definition: version.definition,
@@ -142,8 +168,104 @@ async function draftHosted(
     },
     { destinationSpaceId: spaceId },
   )
-  await applyWorkflowWriteResponse(d, 'workflow', result)
+  await applyWorkflowWriteResponse(d, kind, result)
   return result.versions.at(-1)!.n
+}
+
+async function promoteHostedCatalogueSpace(
+  n: number,
+  reason: string,
+  spaceId: string,
+  d: Database,
+  ports: Pick<CataloguePromotionPorts, 'author'>,
+  expectedProductionVersion: number | null,
+): Promise<void> {
+  const result = await recordApiClient().promoteWorkflow!(
+    {
+      kind: 'step_catalogue',
+      slug: 'shared',
+      n,
+      expectedProductionVersion,
+      author: ports.author(),
+      reason: reason.trim(),
+      sessionId: sessionId(),
+    },
+    { destinationSpaceId: spaceId },
+  )
+  await applyWorkflowWriteResponse(d, 'step_catalogue', result)
+}
+
+async function applySharedCataloguePromotion(
+  n: number,
+  reason: string,
+  sourceSpace: string,
+  targetSpaces: readonly (string | null)[],
+  versions: readonly StoredPromotionVersion[],
+  d: Database,
+  ports: CataloguePromotionPorts,
+): Promise<WorkflowPromotionSpaceDecision> {
+  const decision = sharedWorkflowPromotionSpaces(versions, n, sourceSpace, targetSpaces)
+  const sourceTarget = versions.find(
+    (version) => version.spaceId === sourceSpace && version.n === n,
+  )
+  if (!sourceTarget)
+    throw new Error(`step catalogue has no version ${n} in hosted space ${sourceSpace}`)
+  for (const spaceId of decision.changed)
+    ports.preflight(JSON.parse(sourceTarget.definition), spaceId)
+  return promoteSharedWorkflowSpaces({
+    slug: 'shared step catalogue',
+    targetVersion: n,
+    sourceSpace,
+    versions,
+    targetSpaces,
+    draftVersion: (spaceId, version) =>
+      spaceId === null
+        ? Promise.resolve(ports.draftLocal(version))
+        : draftHosted('shared', spaceId, version, d, 'step_catalogue'),
+    promoteSpace: async (spaceId) => {
+      if (spaceId === null) ports.promoteLocal(n, reason)
+      else {
+        const expected = versions.find(
+          (version) => version.spaceId === spaceId && version.status === 'production',
+        )?.n
+        await promoteHostedCatalogueSpace(n, reason, spaceId, d, ports, expected ?? null)
+      }
+    },
+  })
+}
+
+async function sharedPromotionState(slug: string, sourceSpace: string, d: Database) {
+  const membershipList = await recordMemberships(recordApiClient())
+  const spaceIds = membershipList.memberships.map((membership) => membership.spaceId)
+  if (!spaceIds.includes(sourceSpace)) spaceIds.unshift(sourceSpace)
+  const snapshots = await Promise.all(spaceIds.map((spaceId) => hostedSnapshot(spaceId, slug)))
+  for (const snapshot of snapshots)
+    for (const table of RECORD_WORKFLOW_TABLES)
+      for (const row of snapshot.rows.get(table)!) applyWorkflowCatalogueRow(d, table, row)
+  return { spaceIds, snapshots }
+}
+
+export async function promoteSharedStepCatalogue(
+  n: number,
+  reason: string,
+  sourceSpace: string,
+  d: Database,
+  ports: CataloguePromotionPorts,
+): Promise<WorkflowPromotionSpaceDecision> {
+  const { spaceIds, snapshots } = await sharedPromotionState('', sourceSpace, d)
+  const versions = [
+    ...storedCatalogueVersions(d).filter((row) => row.spaceId === null),
+    ...snapshots.flatMap((snapshot) => snapshot.catalogueVersions),
+  ]
+  return applySharedCataloguePromotion(
+    n,
+    `${SHARED_WORKFLOW_PROMOTION_REASON} ${reason.trim()}`,
+    sourceSpace,
+    [null, ...spaceIds],
+    versions,
+    d,
+    ports,
+  )
 }
 
 async function promoteHostedWorkflowSpace(
@@ -152,7 +274,7 @@ async function promoteHostedWorkflowSpace(
   reason: string,
   spaceId: string,
   d: Database,
-  ports: Pick<PromotionPorts, 'preflight' | 'author'>,
+  ports: Pick<PromotionPorts, 'author'>,
   expectedProductionVersion: number | null,
 ): Promise<void> {
   const target = d
@@ -161,7 +283,6 @@ async function promoteHostedWorkflowSpace(
     )
     .get(slug, spaceId, n)
   if (!target) throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${spaceId}`)
-  ports.preflight(JSON.parse(target.definition) as WorkflowDefinition, spaceId)
   const result = await recordApiClient().promoteWorkflow!(
     {
       kind: 'workflow',
@@ -185,24 +306,61 @@ export async function promoteSharedWorkflow(
   d: Database,
   ports: PromotionPorts,
 ): Promise<WorkflowPromotionSpaceDecision> {
-  const membershipList = await recordMemberships(recordApiClient())
-  const spaceIds = membershipList.memberships.map((membership) => membership.spaceId)
-  if (sourceSpace && !spaceIds.includes(sourceSpace)) spaceIds.unshift(sourceSpace)
-  const snapshots = await Promise.all(spaceIds.map((spaceId) => hostedSnapshot(spaceId, slug)))
-  for (const snapshot of snapshots)
-    for (const table of RECORD_WORKFLOW_TABLES)
-      for (const row of snapshot.rows.get(table)!) applyWorkflowCatalogueRow(d, table, row)
+  const { spaceIds, snapshots } = await sharedPromotionState(slug, sourceSpace, d)
   const versions = [
     ...storedVersions(slug, d).filter((row) => row.spaceId === null),
     ...snapshots.flatMap((snapshot) => snapshot.versions),
   ]
   const sharedReason = `${SHARED_WORKFLOW_PROMOTION_REASON} ${reason.trim()}`
+  const targetSpaces = [null, ...spaceIds]
+  const workflowDecision = sharedWorkflowPromotionSpaces(versions, n, sourceSpace, targetSpaces)
+  const catalogueVersions = [
+    ...storedCatalogueVersions(d).filter((row) => row.spaceId === null),
+    ...snapshots.flatMap((snapshot) => snapshot.catalogueVersions),
+  ]
+  const sourceCatalogue = catalogueVersions.find(
+    (version) => version.spaceId === sourceSpace && version.status === 'production',
+  )
+  if (!sourceCatalogue) throw new Error(ports.missingCatalogueRefusal)
+  const catalogueDecision = sharedWorkflowPromotionSpaces(
+    catalogueVersions,
+    sourceCatalogue.n,
+    sourceSpace,
+    targetSpaces,
+  )
+  const workflowTarget = versions.find(
+    (version) => version.spaceId === sourceSpace && version.n === n,
+  )
+  if (!workflowTarget)
+    throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${sourceSpace}`)
+  for (const spaceId of workflowDecision.changed) {
+    const catalogue = catalogueDecision.changed.includes(spaceId)
+      ? sourceCatalogue
+      : catalogueVersions.find(
+          (version) => version.spaceId === spaceId && version.status === 'production',
+        )
+    if (!catalogue) throw new Error(ports.missingCatalogueRefusal)
+    ports.preflight(
+      JSON.parse(workflowTarget.definition) as WorkflowDefinition,
+      spaceId,
+      JSON.parse(catalogue.definition),
+    )
+  }
+  await applySharedCataloguePromotion(
+    sourceCatalogue.n,
+    sharedReason,
+    sourceSpace,
+    targetSpaces,
+    catalogueVersions,
+    d,
+    ports.catalogue,
+  )
   return promoteSharedWorkflowSpaces({
     slug,
     targetVersion: n,
     sourceSpace,
     versions,
-    targetSpaces: [null, ...spaceIds],
+    targetSpaces,
     draftVersion: (spaceId, version) =>
       spaceId === null
         ? Promise.resolve(ports.draftLocal(version))

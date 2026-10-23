@@ -21,6 +21,11 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
+  type CheckoutResolution,
+  checkoutOutsideChangeRefusal,
+  classifyCheckoutEvidence,
+} from './workflow-checkout-refusal.ts'
+import {
   type ArtifactRef,
   type BottegaCommandIdentity,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -77,27 +82,6 @@ export function openWorkflowObligations(cursorId: number, d: Database): OpenObli
         WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY id`,
     )
     .all(cursorId)
-}
-
-type CheckoutResolution = {
-  project: string | null
-  branch: string | null
-  headIsTipOrAncestor: boolean
-  landingCommit?: string | null
-  landingIsHeadOrAncestor?: boolean
-}
-
-type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
-
-/** Decides whether a commit belongs to the change before or after its recorded landing. */
-export function classifyCheckoutEvidence(input: {
-  headIsTipOrAncestor: boolean
-  landingCommit: string | null
-  landingIsHeadOrAncestor: boolean
-}): CheckoutEvidenceLocation {
-  if (input.headIsTipOrAncestor) return 'branch'
-  if (input.landingCommit && input.landingIsHeadOrAncestor) return 'post-landing'
-  return 'outside-change'
 }
 
 type HubTaskRead = {
@@ -240,17 +224,23 @@ function productionResolveCheckout(
   const landingCommit = headIsTipOrAncestor
     ? null
     : checkoutLandingCommit(identity.project, expectedBranch, d)
-  const landingIsHeadOrAncestor = Boolean(
-    landingCommit &&
-      headCommit &&
-      gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+  const landingCommitAvailable = Boolean(
+    landingCommit && gitOk(cwd, ['cat-file', '-e', `${landingCommit}^{commit}`]),
   )
+  const landingIsHeadOrAncestor = landingCommitAvailable
+    ? Boolean(
+        landingCommit &&
+          headCommit &&
+          gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+      )
+    : undefined
   return {
     project,
     branch,
     headIsTipOrAncestor,
     landingCommit,
     landingIsHeadOrAncestor,
+    landingBranch: projectByName(identity.project, d)?.settings.trunk ?? 'main',
   }
 }
 
@@ -467,7 +457,7 @@ function requireCheckout(
       `${flag} cwd is on ${checkout.branch ?? 'unset'}, not this cursor's ${identity.branch}`,
     )
   if (identity.branch && location === 'outside-change')
-    throw new Error(`${flag} head_commit is not the tip or an ancestor of ${identity.branch}`)
+    throw new Error(checkoutOutsideChangeRefusal(flag, identity.branch, cwd, checkout))
   return checkout
 }
 
@@ -935,6 +925,7 @@ function gatherTreeEvidence(
 ): NonNullable<ValidatedEvidence['tree']> {
   return {
     project: identity.project,
+    worktree: identity.worktree,
     commit: identity.worktree
       ? invokeFloorEvidencePort(
           ports,
