@@ -431,9 +431,9 @@ describe('record API client test safety', () => {
     installRecordSessionRunner(session.runner)
     installRecordApiClient(null)
     const previousEnv = process.env.NODE_ENV
-    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
-    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () =>
       Response.json({ error: 'claim write failed' }, { status: 500 })) as unknown as typeof fetch
@@ -453,8 +453,8 @@ describe('record API client test safety', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
-      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-      else process.env.ORCH_RECORD_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousUrl
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }

@@ -277,10 +277,10 @@ test('a secret split across chunks is withheld when its line completes', () => {
 })
 
 test('a sha line, pull-request URL, and refusal remain usable evidence', async () => {
-  const priorDepth = process.env.ORCH_DEPTH
+  const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const url = 'https://github.com/acme/app/pull/7'
     const refusal = 'applicable lens safety has no recorded result on this branch'
@@ -325,8 +325,8 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
       }),
     ).toEqual({ met: true })
   } finally {
-    if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-    else process.env.ORCH_DEPTH = priorDepth
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
