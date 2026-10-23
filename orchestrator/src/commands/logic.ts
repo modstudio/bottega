@@ -48,7 +48,8 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
-import { resolveAnswerIdentifier, resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { resolveAnswerIdentifier } from '../run/run-answer-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
