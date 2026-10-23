@@ -6,6 +6,7 @@ import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
+import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
@@ -222,7 +223,7 @@ M 100644 :5 notes.md
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
-function postFixFixture(fixPath: string): {
+function postFixFixture(fixPath: string | null): {
   repo: string
   branch: string
   runId: string
@@ -233,14 +234,17 @@ function postFixFixture(fixPath: string): {
   git(repo, 'config', 'user.email', 'fixture@example.com')
   git(repo, 'config', 'user.name', 'Fixture')
   writeFileSync(join(repo, 'base.txt'), 'base\n')
-  git(repo, 'add', 'base.txt')
+  mkdirSync(join(repo, 'critical'))
+  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "base"\n')
+  git(repo, 'add', 'base.txt', 'critical/shared.ts')
   git(repo, 'commit', '-m', 'base')
   const base = git(repo, 'rev-parse', 'HEAD')
   const branch = `DEV-1510-${crypto.randomUUID()}`
   git(repo, 'checkout', '-b', branch)
   mkdirSync(join(repo, 'src'), { recursive: true })
   writeFileSync(join(repo, 'src/large.ts'), 'export const line = 1\n'.repeat(401))
-  git(repo, 'add', 'src/large.ts')
+  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
+  git(repo, 'add', 'src/large.ts', 'critical/shared.ts')
   git(repo, 'commit', '-m', 'reviewed change')
   const reviewed = git(repo, 'rev-parse', 'HEAD')
   const name = `post-fix-${crypto.randomUUID()}`
@@ -279,20 +283,42 @@ function postFixFixture(fixPath: string): {
     .get(name, name, branch, base, reviewed, reviewed)!.id
   const reviewId = recordReview(runId, reviewReply(0), db())
   completeReview(reviewId, db())
-  const absoluteFix = join(repo, fixPath)
-  mkdirSync(join(absoluteFix, '..'), { recursive: true })
-  writeFileSync(absoluteFix, 'export const fix = true\n')
-  git(repo, 'add', fixPath)
-  git(repo, 'commit', '-m', 'apply review fix')
+  if (fixPath) {
+    const absoluteFix = join(repo, fixPath)
+    mkdirSync(join(absoluteFix, '..'), { recursive: true })
+    writeFileSync(absoluteFix, 'export const fix = true\n')
+    git(repo, 'add', fixPath)
+    git(repo, 'commit', '-m', 'apply review fix')
+  }
   git(repo, 'checkout', 'main')
-  mkdirSync(join(repo, 'critical'), { recursive: true })
+  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "trunk"\n')
   writeFileSync(join(repo, 'critical/trunk.ts'), 'export const trunk = true\n')
-  git(repo, 'add', 'critical/trunk.ts')
+  git(repo, 'add', 'critical/shared.ts', 'critical/trunk.ts')
   git(repo, 'commit', '-m', 'advance trunk')
   git(repo, 'checkout', branch)
-  git(repo, 'merge', '--no-edit', 'main')
+  const merge = spawnFixtureGitSync(['merge', '--no-edit', 'main'], { cwd: repo })
+  expect(merge.exitCode).not.toBe(0)
+  writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "combined"\n')
+  git(repo, 'add', 'critical/shared.ts')
+  git(repo, 'commit', '--no-edit')
   return { repo, branch, runId, reviewed }
 }
+
+test('review tier needs no round when the only post-review commit is a trunk merge', async () => {
+  const { repo, branch, reviewed } = postFixFixture(null)
+  try {
+    const json: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
+
+    expect(JSON.parse(json[0]!).post_fix).toMatchObject({
+      kind: 'no-round-needed',
+      reviewedTip: reviewed,
+      tierThreePaths: [],
+    })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
 
 test('review tier lists a never-completed lens when no tier-three fix path was touched', async () => {
   const { repo, branch, reviewed } = postFixFixture('src/fix.ts')

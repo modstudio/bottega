@@ -20,6 +20,7 @@ import {
 import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
 
 const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
+const PYTHON_TEST_PATH = /(^|\/)test_[^/]+\.py$/
 
 type CompletedReview = {
   number: number
@@ -120,6 +121,42 @@ function matchingReviewedTip(
   return match
 }
 
+function branchFixFiles(
+  repo: string,
+  reviewedTip: string,
+  currentTip: string,
+  trunkRef: string,
+): ReviewTierFile[] {
+  const commits = git(repo, [
+    'rev-list',
+    '--reverse',
+    '--parents',
+    currentTip,
+    '--not',
+    reviewedTip,
+    trunkRef,
+  ])
+  if (!commits.ok) throw new Error(commits.err)
+  const files = new Map<string, ReviewTierFile>()
+  for (const row of commits.out.split('\n').filter(Boolean)) {
+    const [commit, firstParent, ...mergedParents] = row.split(' ')
+    if (!commit || !firstParent) throw new Error(`could not identify the parent of ${commit}`)
+    const mergesLandingBranch = mergedParents.some(
+      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
+    )
+    if (mergesLandingBranch) continue
+    for (const file of diffNumstat(repo, firstParent, commit)) {
+      const previous = files.get(file.path)
+      files.set(file.path, {
+        path: file.path,
+        insertions: (previous?.insertions ?? 0) + file.insertions,
+        deletions: (previous?.deletions ?? 0) + file.deletions,
+      })
+    }
+  }
+  return [...files.values()]
+}
+
 /** Gather repository and review-store evidence without making the review-policy decision. */
 export function gatherPostFixReviewFacts(input: {
   database: Database
@@ -141,15 +178,10 @@ export function gatherPostFixReviewFacts(input: {
   )
   if (!reviewedTip) return { completed, reviewedTip: null, fixFiles: null }
   try {
-    const currentPaths = new Set(
-      diffNumstat(input.repo, input.from, input.to).map(({ path }) => path),
-    )
     return {
       completed,
       reviewedTip,
-      fixFiles: diffNumstat(input.repo, reviewedTip, input.to).filter(({ path }) =>
-        currentPaths.has(path),
-      ),
+      fixFiles: branchFixFiles(input.repo, reviewedTip, input.to, input.trunkRef),
     }
   } catch {
     return { completed, reviewedTip: null, fixFiles: null }
@@ -167,7 +199,10 @@ export function postFixReviewDecision(input: {
   if (!reviewedTip || !fixFiles) {
     return { kind: 'reviewed-tip-unidentified', reviewNumber: completed.number }
   }
-  const tierThreePaths = tierThreeRiskPaths(fixFiles, input.review?.risk)
+  const tierThreePaths = tierThreeRiskPaths(
+    fixFiles.filter(({ path }) => !PYTHON_TEST_PATH.test(path)),
+    input.review?.risk,
+  )
   if (input.tier !== POST_FIX_RELENS_TIER || tierThreePaths.length === 0) {
     return {
       kind: 'no-round-needed',
