@@ -499,12 +499,6 @@ export const modules: ArchitectureModule[] = [
     '../record/outbox-sanitize.ts',
     '../verdict/verdict-payload.ts',
   ]),
-  module('orchestrator/src/score/score-missing.ts', [
-    '../../../shared/brand.ts',
-    '../review/review-triage.ts',
-    '../review/review-vocabulary.ts',
-    './score.ts',
-  ]),
   ...projectModules,
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',

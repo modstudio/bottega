@@ -5,22 +5,13 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { FINDING_DETAIL_RULE, FINDING_VALUE } from '../review/review-triage.ts'
 import {
-  REVIEW_COVERAGE,
-  REVIEW_LIMITS,
-  REVIEW_OVERLAP,
-  REVIEW_REPRODUCED,
+  FINDING_DETAIL_RULE,
+  FINDING_VALUE,
+  REVIEW_GRADE_NAMES,
+  REVIEW_GRADE_VALUES,
 } from '../review/review-vocabulary.ts'
 import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
-
-export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const
-export const REVIEW_GRADE_VALUES = {
-  reproduced: REVIEW_REPRODUCED,
-  coverage: REVIEW_COVERAGE,
-  limits: REVIEW_LIMITS,
-  overlap: REVIEW_OVERLAP,
-} as const
 
 const EXAMPLE = {
   delivery: 'full',
@@ -44,6 +35,10 @@ export type GivenScoreFlags = {
   fidelity: string | undefined
   grades: Record<(typeof REVIEW_GRADE_NAMES)[number], string | undefined>
   requiredFindings: readonly number[]
+  findingFlags: readonly string[]
+  duplicateFlags: readonly string[]
+  comparison: { name: 'better-than' | 'worse-than' | 'same-as'; value: string } | undefined
+  requiredComparisonIds: readonly string[]
 }
 
 function axisToken(name: string, levels: readonly string[]): string {
@@ -80,6 +75,10 @@ export function missingScoreRequirements(
     if (!given.grades[name]) missing.push(missingReviewGradeFlag(name))
   }
   for (const ordinal of given.requiredFindings) missing.push(missingReviewFindingFlag(ordinal))
+  if (given.requiredComparisonIds.length && !given.comparison) {
+    const ids = given.requiredComparisonIds.join(',')
+    missing.push(`--better-than ${ids} | --worse-than ${ids} | --same-as ${ids}`)
+  }
   return missing
 }
 
@@ -98,8 +97,14 @@ export function workingScoreForm(
   for (const name of REVIEW_GRADE_NAMES) {
     parts.push(`--${name} ${given.grades[name] ?? EXAMPLE[name]}`)
   }
+  for (const value of given.findingFlags) parts.push(`--finding ${value}`)
   for (const ordinal of given.requiredFindings) {
     parts.push(`--finding ${ordinal}=${EXAMPLE.finding}`)
+  }
+  for (const value of given.duplicateFlags) parts.push(`--duplicate ${value}`)
+  if (given.comparison) parts.push(`--${given.comparison.name} ${given.comparison.value}`)
+  else if (given.requiredComparisonIds.length) {
+    parts.push(`--same-as ${given.requiredComparisonIds.join(',')}`)
   }
   return parts.join(' ')
 }

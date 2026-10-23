@@ -25,7 +25,12 @@ import {
   type ReviewGrades,
   triageFinding,
 } from './review/review-triage.ts'
-import { REVIEW_SEVERITY, type ReviewSeverity } from './review/review-vocabulary.ts'
+import {
+  REVIEW_GRADE_NAMES,
+  REVIEW_GRADE_VALUES,
+  REVIEW_SEVERITY,
+  type ReviewSeverity,
+} from './review/review-vocabulary.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_VOIDED } from './run/question-close.ts'
 import {
   adoptRunMutation,
@@ -51,8 +56,6 @@ import {
   type GivenScoreFlags,
   missingScoreRefusal,
   missingScoreRequirements,
-  REVIEW_GRADE_NAMES,
-  REVIEW_GRADE_VALUES,
   type ScoreRequirementJob,
   workingScoreForm,
 } from './score/score-missing.ts'
@@ -427,9 +430,8 @@ function throwIfMissingScore(
   id: string,
   jobRequirements: ScoreRequirementJob,
   given: GivenScoreFlags,
-  extraMissing: readonly string[] = [],
 ): void {
-  const missing = [...missingScoreRequirements(jobRequirements, given), ...extraMissing]
+  const missing = missingScoreRequirements(jobRequirements, given)
   if (missing.length) {
     throw new Error(missingScoreRefusal(id, missing, workingScoreForm(id, jobRequirements, given)))
   }
@@ -599,14 +601,6 @@ export async function judgeRun(
   ) {
     throw new Error(`${row.job} does not take findings close-out flags`)
   }
-  const extraMissing: string[] = []
-  if (partners.length && !comparison) {
-    extraMissing.push(
-      `--better-than ${partners.map((partner) => partner.record_id).join(',')} | ` +
-        `--worse-than ${partners.map((partner) => partner.record_id).join(',')} | ` +
-        `--same-as ${partners.map((partner) => partner.record_id).join(',')}`,
-    )
-  }
   if (comparison) {
     const expected = partners.map((partner) => partner.record_id).sort((a, b) => a.localeCompare(b))
     const actual = [...comparisonIds].sort((a, b) => a.localeCompare(b))
@@ -622,8 +616,13 @@ export async function judgeRun(
   throwIfMissingScore(
     id,
     { writesRepo: writes, producesFindings: findingsJob },
-    { delivery, quality, fidelity, grades: gradeValues, requiredFindings },
-    extraMissing,
+    givenScoreFlags(delivery, quality, fidelity, gradeValues, {
+      requiredFindings,
+      findingFlags: flags.values('finding'),
+      duplicateFlags: flags.values('duplicate'),
+      comparison: comparison ? { name: comparison, value: flags.flag(comparison)! } : undefined,
+      requiredComparisonIds: partners.map((partner) => partner.record_id),
+    }),
   )
   const note = options.note
   let authority = runMutationActor(id)
@@ -803,11 +802,38 @@ function filledPresentAxes(
 }
 
 function suppliedReviewGrades(flags: JudgmentFlags): GivenScoreFlags['grades'] {
+  return Object.fromEntries(
+    REVIEW_GRADE_NAMES.map((name) => [name, flags.flag(name)]),
+  ) as GivenScoreFlags['grades']
+}
+
+function givenScoreFlags(
+  delivery: string | undefined,
+  quality: string | undefined,
+  fidelity: string | undefined,
+  grades: GivenScoreFlags['grades'],
+  closeout: Partial<
+    Pick<
+      GivenScoreFlags,
+      | 'requiredFindings'
+      | 'findingFlags'
+      | 'duplicateFlags'
+      | 'comparison'
+      | 'requiredComparisonIds'
+    >
+  > = {},
+): GivenScoreFlags {
   return {
-    reproduced: flags.flag('reproduced'),
-    coverage: flags.flag('coverage'),
-    limits: flags.flag('limits'),
-    overlap: flags.flag('overlap'),
+    delivery,
+    quality,
+    fidelity,
+    grades,
+    requiredFindings: [],
+    findingFlags: [],
+    duplicateFlags: [],
+    comparison: undefined,
+    requiredComparisonIds: [],
+    ...closeout,
   }
 }
 
@@ -972,7 +998,7 @@ export async function scoreRun(
   throwIfMissingScore(
     id,
     { writesRepo, producesFindings: findingsJob },
-    { delivery, quality, fidelity, grades: givenGrades, requiredFindings: [] },
+    givenScoreFlags(delivery, quality, fidelity, givenGrades),
   )
   const scoredDelivery = delivery as Delivery
   const refusal = refuseVerdict({

@@ -939,6 +939,12 @@ export const importBoundaries: ImportBoundary[] = [
     [],
     'Enforce the score concern boundary.',
   ),
+  boundary(
+    'score-missing-boundary',
+    'orchestrator/src/score/score-missing.ts',
+    ['../../../shared/brand.ts', '../review/review-vocabulary.ts', './score.ts'],
+    'Keep the missing-score decision independent of adapters and state.',
+  ),
   ...setupModuleSpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),

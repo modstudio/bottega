@@ -12,6 +12,19 @@ export const REVIEW_COVERAGE = ['empty', 'partial', 'adequate'] as const
 export const REVIEW_LIMITS = ['named', 'absent'] as const
 export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
 export const REVIEW_SEVERITY = ['critical', 'high', 'medium', 'low'] as const
+export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const
+export const REVIEW_GRADE_VALUES = {
+  reproduced: REVIEW_REPRODUCED,
+  coverage: REVIEW_COVERAGE,
+  limits: REVIEW_LIMITS,
+  overlap: REVIEW_OVERLAP,
+} as const
+export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
+export type Disposition = (typeof DISPOSITIONS)[number]
+
+/** The `--finding` value after `N=`, shared by score help and its missing-finding refusal. */
+export const FINDING_VALUE = `<${DISPOSITIONS.join('|')}>:<detail>`
+export const FINDING_DETAIL_RULE = `accepted/modified/skipped detail is ${REVIEW_SEVERITY.join('|')}; rejected detail is a lowercase stable category ID of 1-64 characters`
 export type ReviewReproduced = (typeof REVIEW_REPRODUCED)[number]
 export type ReviewCoverage = (typeof REVIEW_COVERAGE)[number]
 export type ReviewLimits = (typeof REVIEW_LIMITS)[number]

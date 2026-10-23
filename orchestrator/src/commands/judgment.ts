@@ -11,8 +11,9 @@ import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
 import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
-import { FINDING_DETAIL_RULE, FINDING_VALUE } from '../review/review-triage.ts'
 import {
+  FINDING_DETAIL_RULE,
+  FINDING_VALUE,
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
   REVIEW_OVERLAP,

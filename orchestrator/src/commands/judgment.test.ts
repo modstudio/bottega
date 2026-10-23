@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
-import { addRun, dir } from '../../test/fixtures/store.ts'
+import { addRun, dir, score as seedScore } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
@@ -164,6 +164,12 @@ const silent = {
   pairHint: (partner: { id: string }) => `pair ${partner.id}`,
 }
 
+async function runSuggestedScoreForm(form: string): Promise<void> {
+  const program = new Command().name(PLATFORM_SLUG).exitOverride()
+  register(program)
+  await program.parseAsync(form.trim().split(' ').slice(1), { from: 'user' })
+}
+
 test('a review-lens run scored with only delivery names every remaining required flag once', async () => {
   const id = addRun({
     agent: 'codex',
@@ -224,4 +230,85 @@ test('an implement run scored with only full names quality and fidelity together
     ),
   )
   expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+})
+
+test('a suggested form preserves supplied finding verdicts and succeeds through the command', async () => {
+  const id = addRun({
+    agent: 'codex',
+    job: 'review-lens',
+    status: 'ok',
+    session: 'orch-test-session',
+  })
+  db().query("UPDATE run SET lens='correctness',model='m' WHERE record_id=?").run(id)
+  recordReview(id, reviewReply(2, 'high'), db())
+  let refusal = ''
+  try {
+    await judgeRun(
+      id,
+      scoreFlags({ finding: '1=modified:medium' }),
+      { words: ['full'], note: null, auditReason: null, notEvidence: NOT_EVIDENCE },
+      silent,
+    )
+  } catch (error) {
+    refusal = (error as Error).message
+  }
+  const form = refusal.trim().split('\n').at(-1)!
+  expect(form).toContain('--finding 1=modified:medium --finding 2=accepted:high')
+
+  await runSuggestedScoreForm(form)
+
+  expect(db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(id)).toEqual({
+    delivery: 'full',
+    quality: 'right',
+  })
+})
+
+test('a suggested form fills a required pair verdict and succeeds through the command', async () => {
+  const partner = addRun({
+    agent: 'codex',
+    job: 'review-lens',
+    status: 'ok',
+    session: 'orch-test-session',
+  })
+  const id = addRun({
+    agent: 'codex',
+    job: 'review-lens',
+    status: 'ok',
+    session: 'orch-test-session',
+  })
+  for (const run of [partner, id]) {
+    db()
+      .query(
+        "UPDATE run SET lens='correctness',model='m',spec_sha='same',input_tree='tree' WHERE record_id=?",
+      )
+      .run(run)
+  }
+  seedScore(partner, 'full', 'right')
+  recordReview(id, reviewReply(1, 'high'), db())
+  let refusal = ''
+  try {
+    await judgeRun(
+      id,
+      scoreFlags({
+        reproduced: 'all',
+        coverage: 'adequate',
+        limits: 'named',
+        overlap: 'unique',
+        finding: '1=accepted:high',
+      }),
+      { words: ['full', 'right'], note: null, auditReason: null, notEvidence: NOT_EVIDENCE },
+      silent,
+    )
+  } catch (error) {
+    refusal = (error as Error).message
+  }
+  const form = refusal.trim().split('\n').at(-1)!
+  expect(form).toContain(`--same-as ${partner}`)
+
+  await runSuggestedScoreForm(form)
+
+  expect(db().query('SELECT run_a_record_id,run_b_record_id FROM compared_pair').get()).toEqual({
+    run_a_record_id: partner,
+    run_b_record_id: id,
+  })
 })

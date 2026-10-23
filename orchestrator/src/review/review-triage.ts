@@ -8,6 +8,8 @@ import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.
 import { parseReviewOutput, recordReviews } from './review.ts'
 import { enqueueReview, enqueueReviewFinding, enqueueReviewLens } from './review-outbox.ts'
 import {
+  DISPOSITIONS,
+  type Disposition,
   REVIEW_SEVERITY,
   type ReviewCoverage,
   type ReviewLimits,
@@ -16,19 +18,14 @@ import {
   type ReviewSeverity,
 } from './review-vocabulary.ts'
 
+export { DISPOSITIONS, type Disposition } from './review-vocabulary.ts'
+
 /**
  * Initial safety floor. Re-set this from the observed triage distribution once
  * this repository has enough review data; until then the conservative value
  * prevents a handful of findings from changing reviewer behavior.
  */
 export const MIN_REVIEW_TRIAGED = 10
-
-export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
-export type Disposition = (typeof DISPOSITIONS)[number]
-
-/** The `--finding` value after `N=`, shared by score help and its missing-finding refusal. */
-export const FINDING_VALUE = `<${DISPOSITIONS.join('|')}>:<detail>`
-export const FINDING_DETAIL_RULE = `accepted/modified/skipped detail is ${REVIEW_SEVERITY.join('|')}; rejected detail is a lowercase stable category ID of 1-64 characters`
 
 export function triageValues(
   disposition: Disposition,
