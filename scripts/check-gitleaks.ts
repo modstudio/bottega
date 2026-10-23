@@ -62,11 +62,7 @@ for (const scan of scans) {
     })
     const log = result.stderr.toString()
     process.stderr.write(result.stderr)
-    const decision = decideGitleaksScan(
-      scan.mode === 'history'
-        ? { mode: 'history', expectedCommitCount: rangeCommitCount, exitCode: result.exitCode, log }
-        : { mode: scan.mode, exitCode: result.exitCode, log },
-    )
+    const decision = decideGitleaksScan({ mode: scan.mode, exitCode: result.exitCode, log })
     if (decision.status === 'refused') {
       console.error(`check-gitleaks: ${scan.mode} scan refused: ${decision.message}`)
       console.error(`check-gitleaks: command: ${[gitleaks, ...scan.args].join(' ')}`)
