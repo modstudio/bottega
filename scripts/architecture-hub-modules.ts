@@ -225,6 +225,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-cli.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/trackers.ts',
       'node:fs',
       'commander',
       './cli-command.ts',
