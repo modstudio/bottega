@@ -52,6 +52,10 @@ test('release sender upserts the finished state by record id in the project spac
     live: 'before-sha',
     rollback: false,
     reason: null,
+    trunk: 'main',
+    trunkTip: 'candidate-sha',
+    commitsBehindTrunk: 0,
+    behindTrunkReason: null,
   })
   const started = source
     .query<LocalOutboxRow, []>('SELECT row_id AS record_id,payload,created_at FROM outbox')

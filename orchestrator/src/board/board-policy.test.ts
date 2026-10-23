@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { db } from '../database/db.ts'
 import {
   acknowledgementRefusal,
   architectIdentity,
@@ -16,7 +17,7 @@ import {
   standingPostingRefusal,
   validatePostNoticeInput,
 } from './board-policy.ts'
-import { boardActor } from './board-store.ts'
+import { boardActor, presenceFacts } from './board-store.ts'
 
 test('an omitted purpose defaults from acknowledgement while an explicit purpose wins', () => {
   expect(defaultBoardPurpose(undefined, false)).toBe('information')
@@ -52,6 +53,30 @@ test('an unsupported board caller refusal names its triggering markers', () => {
   expect(() => boardActor({ CODEX_THREAD_ID: 'codex-1', OTHER_SESSION_ID: 'session-1' })).toThrow(
     '(CODEX_THREAD_ID, OTHER_SESSION_ID)',
   )
+})
+
+test('a session whose presence is stale but whose session_seen is fresh is a reader', () => {
+  const now = 1_000
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES ('stale-presence','claude-code','architect','host-a',?,
+               (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
+    )
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(700).toISOString())
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES ('only-stale','claude-code','architect','host-a',?,
+               (SELECT record_id FROM project WHERE name=?),'/tmp',NULL,?)`,
+    )
+    .run(PLATFORM_SLUG, PLATFORM_SLUG, new Date(700).toISOString())
+  db()
+    .query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
+    .run('stale-presence', new Date(900).toISOString())
+  expect(resolveAudience(parseAudience('architects'), presenceFacts(db(), now), now, 200)).toEqual([
+    'stale-presence',
+  ])
 })
 
 test('audiences resolve at delivery, including a late joiner', () => {

@@ -14,6 +14,12 @@ def store_path() -> str:
     return os.path.abspath(os.environ["ORCH_DB"])
 
 
+def board_bin() -> str:
+    return os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
+    )
+
+
 def marker_path(kind: str, session: str) -> str:
     root = os.path.abspath(os.environ["ORCH_BOARD_HOOK_STATE"])
     name = hashlib.sha256(session.encode()).hexdigest()
@@ -76,10 +82,7 @@ def pending(
     recently_injected: list[str] | None = None,
     exclude_acknowledgements: bool = False,
 ):
-    binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
-    )
-    command = [binary, "board", "pending", "--session", session, "--json"]
+    command = [board_bin(), "board", "pending", "--session", session, "--json"]
     if recently_injected:
         command.extend(["--recently-injected", ",".join(recently_injected)])
     if exclude_acknowledgements:
@@ -115,11 +118,8 @@ def mark_delivered(
 ) -> None:
     if not ids:
         return
-    binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
-    )
     command = [
-        binary, "board", "delivered", ",".join(ids), "--session", session,
+        board_bin(), "board", "delivered", ",".join(ids), "--session", session,
         "--point", delivery_point, "--emission", emission_id,
     ]
     if blocked_stop:

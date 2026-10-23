@@ -113,7 +113,7 @@ case "$*" in
   "board presence") exit 0 ;;
   "question inbox --all --active --json") printf '[]\\n' ;;
   "run list --live --json") printf '%s\\n' '{row}' ;;
-  "machine monitor --notices --json") printf '[]\\n' ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
   *) exit 0 ;;
 esac
 ''',
@@ -182,7 +182,7 @@ case "$*" in
       : >"$FAKE_SECOND_TICK"
       printf '%s\\n' '{first_row}'
     fi ;;
-  "machine monitor --notices --json") printf '[]\\n' ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
   *) exit 0 ;;
 esac
 ''',
@@ -238,7 +238,7 @@ case "$*" in
   "board presence") exit 0 ;;
   "question inbox --all --active --json") printf '[]\\n' ;;
   "run list --live --json") exit 0 ;;
-  "machine monitor --notices --json") printf '[]\\n' ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
   *) exit 0 ;;
 esac
 """,
@@ -300,7 +300,7 @@ case "$*" in
   "board presence") exit 0 ;;
   "question inbox --all --active --json") printf '[]\\n' ;;
   "run list --live --json") printf '%s\\n' '{row}' ;;
-  "machine monitor --notices --json")
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh")
     if [ ! -f "$FAKE_UPDATED" ]; then
       : >"$FAKE_UPDATED"
       printf '\\n' >>"$FAKE_HEARTBEAT_HELPER"
@@ -360,7 +360,7 @@ case "$*" in
   "board presence") exit 0 ;;
   "question inbox --all --active --json") printf '[]\\n' ;;
   "run list --live --json") exit 0 ;;
-  "machine monitor --notices --json") printf '[]\\n' ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
   *) exit 0 ;;
 esac
 ''',
@@ -455,7 +455,7 @@ case "$*" in
       printf '%s\\n' '{live}'
     fi ;;
   "run list --json --id {record_id}") printf '%s\\n' '{terminal}' ;;
-  "machine monitor --notices --json") printf '[]\\n' ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
   *) exit 1 ;;
 esac
 ''',
@@ -563,7 +563,7 @@ case "$*" in
     else
       printf '%s\\n' '{terminal(first_id, 8)}'
     fi ;;
-  "machine monitor --notices --json") printf '[]\\n' ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
   *) exit 1 ;;
 esac
 ''',
@@ -652,7 +652,7 @@ case "$*" in
       : >"$FAKE_LIVE_SEEN"; printf '%s\\n' '{live}'
     fi ;;
   "run list --json --id {root_id}") printf '%s\\n' '{terminal}' ;;
-  "machine monitor --notices --json")
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh")
     if [ ! -f "$FAKE_UPDATED" ]; then
       : >"$FAKE_UPDATED"; printf '\\n' >>"$FAKE_OBSERVATION_HELPER"
     fi
@@ -714,7 +714,7 @@ case \"$*\" in
   \"board presence\") exit 0 ;;
   \"question inbox --all --active --json\") printf '[]\\n' ;;
   \"run list --live --json\") exit 0 ;;
-  \"machine monitor --notices --json\")
+  \"machine monitor --notices --json --skip-board-refresh\")
     printf '%s\\n' '[{\"noticeId\":\"condition:1\",\"kind\":\"worker-gate-tooling-change\",\"subject\":\"run:01990000-0000-7000-8000-000000000002\",\"label\":\"run 16709\",\"detail\":\"detected (age unknown, status ok, project bottega); inspect the run deliberately.\",\"ownerSession\":\"fixture-session\"}]' ;;
   \"machine monitor --ack-notices condition:1\") exit 0 ;;
   *) exit 0 ;;
@@ -898,6 +898,61 @@ esac
                 "reason withheld (secret-shaped)",
             )
 
+    def test_hosted_board_refresh_runs_separately_every_fifth_tick(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            shutil.copy2(PATH, hooks / PATH.name)
+            shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
+            shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
+            calls = checkout / "monitor-calls"
+            fake = binary / "bottega"
+            fake.write_text(
+                """#!/bin/sh
+case \"$*\" in
+  \"board presence\") exit 0 ;;
+  \"question inbox --all --active --json\") printf '[]\\n' ;;
+  \"run list --live --json\")
+    printf '%s\\n' '{\"record_id\":\"01990000-0000-7000-8000-000000000001\",\"number\":1,\"job\":\"fixture\",\"agent\":\"codex\",\"status\":\"running\",\"live_statuses\":[\"queued\",\"reserved\",\"attached\",\"running\",\"asking\"],\"session_id\":\"fixture-session\",\"started_at\":\"2026-01-01T00:00:00Z\",\"latency_ms\":null,\"live_member_id\":\"01990000-0000-7000-8000-000000000001\",\"live_member_number\":1,\"live_member_status\":\"running\",\"stall_state\":\"healthy\",\"waiting_for_host_capacity\":false,\"host_wait_since\":null,\"stall\":null,\"turns\":[{\"started_at\":\"2026-01-01T00:00:00Z\",\"latency_ms\":null}]}' ;;
+  \"machine monitor --notices --json\"|\"machine monitor --notices --json --skip-board-refresh\")
+    printf '%s\\n' \"$*\" >>\"$FAKE_MONITOR_CALLS\"
+    printf '%s\\n' '{\"notices\":[],\"warning\":null}' ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "5"],
+                cwd=checkout,
+                env={
+                    **os.environ,
+                    "ORCH_DB": str(checkout / "absent.db"),
+                    "FAKE_MONITOR_CALLS": str(calls),
+                },
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+
+            self.assertEqual(
+                calls.read_text(encoding="utf-8").splitlines(),
+                [
+                    "machine monitor --notices --json --skip-board-refresh",
+                    "machine monitor --notices --json --skip-board-refresh",
+                    "machine monitor --notices --json --skip-board-refresh",
+                    "machine monitor --notices --json --skip-board-refresh",
+                    "machine monitor --notices --json",
+                ],
+            )
+
     def test_secret_detector_matches_the_shared_canonical_fixtures(self):
         fixture_path = PATH.parents[2] / "shared" / "secret-shaped-fixtures.json"
         fixtures = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -938,7 +993,7 @@ case \"$*\" in
   \"board presence\") exit 0 ;;
   \"question inbox --all --active --json\") printf '[]\\n' ;;
   \"run list --live --json\") exit 0 ;;
-  \"machine monitor --notices --json\") echo $$ >\"$FAKE_MONITOR_PID_FILE\"; sleep 30 ;;
+  \"machine monitor --notices --json --skip-board-refresh\") echo $$ >\"$FAKE_MONITOR_PID_FILE\"; sleep 30 ;;
   *) exit 0 ;;
 esac
 """,

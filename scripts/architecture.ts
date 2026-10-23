@@ -682,6 +682,7 @@ export const modules: ArchitectureModule[] = [
     '../record/record-cache-workflow.ts',
     '../record/record-space.ts',
     '../record/record-workflow-contract.ts',
+    './step-catalogue-definition.ts',
     './workflow-definition.ts',
     './workflow-shared-promotion.ts',
   ]),

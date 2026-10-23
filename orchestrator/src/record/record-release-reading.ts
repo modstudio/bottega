@@ -4,6 +4,10 @@ export type RecordRelease = {
   id: string
   rung: string
   candidateCommit: string
+  trunk: string | null
+  trunkTip: string | null
+  commitsBehindTrunk: number | null
+  behindTrunkReason: string | null
   liveCommitBefore: string | null
   liveCommitAfter: string | null
   rollback: boolean

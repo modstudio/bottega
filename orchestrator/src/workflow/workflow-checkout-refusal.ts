@@ -7,7 +7,7 @@ export type CheckoutResolution = {
   headIsTipOrAncestor: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
-  landingBranch?: string
+  landingBranch: string
 }
 
 export type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
@@ -30,11 +30,10 @@ export function checkoutOutsideChangeRefusal(
   checkout: CheckoutResolution,
 ): string {
   if (checkout.landingCommit && checkout.landingIsHeadOrAncestor === undefined) {
-    const landingBranch = checkout.landingBranch ?? 'main'
     return (
       `${flag} could not establish whether head_commit belongs to ${identityBranch} because ` +
       `landing commit ${checkout.landingCommit} is not available in ${cwd}; ` +
-      `run \`git pull --ff-only origin ${landingBranch}\` in that checkout`
+      `run \`git pull --ff-only origin ${checkout.landingBranch}\` in that checkout`
     )
   }
   return (
