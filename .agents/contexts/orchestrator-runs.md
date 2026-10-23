@@ -46,9 +46,11 @@ Detach claims a reserved id before routing; the asking session still owns the ru
 
 Writing runs checkpoint on schedule and at limits or stop. Update `$BOTTEGA_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` preserves the full diff against the immutable run base.
 
-**Done describes the work, not the knowledge.** Consult a landed task's record instead of deriving it again.
+Workers do not register Git worktrees; they make baseline copies under `$BOTTEGA_SCRATCH`.
 
-`bottega run discard` and `bottega run abandon` remove the tree but keep a branch whose commits are reachable from nowhere else; the refusal names the commit count and the command that deletes it anyway. Empty and non-unique branches discard routinely. Abandoned unique commits remain. A merged branch is recoverable from the GitHub pull request.
+**Done describes work, not knowledge.** Consult a landed task's record instead of deriving it.
+
+`bottega run discard` and `bottega run abandon` remove the tree but retain uniquely reachable commits; refusals name their count and forced-deletion command. Empty and non-unique branches discard routinely; merged branches are recoverable from GitHub pull requests.
 
 **`writesRepo` is declared, never inferred from `readsRepo`.** Codex `--approve-for-me` is required for MCP and implies workspace-write; `mcpImpliesWrite` declares that, and any writable sandbox is put in a worktree whether or not the job writes. The failure is silent: an agent that cannot write reports success having changed nothing.
 
