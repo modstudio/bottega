@@ -9,6 +9,7 @@ import {
   createPullRequest,
   recordTriageOverride,
 } from '../pull-request/pr-admission.ts'
+import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { mergePullRequest } from '../pull-request/pr-merge.ts'
 import { log } from './support.ts'
@@ -27,6 +28,22 @@ export function validateGithubArguments(args: readonly string[]): void {
     throw new Error(
       `${PLATFORM_SLUG} pr create refuses ${forbidden}; it admits the checked-out head into the registered landing branch and owns pull-request output`,
     )
+  }
+}
+
+export function pullRequestCiCommandOutcome(result: {
+  prNumber: number
+  complete: boolean
+  counts: PullRequestCiCounts
+  error?: string
+}): { output: string | null; error: string | null; exitCode: number } {
+  if (!result.complete) {
+    return { output: null, error: result.error ?? 'CI recording incomplete', exitCode: 1 }
+  }
+  return {
+    output: `PR #${result.prNumber}: ${result.counts.ciRuns} CI runs, ${result.counts.reruns} reruns, ${result.counts.flakeAttributedReruns} flake-attributed reruns`,
+    error: null,
+    exitCode: 0,
   }
 }
 
@@ -83,12 +100,10 @@ export function register(program: Command): void {
         cwd: project.path,
         database,
       })
-      if (!result.complete) {
-        console.error(result.error)
-      }
-      log(
-        `PR #${result.prNumber}: ${result.counts.ciRuns} CI runs, ${result.counts.reruns} reruns, ${result.counts.flakeAttributedReruns} flake-attributed reruns`,
-      )
+      const outcome = pullRequestCiCommandOutcome(result)
+      if (outcome.error) console.error(outcome.error)
+      if (outcome.output) log(outcome.output)
+      if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     })
 
   pr.command('override')

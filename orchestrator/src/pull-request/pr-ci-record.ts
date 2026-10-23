@@ -210,7 +210,8 @@ export function parsePullRequestCiAttempt(
     conclusion: nullableText(row.conclusion, 'workflow conclusion'),
     failedJobs,
     createdAt: text(row.created_at, 'workflow creation time'),
-    completedAt: nullableText(row.updated_at, 'workflow completion time'),
+    completedAt:
+      row.conclusion === null ? null : nullableText(row.updated_at, 'workflow completion time'),
   }
 }
 

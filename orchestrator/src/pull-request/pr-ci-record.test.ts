@@ -150,6 +150,13 @@ test('parses the recorded GitHub API attempt and failed-job shapes', () => {
   })
 })
 
+test('an in-progress workflow attempt has no completion time', () => {
+  expect(
+    parsePullRequestCiAttempt({ ...attemptFixture, conclusion: null }, jobsFixture.jobs)
+      .completedAt,
+  ).toBeNull()
+})
+
 test('fetches force-pushed PR heads and every matching merge-queue branch in the PR window', () => {
   const queries: Array<{ branch?: string; event?: string; created: string }> = []
   const adapter: PullRequestCiFetchAdapter = {

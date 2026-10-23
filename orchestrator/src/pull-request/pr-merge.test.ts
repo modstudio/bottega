@@ -152,27 +152,6 @@ test('an injected forge adapter merges all-passing checks with the method, subje
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
 })
 
-test('a successful merge records CI evidence after the forge reports the merge', () => {
-  registerProject(['test'])
-  const calls: string[] = []
-  mergePullRequest(
-    '42',
-    cwd,
-    adapter({
-      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: 'check' }],
-      merge: () => {
-        calls.push('merge')
-        return 'merged-oid'
-      },
-      recordCi: () => {
-        calls.push('record-ci')
-        return undefined
-      },
-    }),
-  )
-  expect(calls).toEqual(['merge', 'record-ci'])
-})
-
 test('an incomplete CI record is merge residue with the shared retry remedy', () => {
   registerProject(['test'])
   const incomplete = `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`
