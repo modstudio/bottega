@@ -39,6 +39,27 @@ function postgresServerMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+export function isBoardClaimSubjectUniqueViolation(error: unknown): boolean {
+  for (const item of errorChain(error)) {
+    const candidate = item as {
+      code?: unknown
+      errno?: unknown
+      constraint?: unknown
+      constraint_name?: unknown
+    }
+    const state = String(candidate.errno ?? candidate.code ?? '')
+    const constraint = String(candidate.constraint ?? candidate.constraint_name ?? '')
+    const message = item instanceof Error ? item.message : ''
+    if (
+      state === '23505' &&
+      (constraint === 'board_claim_live_subject_unique' ||
+        message.includes('board_claim_live_subject_unique'))
+    )
+      return true
+  }
+  return false
+}
+
 /** Maps a board trigger exception or RLS denial to a named refusal. */
 export function hostedBoardStoreRefusal(error: unknown): RecordBoardError | null {
   if (error instanceof RecordBoardError) return error

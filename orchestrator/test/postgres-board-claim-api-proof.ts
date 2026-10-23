@@ -42,7 +42,10 @@ export function registerBoardClaimApiProof(input: {
       holderSession: 'holder-b',
     })
     expect(conflict.status).toBe(409)
-    expect(JSON.stringify(await conflict.json())).toContain(input.userA())
+    const conflictBody = JSON.stringify(await conflict.json())
+    expect(conflictBody).toContain(input.userA())
+    expect(conflictBody).toContain('release claim')
+    expect(conflictBody).toContain('wait for lapse')
     const notices = await json(
       await fetch(`${input.origin()}/v1/board/changes?after=0&limit=100`, {
         headers: headers(input.tokenA()),
@@ -91,6 +94,49 @@ export function registerBoardClaimApiProof(input: {
     expect(old?.closeReason).toBe('lapsed')
     expect(old?.supersededByClaimId).toBe(successor)
     expect(claims.find((claim) => claim.id === successor)?.previousClaimIds).toContain(lapsedId)
+    const sameHolderLapsedId = newRecordId()
+    expect(
+      (
+        await take(input.tokenA(), {
+          id: sameHolderLapsedId,
+          project: input.project,
+          projectId: input.projectId,
+          subject: 'task:BAPI-2',
+          holderSession: 'holder-a',
+          durationMs: 1,
+        })
+      ).status,
+    ).toBe(200)
+    await Bun.sleep(20)
+    const sameHolderSuccessor = newRecordId()
+    const sameHolderTakeover = await take(input.tokenA(), {
+      id: sameHolderSuccessor,
+      project: input.project,
+      projectId: input.projectId,
+      subject: 'task:BAPI-2',
+      holderSession: 'holder-a',
+    })
+    expect(sameHolderTakeover.status).toBe(200)
+    expect((await json(sameHolderTakeover)).action).toBe('taken-over')
+    const afterSameHolderTakeover = await json(
+      await fetch(
+        `${input.origin()}/v1/board/claims?project=${input.project}&projectId=${input.projectId}`,
+        { headers: headers(input.tokenA()) },
+      ),
+    )
+    const sameHolderClaims = afterSameHolderTakeover.claims as Array<{
+      id: string
+      closeReason: string | null
+      supersededByClaimId: string | null
+      previousClaimIds: string[]
+    }>
+    expect(sameHolderClaims.find((claim) => claim.id === sameHolderLapsedId)).toMatchObject({
+      closeReason: 'lapsed',
+      supersededByClaimId: sameHolderSuccessor,
+    })
+    expect(
+      sameHolderClaims.find((claim) => claim.id === sameHolderSuccessor)?.previousClaimIds,
+    ).toContain(sameHolderLapsedId)
     const released = await fetch(`${input.origin()}/v1/board/claims/${liveId}/release`, {
       method: 'POST',
       headers: headers(input.tokenA()),

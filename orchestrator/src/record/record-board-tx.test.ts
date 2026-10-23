@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { RecordBoardError } from './record-board-contract.ts'
-import { hostedBoardStoreRefusal } from './record-board-tx.ts'
+import { hostedBoardStoreRefusal, isBoardClaimSubjectUniqueViolation } from './record-board-tx.ts'
 
 test('a raised board exception becomes a named refusal', () => {
   const error = new SQL.PostgresError('board reply scope and recipients must match thread root', {
@@ -31,4 +31,20 @@ test('a missing grant is not treated as a board refusal', () => {
     errno: 42501 as unknown as string,
   })
   expect(hostedBoardStoreRefusal(error)).toBeNull()
+})
+
+test('the live-subject unique violation is identified through the Postgres error chain', () => {
+  const error = new SQL.PostgresError(
+    'duplicate key value violates unique constraint "board_claim_live_subject_unique"',
+    { code: 'ERR_POSTGRES_SERVER_ERROR', errno: '23505' },
+  )
+  expect(isBoardClaimSubjectUniqueViolation(error)).toBeTrue()
+  expect(
+    isBoardClaimSubjectUniqueViolation(
+      new SQL.PostgresError('another unique constraint', {
+        code: 'ERR_POSTGRES_SERVER_ERROR',
+        errno: '23505',
+      }),
+    ),
+  ).toBeFalse()
 })

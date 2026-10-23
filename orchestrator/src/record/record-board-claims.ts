@@ -29,7 +29,11 @@ import {
   resolveVisibleProjectId,
 } from './record-board-messages.ts'
 import { hostedBoardActor } from './record-board-scope.ts'
-import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
+import {
+  type BoardTenant,
+  isBoardClaimSubjectUniqueViolation,
+  withBoardTenant,
+} from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
@@ -138,7 +142,12 @@ function takeOverlaps(
   subject: ClaimSubject,
   userId: string,
   clock: number,
-): { exactHeld: ClaimRow | undefined; conflicts: ClaimRow[]; foreignLive: ClaimRow[] } {
+): {
+  exactHeld: ClaimRow | undefined
+  conflicts: ClaimRow[]
+  foreignLive: ClaimRow[]
+  lapsedExact: ClaimRow[]
+} {
   const overlaps = open.filter((row) =>
     claimSubjectsConflict(subject, {
       kind: String(row.subject_kind) as ClaimSubject['kind'],
@@ -153,7 +162,28 @@ function takeOverlaps(
       String(row.holder_user_id) === userId,
   )
   const conflicts = overlaps.filter((row) => String(row.holder_user_id) !== userId)
-  return { exactHeld, conflicts, foreignLive: conflicts.filter((row) => hostedLive(row, clock)) }
+  const lapsedExact = overlaps.filter(
+    (row) =>
+      !hostedLive(row, clock) &&
+      String(row.subject_kind) === subject.kind &&
+      String(row.subject_value) === subject.value &&
+      String(row.holder_user_id) === userId,
+  )
+  return {
+    exactHeld,
+    conflicts,
+    foreignLive: conflicts.filter((row) => hostedLive(row, clock)),
+    lapsedExact,
+  }
+}
+
+function liveClaimRefusal(rows: ClaimRow[]): string {
+  const details = rows.map(
+    (row) =>
+      `user ${String(row.holder_user_id)} holding claim ${String(row.id)} until ${iso(row.lapses_at)} ` +
+      `(release claim ${String(row.id)}, or wait for lapse)`,
+  )
+  return `${CLAIM_CONFLICT} ${details.join('; ')}`
 }
 
 type ClaimTellKind = 'taken-over' | 'conflict-attempt'
@@ -263,9 +293,30 @@ export async function takeHostedBoardClaim(
   if (durationRefusal) throw new RecordBoardError(durationRefusal, 400)
   const session = sessionOrNull(input.holderSession)
   const clock = Date.now()
-  const outcome = await withBoardTenant(input, true, (tx) =>
-    takeClaimInTx(tx, input, subject, note, duration, session, clock),
-  )
+  let outcome: TakeOutcome
+  try {
+    outcome = await withBoardTenant(input, true, (tx) =>
+      takeClaimInTx(tx, input, subject, note, duration, session, clock),
+    )
+  } catch (error) {
+    if (!isBoardClaimSubjectUniqueViolation(error)) throw error
+    const live = await withBoardTenant(input, false, async (tx) => {
+      const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
+      const rows = (await tx`
+        SELECT * FROM board_claim
+        WHERE project_id=${projectId}::uuid AND subject_kind=${subject.kind}
+          AND subject_value=${subject.value} AND closed_at IS NULL
+        ORDER BY taken_at, id
+      `) as ClaimRow[]
+      return rows.filter((row) => hostedLive(row, Date.now()))
+    })
+    throw new RecordBoardError(
+      live.length
+        ? liveClaimRefusal(live)
+        : `${CLAIM_CONFLICT} another live holder (release the claim, or wait for lapse)`,
+      409,
+    )
+  }
   if (takeRefused(outcome)) throw new RecordBoardError(outcome.refused, 409)
   return outcome
 }
@@ -370,7 +421,12 @@ async function takeClaimInTx(
     SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
     ORDER BY taken_at, id
   `) as ClaimRow[]
-  const { exactHeld, conflicts, foreignLive } = takeOverlaps(open, subject, input.userId, clock)
+  const { exactHeld, conflicts, foreignLive, lapsedExact } = takeOverlaps(
+    open,
+    subject,
+    input.userId,
+    clock,
+  )
   const decision = claimTakeDecision({
     sameHolderSameSubject: exactHeld !== undefined,
     conflictingClaim: conflicts.length > 0,
@@ -383,7 +439,7 @@ async function takeClaimInTx(
   if (decision === 'refuse') {
     await tellConflicts(tx, foreignLive, input, projectId, session, clock, 'conflict-attempt')
     return {
-      refused: `${CLAIM_CONFLICT} ${foreignLive.map((conflict) => `user ${String(conflict.holder_user_id)} until ${iso(conflict.lapses_at)}`).join('; ')}`,
+      refused: liveClaimRefusal(foreignLive),
     }
   }
   return insertTakenClaim(
@@ -394,7 +450,7 @@ async function takeClaimInTx(
     duration,
     session,
     projectId,
-    decision === 'take-over' ? conflicts : [],
+    [...(decision === 'take-over' ? conflicts : []), ...lapsedExact],
     clock,
   )
 }
