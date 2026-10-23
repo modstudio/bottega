@@ -218,6 +218,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-outbox.ts',
       './question-close.ts',
       './question-open.ts',
+      './shared-git-config-check.ts',
       'bun:sqlite',
     ],
     'Enforce the run-liveness concern boundary.',

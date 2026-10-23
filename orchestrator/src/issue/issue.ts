@@ -17,6 +17,7 @@ import { type Project, projectByName } from '../project/projects.ts'
 import { run } from '../run/run.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
+import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability, srtInstalled } from '../sandbox/sandbox-runtime.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
@@ -425,7 +426,10 @@ async function handbackAskingIssue(
           `kept branch ${branch}: ${unique} unique, ${after ?? 'n/a'} after cut (run ${id})`,
       },
     },
-    { lifecycleCheckpoint: () => {} },
+    {
+      lifecycleCheckpoint: () => {},
+      checkSharedGitConfig: terminalSharedGitConfigForRecordedRun,
+    },
   )
 }
 

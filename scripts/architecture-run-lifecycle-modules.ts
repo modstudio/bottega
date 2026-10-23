@@ -335,8 +335,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/shared-git-config-run.ts', [
     '../events.ts',
     '../jobs/jobs.ts',
+    './shared-git-config-check.ts',
     './shared-git-config.ts',
   ]),
+  module('orchestrator/src/run/shared-git-config-check.ts', []),
   module('orchestrator/src/run/run-terminal-blockers.ts', ['../failure/failure.ts']),
   module('orchestrator/src/run/run-terminal-change.ts', [
     'bun:sqlite',

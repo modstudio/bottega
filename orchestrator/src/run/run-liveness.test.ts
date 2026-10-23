@@ -11,8 +11,36 @@ import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
 import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
 const noSharedGitConfigCheck = () => null
+
+test('shared git config skip reasons prioritize a live vendor over worktree sharers', () => {
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: 42,
+      vendorAlive: true,
+      worktree: '/trees/shared',
+      sharerCount: 1,
+    }),
+  ).toBe('shared git config check skipped: vendor pid 42 is still alive')
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: 42,
+      vendorAlive: false,
+      worktree: '/trees/shared',
+      sharerCount: 1,
+    }),
+  ).toBe('shared git config check skipped: another live run still claims /trees/shared')
+  expect(
+    sharedGitConfigCheckSkipReason({
+      vendorPid: null,
+      vendorAlive: false,
+      worktree: null,
+      sharerCount: 0,
+    }),
+  ).toBeNull()
+})
 
 async function inbox(): Promise<string> {
   const lines: string[] = []
@@ -109,6 +137,48 @@ describe('reapStale', () => {
         }
       ).error,
     ).toContain('shared git config changed: user.name')
+  })
+
+  test('a stale run keeps shared config untouched while its vendor is alive', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, process.pid, '/trees/run', id)
+    let checks = 0
+
+    expect(
+      reapStale(db(), () => {
+        checks++
+        return null
+      }),
+    ).toBe(1)
+    expect(checks).toBe(0)
+    expect(
+      (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+    ).toContain(`vendor pid ${process.pid} is still alive`)
+  })
+
+  test('a stale run keeps shared config untouched while another live run claims its tree', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, 4194304, '/trees/shared', id)
+    db()
+      .query('UPDATE run SET pid=?, worktree=? WHERE record_id=?')
+      .run(process.pid, '/trees/shared', sharer)
+    let checks = 0
+
+    expect(
+      reapStale(db(), () => {
+        checks++
+        return null
+      }),
+    ).toBe(1)
+    expect(checks).toBe(0)
+    expect(
+      (db().query('SELECT error FROM run WHERE record_id=?').get(id) as { error: string }).error,
+    ).toContain('another live run still claims /trees/shared')
   })
 
   test('a competing stale reaper does not run the shared config check after losing the status guard', () => {
