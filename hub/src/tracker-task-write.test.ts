@@ -12,7 +12,12 @@ import {
 
 const taskId = '01990000-0000-7000-8000-000000001659'
 const project = {
+  record_id: '01990000-0000-7000-8000-000000001658',
   name: 'adanim',
+  path: '/fixture/adanim',
+  stack: 'node',
+  canon: true,
+  repository: true,
   settings: {
     envPrefix: 'ADANIM',
     tracker: {
@@ -20,7 +25,7 @@ const project = {
       states: { todo: 'open', in_progress: 'active', done: 'done' },
     },
   },
-} as RegisteredProject
+} satisfies RegisteredProject
 
 const branchClassification = {
   project: 'adanim',
@@ -133,6 +138,26 @@ describe('array-mcp task writes', () => {
     })
     expect(db().query(`SELECT closed_at FROM task WHERE key='ADN-1659'`).get()).toEqual({
       closed_at: null,
+    })
+  })
+
+  test('a failed set transition leaves the cached status unchanged', async () => {
+    await expect(
+      setTaskStatusThroughTracker(
+        'ADN-1659',
+        {},
+        'in_progress',
+        UNATTRIBUTED,
+        {},
+        dependencies(async () => {
+          throw new Error('tracker refused the status')
+        }),
+      ),
+    ).rejects.toThrow('tracker refused the status')
+
+    expect(showTask('ADN-1659').task).toMatchObject({
+      status: 'todo',
+      status_category: 'open',
     })
   })
 

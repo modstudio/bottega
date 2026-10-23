@@ -323,7 +323,7 @@ function registerTaskQueryCommands(task: Command): void {
   commonBody(
     task
       .command('set <key>')
-      .description('change fields on a local task')
+      .description('change task fields; external trackers support status when adapted')
       .option('--project <X>', 'resolve the task in this project')
       .option('--title <text>', 'replace the task title')
       .option('--status <Y>', 'replace the task status')
