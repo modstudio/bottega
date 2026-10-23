@@ -130,6 +130,13 @@ function headCommit(cwd: string): string | null {
   return result.status === 0 ? result.stdout.trim() : null
 }
 
+function resolveEvidenceHead(
+  cwd: string,
+  input: { commit?: string | null; resolveHeadCommit?: (cwd: string) => string | null },
+): string | null {
+  return input.commit === undefined ? (input.resolveHeadCommit ?? headCommit)(cwd) : input.commit
+}
+
 export async function recordWorkflowProbe(
   command: string[],
   input: {
@@ -137,17 +144,25 @@ export async function recordWorkflowProbe(
     d?: Database
     runner?: ProbeRunner
     commit?: string | null
+    resolveHeadCommit?: (cwd: string) => string | null
   } = {},
 ): Promise<ProbeRecord> {
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow probe needs a command after --`)
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
-  const commit = input.commit === undefined ? headCommit(cwd) : input.commit
+  // Capture the head the probe command will run against.
+  const preCommandHead = resolveEvidenceHead(cwd, input)
   probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
   const ran = input.runner
     ? await input.runner({ command, cwd })
-    : await sandboxedRunner(command, cwd, database, [commit ?? ''])
-  const recorded = await recordWorkflowCommand(command, cwd, ran, 'probe', { ...input, commit })
+    : await sandboxedRunner(command, cwd, database, [preCommandHead ?? ''])
+  // Capture the head the completed probe proves, retaining the prior head if its cwd disappeared.
+  const evidenceHead = resolveEvidenceHead(cwd, input) ?? preCommandHead
+  const recorded = await recordWorkflowCommand(command, cwd, ran, 'probe', {
+    ...input,
+    commit: evidenceHead,
+    preCommandCommit: preCommandHead,
+  })
   return finishRecord(recorded, ran)
 }
 
@@ -212,26 +227,31 @@ async function recordWorkflowCommand(
   cwd: string,
   ran: ProbeRunResult,
   kind: 'probe' | 'exec',
-  input: { d?: Database; commit?: string | null },
+  input: { d?: Database; commit?: string | null; preCommandCommit?: string | null },
 ): Promise<RecordedArtifact> {
   const commandJson = JSON.stringify(command)
-  const redactedOutput = withholdSecretShapedLines(ran.output, [input.commit ?? ''])
+  const redactedOutput = withholdSecretShapedLines(ran.output, [
+    input.commit ?? '',
+    input.preCommandCommit ?? '',
+  ])
   const commandSecret = containsSecretShaped(commandJson)
   const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
   const withheld = tail === PROBE_WITHHELD
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
+    // head_commit is the checkout head after the command for every workflow evidence row.
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,withheld,command_withheld,session_id,created_at,kind)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO probe (record_id,command,cwd,head_commit,pre_command_head_commit,exit_code,output_tail,withheld,command_withheld,session_id,created_at,kind)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),
         storedCommand,
         cwd,
         input.commit ?? null,
+        input.preCommandCommit ?? null,
         ran.exitCode,
         tail,
         withheld ? 1 : 0,
@@ -254,6 +274,7 @@ export async function recordWorkflowExec(
     commit?: string | null
     write?: (chunk: string) => void
     registeredProject?: boolean
+    resolveHeadCommit?: (cwd: string) => string | null
   } = {},
 ): Promise<ProbeRecord> {
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
@@ -266,14 +287,21 @@ export async function recordWorkflowExec(
       `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
     )
   const cwd = input.cwd ?? process.cwd()
-  const commit = input.commit === undefined ? headCommit(cwd) : input.commit
+  // Capture the head the exec command will run against.
+  const commandHead = resolveEvidenceHead(cwd, input)
   if (input.registeredProject === false)
     throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
   const ran = input.runner
     ? await input.runner({ command, cwd })
     : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)), [
-        commit ?? '',
+        commandHead ?? '',
       ])
-  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', { ...input, commit })
+  // Capture the head the completed exec proves, retaining the prior head if its cwd disappeared.
+  const evidenceHead = resolveEvidenceHead(cwd, input) ?? commandHead
+  const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', {
+    ...input,
+    commit: evidenceHead,
+    preCommandCommit: commandHead,
+  })
   return finishRecord(recorded, ran)
 }

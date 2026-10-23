@@ -100,7 +100,7 @@ import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
 import { enforceRunMcpGrammar } from './run-mcp-grammar.ts'
-import { prepareRunMcpPreflight } from './run-mcp-main-stack.ts'
+import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
 import {
   bindReviewInstructions,
@@ -127,7 +127,10 @@ import { finishRun, type TerminalInput } from './run-terminal.ts'
 import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
-import { snapshotWritingRunSharedGitConfig } from './shared-git-config.ts'
+import {
+  recordSharedGitConfigSnapshotFailure,
+  snapshotWritingRunSharedGitConfig,
+} from './shared-git-config.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
@@ -193,6 +196,8 @@ export async function run(opts: {
   /** True only when the caller selected the agent rather than routing it. */
   agentExplicit?: boolean
   routedAgent?: { agent: string; reason: string }
+  /** Agent whose detached foreground selection completed MCP startup checks. */
+  dispatchMcpPreflightedAgent?: string
   schemaPath?: string
   mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
@@ -503,14 +508,25 @@ export async function run(opts: {
       opts.probe,
       opts.lens,
     )
-  const source = resume.isFirstTurn
-    ? {
-        source: 'pick' as const,
-        ...(await selectAgentWithCapacityEvents({
+  const selectFirstTurnAgent = () =>
+    selectAgentAndPreflightMcp({
+      select: () =>
+        selectAgentWithCapacityEvents({
           runId: opts.reserveId,
           select: pickSource,
           noWait: opts.noWaitCapacity,
-        })),
+        }),
+      mcpRequest,
+      cwd: callerCwd,
+      job: opts.job,
+      projectName: runProjectName ?? undefined,
+      preflightedAgent: opts.dispatchMcpPreflightedAgent,
+      onFailure: (cause) => recordRunStartupFailure(opts.reserveId, cause),
+    })
+  const source = resume.isFirstTurn
+    ? {
+        source: 'pick' as const,
+        ...(await selectFirstTurnAgent()),
       }
     : { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })
@@ -878,12 +894,13 @@ export async function run(opts: {
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }
-  snapshotWritingRunSharedGitConfig({
+  const sharedGitConfigSnapshot = snapshotWritingRunSharedGitConfig({
     runId: claim.id,
     writesJob,
     worktree: worktree?.path ?? null,
     writableRoots,
   })
+  recordSharedGitConfigSnapshotFailure(claim.id, sharedGitConfigSnapshot)
   // Keep this handle visible to signals/finally so a running row can terminate.
   // A full Subprocess would widen the narrowed `p` streams.
   let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null

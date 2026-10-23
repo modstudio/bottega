@@ -125,7 +125,10 @@ export function register(program: Command): void {
           auditReason: auditReason(flags),
           presentation,
         },
-        { lifecycleCheckpoint },
+        {
+          lifecycleCheckpoint,
+          checkSharedGitConfig: terminalSharedGitConfigForRecordedRun,
+        },
       )
     })
 }
