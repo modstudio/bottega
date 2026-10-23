@@ -16,7 +16,6 @@ import type { WorkflowDefinition } from './workflow-definition.ts'
 import {
   SHARED_WORKFLOW_PROMOTION_REASON,
   sharedWorkflowPromotionSpaces,
-  type WorkflowPromotionEvent,
   type WorkflowPromotionSpaceDecision,
   type WorkflowPromotionVersion,
 } from './workflow-shared-promotion.ts'
@@ -37,17 +36,14 @@ type HostedSpaceSnapshot = {
   spaceId: string
   rows: Map<RecordWorkflowTable, HostedRow[]>
   versions: StoredPromotionVersion[]
-  events: WorkflowPromotionEvent[]
 }
 
 type SharedWorkflowPromotionInput<Row extends WorkflowPromotionVersion> = {
   slug: string
   targetVersion: number
   sourceSpace: string
-  seedAuthor: string
   targetSpaces: readonly (string | null)[]
   versions: readonly Row[]
-  events: readonly WorkflowPromotionEvent[]
   draftVersion(spaceId: string | null, version: Row): Promise<number>
   promoteSpace(spaceId: string | null): Promise<void>
 }
@@ -58,13 +54,12 @@ async function promoteSharedWorkflowSpaces<Row extends WorkflowPromotionVersion>
   const decision = sharedWorkflowPromotionSpaces(
     input.versions,
     input.targetVersion,
-    input.seedAuthor,
-    input.events,
+    input.sourceSpace,
     input.targetSpaces,
   )
-  const source = input.versions.filter(
-    (row) => row.spaceId === input.sourceSpace && row.n <= input.targetVersion,
-  )
+  const source = input.versions
+    .filter((row) => row.spaceId === input.sourceSpace && row.n <= input.targetVersion)
+    .sort((left, right) => left.n - right.n)
   for (const spaceId of decision.changed) {
     const present = new Set(
       input.versions.filter((row) => row.spaceId === spaceId).map((row) => row.n),
@@ -85,13 +80,6 @@ const storedVersions = (slug: string, d: Database): StoredPromotionVersion[] =>
   d
     .query<StoredPromotionVersion, [string]>(
       `SELECT w.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? ORDER BY w.space_id,v.n`,
-    )
-    .all(slug)
-
-const storedEvents = (slug: string, d: Database): WorkflowPromotionEvent[] =>
-  d
-    .query<WorkflowPromotionEvent, [string]>(
-      `SELECT w.space_id spaceId,e.event,e.author,e.reason FROM workflow_event e JOIN workflow w ON w.id=e.workflow_id WHERE w.slug=? ORDER BY w.space_id,e.id`,
     )
     .all(slug)
 
@@ -120,9 +108,8 @@ async function hostedSnapshot(spaceId: string, slug: string): Promise<HostedSpac
     )
   }
   const identity = rows.get('workflow')!.find((row) => row.slug === slug)
-  if (!identity) return { spaceId, rows, versions: [], events: [] }
+  if (!identity) return { spaceId, rows, versions: [] }
   const versionRows = rows.get('workflow_version')!.filter((row) => row.ownerId === identity.id)
-  const versionIds = new Set(versionRows.map((row) => row.id))
   return {
     spaceId,
     rows,
@@ -134,15 +121,6 @@ async function hostedSnapshot(spaceId: string, slug: string): Promise<HostedSpac
       definition: String(row.definition),
       reason: String(row.reason),
     })),
-    events: rows
-      .get('workflow_event')!
-      .filter((row) => versionIds.has(row.ownerVersionId))
-      .map((row) => ({
-        spaceId,
-        event: String(row.event),
-        author: String(row.author),
-        reason: String(row.reason),
-      })),
   }
 }
 
@@ -168,14 +146,14 @@ async function draftHosted(
   return result.versions.at(-1)!.n
 }
 
-export async function promoteHostedWorkflowSpace(
+async function promoteHostedWorkflowSpace(
   slug: string,
   n: number,
   reason: string,
   spaceId: string,
   d: Database,
   ports: Pick<PromotionPorts, 'preflight' | 'author'>,
-  expectedProductionVersion?: number | null,
+  expectedProductionVersion: number | null,
 ): Promise<void> {
   const target = d
     .query<{ definition: string }, [string, string, number]>(
@@ -184,18 +162,12 @@ export async function promoteHostedWorkflowSpace(
     .get(slug, spaceId, n)
   if (!target) throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${spaceId}`)
   ports.preflight(JSON.parse(target.definition) as WorkflowDefinition, spaceId)
-  const current = d
-    .query<{ n: number }, [string, string]>(
-      `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
-    )
-    .get(slug, spaceId)
   const result = await recordApiClient().promoteWorkflow!(
     {
       kind: 'workflow',
       slug,
       n,
-      expectedProductionVersion:
-        expectedProductionVersion === undefined ? (current?.n ?? null) : expectedProductionVersion,
+      expectedProductionVersion,
       author: ports.author(),
       reason: reason.trim(),
       sessionId: sessionId(),
@@ -210,7 +182,6 @@ export async function promoteSharedWorkflow(
   n: number,
   reason: string,
   sourceSpace: string,
-  seedAuthor: string,
   d: Database,
   ports: PromotionPorts,
 ): Promise<WorkflowPromotionSpaceDecision> {
@@ -225,18 +196,12 @@ export async function promoteSharedWorkflow(
     ...storedVersions(slug, d).filter((row) => row.spaceId === null),
     ...snapshots.flatMap((snapshot) => snapshot.versions),
   ]
-  const events = [
-    ...storedEvents(slug, d).filter((event) => event.spaceId === null),
-    ...snapshots.flatMap((snapshot) => snapshot.events),
-  ]
   const sharedReason = `${SHARED_WORKFLOW_PROMOTION_REASON} ${reason.trim()}`
   return promoteSharedWorkflowSpaces({
     slug,
     targetVersion: n,
     sourceSpace,
-    seedAuthor,
     versions,
-    events,
     targetSpaces: [null, ...spaceIds],
     draftVersion: (spaceId, version) =>
       spaceId === null

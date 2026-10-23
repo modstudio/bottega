@@ -8,39 +8,89 @@ const shared = (
   spaceId: string | null,
   n: number,
   status: WorkflowPromotionVersion['status'] = 'production',
-): WorkflowPromotionVersion => ({ spaceId, n, status, author: 'seed' })
+  definition = `definition-${n}`,
+): WorkflowPromotionVersion => ({ spaceId, n, status, author: 'seed', definition })
 
 describe('shared workflow promotion spaces', () => {
-  test('moves every shared space on an earlier version and reports an authored override', () => {
+  test('a space with an identical prefix follows the source to its target', () => {
     const versions = [
-      shared('source', 17, 'retired'),
+      ...[15, 16, 17, 18, 19].map((n) => shared('source', n, 'retired')),
       shared('source', 20, 'draft'),
-      shared('space-a', 17),
-      shared('space-b', 17),
-      shared('space-c', 17),
-      shared(null, 17),
-      { ...shared('own-space', 17), author: 'architect' },
+      ...[15, 16].map((n) => shared('follower', n, 'retired')),
+      shared('follower', 17),
     ]
 
-    expect(sharedWorkflowPromotionSpaces(versions, 20, 'seed', [])).toEqual({
-      changed: ['source', 'space-a', 'space-b', 'space-c', null],
-      overrides: ['own-space'],
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source', 'follower'],
+      overrides: [],
       pinned: [],
     })
   })
 
-  test('keeps a space with its own promotion pin but not one changed by a shared promotion', () => {
-    const versions = [shared('source', 20, 'draft'), shared('pinned', 17), shared('follow', 17)]
-    expect(
-      sharedWorkflowPromotionSpaces(versions, 20, 'seed', [
-        { spaceId: 'pinned', event: 'promote', author: 'operator', reason: 'pin version 17' },
-        {
-          spaceId: 'follow',
-          event: 'promote',
-          author: 'operator',
-          reason: 'shared promotion: prior release',
-        },
-      ]),
-    ).toEqual({ changed: ['source', 'follow'], overrides: [], pinned: ['pinned'] })
+  test('a space with a differing version is an override', () => {
+    const versions = [shared('source', 17), shared('source', 20, 'draft'), shared('own', 17)]
+    versions[2]!.definition = 'different'
+
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source'],
+      overrides: ['own'],
+      pinned: [],
+    })
+  })
+
+  test('a space with a version absent from the source is an override', () => {
+    const versions = [shared('source', 20, 'draft'), shared('own', 17)]
+
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source'],
+      overrides: ['own'],
+      pinned: [],
+    })
+  })
+
+  test('a session-promoted latest production follows the source', () => {
+    const versions = [
+      ...[15, 16, 17, 18, 19].map((n) => shared('source', n, 'retired')),
+      shared('source', 20, 'draft'),
+      ...[15, 16].map((n) => shared('follower', n, 'retired')),
+      { ...shared('follower', 17), author: 'session' },
+    ]
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source', 'follower'],
+      overrides: [],
+      pinned: [],
+    })
+  })
+
+  test('an interrupted copy with matching drafts follows on retry', () => {
+    const versions = [
+      shared('source', 17, 'retired'),
+      shared('source', 18, 'retired'),
+      shared('source', 19, 'retired'),
+      shared('source', 20, 'draft'),
+      shared('follower', 17),
+      shared('follower', 18, 'draft'),
+      shared('follower', 19, 'draft'),
+    ]
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source', 'follower'],
+      overrides: [],
+      pinned: [],
+    })
+  })
+
+  test('keeps a space with a retired version above production', () => {
+    const versions = [
+      shared('source', 17, 'retired'),
+      shared('source', 18, 'retired'),
+      shared('source', 20, 'draft'),
+      shared('pinned', 17),
+      shared('pinned', 18, 'retired'),
+    ]
+    expect(sharedWorkflowPromotionSpaces(versions, 20, 'source')).toEqual({
+      changed: ['source'],
+      overrides: [],
+      pinned: ['pinned'],
+    })
   })
 })
