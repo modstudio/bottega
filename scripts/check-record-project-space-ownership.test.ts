@@ -1,17 +1,27 @@
 import { expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertProjectSpaceFunctionDeclaration } from './check-record-project-space-ownership.ts'
 
-const migration = readFileSync(
-  fileURLToPath(
-    new URL(
-      '../shared/record/migrations/20261020020004_dev_1214_declared_project_move/migration.sql',
-      import.meta.url,
-    ),
-  ),
-  'utf8',
-)
+const MOVE_FUNCTION_MARKER = 'CREATE OR REPLACE FUNCTION record_move_project_space'
+
+/** The newest migration redefining record_move_project_space, by directory name order. */
+function moveFunctionMigration(): string {
+  const folder = fileURLToPath(new URL('../shared/record/migrations', import.meta.url))
+  const newest = readdirSync(folder, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .filter((name) =>
+      readFileSync(join(folder, name, 'migration.sql'), 'utf8').includes(MOVE_FUNCTION_MARKER),
+    )
+    .at(-1)
+  if (newest === undefined) throw new Error(`no migration declares ${MOVE_FUNCTION_MARKER}`)
+  return join(folder, newest, 'migration.sql')
+}
+
+const migration = readFileSync(moveFunctionMigration(), 'utf8')
 
 test('project-space declaration gate rejects an added contradicting classification row', () => {
   const contradicting = migration.replace(
