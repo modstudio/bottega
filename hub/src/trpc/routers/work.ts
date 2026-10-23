@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { TASK_STATUSES } from '../../../../shared/trackers.ts'
+import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
 import {
   commentTask,
@@ -13,6 +13,7 @@ import {
 } from '../../task.ts'
 import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import { machineAttribution } from '../../task-machine-attribution.ts'
+import { setTaskThroughTracker } from '../../tracker-task-write.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -65,6 +66,7 @@ type WorkDeps = {
   strip: typeof strip
   view: typeof view
   taskRecord: typeof taskRecord
+  setTaskThroughTracker: typeof setTaskThroughTracker
   setTask: typeof setTask
   setTaskBody: typeof setTaskBody
   commentTask: typeof commentTask
@@ -93,6 +95,19 @@ function setBodyProcedure(deps: WorkDeps) {
         }
         throw asWriteError(cause)
       }
+    })
+}
+
+function setStatusProcedure(deps: WorkDeps) {
+  return t.procedure
+    .input(z.object({ ...taskIdentityInput, status: z.string().trim().min(1) }))
+    .mutation(async ({ input: value }) => {
+      const attribution = await deps.machineAttribution()
+      return write(() =>
+        deps.setTaskThroughTracker(value.key, value.scope, { status: value.status }, attribution, {
+          confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
+        }),
+      )
     })
 }
 
@@ -134,6 +149,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
     strip,
     view,
     taskRecord,
+    setTaskThroughTracker,
     setTask,
     setTaskBody,
     commentTask,
@@ -166,19 +182,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         throw cause
       }
     }),
-    setStatus: t.procedure
-      .input(
-        z.object({
-          ...taskIdentityInput,
-          status: z.enum(TASK_STATUSES),
-        }),
-      )
-      .mutation(async ({ input: value }) => {
-        const attribution = await deps.machineAttribution()
-        return write(() =>
-          deps.setTask(value.key, value.scope, { status: value.status }, attribution),
-        )
-      }),
+    setStatus: setStatusProcedure(deps),
     setTitle: t.procedure
       .input(
         z.object({

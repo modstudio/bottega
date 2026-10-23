@@ -419,7 +419,8 @@ describe('project workflow injection', () => {
           get: 'task_list',
           create: 'task_create',
           update: 'fixture_task_update',
-          status: 'task_update',
+          status: `${PLATFORM_SLUG} task set {key} --status`,
+          comment: `${PLATFORM_SLUG} workflow attach`,
           document: 'task_addDocument',
         },
         states: {},
@@ -755,6 +756,21 @@ describe('project workflow injection', () => {
     ).tracker
     expect(tracker.actions.search).toBe(`${PLATFORM_SLUG} task list --project fixture_name`)
     expect(tracker.actions.get).toBe(`${PLATFORM_SLUG} task show DEV_661`)
+  })
+
+  test(`array-mcp tracker facts name ${PLATFORM_SLUG} status and workflow evidence verbs`, () => {
+    const tracker = resolveInjection(
+      {
+        name: 'adanim',
+        stack: 'node',
+        settings: { tracker: { protocol: 'array-mcp' } },
+      },
+      ['tracker'],
+      { key: 'ADN-1659' },
+    ).tracker
+
+    expect(tracker.actions.status).toBe(`${PLATFORM_SLUG} task set ADN-1659 --status`)
+    expect(tracker.actions.comment).toBe(`${PLATFORM_SLUG} workflow attach`)
   })
 
   test('one refusal names every missing fact and its project update command', () => {

@@ -225,6 +225,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-cli.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/trackers.ts',
       'node:fs',
       'commander',
       './cli-command.ts',
@@ -239,6 +240,7 @@ export const hubModuleSpecs = [
       './task-import.ts',
       './tracker-new.ts',
       './tracker-task-cli.ts',
+      './tracker-task-write.ts',
     ],
   },
   {

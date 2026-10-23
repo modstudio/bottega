@@ -1,19 +1,18 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../shared/trackers.ts'
 import { PresenceOption } from './cli-command.ts'
 import { requireDatabase } from './db.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects } from './projects.ts'
 import {
-  commentTask,
   createTask,
   DuplicateTaskError,
   deleteTaskComment,
   duplicateCandidates,
   editTaskComment,
   listTasks,
-  setTask,
   showTask,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
@@ -29,6 +28,11 @@ import { importTasks } from './task-import.ts'
 import { machineAttribution } from './task-machine-attribution.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
+import {
+  closeTaskThroughTracker,
+  commentTaskThroughTracker,
+  setTaskThroughTracker,
+} from './tracker-task-write.ts'
 
 type TaskOptions = {
   abandon?: string
@@ -181,7 +185,8 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     Boolean(options.keepBranches),
     optional(options, 'abandon'),
     await machineAttribution(),
-    {},
+    ARRAY_MCP_STATUS_WRITE_CONFIRM,
+    { close: closeTaskThroughTracker },
   )
   printTaskRow(closed)
   if (claimReleaseError) {
@@ -316,7 +321,7 @@ function registerTaskQueryCommands(task: Command): void {
   commonBody(
     task
       .command('set <key>')
-      .description('change fields on a local task')
+      .description('change task fields; external trackers support status when adapted')
       .option('--project <X>', 'resolve the task in this project')
       .option('--title <text>', 'replace the task title')
       .option('--status <Y>', 'replace the task status')
@@ -344,12 +349,19 @@ function registerTaskQueryCommands(task: Command): void {
     }
     if (!Object.keys(changes).length)
       throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
-    printTaskRow(
-      await setTask(key, { project: options.project }, changes, await machineAttribution(), {
+    const attribution = await machineAttribution()
+    const row = await setTaskThroughTracker(
+      key,
+      { project: options.project },
+      changes,
+      attribution,
+      {
         force: Boolean(options.force),
         abandonReason: optional(options, 'abandon'),
-      }),
+        confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
+      },
     )
+    printTaskRow(row)
   })
 }
 
@@ -370,7 +382,7 @@ function registerTaskLifecycleCommands(task: Command): void {
     .option('--project <X>', 'resolve the task in this project')
     .action(async (key, text, _options, command) => {
       open()
-      const comment = await commentTask(
+      const comment = await commentTaskThroughTracker(
         key,
         { project: taskOptions(command).project },
         text,

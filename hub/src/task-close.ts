@@ -9,19 +9,20 @@ export async function closeThenPrune(
   keepBranches: boolean,
   abandonReason: string | undefined,
   attribution: Attribution,
+  confirm: string,
   dependencies: {
     close?: (
       key: string,
       scope: TaskScope,
       attribution: Attribution,
-      options: { abandonReason?: string },
+      options: { abandonReason?: string; confirm: string },
     ) => Promise<TaskRow>
     prune?: typeof pruneTaskBranches
     releaseClaims?: typeof releaseTaskClaims
   } = {},
 ) {
   const closed = dependencies.close
-    ? await dependencies.close(key, scope, attribution, { abandonReason })
+    ? await dependencies.close(key, scope, attribution, { abandonReason, confirm })
     : await closeTask(key, scope, attribution, { abandonReason })
   let claimReleaseError: Error | null = null
   try {

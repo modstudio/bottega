@@ -387,6 +387,7 @@ describe('work.task', () => {
       strip: fakeStrip,
       view: fakeView,
       setTask: refusal as never,
+      setTaskThroughTracker: refusal as never,
       commentTask: refusal as never,
       updateTaskDocument: refusal as never,
     })
@@ -419,13 +420,31 @@ describe('work.task', () => {
     const router = createWorkRouter({
       strip: fakeStrip,
       view: fakeView,
-      setTask: (() => {
+      setTaskThroughTracker: (() => {
         throw new Error('no task DEV-404')
       }) as never,
     })
     await expect(
       router.createCaller({}).setStatus({ key: 'DEV-404', scope: {}, status: 'active' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
+  })
+
+  test('dashboard status writes use tracker routing with explicit production confirmation', async () => {
+    const seen: unknown[] = []
+    const router = createWorkRouter({
+      setTaskThroughTracker: ((...args: unknown[]) => {
+        seen.push(...args)
+        return { key: 'EXT-1', status: 'active' }
+      }) as never,
+    })
+    await router.createCaller({}).setStatus({ key: 'EXT-1', scope: {}, status: 'in_progress' })
+    expect(seen).toEqual([
+      'EXT-1',
+      {},
+      { status: 'in_progress' },
+      expect.any(Object),
+      { confirm: 'production' },
+    ])
   })
 
   test('a stale document reports both versions without retrying the write', async () => {

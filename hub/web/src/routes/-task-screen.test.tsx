@@ -3,7 +3,7 @@ import { queryClient } from '@bottega/hub-data/client'
 import type { UseTaskResult } from '@bottega/hub-data/use-task'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { TaskScreen } from './-task-screen'
+import { TaskScreen, taskStatusControlValue } from './-task-screen'
 
 test('a hosted task renders its history and its rail tabs without edit controls', () => {
   const detail: NonNullable<UseTaskResult['detail']> = {
@@ -165,4 +165,21 @@ test('a hosted task renders its history and its rail tabs without edit controls'
   expect(html).not.toContain('Edit</button>')
   expect(html).not.toContain('Add a comment')
   expect(html).not.toContain('Task status')
+
+  const trackedDetail = {
+    ...detail,
+    task: {
+      ...detail.task,
+      status: 'in_progress',
+      statusCategory: 'active' as const,
+      source: 'mcp' as const,
+      sourceProtocol: 'array-mcp',
+    },
+    capabilities: {
+      ...detail.capabilities,
+      setStatus: { allowed: true as const },
+      statusVocabulary: ['todo', 'in_progress', 'done'],
+    },
+  }
+  expect(taskStatusControlValue(trackedDetail)).toBe('in_progress')
 })
