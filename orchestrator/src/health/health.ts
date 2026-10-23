@@ -16,8 +16,8 @@ import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { bucketThrottles, type ThrottleBucket } from './throttle-health.ts'
 
 const HEALTH_DEFAULT_DAYS = 14
-const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
-type HealthClass = FailureKind | 'stale' | 'stopped'
+export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
+type HealthClass = FailureKind | 'stale'
 
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
@@ -52,7 +52,7 @@ export function landingsWithPostStepError(database: Database = db()): {
     .all() as { project: string; branch: string; error: string }[]
 }
 
-type RunRow = {
+export type HealthRunRow = {
   record_id: string
   number: number
   started_at: string
@@ -63,14 +63,25 @@ type RunRow = {
   work_preserved: number
 }
 
-const classOf = (row: RunRow): HealthClass | null =>
+const healthClassOf = (row: HealthRunRow): HealthClass | null =>
   row.status === 'stale' || row.status === 'stopped'
     ? row.status
     : row.failure_kind && FAILURE_KINDS.includes(row.failure_kind)
       ? row.failure_kind
       : null
 
-function falseVerdictRows(database: Database, runs: RunRow[]): HealthVerdictRow[] {
+export function healthClassTotals(rows: readonly HealthRunRow[], classes: readonly HealthClass[]) {
+  return classes.map((kind) => {
+    const matching = rows.filter((row) => healthClassOf(row) === kind)
+    return {
+      kind,
+      count: matching.length,
+      totalTimeMs: matching.reduce((sum, row) => sum + Math.max(0, row.latency_ms ?? 0), 0),
+    }
+  })
+}
+
+function falseVerdictRows(database: Database, runs: HealthRunRow[]): HealthVerdictRow[] {
   const cleared = database
     .query(
       `SELECT DISTINCT run_record_id FROM run_mutation_audit
@@ -98,7 +109,7 @@ function falseVerdictRows(database: Database, runs: RunRow[]): HealthVerdictRow[
   return [...FAILURE_KINDS].map((kind): HealthVerdictRow => {
     const falseIds = falseByKind.get(kind) ?? new Set<string>()
     const currentIds = new Set(
-      runs.filter((row) => classOf(row) === kind).map((row) => row.record_id),
+      runs.filter((row) => healthClassOf(row) === kind).map((row) => row.record_id),
     )
     for (const id of falseIds) currentIds.add(id)
     return {
@@ -125,13 +136,13 @@ export function harnessHealth(
       `SELECT record_id,number,started_at,latency_ms,failure_kind,status,error,work_preserved FROM run
       WHERE datetime(started_at) >= datetime(?) ORDER BY started_at,number`,
     )
-    .all(from) as RunRow[]
+    .all(from) as HealthRunRow[]
   const dayKeys = Array.from({ length: days }, (_, offset) =>
     new Date(firstDay.getTime() + offset * 86_400_000).toISOString().slice(0, 10),
   )
-  const classes = HEALTH_CLASSES.map((kind): HealthClassRow => {
-    const matching = runs.filter((row) => classOf(row) === kind)
-    const totalTimeMs = matching.reduce((sum, row) => sum + Math.max(0, row.latency_ms ?? 0), 0)
+  const classTotals = healthClassTotals(runs, HEALTH_CLASSES)
+  const classes = classTotals.map(({ kind, count, totalTimeMs }): HealthClassRow => {
+    const matching = runs.filter((row) => healthClassOf(row) === kind)
     const grouped = new Map<
       string,
       { count: number; exampleRunRecordId: string; exampleRunNumber: number }
@@ -158,7 +169,7 @@ export function harnessHealth(
         : undefined
     return {
       kind,
-      count: matching.length,
+      count,
       totalTimeMs,
       workPreserved: matching.filter((row) => row.work_preserved === 1).length,
       ...(reclaimedMs !== undefined ? { reclaimedMs } : {}),

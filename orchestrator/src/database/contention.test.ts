@@ -1,7 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { insertContention } from './contention.ts'
+import { insertContention, loadContentionWaits } from './contention.ts'
 import { db } from './db.ts'
+import { migratedTestDatabase } from './test-database.fixture.ts'
 
 describe('contention ledger', () => {
   test('contention writes enqueue their record', () => {
@@ -36,6 +37,46 @@ describe('contention ledger', () => {
       resourceKey: 'fixture',
       eventKind: 'timeout',
     })
+  })
+
+  test('wait rows use datetime semantics for both window bounds', () => {
+    const database = migratedTestDatabase()
+    try {
+      const insert = database.query(
+        `INSERT INTO contention
+           (record_id,at,resource_kind,resource_key,event_kind,duration_ms)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      insert.run(
+        '00000000-0000-7000-8000-000000000001',
+        '2026-10-23 08:00:00',
+        'cpu',
+        'space-separated',
+        'wait',
+        25,
+      )
+      insert.run(
+        '00000000-0000-7000-8000-000000000002',
+        '2026-10-23T09:00:00.000Z',
+        'cpu',
+        'exclusive-end',
+        'wait',
+        50,
+      )
+
+      expect(
+        loadContentionWaits(database, '2026-10-23T07:00:00.000Z', '2026-10-23T09:00:00.000Z'),
+      ).toEqual([
+        {
+          at: '2026-10-23 08:00:00',
+          resourceKind: 'cpu',
+          resourceKey: 'space-separated',
+          durationMs: 25,
+        },
+      ])
+    } finally {
+      database.close()
+    }
   })
 })
 

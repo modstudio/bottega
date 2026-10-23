@@ -96,7 +96,11 @@ function attributedLandings(
 
 export function loadCycleCostReport(
   database: Database,
-  windows: { currentWindow: CycleCostWindow; previousWindow: CycleCostWindow },
+  windows: {
+    currentWindow: CycleCostWindow
+    previousWindow: CycleCostWindow
+    project?: string
+  },
 ): CycleCostReport {
   const registeredProjects = [
     ...projects(undefined, database),
@@ -159,28 +163,32 @@ export function loadCycleCostReport(
     conclusion: string | null
   }[]
 
+  const selected = <T extends { project: string }>(rows: readonly T[]) =>
+    windows.project ? rows.filter((row) => row.project === windows.project) : rows
   return deriveCycleCost({
     ...windows,
-    landings,
-    runs,
-    reviewRounds,
-    ciRecords: ciRecords.flatMap((row): CycleCostCiRecord[] => {
-      const project = projectsById.get(row.project_record_id)
-      return project
-        ? [
-            {
-              project: project.name,
-              pullRequestNumber: row.pr_number,
-              recordKind: row.record_kind,
-              complete: row.complete === null ? null : row.complete === 1,
-              workflowRunId: row.workflow_run_id === null ? null : Number(row.workflow_run_id),
-              runAttempt: row.run_attempt,
-              headCommit: row.head_commit,
-              conclusion: row.conclusion,
-            },
-          ]
-        : []
-    }),
-    unattributedLandings,
+    landings: selected(landings),
+    runs: selected(runs),
+    reviewRounds: selected(reviewRounds),
+    ciRecords: selected(
+      ciRecords.flatMap((row): CycleCostCiRecord[] => {
+        const project = projectsById.get(row.project_record_id)
+        return project
+          ? [
+              {
+                project: project.name,
+                pullRequestNumber: row.pr_number,
+                recordKind: row.record_kind,
+                complete: row.complete === null ? null : row.complete === 1,
+                workflowRunId: row.workflow_run_id === null ? null : Number(row.workflow_run_id),
+                runAttempt: row.run_attempt,
+                headCommit: row.head_commit,
+                conclusion: row.conclusion,
+              },
+            ]
+          : []
+      }),
+    ),
+    unattributedLandings: selected(unattributedLandings),
   })
 }

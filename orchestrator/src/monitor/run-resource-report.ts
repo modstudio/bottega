@@ -77,7 +77,8 @@ export function loadRunResourceReport(database: Database, options: ReportFilterO
       `SELECT COALESCE(project.name,'(none)') project,r.job,r.agent,
               r.resource_cpu_ms cpu_ms,r.resource_peak_rss_bytes peak_rss_bytes
          FROM run r LEFT JOIN project ON project.record_id=r.project_record_id
-        WHERE (? IS NULL OR project.name=?) AND (? IS NULL OR r.started_at>=?)`,
+        WHERE (? IS NULL OR project.name=?) AND (? IS NULL OR r.started_at>=?)
+          AND (? IS NULL OR r.started_at<?)`,
     )
     .all(...filter.parameters) as Array<{
     project: string

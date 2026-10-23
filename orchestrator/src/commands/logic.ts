@@ -34,7 +34,6 @@ import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
-import { provisioningCommand } from '../monitor/provisioning-commands.ts'
 import { storageCommand } from '../monitor/storage-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
 import { projectAt } from '../project/projects.ts'
@@ -56,7 +55,7 @@ import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
-import { efficiencyCommand } from './efficiency-command.ts'
+import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
 import { registerLensCommands } from './lens.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
@@ -187,38 +186,54 @@ function answerCommandDefinition(program: Command): Command {
     .option('--json', 'write the answer result as JSON')
 }
 
-function registerMachineAttentionCommands(program: Command): void {
+function registerEfficiencyCommands(program: Command): void {
   program
     .command('efficiency')
     .description('report orchestration efficiency; median is nearest-rank 50th percentile')
     .option('--since <duration>', 'limit the current window by age (default: 7d)')
+    .option(
+      '--section <name>',
+      'print one section; repeat to select more',
+      (name, names: string[]) => [...names, name],
+      [],
+    )
+    .option('--project <name>', 'limit project-keyed evidence to one project')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action((options) =>
       efficiencyCommand(
-        { since: options.since, json: Boolean(options.json) },
+        {
+          since: options.since,
+          sections: options.section,
+          project: options.project,
+          json: Boolean(options.json),
+        },
         { write: writeStdout },
       ),
     )
   program
     .command('provisioning')
-    .description('report worker-tree provisioning cost or run resources')
+    .description('alias the provisioning or run-resources efficiency section')
     .option('--project <name>', 'limit samples to one project')
     .option('--since <duration>', 'limit samples by age')
     .option('--resources', 'report run CPU time and peak memory instead')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action((options) =>
-      provisioningCommand(
-        {
+      efficiencyCommand(
+        provisioningAliasOptions({
           project: options.project,
           since: options.since,
           json: Boolean(options.json),
           resources: Boolean(options.resources),
-        },
+        }),
         { write: writeStdout },
       ),
     )
+}
+
+function registerMachineAttentionCommands(program: Command): void {
+  registerEfficiencyCommands(program)
   program
     .command('setup-ask')
     .description('install the live worker question channel')

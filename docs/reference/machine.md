@@ -359,13 +359,15 @@ inspect orchestrator and hub health
 
 ## bottega machine efficiency
 
-**Synopsis:** `bottega machine efficiency [--since <duration>] [--json]`
+**Synopsis:** `bottega machine efficiency [--since <duration>] [--section <name>] [--project <name>] [--json]`
 
 report orchestration efficiency; median is nearest-rank 50th percentile
 
 ### Options
 
 - `--since <duration>`: limit the current window by age (default: 7d)
+- `--section <name>`: print one section; repeat to select more
+- `--project <name>`: limit project-keyed evidence to one project
 - `--json`: write the report as JSON
 
 ### Related
@@ -441,7 +443,7 @@ inspect machine conditions that need attention
 
 **Synopsis:** `bottega machine provisioning [--project <name>] [--since <duration>] [--resources] [--json]`
 
-report worker-tree provisioning cost or run resources
+alias the provisioning or run-resources efficiency section
 
 ### Options
 
