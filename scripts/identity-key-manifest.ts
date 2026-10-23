@@ -556,7 +556,6 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'doc.parent_record_id',
     'doc.project_record_id',
     'doc.article_subject_id',
-    'doc_related_subject.id',
     'doc_related_subject.doc_record_id',
     'doc_related_subject.subject_id',
     'doc_related_subject.record_id',
