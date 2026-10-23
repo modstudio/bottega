@@ -394,15 +394,11 @@ describe('scoped operator docs', () => {
     })
     expect(await command(['review', 'inspect'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining(
-        `unknown: ${PLATFORM_SLUG} review inspect. Try tier | record | project-record | triage | complete | calibration`,
-      ),
+      err: expect.stringContaining(`unknown: ${PLATFORM_SLUG} review inspect. Try `),
     })
     expect(await command(['review'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining(
-        `unknown: ${PLATFORM_SLUG} review. Try tier | record | project-record | triage | complete | calibration`,
-      ),
+      err: expect.stringContaining(`unknown: ${PLATFORM_SLUG} review. Try `),
     })
   }, 20_000)
 

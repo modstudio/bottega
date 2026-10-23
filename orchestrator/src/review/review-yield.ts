@@ -1,10 +1,13 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { attributedTaskKey } from '../epic/epic.ts'
-import type { ReviewSettings } from '../project/project-injection.ts'
 import { median } from '../state/statistics.ts'
 import { applicableReview } from './review-applicability.ts'
-import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import {
+  parseStoredReviewPathSet,
+  parseStoredReviewSettings,
+  reviewRunEvidenceSql,
+} from './review-evidence-sql.ts'
 import { reviewLensGraded } from './review-group.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import { reviewTriageBag } from './review-triage.ts'
@@ -303,12 +306,12 @@ function classifySecondOpinions(rows: ReviewRoundEvidenceRow[]): Set<string> {
   const result = new Set<string>()
   for (const members of groups.values()) {
     const first = members[0]!
-    const paths = parsePathSet(first.path_set)
+    const paths = parseStoredReviewPathSet(first.path_set)
     if (!paths) continue
     const lens = applicableReview(
       first.tier!,
       paths,
-      projectReviewSettings(first.project_settings),
+      parseStoredReviewSettings(first.project_settings),
     ).secondOpinion
     if (!lens) continue
     const creditedRuns = identifySecondOpinionRun(
@@ -390,32 +393,10 @@ function lensPairs(rows: ComputedLens[]): ReviewYieldLensPair[] {
     })
 }
 
-function projectReviewSettings(projectSettings: string | null): ReviewSettings | undefined {
-  if (!projectSettings) return undefined
-  try {
-    const parsed = JSON.parse(projectSettings) as { review?: ReviewSettings }
-    const review = parsed.review
-    return review && Array.isArray(review.lenses) ? review : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function parsePathSet(pathSet: string | null): string[] | null {
-  if (!pathSet) return null
-  try {
-    const parsed = JSON.parse(pathSet) as unknown
-    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) return null
-    return parsed as string[]
-  } catch {
-    return null
-  }
-}
-
 function yieldRowAreas(row: ComputedLens): string[] {
-  const paths = parsePathSet(row.path_set)
+  const paths = parseStoredReviewPathSet(row.path_set)
   if (paths === null) return [UNRECORDED_SLICE]
-  return yieldPathAreas(paths, projectReviewSettings(row.project_settings)?.lenses ?? [])
+  return yieldPathAreas(paths, parseStoredReviewSettings(row.project_settings)?.lenses ?? [])
 }
 
 function changeSlices(

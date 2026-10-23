@@ -294,6 +294,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'review record',
   'review restore-findings',
   'review restore-triage',
+  'review scope-proposal',
   'review show',
   'review tier',
   'review triage',

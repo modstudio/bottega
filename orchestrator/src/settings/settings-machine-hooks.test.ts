@@ -13,6 +13,7 @@ import { withMachineProductHooks } from './settings-machine-hooks.ts'
 const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orch.db'
 const OLD_ROOT = '/Users/operator/Projects/bottega'
+const HEARTBEAT_SUITE_TIMEOUT_MS = 20_000
 const command = (file: string) => `python3 ${OLD_ROOT}/orchestrator/hooks/${file}`
 const handler = (file: string, extra: Record<string, unknown> = {}) => ({
   type: 'command',
@@ -65,14 +66,22 @@ test('heartbeat reminder recognizes detached dispatch commands', () => {
   }).toEqual({ exitCode: 0, output: 'ok' })
 })
 
-test('heartbeat decisions match the canonical hook behavior', () => {
-  const hookTest = fileURLToPath(new URL('../../hooks/test_heartbeat_decision.py', import.meta.url))
-  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
-  expect({
-    exitCode: result.exitCode,
-    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
-  }).toEqual({ exitCode: 0, output: 'ok' })
-})
+// This suite drives real heartbeat processes; moving those cases out of the gate is follow-up work.
+test(
+  'heartbeat decisions match the canonical hook behavior',
+  () => {
+    const hookTest = fileURLToPath(
+      new URL('../../hooks/test_heartbeat_decision.py', import.meta.url),
+    )
+    const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+    expect({
+      exitCode: result.exitCode,
+      output:
+        result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+    }).toEqual({ exitCode: 0, output: 'ok' })
+  },
+  HEARTBEAT_SUITE_TIMEOUT_MS,
+)
 
 test('agent blocker logs spawn identities and fails open when minting fails', () => {
   const hookTest = fileURLToPath(new URL('../../hooks/test_block_agent.py', import.meta.url))

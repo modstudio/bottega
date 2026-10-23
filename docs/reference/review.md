@@ -28,6 +28,7 @@ review runs, lenses, tiers, and confinement
 - [bottega review record](#bottega-review-record)
 - [bottega review restore-findings](#bottega-review-restore-findings)
 - [bottega review restore-triage](#bottega-review-restore-triage)
+- [bottega review scope-proposal](#bottega-review-scope-proposal)
 - [bottega review show](#bottega-review-show)
 - [bottega review tier](#bottega-review-tier)
 - [bottega review triage](#bottega-review-triage)
@@ -55,6 +56,7 @@ review runs, lenses, tiers, and confinement
 - [bottega review record](./review.md#bottega-review-record)
 - [bottega review restore-findings](./review.md#bottega-review-restore-findings)
 - [bottega review restore-triage](./review.md#bottega-review-restore-triage)
+- [bottega review scope-proposal](./review.md#bottega-review-scope-proposal)
 - [bottega review show](./review.md#bottega-review-show)
 - [bottega review tier](./review.md#bottega-review-tier)
 - [bottega review triage](./review.md#bottega-review-triage)
@@ -408,6 +410,20 @@ restore missing triage on completed-review findings from outbox rows
 
 - `--dry-run`: report triage that would be restored without writing
 - `--json`: write the restore report as JSON
+
+### Related
+
+- [bottega review](./review.md#bottega-review)
+
+## bottega review scope-proposal
+
+**Synopsis:** `bottega review scope-proposal [--json]`
+
+propose path scopes for currently unscoped review lenses
+
+### Options
+
+- `--json`: write the scope proposal as JSON
 
 ### Related
 
