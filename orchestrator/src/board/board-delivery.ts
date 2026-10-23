@@ -25,7 +25,6 @@ import {
   runReader,
 } from './board-service.ts'
 
-export { BOARD_READ_REFRESH_BUDGET_MS } from './board-hosted-cache.ts'
 export const BOARD_PUSH_REFRESH_SECONDS = 15
 export const BOARD_PUSH_REMIND_SECONDS = 300
 export const BOARD_PUSH_RETRY_SECONDS = 15

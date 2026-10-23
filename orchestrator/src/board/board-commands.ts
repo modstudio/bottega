@@ -4,12 +4,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
-import {
-  BOARD_READ_REFRESH_BUDGET_MS,
-  claimBoardNotices,
-  markBoardNoticesDelivered,
-  readBoardNotices,
-} from './board-delivery.ts'
+import { claimBoardNotices, markBoardNoticesDelivered, readBoardNotices } from './board-delivery.ts'
+import { BOARD_READ_REFRESH_BUDGET_MS } from './board-hosted-cache.ts'
 import { resolveLocalBoardMessageIdentifier } from './board-message-identifier.ts'
 import {
   boardAccept,
