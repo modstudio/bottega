@@ -18,7 +18,11 @@ import {
   type TriageReviewRow,
 } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
-import { reviewBudgetForBranch } from '../review/review-round-budget.ts'
+import {
+  type ReviewRoundBudgetDecision,
+  reviewBudgetForBranch,
+  reviewRoundBudgetDecision,
+} from '../review/review-round-budget.ts'
 import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
@@ -29,8 +33,8 @@ import {
 import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
 import {
+  ceilingTriageFacts,
   decideTriage,
-  missingLensNames,
   type TriageDecision,
   type TriageReviewGroup,
 } from './triage-decision.ts'
@@ -216,25 +220,6 @@ function admissionChange(change: PullRequestChange) {
   }
 }
 
-function ceilingTriageFacts(triage: TriageDecision) {
-  return triage.complete
-    ? {
-        complete: true,
-        unfinishedReviewNumbers: [],
-        undisposedFindings: [],
-        missingLenses: [],
-        hasNonLensGap: false,
-      }
-    : {
-        complete: false,
-        unfinishedReviewNumbers: triage.unfinishedReviewNumbers,
-        undisposedFindings: triage.undisposedFindings,
-        missingLenses: missingLensNames(triage),
-        hasNonLensGap:
-          triage.architectReadRequired || triage.finalTierRaised || triage.noCompleteReviewRound,
-      }
-}
-
 export function admissionDecision(
   change: PullRequestChange,
   database: Database,
@@ -351,8 +336,7 @@ export function recordTriageOverrideForChange(
     overrideReason?: string
     ceilingRuling?: string
     fromOperator: boolean
-    roundsUsed: number
-    ceiling: number
+    reviewBudget?: Pick<ReviewRoundBudgetDecision, 'atCeiling' | 'roundsUsed' | 'ceiling'>
     triage?: TriageDecision
     overrideOption?: string
   },
@@ -399,8 +383,6 @@ export function recordTriageOverride(
         {
           overrideReason: reason,
           fromOperator,
-          roundsUsed: 0,
-          ceiling: 0,
           overrideOption: '--reason',
         },
         database,
@@ -552,14 +534,18 @@ export function createPullRequest(
   const checked = writeTransaction(() => {
     const triage = triageDecision(change, database)
     const budget = reviewBudgetForBranch(database, change.project.name, change.branch, null)
+    const reviewBudget = reviewRoundBudgetDecision({
+      tier: change.tier,
+      roundsUsed: budget.roundsUsed,
+      currentChangeCounted: budget.currentChangeCounted,
+    })
     recordTriageOverrideForChange(
       change,
       {
         overrideReason: options.overrideReason,
         ceilingRuling: options.ceilingRuling,
         fromOperator: Boolean(options.fromOperator),
-        roundsUsed: budget.roundsUsed,
-        ceiling: change.tier,
+        reviewBudget,
         triage,
       },
       database,

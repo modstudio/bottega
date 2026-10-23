@@ -3,7 +3,11 @@
 import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
-import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import {
+  completedReviewEvidenceSql,
+  disposedReviewFindingsSql,
+  gradedReviewLensesSql,
+} from './review-evidence-sql.ts'
 import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
 export type ReviewTierNumber = 0 | 1 | 2 | 3
 
@@ -11,6 +15,7 @@ export type ReviewRoundBudgetDecision = {
   roundsUsed: number
   ceiling: number
   currentChangeCounted: boolean
+  atCeiling: boolean
   startsNewRound: boolean
   wouldExceedCeiling: boolean
 }
@@ -27,6 +32,7 @@ export function reviewRoundBudgetDecision(input: {
     roundsUsed: input.roundsUsed,
     ceiling: input.tier,
     currentChangeCounted: input.currentChangeCounted,
+    atCeiling: input.roundsUsed >= input.tier,
     startsNewRound,
     wouldExceedCeiling: startsNewRound && input.roundsUsed + 1 > input.tier,
   }
@@ -87,19 +93,9 @@ function eligibleRows(
          JOIN review r ON r.record_id=rl.review_record_id
          JOIN run ON run.record_id=rl.run_record_id
          LEFT JOIN project p ON p.record_id=r.project_record_id
-        WHERE ${reviewRunEvidenceSql('run', 'rl')}
-          AND r.completed_at IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM review_lens pending_lens
-             WHERE pending_lens.review_record_id=r.record_id
-               AND (pending_lens.reproduced IS NULL OR pending_lens.coverage IS NULL
-                 OR pending_lens.limits IS NULL OR pending_lens.overlap IS NULL)
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM review_finding pending_finding
-             WHERE pending_finding.review_record_id=r.record_id
-               AND pending_finding.disposition IS NULL
-          )
+        WHERE ${completedReviewEvidenceSql('r', 'run', 'rl')}
+          AND ${gradedReviewLensesSql('r')}
+          AND ${disposedReviewFindingsSql('r')}
           AND (? IS NULL OR r.recorded_at >= ?)
           AND (? IS NULL OR run.project_record_id=(SELECT record_id FROM project WHERE name=?))
           AND (? IS NULL OR run.branch = ?)

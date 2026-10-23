@@ -174,6 +174,41 @@ function git(repo: string, ...args: string[]): string {
   return result.stdout.toString().trim()
 }
 
+function seedCompletedBudgetRound(input: {
+  project: string
+  branch: string
+  patch: string
+  at: string
+}): void {
+  const runId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+        project_record_id,branch,launch_key,latency_ms)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','review-lens','sha',1,
+               'head','ok',?,(SELECT record_id FROM project WHERE name=?),?,?,1000)`,
+    )
+    .run(runId, input.at, input.project, input.project, input.branch, input.branch)
+  const reviewId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO review
+       (record_id,number,project_record_id,recorded_at,completed_at,tier,patch_id,path_set)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),
+               (SELECT record_id FROM project WHERE name=?),?,?,3,?,'["src/large.ts"]')`,
+    )
+    .run(reviewId, input.project, input.at, input.at, input.patch)
+  db()
+    .query(
+      `INSERT INTO review_lens
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,
+        commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+       VALUES (?, ?, ?,'correctness','codex','[]','[]','[]','[]','all','adequate','named','alone')`,
+    )
+    .run(newRecordId(), reviewId, runId)
+}
+
 function seedReviewedPathRename(repo: string, enabled: boolean): string[] {
   if (!enabled) return []
   writeFileSync(join(repo, 'critical/reviewed.ts'), 'branch = false\ncommon\ntrunk = false\n')
@@ -424,6 +459,31 @@ test('review tier re-lenses a tier-three branch commit after a trunk merge', asy
       reviewedTip: reviewed,
       tierThreePaths: ['critical/fix.ts'],
     })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier prints architect ceiling guidance after three completed rounds', async () => {
+  const { repo, branch } = postFixFixture({ fixPath: 'critical/fix.ts', fixAfterMerge: true })
+  try {
+    const project = db()
+      .query<{ name: string }, [string]>('SELECT name FROM project WHERE path=?')
+      .get(repo)!.name
+    for (const [index, at] of [
+      '2026-10-20T00:00:00Z',
+      '2026-10-21T00:00:00Z',
+      '2026-10-22T00:00:00Z',
+    ].entries()) {
+      seedCompletedBudgetRound({ project, branch, patch: `round-${index}`, at })
+    }
+    const output: string[] = []
+
+    await runReview(['review', 'tier', branch, '--cwd', repo], output)
+
+    expect(output).toContain('rounds 3/3')
+    expect(output.some((line) => line.includes('--ceiling-ruling'))).toBeTrue()
+    expect(output.some((line) => line.includes('.agents/rules/20-build-and-buy.md'))).toBeTrue()
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

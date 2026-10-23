@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import {
   createPullRequest,
   finalizeTriageIntent,
@@ -11,6 +16,49 @@ import {
   triageRefusal,
 } from './pr-admission.ts'
 import { decideTriage, type TriageEvidence } from './triage-decision.ts'
+
+function git(repo: string, ...args: string[]): string {
+  const result = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
+}
+
+function addCompletedBudgetRound(input: {
+  project: string
+  branch: string
+  patch: string
+  at: string
+  lens?: string
+}): void {
+  const database = db()
+  const runId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+        project_record_id,branch,launch_key,latency_ms)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','review-lens','sha',1,
+               'head','ok',?,(SELECT record_id FROM project WHERE name=?),?,?,1000)`,
+    )
+    .run(runId, input.at, input.project, input.project, input.branch, input.branch)
+  const reviewId = newRecordId()
+  database
+    .query(
+      `INSERT INTO review
+       (record_id,number,project_record_id,recorded_at,completed_at,tier,patch_id,path_set)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),
+               (SELECT record_id FROM project WHERE name=?),?,?,3,?,'["src/change.ts"]')`,
+    )
+    .run(reviewId, input.project, input.at, input.at, input.patch)
+  database
+    .query(
+      `INSERT INTO review_lens
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,
+        commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+       VALUES (?,?,?,?,'codex','[]','[]','[]','[]','all','adequate','named','alone')`,
+    )
+    .run(newRecordId(), reviewId, runId, input.lens ?? 'correctness')
+}
 
 test('refuses a secret-shaped override reason before resolving the checkout', () => {
   expect(() =>
@@ -82,8 +130,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
       {
         ceilingRuling: 'no remaining harm',
         fromOperator: false,
-        roundsUsed: 3,
-        ceiling: 3,
+        reviewBudget: { atCeiling: true, roundsUsed: 3, ceiling: 3 },
         triage,
       },
       database,
@@ -92,6 +139,58 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
   expect(database.query('SELECT count(*) AS count FROM landing_override').get()).toEqual({
     count: 0,
   })
+})
+
+test('create refuses a ceiling ruling below the seeded completed-round ceiling', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-pr-ceiling-'))
+  try {
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'fixture@example.com')
+    git(repo, 'config', 'user.name', 'Fixture')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(repo, 'add', 'base.txt')
+    git(repo, 'commit', '-m', 'base')
+    const branch = `DEV-1641-${crypto.randomUUID()}`
+    git(repo, 'checkout', '-b', branch)
+    mkdirSync(join(repo, 'src'))
+    writeFileSync(join(repo, 'src/change.ts'), 'export const change = true\n')
+    git(repo, 'add', 'src/change.ts')
+    git(repo, 'commit', '-m', 'change')
+    const project = `ceiling-create-${crypto.randomUUID()}`
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: repo,
+      settings: {
+        trunk: 'main',
+        review: {
+          lenses: [{ lens: 'correctness' }, { lens: 'craft' }],
+          risk: {
+            paths: [{ pattern: '^src/', tier: 3, reason: 'critical fixture path' }],
+            unlisted: 2,
+          },
+        },
+      },
+    })
+    addCompletedBudgetRound({
+      project,
+      branch,
+      patch: 'round-one',
+      at: '2026-10-20T00:00:00Z',
+    })
+    addCompletedBudgetRound({
+      project,
+      branch,
+      patch: 'round-two',
+      at: '2026-10-21T00:00:00Z',
+    })
+
+    expect(() => createPullRequest([], { ceilingRuling: 'no remaining harm' }, repo)).toThrow(
+      'before the review round ceiling is reached; rounds used 2/3',
+    )
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
 })
 
 test('records the exact triage snapshot and outboxes it', () => {

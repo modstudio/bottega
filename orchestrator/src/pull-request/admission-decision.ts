@@ -1,7 +1,13 @@
 // concern: pull-request-admission-decision
 /** Admits review triage or an override recorded for the exact change identity. */
 
-import { missingLensNames, type TriageDecision } from './triage-decision.ts'
+import type { TriageOverrideAttribution } from './override-decision.ts'
+import {
+  ceilingTriageFacts,
+  ceilingWaivableGaps,
+  normalizeMissingLensNames,
+  type TriageDecision,
+} from './triage-decision.ts'
 
 export type AdmissionChange = {
   project: string
@@ -16,7 +22,7 @@ export type AdmissionOverride = Omit<AdmissionChange, 'patchId' | 'pathSet'> & {
   recordId: string
   patchId: string | null
   pathSet: string | null
-  attribution: 'operator' | 'architect-ceiling'
+  attribution: TriageOverrideAttribution
   missingLenses: string[]
 }
 
@@ -43,13 +49,11 @@ export function decideAdmission(
   )
   const override = identityMatches.find((candidate) => {
     if (candidate.attribution === 'operator') return true
-    if (triage.complete) return false
-    if (triage.unfinishedReviewNumbers.length || triage.undisposedFindings.length) return false
-    if (triage.architectReadRequired || triage.finalTierRaised || triage.noCompleteReviewRound)
-      return false
+    const waivable = ceilingWaivableGaps(ceilingTriageFacts(triage))
+    if (!waivable.waivable) return false
     return (
-      JSON.stringify(candidate.missingLenses.slice().sort()) ===
-      JSON.stringify(missingLensNames(triage))
+      JSON.stringify(normalizeMissingLensNames(candidate.missingLenses)) ===
+      JSON.stringify(waivable.missingLenses)
     )
   })
   return {

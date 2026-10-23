@@ -17,8 +17,7 @@ test('an architect ceiling ruling records its attribution and remaining lenses',
     decideTriageOverride({
       ceilingRuling: 'remaining findings cannot cause harm',
       fromOperator: false,
-      roundsUsed: 3,
-      ceiling: 3,
+      reviewBudget: { atCeiling: true, roundsUsed: 3, ceiling: 3 },
       triage: triage(),
     }),
   ).toEqual({
@@ -34,8 +33,7 @@ test('an architect ceiling ruling refuses below the review round ceiling', () =>
     decideTriageOverride({
       ceilingRuling: 'stop here',
       fromOperator: false,
-      roundsUsed: 2,
-      ceiling: 3,
+      reviewBudget: { atCeiling: false, roundsUsed: 2, ceiling: 3 },
       triage: triage({ missingLenses: ['craft'] }),
     }),
   ).toEqual({
@@ -50,8 +48,6 @@ test('ordinary triage overrides keep operator attribution below the ceiling', ()
     decideTriageOverride({
       overrideReason: 'operator accepts the risk',
       fromOperator: true,
-      roundsUsed: 1,
-      ceiling: 3,
       triage: triage({ missingLenses: ['craft'] }),
     }),
   ).toEqual({
@@ -66,8 +62,7 @@ test('an architect ceiling ruling refuses unfinished reviews and undisposed find
   const input = {
     ceilingRuling: 'stop here',
     fromOperator: false,
-    roundsUsed: 3,
-    ceiling: 3,
+    reviewBudget: { atCeiling: false, roundsUsed: 2, ceiling: 3 },
   }
   expect(
     decideTriageOverride({ ...input, triage: triage({ unfinishedReviewNumbers: [4] }) }),
@@ -87,7 +82,11 @@ test('an architect ceiling ruling refuses unfinished reviews and undisposed find
 })
 
 test('override flag combinations are decided without process or storage', () => {
-  const base = { fromOperator: false, roundsUsed: 1, ceiling: 3, triage: triage() }
+  const base = {
+    fromOperator: false,
+    reviewBudget: { atCeiling: false, roundsUsed: 1, ceiling: 3 },
+    triage: triage(),
+  }
   expect(decideTriageOverride(base)).toEqual({ kind: 'none' })
   expect(decideTriageOverride({ ...base, overrideReason: 'ordinary' })).toMatchObject({
     kind: 'refuse',

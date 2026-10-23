@@ -40,6 +40,7 @@ describe('review round budget decision', () => {
       roundsUsed,
       ceiling: tier,
       currentChangeCounted,
+      atCeiling: roundsUsed >= tier,
       startsNewRound: !currentChangeCounted,
       wouldExceedCeiling,
     })
@@ -57,6 +58,7 @@ describe('review round budget decision', () => {
       roundsUsed: 1,
       ceiling: 3,
       currentChangeCounted: false,
+      atCeiling: false,
       startsNewRound: false,
       wouldExceedCeiling: false,
     })
