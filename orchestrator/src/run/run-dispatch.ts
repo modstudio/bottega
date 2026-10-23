@@ -102,8 +102,8 @@ export async function detach(
   prompt: string,
   spec: DetachSpec,
   selectedAgent?: string,
-  dispatch: RunDispatchMetadata = {},
   spawnCoordinator: typeof spawn = spawn,
+  dispatch: RunDispatchMetadata = {},
 ): Promise<string> {
   writableDb()
   /**

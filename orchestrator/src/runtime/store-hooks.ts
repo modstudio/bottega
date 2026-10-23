@@ -3,8 +3,8 @@
 import { ensureMachineIdentity, registerOpenHooks } from '../database/db.ts'
 import { excludeSharedOutputRuns } from '../evidence/evidence-query.ts'
 import { seedLenses } from '../lens/lens-seeds.ts'
-import { reapStale } from '../run/run-liveness.ts'
 import { enqueueChangedReviewRounds } from '../review/review-outbox.ts'
+import { reapStale } from '../run/run-liveness.ts'
 import { seedWorkflows } from '../workflow/workflow-seeds.ts'
 
 let registered = false

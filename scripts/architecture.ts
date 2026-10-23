@@ -606,6 +606,14 @@ export const modules: ArchitectureModule[] = [
     './store-hooks.ts',
     './standard-transports.ts',
   ]),
+  module('orchestrator/src/runtime/store-hooks.ts', [
+    '../database/db.ts',
+    '../evidence/evidence-query.ts',
+    '../lens/lens-seeds.ts',
+    '../review/review-outbox.ts',
+    '../run/run-liveness.ts',
+    '../workflow/workflow-seeds.ts',
+  ]),
   module('orchestrator/src/transport/ajv-validator.ts', []),
   module('orchestrator/src/transport/acp-trace.ts', [
     'node:child_process',

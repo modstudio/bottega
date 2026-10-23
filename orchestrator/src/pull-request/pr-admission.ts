@@ -77,7 +77,14 @@ export function resolvePullRequestChange(
   const trunk = project.settings.trunk!.trim()
   const base = resolveReviewMergeBase(cwd, tip, trunk)
   if (!base) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
-  const plan = roundPlanForReviewTarget({ database, repo: cwd, project, branch, from: base, to: tip })
+  const plan = roundPlanForReviewTarget({
+    database,
+    repo: cwd,
+    project,
+    branch,
+    from: base,
+    to: tip,
+  })
   if (!plan.group) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
   return {
     project,

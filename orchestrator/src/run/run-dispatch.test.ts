@@ -83,4 +83,3 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
     error: expect.stringContaining('detach handoff failed during await coordinator spawn'),
   })
 })
-

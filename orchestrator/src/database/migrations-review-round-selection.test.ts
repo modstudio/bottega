@@ -8,7 +8,9 @@ test('review round backfill numbers one task across branch names', () => {
   applyMigrationsBefore(database, '0146_review_round_selection_reason')
   const project = newRecordId()
   database
-    .query("INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')")
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
     .run(project)
 
   const addReview = (number: number, branch: string, launchKey: string | null, patch: string) => {

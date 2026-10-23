@@ -2,8 +2,8 @@
 /** Gathers stored review facts and applies the pure round lens plan. */
 
 import type { Database } from 'bun:sqlite'
-import type { ReviewSettings } from '../project/project-injection.ts'
 import { gitContext } from '../git/git-environment.ts'
+import type { ReviewSettings } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
 import {
   type ApplicableReview,
@@ -22,7 +22,7 @@ import { reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
 
 /** Assemble the round plan from the current change, branch review history, and project declaration. */
-export function roundApplicabilityForChange(input: {
+function roundApplicabilityForChange(input: {
   database: Database
   group: ChangeGroup
   relevant: ApplicableReview
@@ -51,12 +51,7 @@ export function roundPlanForReviewTarget(input: {
 }) {
   const trunk = input.project.settings.trunk?.trim()
   if (!trunk) throw new Error(`project ${input.project.name} has no trunk configured`)
-  const output = reviewTierForRange(
-    input.repo,
-    input.from,
-    input.to,
-    input.project.settings.review,
-  )
+  const output = reviewTierForRange(input.repo, input.from, input.to, input.project.settings.review)
   const identity = measureChangeIdentity(input.repo, input.from, input.to)
   const relevant = selectReviewApplicability(output, output.lenses)
   const postFix = postFixReviewDecision({

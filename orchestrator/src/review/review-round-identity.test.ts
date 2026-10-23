@@ -11,16 +11,27 @@ import {
 describe('review round identity', () => {
   test('equal task patches share an identity and different patches do not', () => {
     const first = reviewRoundIdentity({
-        launch_key: 'DEV-1618',
-        branch: 'DEV-1618-round',
-        patch_id: 'abc',
-        path_set: '["a.ts"]',
+      launch_key: 'DEV-1618',
+      branch: 'DEV-1618-round',
+      patch_id: 'abc',
+      path_set: '["a.ts"]',
     })
     expect(first.identity).toBe(
-      reviewRoundIdentity({ ...first, launch_key: 'dev-1618', branch: null, patch_id: 'abc', path_set: '["a.ts"]' }).identity,
+      reviewRoundIdentity({
+        ...first,
+        launch_key: 'dev-1618',
+        branch: null,
+        patch_id: 'abc',
+        path_set: '["a.ts"]',
+      }).identity,
     )
     expect(first.identity).not.toBe(
-      reviewRoundIdentity({ launch_key: 'DEV-1618', branch: null, patch_id: 'def', path_set: '["a.ts"]' }).identity,
+      reviewRoundIdentity({
+        launch_key: 'DEV-1618',
+        branch: null,
+        patch_id: 'def',
+        path_set: '["a.ts"]',
+      }).identity,
     )
   })
 

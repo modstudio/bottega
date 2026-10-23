@@ -377,7 +377,7 @@ export async function detachRoutedRun(
   text: string,
   spec: DetachSpec,
   cwd: string,
-  spawnCoordinator?: Parameters<typeof dispatchDetached>[5],
+  spawnCoordinator?: Parameters<typeof dispatchDetached>[4],
 ): Promise<string> {
   let selected: string | undefined
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
@@ -405,14 +405,7 @@ export async function detachRoutedRun(
     cwd: spec.cwd ?? cwd,
     repo: spec.repo,
   })
-  return dispatchDetached(
-    jobName,
-    text,
-    spec,
-    selected,
-    { selectionReason },
-    spawnCoordinator,
-  )
+  return dispatchDetached(jobName, text, spec, selected, spawnCoordinator, { selectionReason })
 }
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
