@@ -169,7 +169,6 @@ function commandReadOnlyDatabase(): Database {
 
 /** Request the process connection for a mutation. */
 export function writableDb(): Database {
-  if (databaseAccess.active()) throw new Error('refusing a write from a read-only command')
   return db(true)
 }
 

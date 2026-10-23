@@ -131,7 +131,9 @@ export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
   const command = argv[0] as (typeof READ_ONLY_STORE_COMMANDS)[number]
   if (!READ_ONLY_STORE_COMMANDS.includes(command)) return false
   if (command === 'runs') return true
-  return classifyRunIdentifier(argv[1] ?? '') !== null
+  // Every option these verbs take is a boolean flag, so the first non-flag token is the run id.
+  const identifier = argv.slice(1).find((token) => !token.startsWith('-'))
+  return classifyRunIdentifier(identifier ?? '') !== null
 }
 
 export async function lockedStoreMessage(

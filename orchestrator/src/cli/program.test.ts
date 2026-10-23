@@ -41,6 +41,8 @@ test('run query verbs use the read-only store handle', () => {
   expect(usesReadOnlyStoreHandle(['runs', '--json'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['run', '01990000-0000-7000-8000-000000000001'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['result', '1'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['run', '--receipt', '42'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['result', '--quiet', '1'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['wait', '1'])).toBeFalse()
   expect(usesReadOnlyStoreHandle(['run', 'wait', '1'])).toBeFalse()
   expect(usesReadOnlyStoreHandle(['monitor'])).toBeFalse()
