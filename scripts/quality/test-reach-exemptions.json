@@ -1,0 +1,150 @@
+[
+  {
+    "file": "orchestrator/hooks/test_block_agent.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/hooks/test_board_interrupt.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/hooks/test_bun_cache_guard.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/hooks/test_heartbeat_decision.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/hooks/test_heartbeat_guard.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/hooks/test_heartbeat_remind.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/hooks/test_score_reminder.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/hooks/test_session_brief_context.py",
+    "reason": "The Python hook tests do not yet have a gate leg"
+  },
+  {
+    "file": "orchestrator/scripts/acp-parity.test.ts",
+    "reason": "The orchestrator script tests are outside the src gate batch"
+  },
+  {
+    "file": "orchestrator/scripts/branch-store.test.ts",
+    "reason": "The orchestrator script tests are outside the src gate batch"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-import.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-board-shared-space.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-doc-latest-revision.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-doc-revision-author.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-hosted-project-cleanup.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-hosted-task-ids.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-hub-project-identity.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-jsonb-binding.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-public-role.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-read-only.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-recipients.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-rls.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/postgres/postgres-migrate-workflow-generation.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/record/record-catalogue-import-postgres.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/record/record-lens-catalogue-postgres.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/record/record-port-catalogue-postgres.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/src/record/record-workflow-catalogue-postgres.test.ts",
+    "reason": "DEV-1474"
+  },
+  {
+    "file": "orchestrator/test/fake-transport.test.ts",
+    "reason": "The orchestrator test-support tests are outside the src gate batch"
+  },
+  {
+    "file": "orchestrator/test/gate-timing-summary-decision.test.ts",
+    "reason": "The orchestrator test-support tests are outside the src gate batch"
+  },
+  {
+    "file": "orchestrator/test/preload.test.ts",
+    "reason": "The orchestrator test-support tests are outside the src gate batch"
+  },
+  {
+    "file": "orchestrator/test/record-gate-timings.test.ts",
+    "reason": "The orchestrator test-support tests are outside the src gate batch"
+  },
+  {
+    "file": "scripts/architecture-cruise.test.ts",
+    "reason": "The script test is not yet named in the root gate batch"
+  },
+  {
+    "file": "scripts/architecture-hub-data.test.ts",
+    "reason": "The script test is not yet named in the root gate batch"
+  },
+  {
+    "file": "scripts/architecture-ui-layers.test.ts",
+    "reason": "The script test is not yet named in the root gate batch"
+  },
+  {
+    "file": "scripts/architecture-violation-baseline.test.ts",
+    "reason": "The script test is not yet named in the root gate batch"
+  },
+  {
+    "file": "scripts/check-hub-ui-styles.test.ts",
+    "reason": "The script test is not yet named in the root gate batch"
+  },
+  {
+    "file": "scripts/check-record-project-space-ownership.test.ts",
+    "reason": "The script test is not yet named in the root gate batch"
+  }
+]

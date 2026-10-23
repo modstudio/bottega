@@ -3,6 +3,7 @@ export const CHECK_LEGS = [
     name: 'cli',
     directory: 'cli',
     ciJob: 'cli',
+    testDirectories: [],
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [],
   },
@@ -10,6 +11,7 @@ export const CHECK_LEGS = [
     name: 'orchestrator',
     directory: 'orchestrator',
     ciJob: 'orchestrator',
+    testDirectories: ['orchestrator/src'],
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
   },
@@ -17,6 +19,7 @@ export const CHECK_LEGS = [
     name: 'hub',
     directory: 'hub',
     ciJob: 'hub',
+    testDirectories: ['hub'],
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
@@ -29,6 +32,7 @@ export const CHECK_LEGS = [
     name: 'hub/web',
     directory: 'hub/web',
     ciJob: 'hub-web',
+    testDirectories: ['hub/web'],
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
@@ -39,6 +43,7 @@ export const CHECK_LEGS = [
     name: 'hub/deploy/site',
     directory: 'hub/deploy/site',
     ciJob: 'hub-deploy-site',
+    testDirectories: ['hub/deploy/site'],
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
@@ -46,8 +51,22 @@ export const CHECK_LEGS = [
     name: 'retrieval',
     directory: 'retrieval',
     ciJob: 'retrieval',
+    testDirectories: ['retrieval'],
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
+  },
+  {
+    name: 'shared',
+    directory: '.',
+    ciJob: 'shared',
+    testDirectories: ['shared'],
+    typecheck: ['bun', 'run', '--cwd', 'orchestrator', 'typecheck'],
+    suite: [
+      {
+        argv: ['bun', 'test', 'shared'],
+        unitTests: true,
+      },
+    ],
   },
 ] as const
 

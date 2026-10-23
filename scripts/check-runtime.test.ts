@@ -58,6 +58,7 @@ describe('check mode arguments', () => {
       'hub/web',
       'hub/deploy/site',
       'retrieval',
+      'shared',
     ])
   })
 
