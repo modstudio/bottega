@@ -5,7 +5,7 @@ import { type CollectedWaitRun, collectWaitForRuns } from '../collect/collect.ts
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { parseReviewOutput } from '../review/review.ts'
-import { resolveReviewMergeBase } from '../review/review-target.ts'
+import { resolveReviewBase } from '../review/review-target.ts'
 import { reviewTierForRange } from '../review/review-tier-service.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { RUN_FOLLOW_TIMEOUT_MS } from '../run/run-liveness.ts'
@@ -101,7 +101,7 @@ export async function runIssueFixReviews(input: {
   }
   let reviewBase: string | null
   try {
-    reviewBase = resolveReviewMergeBase(worktree.path, worktree.branch, trunk)
+    reviewBase = resolveReviewBase(worktree.path, worktree.branch, trunk)
   } catch (cause) {
     return reviewNotStarted(String((cause as Error)?.message ?? cause))
   }
