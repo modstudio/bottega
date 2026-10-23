@@ -24,14 +24,8 @@ import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
-import {
-  completeReview,
-  DISPOSITIONS,
-  type Disposition,
-  MIN_REVIEW_TRIAGED,
-  triageFinding,
-} from './review-triage.ts'
-import { REVIEW_SEVERITY } from './review-vocabulary.ts'
+import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
+import { DISPOSITIONS, type Disposition, REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { reviewRoundIdentity } from './review-yield.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }

@@ -1,6 +1,6 @@
 // concern: review-triage-restore-policy
 /** Decides whether a finding's outbox triage can be restored without knowing SQLite. */
-import type { Disposition } from './review-triage.ts'
+import type { Disposition } from './review-vocabulary.ts'
 
 export const TRIAGE_RESTORE_SKIP_REASONS = {
   noSource: 'no outbox row',

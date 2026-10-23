@@ -10,8 +10,8 @@ import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
-import { DISPOSITIONS, recordReview } from '../review/review-triage.ts'
-import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
+import { recordReview } from '../review/review-triage.ts'
+import { DISPOSITIONS, REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import {
   register,
   resolveComparisonRunIds,

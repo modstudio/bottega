@@ -20,12 +20,12 @@ import { enqueueReview, enqueueReviewFinding } from './review/review-outbox.ts'
 import {
   assertRunReviewFindingIntegrity,
   completeReview,
-  type Disposition,
   gradeReviewLens,
   type ReviewGrades,
   triageFinding,
 } from './review/review-triage.ts'
 import {
+  type Disposition,
   REVIEW_GRADE_NAMES,
   REVIEW_GRADE_VALUES,
   REVIEW_SEVERITY,

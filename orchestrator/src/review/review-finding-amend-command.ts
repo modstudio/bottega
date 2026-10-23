@@ -5,8 +5,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { getReview } from './review.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
-import { amendFinding, DISPOSITIONS, type Disposition } from './review-triage.ts'
-import { REVIEW_SEVERITY } from './review-vocabulary.ts'
+import { amendFinding } from './review-triage.ts'
+import { DISPOSITIONS, type Disposition, REVIEW_SEVERITY } from './review-vocabulary.ts'
 
 type ReviewFlags = { flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void }

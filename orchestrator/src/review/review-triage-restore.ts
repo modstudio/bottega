@@ -3,7 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { z } from 'zod'
 import { DB_PATH, writableDb, writeTransaction } from '../database/db.ts'
-import { amendFinding, DISPOSITIONS, type Disposition, triageValues } from './review-triage.ts'
+import { amendFinding, triageValues } from './review-triage.ts'
 import {
   decideTriageRestore,
   matchesTriageRestoreIdentity,
@@ -12,6 +12,7 @@ import {
   type TriageRestoreFinding,
   type TriageRestoreSource,
 } from './review-triage-restore-policy.ts'
+import { DISPOSITIONS, type Disposition } from './review-vocabulary.ts'
 
 type OutboxRow = { id: number; row_id: string; payload: string }
 type Candidate = TriageRestoreFinding

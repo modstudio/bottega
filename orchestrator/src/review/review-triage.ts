@@ -18,8 +18,6 @@ import {
   type ReviewSeverity,
 } from './review-vocabulary.ts'
 
-export { DISPOSITIONS, type Disposition } from './review-vocabulary.ts'
-
 /**
  * Initial safety floor. Re-set this from the observed triage distribution once
  * this repository has enough review data; until then the conservative value

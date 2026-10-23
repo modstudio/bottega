@@ -253,6 +253,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       './review-triage.ts',
       './review-triage-restore-policy.ts',
+      './review-vocabulary.ts',
     ],
     reason: 'Keep review-triage restoration in its SQLite adapter and pure policy.',
   },
@@ -260,7 +261,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-triage-restore-policy-boundary',
     file: 'orchestrator/src/review/review-triage-restore-policy.ts',
     allowed: [],
-    typeOnlyAllowed: ['./review-triage.ts'],
+    typeOnlyAllowed: ['./review-vocabulary.ts'],
     reason: 'Keep review-triage restore decisions independent of SQLite.',
   },
   {
