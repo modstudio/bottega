@@ -549,6 +549,7 @@ export const importBoundaries: ImportBoundary[] = [
       './database/db.ts',
       './evidence/unjudged-expiry.ts',
       './failure/failure.ts',
+      './judgment-closeout-refusal.ts',
       './score/duel.ts',
       './jobs/jobs.ts',
       './record/machine-identity.ts',
