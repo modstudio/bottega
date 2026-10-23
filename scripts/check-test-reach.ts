@@ -73,6 +73,7 @@ export function testReach(input: {
   rootTests: readonly string[]
   legs: readonly {
     testDirectories: readonly string[]
+    testPatterns: readonly string[]
     excludedTestDirectories: readonly string[]
     excludedTestPatterns: readonly string[]
   }[]
@@ -85,7 +86,8 @@ export function testReach(input: {
   const reachedByLeg = (file: string) =>
     input.legs.some(
       (leg) =>
-        leg.testDirectories.some((directory) => beneath(directory, file)) &&
+        (leg.testDirectories.some((directory) => beneath(directory, file)) ||
+          leg.testPatterns.some((pattern) => matchesPattern(pattern, file))) &&
         !leg.excludedTestDirectories.some((directory) => beneath(directory, file)) &&
         !leg.excludedTestPatterns.some((pattern) => matchesPattern(pattern, file)),
     )
