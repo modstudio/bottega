@@ -82,7 +82,7 @@ export function loadProvisioningReport(database: Database, options: ReportFilter
       r.provisioning_entries_limited entries_limited,r.provisioning_host_load host_load
       FROM run r JOIN project ON project.record_id=r.project_record_id
       WHERE r.provisioning_ms IS NOT NULL AND (? IS NULL OR project.name=?)
-      AND (? IS NULL OR r.started_at>=?)`,
+      AND (? IS NULL OR r.started_at>=?) AND (? IS NULL OR r.started_at<?)`,
     )
     .all(...filter.parameters) as {
     project: string
