@@ -7,7 +7,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
-import { writableDb } from '../database/db.ts'
+import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
@@ -463,7 +463,9 @@ function mergedPullRequestOutput(input: {
 }): PullRequestMergeOutcome {
   if (input.recordingError) {
     return {
-      output: `${input.mergeCommit}\n${input.recordingError}; cleanup was not run`,
+      output:
+        `pull request #${input.prNumber} merged as ${input.mergeCommit}\n` +
+        `${input.recordingError}; recover landing evidence with: ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr ${input.prNumber}; cleanup was not run`,
       exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
     }
   }
@@ -527,8 +529,10 @@ export function mergePullRequest(
   target: string,
   cwd = process.cwd(),
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
-  database: Database = writableDb(),
+  injectedDatabase?: Database,
 ): PullRequestMergeOutcome {
+  enableSchemaReload()
+  const database = injectedDatabase ?? writableDb()
   const project = projectAt(cwd, database)
   if (!project) {
     throw new Error(
