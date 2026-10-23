@@ -62,10 +62,9 @@ import { machineId } from '../record/machine-identity.ts'
 import { nextQuestionNumber } from '../run/question-number.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
-import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { runScratchDir } from '../run/run-artifacts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
@@ -291,7 +290,7 @@ function waitForGatePoll(ms: number, signal: AbortSignal, wait: (ms: number) => 
 function gateResultLogPaths(runId: string, executionId: number, artifactPath: string | null) {
   if (!artifactPath) return {}
   return {
-    outputPath: `${runScratchDir(runId, RUNS_DIR)}/gate-${executionId}.log`,
+    outputPath: `${runScratchDir(runId)}/gate-${executionId}.log`,
     artifactPath,
   }
 }

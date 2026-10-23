@@ -8,9 +8,14 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { noRepoIsolatePath, RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
+import {
+  noRepoIsolatePath,
+  RUNS_DIR,
+  runArtifactsDir,
+  runSandboxDir,
+  runScratchDir,
+} from '../run/run-artifacts.ts'
 import { chainTerminationAtForRoot } from '../run/run-chain.ts'
-import { runSandboxDir, runScratchDir } from '../run-owned-paths.ts'
 import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import {

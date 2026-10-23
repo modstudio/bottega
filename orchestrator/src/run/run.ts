@@ -65,7 +65,6 @@ import {
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
 import {
   type CodexMcpCatalogue,
   codexMcpSetupHeader,
@@ -91,7 +90,13 @@ import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
-import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
+import {
+  pruneRuns,
+  RUNS_DIR,
+  readDispatchState,
+  runFilePaths,
+  runScratchDir,
+} from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { callerWatch } from './run-caller-watch.ts'
@@ -502,7 +507,7 @@ export async function run(opts: {
       opts.job,
       selectAgentForTransport(requestedTransport, opts.agent),
       Buffer.byteLength(prompt) +
-        replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID, RUNS_DIR)) +
+        replyFileBytes(replySchemaName, runScratchDir(PROMPT_SIZE_RUN_RECORD_ID)) +
         (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
         (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
       true,

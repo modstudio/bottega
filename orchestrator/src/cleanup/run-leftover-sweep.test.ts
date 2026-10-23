@@ -6,8 +6,12 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { noRepoIsolatePath, RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
-import { runSandboxDir, runScratchDir } from '../run-owned-paths.ts'
+import {
+  noRepoIsolatePath,
+  runArtifactsDir,
+  runSandboxDir,
+  runScratchDir,
+} from '../run/run-artifacts.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import {
   keptRunLeftoverLines,
@@ -337,7 +341,7 @@ describe('scheduled run leftover sweep adapter', () => {
       status: 'ok',
       startedAt: old.toISOString(),
     })
-    const sandbox = runSandboxDir(runId, RUNS_DIR)
+    const sandbox = runSandboxDir(runId)
     const worktree = join(runsRoot(), 'held-worktree')
     directory(sandbox)
     directory(worktree)

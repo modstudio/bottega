@@ -7,8 +7,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import type { BranchPruneKeptReason } from '../branch/branch-state.ts'
 import { db } from '../database/db.ts'
 import type { HookTreeRemovalResult } from '../hook-tree/tree.ts'
-import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { formatShipCleanup, type ShipCleanupDependencies, shipCleanup } from './ship-cleanup.ts'
 
 function addProject(): string {
@@ -121,8 +120,8 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   const archiveRoot = mkdtempSync(join(tmpdir(), 'ship-cleanup-archive-'))
   const lensArchive = join(archiveRoot, 'lens')
   const lensPointer = join(runArtifactsDir(lens), 'reader-clone-archive.json')
-  mkdirSync(runScratchDir(lens, RUNS_DIR), { recursive: true })
-  writeFileSync(join(runScratchDir(lens, RUNS_DIR), 'scratch.txt'), 'scratch')
+  mkdirSync(runScratchDir(lens), { recursive: true })
+  writeFileSync(join(runScratchDir(lens), 'scratch.txt'), 'scratch')
   const removed = new Set<string>()
   const removedLandingTrees: string[] = []
   const closed: string[] = []
@@ -225,7 +224,7 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
   expect(formatShipCleanup(report)).toContain('reclaimed process: stopped /trees/root')
   expect(formatShipCleanup(report)).toContain('reclaimed Compose resource: stack:/trees/landing')
   expect(existsSync(runArtifactsDir(lens))).toBe(false)
-  expect(existsSync(runScratchDir(lens, RUNS_DIR))).toBe(false)
+  expect(existsSync(runScratchDir(lens))).toBe(false)
   expect(existsSync(lensArchive)).toBe(false)
   rmSync(archiveRoot, { recursive: true, force: true })
 })

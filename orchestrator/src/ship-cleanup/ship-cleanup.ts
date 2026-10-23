@@ -33,8 +33,7 @@ import {
   type RemovedTreeProcessCleanup,
   reclaimRemovedTreeProcesses,
 } from '../reclaim/orphan-process-reclaim.ts'
-import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { STORAGE_WALK_ENTRY_LIMIT, walkStoragePaths } from '../storage-walk.ts'
 import { removalWorkingDirectoryRefusal } from '../worktree/removal-working-directory.ts'
 import {
@@ -453,7 +452,7 @@ function removeRunStorage(
 ): void {
   const removable = decisions.filter((decision) => decision.artifacts === 'remove')
   const artifactPaths = removable.map((run) => runArtifactsDir(run.record_id))
-  const scratchPaths = removable.map((run) => runScratchDir(run.record_id, RUNS_DIR))
+  const scratchPaths = removable.map((run) => runScratchDir(run.record_id))
   let archivePaths: string[] = []
   try {
     archivePaths = [

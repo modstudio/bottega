@@ -32,7 +32,6 @@ import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
 import { type ArtifactPathEvent, recordRunWarning, runEventsPath } from '../events.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
   type ArtifactPathSource,
@@ -261,6 +260,9 @@ export function pruneRuns(dir: string): void {
   }
 }
 
+export const runScratchDir = (id: string, runsDir = RUNS_DIR): string =>
+  join(runsDir, String(id), 'scratch')
+
 export function prepareFiles(
   runsDir: string,
   recordId: string,
@@ -279,6 +281,10 @@ export function prepareFiles(
 
 export function noRepoIsolatePath(id: string, runsDir = RUNS_DIR): string {
   return join(runsDir, 'isolates', id)
+}
+
+export function runSandboxDir(id: string, runsDir = RUNS_DIR): string {
+  return join(runsDir, `sandbox-${id}`)
 }
 
 export const runArtifactsDir = (id: string, runsDir = RUNS_DIR): string =>
@@ -580,7 +586,7 @@ export function persistRunArtifacts(
   worktree: { path: string } | null,
   changes: { diff?: string } | null,
 ): void {
-  const scratch = runScratchDir(id, RUNS_DIR)
+  const scratch = runScratchDir(id)
   const artifacts = runArtifactsDir(id)
   const runDirectory = join(RUNS_DIR, id)
   mkdirSync(runDirectory, { recursive: true })

@@ -17,7 +17,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { appendRunEvent, readEventLog, runEventsPath } from '../events.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
 import {
   KEEP_RUN_FILES_DAYS,
   namedRunArtifactPaths,
@@ -29,6 +28,7 @@ import {
   reconcileRun,
   runArtifactsDir,
   runFilePaths,
+  runScratchDir,
   terminalRunArtifactPaths,
   writeDispatchState,
 } from './run-artifacts.ts'
@@ -178,8 +178,8 @@ describe('run file pruning', () => {
 test('artifacts are copied and listed', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-artifact-tree-'))
-  mkdirSync(runScratchDir(id, RUNS_DIR), { recursive: true })
-  writeFileSync(join(runScratchDir(id, RUNS_DIR), 'timing-table.txt'), 'file,ms\na,1\n')
+  mkdirSync(runScratchDir(id), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'timing-table.txt'), 'file,ms\na,1\n')
   writeFileSync(join(tree, 'named-evidence.txt'), 'failing test\n')
   try {
     persistRunArtifacts(
@@ -321,8 +321,8 @@ test('artifacts written before scratch persistence survive the run 12430 files_w
   mkdirSync(evidence, { recursive: true })
   writeFileSync(join(evidence, 'report.md'), 'measurements\n')
   writeFileSync(join(evidence, 'poster.png'), 'pixels\n')
-  mkdirSync(runScratchDir(id, RUNS_DIR), { recursive: true })
-  writeFileSync(join(runScratchDir(id, RUNS_DIR), 'reply.json'), '{}\n')
+  mkdirSync(runScratchDir(id), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'reply.json'), '{}\n')
   writeFileSync(join(tree, 'full-measurements.json'), '{}\n')
   try {
     expect(() =>
@@ -346,28 +346,28 @@ test('scratch entries replace collisions without removing other existing artifac
   mkdirSync(runArtifactsDir(id), { recursive: true })
   writeFileSync(join(runArtifactsDir(id), 'reply.json'), 'old\n')
   writeFileSync(join(runArtifactsDir(id), 'evidence.txt'), 'preserved\n')
-  mkdirSync(runScratchDir(id, RUNS_DIR), { recursive: true })
-  writeFileSync(join(runScratchDir(id, RUNS_DIR), 'reply.json'), 'new\n')
+  mkdirSync(runScratchDir(id), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'reply.json'), 'new\n')
 
   persistRunArtifacts(id, null, null, null)
 
   expect(readFileSync(join(runArtifactsDir(id), 'reply.json'), 'utf8')).toBe('new\n')
   expect(readFileSync(join(runArtifactsDir(id), 'evidence.txt'), 'utf8')).toBe('preserved\n')
-  expect(existsSync(runScratchDir(id, RUNS_DIR))).toBe(false)
+  expect(existsSync(runScratchDir(id))).toBe(false)
 })
 test('scratch directories merge recursively with existing artifact directories', () => {
   const id = addRun({ agent: 'codex', job: 'understand' })
   const evidence = join(runArtifactsDir(id), 'evidence')
   mkdirSync(evidence, { recursive: true })
   writeFileSync(join(evidence, 'before.txt'), 'before\n')
-  mkdirSync(join(runScratchDir(id, RUNS_DIR), 'evidence'), { recursive: true })
-  writeFileSync(join(runScratchDir(id, RUNS_DIR), 'evidence', 'after.txt'), 'after\n')
+  mkdirSync(join(runScratchDir(id), 'evidence'), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'evidence', 'after.txt'), 'after\n')
 
   persistRunArtifacts(id, null, null, null)
 
   expect(readFileSync(join(evidence, 'before.txt'), 'utf8')).toBe('before\n')
   expect(readFileSync(join(evidence, 'after.txt'), 'utf8')).toBe('after\n')
-  expect(existsSync(runScratchDir(id, RUNS_DIR))).toBe(false)
+  expect(existsSync(runScratchDir(id))).toBe(false)
 })
 test('a listed directory is copied recursively without following its symlinks', () => {
   const id = addRun({ agent: 'codex', job: 'understand' })
@@ -417,14 +417,14 @@ test('a scratch root replaced by a symlink is refused and its target is never co
   const id = addRun({ agent: 'codex', job: 'understand' })
   const outside = mkdtempSync(join(tmpdir(), 'orch-linked-scratch-root-'))
   writeFileSync(join(outside, 'secret.txt'), 'outside\n')
-  mkdirSync(join(runScratchDir(id, RUNS_DIR), '..'), { recursive: true })
-  symlinkSync(outside, runScratchDir(id, RUNS_DIR))
+  mkdirSync(join(runScratchDir(id), '..'), { recursive: true })
+  symlinkSync(outside, runScratchDir(id))
   try {
     expect(() => persistRunArtifacts(id, null, null, null)).toThrow('symlinked root')
     expect(existsSync(join(runArtifactsDir(id), 'secret.txt'))).toBe(false)
     expect(existsSync(join(outside, 'secret.txt'))).toBe(true)
   } finally {
-    rmSync(runScratchDir(id, RUNS_DIR), { force: true })
+    rmSync(runScratchDir(id), { force: true })
     rmSync(outside, { recursive: true, force: true })
   }
 })
@@ -450,12 +450,12 @@ test('all named artifacts are checked before copy failures are reported together
 })
 test('a listed scratch or artifacts path that was never written is still a failure', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })
-  mkdirSync(runScratchDir(id, RUNS_DIR), { recursive: true })
+  mkdirSync(runScratchDir(id), { recursive: true })
   expect(() =>
     persistRunArtifacts(
       id,
       artifactPaths(
-        join(runScratchDir(id, RUNS_DIR), 'never-written.json'),
+        join(runScratchDir(id), 'never-written.json'),
         join(runArtifactsDir(id), 'absent.md'),
       ),
       null,
@@ -466,8 +466,8 @@ test('a listed scratch or artifacts path that was never written is still a failu
 test('a reclaimed lens tree leaves its artifacts', () => {
   const id = addRun({ agent: 'codex', job: 'review-lens' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-lens-tree-'))
-  mkdirSync(runScratchDir(id, RUNS_DIR), { recursive: true })
-  writeFileSync(join(runScratchDir(id, RUNS_DIR), 'lens-note.txt'), 'covered\n')
+  mkdirSync(runScratchDir(id), { recursive: true })
+  writeFileSync(join(runScratchDir(id), 'lens-note.txt'), 'covered\n')
   persistRunArtifacts(id, null, { path: tree }, null)
   rmSync(tree, { recursive: true, force: true })
   expect(existsSync(runArtifactsDir(id))).toBe(true)
@@ -501,7 +501,7 @@ test('an artifact persistence failure cannot overwrite a concurrent operator sto
 
 test('the adapter retains selected scratch files and records every dropped byte', () => {
   const id = addRun({ agent: 'codex', job: 'diagnose' })
-  const scratch = runScratchDir(id, RUNS_DIR)
+  const scratch = runScratchDir(id)
   mkdirSync(join(scratch, 'repo', '.git'), { recursive: true })
   writeFileSync(join(scratch, 'repo', '.git', 'config'), 'git metadata')
   writeFileSync(join(scratch, 'repo', 'source.ts'), 'source')

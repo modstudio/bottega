@@ -3,8 +3,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { RUNS_DIR } from '../run/run-artifacts.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
+import { runScratchDir } from '../run/run-artifacts.ts'
 import { requestFocusedTests } from './focused-test-request.ts'
 import { focusedTestEligibility } from './focused-test-service.ts'
 
@@ -31,7 +30,7 @@ export function registerFocusedTestTool(input: {
         return input.text(
           await requestFocusedTests({
             runId: input.runId,
-            scratchDir: runScratchDir(input.runId, RUNS_DIR),
+            scratchDir: runScratchDir(input.runId),
             paths,
             signal: context.mcpReq.signal,
           }),

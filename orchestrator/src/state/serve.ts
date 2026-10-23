@@ -27,12 +27,11 @@ import { reviewCalibration } from '../review/review-calibration.ts'
 import { candidates, scoreboard } from '../route/route.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
-import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
-import { runScratchDir } from '../run-owned-paths.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 import { guide } from './guide.ts'
 
@@ -216,8 +215,7 @@ export function runDetail(
     output: read(row.output_path),
     ask_server: summarizeAskServer(
       existsSync(eventsPath) ? readEventLog(eventsPath) : null,
-      readAskServerFailure(runScratchDir(id, RUNS_DIR)) ??
-        readAskServerFailure(runArtifactsDir(id)),
+      readAskServerFailure(runScratchDir(id)) ?? readAskServerFailure(runArtifactsDir(id)),
     ),
     reviews: reviewsForRun(id),
     messages,
