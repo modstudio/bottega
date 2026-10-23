@@ -644,18 +644,6 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   })
 })
 
-test('a withheld pr-create exec carries the withheld flag and no pull request', () => {
-  const d = database()
-  d.query(
-    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,withheld)
-     VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'[withheld: secret-shaped content]','2026-09-01','exec',1)`,
-  ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(gather(d, { artifact: 'exec:1' })).toMatchObject({
-    exec: { withheld: true, output: '[withheld: secret-shaped content]' },
-  })
-  expect(gather(d, { artifact: 'exec:1' }).pullRequest).toBeUndefined()
-})
-
 test('a pr-create exec whose output URL cannot be judged is gathered as a condition', () => {
   const d = database()
   const other = 'https://github.com/acme/app/pull/16'
