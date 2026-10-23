@@ -26,7 +26,11 @@ const profileHooks = {
     { matcher: 'Agent|Task|Workflow', hooks: [handler('block-agent.py')] },
     {
       matcher: 'Bash',
-      hooks: [handler('no-attribution.py'), handler('git-guard.py', { if: 'Bash(git:*)' })],
+      hooks: [
+        handler('no-attribution.py'),
+        handler('bun-cache-guard.py'),
+        handler('git-guard.py', { if: 'Bash(git:*)' }),
+      ],
     },
   ],
   SubagentStart: [{ matcher: '*', hooks: [handler('block-agent.py')] }],
@@ -101,7 +105,7 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(16)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(17)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(3)
@@ -164,6 +168,7 @@ test('superseded handlers name exactly the removed profile entries', () => {
   expect(render(profileHooks).superseded).toEqual([
     { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
+    { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
     { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
     ...Array.from({ length: 2 }, () => ({
