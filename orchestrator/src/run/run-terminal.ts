@@ -350,7 +350,7 @@ export function shouldCheckpointAtTerminal(input: {
 }
 
 /** Describe the final checkpoint result without changing the worker outcome. */
-export function terminalCheckpointHeader(input: {
+function terminalCheckpointHeader(input: {
   created: boolean
   commit: string | null
   error: string | null

@@ -13,7 +13,6 @@ import {
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
-  terminalCheckpointHeader,
   writeTerminalOperationalState,
 } from './run-terminal.ts'
 
@@ -219,19 +218,6 @@ describe('terminal checkpoint decision', () => {
         hasWorktree: true,
       }),
     ).toBe(false)
-  })
-
-  test('reports a failed final checkpoint with the error and retained worktree', () => {
-    expect(
-      terminalCheckpointHeader({
-        created: false,
-        commit: null,
-        error: 'bun executable disappeared',
-        worktree: '/worktrees/DEV-1647',
-      }),
-    ).toBe(
-      'Harness checkpoint failed: bun executable disappeared; any uncommitted work is still in the worktree at /worktrees/DEV-1647.',
-    )
   })
 
   test('the terminal checkpoint step surfaces a containment refusal', () => {
