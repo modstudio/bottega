@@ -218,15 +218,35 @@ function focusedTestWaitCallbacks(input: { runId: string; progressPath: string }
   })
 }
 
-function startFocusedTest(input: {
+type FocusedTestStartInput = {
   runId: string
   scratchDir: string
   environment: Record<string, string>
   confinement: BrokerConfinement<SandboxRuntimeConfig>
   request: FocusedTestRequest
   registerActive: (terminate: () => Promise<void>) => () => void
+  onStart: (() => void) | undefined
   onFinish: (() => void) | undefined
-}): ActiveFocusedTest {
+}
+
+function registerFocusedTestExecution(
+  input: FocusedTestStartInput,
+  stop: () => Promise<void>,
+  completion: () => Promise<void>,
+): () => void {
+  input.onStart?.()
+  try {
+    return input.registerActive(async () => {
+      await stop()
+      await completion()
+    })
+  } catch (error) {
+    input.onFinish?.()
+    throw error
+  }
+}
+
+function startFocusedTest(input: FocusedTestStartInput): ActiveFocusedTest {
   const state: FocusedTestProcessState = {
     child: null,
     termination: null,
@@ -249,10 +269,7 @@ function startFocusedTest(input: {
     return state.termination
   }
   let completion!: Promise<void>
-  const unregister = input.registerActive(async () => {
-    await stop()
-    await completion
-  })
+  const unregister = registerFocusedTestExecution(input, stop, () => completion)
   completion = (async () => {
     const logName = `focused-test-${input.request.id}.log`
     const logPath = join(input.scratchDir, logName)
@@ -356,12 +373,12 @@ export function startFocusedTestBroker(input: {
       return
     }
     if (!request) return
-    input.onExecutionStart?.()
     const execution = startFocusedTest({
       ...input,
       confinement: input.confinement,
       request,
       registerActive: input.registerActive ?? (() => () => {}),
+      onStart: input.onExecutionStart,
       onFinish: input.onExecutionFinish,
     })
     active = execution

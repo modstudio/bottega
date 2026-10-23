@@ -50,7 +50,12 @@ export function startWorkerExecutionBrokers(input: {
       registerActive: registerLiveGate,
       onExecutionStart: ({ at }) => {
         input.onExecutionStart()
-        input.onGateStart(at)
+        try {
+          input.onGateStart(at)
+        } catch (error) {
+          input.onExecutionFinish()
+          throw error
+        }
       },
       onExecutionFinish: ({ at }) => {
         try {
