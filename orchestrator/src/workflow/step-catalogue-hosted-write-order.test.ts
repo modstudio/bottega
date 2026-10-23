@@ -229,7 +229,12 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
       }
     },
   })
-  expect((await promoteStepCatalogue(1, 'promote')).status).toBe('production')
+  expect(await promoteStepCatalogue(1, 'promote')).toEqual({
+    version: 1,
+    changedSpaces: [SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+  })
   expect(local.query('SELECT record_id FROM step_catalogue WHERE space_id=?').get(SPACE)).toEqual({
     record_id: ownerId,
   })

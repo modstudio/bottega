@@ -407,6 +407,11 @@ function sharedFixtureItems(table: string, current: SharedFixtureSpace): Record<
   return []
 }
 
+const secondFollowerShape = (currentProduction: boolean | undefined) =>
+  currentProduction
+    ? { productionVersion: 17, latestVersion: 17, distinctDefinitions: true }
+    : { productionVersion: 1, latestVersion: 1, distinctDefinitions: false }
+
 function installSharedPromotionFixture(
   options: {
     catalogueAdvance?: boolean
@@ -456,19 +461,21 @@ function installSharedPromotionFixture(
     options.currentProduction ? 'follower-session' : BUILT_IN_WORKFLOW_AUTHOR,
     options.currentProduction,
   )
-  if (options.secondFollower)
+  if (options.secondFollower) {
+    const second = secondFollowerShape(options.currentProduction)
     addSharedFixtureSpace(
       local,
       state,
       slug,
       definition,
       SECOND_FOLLOWER_SPACE,
-      17,
-      17,
+      second.productionVersion,
+      second.latestVersion,
       false,
       'second-follower-session',
-      true,
+      second.distinctDefinitions,
     )
+  }
 
   if (options.catalogueAdvance) {
     const source = state.get(SPACE)!
@@ -603,15 +610,50 @@ test('shared hosted promotion gives a follower the required catalogue before the
   ])
 })
 
-test('shared hosted promotion refuses before writing when a follower planned catalogue lacks a workflow step', async () => {
-  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
+test('shared hosted promotion skips an override whose catalogue cannot carry the workflow', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true, secondFollower: true })
   const followerCatalogue = fixture.state.get(FOLLOWER_SPACE)!.catalogueVersions[0]!
   const definition = JSON.parse(followerCatalogue.definition)
   definition.steps[0].title = 'Follower override'
   followerCatalogue.definition = JSON.stringify(definition)
 
+  expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({
+    version: 2,
+    changedSpaces: ['local', SPACE, SECOND_FOLLOWER_SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+    blockedByCatalogue: [
+      {
+        space: FOLLOWER_SPACE,
+        disposition: 'override',
+        plannedVersion: 1,
+        reason:
+          'invalid workflow definition:\n- mode "default" references missing step "new-shared-step"; add and promote that catalogue step, or edit the workflow mode',
+      },
+    ],
+  })
+  expect(fixture.calls).toEqual([
+    `catalogue-draft:${SECOND_FOLLOWER_SPACE}:test`,
+    `catalogue-promote:${SECOND_FOLLOWER_SPACE}:shared promotion: release`,
+    `promote:${SPACE}:shared promotion: release`,
+    `draft:${SECOND_FOLLOWER_SPACE}:seed two`,
+    `promote:${SECOND_FOLLOWER_SPACE}:shared promotion: release`,
+  ])
+  expect(fixture.state.get(FOLLOWER_SPACE)!.versions).toHaveLength(1)
+  expect(fixture.state.get(FOLLOWER_SPACE)!.versions[0]!.status).toBe('production')
+})
+
+test('shared hosted promotion refusal names the target catalogue plan before writing', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
+  const sourceCatalogue = fixture.state.get(SPACE)!.catalogueVersions[1]!
+  const definition = JSON.parse(sourceCatalogue.definition)
+  definition.steps = definition.steps.filter(
+    (step: { slug: string }) => step.slug !== 'new-shared-step',
+  )
+  sourceCatalogue.definition = JSON.stringify(definition)
+
   await expect(promoteWorkflow(fixture.slug, 2, 'release')).rejects.toThrow(
-    'references missing step "new-shared-step"',
+    'space local catalogue follower planned version 2 cannot carry the workflow: invalid workflow definition:\n- mode "default" references missing step "new-shared-step"',
   )
   expect(fixture.calls).toEqual([])
 })
