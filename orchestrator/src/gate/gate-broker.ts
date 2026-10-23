@@ -141,16 +141,16 @@ function gatePlan(runId: string): {
 }
 
 function requiredMainCheckout(environment: Record<string, string>, runId: string): string {
-  const mainCheckout = environment.ORCH_MAIN_CHECKOUT
+  const mainCheckout = environment.BOTTEGA_MAIN_CHECKOUT
   if (!mainCheckout) throw new Error(`run ${runId} has no recorded main checkout`)
   return mainCheckout
 }
 
 function operatorGitEnvironment(): NodeJS.ProcessEnv {
   const environment = scrubbedGitEnv(process.env)
-  delete environment.ORCH_RUN_ID
-  delete environment.ORCH_RUN_TOKEN
-  delete environment.ORCH_DEPTH
+  delete environment.BOTTEGA_RUN_ID
+  delete environment.BOTTEGA_RUN_TOKEN
+  delete environment.BOTTEGA_DEPTH
   return environment
 }
 

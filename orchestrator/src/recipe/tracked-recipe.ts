@@ -274,8 +274,8 @@ export function trackedHookBranch(input: {
 function renderedPlaceholder(name: string): string {
   if (name === 'main') return name
   if (name === 'tree_exists') return 'true'
-  if (name === 'index') return '$ORCH_INDEX'
-  if (name === 'label') return '$ORCH_RUN_LABEL'
+  if (name === 'index') return '$BOTTEGA_INDEX'
+  if (name === 'label') return '$BOTTEGA_RUN_LABEL'
   const allocation = name.match(/^(ports|db|alloc)\.(.+)$/)
   if (allocation) {
     return `$${allocationEnvironmentVariable(
@@ -345,9 +345,9 @@ export function recipeAllocationEnvironment(
   rootRunId?: string,
 ): Record<string, string> {
   const environment: Record<string, string> = {}
-  if (rootRunId !== undefined) environment.ORCH_RUN_LABEL = orchRunLabelForRun(rootRunId)
+  if (rootRunId !== undefined) environment.BOTTEGA_RUN_LABEL = orchRunLabelForRun(rootRunId)
   if (!allocations) return environment
-  environment.ORCH_INDEX = String(allocations.index)
+  environment.BOTTEGA_INDEX = String(allocations.index)
   for (const [name, port] of Object.entries(allocations.ports)) {
     environment[allocationEnvironmentVariable('ports', name)] = String(port)
   }

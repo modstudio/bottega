@@ -12,7 +12,7 @@ import {
   retireRecordWorkflow,
 } from './record-workflow-catalogue.ts'
 
-const url = process.env.ORCH_TEST_WORKFLOW_CATALOGUE_URL
+const url = process.env.BOTTEGA_TEST_WORKFLOW_CATALOGUE_URL
 const postgres = url ? describe : describe.skip
 const spaceId = newRecordId(),
   pagingSpaceId = newRecordId(),

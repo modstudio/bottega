@@ -6,8 +6,8 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 
-const validMigrationUrl = process.env.ORCH_TEST_BOARD_SHARED_SPACE_MIGRATION_URL
-const invalidMigrationUrl = process.env.ORCH_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL
+const validMigrationUrl = process.env.BOTTEGA_TEST_BOARD_SHARED_SPACE_MIGRATION_URL
+const invalidMigrationUrl = process.env.BOTTEGA_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL
 const realPostgres = validMigrationUrl && invalidMigrationUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const sharedSpaceMigration = '20261012210147_dev_1217_board_shared_spaces'

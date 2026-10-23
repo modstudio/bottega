@@ -64,8 +64,8 @@ export function registerPublicDocProofs(input: {
 
   test('public document designation commands honor tenant visibility under forced row security', async () => {
     const [sessionUserId, token, setToken] = input.session()
-    const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
-    if (!ownerUrl) throw new Error('ORCH_RECORD_MIGRATE_URL is required')
+    const ownerUrl = process.env.BOTTEGA_RECORD_MIGRATE_URL
+    if (!ownerUrl) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required')
     setToken(token)
     input.admin(`
       INSERT INTO membership (id, space_id, user_id, role, permission, created_at)

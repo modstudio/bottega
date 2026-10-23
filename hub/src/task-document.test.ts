@@ -25,15 +25,15 @@ const seed = (key: string, project: string) => {
 }
 
 describe('task documents', () => {
-  const previousHostedUrl = process.env.HUB_HOSTED_URL
+  const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
 
   beforeAll(() => {
-    delete process.env.HUB_HOSTED_URL
+    delete process.env.BOTTEGA_HOSTED_URL
   })
   beforeEach(resetFixtureStore)
   afterAll(() => {
-    if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
-    else process.env.HUB_HOSTED_URL = previousHostedUrl
+    if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+    else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
   })
 
   test('creates, updates with versioning, and deletes a local document', async () => {

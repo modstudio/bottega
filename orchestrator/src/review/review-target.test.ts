@@ -108,13 +108,13 @@ describe('review target', () => {
 
   test('preflight distinguishes plain, resolved, and already-reserved implicit targets', () => {
     const repo = mkdtempSync(join(tmpdir(), 'implicit-review-preflight-'))
-    const priorDepth = process.env.ORCH_DEPTH
+    const priorDepth = process.env.BOTTEGA_DEPTH
     const git = (...args: string[]) => {
       const result = spawnFixtureGitSync(args, { cwd: repo })
       if (result.exitCode !== 0) throw new Error(result.stderr.toString())
     }
     try {
-      process.env.ORCH_DEPTH = '0'
+      process.env.BOTTEGA_DEPTH = '0'
       git('init', '-b', 'main')
       git('config', 'user.name', 'Fixture')
       git('config', 'user.email', 'fixture@example.com')
@@ -164,8 +164,8 @@ describe('review target', () => {
         before,
       )
     } finally {
-      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-      else process.env.ORCH_DEPTH = priorDepth
+      if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+      else process.env.BOTTEGA_DEPTH = priorDepth
       rmSync(repo, { recursive: true, force: true })
     }
   })

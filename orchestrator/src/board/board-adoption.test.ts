@@ -22,7 +22,7 @@ import { postNotice, withdrawNotice } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z')
-const ENV = { CLAUDE_CODE_SESSION_ID: 'reader', ORCH_RECORD_API_URL: 'https://record.test' }
+const ENV = { CLAUDE_CODE_SESSION_ID: 'reader', BOTTEGA_RECORD_API_URL: 'https://record.test' }
 
 function presence(session = 'reader', lastSeen = NOW) {
   db()

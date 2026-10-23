@@ -29,12 +29,12 @@ import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { importProjects, projectImportRecordId } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 
-const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
-const databaseUrl = process.env.ORCH_TEST_POSTGRES_URL
-const migrateUrl = process.env.ORCH_RECORD_MIGRATE_URL
-const actorUrl = process.env.ORCH_RECORD_URL
-const sourceOrchDb = process.env.ORCH_TEST_SOURCE_ORCH_DB
-const sourceHubDb = process.env.ORCH_TEST_SOURCE_HUB_DB
+const container = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+const databaseUrl = process.env.BOTTEGA_TEST_POSTGRES_URL
+const migrateUrl = process.env.BOTTEGA_RECORD_MIGRATE_URL
+const actorUrl = process.env.BOTTEGA_RECORD_URL
+const sourceOrchDb = process.env.BOTTEGA_TEST_SOURCE_ORCH_DB
+const sourceHubDb = process.env.BOTTEGA_TEST_SOURCE_HUB_DB
 const realPostgres =
   container && databaseUrl && migrateUrl && actorUrl && sourceOrchDb && sourceHubDb
     ? describe
@@ -156,12 +156,12 @@ realPostgres('project import against copied live SQLite data', () => {
     apiServer = await startRecordApiServer({
       ...process.env,
       PORT: '0',
-      ORCH_RECORD_URL: actorUrl!,
+      BOTTEGA_RECORD_URL: actorUrl!,
       RECORD_AUTH_DATABASE_URL: process.env.RECORD_AUTH_DATABASE_URL ?? actorUrl!,
       BETTER_AUTH_URL: 'http://127.0.0.1',
       RECORD_HUB_URL: 'http://127.0.0.1',
     })
-    process.env.ORCH_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
+    process.env.BOTTEGA_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
     installRecordApiClient(null)
   })
 
@@ -170,7 +170,7 @@ realPostgres('project import against copied live SQLite data', () => {
   afterAll(async () => {
     await apiServer?.stop(true)
     installRecordSessionRunner(null)
-    delete process.env.ORCH_RECORD_API_URL
+    delete process.env.BOTTEGA_RECORD_API_URL
     delete process.env.BETTER_AUTH_SECRET
     await sql.unsafe(
       'DROP TABLE IF EXISTS run_exclusion, run_score, doc_revision, doc, membership, machine, seq, project, "user", space CASCADE',

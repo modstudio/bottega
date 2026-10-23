@@ -20,7 +20,7 @@ import { basename, dirname, join, resolve } from 'node:path'
  * this invocation, not a cleanliness verdict.
  */
 
-const ORCH_ROUTING = ['ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF'] as const
+const ORCH_ROUTING = ['BOTTEGA_GUARDED_GIT_COMMON_DIR', 'BOTTEGA_ALLOWED_GIT_REF'] as const
 
 let listedLocalEnvVars: string[] | undefined
 

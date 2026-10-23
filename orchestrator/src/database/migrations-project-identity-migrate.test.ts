@@ -14,12 +14,12 @@ import {
 import { migratedTestDatabase, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const CONTRACT = '0115_project_identity_contract'
-const priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
+const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 
 afterEach(() => {
   installRecordApiClient(null)
-  if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
+  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
 })
 
 function preContractProject(database: Database, recordId: string | null): void {
@@ -29,7 +29,7 @@ function preContractProject(database: Database, recordId: string | null): void {
 }
 
 test('the real two-phase migrate mints locally before contracting without hosting', async () => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   const database = migrationBoundaryTestDatabase(CONTRACT)
   try {
     preContractProject(database, null)
@@ -58,7 +58,7 @@ test('the real two-phase migrate mints locally before contracting without hostin
 })
 
 test('the real two-phase migrate skips authority and network when no identity is missing', async () => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   const database = migrationBoundaryTestDatabase(CONTRACT)
   try {
     preContractProject(database, '01990000-0000-7000-8000-000000001214')
@@ -81,7 +81,7 @@ test('the real two-phase migrate skips authority and network when no identity is
 })
 
 test('the real two-phase migrate refuses unreachable hosting before contraction', async () => {
-  process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
   const database = migrationBoundaryTestDatabase(CONTRACT)
   try {
     preContractProject(database, null)

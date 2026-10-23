@@ -113,7 +113,7 @@ describe('thin output warning', () => {
     const directory = mkdtempSync(join(tmpdir(), 'orch-expiring-thin-'))
     const output = join(directory, 'answer.txt')
     writeFileSync(output, 'x'.repeat(600))
-    process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT = output
+    process.env.BOTTEGA_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT = output
     try {
       expect(
         thinOutputWarning({
@@ -127,7 +127,7 @@ describe('thin output warning', () => {
       ).toBeNull()
       expect(existsSync(output)).toBe(false)
     } finally {
-      delete process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT
+      delete process.env.BOTTEGA_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT
       rmSync(directory, { recursive: true, force: true })
     }
   })

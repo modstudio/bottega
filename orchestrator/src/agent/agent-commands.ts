@@ -129,7 +129,7 @@ function addCommand(name: string, argv: string[], presentation: Presentation): v
     const configured = modelHostModel().trim()
     if (!configured)
       throw new Error(
-        'agent add requires --model or ORCH_MODEL_HOST_MODEL\ncleared by: pass --model or set ORCH_MODEL_HOST_MODEL',
+        'agent add requires --model or BOTTEGA_MODEL_HOST_MODEL\ncleared by: pass --model or set BOTTEGA_MODEL_HOST_MODEL',
       )
     input.model = configured
   }

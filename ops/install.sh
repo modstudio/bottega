@@ -87,9 +87,9 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/doc
 
 remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
 
-if [[ -z "${HUB_HOSTED_URL:-}" ]]; then
+if [[ -z "${BOTTEGA_HOSTED_URL:-}" ]]; then
   hosted_labels="$(grep -l "__HUB_HOSTED_URL__" "$CONCERN"/launchd/*.plist.template | xargs -n1 basename | sed 's/\.plist\.template$//' | paste -sd ' ' -)"
-  echo "warning: HUB_HOSTED_URL is unset for ${hosted_labels}; set HUB_HOSTED_URL and rerun ops/install.sh" >&2
+  echo "warning: BOTTEGA_HOSTED_URL is unset for ${hosted_labels}; set BOTTEGA_HOSTED_URL and rerun ops/install.sh" >&2
 fi
 
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
@@ -153,7 +153,13 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       -e "s#__RECORD_TUNNEL_APP__#${RECORD_TUNNEL_APP}#g" \
       -e "s#__RECORD_TUNNEL_LOCAL_PORT__#${RECORD_TUNNEL_LOCAL_PORT}#g" \
       -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" \
-      -e "s#__HUB_HOSTED_URL__#${HUB_HOSTED_URL:-}#g" "$tmpl" > "$target"
+      -e "s#__HUB_HOSTED_URL__#${BOTTEGA_HOSTED_URL:-}#g" "$tmpl" > "$target"
+
+  if ! bun --no-env-file "$INSTALL_ROOT/orchestrator/src/setup/environment-name-migration.ts" check-file "$target"; then
+    echo "refusing installed plist with a legacy environment name: $target" >&2
+    FAILED_LABELS+=("$label")
+    continue
+  fi
 
   # Load it. A label that still will not load is reported and the rest continue.
   if bootstrap_with_retry "$target"; then

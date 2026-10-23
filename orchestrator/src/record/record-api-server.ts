@@ -130,7 +130,7 @@ function recordApiServerConfig(environment: ServerEnvironment = process.env) {
   }
   return {
     port,
-    recordUrl: required(environment, 'ORCH_RECORD_URL'),
+    recordUrl: required(environment, 'BOTTEGA_RECORD_URL'),
     authDatabaseUrl: required(environment, 'RECORD_AUTH_DATABASE_URL'),
     authSecret: required(environment, 'BETTER_AUTH_SECRET'),
     authUrl: required(environment, 'BETTER_AUTH_URL'),

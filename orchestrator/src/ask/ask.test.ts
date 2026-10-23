@@ -46,11 +46,11 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>): string {
 }
 
 beforeEach(() => {
-  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 })
 afterEach(() => {
   installRecordApiClient(null)
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 
 describe('the live ask channel always answers', () => {

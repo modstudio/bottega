@@ -7,11 +7,11 @@ export function recordAskProxyFailure(error: unknown, scratchDir?: string): unkn
 }
 
 export async function main(_argv: string[] = []): Promise<number> {
-  const value = process.env.ORCH_ASK_URL
-  if (!value) throw new Error('ORCH_ASK_URL is required')
+  const value = process.env.BOTTEGA_ASK_URL
+  if (!value) throw new Error('BOTTEGA_ASK_URL is required')
   const url = new URL(value)
   if (url.protocol !== 'tcp:' || url.hostname !== '127.0.0.1' || !url.port) {
-    throw new Error('ORCH_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
+    throw new Error('BOTTEGA_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
   }
 
   const socket = createConnection({ host: '127.0.0.1', port: Number(url.port) })

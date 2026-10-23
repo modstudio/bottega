@@ -441,11 +441,11 @@ describe('tracked recipe execution', () => {
     }
     expect(renderTrackedRecipeNotes(recipe, '/main')).toBe(
       'serve mode default:\n' +
-        '  bun /main/app.ts $ORCH_INDEX true   default web\n' +
+        '  bun /main/app.ts $BOTTEGA_INDEX true   default web\n' +
         '  stop: kill <branch>\n' +
         'serve mode preview:\n' +
-        '  serve <path> $ORCH_PORTS_HUB   preview web\n' +
-        '  stop: stop $ORCH_ALLOC_TOKEN\n' +
+        '  serve <path> $BOTTEGA_PORTS_HUB   preview web\n' +
+        '  stop: stop $BOTTEGA_ALLOC_TOKEN\n' +
         'NEVER verify against a server you did not start for this worktree. Borrowing one\n' +
         'tests a different branch and PASSES, which is worse than failing.',
     )
@@ -542,13 +542,13 @@ describe('tracked recipe execution', () => {
         rootId,
       ),
     ).toEqual({
-      ORCH_RUN_LABEL: `orch.run=${rootRecordId}`,
-      ORCH_INDEX: '4',
-      ORCH_PORTS_HUB: '21003',
-      ORCH_PORTS_API_V2: '21004',
-      ORCH_DB_APP: 'app_4',
-      ORCH_DB_AUDIT: 'audit_4',
-      ORCH_ALLOC_TOKEN: 'tree-4',
+      BOTTEGA_RUN_LABEL: `orch.run=${rootRecordId}`,
+      BOTTEGA_INDEX: '4',
+      BOTTEGA_PORTS_HUB: '21003',
+      BOTTEGA_PORTS_API_V2: '21004',
+      BOTTEGA_ORCHESTRATOR_DB_APP: 'app_4',
+      BOTTEGA_ORCHESTRATOR_DB_AUDIT: 'audit_4',
+      BOTTEGA_ALLOC_TOKEN: 'tree-4',
     })
   })
 
@@ -611,8 +611,8 @@ describe('tracked recipe execution', () => {
       .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(rootId)!.record_id
     expect(trackedRecipeEnvironment(turnId)).toMatchObject({
-      ORCH_RUN_LABEL: `orch.run=${rootRecordId}`,
-      ORCH_INDEX: '6',
+      BOTTEGA_RUN_LABEL: `orch.run=${rootRecordId}`,
+      BOTTEGA_INDEX: '6',
     })
     expect(turnId).not.toBe(rootId)
   })

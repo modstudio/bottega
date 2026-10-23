@@ -73,7 +73,7 @@ The check creates the `record_owner`, `record_actor`, `record_auth`, and `record
 
 1. Stop every writer, including the record API and direct CLI syncs. Preserve the current database and role credentials until the replacement has been validated.
 2. Restore into a new scratch database first with `restore-check.sh`. Compare the printed row counts with the source or the last known healthy report.
-3. As the PostgreSQL cluster administrator, ensure the login roles `record_owner`, `record_actor`, `record_auth`, and `record_reader` exist. Create an empty replacement database owned by `record_owner`; then run `ALTER SCHEMA public OWNER TO record_owner` in it. The owner connection belongs in `ORCH_RECORD_MIGRATE_URL`; application traffic must continue to use `record_actor` through `ORCH_RECORD_URL`.
+3. As the PostgreSQL cluster administrator, ensure the login roles `record_owner`, `record_actor`, `record_auth`, and `record_reader` exist. Create an empty replacement database owned by `record_owner`; then run `ALTER SCHEMA public OWNER TO record_owner` in it. The owner connection belongs in `BOTTEGA_RECORD_MIGRATE_URL`; application traffic must continue to use `record_actor` through `BOTTEGA_RECORD_URL`.
 4. Restore the archive with the PostgreSQL 18 client and fail on the first error:
 
    ```sh

@@ -32,7 +32,7 @@ async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<
   const principals = await postgres`SELECT current_user AS principal`
   if (principals[0]?.principal === RECORD_OWNER_ROLE)
     throw new Error(
-      `record ${operation} refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
+      `record ${operation} refuses ${RECORD_OWNER_ROLE} credentials; set BOTTEGA_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
     )
 }
 
@@ -62,7 +62,7 @@ export type RecordDoctorFacts = {
 
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
 const API_REACHABILITY_REMEDY =
-  'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry'
+  'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
 
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
@@ -447,7 +447,7 @@ async function operatorRecordChecks(input: {
       checks.push({
         name,
         status: 'skipped',
-        detail: 'ORCH_RECORD_MIGRATE_URL not set',
+        detail: 'BOTTEGA_RECORD_MIGRATE_URL not set',
       })
     return checks
   }
@@ -505,7 +505,7 @@ export async function diagnoseRecord(
   const database = db()
   const projects = input.projects ?? []
   const customer = await customerFacts(projects, database)
-  const recordUrl = input.recordUrl ?? process.env.ORCH_RECORD_URL
+  const recordUrl = input.recordUrl ?? process.env.BOTTEGA_RECORD_URL
   let operatorChecks: RecordDoctorCheck[] | undefined
   if (recordUrl) {
     const active = customer.memberships.find(
@@ -521,7 +521,7 @@ export async function diagnoseRecord(
         : null
     operatorChecks = await operatorRecordChecks({
       recordUrl,
-      migrateUrl: input.migrateUrl ?? process.env.ORCH_RECORD_MIGRATE_URL,
+      migrateUrl: input.migrateUrl ?? process.env.BOTTEGA_RECORD_MIGRATE_URL,
       identity,
       projects,
       database,

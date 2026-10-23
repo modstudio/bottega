@@ -49,6 +49,7 @@ export type SetupAction =
       path: string
       target: string
     }
+  | { kind: 'migrate-environment' }
 
 export function setupActionChangesMachine(action: SetupAction): boolean {
   switch (action.kind) {
@@ -57,6 +58,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'register-mcp':
     case 'migrate-mcp-config':
     case 'remove-legacy-symlink':
+    case 'migrate-environment':
       return true
     case 'unchanged':
     case 'mcp-unchanged':
@@ -73,6 +75,8 @@ export function setupActionLine(action: SetupAction): string {
       return `Migrate MCP names in ${action.path}`
     case 'remove-legacy-symlink':
       return `Remove leftover ${action.path} symlink`
+    case 'migrate-environment':
+      return 'Migrate operator environment names'
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -218,7 +222,13 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     path: link.path,
     target: link.target,
   }))
-  return [...registrations, ...migrations, ...legacySymlinks, ...projects]
+  return [
+    { kind: 'migrate-environment' },
+    ...registrations,
+    ...migrations,
+    ...legacySymlinks,
+    ...projects,
+  ]
 }
 
 export function recommendedAnswers(plan: SetupPlan): SetupAnswers {

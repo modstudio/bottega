@@ -8,19 +8,19 @@ import { createSetupService } from '../setup/setup-service.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 
 const folder = process.cwd()
-const priorRunId = process.env.ORCH_RUN_ID
-const priorDepth = process.env.ORCH_DEPTH
+const priorRunId = process.env.BOTTEGA_RUN_ID
+const priorDepth = process.env.BOTTEGA_DEPTH
 
 beforeEach(() => {
-  delete process.env.ORCH_RUN_ID
-  delete process.env.ORCH_DEPTH
+  delete process.env.BOTTEGA_RUN_ID
+  delete process.env.BOTTEGA_DEPTH
 })
 
 afterEach(() => {
-  if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-  else process.env.ORCH_RUN_ID = priorRunId
-  if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = priorDepth
+  if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+  else process.env.BOTTEGA_RUN_ID = priorRunId
+  if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+  else process.env.BOTTEGA_DEPTH = priorDepth
 })
 
 const question: SetupQuestion = {
@@ -133,7 +133,8 @@ describe('setup MCP tools', () => {
 
     expect(planCalls).toBe(1)
     expect(applied).toHaveLength(1)
-    expect(outcome.actions[0]).toMatchObject({
+    expect(outcome.actions[0]).toEqual({ kind: 'migrate-environment' })
+    expect(outcome.actions[1]).toMatchObject({
       kind: 'add',
       name: 'alpha',
       settings: { keyPrefixes: ['ALPHA'] },
@@ -149,7 +150,7 @@ describe('setup MCP tools', () => {
     expect(result.structuredContent).toEqual({
       questions: [question],
       notices: [{ message: 'One harness is signed out.', fix: 'Sign in to that harness.' }],
-      changes: [`Add project alpha (${folder}/alpha)`],
+      changes: ['Migrate operator environment names', `Add project alpha (${folder}/alpha)`],
     })
   })
 
@@ -199,11 +200,13 @@ describe('setup MCP tools', () => {
     expect(result.isError).not.toBe(true)
     expect(applied).toHaveLength(1)
     expect(applied[0]).toEqual([
+      { kind: 'migrate-environment' },
       expect.objectContaining({ kind: 'add', name: 'alpha', settings: { keyPrefixes: ['ALT'] } }),
       expect.objectContaining({ kind: 'unchanged', name: 'ready' }),
     ])
     expect(result.structuredContent).toEqual({
       actions: [
+        { line: 'Migrate operator environment names', status: 'applied', message: null },
         { line: `Add project alpha (${folder}/alpha)`, status: 'applied', message: null },
         { line: `Project ready (${folder}/ready)`, status: 'applied', message: null },
       ],
@@ -252,7 +255,7 @@ describe('setup MCP tools', () => {
   })
 
   test.each(['setup_plan', 'setup_apply'])('%s refuses a worker-marked caller', async (name) => {
-    process.env.ORCH_RUN_ID = '123'
+    process.env.BOTTEGA_RUN_ID = '123'
     const toolArguments =
       name === 'setup_plan'
         ? { folders: [folder] }

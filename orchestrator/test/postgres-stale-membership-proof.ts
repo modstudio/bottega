@@ -21,7 +21,7 @@ export function registerStaleMembershipProof(input: {
     const server = await startRecordApiServer({
       ...process.env,
       PORT: '0',
-      ORCH_RECORD_URL: input.actorUrl,
+      BOTTEGA_RECORD_URL: input.actorUrl,
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
       BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
       RECORD_HUB_URL: 'http://127.0.0.1',

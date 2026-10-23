@@ -301,8 +301,8 @@ export async function fileIssue(
   let worker: WorkerReporter | null = null
   let reporterId: string | number = session ?? ''
   if (reporter.kind === 'session' && !session) {
-    const runId = resolveRunIdentifier(db(), process.env.ORCH_RUN_ID ?? '')
-    const token = process.env.ORCH_RUN_TOKEN ?? ''
+    const runId = resolveRunIdentifier(db(), process.env.BOTTEGA_RUN_ID ?? '')
+    const token = process.env.BOTTEGA_RUN_TOKEN ?? ''
     if (!strictlyAuthenticatedWorkerRun(runId, token)) {
       throw new Error('cannot file issue: the reporting session is not available')
     }
@@ -1016,7 +1016,7 @@ export function createDocsMcpServer(): McpServer {
       }),
     },
     async (input) => {
-      if (process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH) {
+      if (process.env.BOTTEGA_RUN_ID || process.env.BOTTEGA_DEPTH) {
         throw new Error(
           `Worker note filing is available only through the ${WORKER_MCP_SERVER_NAME} note tool; do not retry this ${MCP_SERVER_NAME} MCP tool.`,
         )

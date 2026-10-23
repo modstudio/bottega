@@ -53,7 +53,7 @@ function confinementReportCommand(flags: CliFlags): void {
       transport: agent.defaultTransport,
     })),
     parentEnvNames: Object.keys(process.env),
-    sandboxOverride: process.env.ORCH_SANDBOX,
+    sandboxOverride: process.env.BOTTEGA_SANDBOX,
     srtDenyRead: lens.denyRead,
     envFilePaths: lens.envFilePaths,
     keychainPaths: lens.keychainPaths,

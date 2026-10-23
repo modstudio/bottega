@@ -146,7 +146,7 @@ export async function measureRunStorage(
 }
 
 function measureVolume(environment: NodeJS.ProcessEnv = process.env): StorageVolume {
-  const path = environment.ORCH_DB
+  const path = environment.BOTTEGA_ORCHESTRATOR_DB
     ? dirname(resolveOrchestratorDatabase(environment))
     : resolveStateRoot(environment)
   try {

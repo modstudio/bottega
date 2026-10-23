@@ -37,7 +37,7 @@ afterEach(() => {
 function userCanonHomesFromEnvironment(env: NodeJS.ProcessEnv): UserCanonHomeTarget[] {
   return resolveUserCanonHomesFromEnvironment(
     env,
-    env.ORCH_RUNS ?? join(env.HOME!, 'orchestrator-runs'),
+    env.BOTTEGA_RUNS ?? join(env.HOME!, 'orchestrator-runs'),
   )
 }
 
@@ -584,7 +584,7 @@ describe('Codex and Grok home canon files', () => {
     const runs = join(root, 'orchestrator-runs')
     const homes = userCanonHomesFromEnvironment({
       HOME: root,
-      ORCH_RUNS: runs,
+      BOTTEGA_RUNS: runs,
       CODEX_HOME: join(runs, '41', 'codex'),
       GROK_HOME: join(runs, '41', 'grok'),
     })

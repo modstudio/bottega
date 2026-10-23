@@ -21,7 +21,7 @@ export function resolveTranscriptRoot(resolved: string): TranscriptRoot {
 
 /** Build the refusal for a resolved transcript root that cannot be read. */
 export function unreadableTranscriptRootMessage(path: string): string {
-  return `Cannot read hub.transcript_root ${path}; set HUB_TRANSCRIPT_ROOT to a readable path or set HUB_TRANSCRIPT_ROOT="" to disable transcript ingest`
+  return `Cannot read hub.transcript_root ${path}; set BOTTEGA_TRANSCRIPT_ROOT to a readable path or set BOTTEGA_TRANSCRIPT_ROOT="" to disable transcript ingest`
 }
 
 /** Every .jsonl transcript under a root. */

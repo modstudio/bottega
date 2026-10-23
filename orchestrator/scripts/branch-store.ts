@@ -24,7 +24,10 @@ export function classifyStore(path: string | null, folder = MIGRATIONS_FOLDER): 
 }
 
 export function liveStorePath(): string | null {
-  if (process.env.ORCH_DB) return existsSync(process.env.ORCH_DB) ? process.env.ORCH_DB : null
+  if (process.env.BOTTEGA_ORCHESTRATOR_DB)
+    return existsSync(process.env.BOTTEGA_ORCHESTRATOR_DB)
+      ? process.env.BOTTEGA_ORCHESTRATOR_DB
+      : null
   for (const path of [DATABASE_RESOLUTION.mainStorePath, DATABASE_RESOLUTION.path]) {
     if (path && existsSync(path)) return path
   }
@@ -32,8 +35,8 @@ export function liveStorePath(): string | null {
 }
 
 export function withBranchStoreScratch<T>(name: string, fn: (dir: string) => T): T {
-  const base = process.env.ORCH_SCRATCH
-    ? join(process.env.ORCH_SCRATCH, name)
+  const base = process.env.BOTTEGA_SCRATCH
+    ? join(process.env.BOTTEGA_SCRATCH, name)
     : join(tmpdir(), `orch-${name}`)
   mkdirSync(base, { recursive: true })
   const dir = mkdtempSync(join(base, 'store-'))

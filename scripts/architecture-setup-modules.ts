@@ -24,6 +24,8 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './repository-facts.ts',
       './setup-apply.ts',
       './setup-engine.ts',
+      './setup-environment.ts',
+      './setup-environment-runtime.ts',
       './setup-facts.ts',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
@@ -35,6 +37,22 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep shared setup assembly and application independent of CLI and MCP presentation grammar.',
+  },
+  {
+    name: 'setup-environment-boundary',
+    file: 'orchestrator/src/setup/setup-environment.ts',
+    allowed: [
+      'node:fs/promises',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../../../shared/config-directory.ts',
+      '../../../shared/config-client.ts',
+      './environment-name-migration.ts',
+      '../config/config-service.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep environment migration decisions and operator-file writes independent of setup planning and presentation.',
   },
   {
     name: 'setup-registration-write-boundary',

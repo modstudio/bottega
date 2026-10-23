@@ -34,11 +34,11 @@ const target = z.union([
 type ClientFactory = (context: Context) => RecordClient
 
 function defaultClient(context: Context): RecordClient {
-  const baseUrl = process.env.HUB_RECORD_API_URL
+  const baseUrl = process.env.BOTTEGA_RECORD_API_URL
   if (!baseUrl) {
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'HUB_RECORD_API_URL is required',
+      message: 'BOTTEGA_RECORD_API_URL is required',
     })
   }
   return createRecordClient({

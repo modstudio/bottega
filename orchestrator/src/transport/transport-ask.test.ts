@@ -51,7 +51,7 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
 
   test(`ACP reports exactly the ${WORKER_MCP_SERVER_NAME} session server it would register`, () => {
     const command = configuredAcpAsk(
-      opts(BUILTIN_AGENTS.codex!, { ORCH_RUN_ID: '42', ORCH_RUN_TOKEN: 'token' }),
+      opts(BUILTIN_AGENTS.codex!, { BOTTEGA_RUN_ID: '42', BOTTEGA_RUN_TOKEN: 'token' }),
     )
     expect(command).toEqual({ kind: 'command', argv: bottegaEntryArgv('ask-server') })
     expect(configuredAcpAsk(opts(BUILTIN_AGENTS.codex!, {}))).toBeNull()
@@ -61,9 +61,9 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
     expect(
       configuredAcpAsk({
         ...opts(BUILTIN_AGENTS.codex!, {
-          ORCH_RUN_ID: '42',
-          ORCH_RUN_TOKEN: 'token',
-          ORCH_ASK_URL: 'http://127.0.0.1:43127/mcp',
+          BOTTEGA_RUN_ID: '42',
+          BOTTEGA_RUN_TOKEN: 'token',
+          BOTTEGA_ASK_URL: 'http://127.0.0.1:43127/mcp',
         }),
         writingAcp: true,
         ask: { kind: 'endpoint', url: 'http://127.0.0.1:43127/mcp' },
@@ -82,8 +82,8 @@ describe(`configured ${WORKER_MCP_SERVER_NAME} transport evidence`, () => {
         configuredAcpAsk(
           opts(BUILTIN_AGENTS.grok!, {
             GROK_HOME: root,
-            ORCH_RUN_ID: '42',
-            ORCH_RUN_TOKEN: 'token',
+            BOTTEGA_RUN_ID: '42',
+            BOTTEGA_RUN_TOKEN: 'token',
           }),
         ),
       ).toEqual({ kind: 'command', argv: ['/old/bun', '/old/orch', 'ask-server'] })

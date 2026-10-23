@@ -6,14 +6,14 @@ import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { detach } from './run-dispatch.ts'
 
-const originalDepth = process.env.ORCH_DEPTH
+const originalDepth = process.env.BOTTEGA_DEPTH
 afterEach(() => {
-  if (originalDepth === undefined) delete process.env.ORCH_DEPTH
-  else process.env.ORCH_DEPTH = originalDepth
+  if (originalDepth === undefined) delete process.env.BOTTEGA_DEPTH
+  else process.env.BOTTEGA_DEPTH = originalDepth
 })
 
 test('two detached runs never share prompt or coordinator files', async () => {
-  process.env.ORCH_DEPTH = '0'
+  process.env.BOTTEGA_DEPTH = '0'
   let pid = 4_200_000
   const fakeSpawn = (() => {
     const child = new EventEmitter() as ChildProcess

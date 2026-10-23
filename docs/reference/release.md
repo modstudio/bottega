@@ -52,7 +52,7 @@ list recorded releases for a project
 
 **Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--behind-trunk <reason>] [--json]`
 
-run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH_RELEASE_COMMIT set, plus ORCH_RELEASE_ROLLBACK set to 1 on a deliberate rollback
+run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback
 
 ### Options
 

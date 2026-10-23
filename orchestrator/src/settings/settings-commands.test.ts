@@ -22,12 +22,12 @@ import {
 
 const roots: string[] = []
 const priorHome = process.env.HOME
-const priorApiUrl = process.env.ORCH_RECORD_API_URL
+const priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
 afterEach(() => {
   if (priorHome === undefined) delete process.env.HOME
   else process.env.HOME = priorHome
-  if (priorApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorApiUrl
+  if (priorApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorApiUrl
   installRecordSessionRunner(null)
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -94,7 +94,7 @@ function presentation() {
 describe('settings import', () => {
   test('a bound install without an endpoint refuses a user write before identity side effects', async () => {
     const root = fixtureProject('bound-user')
-    delete process.env.ORCH_RECORD_API_URL
+    delete process.env.BOTTEGA_RECORD_API_URL
     rememberHostedRecord()
 
     let keychainCalls = 0
@@ -665,25 +665,25 @@ describe('worker settings command refusals', () => {
   let priorRunId: string | undefined
 
   beforeEach(() => {
-    priorRunId = process.env.ORCH_RUN_ID
-    process.env.ORCH_RUN_ID = 'settings-worker'
+    priorRunId = process.env.BOTTEGA_RUN_ID
+    process.env.BOTTEGA_RUN_ID = 'settings-worker'
   })
 
   afterEach(() => {
-    if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-    else process.env.ORCH_RUN_ID = priorRunId
+    if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+    else process.env.BOTTEGA_RUN_ID = priorRunId
   })
 
   test('settings import allows an architect caller and refuses a worker caller', async () => {
     const allowedRoot = fixtureProject('import-architect')
-    delete process.env.ORCH_RUN_ID
+    delete process.env.BOTTEGA_RUN_ID
     await settingsImportCommand(
       presentation().flags({ project: 'import-architect' }),
       presentation().port(allowedRoot),
     )
     expect(getDoc('settings', 'import-architect', 'settings')).not.toBeNull()
 
-    process.env.ORCH_RUN_ID = 'settings-worker'
+    process.env.BOTTEGA_RUN_ID = 'settings-worker'
     const refusedRoot = fixtureProject('import-worker')
     await expect(
       settingsImportCommand(
@@ -701,7 +701,7 @@ describe('worker settings command refusals', () => {
       const worker = `permission-${operation}-worker`
       fixtureProject(architect)
       fixtureProject(worker)
-      delete process.env.ORCH_RUN_ID
+      delete process.env.BOTTEGA_RUN_ID
       const architectDoc = await setDoc({
         scope: 'settings',
         subject: architect,
@@ -737,7 +737,7 @@ describe('worker settings command refusals', () => {
         operation,
       )
 
-      process.env.ORCH_RUN_ID = 'settings-worker'
+      process.env.BOTTEGA_RUN_ID = 'settings-worker'
       await expect(
         settingsPermissionCommand(
           presentation().flags({

@@ -43,6 +43,10 @@ export type SetupProjectService = {
   currentRecipePath?(name: string): string | null
 }
 
+export type SetupEnvironmentService = {
+  migrateEnvironment(): Promise<string | null>
+}
+
 type CreatedRecipe = { path: string; device: number; inode: number; contentHash: string }
 
 const contentHash = (content: string | Uint8Array): string =>
@@ -203,6 +207,7 @@ function mismatchReason(
 export async function applySetupActions(
   actions: SetupAction[],
   service: SetupProjectService,
+  environment: SetupEnvironmentService,
   runner: SetupCommandRunner = runSetupCommand,
 ): Promise<SetupActionResult[]> {
   const results: SetupActionResult[] = []
@@ -213,8 +218,8 @@ export async function applySetupActions(
       continue
     }
     try {
-      const status = await applySetupAction(action, service, runner)
-      results.push({ ...action, status, message: null })
+      const applied = await applySetupAction(action, service, environment, runner)
+      results.push({ ...action, ...applied })
     } catch (error) {
       refused = true
       results.push({
@@ -230,35 +235,42 @@ export async function applySetupActions(
 async function applySetupAction(
   action: SetupAction,
   service: SetupProjectService,
+  environment: SetupEnvironmentService,
   runner: SetupCommandRunner,
-): Promise<'applied' | 'unchanged'> {
+): Promise<{ status: 'applied' | 'unchanged'; message: string | null }> {
+  if (action.kind === 'migrate-environment') {
+    const message = await environment.migrateEnvironment()
+    return { status: message ? 'applied' : 'unchanged', message }
+  }
   if (
     action.kind === 'unchanged' ||
     action.kind === 'mcp-unchanged' ||
     action.kind === 'mcp-skipped'
   ) {
-    return 'unchanged'
+    return { status: 'unchanged', message: null }
   }
   if (action.kind === 'migrate-mcp-config') {
     const current = await readFile(action.path, 'utf8')
     const migrated = migrateMcpConfigText(current, {
       renameServerKeys: basename(action.path) !== '.claude.json',
     })
-    if (current === migrated) return 'unchanged'
+    if (current === migrated) return { status: 'unchanged', message: null }
     await writeFile(action.path, migrated, 'utf8')
-    return 'applied'
+    return { status: 'applied', message: null }
   }
-  if (action.kind === 'remove-legacy-symlink') return applyLegacyPathSymlinkRemoval(action)
-  if (action.kind === 'register-mcp') return applyMcpRegistration(action, runner)
+  if (action.kind === 'remove-legacy-symlink')
+    return { status: await applyLegacyPathSymlinkRemoval(action), message: null }
+  if (action.kind === 'register-mcp')
+    return { status: applyMcpRegistration(action, runner), message: null }
   if (action.kind === 'add') {
     await applyAddAction(action, service)
-    return 'applied'
+    return { status: 'applied', message: null }
   }
   if (action.kind === 'set') {
     await applySetAction(action, service)
-    return 'applied'
+    return { status: 'applied', message: null }
   }
-  return 'unchanged'
+  return { status: 'unchanged', message: null }
 }
 
 async function applyLegacyPathSymlinkRemoval(

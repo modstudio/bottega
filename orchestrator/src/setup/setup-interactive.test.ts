@@ -134,7 +134,7 @@ test('validates chosen answers and applies exactly the planned actions', async (
 
   expect(outcome.kind).toBe('applied')
   expect(received).toHaveLength(1)
-  expect(received[0]?.[0]).toMatchObject({
+  expect(received[0]?.find((action) => action.kind === 'add')).toMatchObject({
     kind: 'add',
     name: 'alpha',
     settings: { keyPrefixes: ['BBB'] },
@@ -157,7 +157,9 @@ test('answers a single-option question without prompting and still applies it', 
 
   expect(prompts.selections).toEqual([])
   expect(prompts.lines[0]).toContain('The derived prefix.')
-  expect(received[0]?.[0]).toMatchObject({ settings: { keyPrefixes: ['ONLY'] } })
+  expect(received[0]?.find((action) => action.kind === 'add')).toMatchObject({
+    settings: { keyPrefixes: ['ONLY'] },
+  })
 })
 
 test('cancelling a question never applies', async () => {
@@ -196,7 +198,7 @@ test('cancelling or declining confirmation never applies', async () => {
   }
 })
 
-test('a plan with no changing action neither confirms nor applies', async () => {
+test('a plan with no project change still offers the environment migration', async () => {
   const current = {
     name: 'ready',
     path: '/work/ready',
@@ -215,10 +217,9 @@ test('a plan with no changing action neither confirms nor applies', async () => 
     },
   )
 
-  expect(outcome).toEqual({ kind: 'nothing-to-do' })
-  expect(prompts.confirmations).toEqual([])
-  expect(applyCalls).toBe(0)
-  expect(prompts.lines).toContain('The machine and projects are already set up.')
+  expect(outcome).toEqual({ kind: 'applied', results: [] })
+  expect(prompts.confirmations).toHaveLength(1)
+  expect(applyCalls).toBe(1)
 })
 
 test('reports a refused result and later not-attempted results', async () => {
@@ -227,8 +228,9 @@ test('reports a refused result and later not-attempted results', async () => {
     plan([], [proposal('first'), proposal('second')]),
     prompts,
     async (actions): Promise<SetupActionResult[]> => [
-      { ...actions[0]!, status: 'refused', message: 'register refused the first project' },
-      { ...actions[1]!, status: 'not-attempted', message: null },
+      { ...actions[0]!, status: 'unchanged', message: null },
+      { ...actions[1]!, status: 'refused', message: 'register refused the first project' },
+      { ...actions[2]!, status: 'not-attempted', message: null },
     ],
   )
 

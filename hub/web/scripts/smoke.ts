@@ -22,9 +22,9 @@ function smokeEnvironment(): Record<string, string | undefined> {
     [CONFIG_HOME_ENV]: join(stateRoot, 'config'),
     [STATE_HOME_ENV]: stateRoot,
   }
-  delete env.ORCH_DB
-  delete env.ORCH_RUNS
-  delete env.HUB_DB
+  delete env.BOTTEGA_ORCHESTRATOR_DB
+  delete env.BOTTEGA_RUNS
+  delete env.BOTTEGA_HUB_DB
   return env
 }
 

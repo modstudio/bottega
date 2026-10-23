@@ -42,7 +42,7 @@ export function hostedUnavailableRemedy(hostedUrl: string | null | undefined): s
   return hostedUrl?.trim() ? HOSTED_UNREACHABLE_REMEDY : MISSING_HOSTED_URL_REMEDY
 }
 
-/** Hosted-configured when HUB_HOSTED_URL is set; otherwise local-authoritative. */
+/** Hosted-configured when BOTTEGA_HOSTED_URL is set; otherwise local-authoritative. */
 export function hostedWriteMode(hostedUrl: string | null | undefined): HostedWriteMode {
   if (hostedUrl?.trim()) return 'hosted-configured'
   return 'local-authoritative'

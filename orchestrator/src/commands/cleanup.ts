@@ -46,9 +46,9 @@ function auditReason(flags: ReturnType<typeof optionFlags>): string | null {
 }
 
 function lifecycleCheckpoint(name: string): void {
-  if (process.env.ORCH_TEST_LIFECYCLE_CHECKPOINT !== name) return
-  const ready = process.env.ORCH_TEST_LIFECYCLE_READY
-  const release = process.env.ORCH_TEST_LIFECYCLE_RELEASE
+  if (process.env.BOTTEGA_TEST_LIFECYCLE_CHECKPOINT !== name) return
+  const ready = process.env.BOTTEGA_TEST_LIFECYCLE_READY
+  const release = process.env.BOTTEGA_TEST_LIFECYCLE_RELEASE
   if (!ready || !release) return
   writeFileSync(ready, `${name}\n`)
   while (!existsSync(release)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)

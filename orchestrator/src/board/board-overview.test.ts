@@ -185,7 +185,7 @@ test('an adopted overview combines local and cached roots with null hosted reach
   const listed = await listBoardOverview(
     {},
     {
-      env: { ORCH_RECORD_API_URL: 'https://record.test' },
+      env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
       clock,
       client: {
         ...createMemoryRecordApiClient(),
@@ -224,7 +224,12 @@ test('a spent refresh budget keeps the failed store outcome for overview and pus
   }
   const listed = await listBoardOverview(
     {},
-    { env: { ORCH_RECORD_API_URL: 'https://record.test' }, clock, budgetMs: 20, client: hanging },
+    {
+      env: { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+      clock,
+      budgetMs: 20,
+      client: hanging,
+    },
   )
   expect(listed.warning).toContain('hosted board refresh budget spent')
   const session = 'overview-push'
@@ -235,8 +240,8 @@ test('a spent refresh budget keeps the failed store outcome for overview and pus
     )
     .run(session, '2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
   installRecordApiClient(hanging)
-  const previousUrl = process.env.ORCH_RECORD_API_URL
-  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   try {
     await pendingBoardDelivery({ session, budgetMs: 20, clock: clock + 1 })
     expect(
@@ -247,8 +252,8 @@ test('a spent refresh budget keeps the failed store outcome for overview and pus
       ).value,
     ).toContain('hosted board refresh budget spent')
   } finally {
-    if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-    else process.env.ORCH_RECORD_API_URL = previousUrl
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
     installRecordApiClient(null)
   }
 })

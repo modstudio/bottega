@@ -40,18 +40,18 @@ async function runProject(
 let priorRecordUrl: string | undefined
 let priorRecordApiUrl: string | undefined
 beforeAll(() => {
-  priorRecordUrl = process.env.ORCH_RECORD_URL
-  priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
-  process.env.ORCH_RECORD_URL = 'postgres://record.test/database'
+  priorRecordUrl = process.env.BOTTEGA_RECORD_URL
+  priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_URL = 'postgres://record.test/database'
 })
 afterAll(() => {
-  if (priorRecordUrl === undefined) delete process.env.ORCH_RECORD_URL
-  else process.env.ORCH_RECORD_URL = priorRecordUrl
-  if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
+  if (priorRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_URL
+  else process.env.BOTTEGA_RECORD_URL = priorRecordUrl
+  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
 })
 beforeEach(() => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
 })
 afterEach(() => {
   installRecordApiClient(createMemoryRecordApiClient())
@@ -91,7 +91,7 @@ test('a bound store refuses before adding a local row and names record use', asy
   const path = mkdtempSync(join(tmpdir(), 'orch-bound-project-'))
   await expect(runProject(['project', 'add', path], { name: 'bound-refusal' })).rejects.toThrow(
     new RegExp(
-      `bound to a hosted record[\\s\\S]*ORCH_RECORD_API_URL[\\s\\S]*${PLATFORM_SLUG} record use`,
+      `bound to a hosted record[\\s\\S]*BOTTEGA_RECORD_API_URL[\\s\\S]*${PLATFORM_SLUG} record use`,
     ),
   )
   expect(projectByName('bound-refusal')).toBeNull()

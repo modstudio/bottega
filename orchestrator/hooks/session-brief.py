@@ -482,7 +482,7 @@ def _settings_apply_notice(completed):
 
 
 def orch_worker_session(env=None):
-    return bool((env if env is not None else os.environ).get("ORCH_RUN_ID"))
+    return bool((env if env is not None else os.environ).get("BOTTEGA_RUN_ID"))
 
 
 def main() -> int:
@@ -556,8 +556,8 @@ def main() -> int:
                 with open(capability_path, "x", encoding="utf-8") as capability_file:
                     os.chmod(capability_path, 0o600)
                     json.dump({"token": capability_token, "pid": os.getpid()}, capability_file)
-                inbox_env["ORCH_MONITOR_CAPABILITY_PATH"] = capability_path
-                inbox_env["ORCH_MONITOR_CAPABILITY_TOKEN"] = capability_token
+                inbox_env["BOTTEGA_MONITOR_CAPABILITY_PATH"] = capability_path
+                inbox_env["BOTTEGA_MONITOR_CAPABILITY_TOKEN"] = capability_token
                 monitor_p = _start(
                     *_monitor_notice_command(bottega, skip_board_refresh=True), env=inbox_env
                 )

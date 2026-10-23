@@ -6,10 +6,10 @@ import { childEnv, planRunProcessTermination, terminateRunProcesses } from './ru
 
 test('repository workers receive test caps while inline workers do not', () => {
   const defaults = childEnv(AGENTS.codex!, undefined, undefined, {}, true)
-  expect(defaults.ORCH_TEST_WORKERS).toBeDefined()
-  expect(defaults.VITEST_MAX_WORKERS).toBe(defaults.ORCH_TEST_WORKERS)
+  expect(defaults.BOTTEGA_TEST_WORKERS).toBeDefined()
+  expect(defaults.VITEST_MAX_WORKERS).toBe(defaults.BOTTEGA_TEST_WORKERS)
   expect(childEnv(AGENTS.codex!, undefined, undefined, {}, false)).not.toHaveProperty(
-    'ORCH_TEST_WORKERS',
+    'BOTTEGA_TEST_WORKERS',
   )
 })
 
@@ -60,24 +60,24 @@ test('worker context controls follow a registered agent harness rather than its 
 })
 
 test('a parent environment holding both record URLs yields a child environment holding neither', () => {
-  const priorUrl = process.env.ORCH_RECORD_URL
-  const priorMigrate = process.env.ORCH_RECORD_MIGRATE_URL
-  const priorOther = process.env.ORCH_OTHER
-  process.env.ORCH_RECORD_URL = 'postgres://record.test/database'
-  process.env.ORCH_RECORD_MIGRATE_URL = 'postgres://record.test/migrate'
-  process.env.ORCH_OTHER = 'keep'
+  const priorUrl = process.env.BOTTEGA_RECORD_URL
+  const priorMigrate = process.env.BOTTEGA_RECORD_MIGRATE_URL
+  const priorOther = process.env.BOTTEGA_OTHER
+  process.env.BOTTEGA_RECORD_URL = 'postgres://record.test/database'
+  process.env.BOTTEGA_RECORD_MIGRATE_URL = 'postgres://record.test/migrate'
+  process.env.BOTTEGA_OTHER = 'keep'
   try {
     const child = childEnv(AGENTS.grok!, undefined, undefined, {}, false)
-    expect(child.ORCH_RECORD_URL).toBeUndefined()
-    expect(child.ORCH_RECORD_MIGRATE_URL).toBeUndefined()
-    expect(child.ORCH_OTHER).toBe('keep')
+    expect(child.BOTTEGA_RECORD_URL).toBeUndefined()
+    expect(child.BOTTEGA_RECORD_MIGRATE_URL).toBeUndefined()
+    expect(child.BOTTEGA_OTHER).toBe('keep')
   } finally {
-    if (priorUrl === undefined) delete process.env.ORCH_RECORD_URL
-    else process.env.ORCH_RECORD_URL = priorUrl
-    if (priorMigrate === undefined) delete process.env.ORCH_RECORD_MIGRATE_URL
-    else process.env.ORCH_RECORD_MIGRATE_URL = priorMigrate
-    if (priorOther === undefined) delete process.env.ORCH_OTHER
-    else process.env.ORCH_OTHER = priorOther
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_URL
+    else process.env.BOTTEGA_RECORD_URL = priorUrl
+    if (priorMigrate === undefined) delete process.env.BOTTEGA_RECORD_MIGRATE_URL
+    else process.env.BOTTEGA_RECORD_MIGRATE_URL = priorMigrate
+    if (priorOther === undefined) delete process.env.BOTTEGA_OTHER
+    else process.env.BOTTEGA_OTHER = priorOther
   }
 })
 
@@ -91,10 +91,10 @@ test('a Codex worker environment uses its chain-scoped CODEX_HOME', () => {
 test('a worker receives UUID machine identity, a separate display number and its agent', () => {
   const recordId = '42000000-0000-4000-8000-000000000000'
   expect(childEnv(AGENTS.codex!, recordId, 'token', {}, false, 42)).toMatchObject({
-    ORCH_RUN_ID: recordId,
-    ORCH_RUN_NUMBER: '42',
-    ORCH_RUN_TOKEN: 'token',
-    ORCH_AGENT: AGENTS.codex!.name,
+    BOTTEGA_RUN_ID: recordId,
+    BOTTEGA_RUN_NUMBER: '42',
+    BOTTEGA_RUN_TOKEN: 'token',
+    BOTTEGA_AGENT: AGENTS.codex!.name,
   })
 })
 

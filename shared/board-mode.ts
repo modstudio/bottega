@@ -20,7 +20,7 @@ export function classifyBoardId(id: string): BoardIdShape {
   return 'invalid'
 }
 
-const missingHostedConfiguration = `this install has adopted the hosted board but ORCH_RECORD_API_URL is not configured; configure the hosted record API and sign in with ${PLATFORM_SLUG} record sign-in`
+const missingHostedConfiguration = `this install has adopted the hosted board but BOTTEGA_RECORD_API_URL is not configured; configure the hosted record API and sign in with ${PLATFORM_SLUG} record sign-in`
 
 function isHostedConfigured(value: HostedConfigured): boolean {
   return typeof value === 'function' ? value() : value

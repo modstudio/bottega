@@ -19,8 +19,8 @@ afterEach(() => registerEmbeddedAssets(null))
 test('the absent explicit-store refusal names the condition and explicit remedy', () => {
   expect(missingHubDatabaseMessage('/scratch/missing.db')).toBe(
     'hub database does not exist: /scratch/missing.db\n' +
-      'invariant: An absent HUB_DB path is a mistake, not a request to create a store.\n' +
-      'cleared by: unset HUB_DB to use the installation store, or name an existing database',
+      'invariant: An absent BOTTEGA_HUB_DB path is a mistake, not a request to create a store.\n' +
+      'cleared by: unset BOTTEGA_HUB_DB to use the installation store, or name an existing database',
   )
 })
 
@@ -45,7 +45,7 @@ test('implicit creation allows a linked checkout to initialize temporary state',
 test('a reader checkout resolves the shared hub path as read-only', () => {
   const runtime = resolveHubRuntime(
     '/reader/clone',
-    { HOME: '/reader/home', HUB_DB: '/operator/state/hub.db' },
+    { HOME: '/reader/home', BOTTEGA_HUB_DB: '/operator/state/hub.db' },
     () => '/main/checkout',
   )
 
@@ -75,7 +75,7 @@ test('a worker refuses hub writes and migrations before touching a shared path',
       ],
       {
         cwd: join(import.meta.dir, '../..'),
-        env: { ...process.env, HUB_DB: path, ORCH_RUN_ID: randomUUID() },
+        env: { ...process.env, BOTTEGA_HUB_DB: path, BOTTEGA_RUN_ID: randomUUID() },
       },
     )
 
@@ -90,7 +90,7 @@ test('a worker refuses hub writes and migrations before touching a shared path',
   expect(existsSync(parent)).toBeFalse()
 })
 
-test('the migrate creation decision refuses an absent HUB_DB before touching its parent', () => {
+test('the migrate creation decision refuses an absent BOTTEGA_HUB_DB before touching its parent', () => {
   const parent = join(tmpdir(), `hub-explicit-${randomUUID()}`)
   const path = join(parent, 'hub.db')
 

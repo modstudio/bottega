@@ -25,12 +25,12 @@ const whoami = async () => ({
 })
 
 afterEach(() => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
 })
 
 test('hosted port failure is inert and success adopts the hosted identity', async () => {
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
@@ -70,9 +70,9 @@ test('hosted port failure is inert and success adopts the hosted identity', asyn
 })
 
 test('every hosted port writer refuses a worker before calling the record', () => {
-  process.env.ORCH_RECORD_API_URL = 'https://record.example.test'
-  const priorRunId = process.env.ORCH_RUN_ID
-  process.env.ORCH_RUN_ID = 'port-writer-worker'
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  const priorRunId = process.env.BOTTEGA_RUN_ID
+  process.env.BOTTEGA_RUN_ID = 'port-writer-worker'
   let calls = 0
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -105,7 +105,7 @@ test('every hosted port writer refuses a worker before calling the record', () =
     }
     expect(calls).toBe(0)
   } finally {
-    if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
-    else process.env.ORCH_RUN_ID = priorRunId
+    if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
+    else process.env.BOTTEGA_RUN_ID = priorRunId
   }
 })

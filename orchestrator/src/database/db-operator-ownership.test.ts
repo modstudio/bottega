@@ -152,7 +152,7 @@ test('operator authority covers answer, continue, tell, review read, and sweep l
 
 describe('worker refusal', () => {
   beforeEach(() => {
-    process.env.ORCH_RUN_ID = '42'
+    process.env.BOTTEGA_RUN_ID = '42'
   })
 
   test('a worker cannot score', async () => {
@@ -164,8 +164,8 @@ describe('worker refusal', () => {
 
   test('a worker cannot score or adopt after dropping only run id and depth', async () => {
     for (const marker of WORKER_ENVIRONMENT_MARKERS) process.env[marker] = 'worker-value'
-    delete process.env.ORCH_RUN_ID
-    delete process.env.ORCH_DEPTH
+    delete process.env.BOTTEGA_RUN_ID
+    delete process.env.BOTTEGA_DEPTH
     const id = addRun({ agent: 'codex', job: 'file-question', session: null })
     await expect(
       scoreRun(id, flags, { ...judgmentOptions, dashboardAuthorized: false }, presentation),

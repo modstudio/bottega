@@ -20,7 +20,7 @@ describe('transcript root', () => {
 
   test('an absent resolved root refuses with the remedy', () => {
     expect(unreadableTranscriptRootMessage('/missing')).toContain(
-      'Cannot read hub.transcript_root /missing; set HUB_TRANSCRIPT_ROOT',
+      'Cannot read hub.transcript_root /missing; set BOTTEGA_TRANSCRIPT_ROOT',
     )
   })
 })

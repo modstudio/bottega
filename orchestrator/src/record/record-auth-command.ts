@@ -8,7 +8,7 @@ import { rememberSignedInRecordUser } from './record-session.ts'
 type Presentation = { log(value: string): void }
 
 export async function recordPassword(readPassword: () => Promise<string>): Promise<string> {
-  const password = process.env.ORCH_RECORD_PASSWORD ?? (await readPassword())
+  const password = process.env.BOTTEGA_RECORD_PASSWORD ?? (await readPassword())
   if (!password) throw new Error('record password is required')
   return password
 }

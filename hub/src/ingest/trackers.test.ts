@@ -133,14 +133,14 @@ describe('tracker observation times', () => {
   })
 })
 
-const recordApiUrl = process.env.ORCH_RECORD_API_URL
+const recordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 beforeAll(() => {
-  delete process.env.ORCH_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
   resetFixtureStore()
 })
 afterAll(() => {
-  if (recordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
-  else process.env.ORCH_RECORD_API_URL = recordApiUrl
+  if (recordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = recordApiUrl
 })
 
 describe('tracker register', () => {

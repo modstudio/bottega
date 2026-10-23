@@ -89,7 +89,7 @@ function environmentName(node: ts.Node): string | null {
     node.expression.name.text !== 'env'
   )
     return null
-  return ['PATH', 'HOME', 'ORCH_SANDBOX'].includes(node.name.text) ? node.name.text : null
+  return ['PATH', 'HOME', 'BOTTEGA_SANDBOX'].includes(node.name.text) ? node.name.text : null
 }
 
 function checkTest(path: string): void {

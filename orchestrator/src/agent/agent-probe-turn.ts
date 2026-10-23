@@ -77,7 +77,7 @@ async function probeEnvironment(agent: Agent, scratch: string): Promise<Record<s
     ),
     ...(agent.env?.() ?? {}),
     ...(await resolveEndpointApiKeyEnv(agent)),
-    ORCH_SCRATCH: scratch,
+    BOTTEGA_SCRATCH: scratch,
   }
 }
 

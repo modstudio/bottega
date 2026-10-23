@@ -68,9 +68,9 @@ export function recordArchitectRead(
   runGit: Git = git,
   recordedAt = nowIso(),
 ): string {
-  if (process.env.ORCH_DEPTH !== undefined) {
+  if (process.env.BOTTEGA_DEPTH !== undefined) {
     throw new Error(
-      `${PLATFORM_SLUG} review read is reserved for architect sessions; ORCH_DEPTH is set`,
+      `${PLATFORM_SLUG} review read is reserved for architect sessions; BOTTEGA_DEPTH is set`,
     )
   }
   const note = input.note.trim()

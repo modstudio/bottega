@@ -38,8 +38,8 @@ test('Commander binds scalar, repeatable, and presence options without losing ta
   subscribe.parseOptions(['--member', 'one', '--member', 'two'])
   expect(subscribe.opts().member).toEqual(['one', 'two'])
 
-  const hostedUrl = process.env.HUB_HOSTED_URL
-  delete process.env.HUB_HOSTED_URL
+  const hostedUrl = process.env.BOTTEGA_HOSTED_URL
+  delete process.env.BOTTEGA_HOSTED_URL
   try {
     const parent = await createTask({ project: 'workshop', title: 'Parent' })
     const child = await createTask({ project: 'workshop', title: 'Child', parent: parent.key })
@@ -54,6 +54,6 @@ test('Commander binds scalar, repeatable, and presence options without losing ta
     )
     expect(getTaskDocument(document.label, {}).role).toBeNull()
   } finally {
-    if (hostedUrl !== undefined) process.env.HUB_HOSTED_URL = hostedUrl
+    if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
   }
 })

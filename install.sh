@@ -128,7 +128,7 @@ chmod 755 "$STAGED_BINARY"
 mv -f "$STAGED_BINARY" "$INSTALL_DIR/bottega"
 echo "installed: $INSTALL_DIR/bottega ($VERSION)"
 
-(unset ORCH_DB HUB_DB ORCH_DB_WRITE; "$INSTALL_DIR/bottega" machine migrate)
+(unset BOTTEGA_ORCHESTRATOR_DB BOTTEGA_HUB_DB BOTTEGA_ORCHESTRATOR_DB_WRITE; "$INSTALL_DIR/bottega" machine migrate)
 
 case ":${PATH:-}:" in
   *":$INSTALL_DIR:"*) ;;

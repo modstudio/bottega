@@ -43,7 +43,7 @@ const DEFAULT_IDLE_KILL_CONFIRM_MS = 5_000
 const CPU_IDLE_PERCENT = 1
 
 export function idleKillMs(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.ORCH_IDLE_KILL_MS
+  const raw = env.BOTTEGA_IDLE_KILL_MS
   if (raw === undefined || raw === '') return DEFAULT_IDLE_KILL_MS
   const n = Number(raw)
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_IDLE_KILL_MS

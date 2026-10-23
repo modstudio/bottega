@@ -48,8 +48,8 @@ export async function appliedRecordMigrationCount(url: string): Promise<number> 
   }
 }
 
-export async function migratePostgres(url = process.env.ORCH_RECORD_MIGRATE_URL): Promise<void> {
-  if (!url) throw new Error('ORCH_RECORD_MIGRATE_URL is required to migrate the record')
+export async function migratePostgres(url = process.env.BOTTEGA_RECORD_MIGRATE_URL): Promise<void> {
+  if (!url) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to migrate the record')
   const sql = new SQL(url)
   try {
     await migrate(drizzle({ client: sql }), { migrationsFolder: POSTGRES_MIGRATIONS_FOLDER })
