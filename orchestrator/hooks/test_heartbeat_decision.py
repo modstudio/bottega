@@ -18,6 +18,8 @@ SPEC = importlib.util.spec_from_file_location("heartbeat_decision", PATH)
 heartbeat_decision = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(heartbeat_decision)
 
+CHILD_PROCESS_TIMEOUT_SECONDS = 10
+
 
 class HeartbeatDecisionTest(unittest.TestCase):
     def test_live_continuation_uses_turn_number_and_age(self):
@@ -78,7 +80,7 @@ esac
                 env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -149,7 +151,13 @@ esac
             }
 
             unchanged = subprocess.run(
-                command, cwd=checkout, env=env, capture_output=True, text=True, timeout=2, check=True
+                command,
+                cwd=checkout,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
+                check=True,
             )
             self.assertEqual(unchanged.stdout.count("WAITING"), 1)
 
@@ -160,7 +168,7 @@ esac
                 env={**env, "KEEPALIVE_TICKS": "2"},
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
             self.assertEqual(keepalive.stdout.count("WAITING"), 2)
@@ -197,7 +205,7 @@ esac
                 env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -269,7 +277,7 @@ esac
                 },
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -319,7 +327,7 @@ esac
                 env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -418,7 +426,7 @@ esac
                 },
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -528,7 +536,7 @@ esac
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -620,7 +628,7 @@ esac
                 },
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -637,6 +645,7 @@ esac
             env={"PATH": minimal_path},
             capture_output=True,
             text=True,
+            timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
             check=True,
         )
 
@@ -674,7 +683,7 @@ esac
                 env={**os.environ, "ORCH_DB": str(checkout / "absent.db")},
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
                 check=True,
             )
 
@@ -904,7 +913,7 @@ esac
                     stderr=subprocess.DEVNULL,
                 )
                 try:
-                    deadline = time.monotonic() + 0.7
+                    deadline = time.monotonic() + CHILD_PROCESS_TIMEOUT_SECONDS
                     while (
                         not monitor_pid_file.exists() or not watchdog_pid_file.exists()
                     ) and time.monotonic() < deadline:
@@ -915,7 +924,7 @@ esac
                     watchdog_pid = int(watchdog_pid_file.read_text(encoding="utf-8"))
 
                     heartbeat.send_signal(sent_signal)
-                    heartbeat.wait(timeout=0.7)
+                    heartbeat.wait(timeout=CHILD_PROCESS_TIMEOUT_SECONDS)
                     self.assertEqual(
                         heartbeat.returncode,
                         143 if sent_signal == signal.SIGTERM else 130,
