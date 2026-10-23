@@ -1,19 +1,21 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
 type WorkspacePackage = { directory: string; hasTestScript: boolean }
 
+/** The root package's declared workspaces are the package boundaries; no tree walk, no node_modules. */
 function workspacePackages(): WorkspacePackage[] {
-  const packageFiles = new Bun.Glob('**/{package.json,bunfig.toml}').scanSync({
-    cwd: root,
-    dot: false,
-    onlyFiles: true,
-  })
-  const directories = new Set([...packageFiles].map((path) => resolve(root, dirname(path))))
+  const rootManifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+    workspaces?: string[]
+  }
+  const directories = new Set([
+    root,
+    ...(rootManifest.workspaces ?? []).map((workspace) => resolve(root, workspace)),
+  ])
   return [...directories]
     .map((directory) => {
       const manifest = resolve(directory, 'package.json')
