@@ -3,7 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import type { ReviewSettings } from '../project/project-injection.ts'
-import { type ApplicableReview, lensesSelectingPaths } from './review-applicability.ts'
+import {
+  type ApplicableReview,
+  lensesSelectingPaths,
+  type ReviewFunnelPlan,
+} from './review-applicability.ts'
 import { type ChangeGroup, reviewsForTriage, serializePathSet } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
 import { applicableRoundLensPlan, roundLensFacts } from './review-round-lens-plan.ts'
@@ -15,7 +19,7 @@ export function roundApplicabilityForChange(input: {
   relevant: ApplicableReview
   postFix: PostFixReviewDecision
   review: ReviewSettings | undefined
-}): ApplicableReview {
+}): ReviewFunnelPlan {
   const fixPaths = input.postFix.kind === 're-lens' ? input.postFix.fixPaths : []
   const fixPathsByLens = lensesSelectingPaths(fixPaths, input.review)
   return applicableRoundLensPlan({

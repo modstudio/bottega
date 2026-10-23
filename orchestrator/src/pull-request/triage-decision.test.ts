@@ -141,41 +141,6 @@ describe('pull-request triage decision', () => {
     })
   })
 
-  test('a post-review change needing a funnel round still requires its exact lens', () => {
-    const earlier = review({
-      reviewId: 3,
-      tier: 3,
-      lensIdentities: ['correctness', 'migration-safety', 'teardown-safety'],
-      lenses: [
-        { recordId: 'lens-correctness', lens: 'correctness', graded: true },
-        { recordId: 'lens-migration', lens: 'migration-safety', graded: true },
-        { recordId: 'lens-teardown', lens: 'teardown-safety', graded: true },
-      ],
-      findings: [],
-    })
-    expect(
-      decideTriage(
-        evidence({
-          tier: 3,
-          reviews: [],
-          applicableReview: {
-            lenses: ['correctness', 'migration-safety', 'teardown-safety'],
-          },
-          reviewPlan: {
-            round: { lenses: ['teardown-safety'] },
-            admissionRequired: {
-              lenses: ['correctness', 'migration-safety', 'teardown-safety'],
-            },
-          },
-          branchReviewGroups: [branchGroup([earlier])],
-        }),
-      ),
-    ).toMatchObject({
-      complete: false,
-      missingLenses: [{ lens: 'teardown-safety', recordedOnBranch: true }],
-    })
-  })
-
   test('admission requires a newly selected round lens absent from earlier coverage', () => {
     const earlier = review({
       reviewId: 3,

@@ -1,21 +1,19 @@
 // concern: review-round-lens-plan
 /** Decides which relevant lenses belong in one review round. */
 
-import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
+import {
+  type ApplicableReview,
+  type ReviewFunnelPlan,
+  selectReviewApplicability,
+} from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
-import { identifySecondOpinionRun } from './review-second-opinion.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
   completedLenses: readonly string[]
   satisfiedSecondOpinionLenses: readonly string[]
   latestAcceptedOrModifiedLenses: readonly string[]
-}
-
-export type ReviewFunnelPlan = {
-  round: ApplicableReview
-  admissionRequired: ApplicableReview
 }
 
 /**
@@ -60,9 +58,17 @@ export function roundLensFacts(
         : [],
     ),
   )
-  const satisfiedSecondOpinionLenses = completedLenses.filter((lens) =>
-    Boolean(identifySecondOpinionRun(completedOpinions, lens)),
-  )
+  const satisfiedSecondOpinionLenses = completedLenses.filter((lens) => {
+    const models = new Set(
+      completedOpinions
+        .filter(
+          (opinion) =>
+            opinion.completed && opinion.graded && opinion.lens === lens && opinion.model,
+        )
+        .map((opinion) => opinion.model),
+    )
+    return models.size >= 2
+  })
   const prior = branchReviews.filter(
     (review) =>
       review.completedAt !== null &&

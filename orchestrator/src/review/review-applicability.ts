@@ -25,6 +25,11 @@ export type ApplicableReview = {
   secondOpinionBasis?: string
 }
 
+export type ReviewFunnelPlan = {
+  round: ApplicableReview
+  admissionRequired: ApplicableReview
+}
+
 export type ReviewPlan = {
   tier: ReviewTier
   applicability: ApplicableReview
@@ -86,13 +91,6 @@ function selectedLensRules(
     if (entry.basis) bases[entry.lens] = entry.basis
   }
   return { lenses, bases }
-}
-
-/** Lenses whose declaration can select them from newly touched paths. */
-export function pathScopedLenses(review: ReviewSettings | undefined): string[] {
-  return (review ?? BUILT_IN_REVIEW).lenses
-    .filter(({ paths }) => paths !== undefined)
-    .map(({ lens }) => lens)
 }
 
 /** Map each path-scoped lens to the changed paths that select it. */

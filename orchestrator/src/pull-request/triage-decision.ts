@@ -1,9 +1,8 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
-import type { ApplicableReview } from '../review/review-applicability.ts'
+import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
-import type { ReviewFunnelPlan } from '../review/review-round-lens-plan.ts'
 import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
 
 export type TriageReviewGroup = {

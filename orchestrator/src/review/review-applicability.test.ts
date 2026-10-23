@@ -4,7 +4,6 @@ import {
   applicableReview,
   applicableReviewForChange,
   lensesSelectingPaths,
-  pathScopedLenses,
 } from './review-applicability.ts'
 
 describe('applicable review lenses', () => {
@@ -28,10 +27,6 @@ describe('applicable review lenses', () => {
       'correctness',
       'craft',
     ])
-  })
-
-  test('identifies only lenses declared with path scopes', () => {
-    expect(pathScopedLenses(review)).toEqual(['migration-safety', 'correctness'])
   })
 
   test('maps scoped lenses to the paths that select them', () => {

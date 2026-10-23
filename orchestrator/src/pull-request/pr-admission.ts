@@ -8,7 +8,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { enqueueLandingOverride, enqueueLandingTriageSnapshot } from '../record/landing-outbox.ts'
-import type { ApplicableReview } from '../review/review-applicability.ts'
+import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import {
   branchRunOwnerSession,
   type ChangeGroup,
@@ -18,7 +18,6 @@ import {
   type TriageReviewRow,
 } from '../review/review-group.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
-import type { ReviewFunnelPlan } from '../review/review-round-lens-plan.ts'
 import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {

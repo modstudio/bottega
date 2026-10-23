@@ -12,7 +12,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { selectReviewApplicability } from './review-applicability.ts'
+import { type ReviewFunnelPlan, selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
@@ -22,7 +22,6 @@ import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
-import type { ReviewFunnelPlan } from './review-round-lens-plan.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
 import {
   resolveReviewBase,
@@ -50,7 +49,7 @@ function roundApplicabilityForTierOutput(input: {
   review: Parameters<typeof reviewTierForRange>[3]
 }): ReviewFunnelPlan {
   const relevant = selectReviewApplicability(input.output, input.output.lenses)
-  if (!input.identity) return relevant
+  if (!input.identity) return { round: relevant, admissionRequired: relevant }
   return roundApplicabilityForChange({
     database: db(),
     group: {
