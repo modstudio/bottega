@@ -68,6 +68,7 @@ import {
   latestCheckpoint,
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
+import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
@@ -369,6 +370,33 @@ function vendorProcessSample(pid: number | null): ProcessSample | undefined {
   return pid && pid > 1 ? sampleProcesses().find((row) => row.pid === pid) : undefined
 }
 
+function liveCheckpointSchedule(input: {
+  writesJob: boolean
+  worktree: Worktree | null
+  runId: string
+  taskKey: string | null
+  scratchDir: string
+  guardEnvironment: NodeJS.ProcessEnv
+  containment: CheckpointContainment
+}) {
+  return createCheckpointSchedule((trigger) => {
+    if (!input.writesJob || !input.worktree) return null
+    const result = checkpointRun({
+      database: db(),
+      runId: input.runId,
+      worktree: input.worktree.path,
+      branch: input.worktree.branch,
+      taskKey: input.taskKey,
+      scratchDir: input.scratchDir,
+      guardEnvironment: input.guardEnvironment,
+      containment: input.containment,
+      final: trigger === 'limit',
+    })
+    if (result.error) console.error(`orch: run ${input.runId} checkpoint failed: ${result.error}`)
+    return result
+  })
+}
+
 type ConfiguredAsk = Parameters<typeof recordConfiguredAsk>[0]
 
 function recordRunAsk(
@@ -514,6 +542,15 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let gateStartedAtMs: number | null = null
   let excludedGateMsAtTimeout = 0
   let rearmWallDeadline = () => {}
+  const checkpointSchedule = liveCheckpointSchedule({
+    writesJob,
+    worktree,
+    runId: claim.id,
+    taskKey: launchKey,
+    scratchDir,
+    guardEnvironment: gitConfigEnvironment ?? {},
+    containment: input.checkpointContainment,
+  })
   try {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
@@ -538,6 +575,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
       confinement: brokerConfinement(input, sandboxSelection.profile),
+      onExecutionStart: checkpointSchedule.executionStarted,
+      onExecutionFinish: checkpointSchedule.executionFinished,
       onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
@@ -635,26 +674,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
               last_event_at=COALESCE(last_event_at, ?) WHERE record_id=?`,
       )
       .run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
-    const createCheckpoint = (final = false) => {
-      if (!writesJob || !worktree) return null
-      const result = checkpointRun({
-        database: db(),
-        runId: claim.id,
-        worktree: worktree.path,
-        branch: worktree.branch,
-        taskKey: launchKey,
-        scratchDir,
-        guardEnvironment: gitConfigEnvironment ?? {},
-        containment: input.checkpointContainment,
-        final,
-      })
-      if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
-      return result
-    }
     if (writesJob) {
       checkpointTimer = setInterval(
         () => {
-          createCheckpoint(false)
+          checkpointSchedule.request('scheduled')
         },
         (requestedJob.checkpointMinutes ?? DEFAULT_CHECKPOINT_MINUTES) * 60_000,
       )
@@ -733,7 +756,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         reclaimedMs: Math.max(0, boundMs - elapsed),
         boundMs,
       })
-      const checkpoint = createCheckpoint(true)
+      const checkpoint = checkpointSchedule.request('limit')
       const afterCheckpoint = recordedRunStatus(claim.id)
       const askedDuringCheckpoint = afterCheckpoint === 'asking' || runHasOpenQuestion(claim.id)
       if (askedDuringCheckpoint) {
