@@ -22,7 +22,8 @@ test('the Python hook leg runs unittest discovery over its declared reach', () =
   expect(hooks).toMatchObject({
     directory: '.',
     ciJob: 'orchestrator-hooks',
-    testDirectories: ['orchestrator/hooks'],
+    testDirectories: [],
+    testPatterns: ['orchestrator/hooks/test_*.py'],
     typecheck: null,
     suite: [
       {
@@ -79,6 +80,7 @@ test('reports tracked tests outside a leg or root batch unless exempted', () => 
       legs: [
         {
           testDirectories: ['orchestrator/src'],
+          testPatterns: [],
           excludedTestDirectories: [],
           excludedTestPatterns: [],
         },
@@ -90,6 +92,21 @@ test('reports tracked tests outside a leg or root batch unless exempted', () => 
   ).toEqual({
     unreached: ['orchestrator/hooks/test_guard.py', 'scripts/unreached.test.ts'],
     unexempted: ['scripts/unreached.test.ts'],
+    staleExemptions: [],
+  })
+})
+
+test('a nested Python hook test outside unittest discovery remains unreached', () => {
+  expect(
+    testReach({
+      tracked: ['orchestrator/hooks/test_top_level.py', 'orchestrator/hooks/nested/test_x.py'],
+      rootTests: [],
+      legs: CHECK_LEGS,
+      exemptions: [],
+    }),
+  ).toEqual({
+    unreached: ['orchestrator/hooks/nested/test_x.py'],
+    unexempted: ['orchestrator/hooks/nested/test_x.py'],
     staleExemptions: [],
   })
 })
