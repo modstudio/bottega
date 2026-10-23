@@ -10,6 +10,7 @@ import { checkoutRemovalAttribution } from '../resources/resource-claims.ts'
 import { callerWatch } from '../run/run-caller-watch.ts'
 import {
   callerCheckoutWatch,
+  classifyCheckoutChanges,
   classifyDivergence,
   classifyRemovedCallerCheckout,
   divergenceAttributionLabel,
@@ -89,19 +90,19 @@ test('a missing caller checkout passes only when every writable root excludes it
 
 test('physical overlap recognizes real temporary roots and symlink spellings', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-overlap-'))
-  const slashTmpCaller = mkdtempSync('/tmp/orch-overlap-')
+  const temporaryCaller = mkdtempSync(join(tmpdir(), 'orch-overlap-caller-'))
   const checkout = join(root, 'checkout')
   const alias = join(root, 'alias')
   mkdirSync(checkout)
   symlinkSync(checkout, alias)
   try {
     expect(checkoutPathsOverlap(realpathSync(checkout), root)).toBe(true)
-    expect(checkoutPathsOverlap(realpathSync(slashTmpCaller), '/tmp')).toBe(true)
+    expect(checkoutPathsOverlap(realpathSync(temporaryCaller), realpathSync(tmpdir()))).toBe(true)
     expect(checkoutPathsOverlap(checkout, alias)).toBe(true)
     expect(checkoutPathsOverlap(checkout, join(root, 'missing'))).toBeNull()
   } finally {
     rmSync(root, { recursive: true, force: true })
-    rmSync(slashTmpCaller, { recursive: true, force: true })
+    rmSync(temporaryCaller, { recursive: true, force: true })
   }
 })
 
@@ -109,16 +110,53 @@ test('a present changed caller checkout is still classified as divergent', () =>
   const database = migratedTestDatabase()
   const before = frozen('/projects/caller')
   const after = { ...before, status: ' M changed.ts\0', indexTree: 'changed-tree' }
+  const removal = {
+    attribution: 'tree_removal' as const,
+    removalSession: 'owner-session',
+    removalRun: 'tree-run',
+  }
+  const divergence = classifyDivergence({
+    before: [before],
+    after: [after],
+    ownDiffPaths: [],
+    chainRoot: 'root',
+    database,
+    startedAt: '2026-10-22T00:00:00.000Z',
+  })
   expect(
-    classifyDivergence({
+    classifyCheckoutChanges({
       before: [before],
       after: [after],
+      removedCaller: frozen('/projects/removed-caller'),
       ownDiffPaths: [],
       chainRoot: 'root',
       database,
       startedAt: '2026-10-22T00:00:00.000Z',
+      removal,
     }),
-  ).toMatchObject({ classification: 'non_overlapping', checkout: '/projects/caller' })
+  ).toEqual(divergence)
+  expect(divergence).toMatchObject({
+    classification: 'non_overlapping',
+    checkout: '/projects/caller',
+  })
+  expect(
+    classifyCheckoutChanges({
+      before: [before],
+      after: [before],
+      removedCaller: frozen('/projects/removed-caller'),
+      ownDiffPaths: [],
+      chainRoot: 'root',
+      database,
+      startedAt: '2026-10-22T00:00:00.000Z',
+      removal,
+    }),
+  ).toMatchObject({
+    classification: 'removed',
+    checkout: '/projects/removed-caller',
+    attribution: 'tree_removal',
+    removalSession: 'owner-session',
+    removalRun: 'tree-run',
+  })
 })
 
 test('an unsafe removed caller names the cause and recorded removal attribution', () => {
