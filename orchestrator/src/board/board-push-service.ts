@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
+import { deliveryWarning } from './board-delivery.ts'
 import {
   BOARD_RECEIPT_WRITE_BUDGET_MS,
   cachedAudienceAtPosting,
@@ -15,7 +16,7 @@ import {
 } from './board-hosted-cache.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { requireRealSession } from './board-policy.ts'
-import { boardPushDecision } from './board-push-policy.ts'
+import { boardPushDecision, deferredReplySuccessorWarning } from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
   noteBoardReachRecordingFailure,
@@ -47,7 +48,10 @@ type DeliveryInput = {
   recentlyInjectedIds?: string[]
   clock?: number
   database?: Database
+  claimReplySuccessors?: boolean
 }
+
+export { deliveryWarning }
 
 const receiptAt = (database: Database, table: string, id: string | number, session: string) =>
   (database
@@ -175,8 +179,15 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   if (input.budgetMs > 0) await refreshHostedBoard({ budgetMs: input.budgetMs, database })
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const beganAt = boardReaderBeganAt(input.session, database)
-  const localPush = claimPushNotices(false, env, clock, database)
-  const hostedPush = claimCachedHostedForPush(input.session, false, clock, database)
+  const claimReplySuccessors = input.claimReplySuccessors ?? true
+  const localPush = claimPushNotices(false, env, clock, database, claimReplySuccessors)
+  const hostedPush = claimCachedHostedForPush(
+    input.session,
+    false,
+    clock,
+    database,
+    claimReplySuccessors,
+  )
   const unread: BoardDelivery[] = [
     ...localPush.notices.map((message) => ({
       id: String(message.number),
@@ -223,7 +234,13 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     delivery: selected.messages,
     overflow: selected.overflow,
     pendingAcknowledgements,
-    warning: localPush.warning ?? hostedPush.warning,
+    warning: deliveryWarning(
+      localPush.warning,
+      hostedPush.warning,
+      deferredReplySuccessorWarning(
+        localPush.deferredReplySuccessorCount + hostedPush.deferredReplySuccessorCount,
+      ),
+    ),
   }
 }
 

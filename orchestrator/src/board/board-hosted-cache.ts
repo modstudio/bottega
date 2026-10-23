@@ -838,10 +838,21 @@ export function claimCachedHostedForPush(
   all = false,
   clock = Date.now(),
   database: Database = writableDb(),
-): { notices: HostedCacheNotice[]; withheldOlderCount: number; warning: string | null } {
+  claimReplySuccessors = true,
+): {
+  notices: HostedCacheNotice[]
+  withheldOlderCount: number
+  deferredReplySuccessorCount: number
+  warning: string | null
+} {
   const context = loadClaimContext(database, reader, all, clock)
   const beganAt = reader === OPERATOR_READER ? ('unbounded' as const) : context.readerBeganAt
-  const selected = selectPushNotices(beganAt, claimCachedHostedFromContext(context), clock)
+  const selected = selectPushNotices(
+    beganAt,
+    claimCachedHostedFromContext(context),
+    clock,
+    claimReplySuccessors,
+  )
   const notices = selected.notices.filter((notice) => {
     if (!notice.reportReplySuccessor) return true
     const message = context.messagesById.get(notice.id)
@@ -850,6 +861,7 @@ export function claimCachedHostedForPush(
   return {
     notices,
     withheldOlderCount: selected.withheldOlderCount,
+    deferredReplySuccessorCount: selected.deferredReplySuccessorCount,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }
