@@ -218,6 +218,8 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 export function db(): Database {
   if (databaseAccess.active()) {
     if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
+    const legacyRefusal = legacyDatabaseRefusal()
+    if (legacyRefusal) throw new Error(legacyRefusal)
     assertTestHubDatabasePath()
     if (!existsSync(DB_PATH)) throw new Error(missingHubDatabaseMessage())
     const access = hubStoreAccess(restrictedActor, DB_PATH)

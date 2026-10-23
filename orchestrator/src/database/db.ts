@@ -155,6 +155,8 @@ export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
 
 function commandReadOnlyDatabase(): Database {
   if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   readOnlyHandle = openReadOnlyDatabase()
   readOnlyHandle.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
