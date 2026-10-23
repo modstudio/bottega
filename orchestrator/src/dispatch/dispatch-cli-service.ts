@@ -40,6 +40,7 @@ import {
 import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
+import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
@@ -61,7 +62,11 @@ import {
   isWorktreeRelativeRef,
   resolveBase,
 } from '../worktree/worktree-caller.ts'
-import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
+import {
+  type DispatchDetachSpec,
+  dispatchCommand,
+  reviewMemoryBranch,
+} from './dispatch-commands.ts'
 import { callerCheckoutFacts } from './dispatch-preflight.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey } from './task-key-lookup.ts'
@@ -386,10 +391,20 @@ const detachedMcpConstraints = (
   transportPinSource: spec.transportPinSource,
 })
 
+export type PreDetachSelectionDecision = 'detach-then-wait' | 'foreground-refuse'
+
+export function decidePreDetachSelection(input: {
+  selection: 'capacity-wait' | 'hard-refusal'
+  noWaitCapacity: boolean
+}): PreDetachSelectionDecision {
+  if (input.selection === 'capacity-wait' && !input.noWaitCapacity) return 'detach-then-wait'
+  return 'foreground-refuse'
+}
+
 async function selectBeforeDetach(
   jobName: string,
   text: string,
-  spec: DetachSpec,
+  spec: DispatchDetachSpec,
   presentation: Pick<Presentation, 'cwd' | 'error'>,
 ): Promise<{ agent: string; reason: string } | undefined> {
   if (spec.resume) return undefined
@@ -403,28 +418,42 @@ async function selectBeforeDetach(
     Boolean(requestedJob.findings),
     spec.deliverables ?? [],
   ).requiresCanonSource
-  return waitForAgentSelection({
-    select: () =>
-      pick(
-        jobName,
-        spec.agent,
-        routedPromptBytes(text, replySchemaName, requestedJob, requiresCanonSource),
-        true,
-        stackAt(spec.cwd ?? presentation.cwd()),
-        {
-          agents: spec.avoid,
-          models: spec.distinctModels,
-          model: spec.model,
-          noWaitCapacity: spec.noWaitCapacity,
-          ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
-          project: spec.repo ?? null,
-        },
-        spec.probe,
-        spec.lens,
-      ),
-    noWait: spec.noWaitCapacity,
-    onWait: () => presentation.error('waiting for capacity'),
-  })
+  const select = () =>
+    pick(
+      jobName,
+      spec.agent,
+      routedPromptBytes(text, replySchemaName, requestedJob, requiresCanonSource),
+      true,
+      stackAt(spec.cwd ?? presentation.cwd()),
+      {
+        agents: spec.avoid,
+        models: spec.distinctModels,
+        model: spec.model,
+        noWaitCapacity: spec.noWaitCapacity,
+        ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
+        project: spec.repo ?? null,
+      },
+      spec.probe,
+      spec.lens,
+    )
+  if (spec.waitForCapacityBeforeDetach) {
+    return waitForAgentSelection({
+      select,
+      noWait: spec.noWaitCapacity,
+      onWait: () => presentation.error('waiting for capacity'),
+    })
+  }
+  try {
+    return select()
+  } catch (error) {
+    const selection = error instanceof AgentCapacityError ? 'capacity-wait' : 'hard-refusal'
+    const decision = decidePreDetachSelection({
+      selection,
+      noWaitCapacity: Boolean(spec.noWaitCapacity),
+    })
+    if (decision === 'detach-then-wait') return undefined
+    throw error
+  }
 }
 
 export function detachSpecWithRoutedSelection(
@@ -460,12 +489,13 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       mcp: parseRequestedMcp(argv),
     }
   }
-  const detach = async (jobName: string, text: string, spec: DetachSpec) => {
+  const detach = async (jobName: string, text: string, spec: DispatchDetachSpec) => {
     const selected = await selectBeforeDetach(jobName, text, spec, presentation)
+    const { waitForCapacityBeforeDetach: _, ...runSpec } = spec
     return dispatchDetached(
       jobName,
       text,
-      detachSpecWithRoutedSelection(spec, selected),
+      detachSpecWithRoutedSelection(runSpec, selected),
       selected?.agent,
     )
   }

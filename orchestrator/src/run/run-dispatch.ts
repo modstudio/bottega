@@ -143,11 +143,12 @@ export async function detach(
         spec.carry,
         spec.repo,
       )
-  if (firstTurn && mcpRequest) {
+  if (firstTurn && mcpRequest && selectedAgent) {
     // Who will run is knowable here, and a proven-failed grok attach must not
-    // leave a placeholder for the child to fail. Resume keeps the agent that
-    // already started; it is not a new dispatch.
-    if (!selectedAgent) throw new Error('MCP preflight requires the selected agent')
+    // leave a placeholder for the child to fail. A capacity-only foreground
+    // result has no selected agent yet, so the coordinator performs this same
+    // setup after its capacity wait and records any refusal on the reserved run.
+    // Resume keeps the agent that already started; it is not a new dispatch.
     ensureDispatchMcpMainStack({ mcpRequest, cwd, projectName: spec.repo })
     preflightMcp({ mcp: mcpRequest, cwd, job: jobName, selectedAgent })
   }

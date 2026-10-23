@@ -29,6 +29,7 @@ import type { ReviewFindingMemory } from './review-memory.ts'
 import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.ts'
 
 type TransportName = 'cli' | 'acp'
+export type DispatchDetachSpec = DetachSpec & { waitForCapacityBeforeDetach?: boolean }
 
 export function genericLensProfileNotices(
   resolved: NonNullable<ReturnType<typeof resolveLens>> | null,
@@ -171,7 +172,7 @@ type DispatchPresentation = {
     cwd: string,
     explicitBranch: string | null,
   ): ReviewFindingMemory
-  detach(jobName: string, prompt: string, spec: DetachSpec): Promise<string>
+  detach(jobName: string, prompt: string, spec: DispatchDetachSpec): Promise<string>
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
 }
@@ -574,10 +575,8 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, {
-    ...{ agent, agentExplicit },
-    schema,
+    ...{ agent, agentExplicit, schema, lens },
     label: flag('label'),
-    lens,
     mcp: resolved.mcp,
     model: flag('model'),
     probe: has('probe'),
@@ -597,6 +596,7 @@ export async function dispatchCommand(
     timeoutMinutes,
     keepTree,
     resolvedTaskBranch,
+    waitForCapacityBeforeDetach: true,
   })
   recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
   warnImplementContractConflicts(conflicts, id)

@@ -1,12 +1,25 @@
 import { describe, expect, test } from 'bun:test'
 import {
   callerCheckoutDecision,
+  decidePreDetachSelection,
   detachSpecWithRoutedSelection,
   dispatchLaunchCwdDecision,
   resolveCallerCheckoutDecision,
   taskBranchLandingBypassWarning,
   transportSelection,
 } from './dispatch-cli-service.ts'
+
+test('detached selection waits only after a capacity-only foreground result', () => {
+  expect(decidePreDetachSelection({ selection: 'capacity-wait', noWaitCapacity: false })).toBe(
+    'detach-then-wait',
+  )
+  expect(decidePreDetachSelection({ selection: 'capacity-wait', noWaitCapacity: true })).toBe(
+    'foreground-refuse',
+  )
+  expect(decidePreDetachSelection({ selection: 'hard-refusal', noWaitCapacity: false })).toBe(
+    'foreground-refuse',
+  )
+})
 
 test('a routed selection is handed off separately from the caller pin', () => {
   expect(detachSpecWithRoutedSelection({}, { agent: 'codex', reason: 'surface route' })).toEqual({
