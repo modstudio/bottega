@@ -56,6 +56,17 @@ export type TriageDecision =
       noCompleteReviewRound: boolean
     }
 
+/** The lens coverage still required by an incomplete triage decision. */
+export function missingLensNames(decision: TriageDecision): string[] {
+  if (decision.complete) return []
+  return [
+    ...new Set([
+      ...decision.missingLenses.map(({ lens }) => lens),
+      ...(decision.missingSecondOpinion ? [decision.missingSecondOpinion.lens] : []),
+    ]),
+  ].sort()
+}
+
 type CompleteReviewRound = {
   reviews: readonly TriageReviewRow[]
   tier: 0 | 1 | 2 | 3

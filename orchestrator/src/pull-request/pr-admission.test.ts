@@ -7,6 +7,7 @@ import {
   type PullRequestChange,
   recordMergeAdmission,
   recordTriageIntent,
+  recordTriageOverrideForChange,
   triageRefusal,
 } from './pr-admission.ts'
 import { decideTriage, type TriageEvidence } from './triage-decision.ts'
@@ -18,6 +19,79 @@ test('refuses a secret-shaped override reason before resolving the checkout', ()
       fromOperator: true,
     }),
   ).toThrow('reason resembles a secret')
+})
+
+test('an undisposed finding at the ceiling refuses without recording a ruling', () => {
+  const database = db()
+  const project = database
+    .query<{ record_id: string }, []>(
+      `INSERT INTO project (record_id,name,path,stack,canon,settings,retired_at)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'ceiling-fixture','/tmp/ceiling-fixture',NULL,0,'{"trunk":"main"}',NULL)
+       RETURNING record_id`,
+    )
+    .get()!
+  const change: PullRequestChange = {
+    project: {
+      recordId: project.record_id,
+      name: 'ceiling-fixture',
+      path: '/tmp/ceiling-fixture',
+      stack: null,
+      canon: false,
+      retiredAt: null,
+      settings: { trunk: 'main' },
+    },
+    branch: 'DEV-1641-ceiling',
+    tip: 'tip',
+    tree: 'tree',
+    group: {
+      project: 'ceiling-fixture',
+      branch: 'DEV-1641-ceiling',
+      patchId: 'patch',
+      pathSet: ['a.ts'],
+    },
+    tier: 3,
+    applicability: { lenses: ['correctness', 'craft'] },
+  }
+  const triage = decideTriage({
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    tip: 'tip',
+    tier: 3,
+    applicableReview: { lenses: ['correctness', 'craft'] },
+    branchOwnerSession: null,
+    reviews: [
+      {
+        reviewRecordId: 'review-3',
+        reviewNumber: 3,
+        recordedAt: '2026-10-23T00:00:00Z',
+        completedAt: '2026-10-23T00:01:00Z',
+        tier: 3,
+        patchId: 'patch',
+        pathSet: '["a.ts"]',
+        lensIdentities: ['correctness'],
+        lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true }],
+        findings: [{ recordId: 'finding-3', ordinal: 1, disposition: null }],
+      },
+    ],
+    branchReviewGroups: [],
+    reads: [],
+  })
+  expect(() =>
+    recordTriageOverrideForChange(
+      change,
+      {
+        ceilingRuling: 'no remaining harm',
+        fromOperator: false,
+        roundsUsed: 3,
+        ceiling: 3,
+        triage,
+      },
+      database,
+    ),
+  ).toThrow('findings are undisposed')
+  expect(database.query('SELECT count(*) AS count FROM landing_override').get()).toEqual({
+    count: 0,
+  })
 })
 
 test('records the exact triage snapshot and outboxes it', () => {

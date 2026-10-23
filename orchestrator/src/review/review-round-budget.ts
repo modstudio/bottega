@@ -88,6 +88,18 @@ function eligibleRows(
          JOIN run ON run.record_id=rl.run_record_id
          LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE ${reviewRunEvidenceSql('run', 'rl')}
+          AND r.completed_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM review_lens pending_lens
+             WHERE pending_lens.review_record_id=r.record_id
+               AND (pending_lens.reproduced IS NULL OR pending_lens.coverage IS NULL
+                 OR pending_lens.limits IS NULL OR pending_lens.overlap IS NULL)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM review_finding pending_finding
+             WHERE pending_finding.review_record_id=r.record_id
+               AND pending_finding.disposition IS NULL
+          )
           AND (? IS NULL OR r.recorded_at >= ?)
           AND (? IS NULL OR run.project_record_id=(SELECT record_id FROM project WHERE name=?))
           AND (? IS NULL OR run.branch = ?)
@@ -145,6 +157,8 @@ export function reviewBudgetForBranch(
   eligibleReviewCount: number
   unclassifiableReviewCount: number
 } {
+  // eligibleRows admits a round only after the review is completed, every lens is graded,
+  // and every finding is disposed; grouping then counts each task/patch/path identity once.
   const evidence = branchEvidence(database, undefined, { project, branch }).get(
     branchKey(project, branch),
   )

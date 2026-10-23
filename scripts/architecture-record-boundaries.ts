@@ -535,7 +535,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-landing-boundary',
     'shared/record/schema-landing.ts',
-    ['drizzle-orm/pg-core', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
     'Enforce the hosted landing schema concern boundary.',
   ),
   boundary(

@@ -36,6 +36,8 @@ const change = {
 
 const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride => ({
   recordId: 'override-17',
+  attribution: 'operator',
+  missingLenses: [],
   ...change,
   ...values,
 })
@@ -49,19 +51,27 @@ describe('pull-request admission decision', () => {
     })
   })
 
-  test('a recorded ceiling ruling admits only its exact head', () => {
-    expect(decideAdmission(change, incomplete, [override({ recordId: 'ceiling-ruling' })])).toEqual(
-      {
-        complete: true,
-        overrideId: 'ceiling-ruling',
-        triage: incomplete,
-      },
-    )
+  test('an architect ruling admits only the exact recorded missing-lens gap', () => {
+    const ceiling = override({
+      recordId: 'ceiling-ruling',
+      attribution: 'architect-ceiling',
+      missingLenses: ['correctness'],
+    })
+    const ceilingGap = { ...incomplete, noCompleteReviewRound: false }
+    expect(decideAdmission(change, ceilingGap, [ceiling]).overrideId).toBe('ceiling-ruling')
     expect(
-      decideAdmission({ ...change, tip: 'different-head', tree: 'different-tree' }, incomplete, [
-        override({ recordId: 'ceiling-ruling' }),
-      ]),
-    ).toEqual({ complete: false, overrideId: null, triage: incomplete })
+      decideAdmission(
+        change,
+        {
+          ...ceilingGap,
+          missingLenses: [...incomplete.missingLenses, { lens: 'craft', recordedOnBranch: false }],
+        },
+        [ceiling],
+      ).overrideId,
+    ).toBeNull()
+    expect(
+      decideAdmission({ ...change, tip: 'different-head' }, ceilingGap, [ceiling]).overrideId,
+    ).toBeNull()
   })
 
   test.each([

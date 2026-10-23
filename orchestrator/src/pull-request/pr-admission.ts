@@ -26,13 +26,14 @@ import {
   type AdmissionOverride,
   decideAdmission,
 } from './admission-decision.ts'
-import {
-  decideTriageOverride,
-  type TriageOverrideAttribution,
-  validateTriageOverride,
-} from './override-decision.ts'
+import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
-import { decideTriage, type TriageDecision, type TriageReviewGroup } from './triage-decision.ts'
+import {
+  decideTriage,
+  missingLensNames,
+  type TriageDecision,
+  type TriageReviewGroup,
+} from './triage-decision.ts'
 
 type Git = (cwd: string, args: string[]) => string
 
@@ -186,33 +187,60 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
         tree: string
         patchId: string | null
         pathSet: string | null
+        attribution: TriageOverrideAttribution
+        missingLenses: string
       },
       [string, string]
     >(
-      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet
+      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet,
+              attribution,missing_lenses AS missingLenses
        FROM landing_override
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND branch=? ORDER BY at DESC,record_id DESC`,
     )
     .all(change.project.name, change.branch)
+    .map((row) => ({
+      ...row,
+      missingLenses: JSON.parse(row.missingLenses) as string[],
+    }))
+}
+
+function admissionChange(change: PullRequestChange) {
+  return {
+    project: change.project.name,
+    branch: change.branch,
+    tip: change.tip,
+    tree: change.tree,
+    patchId: change.group.patchId,
+    pathSet: serializePathSet(change.group.pathSet),
+  }
+}
+
+function ceilingTriageFacts(triage: TriageDecision) {
+  return triage.complete
+    ? {
+        complete: true,
+        unfinishedReviewNumbers: [],
+        undisposedFindings: [],
+        missingLenses: [],
+        hasNonLensGap: false,
+      }
+    : {
+        complete: false,
+        unfinishedReviewNumbers: triage.unfinishedReviewNumbers,
+        undisposedFindings: triage.undisposedFindings,
+        missingLenses: missingLensNames(triage),
+        hasNonLensGap:
+          triage.architectReadRequired || triage.finalTierRaised || triage.noCompleteReviewRound,
+      }
 }
 
 export function admissionDecision(
   change: PullRequestChange,
   database: Database,
+  triage: TriageDecision = triageDecision(change, database),
 ): AdmissionDecision {
-  return decideAdmission(
-    {
-      project: change.project.name,
-      branch: change.branch,
-      tip: change.tip,
-      tree: change.tree,
-      patchId: change.group.patchId,
-      pathSet: serializePathSet(change.group.pathSet),
-    },
-    triageDecision(change, database),
-    overridesForChange(change, database),
-  )
+  return decideAdmission(admissionChange(change), triage, overridesForChange(change, database))
 }
 
 export function triageRefusal(
@@ -317,20 +345,41 @@ function insertOverride(
   return row.record_id
 }
 
-function validatedOverrideReason(
-  reason: string | undefined,
-  fromOperator: boolean,
-  reasonOption = '--override-triage',
+export function recordTriageOverrideForChange(
+  change: PullRequestChange,
+  input: {
+    overrideReason?: string
+    ceilingRuling?: string
+    fromOperator: boolean
+    roundsUsed: number
+    ceiling: number
+    triage?: TriageDecision
+    overrideOption?: string
+  },
+  database: Database,
 ): string | null {
-  const validated = validateTriageOverride(reason, fromOperator, reasonOption)
-  if (validated === null) return null
-  if (containsSecretShaped(validated)) {
+  const override = decideTriageOverride({
+    ...input,
+    triage: input.triage ? ceilingTriageFacts(input.triage) : undefined,
+  })
+  if (override.kind === 'refuse') throw new Error(override.reason)
+  if (override.kind === 'none') return null
+  return insertOverride(
+    change,
+    override.reason,
+    override.attribution,
+    override.missingLenses,
+    database,
+  )
+}
+
+function guardTriageOverrideService(reasons: readonly (string | undefined)[]): void {
+  if (reasons.some((reason) => reason !== undefined && containsSecretShaped(reason))) {
     throw new Error('refusing triage override because its reason resembles a secret')
   }
-  if (process.env.ORCH_DEPTH !== undefined) {
+  if (reasons.some((reason) => reason !== undefined) && process.env.ORCH_DEPTH !== undefined) {
     throw new Error('triage overrides are reserved for architect sessions; ORCH_DEPTH is set')
   }
-  return validated
 }
 
 export function recordTriageOverride(
@@ -338,13 +387,24 @@ export function recordTriageOverride(
   fromOperator: boolean,
   cwd = process.cwd(),
 ): string {
-  const validated = validatedOverrideReason(reason, fromOperator, '--reason')
-  if (validated === null)
+  guardTriageOverrideService([reason])
+  if (reason === undefined)
     throw new Error(`${PLATFORM_SLUG} pr override requires --reason "<reason>"`)
   const change = resolvePullRequestChange(cwd)
   const database = writableDb()
   return writeTransaction(
-    () => insertOverride(change, validated, 'operator', [], database),
+    () =>
+      recordTriageOverrideForChange(
+        change,
+        {
+          overrideReason: reason,
+          fromOperator,
+          roundsUsed: 0,
+          ceiling: 0,
+          overrideOption: '--reason',
+        },
+        database,
+      )!,
     database,
   )
 }
@@ -484,17 +544,7 @@ export function createPullRequest(
   options: { overrideReason?: string; ceilingRuling?: string; fromOperator?: boolean },
   cwd = process.cwd(),
 ): { output: string; overrideId: string | null } {
-  for (const candidate of [options.overrideReason, options.ceilingRuling]) {
-    if (candidate !== undefined && containsSecretShaped(candidate)) {
-      throw new Error('refusing triage override because its reason resembles a secret')
-    }
-  }
-  if (
-    (options.overrideReason !== undefined || options.ceilingRuling !== undefined) &&
-    process.env.ORCH_DEPTH !== undefined
-  ) {
-    throw new Error('triage overrides are reserved for architect sessions; ORCH_DEPTH is set')
-  }
+  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
   const change = resolvePullRequestChange(cwd)
   const existing = pullRequestForBranch(cwd, change.branch)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
@@ -502,42 +552,19 @@ export function createPullRequest(
   const checked = writeTransaction(() => {
     const triage = triageDecision(change, database)
     const budget = reviewBudgetForBranch(database, change.project.name, change.branch, null)
-    const missingLenses = triage.complete
-      ? []
-      : [
-          ...triage.missingLenses.map(({ lens }) => lens),
-          ...(triage.missingSecondOpinion ? [triage.missingSecondOpinion.lens] : []),
-        ]
-    const override = decideTriageOverride({
-      overrideReason: options.overrideReason,
-      ceilingRuling: options.ceilingRuling,
-      fromOperator: Boolean(options.fromOperator),
-      roundsUsed: budget.roundsUsed,
-      ceiling: change.tier,
-      missingLenses: [...new Set(missingLenses)],
-    })
-    if (override.kind === 'refuse') throw new Error(override.reason)
-    if (override.kind === 'accept') {
-      insertOverride(
-        change,
-        override.reason,
-        override.attribution,
-        override.missingLenses,
-        database,
-      )
-    }
-    const decision = decideAdmission(
+    recordTriageOverrideForChange(
+      change,
       {
-        project: change.project.name,
-        branch: change.branch,
-        tip: change.tip,
-        tree: change.tree,
-        patchId: change.group.patchId,
-        pathSet: serializePathSet(change.group.pathSet),
+        overrideReason: options.overrideReason,
+        ceilingRuling: options.ceilingRuling,
+        fromOperator: Boolean(options.fromOperator),
+        roundsUsed: budget.roundsUsed,
+        ceiling: change.tier,
+        triage,
       },
-      triage,
-      overridesForChange(change, database),
+      database,
     )
+    const decision = admissionDecision(change, database, triage)
     if (!decision.complete && !decision.triage.complete) {
       throw new Error(triageRefusal(change, decision.triage))
     }

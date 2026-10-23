@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { existsSync } from 'node:fs'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -17,9 +17,16 @@ describe('review round budget decision', () => {
       roundsUsed: 3,
       currentChangeCounted: false,
     })
-    expect(reviewCeilingGuidance(decision)).toBe(
-      `the review round ceiling is reached; the architect rules under \`.agents/rules/20-build-and-buy.md\` “Review rounds are a funnel” and, when no remaining finding can cause harm, records it with \`${PLATFORM_SLUG} pr create ... --ceiling-ruling "<reason>"\``,
-    )
+    const guidance = reviewCeilingGuidance(decision)!
+    expect(guidance).toContain('--ceiling-ruling')
+    const canonPath = guidance.match(/`([^`]+\.md)`/)?.[1]
+    expect(canonPath).toBeDefined()
+    expect(existsSync(new URL(`../../../${canonPath}`, import.meta.url))).toBe(true)
+    expect(
+      reviewCeilingGuidance(
+        reviewRoundBudgetDecision({ tier: 3, roundsUsed: 2, currentChangeCounted: false }),
+      ),
+    ).toBeNull()
   })
 
   test.each([
@@ -67,19 +74,26 @@ function addEvidence(input: {
   probe?: boolean
   excluded?: boolean
   deliveryNone?: boolean
+  completed?: boolean
+  ungraded?: boolean
+  undisposed?: boolean
 }): void {
   const project = input.project ?? 'fixture'
   db()
     .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
     .run(newRecordId(), project, `/fixture/${project}`)
   const review = db()
-    .query<{ record_id: string }, [string, string, number | null, string | null, string]>(
-      `INSERT INTO review (record_id,number,recorded_at,tier,patch_id,path_set)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?) RETURNING record_id`,
+    .query<
+      { record_id: string },
+      [string, string, string | null, number | null, string | null, string]
+    >(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
       input.at,
+      input.completed === false ? null : input.at,
       input.tier,
       input.patch,
       JSON.stringify([input.path ?? 'change.ts']),
@@ -103,10 +117,33 @@ function addEvidence(input: {
   db()
     .query(
       `INSERT INTO review_lens
-       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]')`,
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+        reproduced,coverage,limits,overlap)
+       VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
     )
-    .run(newRecordId(), review.record_id, run)
+    .run(
+      newRecordId(),
+      review.record_id,
+      run,
+      input.ungraded ? null : 'all',
+      input.ungraded ? null : 'adequate',
+      input.ungraded ? null : 'named',
+      input.ungraded ? null : 'alone',
+    )
+  if (input.undisposed) {
+    const lens = db()
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM review_lens WHERE review_record_id=?',
+      )
+      .get(review.record_id)!
+    db()
+      .query(
+        `INSERT INTO review_finding
+         (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction)
+         VALUES (?,?,?,1,'medium','change.ts','evidence','fix')`,
+      )
+      .run(newRecordId(), review.record_id, lens.record_id)
+  }
 }
 
 describe('review budget query', () => {
@@ -138,6 +175,27 @@ describe('review budget query', () => {
     addEvidence({ branch: 'exact', at: '2026-10-01T00:00:00Z', patch: 'one', tier: 2 })
     addEvidence({ branch: 'exact', at: '2026-10-02T00:00:00Z', patch: 'two', tier: 2 })
     addEvidence({ branch: 'no-tier', at: '2026-10-01T00:00:00Z', patch: 'one', tier: null })
+    addEvidence({
+      branch: 'incomplete',
+      at: '2026-10-01T00:00:00Z',
+      patch: 'open',
+      tier: 3,
+      completed: false,
+    })
+    addEvidence({
+      branch: 'incomplete',
+      at: '2026-10-02T00:00:00Z',
+      patch: 'ungraded',
+      tier: 3,
+      ungraded: true,
+    })
+    addEvidence({
+      branch: 'incomplete',
+      at: '2026-10-03T00:00:00Z',
+      patch: 'undisposed',
+      tier: 3,
+      undisposed: true,
+    })
     addEvidence({
       branch: 'no-round',
       launchKey: null,
@@ -173,6 +231,12 @@ describe('review budget query', () => {
       unclassifiableReviewCount: 0,
     })
     expect(reviewBudgetForBranch(db(), 'fixture', 'no-reviews', null)).toEqual({
+      roundsUsed: 0,
+      currentChangeCounted: false,
+      eligibleReviewCount: 0,
+      unclassifiableReviewCount: 0,
+    })
+    expect(reviewBudgetForBranch(db(), 'fixture', 'incomplete', null)).toEqual({
       roundsUsed: 0,
       currentChangeCounted: false,
       eligibleReviewCount: 0,
