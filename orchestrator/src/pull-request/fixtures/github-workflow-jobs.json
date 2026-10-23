@@ -1,0 +1,7 @@
+{
+  "total_count": 2,
+  "jobs": [
+    { "id": 4201, "name": "unit", "conclusion": "success" },
+    { "id": 4202, "name": "integration", "conclusion": "failure" }
+  ]
+}

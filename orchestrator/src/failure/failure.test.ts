@@ -55,6 +55,18 @@ describe('vendor capacity classification', () => {
   })
 })
 
+describe('billing classification', () => {
+  test('classifies the recorded grok balance exhaustion and an HTTP payment status', () => {
+    expect(classify('402 Grok Build usage balance exhausted')).toBe('billing')
+    expect(classify('402 Payment Required')).toBe('billing')
+  })
+
+  test('does not treat an unrelated 402 number as a billing status', () => {
+    expect(classify('orchestrator/src/x.ts:402')).not.toBe('billing')
+    expect(classify('processed 402 files')).not.toBe('billing')
+  })
+})
+
 describe('failure text clustering', () => {
   test('normalizes the measured 14-day failure shapes without volatile values', () => {
     const fixtures = [

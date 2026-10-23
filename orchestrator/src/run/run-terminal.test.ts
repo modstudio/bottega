@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -11,7 +12,33 @@ import {
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
+  writeTerminalOperationalState,
 } from './run-terminal.ts'
+
+test('a billing terminal outcome durably disables the agent with its operator remedy', () => {
+  const runId = addRun({ agent: 'grok', job: 'implement' })
+
+  writeTerminalOperationalState(db(), runId, null, 'billing', 'grok')
+
+  expect(db().query("SELECT enabled,disabled_reason FROM agent WHERE name='grok'").get()).toEqual({
+    enabled: 0,
+    disabled_reason: `billing hold — restore the vendor balance or billing limit, then run '${PLATFORM_SLUG} agent set grok --enabled true'`,
+  })
+})
+
+test('a non-billing terminal outcome leaves agent enablement unchanged', () => {
+  const runId = addRun({ agent: 'grok', job: 'implement' })
+  db()
+    .query("UPDATE agent SET enabled=0,disabled_reason='operator disabled' WHERE name='grok'")
+    .run()
+
+  writeTerminalOperationalState(db(), runId, null, 'quota', 'grok')
+
+  expect(db().query("SELECT enabled,disabled_reason FROM agent WHERE name='grok'").get()).toEqual({
+    enabled: 0,
+    disabled_reason: 'operator disabled',
+  })
+})
 
 test('an ok child refreshes the failed root run record with the chain outcome', () => {
   const root = addRun({

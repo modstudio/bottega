@@ -63,6 +63,7 @@ function adapter(
       database: ReturnType<typeof db>,
     ) => string | null
     recordLandings?: () => void
+    recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
   } = {},
 ): PullRequestMergeAdapter {
@@ -84,6 +85,7 @@ function adapter(
     recordAdmission: (change, decision, prNumber, database) =>
       input.recordAdmission?.(change, decision, prNumber, database) ?? null,
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
+    ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
     queueState: () => ({
@@ -148,6 +150,39 @@ test('an injected forge adapter merges all-passing checks with the method, subje
   )
   expect(commit.output).toBe('merged-oid')
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
+})
+
+test('an incomplete CI record is merge residue with the shared retry remedy', () => {
+  registerProject(['test'])
+  const incomplete = `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: 'check' }],
+      recordCi: () => incomplete,
+    }),
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain(incomplete)
+})
+
+test('a thrown CI fetch failure is merge residue with the shared retry remedy', () => {
+  registerProject(['test'])
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: 'check' }],
+      recordCi: () => {
+        throw new Error('workflow runs unavailable')
+      },
+    }),
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain(
+    `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`,
+  )
 })
 
 test('a cleanup failure reports its retry without undoing a successful merge', () => {

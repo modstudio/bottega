@@ -53,6 +53,7 @@ import {
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
+import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
 import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
@@ -872,6 +873,7 @@ const recordKinds = {
         requireOwnedUpsert(written, 'landing_triage_snapshot', values.id)
       }),
   },
+  pull_request_ci: pullRequestCiRecordKind(existingEvidenceOwned, requireOwnedUpsert),
   contention: {
     ...OUTBOX_PAYLOAD_CONTRACTS.contention,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>

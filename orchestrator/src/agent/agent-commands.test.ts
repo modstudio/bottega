@@ -109,6 +109,37 @@ test('a successful registration probe clears a quota cooldown', async () => {
   ).toEqual({ probe: 1, status: 'ok' })
 })
 
+test('a successful registration probe does not clear a billing hold', async () => {
+  const original = db()
+    .query("SELECT enabled,disabled_reason,probe_result FROM agent WHERE name='grok'")
+    .get() as { enabled: number; disabled_reason: string | null; probe_result: string }
+  const reason = `billing hold — restore the vendor balance or billing limit, then run '${PLATFORM_SLUG} agent set grok --enabled true'`
+  db().query("UPDATE agent SET enabled=0,disabled_reason=? WHERE name='grok'").run(reason)
+  refreshAgents()
+  try {
+    await agentCommand(
+      ['agent', 'probe', 'grok'],
+      { log: () => {}, setExitCode: () => {} },
+      { probeAgent: async () => JSON.parse(original.probe_result) },
+    )
+    expect(db().query("SELECT enabled,disabled_reason FROM agent WHERE name='grok'").get()).toEqual(
+      { enabled: 0, disabled_reason: reason },
+    )
+    await agentCommand(['agent', 'set', 'grok', '--enabled', 'true'], {
+      log: () => {},
+      setExitCode: () => {},
+    })
+    expect(db().query("SELECT enabled,disabled_reason FROM agent WHERE name='grok'").get()).toEqual(
+      { enabled: 1, disabled_reason: null },
+    )
+  } finally {
+    db()
+      .query("UPDATE agent SET enabled=?,disabled_reason=? WHERE name='grok'")
+      .run(original.enabled, original.disabled_reason)
+    refreshAgents()
+  }
+})
+
 test('agent add persists job, concurrency, and metered-routing flags', async () => {
   const output: string[] = []
   try {

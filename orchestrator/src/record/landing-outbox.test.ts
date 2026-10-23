@@ -72,6 +72,7 @@ test('landing evidence backfill enqueues references in order, maps every column,
     enqueuedTriageSnapshots: 0,
     enqueuedContentions: 1,
     enqueuedFlakes: 1,
+    enqueuedPullRequestCi: 0,
   })
   const rows = database
     .query<{ kind: string; payload: string }, []>('SELECT kind,payload FROM outbox ORDER BY id')
@@ -115,6 +116,7 @@ test('landing evidence backfill enqueues references in order, maps every column,
     enqueuedTriageSnapshots: 0,
     enqueuedContentions: 0,
     enqueuedFlakes: 0,
+    enqueuedPullRequestCi: 0,
   })
   expect(
     database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,

@@ -71,7 +71,7 @@ describe('reclassify-failures', () => {
       db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(failed),
     ).toEqual({
       status: 'failed',
-      failure_kind: 'quota',
+      failure_kind: 'billing',
     })
     expect(
       db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(successful),
@@ -83,7 +83,7 @@ describe('reclassify-failures', () => {
       db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(nullKind),
     ).toEqual({
       status: 'failed',
-      failure_kind: 'quota',
+      failure_kind: 'billing',
     })
     expect(
       db().query('SELECT status, failure_kind FROM run WHERE record_id=?').get(unrelated),
@@ -100,7 +100,7 @@ describe('reclassify-failures', () => {
     const again = runCli('reclassify-failures')
     expect(again.exitCode).toBe(0)
     expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(failed)).toEqual({
-      failure_kind: 'quota',
+      failure_kind: 'billing',
     })
   }, 20_000)
 })

@@ -250,6 +250,56 @@ describe('workflow render check', () => {
     ])
   })
 
+  test('renders ship-task ship-to steps when every release rung is on demand', () => {
+    const definition: WorkflowDefinition = {
+      title: 'Ship task',
+      description: 'Ships a task.',
+      arguments: [
+        { name: 'key', required: true, description: 'Task key.' },
+        { name: 'depth', required: false, description: 'Last release rung to reach.' },
+      ],
+      modes: [
+        {
+          slug: 'full',
+          title: 'Full',
+          default: true,
+          steps: ['merge-pr', 'promote-release', 'close-task'],
+        },
+        { slug: 'merge', title: 'Merge', steps: ['merge-pr'] },
+      ],
+    }
+    const shipCatalogue: StepCatalogueDefinition = {
+      steps: [
+        { ...catalogue('Merge.').steps[0]!, slug: 'merge-pr', needs: ['release', 'ship-to'] },
+        {
+          ...catalogue('Promote.').steps[0]!,
+          slug: 'promote-release',
+          needs: ['release', 'ship-to'],
+        },
+        {
+          ...catalogue('Close.').steps[0]!,
+          slug: 'close-task',
+          needs: ['release', 'tracker', 'ship-to'],
+        },
+      ],
+    }
+    const result = checkWorkflowRendering([{ slug: 'ship-task', definition }], shipCatalogue, [
+      project({
+        release: {
+          rungs: [{ name: 'hosted-api', branch: 'main', onDemand: true }],
+          mergeMethod: 'squash',
+          requiredChecks: [],
+        },
+        tracker: {
+          protocol: 'hub',
+          states: { review: 'review', done: 'done' },
+        },
+      }),
+    ])
+
+    expect(result).toEqual({ failures: [], unresolvedProjects: [], resolutionFailures: [] })
+  })
+
   test('reports a floor placeholder that resolves to an invalid floor kind', () => {
     const badFloor = catalogue('Body renders.')
     badFloor.steps[0]!.floor = ['{{tracker.server}}']
