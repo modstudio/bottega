@@ -308,13 +308,14 @@ post a notice to the architects board
 
 ## bottega board presence
 
-**Synopsis:** `bottega board presence [--started-at <instant>]`
+**Synopsis:** `bottega board presence [--started-at <instant>] [--began-at <instant>]`
 
 record this architect session as present
 
 ### Options
 
 - `--started-at <instant>`: session-start instant
+- `--began-at <instant>`: session start recorded on insert only
 
 ### Related
 
