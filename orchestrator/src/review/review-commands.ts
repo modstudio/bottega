@@ -315,13 +315,17 @@ function printReviewRoundStatus(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): void {
-  if (output.post_fix.kind === 'no-round-needed' && output.lenses.length === 0) {
+  if (
+    output.lenses.length === 0 &&
+    (output.post_fix.kind === 'no-round-needed' ||
+      output.post_fix.kind === 'reviewed-tip-unidentified')
+  ) {
     log('no round needed: the architect reads the fix and lands it')
     return
   }
   if (output.post_fix.kind === 'reviewed-tip-unidentified') {
     log(
-      `completed review ${output.post_fix.reviewNumber} tip could not be identified from review pins by patch identity; falling back to the full current-change review`,
+      `completed review ${output.post_fix.reviewNumber} tip could not be identified from review pins by patch identity; applying the review funnel`,
     )
   }
   if (output.post_fix.kind === 're-lens') {
