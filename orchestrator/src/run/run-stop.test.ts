@@ -1,12 +1,14 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import { existsSync, rmSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { discardRun } from '../cleanup/cleanup.ts'
+import * as closeOut from '../close/close-out.ts'
 import { cleanFixture, closeOutFixture } from '../close/reader-scratch-close-out.fixture.ts'
 import { db } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import * as dockerResources from '../resources/docker-resources.ts'
 import { candidates } from '../route/route.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
@@ -24,6 +26,7 @@ const presentation = () => {
     },
   }
 }
+
 async function invoke(
   action: 'stop' | 'abandon',
   id: string,
@@ -394,6 +397,35 @@ test('stop then discard when close-out is already recorded', async () => {
     expect(await discardStopped(fixture.id)).toContain(
       `run ${fixture.id}'s worktree was already released by stop or close-out`,
     )
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
+
+test('stop and discard agree when clone removal precedes failed close-out recording', async () => {
+  const fixture = runningReaderClone()
+  spyOn(closeOut, 'closeOutRun').mockImplementation(() => {
+    rmSync(fixture.worktree, { recursive: true, force: true })
+    throw new Error('recording transaction failed')
+  })
+  spyOn(dockerResources, 'resourcesForRuns').mockReturnValue({
+    ascertainable: true,
+    resources: [],
+  })
+  try {
+    const result = await invoke('stop', fixture.id)
+    expect(result.code).toBe(0)
+    expect(result.out).toContain(`released worktree ${fixture.worktree}`)
+    expect(
+      db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
+    ).toEqual({ worktree: fixture.worktree, close_out_outcome: null })
+
+    expect(await discardStopped(fixture.id)).toContain(
+      `run ${fixture.id}'s worktree was already released by stop or close-out`,
+    )
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(fixture.id)).toEqual({
+      worktree: null,
+    })
   } finally {
     cleanFixture(fixture.repo, fixture.nestedSource)
   }

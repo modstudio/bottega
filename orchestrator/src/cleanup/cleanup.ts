@@ -407,6 +407,15 @@ function mintedBranchForCleanup(row: CleanupRow): string | null {
   }
 }
 
+function discardedWorktreeLine(
+  verb: 'discarded' | 'abandoned',
+  runId: string,
+  treeWasAlreadyReleased: boolean,
+): string {
+  if (verb === 'discarded' && treeWasAlreadyReleased) return alreadyReleasedWorktreeLine(runId)
+  return `${verb} run ${runId}'s worktree`
+}
+
 function assertDiscardTreeOwnership(row: CleanupRow, repoRoot: string, force: boolean): void {
   if (force || !existsSync(row.worktree)) return
   const conversationIds = (
@@ -465,6 +474,7 @@ export function discardWorktree(
 ): void {
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
   withCleanupLock(repoRoot, `${row.record_id}`, row.worktree, () => {
+    const treeWasAlreadyReleased = !existsSync(row.worktree)
     assertDiscardTreeOwnership(row, repoRoot, force)
     const sharers = otherConversationWorktreeSharers(db(), row)
     if (sharers.length) releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
@@ -589,7 +599,7 @@ export function discardWorktree(
       }
       if (auditAuthority) auditRunMutation(auditAuthority, 'discard', options.auditReason)
     })
-    options.presentation.log(`${verb} run ${row.record_id}'s worktree`)
+    options.presentation.log(discardedWorktreeLine(verb, row.record_id, treeWasAlreadyReleased))
     if (r.output) options.presentation.log(r.output)
     if (protectedBranch && keptProtectedBranch) {
       options.presentation.log(

@@ -265,13 +265,16 @@ export async function stopRun(
     if (refusal) throw new Error(refusal)
   }
   const dockerTeardown = teardownTerminalRunResources(db(), row.record_id)
+  const readerCloneRelease = releaseStoppedReaderClone(
+    cleanupRow.record_id,
+    stopCoordinatorExtraPids(row.pid),
+  )
   logStoppedRun(
     options,
     row,
     cleanupRow,
     dockerTeardown,
-    releaseStoppedReaderClone(cleanupRow.record_id, stopCoordinatorExtraPids(row.pid)) ===
-      'released',
+    readerCloneRelease === 'released' || readerCloneRelease === 'tree-released-with-unrecorded-row',
   )
 }
 

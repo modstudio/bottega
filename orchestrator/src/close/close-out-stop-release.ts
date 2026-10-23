@@ -1,12 +1,17 @@
 // concern: close-out
 /** Releases a stopped conversation's tree only when it is a reader clone. Must not know the CLI. */
 
+import { existsSync } from 'node:fs'
 import { discardWorktreeAbsence } from '../cleanup/discard-worktree-absence.ts'
 import { db } from '../database/db.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { closeOutRun } from './close-out.ts'
 
-export type StoppedReaderCloneRelease = 'released' | 'kept' | 'not-applicable'
+export type StoppedReaderCloneRelease =
+  | 'released'
+  | 'tree-released-with-unrecorded-row'
+  | 'kept'
+  | 'not-applicable'
 
 function conversationRoot(runId: string): string {
   const row = db()
@@ -59,5 +64,6 @@ export function releaseStoppedReaderClone(
   } catch {
     // Close-out may have recorded the release before throwing.
   }
-  return recordedReaderCloneRelease(rootId) ? 'released' : 'kept'
+  if (recordedReaderCloneRelease(rootId)) return 'released'
+  return existsSync(worktree) ? 'kept' : 'tree-released-with-unrecorded-row'
 }
