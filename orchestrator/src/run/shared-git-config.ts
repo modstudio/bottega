@@ -8,7 +8,7 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { recordRunWarning } from '../events.ts'
 import { commonGitDir, targetGitEnvironment } from '../git/git-environment.ts'
 
-export const SHARED_GIT_CONFIG_SNAPSHOT_FILE = 'shared-git-config-snapshot.json'
+const SHARED_GIT_CONFIG_SNAPSHOT_FILE = 'shared-git-config-snapshot.json'
 
 export type GitConfigValues = Readonly<Record<string, readonly string[]>>
 export type SharedGitConfigSnapshot =

@@ -86,6 +86,29 @@ describe('reapStale', () => {
     })
   })
 
+  test('a stale writing run checks shared config before recording its terminal result', () => {
+    const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
+      .run(4194304, 4194304, '/trees/run', id)
+    const checked: unknown[] = []
+
+    expect(
+      reapStale(db(), (input) => {
+        checked.push(input)
+        return 'shared git config changed: user.name (changed; value names run tree: no) in /repo/.git/config'
+      }),
+    ).toBe(1)
+    expect(checked).toEqual([{ runId: id, job: 'implement', worktree: '/trees/run' }])
+    expect(
+      (
+        db().query('SELECT error FROM run WHERE record_id=?').get(id) as {
+          error: string
+        }
+      ).error,
+    ).toContain('shared git config changed: user.name')
+  })
+
   test('the reaper says WHY it swept, so routing can discount it', () => {
     // Without the kind these rows are indistinguishable from an agent that
     // simply failed, and the router charges them accordingly.

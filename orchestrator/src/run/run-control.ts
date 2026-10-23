@@ -43,16 +43,28 @@ import {
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
 import { RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
-import { terminalSharedGitConfigForRun } from './shared-git-config.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
+import { terminalSharedGitConfigForRun } from './shared-git-config.ts'
 
 export type RunControlPresentation = {
   dur(ms: number | null | undefined): string
   scoreHint(id: string, jobName: string, parent: string | null): string
   argvResumeLimit(agentName: string): number | undefined
   printRunId(id: string): void
+}
+
+function checkSharedGitConfig(input: {
+  runId: string
+  job: string
+  worktree: string | null
+}): string | null {
+  return terminalSharedGitConfigForRun({
+    runId: input.runId,
+    writesJob: Boolean(job(input.job).needs.writesRepo),
+    worktree: input.worktree,
+  })
 }
 
 export function continuationInstructionsForFreshRetry(
@@ -244,13 +256,7 @@ export async function follow(
       )
       process.exit(2)
     }
-    const observed = reapStale(db(), (input) =>
-      terminalSharedGitConfigForRun({
-        runId: input.runId,
-        writesJob: Boolean(job(input.job).needs.writesRepo),
-        worktree: input.worktree,
-      }),
-    )
+    const observed = reapStale(db(), checkSharedGitConfig)
     if (Array.isArray(observed) && observed.some((dead) => dead.record_id === chain.finalId)) {
       console.error(
         `run ${chain.finalId}: process gone, not terminalised (read-only linked worktree)`,

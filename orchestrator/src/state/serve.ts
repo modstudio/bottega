@@ -29,9 +29,9 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { reapStale } from '../run/run-liveness.ts'
-import { terminalSharedGitConfigForRun } from '../run/shared-git-config.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
+import { terminalSharedGitConfigForRun } from '../run/shared-git-config.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 import { guide } from './guide.ts'
@@ -40,6 +40,18 @@ registerStandardRuntime()
 
 const jsonArray = (value: unknown) =>
   typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
+
+function checkSharedGitConfig(input: {
+  runId: string
+  job: string
+  worktree: string | null
+}): string | null {
+  return terminalSharedGitConfigForRun({
+    runId: input.runId,
+    writesJob: Boolean(JOBS[input.job]?.needs.writesRepo),
+    worktree: input.worktree,
+  })
+}
 
 function reviewsForRun(runId: string): RunDetailReviewLens[] {
   const lenses = db()
@@ -256,13 +268,7 @@ export function state(sinceDays: number | null = null) {
   // flight" without ever becoming stale: reapStale had left it alone because
   // its pid was alive, and then the view hid it. Sweep first, then show
   // whatever is still marked running.
-  reapStale(d, (input) =>
-    terminalSharedGitConfigForRun({
-      runId: input.runId,
-      writesJob: Boolean(JOBS[input.job]?.needs.writesRepo),
-      worktree: input.worktree,
-    }),
-  )
+  reapStale(d, checkSharedGitConfig)
 
   /**
    * ASKING RUNS ARE LIVE, and are the ones most worth seeing.

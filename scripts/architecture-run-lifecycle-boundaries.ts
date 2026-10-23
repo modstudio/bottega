@@ -123,6 +123,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-authority.ts',
       './run-dispatch.ts',
       './run-liveness.ts',
+      './shared-git-config.ts',
       './run-resume-kind.ts',
       './run-retry.ts',
       './checkpoint.ts',
