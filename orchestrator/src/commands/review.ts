@@ -27,6 +27,7 @@ import { reviewBudgetCommand } from '../review/review-round-budget.ts'
 import { scopeProposalReviewCommand } from '../review/review-scope-proposal-command.ts'
 import { restoreReviewTriageCommand } from '../review/review-triage-restore.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {
   formatConfinementReport,
   parseConfinementJobSelector,
@@ -120,13 +121,16 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
     .allowExcessArguments(true)
     .option('--project <value>', 'include only evidence for this project')
     .option('--since <value>', 'include evidence recorded at or after this ISO datetime')
+    .option('--until <value>', 'include evidence recorded before this ISO datetime')
     .option('--task <value>', 'include only evidence attributed to this task')
     .option('--key <value>', 'alias for --task')
     .option('--lens <value>', 'include only evidence from this lens')
     .option('--agent <value>', 'include only evidence from this agent')
     .option('--json', 'write the yield report as JSON')
     .action((_options, command) =>
-      run(command, (_argv, flags, output) => yieldReviewCommand(flags, output)),
+      run(command, async (_argv, flags, output) =>
+        yieldReviewCommand(flags, output, await loadSubscriptionCostContext()),
+      ),
     )
 
   review

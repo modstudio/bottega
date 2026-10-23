@@ -475,7 +475,7 @@ set the disposition of one finding on an incomplete review
 
 ## bottega review yield
 
-**Synopsis:** `bottega review yield [--project <value>] [--since <value>] [--task <value>] [--key <value>] [--lens <value>] [--agent <value>] [--json]`
+**Synopsis:** `bottega review yield [--project <value>] [--since <value>] [--until <value>] [--task <value>] [--key <value>] [--lens <value>] [--agent <value>] [--json]`
 
 report the measured yield of completed review evidence
 
@@ -483,6 +483,7 @@ report the measured yield of completed review evidence
 
 - `--project <value>`: include only evidence for this project
 - `--since <value>`: include evidence recorded at or after this ISO datetime
+- `--until <value>`: include evidence recorded before this ISO datetime
 - `--task <value>`: include only evidence attributed to this task
 - `--key <value>`: alias for --task
 - `--lens <value>`: include only evidence from this lens
