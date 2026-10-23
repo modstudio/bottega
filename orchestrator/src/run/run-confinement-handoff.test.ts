@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, expect, mock, test } from 'bun:test'
+import { afterEach, beforeAll, expect, mock, spyOn, test } from 'bun:test'
 import { mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -85,11 +85,8 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
     ensureLocalHealth: async () => ({ ok: true, detail: 'fixture' }),
     tryWake: () => ({ sent: false, detail: 'fixture' }),
   }))
-  mock.module('./run-worker-home.ts', () => ({
-    ...productionWorkerHome,
-    prepareWorkerHomeLaunch: async (
-      input: Parameters<typeof productionWorkerHome.prepareWorkerHomeLaunch>[0],
-    ) => {
+  spyOn(productionWorkerHome, 'prepareWorkerHomeLaunch').mockImplementation(
+    async (input: Parameters<typeof productionWorkerHome.prepareWorkerHomeLaunch>[0]) => {
       // The real preparation refuses without a host Codex login, a host precondition rather than fixture behavior.
       const harness = workerHarnessName(input.agent)
       return {
@@ -99,7 +96,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
         sandboxEnvironment: {},
       }
     },
-  }))
+  )
   mock.module('./run-terminal.ts', () => ({
     finishRun: async (input: {
       watchedCheckouts: Parameters<typeof freezeAfterCheckouts>[0]['watched']
