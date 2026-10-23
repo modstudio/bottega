@@ -278,7 +278,12 @@ async function claimMonitorNoticesWithHosted(
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
   const database = openReadOnlyDatabase()
   try {
-    const board = await pendingBoardDelivery({ session: ownerSession, budgetMs: 0, database })
+    const board = await pendingBoardDelivery({
+      session: ownerSession,
+      budgetMs: 0,
+      database,
+      claimReplySuccessors: false,
+    })
     const verification =
       verificationSource.source === 'stored'
         ? hostedBoardVerificationWarning(database)
@@ -300,7 +305,7 @@ async function claimMonitorNoticesWithHosted(
           }),
         ),
       ],
-      warning: [overflow, verification].filter(Boolean).join(' ') || null,
+      warning: [overflow, board.warning, verification].filter(Boolean).join(' ') || null,
     }
   } finally {
     database.close()

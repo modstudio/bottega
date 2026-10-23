@@ -3,7 +3,11 @@ import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { boardPushDecision, reportReplySuccessorDecision } from './board-push-policy.ts'
+import {
+  boardPushDecision,
+  reportReplySuccessorDecision,
+  selectPushNotices,
+} from './board-push-policy.ts'
 import { claimPushNotices, postNotice } from './board-service.ts'
 import { replyToThread } from './board-thread-service.ts'
 
@@ -119,6 +123,21 @@ test('a session that began after a post is not pushed an older request', () => {
       reportReplySuccessor: true,
     }),
   ).toBe('ordinary')
+})
+
+test('a read-only delivery defers a reply successor instead of claiming it', () => {
+  const successor = {
+    ackRequired: false,
+    ackDeadline: null,
+    createdAt: postedAt,
+    expiresAt: null,
+    reportReplySuccessor: true,
+  }
+  expect(selectPushNotices('2026-10-16T12:00:00.000Z', [successor], clock, false)).toEqual({
+    notices: [],
+    withheldOlderCount: 1,
+    deferredReplySuccessorCount: 1,
+  })
 })
 
 function ensurePostingProject() {

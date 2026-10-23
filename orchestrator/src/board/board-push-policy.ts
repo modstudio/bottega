@@ -137,8 +137,14 @@ export function selectPushNotices<
   readerBeganAt: BoardReaderStart,
   candidates: T[],
   clock: number,
-): { notices: T[]; withheldOlderCount: number } {
+  claimReplySuccessors = true,
+): { notices: T[]; withheldOlderCount: number; deferredReplySuccessorCount: number } {
+  let deferredReplySuccessorCount = 0
   const notices = candidates.flatMap((notice) => {
+    if (notice.reportReplySuccessor && !claimReplySuccessors) {
+      deferredReplySuccessorCount += 1
+      return []
+    }
     const decision = boardPushDecision({
       acknowledgementRequired: notice.ackRequired,
       postedAt: notice.createdAt,
@@ -152,7 +158,11 @@ export function selectPushNotices<
     if (decision === 'withheld') return []
     return [notice]
   })
-  return { notices, withheldOlderCount: candidates.length - notices.length }
+  return {
+    notices,
+    withheldOlderCount: candidates.length - notices.length,
+    deferredReplySuccessorCount,
+  }
 }
 
 export const missingReaderStartWarning = (reader: string): string =>

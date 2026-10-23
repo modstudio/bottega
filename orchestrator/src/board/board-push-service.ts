@@ -47,7 +47,13 @@ type DeliveryInput = {
   recentlyInjectedIds?: string[]
   clock?: number
   database?: Database
+  claimReplySuccessors?: boolean
 }
+
+const deferredReplySuccessorWarning = (count: number): string | null =>
+  count > 0
+    ? `${count} report reply successor${count === 1 ? '' : 's'} require a writable claim and were deferred by this read-only delivery.`
+    : null
 
 const receiptAt = (database: Database, table: string, id: string | number, session: string) =>
   (database
@@ -175,8 +181,15 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   if (input.budgetMs > 0) await refreshHostedBoard({ budgetMs: input.budgetMs, database })
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const beganAt = boardReaderBeganAt(input.session, database)
-  const localPush = claimPushNotices(false, env, clock, database)
-  const hostedPush = claimCachedHostedForPush(input.session, false, clock, database)
+  const claimReplySuccessors = input.claimReplySuccessors ?? true
+  const localPush = claimPushNotices(false, env, clock, database, claimReplySuccessors)
+  const hostedPush = claimCachedHostedForPush(
+    input.session,
+    false,
+    clock,
+    database,
+    claimReplySuccessors,
+  )
   const unread: BoardDelivery[] = [
     ...localPush.notices.map((message) => ({
       id: String(message.number),
@@ -223,7 +236,16 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     delivery: selected.messages,
     overflow: selected.overflow,
     pendingAcknowledgements,
-    warning: localPush.warning ?? hostedPush.warning,
+    warning:
+      [
+        localPush.warning,
+        hostedPush.warning,
+        deferredReplySuccessorWarning(
+          localPush.deferredReplySuccessorCount + hostedPush.deferredReplySuccessorCount,
+        ),
+      ]
+        .filter(Boolean)
+        .join(' ') || null,
   }
 }
 

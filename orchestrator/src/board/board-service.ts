@@ -419,15 +419,22 @@ export function claimPushNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database: Database = writableDb(),
+  claimReplySuccessors = true,
 ): {
   notices: ReturnType<typeof claimNotices>
   withheldOlderCount: number
+  deferredReplySuccessorCount: number
   warning: string | null
 } {
   const reader = boardReader(env)
   const beganAt =
     reader === OPERATOR_READER ? ('unbounded' as const) : boardReaderBeganAt(reader, database)
-  const selected = selectPushNotices(beganAt, claimNotices(all, env, clock, database), clock)
+  const selected = selectPushNotices(
+    beganAt,
+    claimNotices(all, env, clock, database),
+    clock,
+    claimReplySuccessors,
+  )
   const notices = selected.notices.filter((notice) => {
     if (!notice.reportReplySuccessor) return true
     const row = messageRows(database).find((item) => item.record_id === notice.recordId)
@@ -436,6 +443,7 @@ export function claimPushNotices(
   return {
     notices,
     withheldOlderCount: selected.withheldOlderCount,
+    deferredReplySuccessorCount: selected.deferredReplySuccessorCount,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }
