@@ -47,7 +47,7 @@ const context = { session: 'session-one' }
 const matchingCheckout = {
   headIsTipOrAncestor: true,
   landingBranch: 'main',
-  ...{ project: 'fixture', branch: args.branch },
+  ...{ project: 'fixture', branch: args.branch, checkoutPath: '/tmp/work' },
 }
 
 const testPorts = {

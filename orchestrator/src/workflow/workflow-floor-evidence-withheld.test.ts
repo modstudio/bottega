@@ -39,6 +39,7 @@ const gather = (d: Database) =>
       resolveCheckout: () => ({
         project: 'fixture',
         branch: 'DEV-977-work',
+        checkoutPath: '/fixture/work',
         headIsTipOrAncestor: true,
         landingBranch: 'main',
       }),

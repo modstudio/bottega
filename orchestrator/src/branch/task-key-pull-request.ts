@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 export type BranchLanding = {
   mergeCommit: string | null
   pullRequestNumber: number
+  tip: string | null
 }
 
 /** The latest recorded landing for this exact branch. */
@@ -16,7 +17,7 @@ export function latestBranchLanding(
 ): BranchLanding | null {
   return d
     .query<BranchLanding, [string, string]>(
-      `SELECT merge_commit AS mergeCommit, pr_number AS pullRequestNumber
+      `SELECT merge_commit AS mergeCommit, pr_number AS pullRequestNumber, tip
          FROM branch_landing_record
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
         ORDER BY merged_at DESC, pr_number DESC

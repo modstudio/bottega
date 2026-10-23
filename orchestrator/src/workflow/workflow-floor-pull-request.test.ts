@@ -176,6 +176,17 @@ test('a pr-create exec from another session is refused on every pull-request flo
     )
 })
 
+test('a pr-create exec predating the step names the pull-request link alternative', () => {
+  const decision = decide({
+    ...matchingExecEvidence,
+    exec: { ...matchingExecEvidence.exec, createdAfterStepActivation: false },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message: expect.stringContaining('pass `--artifact <the pull request link>`'),
+  })
+})
+
 test('a withheld pr-create exec names the pull-request link remedy', () => {
   const decision = decideFloorSatisfaction({
     floors: [pullRequestExit],

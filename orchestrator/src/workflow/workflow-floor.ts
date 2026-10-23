@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   commandExitBindingRefusal,
   commandExitMismatchRefusal,
+  floorsAcceptPullRequestLink,
   gateFloorRefusal,
 } from './workflow-floor-refusal.ts'
 
@@ -809,7 +810,10 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   )
   const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }
-  const bindingRefusal = commandExitBindingRefusal(input.evidence.exec)
+  const bindingRefusal = commandExitBindingRefusal(
+    input.evidence.exec,
+    floorsAcceptPullRequestLink(input.floors),
+  )
   if (
     met.length === 0 &&
     bindingRefusal &&

@@ -15,11 +15,10 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
+import { projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -38,6 +37,7 @@ import {
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -185,63 +185,6 @@ function positive(value: number | undefined, flag: string): number | undefined {
   if (value === undefined) return undefined
   if (!Number.isInteger(value) || value < 1) throw new Error(`${flag} must be a positive integer`)
   return value
-}
-
-function gitText(cwd: string, args: string[]): string | null {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
-  return result.status === 0 ? result.stdout.trim() : null
-}
-
-function gitOk(cwd: string, args: string[]): boolean {
-  return spawnSync('git', args, { cwd, encoding: 'utf8' }).status === 0
-}
-
-function cwdProject(cwd: string, identity: CursorIdentity, d: Database): string | null {
-  const at = projectAt(cwd, d)?.name ?? null
-  if (at) return at
-  const tree = identity.worktree
-  if (tree && (cwd === tree || cwd.startsWith(`${tree}/`))) return identity.project
-  return null
-}
-
-function productionResolveCheckout(
-  cwd: string,
-  headCommit: string | null,
-  expectedBranch: string | null,
-  identity: CursorIdentity,
-  d: Database,
-): CheckoutResolution {
-  const project = cwdProject(cwd, identity, d)
-  const branch = gitText(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  const tip =
-    (expectedBranch
-      ? (gitText(cwd, ['rev-parse', '--verify', expectedBranch]) ??
-        gitText(cwd, ['rev-parse', '--verify', `origin/${expectedBranch}`]))
-      : null) ?? gitText(cwd, ['rev-parse', 'HEAD'])
-  const headIsTipOrAncestor = Boolean(
-    headCommit && tip && gitOk(cwd, ['merge-base', '--is-ancestor', headCommit, tip]),
-  )
-  const landingCommit = headIsTipOrAncestor
-    ? null
-    : checkoutLandingCommit(identity.project, expectedBranch, d)
-  const landingCommitAvailable = Boolean(
-    landingCommit && gitOk(cwd, ['cat-file', '-e', `${landingCommit}^{commit}`]),
-  )
-  const landingIsHeadOrAncestor = landingCommitAvailable
-    ? Boolean(
-        landingCommit &&
-          headCommit &&
-          gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
-      )
-    : undefined
-  return {
-    project,
-    branch,
-    headIsTipOrAncestor,
-    landingCommit,
-    landingIsHeadOrAncestor,
-    landingBranch: projectByName(identity.project, d)?.settings.trunk ?? 'main',
-  }
 }
 
 function gatherRuling(
@@ -442,6 +385,9 @@ function requireCheckout(
     headIsTipOrAncestor: checkout.headIsTipOrAncestor,
     landingCommit: checkout.landingCommit ?? null,
     landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
+    recordedLandingTip: checkout.recordedLandingTip,
+    headIsRecordedTipOrAncestor: checkout.headIsRecordedTipOrAncestor,
+    landingIsOnTrunk: checkout.landingIsOnTrunk,
   })
   if (
     requireOnBranch &&
@@ -453,7 +399,9 @@ function requireCheckout(
       `${flag} cwd is on ${checkout.branch ?? 'unset'}, not this cursor's ${identity.branch}`,
     )
   if (identity.branch && location === 'outside-change')
-    throw new Error(checkoutOutsideChangeRefusal(flag, identity.branch, cwd, checkout))
+    throw new Error(
+      checkoutOutsideChangeRefusal(flag, identity.branch, checkout.checkoutPath, checkout),
+    )
   return checkout
 }
 
