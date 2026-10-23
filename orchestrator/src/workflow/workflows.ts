@@ -20,6 +20,7 @@ import {
   productionStepCatalogue,
   type StepCatalogueDefinition,
   selectedStepCatalogue,
+  sharedStepCataloguePromotionPorts,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
@@ -542,13 +543,17 @@ export function promoteWorkflow(
       const target = selectedWorkflow(slug, n, d, spaceId)
       if (target.status === 'retired')
         throw new Error(`workflow "${slug}" version ${n} is not a draft`)
-      const promotionPorts = {
-        preflight: (definition: WorkflowDefinition, targetSpace: string) =>
-          workflowPromotionPreflight(slug, definition, d, targetSpace),
-        author: () => writeAuthor(authorValue),
-      }
       const decision = await promoteSharedWorkflow(slug, n, reasonValue, spaceId, d, {
-        ...promotionPorts,
+        preflight: (definition, targetSpace, catalogue) =>
+          workflowPromotionPreflight(
+            slug,
+            definition,
+            d,
+            targetSpace,
+            catalogue as StepCatalogueDefinition,
+          ),
+        catalogue: sharedStepCataloguePromotionPorts(authorValue, d),
+        author: () => writeAuthor(authorValue),
         draftLocal: (version) =>
           writeDraftLocal(
             slug,
@@ -589,9 +594,13 @@ function workflowPromotionPreflight(
   definition: WorkflowDefinition,
   d: Database,
   spaceId: string | null,
+  catalogueOverride?: StepCatalogueDefinition,
 ): void {
   const catalogue =
-    spaceId === null ? productionStepCatalogue(d).definition : hostedProductionCatalogue(d, spaceId)
+    catalogueOverride ??
+    (spaceId === null
+      ? productionStepCatalogue(d).definition
+      : hostedProductionCatalogue(d, spaceId))
   requireValid(definition, undefined, catalogue)
   const refusal = catalogueReferenceRefusal(slug, definition, catalogue)
   if (refusal) throw new Error(refusal)

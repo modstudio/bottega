@@ -44,6 +44,43 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
+    async listWorkflowCatalogue(table) {
+      if (table === 'step_catalogue')
+        return {
+          items: [
+            {
+              id: ownerId,
+              spaceId: SPACE,
+              slug: 'shared',
+              generation: 1,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'step_catalogue_version')
+        return {
+          items: [
+            {
+              id: versionId,
+              spaceId: SPACE,
+              ownerId,
+              n: 1,
+              status: 'draft',
+              definition: JSON.stringify(definition),
+              author: 'unknown',
+              reason: 'set',
+              createdAt: at,
+              promotedAt: null,
+              retiredAt: null,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      return { items: [], nextCursor: null }
+    },
     async draftWorkflow() {
       throw new Error('hosted catalogue set failed')
     },
@@ -56,6 +93,43 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
+    async listWorkflowCatalogue(table) {
+      if (table === 'step_catalogue')
+        return {
+          items: [
+            {
+              id: ownerId,
+              spaceId: SPACE,
+              slug: 'shared',
+              generation: 1,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'step_catalogue_version')
+        return {
+          items: [
+            {
+              id: versionId,
+              spaceId: SPACE,
+              ownerId,
+              n: 1,
+              status: 'draft',
+              definition: JSON.stringify(definition),
+              author: 'unknown',
+              reason: 'set',
+              createdAt: at,
+              promotedAt: null,
+              retiredAt: null,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      return { items: [], nextCursor: null }
+    },
     async draftWorkflow() {
       return {
         identity: {
@@ -114,6 +188,43 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
+    async listWorkflowCatalogue(table) {
+      if (table === 'step_catalogue')
+        return {
+          items: [
+            {
+              id: ownerId,
+              spaceId: SPACE,
+              slug: 'shared',
+              generation: 1,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'step_catalogue_version')
+        return {
+          items: [
+            {
+              id: versionId,
+              spaceId: SPACE,
+              ownerId,
+              n: 1,
+              status: 'draft',
+              definition: JSON.stringify(definition),
+              author: 'unknown',
+              reason: 'set',
+              createdAt: at,
+              promotedAt: null,
+              retiredAt: null,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      return { items: [], nextCursor: null }
+    },
     async promoteWorkflow() {
       return {
         identity: {
@@ -254,12 +365,106 @@ test('hosted catalogue promotion does not call the API when it removes a live re
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
+    async listWorkflowCatalogue(table) {
+      if (table === 'step_catalogue')
+        return {
+          items: [
+            {
+              id: catalogueId,
+              spaceId: SPACE,
+              slug: 'shared',
+              generation: 1,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'step_catalogue_version')
+        return {
+          items: [
+            {
+              id: productionVersionId,
+              spaceId: SPACE,
+              ownerId: catalogueId,
+              n: 1,
+              status: 'production',
+              definition: JSON.stringify(production),
+              author: 'test',
+              reason: 'test',
+              createdAt: at,
+              promotedAt: at,
+              retiredAt: null,
+              updatedAt: at,
+            },
+            {
+              id: draftVersionId,
+              spaceId: SPACE,
+              ownerId: catalogueId,
+              n: 2,
+              status: 'draft',
+              definition: JSON.stringify({ ...production, steps: production.steps.slice(1) }),
+              author: 'test',
+              reason: 'test',
+              createdAt: at,
+              promotedAt: null,
+              retiredAt: null,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'workflow')
+        return {
+          items: [
+            {
+              id: workflowId,
+              spaceId: SPACE,
+              slug: 'live-flow',
+              generation: 1,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'workflow_version')
+        return {
+          items: [
+            {
+              id: newRecordId(),
+              spaceId: SPACE,
+              ownerId: workflowId,
+              n: 1,
+              status: 'production',
+              definition: JSON.stringify({
+                title: 'Live flow',
+                description: '',
+                arguments: [],
+                modes: [
+                  { slug: 'default', title: 'Default', default: true, steps: [referenced.slug] },
+                ],
+              }),
+              author: 'test',
+              reason: 'test',
+              createdAt: at,
+              promotedAt: at,
+              retiredAt: null,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      return { items: [], nextCursor: null }
+    },
     async promoteWorkflow() {
       calls++
       throw new Error('API must not be called')
     },
   })
 
-  await expect(promoteStepCatalogue(2, 'remove live reference')).rejects.toThrow('live-flow')
+  await expect(promoteStepCatalogue(2, 'remove live reference')).rejects.toThrow(
+    'changes references used by production workflows',
+  )
   expect(calls).toBe(0)
 })
