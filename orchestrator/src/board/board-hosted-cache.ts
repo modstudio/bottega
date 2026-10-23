@@ -476,6 +476,14 @@ function hostedReplySuccessorPush(
     presence: presenceFacts(database, clock),
     reader,
     rootAuthorSession: root.authorSession,
+    rootAuthorReceivedReply: Boolean(
+      database
+        .query(
+          `SELECT 1 AS ok FROM hosted_board_receipt_cache
+           WHERE message_id=? AND reader_session=? AND delivered_at IS NOT NULL`,
+        )
+        .get(message.id, root.authorSession),
+    ),
     rootProject: root.origin.project,
     readerIsParticipant: replyAddressesReader(message, reader, clock, database),
     successorAlreadyReceived: Boolean(
@@ -487,6 +495,7 @@ function hostedReplySuccessorPush(
         .get(message.id),
     ),
     readerBeganAt: boardReaderBeganAt(reader, database),
+    replyPostedAt: message.createdAt,
     now: clock,
     liveWindowMs: SESSION_LIVE_MS,
   })

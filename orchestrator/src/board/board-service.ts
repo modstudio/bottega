@@ -159,6 +159,7 @@ function replySuccessorPush(
     presence: presenceFacts(database, clock),
     reader,
     rootAuthorSession: root.author_session,
+    rootAuthorReceivedReply: wasDelivered(reply.record_id, root.author_session, database),
     rootProject: root.author_project,
     readerIsParticipant: hasReceipt(reply.record_id, reader, database),
     successorAlreadyReceived: Boolean(
@@ -170,6 +171,7 @@ function replySuccessorPush(
         .get(reply.record_id),
     ),
     readerBeganAt: boardReaderBeganAt(reader, database),
+    replyPostedAt: reply.created_at,
     now: clock,
     liveWindowMs: SESSION_LIVE_MS,
   })
