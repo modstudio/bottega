@@ -18,6 +18,7 @@ export const mcpModules: McpModule[] = [
     'node:path',
     '@modelcontextprotocol/server',
     'zod',
+    '../setup/setup-apply.ts',
     '../setup/setup-planner.ts',
     '../setup/setup-service.ts',
   ]),

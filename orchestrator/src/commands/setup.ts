@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
+import { setupResultsRequireAttention } from '../setup/setup-apply.ts'
 import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
 import { restoreSetupEnvironment } from '../setup/setup-environment-runtime.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
@@ -50,10 +51,7 @@ export function register(program: Command): void {
       if (plan === SETUP_CANCEL) return
       const outcome = await runInteractiveSetup(plan, clackSetupPrompter, applySetupPlan)
       if (outcome.kind === 'cancelled') process.exitCode = 130
-      if (
-        outcome.kind === 'applied' &&
-        outcome.results.some((result) => result.status === 'refused')
-      ) {
+      if (outcome.kind === 'applied' && setupResultsRequireAttention(outcome.results)) {
         process.exitCode = 1
       }
     })
@@ -109,7 +107,7 @@ export function register(program: Command): void {
       const { plan, actions, results } = options.yes
         ? await setupService.applyRecommended(folders)
         : await setupService.apply(folders, answerValue)
-      if (results.some((result) => result.status === 'refused')) process.exitCode = 1
+      if (setupResultsRequireAttention(results)) process.exitCode = 1
       log(
         JSON.stringify(
           { ...plan, diff: actions, actions: results },
