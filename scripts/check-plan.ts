@@ -1,3 +1,5 @@
+import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+
 export const CHECK_LEGS = [
   {
     name: 'cli',
@@ -14,10 +16,14 @@ export const CHECK_LEGS = [
     name: 'orchestrator',
     directory: 'orchestrator',
     ciJob: 'orchestrator',
-    testDirectories: ['orchestrator/src', 'orchestrator/scripts', 'orchestrator/test'],
+    testDirectories: ORCHESTRATOR_GATE_TEST_SELECTION.directories.map(({ reach }) => reach),
     testPatterns: [],
-    excludedTestDirectories: ['orchestrator/src/postgres'],
-    excludedTestPatterns: ['orchestrator/src/record/*-postgres.test.ts'],
+    excludedTestDirectories: ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.flatMap((exclusion) =>
+      'reachDirectory' in exclusion ? [exclusion.reachDirectory] : [],
+    ),
+    excludedTestPatterns: ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.flatMap((exclusion) =>
+      'reachPattern' in exclusion ? [exclusion.reachPattern] : [],
+    ),
     typecheck: ['bun', 'run', 'typecheck'],
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
   },

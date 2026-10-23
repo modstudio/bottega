@@ -6,6 +6,7 @@ import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.t
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { withGateSlot } from '../src/gate-load.ts'
 import { gateShardArguments } from '../src/gate-shard.ts'
+import { ORCHESTRATOR_GATE_TEST_SELECTION } from './gate-test-selection.ts'
 import { publishTimingSummary } from './gate-timing-summary.ts'
 import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
 
@@ -44,9 +45,11 @@ async function runTests(): Promise<GateTimings> {
   const command = [
     'bun',
     'test',
-    'src',
-    'scripts',
-    'test',
+    ...ORCHESTRATOR_GATE_TEST_SELECTION.directories.map(({ selector }) => selector),
+    ...ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.flatMap(({ ignore }) => [
+      '--path-ignore-patterns',
+      ignore,
+    ]),
     ...shardArguments,
     '--reporter=junit',
     `--reporter-outfile=${junitPath}`,
