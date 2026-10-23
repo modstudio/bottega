@@ -16,14 +16,18 @@ export function startReleaseLedgerEntry(
     live: string | null
     rollback: boolean
     reason: string | null
+    trunk: string
+    trunkTip: string
+    commitsBehindTrunk: number
+    behindTrunkReason: string | null
   },
 ): number {
   return writeTransaction(() => {
     const row = database
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO release_ledger
-       (record_id,project,project_record_id,rung,candidate_commit,live_commit_before,rollback,rollback_reason,actor,session_id,started_at)
-       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?) RETURNING id`,
+       (record_id,project,project_record_id,rung,candidate_commit,live_commit_before,rollback,rollback_reason,trunk,trunk_tip,commits_behind_trunk,behind_trunk_reason,actor,session_id,started_at)
+       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         newRecordId(),
@@ -34,6 +38,10 @@ export function startReleaseLedgerEntry(
         input.live,
         input.rollback ? 1 : 0,
         input.reason,
+        input.trunk,
+        input.trunkTip,
+        input.commitsBehindTrunk,
+        input.behindTrunkReason,
         userInfo().username,
         sessionId(),
         nowIso(),

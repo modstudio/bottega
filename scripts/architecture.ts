@@ -108,6 +108,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/route/route-policy.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
     '../../../shared/repository-visibility.ts',
@@ -687,6 +688,7 @@ export const modules: ArchitectureModule[] = [
     '../record/record-cache-workflow.ts',
     '../record/record-space.ts',
     '../record/record-workflow-contract.ts',
+    './step-catalogue-definition.ts',
     './workflow-definition.ts',
     './workflow-shared-promotion.ts',
   ]),

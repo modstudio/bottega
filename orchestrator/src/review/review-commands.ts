@@ -269,7 +269,6 @@ function reviewTierOutput(value: string, cwd: string) {
     facts: gatherPostFixReviewFacts({
       database: db(),
       repo,
-      from,
       to,
       trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
       project: project.name,

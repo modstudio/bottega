@@ -21,6 +21,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../run/question-open.ts',
   '../run/run-identifier.ts',
   '../collect/result-output.ts',
+  '../transport/codex-throttle.ts',
 ] as const
 const DEGRADED_HEAVY_MODULES = [
   'agents.ts',

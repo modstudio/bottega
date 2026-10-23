@@ -73,6 +73,7 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
   review_read: [{ at: 'note', style: 'value' }],
   release: [
     { at: 'rollbackReason', style: 'value', recordedAs: 'rollback_reason' },
+    { at: 'behindTrunkReason', style: 'value', recordedAs: 'behind_trunk_reason' },
     { at: 'warning', style: 'value' },
   ],
   landing: [

@@ -560,6 +560,15 @@ describe('scoped operator docs', () => {
     ])
   })
 
+  test('a tracked document path with a symbol suffix is accepted', () => {
+    expect(
+      checkDoc('`shared/git.ts:borrowedCheckoutFromAlternates`', {
+        repoRoot: '/fixture',
+        trackedFiles: new Set(['shared/git.ts']),
+      }),
+    ).toEqual([])
+  })
+
   test('a dispatch citation naming an unknown job is flagged', () => {
     const options = { repoRoot: '/fixture', trackedFiles: new Set<string>() }
     expect(

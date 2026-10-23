@@ -57,12 +57,12 @@ function fileRisk(
   riskPaths: readonly CompiledReviewRiskPath[] | undefined,
   declaredUnlisted: 0 | 1 | 2 | undefined,
 ): FileRisk | null {
-  if (isReviewExcluded(path)) return null
   const match =
     AGENT_INSTRUCTION_PATHS.find((entry) => entry.pattern.test(path)) ??
     riskPaths?.find((entry) => entry.pattern.test(path))
   if (match)
     return { tier: match.tier, reason: `${path} (${match.reason})`, basis: match.basis ?? null }
+  if (isReviewExcluded(path)) return null
   const kind = categorizeFile(path)
   if (kind !== 'product' || isOrdinaryConfig(path)) return null
   const tier = declaredUnlisted ?? 2

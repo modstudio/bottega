@@ -3,9 +3,8 @@ import {
   attributeCommandCpu,
   cpuBudgetMs,
   decideRuntimeBudget,
-  dependencyInstallMode,
+  dependencyInstallDecision,
   HUNG_SUITE_TIMEOUT_MS,
-  installNeeded,
   parseCheckArguments,
   runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
@@ -14,36 +13,58 @@ import {
 } from './check-runtime'
 
 describe('dependency installation', () => {
-  test('uses the offline mode only for an orchestrator worker run', () => {
-    expect(dependencyInstallMode({ ci: false, linkedWorktree: true, workerRun: true })).toBe(
-      'worker-offline',
-    )
+  test("a worker keeps using its base when main's lockfile advances", () => {
+    const factsAfterMainAdvances = {
+      workerRun: true,
+      nodeModulesPresent: true,
+      provisioningSourceResolved: true,
+      lockfileMatchesProvisioningSource: true,
+    }
+    expect(dependencyInstallDecision(factsAfterMainAdvances)).toBe('skip-provisioned')
   })
 
-  test('uses the normal mode for an architect linked worktree, CI, and the main checkout', () => {
-    expect(dependencyInstallMode({ ci: false, linkedWorktree: true, workerRun: false })).toBe(
-      'normal',
-    )
-    expect(dependencyInstallMode({ ci: true, linkedWorktree: false, workerRun: false })).toBe(
-      'normal',
-    )
-    expect(dependencyInstallMode({ ci: false, linkedWorktree: false, workerRun: false })).toBe(
-      'normal',
-    )
+  test('a worker refuses a lockfile change', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: true,
+        provisioningSourceResolved: true,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('refuse-lockfile-change')
   })
 
-  test('an installed tree recorded for the current lockfile needs no install', () => {
-    expect(installNeeded('current', { lockfileHash: 'current', nodeModulesPresent: true })).toBe(
-      false,
-    )
+  test('a worker refuses when node_modules is missing', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: false,
+        provisioningSourceResolved: true,
+        lockfileMatchesProvisioningSource: true,
+      }),
+    ).toBe('refuse-missing-node-modules')
   })
 
-  test('a missing, unrecorded, or stale installed tree needs an install', () => {
-    expect(installNeeded('current', { lockfileHash: 'current', nodeModulesPresent: false })).toBe(
-      true,
-    )
-    expect(installNeeded('current', { lockfileHash: null, nodeModulesPresent: true })).toBe(true)
-    expect(installNeeded('current', { lockfileHash: 'stale', nodeModulesPresent: true })).toBe(true)
+  test('a worker refuses when its provisioning source cannot be resolved', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: true,
+        provisioningSourceResolved: false,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('refuse-unresolved-provisioning-source')
+  })
+
+  test('a non-worker uses the normal install', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: false,
+        nodeModulesPresent: false,
+        provisioningSourceResolved: false,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('normal-install')
   })
 })
 

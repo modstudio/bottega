@@ -23,6 +23,9 @@ test('board presence validates and records the hook start instant', async () => 
     await expect(
       invalid.parseAsync(['node', 'orch', 'board', 'presence', '--started-at', 'yesterday']),
     ).rejects.toThrow(/ISO 8601 UTC instant/)
+    await expect(
+      invalid.parseAsync(['node', 'orch', 'board', 'presence', '--began-at', 'yesterday']),
+    ).rejects.toThrow(/ISO 8601 UTC instant/)
 
     const startedAt = '2026-10-13T12:00:00.000Z'
     const program = new Command().exitOverride()
@@ -31,6 +34,14 @@ test('board presence validates and records the hook start instant', async () => 
     expect(
       db().query('SELECT first_seen FROM presence WHERE session_id=?').get('presence-cli-reader'),
     ).toEqual({ first_seen: startedAt })
+    db().query('DELETE FROM presence WHERE session_id=?').run('presence-cli-reader')
+    const beganAt = '2026-10-13T11:00:00.000Z'
+    await program.parseAsync(['node', 'orch', 'board', 'presence', '--began-at', beganAt])
+    const repaired = db()
+      .query('SELECT first_seen,last_seen FROM presence WHERE session_id=?')
+      .get('presence-cli-reader') as { first_seen: string; last_seen: string }
+    expect(repaired.first_seen).toBe(beganAt)
+    expect(repaired.last_seen).not.toBe(beganAt)
   } finally {
     if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = previous

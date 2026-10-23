@@ -1,6 +1,7 @@
 // concern: monitor-conditions
 /** Owns monitor condition detection and the row queries and helpers those detectors share with composition and notice revalidation. */
 
+import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -266,8 +267,11 @@ export function idleRunCondition(
 }
 
 /** Report live runs whose vendor stream has gone quiet. The coordinator, not the monitor, checkpoints and terminates past the idle-kill threshold. */
-export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
-  const running = db()
+export function idleRunConditions(
+  clock = Date.now(),
+  database: Database = db(),
+): MonitorCondition[] {
+  const running = database
     .query(
       `SELECT record_id, started_at, last_event_at, agent, job, session_id, pid, host_wait_since
        FROM run WHERE status='running'`,
@@ -301,8 +305,9 @@ export function stalledRunConditions(
     samples?: ReturnType<typeof sampleProcesses>
     observedStartTime?: (pid: number) => string | null
   } = {},
+  database: Database = db(),
 ): MonitorCondition[] {
-  const running = liveRunMembers()
+  const running = liveRunMembers(database)
   const samples = deps.samples ?? (running.length ? sampleProcesses() : [])
   return running.flatMap((run): MonitorCondition[] => {
     const observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
@@ -491,8 +496,11 @@ export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondi
 }
 
 /** Report vendor processes that vanished while their run still claims to be running. */
-export function deadRunningProcessConditions(clock = Date.now()): MonitorCondition[] {
-  const running = db()
+export function deadRunningProcessConditions(
+  clock = Date.now(),
+  database: Database = db(),
+): MonitorCondition[] {
+  const running = database
     .query(
       `SELECT record_id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running'`,
     )
@@ -543,8 +551,11 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
 }
 
 /** Report reserved rows whose coordinator never completed the launch handoff. */
-export function abandonedBootstrapConditions(clock = Date.now()): MonitorCondition[] {
-  const pending = db()
+export function abandonedBootstrapConditions(
+  clock = Date.now(),
+  database: Database = db(),
+): MonitorCondition[] {
+  const pending = database
     .query(
       `SELECT record_id, started_at, pid, agent, session_id
        FROM run WHERE status='running' AND agent='(pending)'`,
