@@ -48,7 +48,10 @@ export const CANON_REFERENCE_EXEMPTIONS: { path: string; reason: string }[] = [
   },
 ]
 
-/** A source location suffix describes a path; it is not part of that path. */
+/** A source location or symbol suffix describes a path; it is not part of that path. */
 export function canonReferencePath(reference: string): string {
-  return reference.replace(/:\d+(?:-\d+)?$/, '')
+  return reference.replace(
+    /:(?:\d+(?:-\d+)?|[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*)$/,
+    '',
+  )
 }
