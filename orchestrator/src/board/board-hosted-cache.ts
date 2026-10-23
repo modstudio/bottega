@@ -393,12 +393,12 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
   }
 }
 
-function loadCachedRows(
+type CachedRow = { message: HostedBoardMessage; tags: BoardTag[] }
+
+function attachCachedTags<T extends { id: string; payload: string }>(
   database: Database,
-): Array<{ message: HostedBoardMessage; tags: BoardTag[] }> {
-  const messages = database
-    .query('SELECT id,payload FROM hosted_board_message_cache ORDER BY rowid')
-    .all() as { id: string; payload: string }[]
+  messages: T[],
+): Array<CachedRow & Omit<T, 'id' | 'payload'>> {
   const tags = database
     .query('SELECT message_id,kind,value,origin FROM hosted_board_message_tag_cache ORDER BY rowid')
     .all() as Array<BoardTag & { message_id: string }>
@@ -408,10 +408,18 @@ function loadCachedRows(
     if (existing) existing.push(tag)
     else tagsByMessage.set(messageId, [tag])
   }
-  return messages.map((row) => ({
-    message: JSON.parse(row.payload) as HostedBoardMessage,
-    tags: tagsByMessage.get(row.id) ?? [],
+  return messages.map(({ id, payload, ...rest }) => ({
+    ...rest,
+    message: JSON.parse(payload) as HostedBoardMessage,
+    tags: tagsByMessage.get(id) ?? [],
   }))
+}
+
+function loadCachedRows(database: Database): CachedRow[] {
+  const messages = database
+    .query('SELECT id,payload FROM hosted_board_message_cache ORDER BY rowid')
+    .all() as { id: string; payload: string }[]
+  return attachCachedTags(database, messages)
 }
 
 export function cachedRows(database: Database) {
@@ -437,7 +445,7 @@ type HostedClaimContext = {
   database: Database
   reader: string
   clock: number
-  rows: Array<{ message: HostedBoardMessage; tags: BoardTag[] }>
+  rows: CachedRow[]
   messages: HostedBoardMessage[]
   messagesById: Map<string, HostedBoardMessage>
   threadMessages: Map<string, HostedBoardMessage[]>
@@ -452,9 +460,9 @@ function claimContext(
   database: Database,
   reader: string,
   clock: number,
-  rows: Array<{ message: HostedBoardMessage; tags: BoardTag[] }>,
-  signedIn = meta(database, BOARD_REFRESH_USER_KEY),
-  allRows = rows,
+  rows: CachedRow[],
+  signedIn: string | null,
+  allRows: CachedRow[],
 ): HostedClaimContext {
   const messages = allRows.map((row) => row.message)
   const threadMessages = new Map<string, HostedBoardMessage[]>()
@@ -498,41 +506,34 @@ function loadClaimContext(
 ): HostedClaimContext {
   const owner = meta(database, BOARD_CACHE_OWNER_KEY)
   const signedIn = meta(database, BOARD_REFRESH_USER_KEY)
-  if (!owner || owner !== signedIn) return claimContext(database, reader, clock, [], signedIn)
-  const messages = database
-    .query(
-      `SELECT message.id,message.payload,receipt.delivered_at,receipt.acknowledged_at
+  if (!owner || owner !== signedIn) return claimContext(database, reader, clock, [], signedIn, [])
+  const rows = attachCachedTags(
+    database,
+    database
+      .query(
+        `SELECT message.id,message.payload,receipt.delivered_at,receipt.acknowledged_at
        FROM hosted_board_message_cache message
        LEFT JOIN hosted_board_receipt_cache receipt
          ON receipt.message_id=message.id AND receipt.reader_session=?
        ORDER BY message.rowid`,
-    )
-    .all(reader) as Array<{
-    id: string
-    payload: string
-    delivered_at: string | null
-    acknowledged_at: string | null
-  }>
-  const tags = database
-    .query('SELECT message_id,kind,value,origin FROM hosted_board_message_tag_cache ORDER BY rowid')
-    .all() as Array<BoardTag & { message_id: string }>
-  const tagsByMessage = new Map<string, BoardTag[]>()
-  for (const { message_id: messageId, ...tag } of tags) {
-    const existing = tagsByMessage.get(messageId)
-    if (existing) existing.push(tag)
-    else tagsByMessage.set(messageId, [tag])
-  }
-  const allRows = messages.map((row) => ({
-    message: JSON.parse(row.payload) as HostedBoardMessage,
-    tags: tagsByMessage.get(row.id) ?? [],
-  }))
+      )
+      .all(reader) as Array<{
+      id: string
+      payload: string
+      delivered_at: string | null
+      acknowledged_at: string | null
+    }>,
+  )
+  const allRows = rows.map(
+    ({ delivered_at: _delivered, acknowledged_at: _acknowledged, ...row }) => row,
+  )
   return claimContext(
     database,
     reader,
     clock,
-    allRows.filter(
-      (_row, index) => all || (!messages[index]!.delivered_at && !messages[index]!.acknowledged_at),
-    ),
+    rows
+      .filter((row) => all || (!row.delivered_at && !row.acknowledged_at))
+      .map(({ delivered_at: _delivered, acknowledged_at: _acknowledged, ...row }) => row),
     signedIn,
     allRows,
   )
@@ -596,6 +597,15 @@ function takeHostedReportReplySuccessor(
   context: HostedClaimContext,
 ): boolean {
   return writeTransaction(() => {
+    const successorAlreadyReceived = Boolean(
+      context.database
+        .query(
+          `SELECT 1 AS ok FROM hosted_board_receipt_cache
+           WHERE message_id=? AND successor=1 AND delivered_at IS NOT NULL`,
+        )
+        .get(message.id),
+    )
+    if (successorAlreadyReceived) return false
     if (!hostedReplySuccessorPush(message, context)) return false
     context.database
       .query(
@@ -653,9 +663,14 @@ export function cachedMessageAddressed(
   clock: number,
   database: Database,
 ): boolean {
-  const rows = cachedRows(database)
-  if (!rows.some((candidate) => candidate.message.id === row.message.id)) rows.push(row)
-  return messageAddressed(row, claimContext(database, reader, clock, rows))
+  const cached = cachedRows(database)
+  const rows = cached.some((candidate) => candidate.message.id === row.message.id)
+    ? cached
+    : [...cached, row]
+  return messageAddressed(
+    row,
+    claimContext(database, reader, clock, rows, meta(database, BOARD_REFRESH_USER_KEY), rows),
+  )
 }
 
 export function hostedBoardVerificationWarning(database: Database = db()): string | null {
