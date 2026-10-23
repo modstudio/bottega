@@ -2,10 +2,14 @@
 /** Decides endpoint authentication from an agent's stored reference and resolves that reference at launch. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { ConfigClientError, type ConfigClientErrorReason } from '../../../shared/config-client.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
-import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
-import { secretResolutionFailure } from '../../../shared/secret-resolution-failure.ts'
+import { RUN_RETRY_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  classifySecretResolutionFailure,
+  isTransientSecretResolutionFailure,
+  type SecretResolutionFailureClassification,
+  secretResolutionFailure,
+} from '../../../shared/secret-resolution-failure.ts'
 
 type EndpointKeyRow = {
   baseUrl?: string | null
@@ -24,39 +28,12 @@ export const ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS = 3
 /** Hosted slowness lasts seconds, so the retry window spans seconds rather than milliseconds. */
 const ENDPOINT_API_KEY_RESOLUTION_INITIAL_RETRY_DELAY_MS = 2_000
 
-export type SecretResolutionFailureClassification =
-  | { kind: 'hosted-failure' }
-  | { kind: 'config-client'; reason: ConfigClientErrorReason; status?: number }
-
-/** Reduce an exception to the non-sensitive facts endpoint policy and doctor need. */
-export function classifySecretResolutionFailure(
-  error: unknown,
-): SecretResolutionFailureClassification | null {
-  if (error instanceof HostedSecretError && error.reason === 'hosted-failure') {
-    if (error.cause instanceof ConfigClientError)
-      return {
-        kind: 'config-client',
-        reason: error.cause.reason,
-        status: error.cause.status,
-      }
-    return { kind: 'hosted-failure' }
-  }
-  if (error instanceof ConfigClientError)
-    return { kind: 'config-client', reason: error.reason, status: error.status }
-  return null
-}
-
 /** Pure policy: retry only transient hosted failures, up to the endpoint-key attempt bound. */
 export function decideEndpointApiKeyRetry(
   failure: SecretResolutionFailureClassification | null,
   attemptNumber: number,
 ): EndpointApiKeyRetryDecision {
-  const transient =
-    failure?.kind === 'hosted-failure' ||
-    (failure?.kind === 'config-client' &&
-      (failure.reason === 'unreachable' ||
-        failure.status === 429 ||
-        (failure.status !== undefined && failure.status >= 500 && failure.status <= 599)))
+  const transient = isTransientSecretResolutionFailure(failure)
   if (!transient || attemptNumber < 1) return { retry: false, retriesExhausted: false }
   if (attemptNumber >= ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS)
     return { retry: false, retriesExhausted: true }
@@ -122,7 +99,7 @@ export async function resolveEndpointApiKeyEnv(
         name,
         resolver,
         options.sleep ?? Bun.sleep,
-        options.exhaustedRetryCommand ?? `${PLATFORM_SLUG} run retry <run>`,
+        options.exhaustedRetryCommand ?? RUN_RETRY_REMEDY,
       )
     : undefined
   const decision = decideEndpointApiKey(row, resolved)

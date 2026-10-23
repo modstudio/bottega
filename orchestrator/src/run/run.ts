@@ -134,8 +134,6 @@ import {
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
-const RUN_KEY_RETRY = { exhaustedRetryCommand: `${PLATFORM_SLUG} run retry <run>` }
-
 function workerMcpLaunchScope(input: {
   agent: Agent
   transport: string
@@ -736,7 +734,7 @@ export async function run(opts: {
         runToken,
         environment: {
           ...(gitConfigEnvironment ?? {}),
-          ...(await resolveEndpointApiKeyEnv(a, undefined, RUN_KEY_RETRY)),
+          ...(await resolveEndpointApiKeyEnv(a)),
         },
         grokEnvironment: grokMcpEnvironment,
         includeStore: repoJob,

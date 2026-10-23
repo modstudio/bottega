@@ -1,5 +1,5 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import { ConfigClientError } from './config-client.ts'
+import { ConfigClientError, type ConfigClientErrorReason } from './config-client.ts'
 import { HostedSecretError } from './hosted-secrets.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 
@@ -7,32 +7,98 @@ type SecretResolutionFailureOptions = {
   exhaustedRetryCommand?: string
 }
 
-function hostedFailureCauseSummary(error: HostedSecretError): string {
-  const cause = error.cause
-  if ((typeof cause !== 'object' && typeof cause !== 'function') || cause === null) return ''
+type HostedFailureCause = {
+  constructorName: string
+  status?: number
+  reason?: ConfigClientErrorReason
+  code?: string | number
+}
+
+export type SecretResolutionFailureClassification =
+  | { kind: 'hosted-failure'; cause?: HostedFailureCause }
+  | {
+      kind: 'config-client'
+      reason: ConfigClientErrorReason
+      status?: number
+      cause?: HostedFailureCause
+    }
+
+function classifyHostedFailureCause(cause: unknown): HostedFailureCause | undefined {
+  if ((typeof cause !== 'object' && typeof cause !== 'function') || cause === null) return undefined
   try {
     const constructorName = cause.constructor?.name
-    if (!constructorName) return ''
-    const facts = [`cause: ${constructorName}`]
+    if (!constructorName) return undefined
     const status = 'status' in cause ? cause.status : undefined
-    if (typeof status === 'number') facts.push(`status: ${status}`)
-    if (cause instanceof ConfigClientError) facts.push(`reason: ${cause.reason}`)
     const code = 'code' in cause ? cause.code : undefined
-    if (typeof code === 'string' || typeof code === 'number') facts.push(`code: ${code}`)
-    return ` (${facts.join(', ')})`
+    return {
+      constructorName,
+      ...(typeof status === 'number' ? { status } : {}),
+      ...(cause instanceof ConfigClientError ? { reason: cause.reason } : {}),
+      ...(typeof code === 'string' || typeof code === 'number' ? { code } : {}),
+    }
   } catch {
-    return ''
+    return undefined
   }
 }
 
-function configClientRemedy(error: ConfigClientError, options: SecretResolutionFailureOptions) {
+/** Reduce a secret read exception to non-sensitive policy and rendering facts. */
+export function classifySecretResolutionFailure(
+  error: unknown,
+): SecretResolutionFailureClassification | null {
+  if (error instanceof HostedSecretError && error.reason === 'hosted-failure') {
+    const cause = classifyHostedFailureCause(error.cause)
+    if (error.cause instanceof ConfigClientError)
+      return {
+        kind: 'config-client',
+        reason: error.cause.reason,
+        status: error.cause.status,
+        ...(cause ? { cause } : {}),
+      }
+    return { kind: 'hosted-failure', ...(cause ? { cause } : {}) }
+  }
+  if (error instanceof ConfigClientError)
+    return { kind: 'config-client', reason: error.reason, status: error.status }
+  return null
+}
+
+/** Whether the classified secret failure can reasonably clear without operator repair. */
+export function isTransientSecretResolutionFailure(
+  classification: SecretResolutionFailureClassification | null,
+): boolean {
+  return (
+    classification?.kind === 'hosted-failure' ||
+    (classification?.kind === 'config-client' &&
+      (classification.reason === 'unreachable' ||
+        classification.status === 429 ||
+        (classification.status !== undefined &&
+          classification.status >= 500 &&
+          classification.status <= 599)))
+  )
+}
+
+function hostedFailureCauseSummary(
+  classification: SecretResolutionFailureClassification | null,
+): string {
+  const cause = classification?.cause
+  if (!cause) return ''
+  const facts = [`cause: ${cause.constructorName}`]
+  if (cause.status !== undefined) facts.push(`status: ${cause.status}`)
+  if (cause.reason !== undefined) facts.push(`reason: ${cause.reason}`)
+  if (cause.code !== undefined) facts.push(`code: ${cause.code}`)
+  return ` (${facts.join(', ')})`
+}
+
+function configClientRemedy(
+  classification: Extract<SecretResolutionFailureClassification, { kind: 'config-client' }>,
+  options: SecretResolutionFailureOptions,
+) {
   if (options.exhaustedRetryCommand) {
     const diagnostic =
-      error.reason === 'unreachable' ? `\nchecked by: ${PLATFORM_SLUG} record doctor` : ''
+      classification.reason === 'unreachable' ? `\nchecked by: ${PLATFORM_SLUG} record doctor` : ''
     return `${diagnostic}\ncleared by: ${options.exhaustedRetryCommand}`
   }
-  if (error.reason === 'unreachable') return `\ncleared by: ${PLATFORM_SLUG} record doctor`
-  if (error.reason === 'not-configured') return `\ncleared by: ${RECORD_SIGN_IN_REMEDY}`
+  if (classification.reason === 'unreachable') return `\ncleared by: ${PLATFORM_SLUG} record doctor`
+  if (classification.reason === 'not-configured') return `\ncleared by: ${RECORD_SIGN_IN_REMEDY}`
   return '\ncleared by: restore hosted secret access, then retry'
 }
 
@@ -41,15 +107,16 @@ export function secretResolutionFailure(
   error: unknown,
   options: SecretResolutionFailureOptions = {},
 ): string | null {
-  if (error instanceof ConfigClientError) {
+  const classification = classifySecretResolutionFailure(error)
+  if (error instanceof ConfigClientError && classification?.kind === 'config-client') {
     const condition =
       error.reason === 'unreachable'
         ? 'hosted secret service is unreachable'
         : 'hosted secret service refused the request'
-    return `${condition}${configClientRemedy(error, options)}`
+    return `${condition}${configClientRemedy(classification, options)}`
   }
   if (!(error instanceof HostedSecretError)) return null
-  const causeSummary = error.reason === 'hosted-failure' ? hostedFailureCauseSummary(error) : ''
+  const causeSummary = hostedFailureCauseSummary(classification)
   const condition = `hosted secret ${error.secretName} could not be opened: ${error.reason}${causeSummary}`
   switch (error.reason) {
     case 'machine-key-missing':
@@ -61,8 +128,8 @@ export function secretResolutionFailure(
     case 'authentication-failed':
       return `${condition}\ncleared by: repair the sealed value from a trusted machine, then retry`
     case 'hosted-failure':
-      if (error.cause instanceof ConfigClientError)
-        return `${condition}${configClientRemedy(error.cause, options)}`
+      if (classification?.kind === 'config-client')
+        return `${condition}${configClientRemedy(classification, options)}`
       return `${condition}\ncleared by: ${options.exhaustedRetryCommand ?? 'retry the command'}`
   }
 }

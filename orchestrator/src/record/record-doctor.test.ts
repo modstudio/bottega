@@ -279,6 +279,24 @@ describe('record doctor decisions', () => {
 })
 
 describe('record doctor agent secrets', () => {
+  test('distinguishes a missing secret from a set-but-empty secret', async () => {
+    const missing = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'MISSING_KEY' }],
+      async () => ({ MISSING_KEY: undefined }),
+    )
+    const empty = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'EMPTY_KEY' }],
+      async () => ({ EMPTY_KEY: '' }),
+    )
+
+    expect(missing[0]?.detail).toBe(
+      `permanent: secret is not set\ncleared by: ${PLATFORM_SLUG} machine config secret set MISSING_KEY`,
+    )
+    expect(empty[0]?.detail).toBe(
+      `permanent: secret is set but empty\ncleared by: ${PLATFORM_SLUG} machine config secret set EMPTY_KEY`,
+    )
+  })
+
   test('checks each distinct enabled-agent secret once without reporting its value', async () => {
     const calls: string[][] = []
     const checks = await agentSecretChecks(
