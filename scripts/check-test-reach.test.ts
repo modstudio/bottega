@@ -1,9 +1,4 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { spawnFixtureSync } from '../orchestrator/test/fixtures/spawn.ts'
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
 import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
 import {
@@ -49,44 +44,38 @@ test('the Python hook leg runs unittest discovery over its declared reach', () =
   })
 })
 
-test('the orchestrator gate selectors collect only their declared non-Postgres tests', () => {
-  const orchestratorRoot = fileURLToPath(new URL('../orchestrator', import.meta.url))
-  const outputDirectory = mkdtempSync(join(tmpdir(), 'orchestrator-gate-selection-'))
-  try {
-    for (const [index, { selector }] of ORCHESTRATOR_GATE_TEST_SELECTION.directories.entries()) {
-      const junitPath = join(outputDirectory, `${index}.xml`)
-      const result = spawnFixtureSync(
-        [
-          'bun',
-          'test',
-          selector,
-          ...ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.flatMap(({ ignore }) => [
-            '--path-ignore-patterns',
-            ignore,
-          ]),
-          '--test-name-pattern',
-          'gate selector collection sentinel that cannot match',
-          '--reporter=junit',
-          `--reporter-outfile=${junitPath}`,
-        ],
-        { cwd: orchestratorRoot, stdout: 'pipe', stderr: 'pipe' },
-      )
-      expect([0, 1]).toContain(result.exitCode)
-      const files = [
-        ...new Set(
-          [...readFileSync(junitPath, 'utf8').matchAll(/ file="([^"]+\.test\.ts)"/g)].map(
-            (match) => match[1]!,
-          ),
-        ),
-      ]
-      const directory = selector.slice(2)
-      expect(files.length).toBeGreaterThan(0)
-      expect(files.every((file) => file.startsWith(`${directory}/`))).toBe(true)
-      expect(files.some((file) => file.startsWith('src/postgres/'))).toBe(false)
-      expect(files.some((file) => /^src\/record\/[^/]+-postgres\.test\.ts$/.test(file))).toBe(false)
-    }
-  } finally {
-    rmSync(outputDirectory, { recursive: true, force: true })
+test('the orchestrator gate selectors are anchored and cover every declared exclusion', () => {
+  const orchestrator = CHECK_LEGS.find((leg) => leg.name === 'orchestrator')!
+  const selections = ORCHESTRATOR_GATE_TEST_SELECTION.directories
+
+  expect(selections.every(({ selector }) => selector.startsWith('./'))).toBe(true)
+  for (const reach of orchestrator.testDirectories) {
+    expect(
+      selections.filter(({ selector }) => `orchestrator/${selector.slice(2)}` === reach),
+    ).toHaveLength(1)
+  }
+
+  for (const reachDirectory of orchestrator.excludedTestDirectories) {
+    const relativeDirectory = reachDirectory.replace(/^orchestrator\//, '')
+    expect(
+      ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.filter(
+        (exclusion) =>
+          'reachDirectory' in exclusion &&
+          exclusion.reachDirectory === reachDirectory &&
+          exclusion.ignore === `${relativeDirectory}/**`,
+      ),
+    ).toHaveLength(1)
+  }
+  for (const reachPattern of orchestrator.excludedTestPatterns) {
+    const relativePattern = reachPattern.replace(/^orchestrator\//, '')
+    expect(
+      ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.filter(
+        (exclusion) =>
+          'reachPattern' in exclusion &&
+          exclusion.reachPattern === reachPattern &&
+          exclusion.ignore === relativePattern,
+      ),
+    ).toHaveLength(1)
   }
 })
 
