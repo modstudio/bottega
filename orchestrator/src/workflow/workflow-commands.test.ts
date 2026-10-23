@@ -761,7 +761,7 @@ test('workflow probe failure prints the stored withheld marker instead of secret
 
   expect(shown.stderr).toEqual([
     `${PLATFORM_SLUG} workflow probe: command exited 1`,
-    '[withheld: secret-shaped content]',
+    '[withheld line: assignment]',
   ])
   expect(shown.stderr.join('\n')).not.toContain('ghp_exampletokenvalue')
 })

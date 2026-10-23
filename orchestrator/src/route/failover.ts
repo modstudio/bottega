@@ -40,6 +40,8 @@ export type ResolvedTaskBranch = {
 export type DetachSpec = {
   agent?: string
   agentExplicit?: boolean
+  /** Surface routing result; unlike agent, this is not a caller pin. */
+  routedAgent?: { agent: string; reason: string }
   schema?: string
   mcp?: McpRequest
   model?: string
@@ -108,6 +110,11 @@ export function chainTransport(rootId: string): TransportName | null {
   return row?.transport === 'cli' || row?.transport === 'acp' ? row.transport : null
 }
 
+const detachRouting = (spec: DetachSpec) => ({
+  agentExplicit: spec.agentExplicit,
+  routedAgent: spec.routedAgent,
+})
+
 export function detachedRunOptions(
   jobName: string,
   prompt: string,
@@ -145,7 +152,7 @@ export function detachedRunOptions(
   } = spec
   const consumed: Required<Record<Exclude<keyof DetachSpec, 'transportPinSource'>, unknown>> = {
     agent,
-    agentExplicit: spec.agentExplicit,
+    ...detachRouting(spec),
     schema: spec.schema,
     mcp,
     model,
@@ -179,7 +186,7 @@ export function detachedRunOptions(
     prompt,
     reserveId,
     agent,
-    agentExplicit: consumed.agentExplicit as boolean | undefined,
+    ...detachRouting(consumed as DetachSpec),
     schemaPath: spec.schema,
     mcp,
     model,

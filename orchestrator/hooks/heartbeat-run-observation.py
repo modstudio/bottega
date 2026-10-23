@@ -94,6 +94,13 @@ def live(session_id: str) -> None:
         waiting = row.get("waiting_for_host_capacity")
         if not isinstance(waiting, bool) or (waiting and host_wait_since is None):
             raise ValueError("host wait state is invalid")
+        waiting_for_capacity = row.get("waiting_for_capacity", False)
+        if not isinstance(waiting_for_capacity, bool):
+            raise ValueError("agent capacity wait state is invalid")
+        throttled = row.get("throttled")
+        live_status_detail = row.get("live_status_detail")
+        if (waiting_for_capacity or isinstance(throttled, dict)) and not isinstance(live_status_detail, str):
+            raise ValueError("live operational status detail is invalid")
         if status == "running" and stall_state not in ("healthy", "stalled", "unknown"):
             raise ValueError("stall state is invalid")
         stall = row.get("stall")
@@ -108,6 +115,8 @@ def live(session_id: str) -> None:
         display = (
             "waiting for host capacity since " + host_wait_since
             if waiting
+            else live_status_detail
+            if waiting_for_capacity or isinstance(throttled, dict)
             else status + " " + age + idle_note
         )
         out.append("%s/%s %s %s" % (row["live_member_number"], row["job"], row["agent"], display))

@@ -22,6 +22,53 @@ CHILD_PROCESS_TIMEOUT_SECONDS = 10
 
 
 class HeartbeatDecisionTest(unittest.TestCase):
+    def test_live_operational_status_uses_the_row_wording(self):
+        base = {
+            "record_id": "01990000-0000-7000-8000-000000000001",
+            "number": 1,
+            "job": "fixture",
+            "agent": "codex",
+            "status": "running",
+            "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
+            "session_id": "fixture-session",
+            "started_at": "2026-10-21T12:00:00.000Z",
+            "latency_ms": None,
+            "live_member_id": "01990000-0000-7000-8000-000000000002",
+            "live_member_number": 501,
+            "live_member_status": "running",
+            "waiting_for_host_capacity": False,
+            "host_wait_since": None,
+            "stall_state": "healthy",
+            "stall": None,
+        }
+        cases = (
+            {
+                "waiting_for_capacity": True,
+                "throttled": None,
+                "live_status_detail": "waiting for capacity since 2026-10-21T12:00:00.000Z",
+            },
+            {
+                "waiting_for_capacity": False,
+                "throttled": {"attempt": 1, "max": 5, "status": 429},
+                "live_status_detail": "throttled (429), retry 1/5 at 2026-10-21T12:04:45.000Z",
+            },
+        )
+        for operational in cases:
+            with self.subTest(detail=operational["live_status_detail"]):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(PATH.with_name("heartbeat-run-observation.py")),
+                        "live",
+                        "fixture-session",
+                    ],
+                    input=json.dumps({**base, **operational}) + "\n",
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                self.assertIn(operational["live_status_detail"], completed.stdout)
+
     def test_live_continuation_uses_turn_number_and_age(self):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)

@@ -27,12 +27,13 @@ import {
   failoverRefusalReason,
   failoverSuccessorAgent,
 } from '../route/failover.ts'
-import { agentsIneligibleForTransport, pick } from '../route/route.ts'
+import { AgentCapacityError, agentsIneligibleForTransport, pick } from '../route/route.ts'
 import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
+import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
 import { terminateRunProcesses } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
 
@@ -158,7 +159,8 @@ function storedFailoverSelectionConstraints(
   })
 }
 
-function selectFailoverSuccessor(input: {
+async function selectFailoverSuccessor(input: {
+  runId: string
   job: string
   prompt: string
   findings: boolean | undefined
@@ -171,32 +173,38 @@ function selectFailoverSuccessor(input: {
   pinnedTransport: TransportName | null
   avoidedAgents: string[]
 }) {
-  try {
-    return pick(
-      input.job,
-      undefined,
-      Buffer.byteLength(input.prompt) + (input.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
-      true,
-      stackAt(input.launchCwd ?? input.callerCwd),
-      {
-        agents: input.avoidedAgents,
-        requiredMcp: requiredMcpServer(
-          mcpRequestFromStored(input.mcp, input.mcpError),
-          input.launchCwd ?? input.callerCwd,
-          input.repo ?? undefined,
-        ),
-        pinnedTransport: input.pinnedTransport ?? undefined,
-        project: input.repo,
-      },
-      false,
-      input.lens ?? undefined,
-    )
-  } catch (error) {
-    if (!input.pinnedTransport) throw error
-    throw new Error(
-      `pinned ${input.pinnedTransport} transport left no eligible agent: ${String((error as Error).message ?? error)}`,
-    )
+  const select = () => {
+    try {
+      return pick(
+        input.job,
+        undefined,
+        Buffer.byteLength(input.prompt) + (input.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
+        true,
+        stackAt(input.launchCwd ?? input.callerCwd),
+        {
+          agents: input.avoidedAgents,
+          requiredMcp: requiredMcpServer(
+            mcpRequestFromStored(input.mcp, input.mcpError),
+            input.launchCwd ?? input.callerCwd,
+            input.repo ?? undefined,
+          ),
+          pinnedTransport: input.pinnedTransport ?? undefined,
+          project: input.repo,
+        },
+        false,
+        input.lens ?? undefined,
+      )
+    } catch (error) {
+      if (!input.pinnedTransport || error instanceof AgentCapacityError) throw error
+      throw new Error(
+        `pinned ${input.pinnedTransport} transport left no eligible agent: ${String((error as Error).message ?? error)}`,
+      )
+    }
   }
+  return selectAgentWithCapacityEvents({
+    runId: input.runId,
+    select,
+  })
 }
 
 function notifyFailureRequiringHuman(input: {
@@ -219,6 +227,7 @@ function notifyFailureRequiringHuman(input: {
     )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: terminal cleanup and failover share one claimed-run transaction boundary
 export async function closeRun(input: CloseInput): Promise<RunResult> {
   const {
     failureKind,
@@ -250,7 +259,13 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     error,
     run,
   } = input
-  notifyFailureRequiringHuman({ failureKind, name, job: opts.job, idleUnkillable, runId: claim.id })
+  notifyFailureRequiringHuman({
+    failureKind,
+    name,
+    job: opts.job,
+    idleUnkillable,
+    runId: claim.id,
+  })
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Exclude this coordinator while terminating the vendor so it can route the successor.
     terminateRunProcesses(claim.id, [process.pid])
@@ -304,7 +319,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
         const transportConstraints = storedFailoverSelectionConstraints(first, opts, tried)
-        const selected = selectFailoverSuccessor({
+        const selected = await selectFailoverSuccessor({
+          runId: claim.id,
           job: opts.job,
           prompt: originalPrompt,
           findings: requestedJob.findings,
@@ -327,9 +343,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         // The recursive successor has its own terminalisation path. Reclaim
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
-        if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job)) {
+        if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job))
           reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid)
-        }
         return await run({
           job: opts.job,
           prompt: originalPrompt,
@@ -404,7 +419,9 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
   }
 
   if (status === 'failed') {
-    throw Object.assign(new Error(`run ${claim.id} failed: ${error}`), { runId: claim.id })
+    throw Object.assign(new Error(`run ${claim.id} failed: ${error}`), {
+      runId: claim.id,
+    })
   }
   return {
     record_id: claim.id,

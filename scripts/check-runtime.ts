@@ -18,28 +18,31 @@ export type RuntimeBudgetVerdict = 'within' | 'over-informational' | 'over-fatal
 export type RuntimeMeasure = 'wall' | 'cpu'
 export type CommandCpuSample = { name: string; userMs: number; systemMs: number }
 export type AttributedCommandCpu = { name: string; cpuMs: number; share: number }
-export type InstalledDependencyState = {
-  lockfileHash: string | null
-  nodeModulesPresent: boolean
-}
 export type DependencyInstallFacts = {
-  ci: boolean
-  linkedWorktree: boolean
   workerRun: boolean
+  nodeModulesPresent: boolean
+  provisioningSourceResolved: boolean
+  lockfileMatchesProvisioningSource: boolean
 }
-export type DependencyInstallMode = 'normal' | 'worker-offline'
+export type DependencyInstallDecision =
+  | 'normal-install'
+  | 'skip-provisioned'
+  | 'refuse-lockfile-change'
+  | 'refuse-missing-node-modules'
+  | 'refuse-unresolved-provisioning-source'
 
-/** Only an orchestrator worker uses the registry-free install path. */
-export function dependencyInstallMode(facts: DependencyInstallFacts): DependencyInstallMode {
-  return facts.workerRun ? 'worker-offline' : 'normal'
-}
-
-/** Decide whether the provisioned dependency tree still belongs to this lockfile. */
-export function installNeeded(
-  lockfileHash: string,
-  installedState: InstalledDependencyState,
-): boolean {
-  return !installedState.nodeModulesPresent || installedState.lockfileHash !== lockfileHash
+/**
+ * Decide whether the gate may use dependencies provisioned before a worker entered its sandbox.
+ * The gate resolves that source from Git structure instead of a worker environment marker because
+ * orchestration marker names are not part of the check's contract.
+ */
+export function dependencyInstallDecision(
+  facts: DependencyInstallFacts,
+): DependencyInstallDecision {
+  if (!facts.workerRun) return 'normal-install'
+  if (!facts.nodeModulesPresent) return 'refuse-missing-node-modules'
+  if (!facts.provisioningSourceResolved) return 'refuse-unresolved-provisioning-source'
+  return facts.lockfileMatchesProvisioningSource ? 'skip-provisioned' : 'refuse-lockfile-change'
 }
 
 const CHECK_LEG_NAMES = CHECK_LEGS.map((leg) => leg.name)

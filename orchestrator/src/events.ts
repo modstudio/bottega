@@ -20,6 +20,14 @@ export type StreamEvent =
       error?: string
       locations?: Array<{ path: string }>
     }
+  | {
+      kind: 'throttled'
+      attempt: number
+      max: number
+      retryDelayMs: number | null
+      retryAt: string | null
+      httpStatus: 429
+    }
 
 export type ConfiguredAsk = { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string }
 
@@ -69,6 +77,17 @@ export type RunLogEvent =
     }
   | { ts: string; type: 'tool_result'; status?: string; bytes?: number }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
+  | {
+      ts: string
+      type: 'throttled'
+      attempt: number
+      max: number
+      retryDelayMs: number | null
+      retryAt: string | null
+      status: 429
+      concurrency: number
+    }
+  | { ts: string; type: 'capacity_wait'; waiting: boolean }
   | AskExpectedRunLogEvent
   | { ts: string; type: 'ask_started'; tools: string[] }
   | { ts: string; type: 'ask_initialized' }
@@ -81,6 +100,15 @@ type PeekEventSummary =
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
   | { type: 'usage'; tokens: number }
+  | {
+      type: 'throttled'
+      attempt: number
+      max: number
+      retryAt: string | null
+      status: 429
+      concurrency: number
+    }
+  | { type: 'capacity_wait'; waiting: boolean; ts: string }
   | { type: 'ask_expected'; transport: 'host' | 'srt'; command?: string[]; endpoint?: string }
   | { type: 'ask_started'; tools: string[] }
   | { type: 'ask_initialized' }
@@ -184,10 +212,79 @@ function isWorkerActivity(event: RunLogEvent): boolean {
   )
 }
 
+export type LiveOperationalStatus = {
+  waiting_for_capacity: boolean
+  capacity_wait_since: string | null
+  live_status_detail: string | null
+  throttled: {
+    attempt: number
+    max: number
+    retry_delay_ms: number | null
+    retry_at: string | null
+    status: number
+    concurrency: number
+  } | null
+}
+
+function formatLiveOperationalStatus(
+  status: Omit<LiveOperationalStatus, 'live_status_detail'>,
+): string | null {
+  if (status.waiting_for_capacity)
+    return `waiting for capacity since ${status.capacity_wait_since ?? 'unknown'}`
+  const throttle = status.throttled
+  return throttle
+    ? `throttled (${throttle.status}), retry ${throttle.attempt}/${throttle.max} at ${throttle.retry_at ?? 'unknown'}`
+    : null
+}
+
+export function liveOperationalStatusFromEvents(
+  events: readonly RunLogEvent[],
+): LiveOperationalStatus {
+  const capacityWait = events.findLast((event) => event.type === 'capacity_wait')
+  const throttle = events.findLast((event) => event.type === 'throttled')
+  const status = {
+    waiting_for_capacity: capacityWait?.type === 'capacity_wait' ? capacityWait.waiting : false,
+    capacity_wait_since:
+      capacityWait?.type === 'capacity_wait' && capacityWait.waiting ? capacityWait.ts : null,
+    throttled:
+      throttle?.type === 'throttled'
+        ? {
+            attempt: throttle.attempt,
+            max: throttle.max,
+            retry_delay_ms: throttle.retryDelayMs,
+            retry_at: throttle.retryAt,
+            status: throttle.status,
+            concurrency: throttle.concurrency,
+          }
+        : null,
+  }
+  return { ...status, live_status_detail: formatLiveOperationalStatus(status) }
+}
+
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
+
+function simpleObservedEvent(
+  event: Extract<StreamEvent, { kind: 'usage' | 'throttled' }>,
+  ts: string,
+  throttleConcurrency: () => number,
+): RunLogEvent {
+  return event.kind === 'usage'
+    ? { ts, type: 'usage', tokens: event.tokens, costUsd: event.costUsd }
+    : {
+        ts,
+        type: 'throttled',
+        attempt: event.attempt,
+        max: event.max,
+        retryDelayMs: event.retryDelayMs,
+        retryAt: event.retryAt,
+        status: event.httpStatus,
+        concurrency: throttleConcurrency(),
+      }
+}
 
 export function createEventLog(
   runId: string,
+  throttleConcurrency: () => number,
   path?: string,
 ): {
   observe(event: StreamEvent, ts?: string): void
@@ -236,8 +333,8 @@ export function createEventLog(
         }
         return
       }
-      if (event.kind === 'usage') {
-        write({ ts, type: 'usage', tokens: event.tokens, costUsd: event.costUsd })
+      if (event.kind === 'usage' || event.kind === 'throttled') {
+        write(simpleObservedEvent(event, ts, throttleConcurrency))
       }
     },
     flush,
@@ -247,12 +344,16 @@ export function createEventLog(
 export async function teeTransportEvents(
   events: AsyncIterable<{ kind: string }>,
   runId: string,
+  throttleConcurrency: () => number,
+  observe?: (event: StreamEvent) => void,
 ): Promise<void> {
-  const log = createEventLog(runId)
+  const log = createEventLog(runId, throttleConcurrency)
   try {
     for await (const event of events) {
       try {
-        log.observe(event as StreamEvent)
+        const normalized = event as StreamEvent
+        log.observe(normalized)
+        observe?.(normalized)
       } catch {
         /* observation never rejects the tee */
       }
@@ -520,6 +621,20 @@ export function readEventLog(path: string): RunLogEvent[] {
   return events
 }
 
+function summarizeOperationalEvent(
+  event: Extract<RunLogEvent, { type: 'throttled' | 'capacity_wait' }>,
+): PeekEventSummary {
+  if (event.type === 'capacity_wait') return { ...event }
+  return {
+    type: 'throttled',
+    attempt: event.attempt,
+    max: event.max,
+    retryAt: event.retryAt,
+    status: event.status,
+    concurrency: event.concurrency,
+  }
+}
+
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'warning')
@@ -537,6 +652,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'tool_result')
     return { type: 'tool_result', status: event.status, bytes: event.bytes }
   if (event.type === 'usage') return { type: 'usage', tokens: event.tokens }
+  if (event.type === 'throttled' || event.type === 'capacity_wait')
+    return summarizeOperationalEvent(event)
   if (event.type === 'ask_expected') {
     return {
       type: 'ask_expected',
@@ -545,8 +662,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
       ...(event.endpoint ? { endpoint: event.endpoint } : {}),
     }
   }
-  if (event.type === 'ask_started') return { type: 'ask_started', tools: event.tools }
-  if (event.type === 'ask_listed') return { type: 'ask_listed', tools: event.tools }
+  if (event.type === 'ask_started' || event.type === 'ask_listed')
+    return { type: event.type, tools: event.tools }
   if (event.type === 'focused_test') {
     return {
       type: 'focused_test',
@@ -656,6 +773,29 @@ function formatArtifactPeekEvent(event: ArtifactPeekEvent) {
   )
 }
 
+type OperationalPeekEvent = Extract<
+  PeekEventSummary,
+  { type: 'usage' | 'throttled' | 'capacity_wait' }
+>
+
+function formatOperationalPeekEvent(event: OperationalPeekEvent): string {
+  if (event.type === 'usage') return `  usage ${event.tokens}`
+  if (event.type === 'capacity_wait') return '  waiting for capacity'
+  const detail = formatLiveOperationalStatus({
+    waiting_for_capacity: false,
+    capacity_wait_since: null,
+    throttled: {
+      attempt: event.attempt,
+      max: event.max,
+      retry_delay_ms: null,
+      retry_at: event.retryAt,
+      status: event.status,
+      concurrency: event.concurrency,
+    },
+  })
+  return `  ${detail} (codex concurrency ${event.concurrency})`
+}
+
 function formatPeekEvent(event: PeekEventSummary): string {
   if ('text' in event) return `  ${event.type} ${event.text}`
   if (event.type === 'note') {
@@ -667,7 +807,8 @@ function formatPeekEvent(event: PeekEventSummary): string {
   if (event.type === 'tool_result') {
     return `  result ${event.status ?? ''}${event.bytes != null ? ` ${event.bytes}b` : ''}`.trimEnd()
   }
-  if (event.type === 'usage') return `  usage ${event.tokens}`
+  if (event.type === 'usage' || event.type === 'throttled' || event.type === 'capacity_wait')
+    return formatOperationalPeekEvent(event)
   if (event.type === 'ask_expected') {
     return `  ask expected ${event.transport} ${event.command?.join(' ') ?? event.endpoint ?? ''}`
   }

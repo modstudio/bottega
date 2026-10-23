@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RunIdentity } from '../../../shared/orch-contract.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
+import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
@@ -245,12 +246,31 @@ function lifecyclePresentation(
   if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
   const status = outcome.line.split(' - ', 1)[0]!
   const hostWaitSince = row.host_wait_since as string | null
+  if (row.waiting_for_capacity === true)
+    return { status: 'waiting', detail: row.live_status_detail as string }
+  if (row.throttled) return { status: 'throttled', detail: row.live_status_detail as string }
   if (isFreshRunHostWait(String(row.status), hostWaitSince))
     return { status: 'waiting', detail: `waiting for host capacity since ${hostWaitSince}` }
   return {
     status,
     detail: row.status === 'asking' ? outcome.line.slice(status.length + 3) : null,
   }
+}
+
+function liveOperationalStatus(liveMemberId: string, live: boolean) {
+  const eventLog = live ? readEventLog(runEventsPath(liveMemberId)) : []
+  return liveOperationalStatusFromEvents(eventLog)
+}
+
+function addExactFilter(
+  where: string[],
+  args: Array<string | number>,
+  clause: 'r.job = ?' | 'r.agent = ?',
+  value: string | undefined,
+): void {
+  if (!value) return
+  where.push(clause)
+  args.push(value)
 }
 
 function resolveRequestedRunIds(values: string[]): { ids: string[]; unknown: string[] } {
@@ -409,15 +429,9 @@ export async function runListingCommand(
   // satisfy the query signature, which is why this file never typechecked.
   const args: (string | number)[] = []
   const jobFlag = flag('job')
-  if (jobFlag) {
-    where.push('r.job = ?')
-    args.push(jobFlag)
-  }
+  addExactFilter(where, args, 'r.job = ?', jobFlag)
   const agentFlag = flag('agent')
-  if (agentFlag) {
-    where.push('r.agent = ?')
-    args.push(agentFlag)
-  }
+  addExactFilter(where, args, 'r.agent = ?', agentFlag)
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
@@ -571,6 +585,7 @@ export async function runListingCommand(
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
+      ...liveOperationalStatus(String(r.live_member_record_id), live),
       stall_state: stallObservation?.state ?? null,
       stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,
