@@ -4,11 +4,14 @@
 export type CheckoutResolution = {
   project: string | null
   branch: string | null
-  checkoutPath?: string
+  checkoutPath: string
   headIsTipOrAncestor: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
   landingBranch: string
+  recordedLandingTip?: string | null
+  headIsRecordedTipOrAncestor?: boolean
+  landingIsOnTrunk?: boolean
 }
 
 export type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
@@ -33,9 +36,32 @@ export function classifyCheckoutEvidence(input: {
   headIsTipOrAncestor: boolean
   landingCommit: string | null
   landingIsHeadOrAncestor: boolean
+  recordedLandingTip?: string | null
+  headIsRecordedTipOrAncestor?: boolean
+  landingIsOnTrunk?: boolean
 }): CheckoutEvidenceLocation {
   if (input.headIsTipOrAncestor) return 'branch'
+  const recordedLanding = classifyRecordedLandingEvidence({
+    recordedTip: input.recordedLandingTip ?? null,
+    headIsRecordedTipOrAncestor: input.headIsRecordedTipOrAncestor ?? false,
+    landingCommit: input.landingCommit,
+    landingIsOnTrunk: input.landingIsOnTrunk ?? false,
+  })
+  if (recordedLanding) return recordedLanding
   if (input.landingCommit && input.landingIsHeadOrAncestor) return 'post-landing'
+  return 'outside-change'
+}
+
+/** Classifies evidence against a recorded tip after its branch ref has disappeared. */
+export function classifyRecordedLandingEvidence(input: {
+  recordedTip: string | null
+  headIsRecordedTipOrAncestor: boolean
+  landingCommit: string | null
+  landingIsOnTrunk: boolean
+}): CheckoutEvidenceLocation | null {
+  if (!input.recordedTip) return null
+  if (input.headIsRecordedTipOrAncestor && input.landingCommit && input.landingIsOnTrunk)
+    return 'post-landing'
   return 'outside-change'
 }
 

@@ -2,7 +2,7 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
@@ -15,16 +15,14 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
-import { projectAt, projectByName } from '../project/projects.ts'
+import { projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
-  decideCheckoutAnswer,
 } from './workflow-checkout-refusal.ts'
 import {
   type ArtifactRef,
@@ -39,6 +37,7 @@ import {
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -186,73 +185,6 @@ function positive(value: number | undefined, flag: string): number | undefined {
   if (value === undefined) return undefined
   if (!Number.isInteger(value) || value < 1) throw new Error(`${flag} must be a positive integer`)
   return value
-}
-
-function gitText(cwd: string, args: string[]): string | null {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
-  return result.status === 0 ? result.stdout.trim() : null
-}
-
-function gitOk(cwd: string, args: string[]): boolean {
-  return spawnSync('git', args, { cwd, encoding: 'utf8' }).status === 0
-}
-
-function cwdProject(cwd: string, identity: CursorIdentity, d: Database): string | null {
-  const at = projectAt(cwd, d)?.name ?? null
-  if (at) return at
-  const tree = identity.worktree
-  if (tree && (cwd === tree || cwd.startsWith(`${tree}/`))) return identity.project
-  return null
-}
-
-function productionResolveCheckout(
-  cwd: string,
-  headCommit: string | null,
-  expectedBranch: string | null,
-  identity: CursorIdentity,
-  d: Database,
-): CheckoutResolution {
-  const registered = projectByName(identity.project, d)
-  const cwdIsDirectory = existsSync(cwd) && statSync(cwd).isDirectory()
-  const answer = decideCheckoutAnswer({
-    recordedCwd: cwd,
-    recordedCwdIsDirectory: cwdIsDirectory,
-    mainCheckoutPath: registered?.path ?? null,
-  })
-  if ('refusal' in answer) throw new Error(answer.refusal)
-  const checkout = answer.checkoutPath
-  const project = cwdProject(checkout, identity, d)
-  const branch = gitText(checkout, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  const tip =
-    (expectedBranch
-      ? (gitText(checkout, ['rev-parse', '--verify', expectedBranch]) ??
-        gitText(checkout, ['rev-parse', '--verify', `origin/${expectedBranch}`]))
-      : null) ?? gitText(checkout, ['rev-parse', 'HEAD'])
-  const headIsTipOrAncestor = Boolean(
-    headCommit && tip && gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, tip]),
-  )
-  const landingCommit = headIsTipOrAncestor
-    ? null
-    : checkoutLandingCommit(identity.project, expectedBranch, d)
-  const landingCommitAvailable = Boolean(
-    landingCommit && gitOk(checkout, ['cat-file', '-e', `${landingCommit}^{commit}`]),
-  )
-  const landingIsHeadOrAncestor = landingCommitAvailable
-    ? Boolean(
-        landingCommit &&
-          headCommit &&
-          gitOk(checkout, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
-      )
-    : undefined
-  return {
-    project,
-    branch,
-    checkoutPath: checkout,
-    headIsTipOrAncestor,
-    landingCommit,
-    landingIsHeadOrAncestor,
-    landingBranch: registered?.settings.trunk ?? 'main',
-  }
 }
 
 function gatherRuling(
@@ -453,6 +385,9 @@ function requireCheckout(
     headIsTipOrAncestor: checkout.headIsTipOrAncestor,
     landingCommit: checkout.landingCommit ?? null,
     landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
+    recordedLandingTip: checkout.recordedLandingTip,
+    headIsRecordedTipOrAncestor: checkout.headIsRecordedTipOrAncestor,
+    landingIsOnTrunk: checkout.landingIsOnTrunk,
   })
   if (
     requireOnBranch &&
@@ -465,7 +400,7 @@ function requireCheckout(
     )
   if (identity.branch && location === 'outside-change')
     throw new Error(
-      checkoutOutsideChangeRefusal(flag, identity.branch, checkout.checkoutPath ?? cwd, checkout),
+      checkoutOutsideChangeRefusal(flag, identity.branch, checkout.checkoutPath, checkout),
     )
   return checkout
 }

@@ -123,6 +123,7 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
       resolveCheckout: () => ({
         project: 'fixture',
         branch: 'DEV-977-work',
+        checkoutPath: '/fixture/work',
         headIsTipOrAncestor: true,
         landingBranch: 'main',
       }),

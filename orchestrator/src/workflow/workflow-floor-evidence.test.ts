@@ -85,6 +85,7 @@ test('an unavailable landing commit names the condition and pull remedy', () => 
   const refusal = checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
     project: 'fixture',
     branch: 'main',
+    checkoutPath: '/fixture/main',
     headIsTipOrAncestor: false,
     landingCommit: 'dd3e2d8050120bf3d676f86257d0c92c0c5bff41',
     landingIsHeadOrAncestor: undefined,
@@ -119,6 +120,7 @@ const planningIdentity: CursorIdentity = {
 const matchingCheckout = {
   project: 'fixture',
   branch: 'DEV-977-work',
+  checkoutPath: '/fixture/work',
   headIsTipOrAncestor: true,
   landingBranch: 'main',
 }
@@ -478,6 +480,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
         resolveCheckout: () => ({
           project: 'other',
           branch: 'other-branch',
+          checkoutPath: '/fixture/work',
           headIsTipOrAncestor: true,
           landingBranch: 'main',
         }),
@@ -512,6 +515,7 @@ test('an architect gate whose commit is outside the change is refused', () => {
         resolveCheckout: () => ({
           project: 'fixture',
           branch: 'DEV-977-work',
+          checkoutPath: '/fixture/work',
           headIsTipOrAncestor: false,
           landingBranch: 'main',
         }),
@@ -574,6 +578,7 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
         resolveCheckout: () => ({
           project: 'other',
           branch: 'other-branch',
+          checkoutPath: '/fixture/work',
           headIsTipOrAncestor: true,
           landingBranch: 'main',
         }),
@@ -605,6 +610,7 @@ test('exec evidence is branch-bound and carries its exit code', () => {
         resolveCheckout: () => ({
           project: 'other',
           branch: 'other-branch',
+          checkoutPath: '/fixture/work',
           headIsTipOrAncestor: true,
           landingBranch: 'main',
         }),

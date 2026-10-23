@@ -28,6 +28,7 @@ test('finds a landing whose branch starts with the task key', () => {
   expect(latestBranchLanding('fixture', 'DEV-977-work', d)).toEqual({
     mergeCommit: 'def',
     pullRequestNumber: 12,
+    tip: 'abc',
   })
   expect(pullRequestNumberForBranch('fixture', 'DEV-977-work', d)).toBe(12)
 })

@@ -18,6 +18,7 @@ const ports = {
   resolveCheckout: () => ({
     project: 'fixture',
     branch: args.branch,
+    checkoutPath: args.worktree,
     headIsTipOrAncestor: true,
     landingBranch: 'main',
   }),

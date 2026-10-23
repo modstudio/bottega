@@ -30,6 +30,7 @@ const testPorts = {
   resolveCheckout: () => ({
     project: 'fixture',
     branch: 'work',
+    checkoutPath: '/tmp/work',
     headIsTipOrAncestor: true,
     landingBranch: 'main',
   }),

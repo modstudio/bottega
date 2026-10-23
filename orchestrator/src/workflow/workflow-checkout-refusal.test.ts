@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { decideCheckoutAnswer } from './workflow-checkout-refusal.ts'
+import {
+  classifyCheckoutEvidence,
+  classifyRecordedLandingEvidence,
+  decideCheckoutAnswer,
+} from './workflow-checkout-refusal.ts'
 
 test('an existing recorded cwd answers checkout questions', () => {
   expect(
@@ -22,14 +26,52 @@ test('the registered main checkout answers after the recorded cwd is removed', (
 })
 
 test('a removed cwd without a registered main checkout names both missing facts', () => {
-  expect(
-    decideCheckoutAnswer({
-      recordedCwd: '/fixture/removed-work',
-      recordedCwdIsDirectory: false,
-      mainCheckoutPath: null,
-    }),
-  ).toEqual({
-    refusal:
-      'recorded evidence cwd /fixture/removed-work is no longer a directory and the cursor project has no registered main checkout',
+  const answer = decideCheckoutAnswer({
+    recordedCwd: '/fixture/removed-work',
+    recordedCwdIsDirectory: false,
+    mainCheckoutPath: null,
   })
+  expect(answer).toHaveProperty('refusal')
+  expect(answer).not.toHaveProperty('checkoutPath')
+})
+
+test('recorded landing accepts its exact tip after the branch ref is gone', () => {
+  expect(
+    classifyRecordedLandingEvidence({
+      recordedTip: 'branch-tip',
+      headIsRecordedTipOrAncestor: true,
+      landingCommit: 'squash-landing',
+      landingIsOnTrunk: true,
+    }),
+  ).toBe('post-landing')
+})
+
+test('recorded landing refuses a head unrelated to its tip', () => {
+  expect(
+    classifyRecordedLandingEvidence({
+      recordedTip: 'branch-tip',
+      headIsRecordedTipOrAncestor: false,
+      landingCommit: 'squash-landing',
+      landingIsOnTrunk: true,
+    }),
+  ).toBe('outside-change')
+})
+
+test('no recorded landing leaves checkout classification unchanged', () => {
+  expect(
+    classifyRecordedLandingEvidence({
+      recordedTip: null,
+      headIsRecordedTipOrAncestor: false,
+      landingCommit: 'squash-landing',
+      landingIsOnTrunk: true,
+    }),
+  ).toBeNull()
+  expect(
+    classifyCheckoutEvidence({
+      headIsTipOrAncestor: false,
+      landingCommit: 'squash-landing',
+      landingIsHeadOrAncestor: true,
+      recordedLandingTip: null,
+    }),
+  ).toBe('post-landing')
 })

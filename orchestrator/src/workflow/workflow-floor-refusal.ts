@@ -10,6 +10,13 @@ type CommandExitBindingEvidence = {
   createdAfterStepActivation: boolean
 }
 
+/** Whether these floors accept a pull-request URL as alternative evidence. */
+export function floorsAcceptPullRequestLink(
+  floors: ReadonlyArray<{ commandEvidence?: string }>,
+): boolean {
+  return floors.some((floor) => floor.commandEvidence === 'pull-request')
+}
+
 export function gateFloorRefusal(tree: {
   project: string
   worktree?: string | null
