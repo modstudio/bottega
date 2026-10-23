@@ -486,25 +486,6 @@ function sharedProjectRecordId(runs: readonly RunRow[]): string | null {
     : null
 }
 
-function recordedChangeRound(
-  database: Database,
-  runs: readonly RunRow[],
-  measured: ReturnType<typeof measureReviewChange>,
-) {
-  const first = runs[0]!
-  const pathSet = measured ? serializePathSet(measured.pathSet) : null
-  return {
-    pathSet,
-    round: reviewRoundForRecording(database, {
-      project_record_id: first.project_record_id,
-      launch_key: first.launch_key,
-      branch: first.branch,
-      patch_id: measured?.patchId ?? null,
-      path_set: pathSet,
-    }),
-  }
-}
-
 function recordedReviewNumber(database: Database, runRecordId: string): number | null {
   const row = database
     .query(
@@ -572,8 +553,16 @@ export function recordReviews(
       run.head_commit,
     )
   })()
-  const { pathSet, round } = recordedChangeRound(database, runs, measured)
+  const pathSet = measured ? serializePathSet(measured.pathSet) : null
   const reviewRecordId = writeTransaction(() => {
+    const first = runs[0]!
+    const round = reviewRoundForRecording(database, {
+      project_record_id: first.project_record_id,
+      launch_key: first.launch_key,
+      branch: first.branch,
+      patch_id: measured?.patchId ?? null,
+      path_set: pathSet,
+    })
     const tier = measured?.tier ?? null
     const review = database
       .query(

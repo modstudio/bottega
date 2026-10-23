@@ -37,9 +37,9 @@ function laterRoundReason(
   findings: ReadonlySet<string>,
   newlyTouched: ReadonlySet<string>,
 ): ReviewLensSelectionReason | null {
+  if (!completed.has(lens)) return 'never-completed'
   if (findings.has(lens)) return 'accepted-finding'
   if (newlyTouched.has(lens)) return 'newly-touched-path'
-  if (!completed.has(lens)) return 'never-completed'
   return null
 }
 

@@ -42,11 +42,17 @@ import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 
-function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string): string {
+function writeDetachedPrompt(
+  recordId: string,
+  prompt: string,
+  beforeCoordinator: (recordId: string) => void,
+): string {
+  const runsDir = RUNS_DIR
   const runDirectory = join(runsDir, recordId)
   mkdirSync(runDirectory, { recursive: true })
   const promptPath = join(runDirectory, 'prompt.txt')
   writeFileSync(promptPath, prompt)
+  beforeCoordinator(recordId)
   return promptPath
 }
 
@@ -99,6 +105,7 @@ export async function detach(
   prompt: string,
   spec: DetachSpec,
   selectedAgent?: string,
+  beforeCoordinator: (recordId: string) => void = () => {},
   spawnCoordinator: typeof spawn = spawn,
 ): Promise<string> {
   writableDb()
@@ -151,9 +158,8 @@ export async function detach(
     ensureDispatchMcpMainStack({ mcpRequest, cwd, projectName: spec.repo })
     preflightMcp({ mcp: mcpRequest, cwd, job: jobName, selectedAgent })
   }
-  const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
-  mkdirSync(runsDir, { recursive: true })
+  mkdirSync(RUNS_DIR, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
   // them then read whichever prompt was written last. Six review lenses fired at
@@ -269,7 +275,7 @@ export async function detach(
   try {
     // The row now exists, so its id replaces that temporary random name and is
     // also stored on the row for run() to reuse rather than creating a second file.
-    const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
+    const promptPath = writeDetachedPrompt(recordId, prompt, beforeCoordinator)
     handoffStep = 'record prompt artifact'
     db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, recordId)
     /**
@@ -310,7 +316,7 @@ export async function detach(
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)
     handoffStep = 'open coordinator log'
-    coordinatorLogFd = openSync(runCoordinatorLogPath(recordId, runsDir), 'a', 0o600)
+    coordinatorLogFd = openSync(runCoordinatorLogPath(recordId, RUNS_DIR), 'a', 0o600)
     const spawnOpts = {
       cwd: spawnCwd(
         cwd,

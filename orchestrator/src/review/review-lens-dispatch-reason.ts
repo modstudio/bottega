@@ -23,11 +23,7 @@ export function reviewLensSelectionReasonForDispatch(input: {
 }): ReviewLensSelectionReason {
   if (!input.lens) return OPERATOR_ORDERED
   if (input.jobName !== 'review-lens' || !input.review) return OPERATOR_ORDERED
-  try {
-    return funnelReasonForLens({ ...input, lens: input.lens, review: input.review })
-  } catch {
-    return OPERATOR_ORDERED
-  }
+  return funnelReasonForLens({ ...input, lens: input.lens, review: input.review })
 }
 
 function funnelReasonForLens(input: {

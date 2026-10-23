@@ -83,3 +83,25 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
     error: expect.stringContaining('detach handoff failed during await coordinator spawn'),
   })
 })
+
+test('dispatch metadata is written before the detached coordinator starts', async () => {
+  process.env.ORCH_DEPTH = '0'
+  const events: string[] = []
+  const coordinator = mock(() => {
+    events.push('spawn')
+    throw new Error('fixture spawn refusal')
+  })
+
+  await expect(
+    detach(
+      'summarize',
+      'dispatch metadata fixture',
+      { cwd: dir },
+      undefined,
+      () => events.push('metadata'),
+      coordinator as never,
+    ),
+  ).rejects.toThrow('fixture spawn refusal')
+
+  expect(events).toEqual(['metadata', 'spawn'])
+})

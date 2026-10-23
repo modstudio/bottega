@@ -398,18 +398,22 @@ async function detachRoutedRun(
       spec.probe,
       spec.lens,
     ).agent
-  const id = await dispatchDetached(jobName, text, spec, selected)
-  writeLensSelectionReason(
-    id,
-    reviewLensSelectionReasonForDispatch({
-      jobName,
-      lens: spec.lens,
-      review: spec.review,
-      cwd: spec.cwd ?? cwd,
-      repo: spec.repo,
-    }),
+  const selectionReason = job(jobName).findings
+    ? reviewLensSelectionReasonForDispatch({
+        jobName,
+        lens: spec.lens,
+        review: spec.review,
+        cwd: spec.cwd ?? cwd,
+        repo: spec.repo,
+      })
+    : null
+  return dispatchDetached(
+    jobName,
+    text,
+    spec,
+    selected,
+    selectionReason ? (id) => writeLensSelectionReason(id, selectionReason) : undefined,
   )
-  return id
 }
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
