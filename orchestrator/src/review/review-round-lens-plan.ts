@@ -8,6 +8,7 @@ import {
 } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
+import { identifySecondOpinionRun } from './review-second-opinion.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
@@ -58,17 +59,9 @@ export function roundLensFacts(
         : [],
     ),
   )
-  const satisfiedSecondOpinionLenses = completedLenses.filter((lens) => {
-    const models = new Set(
-      completedOpinions
-        .filter(
-          (opinion) =>
-            opinion.completed && opinion.graded && opinion.lens === lens && opinion.model,
-        )
-        .map((opinion) => opinion.model),
-    )
-    return models.size >= 2
-  })
+  const satisfiedSecondOpinionLenses = completedLenses.filter((lens) =>
+    Boolean(identifySecondOpinionRun(completedOpinions, lens)),
+  )
   const prior = branchReviews.filter(
     (review) =>
       review.completedAt !== null &&
