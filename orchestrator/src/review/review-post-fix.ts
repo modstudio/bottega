@@ -90,6 +90,16 @@ function latestCompletedReview(
   }
 }
 
+function recordedReviewedTip(repo: string, to: string, review: CompletedReview): string | null {
+  for (const runId of review.runIds) {
+    const commit = git(repo, ['rev-parse', '--verify', `${pinRef(runId)}^{commit}`])
+    if (commit.ok && git(repo, ['merge-base', '--is-ancestor', commit.out, to]).ok) {
+      return commit.out
+    }
+  }
+  return null
+}
+
 function matchingReviewedTip(
   repo: string,
   to: string,
@@ -97,10 +107,9 @@ function matchingReviewedTip(
   branch: string,
   review: CompletedReview,
 ): string | null {
+  const recorded = recordedReviewedTip(repo, to, review)
+  if (recorded) return recorded
   if (!review.identity) return null
-  if (!review.runIds.some((runId) => git(repo, ['rev-parse', '--verify', pinRef(runId)]).ok)) {
-    return null
-  }
   const history = git(repo, ['rev-list', '--reverse', to, '--not', trunkRef])
   if (!history.ok) return null
   let match: string | null = null
