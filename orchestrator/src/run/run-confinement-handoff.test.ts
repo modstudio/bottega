@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import * as productionModelHost from '../agent/model-host.ts'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import {
   type ConfinementEvent,
   classifyCheckoutChanges,
@@ -67,8 +68,8 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
         mcpSetupHeader: null,
         mcpTrustGranted: false,
         grokMcpEnvironment: {},
-        sandboxRunDir: input.callerCwd,
-        sandboxRunDirExisted: true,
+        runtimeDir: input.callerCwd,
+        runtimeDirExisted: true,
         cwd: input.callerCwd,
         prompt: input.prompt,
         mcpConnection: input.mcpConnection,
@@ -86,12 +87,18 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
   }))
   mock.module('./run-worker-home.ts', () => ({
     ...productionWorkerHome,
-    prepareWorkerHomeLaunch: async () => ({
-      codexMcpCatalogues: [],
-      environment: {},
-      hasRunScopedHome: false,
-      sandboxEnvironment: {},
-    }),
+    prepareWorkerHomeLaunch: async (
+      input: Parameters<typeof productionWorkerHome.prepareWorkerHomeLaunch>[0],
+    ) => {
+      // The real preparation refuses without a host Codex login, a host precondition rather than fixture behavior.
+      const harness = workerHarnessName(input.agent)
+      return {
+        codexMcpCatalogues: [],
+        environment: {},
+        hasRunScopedHome: harness === 'codex' || harness === 'grok' || input.sandbox === 'srt',
+        sandboxEnvironment: {},
+      }
+    },
   }))
   mock.module('./run-terminal.ts', () => ({
     finishRun: async (input: {
