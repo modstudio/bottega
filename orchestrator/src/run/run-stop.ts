@@ -11,6 +11,7 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from '../cleanup/cleanup.ts'
+import { releaseStoppedReaderClone } from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
@@ -41,6 +42,7 @@ import type {
   TerminateRunProcessesResult,
   VerifiedRunProcessTermination,
 } from './run-process.ts'
+import { stoppedWorktreeLine } from './stopped-worktree-decision.ts'
 
 export function stoppedRunLine(id: string): string {
   return `stopped run ${id}`
@@ -67,16 +69,6 @@ export function stopTerminationRefusal(
   return null
 }
 
-function stoppedWorktreeLine(
-  worktree: string,
-  branch: string | null,
-  branchOwnedByConversation: boolean,
-  dockerMessage: string,
-): string {
-  const keptBranch = branchOwnedByConversation ? ` and branch ${branch}` : ''
-  return `kept worktree ${worktree}${keptBranch} for continuation; ${dockerMessage}`
-}
-
 function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
   if (!dockerTeardown.complete) {
     return dockerTeardown.removed
@@ -93,16 +85,22 @@ function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
   return 'found no Docker containers to reclaim'
 }
 
+function stopCoordinatorExtraPids(pid: number | null): number[] {
+  return pid && pid !== process.pid ? [pid] : []
+}
+
 function logStoppedRun(
   options: RunStopOptions,
   row: StopRow,
   cleanupRow: ReturnType<typeof stopCleanupRow>,
   dockerTeardown: TerminalDockerTeardown,
+  released: boolean,
 ): void {
   options.presentation.log(stoppedRunLine(row.record_id))
   if (cleanupRow.worktree) {
     options.presentation.log(
       stoppedWorktreeLine(
+        released,
         cleanupRow.worktree,
         cleanupRow.branch,
         branchDeletionProvenanceRefusal(cleanupRow.record_id, cleanupRow.branch) === null,
@@ -140,6 +138,7 @@ type StopRow = {
   agent_pid: number | null
   parent_run_record_id: string | null
   turn: number
+  job: string
   repo: string | null
   cwd: string | null
   worktree: string | null
@@ -151,7 +150,7 @@ type StopRow = {
 function readStopChain(rootId: string): StopRow[] {
   return db()
     .query(
-      `SELECT record_id, number, status, pid, agent_pid, parent_run_record_id, turn, repo, cwd, worktree, branch,
+      `SELECT record_id, number, status, pid, agent_pid, parent_run_record_id, turn, job, repo, cwd, worktree, branch,
             base_commit, worktree_source
        FROM run WHERE record_id = ? OR parent_run_record_id = ? ORDER BY turn DESC, number DESC`,
     )
@@ -174,6 +173,7 @@ function stopCleanupRow(chain: StopRow[], root: StopRow, row: StopRow) {
     base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
     worktree_source:
       root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
+    job: row.job ?? root.job ?? artifact?.job,
   }
 }
 
@@ -245,8 +245,10 @@ export async function stopRun(
   // The coordinator owns setup and final recording. Killing it inside the
   // creation window strands the project tool's directory before it can be
   // attributed or reclaimed. Stop the vendor, but let the coordinator see
-  // the stopped row and finish recording. The tree remains the continuation
-  // substrate; only its recreatable containers are reclaimed at stop.
+  // the stopped row and finish recording. Recreatable containers are
+  // reclaimed at stop. A writing tree stays as continuation substrate. A
+  // read-only reader clone is released here when this process can establish
+  // that release; otherwise the pointer stays so discard can remove it.
   const plan = helpers.planRunProcessTermination(
     candidate.record_id,
     candidate.pid ? [candidate.pid] : [],
@@ -262,7 +264,18 @@ export async function stopRun(
     const refusal = stopTerminationRefusal(row, termination)
     if (refusal) throw new Error(refusal)
   }
-  logStoppedRun(options, row, cleanupRow, teardownTerminalRunResources(db(), row.record_id))
+  const dockerTeardown = teardownTerminalRunResources(db(), row.record_id)
+  const readerCloneRelease = releaseStoppedReaderClone(
+    cleanupRow.record_id,
+    stopCoordinatorExtraPids(row.pid),
+  )
+  logStoppedRun(
+    options,
+    row,
+    cleanupRow,
+    dockerTeardown,
+    readerCloneRelease === 'released' || readerCloneRelease === 'tree-released-with-unrecorded-row',
+  )
 }
 
 export async function abandonRun(

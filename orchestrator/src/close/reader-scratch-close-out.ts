@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { gitResult } from '../git/git-environment.ts'
-import { JOBS } from '../jobs/jobs.ts'
+import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
 import { dryRunReleaseResult, reconstructibilityHold } from './absent-tree-close-out.ts'
 import { readerCloneReleaseDecision } from './reader-scratch-release.ts'
@@ -104,8 +104,7 @@ function readerScratchCloseOutPlan(input: {
   repoRoot: string
   baseCommit: string
 }): ReaderCloneCloseOutPlan {
-  const definition = JOBS[input.job]
-  const readOnlyJob = Boolean(definition?.needs.readsRepo) && !definition?.needs.writesRepo
+  const readOnlyJob = isReadOnlyRepositoryJob(input.job)
   if (!input.terminal) return { action: 'hold', detail: 'conversation is not terminal' }
   if (!readOnlyJob || input.treeAbsent) return { action: 'ordinary' }
   const facts = readerCloneDisposableFacts({

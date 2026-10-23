@@ -1,9 +1,14 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
+import { existsSync, rmSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { discardRun } from '../cleanup/cleanup.ts'
+import * as closeOut from '../close/close-out.ts'
+import { cleanFixture, closeOutFixture } from '../close/reader-scratch-close-out.fixture.ts'
 import { db } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import * as dockerResources from '../resources/docker-resources.ts'
 import { candidates } from '../route/route.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
@@ -21,6 +26,7 @@ const presentation = () => {
     },
   }
 }
+
 async function invoke(
   action: 'stop' | 'abandon',
   id: string,
@@ -59,6 +65,24 @@ const verifiedVendor = {
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
+
+afterEach(() => {
+  mock.restore()
+})
+
+function runningReaderClone() {
+  const fixture = closeOutFixture()
+  db()
+    .query("UPDATE run SET status='running', session_id=? WHERE record_id=?")
+    .run('orch-test-session', fixture.id)
+  return fixture
+}
+
+async function discardStopped(id: string): Promise<string> {
+  const shown = presentation()
+  await discardRun(id, { force: false, auditReason: null, presentation: shown.value })
+  return shown.lines.join('\n')
+}
 
 test('stop reports an identity mismatch with an inspect-then-signal remedy and does not claim stopped', () => {
   expect(
@@ -301,15 +325,110 @@ test('stop by a chain root stops its running child turn', async () => {
 })
 
 test('stop omits a reviewed branch that the conversation did not mint', async () => {
-  const id = insert('running', 'review-lens')
+  const fixture = runningReaderClone()
   db()
-    .query('UPDATE run SET worktree=?, branch=?, minted_branch=NULL WHERE record_id=?')
-    .run('/tmp/review-tree', 'DEV-930-orch-6210', id)
+    .query('UPDATE run SET branch=?, minted_branch=NULL WHERE record_id=?')
+    .run('DEV-930-orch-6210', fixture.id)
+  try {
+    const result = await invoke('stop', fixture.id)
 
-  const result = await invoke('stop', id)
+    expect(result.out).toContain(`released worktree ${fixture.worktree}`)
+    expect(result.out).not.toContain('for continuation')
+    expect(result.out).not.toContain('DEV-930-orch-6210')
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
 
-  expect(result.out).toContain('kept worktree /tmp/review-tree for continuation')
-  expect(result.out).not.toContain('DEV-930-orch-6210')
+test('stop then discard after a completed reader-clone release', async () => {
+  const fixture = runningReaderClone()
+  try {
+    const result = await invoke('stop', fixture.id)
+    expect(result.code).toBe(0)
+    expect(result.out).toContain(`released worktree ${fixture.worktree}`)
+    expect(
+      db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
+    ).toEqual({
+      worktree: null,
+      close_out_outcome: 'released',
+    })
+    expect(existsSync(fixture.worktree)).toBe(false)
+    expect(await discardStopped(fixture.id)).toContain(
+      `run ${fixture.id}'s worktree was already released by stop or close-out`,
+    )
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
+
+test('stop then discard when the coordinator is absent', async () => {
+  const fixture = runningReaderClone()
+  db().query('UPDATE run SET pid=? WHERE record_id=?').run(999_999_999, fixture.id)
+  try {
+    const result = await invoke('stop', fixture.id)
+    expect(result.code).toBe(0)
+    expect(result.out).toContain(`released worktree ${fixture.worktree}`)
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(fixture.id)).toEqual({
+      worktree: null,
+    })
+    expect(await discardStopped(fixture.id)).toContain(
+      `run ${fixture.id}'s worktree was already released by stop or close-out`,
+    )
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
+
+test('stop then discard when close-out is already recorded', async () => {
+  const fixture = runningReaderClone()
+  try {
+    rmSync(fixture.worktree, { recursive: true, force: true })
+    db()
+      .query(
+        `UPDATE run SET worktree=NULL, close_out_outcome='released',
+           close_out_detail='released reader clone' WHERE record_id=?`,
+      )
+      .run(fixture.id)
+    const result = await invoke('stop', fixture.id)
+    expect(result.code).toBe(0)
+    expect(result.out).toContain(`stopped run ${fixture.id}`)
+    expect(result.out).not.toContain('kept worktree')
+    expect(result.out).not.toContain('has no worktree to discard')
+    expect(await discardStopped(fixture.id)).toContain(
+      `run ${fixture.id}'s worktree was already released by stop or close-out`,
+    )
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
+
+test('stop and discard agree when clone removal precedes failed close-out recording', async () => {
+  const fixture = runningReaderClone()
+  spyOn(closeOut, 'closeOutRun').mockImplementation(() => {
+    rmSync(fixture.worktree, { recursive: true, force: true })
+    throw new Error('recording transaction failed')
+  })
+  spyOn(dockerResources, 'resourcesForRuns').mockReturnValue({
+    ascertainable: true,
+    resources: [],
+  })
+  try {
+    const result = await invoke('stop', fixture.id)
+    expect(result.code).toBe(0)
+    expect(result.out).toContain(`released worktree ${fixture.worktree}`)
+    expect(
+      db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
+    ).toEqual({ worktree: fixture.worktree, close_out_outcome: null })
+
+    expect(await discardStopped(fixture.id)).toContain(
+      `run ${fixture.id}'s worktree was already released by stop or close-out`,
+    )
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(fixture.id)).toEqual({
+      worktree: null,
+    })
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
 })
 
 test('stop names a branch minted by its conversation', async () => {
@@ -324,6 +443,9 @@ test('stop names a branch minted by its conversation', async () => {
   expect(result.out).toContain(
     `kept worktree /tmp/writer-tree and branch ${branch} for continuation`,
   )
+  expect(
+    db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(id),
+  ).toEqual({ worktree: '/tmp/writer-tree', close_out_outcome: null })
 })
 
 test('stop waits for a concurrent continuation claim and stops the claimed turn', async () => {
