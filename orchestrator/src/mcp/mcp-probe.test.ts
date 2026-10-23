@@ -73,3 +73,15 @@ test('a reply line with multi-byte text is not lost to the line after it', () =>
   const stdout = Buffer.from(`${JSON.stringify(first)}\n${JSON.stringify(second)}\n`)
   expect(decodeMessages(stdout)).toEqual([first, second])
 })
+
+test('a Content-Length frame is still decoded whole, even when its body spans lines', () => {
+  const framed = { jsonrpc: '2.0', id: 1, result: { text: 'refusé' } }
+  const body = Buffer.from(JSON.stringify(framed, null, 2))
+  const after = { jsonrpc: '2.0', method: 'notifications/message' }
+  const stdout = Buffer.concat([
+    Buffer.from(`Content-Length: ${body.length}\r\n\r\n`),
+    body,
+    Buffer.from(`${JSON.stringify(after)}\n`),
+  ])
+  expect(decodeMessages(stdout)).toEqual([framed, after])
+})
