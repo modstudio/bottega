@@ -8,6 +8,7 @@ import {
   type ReviewTier,
   type ReviewTierFile,
 } from './review-tier-classifier.ts'
+import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
@@ -23,6 +24,7 @@ export type ApplicableReview = {
   secondOpinion?: string
   lensBases?: Record<string, string>
   secondOpinionBasis?: string
+  lensReasons?: Record<string, ReviewLensSelectionReason>
 }
 
 export type ReviewPlan = {
@@ -39,6 +41,9 @@ export function selectReviewApplicability(
   const lensBases = Object.fromEntries(
     Object.entries(applicable.lensBases ?? {}).filter(([lens]) => selected.has(lens)),
   )
+  const lensReasons = Object.fromEntries(
+    Object.entries(applicable.lensReasons ?? {}).filter(([lens]) => selected.has(lens)),
+  )
   return {
     lenses,
     ...(applicable.secondOpinion && selected.has(applicable.secondOpinion)
@@ -50,6 +55,7 @@ export function selectReviewApplicability(
     applicable.secondOpinionBasis
       ? { secondOpinionBasis: applicable.secondOpinionBasis }
       : {}),
+    ...(Object.keys(lensReasons).length ? { lensReasons } : {}),
   }
 }
 

@@ -138,6 +138,7 @@ export type ClaimInput = {
   mcpConnection: McpConnection | null
   mcpMode: McpMode | null
   declaredDeliverables: string[]
+  selectionReason?: string | null
   timeoutMinutes: number | undefined
   timeoutMs: number
   forbidsRepo: boolean
@@ -520,6 +521,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   writeDispatchState(claim.id, {
     deliverables: declaredDeliverables,
     timeoutMinutes: timeoutMinutes ?? null,
+    selectionReason: input.selectionReason ?? null,
   })
   /**
    * A repository worker never runs in the caller's checkout.

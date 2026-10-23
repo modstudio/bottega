@@ -30,6 +30,7 @@ import {
 } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
+import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -417,7 +418,21 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
         spec.probe,
         spec.lens,
       ).agent
-    return dispatchDetached(jobName, text, spec, selected)
+    return dispatchDetached(
+      jobName,
+      text,
+      {
+        ...spec,
+        selectionReason: reviewLensSelectionReasonForDispatch({
+          jobName,
+          lens: spec.lens,
+          review: spec.review,
+          cwd: spec.cwd ?? presentation.cwd(),
+          repo: spec.repo,
+        }),
+      },
+      selected,
+    )
   }
   await dispatchCommand(
     argv,

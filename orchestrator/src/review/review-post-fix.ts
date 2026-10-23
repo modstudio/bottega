@@ -17,7 +17,8 @@ import {
   type ReviewTierFile,
   tierThreeRiskPaths,
 } from './review-tier-classifier.ts'
-import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
+import type { ReviewRoundEvidenceRow } from './review-yield.ts'
 
 const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
 

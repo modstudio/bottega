@@ -12,11 +12,20 @@ export const REVIEW_COVERAGE = ['empty', 'partial', 'adequate'] as const
 export const REVIEW_LIMITS = ['named', 'absent'] as const
 export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
 export const REVIEW_SEVERITY = ['critical', 'high', 'medium', 'low'] as const
+export const REVIEW_LENS_SELECTION_REASON = [
+  'initial',
+  'accepted-finding',
+  'newly-touched-path',
+  'never-completed',
+  'unidentified-tip-funnel',
+  'operator-ordered',
+] as const
 export type ReviewReproduced = (typeof REVIEW_REPRODUCED)[number]
 export type ReviewCoverage = (typeof REVIEW_COVERAGE)[number]
 export type ReviewLimits = (typeof REVIEW_LIMITS)[number]
 export type ReviewOverlap = (typeof REVIEW_OVERLAP)[number]
 export type ReviewSeverity = (typeof REVIEW_SEVERITY)[number]
+export type ReviewLensSelectionReason = (typeof REVIEW_LENS_SELECTION_REASON)[number]
 
 const MONITOR_SEVERITY = ['informational', 'attention'] as const
 export type MonitorSeverity = (typeof MONITOR_SEVERITY)[number]

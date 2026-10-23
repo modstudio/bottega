@@ -107,6 +107,7 @@ export type RunRow = {
   review_ref: string | null
   changed_paths: string | null
   branch: string | null
+  launch_key: string | null
 }
 
 export type ReviewChangeRange = { from: string; to: string; paths: string[] | null }

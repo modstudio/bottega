@@ -4,6 +4,7 @@
 import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
+import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 export type RoundLensFacts = {
   completedLenses: readonly string[]
@@ -28,6 +29,25 @@ export function roundLensPlan(input: {
   return input.relevantLenses.filter(
     (lens) => !completed.has(lens) || findings.has(lens) || newlyTouched.has(lens),
   )
+}
+
+function laterRoundReason(
+  lens: string,
+  completed: ReadonlySet<string>,
+  findings: ReadonlySet<string>,
+  newlyTouched: ReadonlySet<string>,
+): ReviewLensSelectionReason | null {
+  if (findings.has(lens)) return 'accepted-finding'
+  if (newlyTouched.has(lens)) return 'newly-touched-path'
+  if (!completed.has(lens)) return 'never-completed'
+  return null
+}
+
+function withLensReasons(
+  applicable: ApplicableReview,
+  reasons: Record<string, ReviewLensSelectionReason>,
+): ApplicableReview {
+  return Object.keys(reasons).length ? { ...applicable, lensReasons: reasons } : applicable
 }
 
 /** Gather branch-history facts without deciding which lenses the round needs. */
@@ -67,26 +87,44 @@ export function applicableRoundLensPlan(input: {
   postFix: PostFixReviewDecision
   pathScopedLenses: readonly string[]
 }): ApplicableReview {
-  if (input.postFix.kind === 'no-completed-round') return input.relevant
-  if (input.postFix.kind === 'no-round-needed') {
-    const completed = new Set(input.facts.completedLenses)
-    return selectReviewApplicability(
+  if (input.postFix.kind === 'no-completed-round') {
+    return withLensReasons(
       input.relevant,
-      input.relevant.lenses.filter((lens) => !completed.has(lens)),
+      Object.fromEntries(input.relevant.lenses.map((lens) => [lens, 'initial'])),
     )
   }
+  if (input.postFix.kind === 'no-round-needed') {
+    const completed = new Set(input.facts.completedLenses)
+    const lenses = input.relevant.lenses.filter((lens) => !completed.has(lens))
+    return withLensReasons(
+      selectReviewApplicability(input.relevant, lenses),
+      Object.fromEntries(lenses.map((lens) => [lens, 'never-completed'])),
+    )
+  }
+  const completed = new Set(input.facts.completedLenses)
+  const findings = new Set(input.facts.latestAcceptedOrModifiedLenses)
   const pathScoped = new Set(input.pathScopedLenses)
   const newlyTouchedLenses =
     input.postFix.kind === 're-lens'
       ? input.postFix.applicability.lenses.filter((lens) => pathScoped.has(lens))
       : []
-  return selectReviewApplicability(
-    input.relevant,
-    roundLensPlan({
-      relevantLenses: input.relevant.lenses,
-      completedLenses: input.facts.completedLenses,
-      latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
-      newlyTouchedLenses,
-    }),
+  const newlyTouched = new Set(newlyTouchedLenses)
+  const lenses = roundLensPlan({
+    relevantLenses: input.relevant.lenses,
+    completedLenses: input.facts.completedLenses,
+    latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
+    newlyTouchedLenses,
+  })
+  const unidentified = input.postFix.kind === 'reviewed-tip-unidentified'
+  return withLensReasons(
+    selectReviewApplicability(input.relevant, lenses),
+    Object.fromEntries(
+      lenses.map((lens) => [
+        lens,
+        unidentified
+          ? 'unidentified-tip-funnel'
+          : (laterRoundReason(lens, completed, findings, newlyTouched) ?? 'never-completed'),
+      ]),
+    ),
   )
 }

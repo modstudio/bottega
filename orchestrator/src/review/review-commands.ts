@@ -38,7 +38,7 @@ import {
   triageFinding,
 } from './review-triage.ts'
 import { REVIEW_SEVERITY } from './review-vocabulary.ts'
-import { reviewRoundIdentity } from './review-yield.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void }
@@ -306,8 +306,10 @@ function reviewTierOutput(value: string, cwd: string) {
     lens_profiles: roundApplicability.lenses.map((id) => ({
       id,
       basis: roundApplicability.lensBases?.[id] ?? null,
+      reason: roundApplicability.lensReasons?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
+    lensReasons: roundApplicability.lensReasons,
   }
 }
 
@@ -373,7 +375,12 @@ function printReviewTier(
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    log(`lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}`)
+    log(
+      `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${basisLabel(lens.reason ? `reason: ${lens.reason}` : null)}`.replace(
+        '  basis: reason: ',
+        '  reason: ',
+      ),
+    )
   }
   if (output.secondOpinion) {
     log(

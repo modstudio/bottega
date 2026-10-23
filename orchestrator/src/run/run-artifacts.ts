@@ -416,7 +416,11 @@ export function reconcileRun(id: string): string {
   return `reconciled run ${id} as ${snapshot.status}`
 }
 
-export type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }
+export type DispatchState = {
+  deliverables: string[]
+  timeoutMinutes: number | null
+  selectionReason?: string | null
+}
 
 export function writeDispatchState(id: string, state: DispatchState): void {
   mkdirSync(join(RUNS_DIR, id), { recursive: true })
@@ -440,7 +444,8 @@ export function readDispatchState(id: string): DispatchState {
         ? value.deliverables
         : []
     const timeoutMinutes = typeof value.timeoutMinutes === 'number' ? value.timeoutMinutes : null
-    return { deliverables, timeoutMinutes }
+    const selectionReason = typeof value.selectionReason === 'string' ? value.selectionReason : null
+    return { deliverables, timeoutMinutes, selectionReason }
   } catch {
     return { deliverables: [], timeoutMinutes: null }
   }
