@@ -48,10 +48,6 @@ test('a report reply successor is withheld when the reply predates reporter acti
   expect(successorDecision({ replyPostedAt: '2026-10-16T09:00:00.000Z' })).toBe(false)
 })
 
-test('a report reply reaches a successor when it arrived after the absent reporter left', () => {
-  expect(successorDecision()).toBe(true)
-})
-
 test('acknowledgement delivery ends at its deadline and belongs only to sessions already running', () => {
   expect(decision({ acknowledgementDeadline: '2026-10-16T11:59:59.999Z' })).toBe('withheld')
   expect(

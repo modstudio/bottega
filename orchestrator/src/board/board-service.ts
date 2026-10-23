@@ -137,11 +137,14 @@ export function runReader(runId: string, database = db()): string {
   return `run:${row.root_id}`
 }
 
-function wasDelivered(messageRecordId: string, reader: string, database = db()): boolean {
-  const receipt = database
+function receiptDelivery(messageRecordId: string, reader: string, database = db()) {
+  return database
     .query('SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?')
     .get(messageRecordId, reader) as { delivered_at: string | null } | null
-  return Boolean(receipt?.delivered_at)
+}
+
+function wasDelivered(messageRecordId: string, reader: string, database = db()): boolean {
+  return Boolean(receiptDelivery(messageRecordId, reader, database)?.delivered_at)
 }
 
 function replySuccessorPush(
