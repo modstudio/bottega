@@ -1,5 +1,26 @@
 import { db, writeTransaction } from './db.ts'
 
+export type StoredLeaseStartFacts = {
+  leaseHolder: string | null
+  intentHolder: string | null
+  intentUntil: number | null
+  now: number
+}
+
+type StoredLeaseValue = { holder: string; until: number }
+
+function storedValue(value: string | undefined): StoredLeaseValue | null {
+  if (value === undefined) return null
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredLeaseValue>
+    return typeof parsed.holder === 'string' && typeof parsed.until === 'number'
+      ? { holder: parsed.holder, until: parsed.until }
+      : null
+  } catch {
+    return null
+  }
+}
+
 export function acquireStoredLease(key: string, holder: string, durationMs: number): boolean {
   const now = Date.now()
   const row = writeTransaction((conn) => {
@@ -18,6 +39,70 @@ export function acquireStoredLease(key: string, holder: string, durationMs: numb
   } catch {
     return false
   }
+}
+
+/** Atomically apply a caller's start decision and acquire its stored lease. */
+export function acquireStoredLeaseWhen(
+  key: string,
+  intentKey: string,
+  holder: string,
+  durationMs: number,
+  mayStart: (facts: StoredLeaseStartFacts) => boolean,
+): boolean {
+  const now = Date.now()
+  return writeTransaction((conn) => {
+    const rows = conn
+      .query<{ key: string; value: string }, [string, string]>(
+        `SELECT key, value FROM setting WHERE key IN (?, ?)`,
+      )
+      .all(key, intentKey)
+    const lease = storedValue(rows.find((row) => row.key === key)?.value)
+    const intent = storedValue(rows.find((row) => row.key === intentKey)?.value)
+    if (
+      !mayStart({
+        leaseHolder: lease && lease.until > now ? lease.holder : null,
+        intentHolder: intent?.holder ?? null,
+        intentUntil: intent?.until ?? null,
+        now,
+      })
+    )
+      return false
+    conn
+      .query(
+        `INSERT INTO setting (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value
+          WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
+             OR json_extract(setting.value, '$.holder') = ?`,
+      )
+      .run(key, JSON.stringify({ holder, until: now + durationMs }), now, holder)
+    const acquired = conn
+      .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
+      .get(key)
+    return storedValue(acquired?.value)?.holder === holder
+  })
+}
+
+/** Claim the single waiter slot unless another unexpired waiter already owns it. */
+export function acquireStoredLeaseIntent(key: string, holder: string, until: number): boolean {
+  const now = Date.now()
+  return writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO setting (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value
+          WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
+             OR json_extract(setting.value, '$.holder') = ?`,
+      )
+      .run(key, JSON.stringify({ holder, until }), now, holder)
+    const intent = conn
+      .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
+      .get(key)
+    return storedValue(intent?.value)?.holder === holder
+  })
+}
+
+export function releaseStoredLeaseIntent(key: string, holder: string): void {
+  releaseStoredLease(key, holder)
 }
 
 export function releaseStoredLease(key: string, holder: string): void {
