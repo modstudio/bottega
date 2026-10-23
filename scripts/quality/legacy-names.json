@@ -379,7 +379,7 @@
     }
   },
   "state-file": {
-    "total": 87,
+    "total": 86,
     "files": {
       ".agents/contexts/hub.md": 1,
       ".agents/contexts/orchestrator-docs.md": 4,
@@ -390,7 +390,6 @@
       "hub/src/ingest/runs.ts": 1,
       "hub/src/orch.ts": 1,
       "orchestrator/hooks/test_block_agent.py": 3,
-      "orchestrator/src/board/board-push-service.test.ts": 1,
       "orchestrator/src/check/check-attribution-git-guard.test.ts": 1,
       "orchestrator/src/check/check-commands-attribution.test.ts": 1,
       "orchestrator/src/check/check-commands.test.ts": 1,

@@ -182,20 +182,28 @@ export function boardActor(env: Environment = process.env): BoardActor {
 function architectPresenceFacts(database: ReturnType<typeof db>) {
   return (
     database
-      .query('SELECT session_id,project,machine,last_seen,current_task_key FROM presence')
+      .query(
+        `SELECT presence.session_id,presence.project,presence.machine,presence.last_seen,
+                presence.current_task_key,session_seen.last_seen AS session_last_seen
+         FROM presence LEFT JOIN session_seen ON session_seen.session_id=presence.session_id`,
+      )
       .all() as {
       session_id: string
       project: string
       machine: string
       last_seen: string
       current_task_key: string | null
+      session_last_seen: string | null
     }[]
   ).map((row) => ({
     reader: row.session_id,
     role: 'architect' as const,
     project: row.project,
     machine: row.machine,
-    lastSeen: Date.parse(row.last_seen),
+    lastSeen: Math.max(
+      Date.parse(row.last_seen),
+      row.session_last_seen ? Date.parse(row.session_last_seen) : Number.NEGATIVE_INFINITY,
+    ),
     taskKeys: new Set(row.current_task_key ? [row.current_task_key] : []),
   }))
 }

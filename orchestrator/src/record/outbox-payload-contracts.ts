@@ -75,8 +75,14 @@ const REVIEW_READ_RECORD_PAYLOAD_CONTRACT = contract(
 )
 
 const RELEASE_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName machineId localId rung candidateCommit liveCommitBefore liveCommitAfter rollback rollbackReason actor sessionId startedAt finishedAt exitCode liveMatchesCandidate warning withheldFields createdAt updatedAt',
-  { projectId: null },
+  'id spaceId projectId projectName machineId localId rung candidateCommit trunk trunkTip commitsBehindTrunk behindTrunkReason liveCommitBefore liveCommitAfter rollback rollbackReason actor sessionId startedAt finishedAt exitCode liveMatchesCandidate warning withheldFields createdAt updatedAt',
+  {
+    projectId: null,
+    trunk: null,
+    trunkTip: null,
+    commitsBehindTrunk: null,
+    behindTrunkReason: null,
+  },
 )
 
 const LANDING_RECORD_PAYLOAD_COLUMNS = columns(

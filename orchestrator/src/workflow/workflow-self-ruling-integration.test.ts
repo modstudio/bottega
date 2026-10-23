@@ -19,6 +19,7 @@ const ports = {
     project: 'fixture',
     branch: args.branch,
     headIsTipOrAncestor: true,
+    landingBranch: 'main',
   }),
   resolveTreeCommit: () => 'abc',
 }
