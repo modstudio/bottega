@@ -933,7 +933,7 @@ esac
                 cwd=checkout,
                 env={
                     **os.environ,
-                    "ORCH_DB": str(checkout / "absent.db"),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "FAKE_MONITOR_CALLS": str(calls),
                 },
                 capture_output=True,
