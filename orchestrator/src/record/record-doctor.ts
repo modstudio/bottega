@@ -25,7 +25,8 @@ import {
   isTransientSecretResolutionFailure,
   secretResolutionFailure,
 } from '../../../shared/secret-resolution-failure.ts'
-import { AGENTS, type Agent } from '../agent/agent-registry.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
+import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { machineId } from './machine-identity.ts'
@@ -229,6 +230,12 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
   return checks
 }
 
+/** A transient doctor failure clears by waiting; the doctor never names itself as the diagnostic. */
+const DOCTOR_TRANSIENT_REMEDY = {
+  exhaustedRetryCommand: `wait for the hosted record to recover, then re-run ${PLATFORM_SLUG} record doctor`,
+  omitDoctorDiagnostic: true,
+}
+
 /** Resolve each distinct enabled-agent secret once without exposing its value. */
 export async function agentSecretChecks(
   agents: ReadonlyArray<Pick<Agent, 'enabled' | 'apiKeySecret'>>,
@@ -268,7 +275,7 @@ export async function agentSecretChecks(
         return {
           name: `agent API key secret ${name}`,
           status: 'fail',
-          detail: `${transient ? 'transient' : 'permanent'}: ${secretResolutionFailure(error) ?? 'secret could not be resolved'}`,
+          detail: `${transient ? 'transient' : 'permanent'}: ${secretResolutionFailure(error, transient ? DOCTOR_TRANSIENT_REMEDY : {}) ?? 'secret could not be resolved'}`,
           section: 'customer',
         }
       }

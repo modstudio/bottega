@@ -5,6 +5,8 @@ import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 
 type SecretResolutionFailureOptions = {
   exhaustedRetryCommand?: string
+  /** The caller is the record doctor, so its remedy must not send the operator back to it. */
+  omitDoctorDiagnostic?: boolean
 }
 
 type HostedFailureCause = {
@@ -94,7 +96,9 @@ function configClientRemedy(
 ) {
   if (options.exhaustedRetryCommand) {
     const diagnostic =
-      classification.reason === 'unreachable' ? `\nchecked by: ${PLATFORM_SLUG} record doctor` : ''
+      classification.reason === 'unreachable' && !options.omitDoctorDiagnostic
+        ? `\nchecked by: ${PLATFORM_SLUG} record doctor`
+        : ''
     return `${diagnostic}\ncleared by: ${options.exhaustedRetryCommand}`
   }
   if (classification.reason === 'unreachable') return `\ncleared by: ${PLATFORM_SLUG} record doctor`
@@ -130,6 +134,6 @@ export function secretResolutionFailure(
     case 'hosted-failure':
       if (classification?.kind === 'config-client')
         return `${condition}${configClientRemedy(classification, options)}`
-      return `${condition}\ncleared by: ${options.exhaustedRetryCommand ?? 'retry the command'}`
+      return `${condition}\ncleared by: ${options.exhaustedRetryCommand ?? `${PLATFORM_SLUG} record doctor`}`
   }
 }

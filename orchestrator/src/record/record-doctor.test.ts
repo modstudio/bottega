@@ -34,6 +34,22 @@ describe('record doctor decisions', () => {
     operatorConnectionPresent: false,
   } as const
 
+  test('agent credential rows reach the doctor report and fail it', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      agentCredentialChecks: [
+        { name: 'agent API key secret MISSING_KEY', status: 'fail', section: 'customer' },
+      ],
+    })
+
+    expect(checks).toContainEqual({
+      name: 'agent API key secret MISSING_KEY',
+      status: 'fail',
+      section: 'customer',
+    })
+    expect(recordDoctorExitCode(checks)).toBe(1)
+  })
+
   test('a healthy customer machine needs no operator connection or secret', () => {
     const checks = decideRecordDoctorChecks(healthyFacts)
     expect(recordDoctorExitCode(checks)).toBe(0)
@@ -344,5 +360,30 @@ describe('record doctor agent secrets', () => {
     expect(checks[0]?.detail).toContain('status: 503')
     expect(checks[0]?.detail).toContain('reason: response')
     expect(checks[0]?.detail).not.toContain(sensitiveMarker)
+  })
+
+  test('an unreachable hosted record clears by waiting, not by running the doctor again as a fix', async () => {
+    const checks = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'SEALED_KEY' }],
+      async () => {
+        throw new ConfigClientError('unreachable', '/v1/config/secrets/SEALED_KEY')
+      },
+    )
+
+    expect(checks[0]?.detail).toContain('transient')
+    expect(checks[0]?.detail).toContain('cleared by: wait for the hosted record to recover')
+    expect(checks[0]?.detail).not.toContain('checked by:')
+  })
+
+  test('a hosted failure without a service cause names a command, not a vague retry', async () => {
+    const checks = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'SEALED_KEY' }],
+      async () => {
+        throw new HostedSecretError('SEALED_KEY', 'hosted-failure', new Error('transport'))
+      },
+    )
+
+    expect(checks[0]?.detail).toContain('cleared by: wait for the hosted record to recover')
+    expect(checks[0]?.detail).not.toContain('retry the command')
   })
 })

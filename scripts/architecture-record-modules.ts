@@ -446,6 +446,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-space-membership.ts',
     '../../../shared/secret-resolution-failure.ts',
     '../agent/agent-registry.ts',
+    '../agent/agents.ts',
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
     './machine-identity.ts',
