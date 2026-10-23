@@ -623,8 +623,8 @@ export async function run(opts: {
     mcpSetupHeader,
     mcpTrustGranted,
     grokMcpEnvironment,
-    sandboxRunDir,
-    sandboxRunDirExisted,
+    runtimeDir,
+    runtimeDirExisted,
     cwd,
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
@@ -671,8 +671,8 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   const runProject = projectAt(callerCwd)
-  const writableRoots = acpWriter.writableRoots(worktree, writesJob, writingAcp, scratchDir)
-  const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, sandboxRunDir)
+  const writableRoots = acpWriter.runRoots(worktree, writesJob, writingAcp, scratchDir, runtimeDir)
+  const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
@@ -706,7 +706,7 @@ export async function run(opts: {
         readsRepo: repoJob,
         writesRepo: writesJob,
         worktree: worktree?.path ?? isolatedCwd,
-        runsDir: sandboxRunDir,
+        runtimeDir,
         scratchDir,
         project: runProject,
         override: process.env.ORCH_SANDBOX,
@@ -720,7 +720,7 @@ export async function run(opts: {
       const home = await workerHome.prepareWorkerHomeLaunch({
         agent: a,
         sandbox: sandboxSelection.sandbox,
-        runDir: sandboxRunDir,
+        runDir: runtimeDir,
         runNumber: claim.number,
         runRecordId: claim.recordId,
         runToken,
@@ -737,7 +737,7 @@ export async function run(opts: {
         sandboxEnvironment,
       } = home)
     } catch (e) {
-      removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
+      removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
       try {
         recordRunStartupFailure(claim.id, e, started)
@@ -760,7 +760,7 @@ export async function run(opts: {
           rootRunId,
           runId: claim.id,
           projectId: runProjectId,
-          path: sandboxRunDir,
+          path: runtimeDir,
           claimedAt: nowIso(),
         })
       }
@@ -994,7 +994,7 @@ export async function run(opts: {
       mcpTrustGranted,
       writableRoots,
       gitConfigEnvironment,
-      sandboxRunDir,
+      runtimeDir,
       recipeEnvironment,
       launchEnvironment: mcpEnvironment,
       scratchDir,

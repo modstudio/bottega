@@ -36,6 +36,19 @@ test('a confined ACP writing check passes only after the requested content is wr
       },
       removeWorktree() {},
       async callAgent(input) {
+        expect(input.scratchDir).toBe(join(root, 'registration-probe', 'scratch'))
+        expect(input.runtimeDir).toBe(join(root, 'sandbox-registration-probe'))
+        expect(input.harnessStateDir).toBe(join(input.runtimeDir, 'harness'))
+        expect(input.workerHomeDir).toBe(join(input.runtimeDir, 'home'))
+        expect(input.profile.filesystem.allowWrite).toEqual([
+          join(root, 'writing-worktree'),
+          input.scratchDir,
+          input.harnessStateDir,
+        ])
+        expect(input.profile.filesystem.allowWrite).not.toContain(input.runtimeDir)
+        expect(input.profile.filesystem.allowWrite).not.toContain(
+          join(input.runtimeDir, 'checkpoint-hooks'),
+        )
         writeFileSync(
           join(input.cwd, 'registration-probe-write.txt'),
           'REGISTRATION_PROBE_WRITE_OK\n',
