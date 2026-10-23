@@ -17,6 +17,29 @@ test('the shared leg uses a directory-anchored selector that collects only share
   expect(shared.testDirectories).toEqual(['shared'])
 })
 
+test('the hub data package is reached only by its own package leg', () => {
+  const hub = CHECK_LEGS.find((leg) => leg.name === 'hub')!
+  const data = CHECK_LEGS.find((leg) => leg.name === 'hub/data')!
+  expect(hub.excludedTestDirectories).toContain('hub/data')
+  expect(hub.suite.some(({ argv }) => argv.includes('data'))).toBe(false)
+  expect(data).toMatchObject({
+    directory: 'hub/data',
+    ciJob: 'hub-data',
+    testDirectories: ['hub/data'],
+    typecheck: ['bun', 'run', 'typecheck'],
+    suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
+  })
+})
+
+test('source-filtered legs claim only the source directories their suites collect', () => {
+  expect(CHECK_LEGS.find((leg) => leg.name === 'hub/deploy/site')!.testDirectories).toEqual([
+    'hub/deploy/site/src',
+  ])
+  expect(CHECK_LEGS.find((leg) => leg.name === 'retrieval')!.testDirectories).toEqual([
+    'retrieval/src',
+  ])
+})
+
 test('reports tracked tests outside a leg or root batch unless exempted', () => {
   expect(
     testReach({

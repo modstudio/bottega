@@ -55,6 +55,7 @@ describe('check mode arguments', () => {
       'cli',
       'orchestrator',
       'hub',
+      'hub/data',
       'hub/web',
       'hub/deploy/site',
       'retrieval',
