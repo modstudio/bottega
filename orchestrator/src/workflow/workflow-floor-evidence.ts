@@ -21,7 +21,6 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { checkoutLandingCommit } from './workflow-checkout-landing.ts'
 import {
-  type CheckoutResolution,
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
 } from './workflow-checkout-refusal.ts'
@@ -40,6 +39,7 @@ import {
 } from './workflow-floor.ts'
 import {
   type FloorEvidencePorts,
+  type CheckoutResolution,
   invokeFloorEvidencePort,
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
@@ -437,6 +437,7 @@ function requireCheckout(
     headIsTipOrAncestor: false,
     landingCommit: null,
     landingIsHeadOrAncestor: false,
+    landingBranch: 'main',
   }
   if (checkout.project !== identity.project)
     throw new Error(
@@ -873,22 +874,17 @@ export function bottegaCommandIdentity(
   cwd: string,
   d: Database,
 ): BottegaCommandIdentity | undefined {
-  if (!executable || executable === PLATFORM_SLUG) return undefined
-  const resolvedExecutable = realpathIfPresent(
+  if (!executable) return undefined
+  const resolvedCandidate = realpathIfPresent(
     isAbsolute(executable) ? executable : resolve(cwd, executable),
   )
-  const registeredExecutables = new Set<string>()
   const mainCheckout = projectByName(PLATFORM_SLUG, d)?.path
-  if (mainCheckout) {
-    const mainExecutable = realpathIfPresent(join(mainCheckout, 'bin', PLATFORM_SLUG))
-    if (mainExecutable) registeredExecutables.add(mainExecutable)
-  }
+  const mainCheckoutExecutable = mainCheckout
+    ? realpathIfPresent(join(mainCheckout, 'bin', PLATFORM_SLUG))
+    : null
   const installed = installedBottegaExecutable()
-  if (installed) {
-    const installedExecutable = realpathIfPresent(installed)
-    if (installedExecutable) registeredExecutables.add(installedExecutable)
-  }
-  return { resolvedExecutable, registeredExecutables: [...registeredExecutables] }
+  const installedExecutable = installed ? realpathIfPresent(installed) : null
+  return { resolvedCandidate, mainCheckoutExecutable, installedExecutable }
 }
 
 function recordedArgv(raw: string): string[] | null {

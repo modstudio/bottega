@@ -12,6 +12,7 @@ import {
   RECORD_WORKFLOW_TABLES,
   type RecordWorkflowTable,
 } from '../record/record-workflow-contract.ts'
+import type { StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition } from './workflow-definition.ts'
 import {
   SHARED_WORKFLOW_PROMOTION_REASON,
@@ -29,7 +30,11 @@ type StoredPromotionVersion = WorkflowPromotionVersion & {
 type PromotionPorts = {
   draftLocal(version: StoredPromotionVersion): number
   promoteLocal(reason: string): void
-  preflight(definition: WorkflowDefinition, spaceId: string | null, catalogue: unknown): void
+  preflight(
+    definition: WorkflowDefinition,
+    spaceId: string | null,
+    catalogue: StepCatalogueDefinition,
+  ): void
   catalogue: CataloguePromotionPorts
   author(): string
   missingCatalogueRefusal: string
@@ -38,7 +43,7 @@ type PromotionPorts = {
 export type CataloguePromotionPorts = {
   draftLocal(version: StoredPromotionVersion): number
   promoteLocal(version: number, reason: string): void
-  preflight(definition: unknown, spaceId: string | null): void
+  preflight(definition: StepCatalogueDefinition, spaceId: string | null): void
   author(): string
 }
 
@@ -117,7 +122,10 @@ async function hostedRows(spaceId: string, table: RecordWorkflowTable): Promise<
   }
 }
 
-async function hostedSnapshot(spaceId: string, slug: string): Promise<HostedSpaceSnapshot> {
+async function hostedSnapshot(
+  spaceId: string,
+  slug: string | null,
+): Promise<HostedSpaceSnapshot> {
   const rows = new Map<RecordWorkflowTable, HostedRow[]>()
   try {
     for (const table of RECORD_WORKFLOW_TABLES) rows.set(table, await hostedRows(spaceId, table))
@@ -126,7 +134,7 @@ async function hostedSnapshot(spaceId: string, slug: string): Promise<HostedSpac
       `refusing shared workflow promotion: could not read authoritative workflow state for space ${spaceId}: ${error instanceof Error ? error.message : String(error)}; refresh and retry`,
     )
   }
-  const identity = rows.get('workflow')!.find((row) => row.slug === slug)
+  const identity = slug === null ? undefined : rows.get('workflow')!.find((row) => row.slug === slug)
   const catalogue = rows.get('step_catalogue')!.find((row) => row.slug === 'shared')
   const versionRows = identity
     ? rows.get('workflow_version')!.filter((row) => row.ownerId === identity.id)
@@ -246,7 +254,8 @@ async function applySharedCataloguePromotion(
   })
 }
 
-async function sharedPromotionState(slug: string, sourceSpace: string, d: Database) {
+/** A null slug gathers catalogue state without selecting a workflow. */
+async function sharedPromotionState(slug: string | null, sourceSpace: string, d: Database) {
   const membershipList = await recordMemberships(recordApiClient())
   const spaceIds = membershipList.memberships.map((membership) => membership.spaceId)
   if (!spaceIds.includes(sourceSpace)) spaceIds.unshift(sourceSpace)
@@ -264,7 +273,7 @@ export async function promoteSharedStepCatalogue(
   d: Database,
   ports: CataloguePromotionPorts,
 ): Promise<WorkflowPromotionSpaceDecision> {
-  const { spaceIds, snapshots } = await sharedPromotionState('', sourceSpace, d)
+  const { spaceIds, snapshots } = await sharedPromotionState(null, sourceSpace, d)
   const versions = [
     ...storedCatalogueVersions(d).filter((row) => row.spaceId === null),
     ...snapshots.flatMap((snapshot) => snapshot.catalogueVersions),
@@ -290,8 +299,8 @@ async function promoteHostedWorkflowSpace(
   expectedProductionVersion: number | null,
 ): Promise<void> {
   const target = d
-    .query<{ definition: string }, [string, string, number]>(
-      `SELECT v.definition FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.n=?`,
+    .query<{ present: number }, [string, string, number]>(
+      `SELECT 1 AS present FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.n=?`,
     )
     .get(slug, spaceId, n)
   if (!target) throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${spaceId}`)

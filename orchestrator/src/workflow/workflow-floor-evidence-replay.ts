@@ -2,7 +2,6 @@
 /** Replays process and network floor facts without holding the store write lock. */
 
 import type { PullRequestView } from '../branch/pull-request-view.ts'
-import type { CheckoutResolution } from './workflow-checkout-refusal.ts'
 
 type HubTaskRead = {
   key: string
@@ -10,6 +9,15 @@ type HubTaskRead = {
   statusCategory: string | null
   commentIds: Array<string | number>
   commentsVerifiable?: boolean
+}
+
+export type CheckoutResolution = {
+  project: string | null
+  branch: string | null
+  headIsTipOrAncestor: boolean
+  landingCommit?: string | null
+  landingIsHeadOrAncestor?: boolean
+  landingBranch: string
 }
 
 export type FloorEvidencePorts = {

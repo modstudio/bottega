@@ -1,14 +1,7 @@
 // concern: workflow checkout evidence diagnostics
 /** Classifies checkout provenance and names an outside-change remedy. */
 
-export type CheckoutResolution = {
-  project: string | null
-  branch: string | null
-  headIsTipOrAncestor: boolean
-  landingCommit?: string | null
-  landingIsHeadOrAncestor?: boolean
-  landingBranch?: string
-}
+import type { CheckoutResolution } from './workflow-floor-evidence-replay.ts'
 
 export type CheckoutEvidenceLocation = 'branch' | 'post-landing' | 'outside-change'
 
@@ -30,11 +23,10 @@ export function checkoutOutsideChangeRefusal(
   checkout: CheckoutResolution,
 ): string {
   if (checkout.landingCommit && checkout.landingIsHeadOrAncestor === undefined) {
-    const landingBranch = checkout.landingBranch ?? 'main'
     return (
       `${flag} could not establish whether head_commit belongs to ${identityBranch} because ` +
       `landing commit ${checkout.landingCommit} is not available in ${cwd}; ` +
-      `run \`git pull --ff-only origin ${landingBranch}\` in that checkout`
+      `run \`git pull --ff-only origin ${checkout.landingBranch}\` in that checkout`
     )
   }
   return (

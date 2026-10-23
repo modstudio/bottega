@@ -2,15 +2,9 @@
 /** Names the failed floor condition and the action that can establish it. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { ValidatedEvidence } from './workflow-floor.ts'
 
-type CommandExitEvidence = {
-  id: number
-  command: string
-  exitCode: number
-  sessionMatches: boolean
-  sessionAdoptedCursor: boolean
-  createdAfterStepActivation: boolean
-}
+type CommandExitEvidence = NonNullable<ValidatedEvidence['exec']>
 
 export function gateFloorRefusal(tree: {
   project: string

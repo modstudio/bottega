@@ -57,6 +57,7 @@ const testPorts = {
     project: 'fixture',
     branch: 'DEV-822-work',
     headIsTipOrAncestor: true,
+    landingBranch: 'main',
   }),
   viewPullRequest: () => ({
     state: 'MERGED',
@@ -1015,7 +1016,12 @@ describe('workflow cursor adapter', () => {
         },
         resolveCheckout: () => {
           calls.push({ port: 'resolveCheckout', inTransaction: d.inTransaction })
-          return { project: 'fixture', branch: args.branch, headIsTipOrAncestor: true }
+          return {
+            project: 'fixture',
+            branch: args.branch,
+            headIsTipOrAncestor: true,
+            landingBranch: 'main',
+          }
         },
         resolveTreeCommit: () => {
           calls.push({ port: 'resolveTreeCommit', inTransaction: d.inTransaction })
