@@ -4,6 +4,7 @@ import {
   cpuBudgetMs,
   decideRuntimeBudget,
   dependencyInstallDecision,
+  dependencyProvisioningBase,
   HUNG_SUITE_TIMEOUT_MS,
   parseCheckArguments,
   runsRootSuiteTests,
@@ -13,10 +14,23 @@ import {
 } from './check-runtime'
 
 describe('dependency installation', () => {
+  test('a borrowed reader uses its HEAD as the provisioning base', () => {
+    expect(dependencyProvisioningBase(true, false)).toBe('head')
+  })
+
+  test('a linked writer uses the registered landing branch merge base', () => {
+    expect(dependencyProvisioningBase(false, true)).toBe('registered-landing-merge-base')
+  })
+
+  test('a linked writer refuses an unreadable registered landing branch', () => {
+    expect(dependencyProvisioningBase(false, false)).toBe('unresolved')
+  })
+
   test("a worker keeps using its base when main's lockfile advances", () => {
     const factsAfterMainAdvances = {
       workerRun: true,
       nodeModulesPresent: true,
+      lockfileReadable: true,
       provisioningSourceResolved: true,
       lockfileMatchesProvisioningSource: true,
     }
@@ -28,6 +42,7 @@ describe('dependency installation', () => {
       dependencyInstallDecision({
         workerRun: true,
         nodeModulesPresent: true,
+        lockfileReadable: true,
         provisioningSourceResolved: true,
         lockfileMatchesProvisioningSource: false,
       }),
@@ -39,10 +54,23 @@ describe('dependency installation', () => {
       dependencyInstallDecision({
         workerRun: true,
         nodeModulesPresent: false,
+        lockfileReadable: true,
         provisioningSourceResolved: true,
         lockfileMatchesProvisioningSource: true,
       }),
     ).toBe('refuse-missing-node-modules')
+  })
+
+  test('a worker refuses when its bun.lock is unreadable', () => {
+    expect(
+      dependencyInstallDecision({
+        workerRun: true,
+        nodeModulesPresent: true,
+        lockfileReadable: false,
+        provisioningSourceResolved: true,
+        lockfileMatchesProvisioningSource: false,
+      }),
+    ).toBe('refuse-unreadable-lockfile')
   })
 
   test('a worker refuses when its provisioning source cannot be resolved', () => {
@@ -50,6 +78,7 @@ describe('dependency installation', () => {
       dependencyInstallDecision({
         workerRun: true,
         nodeModulesPresent: true,
+        lockfileReadable: true,
         provisioningSourceResolved: false,
         lockfileMatchesProvisioningSource: false,
       }),
@@ -61,6 +90,7 @@ describe('dependency installation', () => {
       dependencyInstallDecision({
         workerRun: false,
         nodeModulesPresent: false,
+        lockfileReadable: false,
         provisioningSourceResolved: false,
         lockfileMatchesProvisioningSource: false,
       }),

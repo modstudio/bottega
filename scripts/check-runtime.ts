@@ -21,6 +21,7 @@ export type AttributedCommandCpu = { name: string; cpuMs: number; share: number 
 export type DependencyInstallFacts = {
   workerRun: boolean
   nodeModulesPresent: boolean
+  lockfileReadable: boolean
   provisioningSourceResolved: boolean
   lockfileMatchesProvisioningSource: boolean
 }
@@ -28,8 +29,20 @@ export type DependencyInstallDecision =
   | 'normal-install'
   | 'skip-provisioned'
   | 'refuse-lockfile-change'
+  | 'refuse-unreadable-lockfile'
   | 'refuse-missing-node-modules'
   | 'refuse-unresolved-provisioning-source'
+
+export type DependencyProvisioningBase = 'head' | 'registered-landing-merge-base' | 'unresolved'
+
+/** Select the commit whose dependencies the worktree recipe provisioned. */
+export function dependencyProvisioningBase(
+  borrowedCheckout: boolean,
+  landingBranchResolved: boolean,
+): DependencyProvisioningBase {
+  if (borrowedCheckout) return 'head'
+  return landingBranchResolved ? 'registered-landing-merge-base' : 'unresolved'
+}
 
 /**
  * Decide whether the gate may use dependencies provisioned before a worker entered its sandbox.
@@ -41,6 +54,7 @@ export function dependencyInstallDecision(
 ): DependencyInstallDecision {
   if (!facts.workerRun) return 'normal-install'
   if (!facts.nodeModulesPresent) return 'refuse-missing-node-modules'
+  if (!facts.lockfileReadable) return 'refuse-unreadable-lockfile'
   if (!facts.provisioningSourceResolved) return 'refuse-unresolved-provisioning-source'
   return facts.lockfileMatchesProvisioningSource ? 'skip-provisioned' : 'refuse-lockfile-change'
 }
