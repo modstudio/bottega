@@ -124,6 +124,7 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
         project: 'fixture',
         branch: 'DEV-977-work',
         headIsTipOrAncestor: true,
+        landingBranch: 'main',
       }),
       resolveTreeCommit: () => 'abc',
       viewPullRequest: () => ({

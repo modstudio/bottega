@@ -378,8 +378,9 @@ function execOutputWithheld(facts: { outputWithheld: boolean; output: string }):
 }
 
 export type BottegaCommandIdentity = {
-  resolvedExecutable: string | null
-  registeredExecutables: readonly string[]
+  resolvedCandidate: string | null
+  mainCheckoutExecutable: string | null
+  installedExecutable: string | null
 }
 
 /** Matches one bottega verb after the adapter has resolved any path-shaped executable. */
@@ -391,8 +392,9 @@ export function bottegaVerbArgv(
   if (argv === null) return false
   const executable = argv[0] ?? ''
   const registeredPath = Boolean(
-    identity?.resolvedExecutable &&
-      identity.registeredExecutables.includes(identity.resolvedExecutable),
+    identity?.resolvedCandidate &&
+      (identity.resolvedCandidate === identity.mainCheckoutExecutable ||
+        identity.resolvedCandidate === identity.installedExecutable),
   )
   return (
     (executable === PLATFORM_SLUG || registeredPath) &&

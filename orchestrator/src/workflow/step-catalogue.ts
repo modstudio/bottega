@@ -742,8 +742,7 @@ export function sharedStepCataloguePromotionPorts(
     draftLocal: (version) =>
       importStepCatalogueLocal(JSON.parse(version.definition), version.reason, version.author, d).n,
     promoteLocal: (version, reason) => promoteStepCatalogueLocal(version, reason, author, d),
-    preflight: (definition, spaceId) =>
-      cataloguePromotionPreflight(definition as StepCatalogueDefinition, d, spaceId),
+    preflight: (definition, spaceId) => cataloguePromotionPreflight(definition, d, spaceId),
     author: () => writeAuthor(author),
   }
 }

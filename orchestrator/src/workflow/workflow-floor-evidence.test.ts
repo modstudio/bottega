@@ -121,6 +121,7 @@ const matchingCheckout = {
   project: 'fixture',
   branch: 'DEV-977-work',
   headIsTipOrAncestor: true,
+  landingBranch: 'main',
 }
 
 const ports: FloorEvidencePorts = {
@@ -479,6 +480,7 @@ test('a foreign architect gate is refused and a matching architect gate is allow
           project: 'other',
           branch: 'other-branch',
           headIsTipOrAncestor: true,
+          landingBranch: 'main',
         }),
       },
     ),
@@ -512,6 +514,7 @@ test('an architect gate whose commit is outside the change is refused', () => {
           project: 'fixture',
           branch: 'DEV-977-work',
           headIsTipOrAncestor: false,
+          landingBranch: 'main',
         }),
       },
     ),
@@ -573,6 +576,7 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
           project: 'other',
           branch: 'other-branch',
           headIsTipOrAncestor: true,
+          landingBranch: 'main',
         }),
       },
     ),
@@ -603,6 +607,7 @@ test('exec evidence is branch-bound and carries its exit code', () => {
           project: 'other',
           branch: 'other-branch',
           headIsTipOrAncestor: true,
+          landingBranch: 'main',
         }),
       },
     ),
