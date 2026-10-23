@@ -603,6 +603,19 @@ test('shared hosted promotion gives a follower the required catalogue before the
   ])
 })
 
+test('shared hosted promotion refuses before writing when a follower planned catalogue lacks a workflow step', async () => {
+  const fixture = installSharedPromotionFixture({ catalogueAdvance: true })
+  const followerCatalogue = fixture.state.get(FOLLOWER_SPACE)!.catalogueVersions[0]!
+  const definition = JSON.parse(followerCatalogue.definition)
+  definition.steps[0].title = 'Follower override'
+  followerCatalogue.definition = JSON.stringify(definition)
+
+  await expect(promoteWorkflow(fixture.slug, 2, 'release')).rejects.toThrow(
+    'references missing step "new-shared-step"',
+  )
+  expect(fixture.calls).toEqual([])
+})
+
 test('shared hosted promotion keeps and reports a space-specific pin', async () => {
   const fixture = installSharedPromotionFixture({ pinned: true })
   expect(await promoteWorkflow(fixture.slug, 2, 'release')).toEqual({

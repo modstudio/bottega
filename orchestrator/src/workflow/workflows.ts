@@ -554,6 +554,7 @@ export function promoteWorkflow(
           ),
         catalogue: sharedStepCataloguePromotionPorts(authorValue, d),
         author: () => writeAuthor(authorValue),
+        missingCatalogueRefusal: HOSTED_CATALOGUE_REFUSAL,
         draftLocal: (version) =>
           writeDraftLocal(
             slug,

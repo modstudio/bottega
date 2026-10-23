@@ -30,6 +30,7 @@ type PromotionPorts = {
   preflight(definition: WorkflowDefinition, spaceId: string | null, catalogue: unknown): void
   catalogue: CataloguePromotionPorts
   author(): string
+  missingCatalogueRefusal: string
 }
 
 export type CataloguePromotionPorts = {
@@ -320,8 +321,7 @@ export async function promoteSharedWorkflow(
   const sourceCatalogue = catalogueVersions.find(
     (version) => version.spaceId === sourceSpace && version.status === 'production',
   )
-  if (!sourceCatalogue)
-    throw new Error(`hosted space ${sourceSpace} has no production step catalogue`)
+  if (!sourceCatalogue) throw new Error(ports.missingCatalogueRefusal)
   const catalogueDecision = sharedWorkflowPromotionSpaces(
     catalogueVersions,
     sourceCatalogue.n,
@@ -339,7 +339,7 @@ export async function promoteSharedWorkflow(
       : catalogueVersions.find(
           (version) => version.spaceId === spaceId && version.status === 'production',
         )
-    if (!catalogue) throw new Error(`space ${spaceId ?? 'local'} has no production step catalogue`)
+    if (!catalogue) throw new Error(ports.missingCatalogueRefusal)
     ports.preflight(
       JSON.parse(workflowTarget.definition) as WorkflowDefinition,
       spaceId,

@@ -44,43 +44,6 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami,
-    async listWorkflowCatalogue(table) {
-      if (table === 'step_catalogue')
-        return {
-          items: [
-            {
-              id: ownerId,
-              spaceId: SPACE,
-              slug: 'shared',
-              generation: 1,
-              createdAt: at,
-              updatedAt: at,
-            },
-          ],
-          nextCursor: null,
-        }
-      if (table === 'step_catalogue_version')
-        return {
-          items: [
-            {
-              id: versionId,
-              spaceId: SPACE,
-              ownerId,
-              n: 1,
-              status: 'draft',
-              definition: JSON.stringify(definition),
-              author: 'unknown',
-              reason: 'set',
-              createdAt: at,
-              promotedAt: null,
-              retiredAt: null,
-              updatedAt: at,
-            },
-          ],
-          nextCursor: null,
-        }
-      return { items: [], nextCursor: null }
-    },
     async draftWorkflow() {
       throw new Error('hosted catalogue set failed')
     },
