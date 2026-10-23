@@ -1,8 +1,10 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db } from '../database/db.ts'
+import { closeDatabaseForFixture, db } from '../database/db.ts'
+import { migrationJournal } from '../database/migrations.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
@@ -65,6 +67,8 @@ function adapter(
     recordLandings?: () => void
     recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
+    queueState?: () => ReturnType<PullRequestMergeAdapter['queueState']>
+    wait?: () => void
   } = {},
 ): PullRequestMergeAdapter {
   return {
@@ -88,14 +92,16 @@ function adapter(
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
-    queueState: () => ({
-      pullRequestState: 'MERGED',
-      mergeCommit: 'merge-commit',
-      entryState: null,
-    }),
+    queueState:
+      input.queueState ??
+      (() => ({
+        pullRequestState: 'MERGED',
+        mergeCommit: 'merge-commit',
+        entryState: null,
+      })),
     enqueue: () => {},
     now: Date.now,
-    wait: () => {},
+    wait: () => input.wait?.(),
     ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
   }
 }
@@ -329,7 +335,92 @@ test('a landing-record failure preserves branches by skipping cleanup', () => {
     }),
   )
   expect(output.output).toContain('landing recording failed')
+  expect(output.output).toContain('pull request #42 merged as merge-commit')
+  expect(output.output).toContain(
+    `${PLATFORM_SLUG} tree branch landed ${pullRequest.headBranch} --pr 42`,
+  )
   expect(cleaned).toBe(false)
+})
+
+const journalVersionAfter = (tag: string): number => {
+  const entry = migrationJournal().find((candidate) => candidate.tag === tag)
+  if (!entry) throw new Error(`missing migration fixture ${tag}`)
+  return entry.idx + 1
+}
+
+test('an additive store advance during the merge-queue wait lets landing recording write', () => {
+  registerProject(['test'], true)
+  const next = journalVersionAfter('0149_pull_request_ci')
+  const prior = next - 1
+  closeDatabaseForFixture()
+  const migrator = new Database(process.env.ORCH_DB!)
+  migrator.exec(`PRAGMA user_version = ${prior}`)
+  let queuePolls = 0
+  let recorded = false
+
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      queueState: () => {
+        queuePolls++
+        return queuePolls === 1
+          ? { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' }
+          : { pullRequestState: 'MERGED', mergeCommit: 'merge-commit', entryState: null }
+      },
+      wait: () => migrator.exec(`PRAGMA user_version = ${next}`),
+      recordLandings: () => {
+        db(true)
+          .query(
+            "INSERT INTO project (record_id,name,path,canon,settings) VALUES ('01990000-0000-7000-8000-000000001633','post-merge-reload', '/reload', 1, '{}')",
+          )
+          .run()
+        recorded = true
+      },
+    }),
+  )
+  migrator.close()
+
+  expect(outcome.exitCode).toBe(0)
+  expect(recorded).toBe(true)
+})
+
+test('a non-additive store advance during the merge-queue wait refuses with its remedy', () => {
+  registerProject(['test'], true)
+  const next = journalVersionAfter('0131_lens_port_uuid_key')
+  const prior = next - 1
+  closeDatabaseForFixture()
+  const migrator = new Database(process.env.ORCH_DB!)
+  migrator.exec(`PRAGMA user_version = ${prior}`)
+  let queuePolls = 0
+
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [{ name: 'test', bucket: 'pass', state: 'SUCCESS', link: '' }],
+      queueState: () => {
+        queuePolls++
+        return queuePolls === 1
+          ? { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' }
+          : { pullRequestState: 'MERGED', mergeCommit: 'merge-commit', entryState: null }
+      },
+      wait: () => migrator.exec(`PRAGMA user_version = ${next}`),
+      recordLandings: () => {
+        db(true)
+      },
+    }),
+  )
+  migrator.close()
+
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain(
+    `store migrated from version ${prior} to ${next} past this process's version; restart this process`,
+  )
+  expect(outcome.output).toContain(
+    `${PLATFORM_SLUG} tree branch landed ${pullRequest.headBranch} --pr 42`,
+  )
 })
 
 test('an injected forge adapter exposes a pending required check without merging', () => {

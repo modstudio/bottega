@@ -464,7 +464,7 @@ async function pullProduction(): Promise<BoardWatchPullResult> {
 }
 
 export async function watchHostedBoard(): Promise<number> {
-  enableSchemaReload(() => {})
+  enableSchemaReload()
   const controller = new AbortController()
   const stop = () => controller.abort()
   process.once('SIGINT', stop)
