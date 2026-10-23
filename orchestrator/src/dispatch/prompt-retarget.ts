@@ -4,31 +4,11 @@
  * not know the database, transports, contracts, or routing.
  */
 
-import { withoutTrailingSeparators } from '../git/checkout-identity.ts'
+import { partialUnicodeCaseFold, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 
 const UNICODE_ALPHANUMERIC_OR_MARK = /[\p{L}\p{N}\p{M}]/u
 const PATH_NAME_CHARACTER = /[\p{L}\p{N}\p{M}_.-]/u
 const SHELL_PATH_BOUNDARY = /[;&|<>()`$]/
-const PARTIAL_FULL_CASE_FOLD = new Map([
-  ['İ', 'i\u0307'],
-  ['ß', 'ss'],
-  ['ẞ', 'ss'],
-  ['ﬀ', 'ff'],
-  ['ﬁ', 'fi'],
-  ['ﬂ', 'fl'],
-  ['ﬃ', 'ffi'],
-  ['ﬄ', 'ffl'],
-  ['ﬅ', 'st'],
-  ['ﬆ', 'st'],
-])
-
-function partialUnicodeCaseFold(value: string): string {
-  return [...value.normalize('NFC')]
-    .map((character) => PARTIAL_FULL_CASE_FOLD.get(character) ?? character.toLowerCase())
-    .join('')
-    .normalize('NFC')
-}
-
 function characterAt(value: string, offset: number): string | undefined {
   const point = value.codePointAt(offset)
   return point === undefined ? undefined : String.fromCodePoint(point)

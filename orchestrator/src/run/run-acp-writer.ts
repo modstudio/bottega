@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { type AskLoopback, startAskHttpEndpoint } from '../ask/ask.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
 import { runCheckpointHooksDir } from '../run-owned-paths.ts'
+import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
 import { writingAcpWritableRoots } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CheckpointContainment } from './checkpoint.ts'
@@ -28,6 +29,18 @@ export function runRoots(
     return writingAcpWritableRoots(worktree.path, scratchDir, runtimeDir)
   }
   return [scratchDir, ...provisionWriterSharedGitRoots(worktree, writesRepo && !writingAcp)]
+}
+
+export function confinementRoots(
+  srtProfile: { filesystem: { allowWrite: string[] } } | null,
+  agent: string,
+  cwd: string,
+  extraRoots: string[],
+  tmpDir: string | undefined,
+  codexSandbox: 'read-only' | 'workspace-write' | 'danger-full-access',
+): string[] | null {
+  if (srtProfile) return srtProfile.filesystem.allowWrite
+  return agent === 'codex' ? codexWritableRoots(codexSandbox, cwd, extraRoots, tmpDir) : null
 }
 
 /** Pure per-run facts used by every host checkpoint path. */
