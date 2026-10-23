@@ -27,6 +27,7 @@ export const pullRequestModuleSpecs = [
       '../review/review-group.ts',
       '../review/review-applicability.ts',
       '../review/review-post-fix.ts',
+      '../review/review-round-budget.ts',
       '../review/review-round-lens-service.ts',
       '../review/review-target.ts',
       './admission-decision.ts',

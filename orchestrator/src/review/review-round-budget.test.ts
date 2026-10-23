@@ -1,14 +1,27 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   reviewBudgetForBranch,
   reviewBudgetReport,
+  reviewCeilingGuidance,
   reviewRoundBudgetDecision,
 } from './review-round-budget.ts'
 
 describe('review round budget decision', () => {
+  test('the ceiling wording directs the architect to the canon ruling command', () => {
+    const decision = reviewRoundBudgetDecision({
+      tier: 3,
+      roundsUsed: 3,
+      currentChangeCounted: false,
+    })
+    expect(reviewCeilingGuidance(decision)).toBe(
+      `the review round ceiling is reached; the architect rules under \`.agents/rules/20-build-and-buy.md\` “Review rounds are a funnel” and, when no remaining finding can cause harm, records it with \`${PLATFORM_SLUG} pr create ... --ceiling-ruling "<reason>"\``,
+    )
+  })
+
   test.each([
     ['under the ceiling', 3, 1, false, false],
     ['current change already counted', 1, 1, true, false],

@@ -51,6 +51,8 @@ export const landingOverride = pgTable.withRLS(
     patchId: text('patch_id'),
     pathSet: jsonb('path_set'),
     reason: text().notNull(),
+    attribution: text().notNull().default('operator'),
+    missingLenses: jsonb('missing_lenses').notNull().default([]),
     sessionId: text('session_id'),
     at: recordedAt('at'),
     withheldFields: jsonb('withheld_fields'),

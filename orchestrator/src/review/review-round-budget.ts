@@ -32,6 +32,15 @@ export function reviewRoundBudgetDecision(input: {
   }
 }
 
+export function reviewCeilingGuidance(decision: ReviewRoundBudgetDecision): string | null {
+  if (!decision.wouldExceedCeiling) return null
+  return (
+    'the review round ceiling is reached; the architect rules under ' +
+    '`.agents/rules/20-build-and-buy.md` “Review rounds are a funnel” and, when no remaining ' +
+    `finding can cause harm, records it with \`${PLATFORM_SLUG} pr create ... --ceiling-ruling "<reason>"\``
+  )
+}
+
 type ReviewBudgetBranch = {
   project: string | null
   branch: string

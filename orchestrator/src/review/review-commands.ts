@@ -21,7 +21,11 @@ import { serializePathSet } from './review-group.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
-import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
+import {
+  reviewBudgetForBranch,
+  reviewCeilingGuidance,
+  reviewRoundBudgetDecision,
+} from './review-round-budget.ts'
 import { roundApplicabilityForChange } from './review-round-lens-service.ts'
 import {
   resolveReviewMergeBase,
@@ -360,7 +364,7 @@ function printReviewTier(
     output.review_budget.unclassifiableReviewCount === 0 &&
     output.review_budget.wouldExceedCeiling
   ) {
-    log('a new round would exceed the ceiling; stop and ask the operator')
+    log(reviewCeilingGuidance(output.review_budget)!)
   }
   for (const lens of output.lens_profiles) {
     const sources = lens.profiles

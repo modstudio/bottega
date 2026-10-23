@@ -49,6 +49,21 @@ describe('pull-request admission decision', () => {
     })
   })
 
+  test('a recorded ceiling ruling admits only its exact head', () => {
+    expect(decideAdmission(change, incomplete, [override({ recordId: 'ceiling-ruling' })])).toEqual(
+      {
+        complete: true,
+        overrideId: 'ceiling-ruling',
+        triage: incomplete,
+      },
+    )
+    expect(
+      decideAdmission({ ...change, tip: 'different-head', tree: 'different-tree' }, incomplete, [
+        override({ recordId: 'ceiling-ruling' }),
+      ]),
+    ).toEqual({ complete: false, overrideId: null, triage: incomplete })
+  })
+
   test.each([
     ['an older tip', { tip: 'tip-old', tree: 'tree-old' }],
     ['another project', { project: 'other' }],

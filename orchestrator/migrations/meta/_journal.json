@@ -1126,6 +1126,14 @@
       "tag": "0148_probe_withheld_facts",
       "compatibility": "additive",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "6",
+      "when": 1793577600012,
+      "tag": "0149_ceiling_ruling",
+      "compatibility": "additive",
+      "breakpoints": true
     }
   ]
 }
