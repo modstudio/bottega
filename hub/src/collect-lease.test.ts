@@ -8,12 +8,14 @@ import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import type { HostedOutboxReport } from './outbox.ts'
+import { acquireStoredLeaseIntent, releaseStoredLease } from './store-lease.ts'
 import { hostedCreateTask } from './task-client.ts'
 
 const {
   COLLECT_LEASE_MS,
   acquireLease,
   collectFastHostedOutbox,
+  explicitRequestMayAcquire,
   releaseLease,
   leaseHolder,
   watch,
@@ -88,7 +90,66 @@ describe('watch cycle start decision', () => {
   })
 })
 
+describe('explicit request start decision', () => {
+  const facts = {
+    leaseHolder: 'watcher',
+    intentHolder: null,
+    intentUntil: null,
+    now: 1_000,
+  }
+
+  test('allows requests without a waiter intent', () => {
+    expect(explicitRequestMayAcquire('explicit', facts)).toBeTrue()
+  })
+
+  test("waits behind another holder's live intent", () => {
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'other-explicit',
+        intentUntil: 1_001,
+      }),
+    ).toBeFalse()
+  })
+
+  test('allows its own, expired, or invalid intent', () => {
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'explicit',
+        intentUntil: 1_001,
+      }),
+    ).toBeTrue()
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'other-explicit',
+        intentUntil: 1_000,
+      }),
+    ).toBeTrue()
+    expect(
+      explicitRequestMayAcquire('explicit', {
+        ...facts,
+        intentHolder: 'other-explicit',
+        intentUntil: null,
+      }),
+    ).toBeTrue()
+  })
+})
+
 describe('collect lease', () => {
+  test('an expired stored waiter intent lets the watcher acquire', () => {
+    const intentKey = 'collect.lease.intent'
+    try {
+      expect(acquireStoredLeaseIntent(intentKey, 'abandoned-waiter', Date.now() - 1)).toBeTrue()
+      expect(acquireLease('watcher-after-abandoned-waiter')).toBeTrue()
+      expect(leaseHolder()).toBe('watcher-after-abandoned-waiter')
+    } finally {
+      releaseLease('watcher-after-abandoned-waiter')
+      releaseStoredLease(intentKey, 'abandoned-waiter')
+    }
+  })
+
   test('only one holder at a time', () => {
     expect(acquireLease('a')).toBe(true)
     expect(acquireLease('b')).toBe(false)

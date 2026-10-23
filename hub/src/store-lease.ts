@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 
 export type StoredLeaseStartFacts = {
@@ -21,17 +22,27 @@ function storedValue(value: string | undefined): StoredLeaseValue | null {
   }
 }
 
+function takeSettingRow(
+  conn: Database,
+  key: string,
+  value: StoredLeaseValue,
+  now: number,
+  holder: string,
+): void {
+  conn
+    .query(
+      `INSERT INTO setting (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
+           OR json_extract(setting.value, '$.holder') = ?`,
+    )
+    .run(key, JSON.stringify(value), now, holder)
+}
+
 export function acquireStoredLease(key: string, holder: string, durationMs: number): boolean {
   const now = Date.now()
   const row = writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value
-          WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
-             OR json_extract(setting.value, '$.holder') = ?`,
-      )
-      .run(key, JSON.stringify({ holder, until: now + durationMs }), now, holder)
+    takeSettingRow(conn, key, { holder, until: now + durationMs }, now, holder)
     return conn.query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`).get(key)
   })
   try {
@@ -67,14 +78,7 @@ export function acquireStoredLeaseWhen(
       })
     )
       return false
-    conn
-      .query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value
-          WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
-             OR json_extract(setting.value, '$.holder') = ?`,
-      )
-      .run(key, JSON.stringify({ holder, until: now + durationMs }), now, holder)
+    takeSettingRow(conn, key, { holder, until: now + durationMs }, now, holder)
     const acquired = conn
       .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
       .get(key)
@@ -86,23 +90,12 @@ export function acquireStoredLeaseWhen(
 export function acquireStoredLeaseIntent(key: string, holder: string, until: number): boolean {
   const now = Date.now()
   return writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value
-          WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
-             OR json_extract(setting.value, '$.holder') = ?`,
-      )
-      .run(key, JSON.stringify({ holder, until }), now, holder)
+    takeSettingRow(conn, key, { holder, until }, now, holder)
     const intent = conn
       .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
       .get(key)
     return storedValue(intent?.value)?.holder === holder
   })
-}
-
-export function releaseStoredLeaseIntent(key: string, holder: string): void {
-  releaseStoredLease(key, holder)
 }
 
 export function releaseStoredLease(key: string, holder: string): void {

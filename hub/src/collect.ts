@@ -35,7 +35,6 @@ import {
   acquireStoredLeaseWhen,
   holdStoredLease,
   releaseStoredLease,
-  releaseStoredLeaseIntent,
   type StoredLeaseGuard,
   type StoredLeaseStartFacts,
   storedLeaseHolder,
@@ -262,17 +261,25 @@ export function acquireLease(holder: string): boolean {
   )
 }
 
+export function explicitRequestMayAcquire(
+  requestHolder: string,
+  facts: StoredLeaseStartFacts,
+): boolean {
+  return (
+    facts.intentHolder === null ||
+    facts.intentHolder === requestHolder ||
+    facts.intentUntil === null ||
+    facts.intentUntil <= facts.now
+  )
+}
+
 function acquireExplicitLease(holder: string): boolean {
   return acquireStoredLeaseWhen(
     COLLECT_LEASE_KEY,
     COLLECT_INTENT_KEY,
     holder,
     COLLECT_LEASE_MS,
-    (facts) =>
-      facts.intentHolder === null ||
-      facts.intentHolder === holder ||
-      facts.intentUntil === null ||
-      facts.intentUntil <= facts.now,
+    (facts) => explicitRequestMayAcquire(holder, facts),
   )
 }
 
@@ -321,13 +328,13 @@ export async function withLease<T>(
       await new Promise((r) => setTimeout(r, 250))
     }
     if (ownsIntent) {
-      releaseStoredLeaseIntent(COLLECT_INTENT_KEY, holder)
+      releaseStoredLease(COLLECT_INTENT_KEY, holder)
       ownsIntent = false
     }
     const result = await holdAndRenewLease(holder, fn, renewEveryMs)
     return result.ran ? result : { ran: false, heldBy: result.heldBy }
   } finally {
-    if (ownsIntent) releaseStoredLeaseIntent(COLLECT_INTENT_KEY, holder)
+    if (ownsIntent) releaseStoredLease(COLLECT_INTENT_KEY, holder)
   }
 }
 
