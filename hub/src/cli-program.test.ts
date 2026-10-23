@@ -1,11 +1,18 @@
 import { beforeEach, expect, test } from 'bun:test'
 import type { Command } from 'commander'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { createHubProgram, run } from './cli-program.ts'
+import { createHubProgram, isReadOnlyInvocation, run } from './cli-program.ts'
 import { createTask, showTask } from './task.ts'
 import { createTaskDocument, getTaskDocument } from './task-document.ts'
 
 beforeEach(resetFixtureStore)
+
+test('task queries use a read-only store handle unless show refreshes its tracker', () => {
+  expect(isReadOnlyInvocation(['task', 'list'])).toBeTrue()
+  expect(isReadOnlyInvocation(['task', 'show', 'DEV-1'])).toBeTrue()
+  expect(isReadOnlyInvocation(['task', 'show', 'DEV-1', '--fresh'])).toBeFalse()
+  expect(isReadOnlyInvocation(['task', 'set', 'DEV-1'])).toBeFalse()
+})
 
 function command(root: Command, ...path: string[]): Command {
   return path.reduce((parent, name) => {

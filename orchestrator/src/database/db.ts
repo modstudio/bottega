@@ -1,6 +1,7 @@
 // concern: database
 /** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
 import { Database } from 'bun:sqlite'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -23,6 +24,7 @@ import {
   legacyDatabaseRefusal,
   linkedWorktreeDatabaseInitializationMessage,
   linkedWorktreeMigrationAllowed,
+  missingDatabaseMessage,
 } from './database-location.ts'
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
@@ -43,6 +45,8 @@ import { initializeDefaultLocalProject } from './project-register-store.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
 let handle: Database | null = null
+let readOnlyHandle: Database | null = null
+const databaseAccess = new AsyncLocalStorage<'read-only'>()
 let connectionWritable: boolean | null = null
 let openedUserVersion: number | null = null
 const noopSchemaReload = (): void => {}
@@ -144,8 +148,29 @@ export function openReadOnlyDatabase(path = DB_PATH): Database {
   return new Database(readOnlyPath, { readonly: true })
 }
 
+/** Run one read command against a SQLite-enforced read-only process handle. */
+export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
+  return databaseAccess.run('read-only', action)
+}
+
+function commandReadOnlyDatabase(): Database {
+  if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
+  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  readOnlyHandle = openReadOnlyDatabase()
+  readOnlyHandle.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  const refused = migrationRefusal(readOnlyHandle)
+  if (refused) {
+    readOnlyHandle.close()
+    readOnlyHandle = null
+    throw new Error(refused)
+  }
+  return readOnlyHandle
+}
+
 /** Request the process connection for a mutation. */
 export function writableDb(): Database {
+  if (databaseAccess.getStore() === 'read-only')
+    throw new Error('refusing a write from a read-only command')
   return db(true)
 }
 
@@ -188,7 +213,9 @@ function databaseWritable(d: Database): boolean {
  */
 export function closeDatabaseForFixture(): void {
   handle?.close()
+  readOnlyHandle?.close()
   handle = null
+  readOnlyHandle = null
   connectionWritable = null
   openedUserVersion = null
   schemaReload = null
@@ -236,6 +263,14 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 }
 
 export function db(writable = false): Database {
+  if (databaseAccess.getStore() === 'read-only') {
+    if (writable) throw new Error('refusing a write from a read-only command')
+    return commandReadOnlyDatabase()
+  }
+  return defaultDatabase(writable)
+}
+
+function defaultDatabase(writable: boolean): Database {
   if (writable && linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   if (handle) {
     if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
@@ -269,26 +304,33 @@ export function db(writable = false): Database {
   // truncation but not the limit taking effect afterwards.
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(d)
-  if (refused) {
-    try {
-      if (contentionTableExists(d) && !linkedWorktreeReadOnly) {
-        writeTransaction(
-          () =>
-            insertContention(d, {
-              resourceKind: 'store',
-              resourceKey: DB_PATH,
-              eventKind: 'refusal',
-              cause: refused,
-            }),
-          d,
-        )
-      }
-    } catch {
-      /* still refuse; recording must not replace the refusal */
+  if (refused) refuseOpenMigration(d, refused)
+  finishDefaultDatabaseOpen(d, writable)
+  return d
+}
+
+function refuseOpenMigration(d: Database, refused: string): never {
+  try {
+    if (contentionTableExists(d) && !linkedWorktreeReadOnly) {
+      writeTransaction(
+        () =>
+          insertContention(d, {
+            resourceKind: 'store',
+            resourceKey: DB_PATH,
+            eventKind: 'refusal',
+            cause: refused,
+          }),
+        d,
+      )
     }
-    d.close()
-    throw new Error(refused)
+  } catch {
+    /* still refuse; recording must not replace the refusal */
   }
+  d.close()
+  throw new Error(refused)
+}
+
+function finishDefaultDatabaseOpen(d: Database, writable: boolean): void {
   const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as {
     path: string
   } | null
@@ -312,7 +354,6 @@ export function db(writable = false): Database {
   openedUserVersion = readUserVersion(d)
   if (connectionWritable) runOpenHooks('afterWritableOpen', d)
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
-  return d
 }
 
 export function liveRuns(database: Database = db()): { worktree: string | null }[] {

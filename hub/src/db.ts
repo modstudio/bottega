@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -162,6 +163,8 @@ export function existingDefaultStoreMigrationRefusal(
 }
 
 let handle: Database | null = null
+let readOnlyHandle: Database | null = null
+const databaseAccess = new AsyncLocalStorage<'read-only'>()
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
 const writeDepth = new WeakMap<Database, number>()
@@ -176,7 +179,9 @@ export function requireDatabase(): void {
 
 export function closeDatabaseForFixture(): void {
   handle?.close()
+  readOnlyHandle?.close()
   handle = null
+  readOnlyHandle = null
   openedUserVersion = null
   schemaReload = null
 }
@@ -210,6 +215,20 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 }
 
 export function db(): Database {
+  if (databaseAccess.getStore() === 'read-only') {
+    if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
+    assertTestHubDatabasePath()
+    if (!existsSync(DB_PATH)) throw new Error(missingHubDatabaseMessage())
+    readOnlyHandle = new Database(DB_PATH, { readonly: true })
+    readOnlyHandle.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    const refused = migrationRefusal(readOnlyHandle)
+    if (refused) {
+      readOnlyHandle.close()
+      readOnlyHandle = null
+      throw new Error(refused)
+    }
+    return readOnlyHandle
+  }
   if (handle) return refuseOrReloadStaleSchema(handle, false)
   // bun test sets NODE_ENV=test; an unset BOTTEGA_HUB_DB must not fall back to the live store.
   assertTestHubDatabasePath()
@@ -243,8 +262,15 @@ export function db(): Database {
   return d
 }
 
+/** Run one query command against a SQLite-enforced read-only process handle. */
+export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
+  return databaseAccess.run('read-only', action)
+}
+
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: (conn: Database) => T, database?: Database): T {
+  if (databaseAccess.getStore() === 'read-only')
+    throw new Error('refusing a write from a read-only command')
   assertHubStoreWritable()
   const target = database ?? db()
   const conn = refuseOrReloadStaleSchema(target, true)

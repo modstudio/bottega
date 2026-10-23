@@ -7,10 +7,11 @@ import {
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../shared/commander-public-path.ts'
+import { formatDatabaseLockRefusal, isDatabaseLocked } from '../../shared/database-lock-refusal.ts'
 import { installationVersionText } from '../../shared/install-root.ts'
 import { HubCommand } from './cli-command.ts'
 import { registerCoreCommands } from './core-cli.ts'
-import { nowIso } from './db.ts'
+import { DB_PATH, nowIso, withReadOnlyDatabaseAccess } from './db.ts'
 import { registerNoteCommands } from './note-cli.ts'
 import { registerOutboxCommands } from './outbox-cli.ts'
 import { registerReportCommands } from './report-cli.ts'
@@ -45,6 +46,12 @@ export function createHubProgram(): HubCommand {
 
 export const program = createHubProgram()
 
+export function isReadOnlyInvocation(argv: readonly string[]): boolean {
+  return (
+    argv[0] === 'task' && (argv[1] === 'list' || (argv[1] === 'show' && !argv.includes('--fresh')))
+  )
+}
+
 function exitCodeFor(error: unknown): number {
   if (!(error instanceof CommanderError)) return 1
   return error.code === 'commander.helpDisplayed' ? 0 : 1
@@ -71,11 +78,18 @@ export async function run(
   applyPublicCommandPath(command, argv, invocation)
   try {
     const input = literalHelp(argv.length ? argv : ['--help'])
-    await command.parseAsync(['bun', PLATFORM_SLUG, ...input])
+    const parse = () => command.parseAsync(['bun', PLATFORM_SLUG, ...input])
+    await (isReadOnlyInvocation(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
     return Number(process.exitCode ?? 0)
   } catch (error) {
     if (!(error instanceof CommanderError))
-      console.error(error instanceof Error ? error.message : String(error))
+      console.error(
+        isDatabaseLocked(error)
+          ? formatDatabaseLockRefusal({ store: DB_PATH, holder: null })
+          : error instanceof Error
+            ? error.message
+            : String(error),
+      )
     return exitCodeFor(error)
   } finally {
     if (argv.includes('--verbose')) console.error(`${PLATFORM_SLUG} ${argv[0]} done at ${nowIso()}`)

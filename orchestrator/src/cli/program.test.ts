@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { CLI_COMMANDS } from './args.ts'
 import { isHelpShapedInvocation, isStoreFreeInvocation, runCliEntryForTest } from './orch.ts'
-import { program } from './program.ts'
+import { program, usesReadOnlyStoreHandle } from './program.ts'
 
 test('the outer CLI classifies every informational invocation without consulting the store', () => {
   for (const argv of [
@@ -35,6 +35,14 @@ test('canon command recognition is pinned to the Commander registry', () => {
 
 test('the retired top-level probe spelling is not registered', () => {
   expect(program.commands.some((command) => command.name() === 'probe')).toBeFalse()
+})
+
+test('run query verbs use the read-only store handle', () => {
+  expect(usesReadOnlyStoreHandle(['runs', '--json'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['run', '01990000-0000-7000-8000-000000000001'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['result', '1'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['wait', '1'])).toBeFalse()
+  expect(usesReadOnlyStoreHandle(['monitor'])).toBeFalse()
 })
 
 test('setup facts reaches the executable entry without creating or mutating a store', async () => {

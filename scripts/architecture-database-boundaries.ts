@@ -8,6 +8,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
     file: `${source}db.ts`,
     allowed: [
       'bun:sqlite',
+      'node:async_hooks',
       'node:crypto',
       'node:fs',
       'node:path',

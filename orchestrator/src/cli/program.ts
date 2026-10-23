@@ -7,6 +7,10 @@ import {
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
+import {
+  formatDatabaseLockRefusal,
+  isDatabaseLocked,
+} from '../../../shared/database-lock-refusal.ts'
 import { AGENT_COMMAND_VERBS } from '../agent/agent-commands.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
@@ -36,7 +40,9 @@ import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
+import { DB_PATH, withReadOnlyDatabaseAccess } from '../database/db.ts'
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
+import { storeWriteLockReport } from '../monitor/monitor-store-write-lock.ts'
 
 export const program = new Command()
   .name(PLATFORM_SLUG)
@@ -88,7 +94,14 @@ program.commands
 
 export { AGENT_COMMAND_VERBS }
 
-const READ_ONLY_COMMANDS = new Set(['mcp-reader-proxy', 'migrate', 'ratchet'])
+const READ_ONLY_COMMANDS = new Set([
+  'mcp-reader-proxy',
+  'migrate',
+  'ratchet',
+  'run',
+  'runs',
+  'result',
+])
 
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
@@ -112,6 +125,21 @@ function isReadOnlyInvocation(argv: string[]): boolean {
   return false
 }
 
+/** Store queries whose result does not depend on incidental maintenance. */
+export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
+  return argv[0] === 'run' || argv[0] === 'runs' || argv[0] === 'result'
+}
+
+async function lockedStoreMessage(error: unknown): Promise<string> {
+  if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
+  const report = await storeWriteLockReport(DB_PATH)
+  return formatDatabaseLockRefusal({
+    store: DB_PATH,
+    holder:
+      report.supported && report.pid !== null ? { pid: report.pid, command: report.command } : null,
+  })
+}
+
 /** The exit code for a failure that escaped a command: Commander's own signals map to 0 or 2, everything else is 1. */
 function exitCodeFor(error: unknown): number {
   if (!(error instanceof CommanderError)) return 1
@@ -133,13 +161,14 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
   setRawArgv(argv)
   applyPublicCommandPath(program, argv, invocation)
   try {
-    await program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
+    const parse = () =>
+      program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
+    await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
     await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
-    if (!(error instanceof CommanderError))
-      console.error(error instanceof Error ? error.message : String(error))
+    if (!(error instanceof CommanderError)) console.error(await lockedStoreMessage(error))
     return code
   }
 }
