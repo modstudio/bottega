@@ -174,6 +174,25 @@ function git(repo: string, ...args: string[]): string {
   return result.stdout.toString().trim()
 }
 
+function seedReviewedPathRename(repo: string, enabled: boolean): string[] {
+  if (!enabled) return []
+  writeFileSync(join(repo, 'critical/reviewed.ts'), 'branch = false\ncommon\ntrunk = false\n')
+  return ['critical/reviewed.ts']
+}
+
+function editReviewedPathBeforeRename(repo: string, enabled: boolean): string[] {
+  if (!enabled) return []
+  writeFileSync(join(repo, 'critical/reviewed.ts'), 'branch = true\ncommon\ntrunk = false\n')
+  return ['critical/reviewed.ts']
+}
+
+function renameReviewedPathOnTrunk(repo: string, enabled: boolean): string[] {
+  if (!enabled) return []
+  git(repo, 'mv', 'critical/reviewed.ts', 'critical/renamed.ts')
+  writeFileSync(join(repo, 'critical/renamed.ts'), 'branch = false\ncommon\ntrunk = true\n')
+  return ['critical/renamed.ts']
+}
+
 function importRebasedHistory(repo: string): void {
   const history = `blob
 mark :1
@@ -227,6 +246,7 @@ function postFixFixture(options: {
   fixPath?: string
   fixAfterMerge?: boolean
   resolveConflict?: boolean
+  shiftReviewedPath?: boolean
 }): {
   repo: string
   branch: string
@@ -240,18 +260,30 @@ function postFixFixture(options: {
   git(repo, 'config', 'user.name', 'Fixture')
   writeFileSync(join(repo, 'base.txt'), 'base\n')
   mkdirSync(join(repo, 'critical'))
+  mkdirSync(join(repo, 'src'))
   writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "base"\n')
-  git(repo, 'add', 'base.txt', 'critical/shared.ts')
+  git(
+    repo,
+    'add',
+    'base.txt',
+    'critical/shared.ts',
+    ...seedReviewedPathRename(repo, options.shiftReviewedPath ?? false),
+  )
   git(repo, 'commit', '-m', 'base')
   const base = git(repo, 'rev-parse', 'HEAD')
   const branch = `DEV-1510-${crypto.randomUUID()}`
   git(repo, 'checkout', '-b', branch)
-  mkdirSync(join(repo, 'src'), { recursive: true })
   writeFileSync(join(repo, 'src/large.ts'), 'export const line = 1\n'.repeat(401))
   if (options.resolveConflict) {
     writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
   }
-  git(repo, 'add', 'src/large.ts', ...(options.resolveConflict ? ['critical/shared.ts'] : []))
+  git(
+    repo,
+    'add',
+    'src/large.ts',
+    ...(options.resolveConflict ? ['critical/shared.ts'] : []),
+    ...editReviewedPathBeforeRename(repo, options.shiftReviewedPath ?? false),
+  )
   git(repo, 'commit', '-m', 'reviewed change')
   const reviewed = git(repo, 'rev-parse', 'HEAD')
   const name = `post-fix-${crypto.randomUUID()}`
@@ -302,13 +334,19 @@ function postFixFixture(options: {
     writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "trunk"\n')
   }
   writeFileSync(join(repo, 'critical/trunk.ts'), 'export const trunk = true\n')
-  git(repo, 'add', 'critical/trunk.ts', ...(options.resolveConflict ? ['critical/shared.ts'] : []))
+  git(
+    repo,
+    'add',
+    'critical/trunk.ts',
+    ...(options.resolveConflict ? ['critical/shared.ts'] : []),
+    ...renameReviewedPathOnTrunk(repo, options.shiftReviewedPath ?? false),
+  )
   git(repo, 'commit', '-m', 'advance trunk')
   git(repo, 'checkout', branch)
   if (options.resolveConflict) {
     const merge = spawnFixtureGitSync(['merge', '--no-edit', 'main'], { cwd: repo })
     expect(merge.exitCode).not.toBe(0)
-    writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "combined"\n')
+    writeFileSync(join(repo, 'critical/shared.ts'), 'export const shared = "branch"\n')
     git(repo, 'add', 'critical/shared.ts')
     git(repo, 'commit', '--no-edit')
   } else {
@@ -324,6 +362,22 @@ function postFixFixture(options: {
   }
   return { repo, branch, runId, reviewed, mergeTip }
 }
+
+test('review tier needs no round when the only post-review commit is a clean trunk merge', async () => {
+  const { repo, branch, reviewed } = postFixFixture({ shiftReviewedPath: true })
+  try {
+    const json: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
+
+    expect(JSON.parse(json[0]!).post_fix).toMatchObject({
+      kind: 'no-round-needed',
+      reviewedTip: reviewed,
+      tierThreePaths: [],
+    })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
 
 test('review tier lists a never-completed lens when no tier-three fix path was touched', async () => {
   const { repo, branch, reviewed } = postFixFixture({ fixPath: 'src/fix.ts' })
