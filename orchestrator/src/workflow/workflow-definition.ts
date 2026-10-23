@@ -32,3 +32,14 @@ export type WorkflowDefinition = {
   arguments: WorkflowArgument[]
   modes: WorkflowMode[]
 }
+
+export function workflowsAfterReplacement<Definition>(
+  rows: readonly { slug: string; definition: string }[],
+  incomingSlug: string,
+  incomingDefinition: Definition,
+): { slug: string; definition: string }[] {
+  const definition = JSON.stringify(incomingDefinition)
+  if (!rows.some((row) => row.slug === incomingSlug))
+    return [...rows, { slug: incomingSlug, definition }]
+  return rows.map((row) => (row.slug === incomingSlug ? { slug: incomingSlug, definition } : row))
+}
