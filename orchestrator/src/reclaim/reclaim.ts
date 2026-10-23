@@ -5,7 +5,12 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { assertBranchRefMayBeDeleted, restoreBranch } from '../branch/branch-ref-guard.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
-import { classifyMintedBranch } from '../branch/branches.ts'
+import {
+  type BranchesReport,
+  branchesReport,
+  classifyMintedBranch,
+  classifyMintedBranchFromReport,
+} from '../branch/branches.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -109,6 +114,33 @@ export function decideBranchReclaimEvidence(input: {
     return { allowed: true, proof: input.classification }
   }
   return { allowed: false, state: input.classification }
+}
+
+function protectedBranchRefusal(
+  project: string,
+  branch: string,
+  trunk: string | null,
+  productionSetting: unknown,
+): ReclaimResult | null {
+  if (trunk === branch) {
+    return refuse(`branch ${project}:${branch} is the registered landing branch`)
+  }
+  const production = typeof productionSetting === 'string' ? productionSetting.trim() : ''
+  return production === branch
+    ? refuse(`branch ${project}:${branch} is the registered production branch`)
+    : null
+}
+
+function reclaimClassification(
+  project: string,
+  branch: string,
+  options: { dryRun?: boolean; branchReport?: BranchesReport },
+): BranchLanding['state'] {
+  return (
+    options.dryRun && options.branchReport
+      ? classifyMintedBranchFromReport(options.branchReport, project, branch)
+      : classifyMintedBranch(project, branch)
+  ).state
 }
 
 type WorktreeProof = {
@@ -356,7 +388,7 @@ export function reclaimWorktree(
 /** Reclaim a local branch when every commit reaches trunk or the prune classifier marks it safe. */
 export function reclaimBranch(
   subject: string,
-  options: { dryRun?: boolean; clock?: number } = {},
+  options: { dryRun?: boolean; clock?: number; branchReport?: BranchesReport } = {},
 ): ReclaimResult {
   const colon = subject.indexOf(':')
   if (colon < 1 || colon === subject.length - 1) {
@@ -370,16 +402,13 @@ export function reclaimBranch(
     typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
       ? project.settings.trunk
       : null
-  if (trunk === branch) {
-    return refuse(`branch ${projectName}:${branch} is the registered landing branch`)
-  }
-  const production =
-    typeof project.settings.productionBranch === 'string'
-      ? project.settings.productionBranch.trim()
-      : ''
-  if (production === branch) {
-    return refuse(`branch ${projectName}:${branch} is the registered production branch`)
-  }
+  const protectedRefusal = protectedBranchRefusal(
+    projectName,
+    branch,
+    trunk,
+    project.settings.productionBranch,
+  )
+  if (protectedRefusal) return protectedRefusal
   const prove = (): { result: ReclaimResult; tip?: string } => {
     const rows = branchRows(projectName, branch)
     if (!rows.length)
@@ -418,7 +447,7 @@ export function reclaimBranch(
         result: refuse(`reachability from landing branch ${trunk} could not be inspected`),
       }
     const classification = absent.length
-      ? classifyMintedBranch(projectName, branch)
+      ? { state: reclaimClassification(projectName, branch, options) }
       : { state: 'empty' as const }
     const evidence = decideBranchReclaimEvidence({
       absentCommits: absent,
@@ -477,5 +506,33 @@ export function reclaimBranch(
         5 * 60_000,
       ),
     5 * 60_000,
+  )
+}
+
+/** Evaluate dry-run reclaim candidates against one gathered project branch report. */
+export function reclaimBranchesDryRun(
+  project: string,
+  branches: readonly string[],
+  gatherReport: (project: string) => BranchesReport = (name) => branchesReport({ project: name }),
+): Map<string, string> {
+  if (branches.length === 0) return new Map()
+  let report: BranchesReport
+  try {
+    report = gatherReport(project)
+  } catch (cause) {
+    const action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}`
+    return new Map(branches.map((branch) => [branch, action]))
+  }
+  return new Map(
+    branches.map((branch) => {
+      try {
+        return [
+          branch,
+          reclaimBranch(`${project}:${branch}`, { dryRun: true, branchReport: report }).action,
+        ]
+      } catch (cause) {
+        return [branch, `reported; reclaim errored: ${String((cause as Error).message ?? cause)}`]
+      }
+    }),
   )
 }

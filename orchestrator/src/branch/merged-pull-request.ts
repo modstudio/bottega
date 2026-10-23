@@ -179,7 +179,14 @@ export function targetedTaskBranchPullRequests(
 export function viewPullRequest(project: Project, reference: number | string): PullRequestView {
   const output = command(
     project.path,
-    ['gh', 'pr', 'view', String(reference), '--json', 'state,mergedAt,headRefName,baseRefName,url'],
+    [
+      'gh',
+      'pr',
+      'view',
+      String(reference),
+      '--json',
+      'state,mergedAt,mergeCommit,headRefName,baseRefName,url',
+    ],
     `gh pr view ${reference}`,
   )
   let value: unknown
@@ -193,17 +200,28 @@ export function viewPullRequest(project: Project, reference: number | string): P
   if (!value || typeof value !== 'object')
     throw new Error(`gh pr view ${reference} returned an unexpected JSON shape`)
   const row = value as Record<string, unknown>
+  const mergeCommit = row.mergeCommit
   if (
     typeof row.state !== 'string' ||
     typeof row.headRefName !== 'string' ||
     typeof row.baseRefName !== 'string' ||
     typeof row.url !== 'string' ||
+    !(
+      mergeCommit === null ||
+      (typeof mergeCommit === 'object' &&
+        mergeCommit !== null &&
+        typeof (mergeCommit as Record<string, unknown>).oid === 'string')
+    ) ||
     !(typeof row.mergedAt === 'string' || row.mergedAt === null || row.mergedAt === undefined)
   )
     throw new Error(`gh pr view ${reference} returned an unexpected JSON shape`)
   return {
     state: row.state,
     mergedAt: typeof row.mergedAt === 'string' ? row.mergedAt : null,
+    mergeCommit:
+      mergeCommit && typeof mergeCommit === 'object'
+        ? ((mergeCommit as Record<string, unknown>).oid as string)
+        : null,
     headRefName: row.headRefName,
     baseRefName: row.baseRefName,
     url: row.url,

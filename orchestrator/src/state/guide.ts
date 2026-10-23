@@ -95,7 +95,7 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
           : [promptSizeBucket(promptBytes)]
       return buckets.map((bucket) => {
         const bucketBytes = bucket === 'large' ? PROMPT_SIZE_BOUNDARY : 0
-        const ev = evidenceFor(name, bucketBytes, null, undefined, lens)
+        const ev = evidenceFor(name, bucketBytes, null, { lens, project: undefined })
         const all = ev.cands
         const eligible = all.filter((c) => c.eligible)
         const tried: AgentOnJob[] = eligible

@@ -3,7 +3,7 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { changeIdentity } from './change-identity.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
-import { reviewTrunkRef } from './review-target.ts'
+import { reviewRemoteTrunkRefExists, reviewTrunkRef } from './review-target.ts'
 import type {
   CoverageGitResult,
   CoverageGitRunner,
@@ -148,12 +148,7 @@ export function reviewCoverageVerdict(
     }
   }
   const oldBase = oldBaseResult.out
-  const remoteTrackingRefExists = runner([
-    'show-ref',
-    '--verify',
-    '--quiet',
-    `refs/remotes/origin/${trunk}`,
-  ]).ok
+  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, (args) => runner(args).ok)
   const newBaseArgs = ['merge-base', tip, reviewTrunkRef(remoteTrackingRefExists, trunk)]
   const newBaseDisplayArgs = ['merge-base', tip, trunk]
   const newBaseResult = runner(newBaseArgs)

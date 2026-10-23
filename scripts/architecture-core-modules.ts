@@ -6,7 +6,11 @@ export const coreModuleSpecs = [
     file: 'orchestrator/src/caller-classification.ts',
     allowed: ['../../shared/caller-classification.ts'],
   },
-  { file: 'orchestrator/src/artifact-paths.ts', allowed: ['node:path'] },
+  {
+    file: 'orchestrator/src/artifact-paths.ts',
+    allowed: ['node:path', './run-owned-paths.ts'],
+  },
+  { file: 'orchestrator/src/run-owned-paths.ts', allowed: ['node:path'] },
   {
     file: 'orchestrator/src/process-resource-sampler.ts',
     allowed: ['../../shared/process-identity.ts'],

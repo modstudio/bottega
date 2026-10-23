@@ -65,6 +65,7 @@ export function register(program: Command): void {
     .option('--agent <value>', 'limit runs to this agent')
     .option('--limit <value>', 'limit the number of runs')
     .option('--since <value>', 'include activity since this ISO instant')
+    .option('--live', 'list only conversations whose latest turn is live')
     .option('--json [version]', 'write runs as JSON in the selected version')
     .option('--unscored', 'list only runs awaiting a verdict')
     .allowExcessArguments(false)

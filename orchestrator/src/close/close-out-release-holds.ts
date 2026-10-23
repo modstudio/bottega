@@ -3,6 +3,7 @@
 import { existsSync } from 'node:fs'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { projectAt } from '../project/projects.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
@@ -12,6 +13,7 @@ type ReleaseHoldResult = {
   worktree: string
   outcome: 'held' | 'failed'
   detail: string
+  hold?: LandingTreeHoldKind
 }
 
 export function landingTreeReleaseHold(input: {
@@ -42,7 +44,13 @@ export function landingTreeReleaseHold(input: {
   )
   const decision = observeLandingTreeRelease({ ...input, treeExists, landingInFlight })
   return decision.action === 'keep'
-    ? { runId: input.runId, worktree: input.worktree, outcome: 'held', detail: decision.reason }
+    ? {
+        runId: input.runId,
+        worktree: input.worktree,
+        outcome: 'held',
+        detail: decision.reason,
+        hold: decision.hold,
+      }
     : null
 }
 

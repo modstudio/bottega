@@ -5,12 +5,19 @@ import {
   decideFocusedTestWait,
   FOCUSED_TEST_MAX_PATHS,
   focusedTestInvocation,
+  hasFocusedTestRunner,
   normalizeFocusedTestPaths,
   parseFocusedTestRequest,
   parseFocusedTestResult,
 } from './focused-test-decision.ts'
 
 describe('focused test decisions', () => {
+  test('only a valid focused test declaration counts as a registered runner', () => {
+    expect(hasFocusedTestRunner({ command: 'scripts/test-focused', args: [] })).toBeTrue()
+    expect(hasFocusedTestRunner(null)).toBeFalse()
+    expect(hasFocusedTestRunner({ command: '', args: [] })).toBeFalse()
+  })
+
   test('starts, joins, returns, and caps waits without filesystem state', () => {
     const execution = { id: 'request-1', paths: ['tests/one.test.ts'] }
     expect(

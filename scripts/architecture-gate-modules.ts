@@ -12,7 +12,7 @@ const module = (file: string, allowed: string[]): GateModule => ({
 })
 
 export const gateModules: GateModule[] = [
-  module('orchestrator/src/gate/gate-decision.ts', []),
+  module('orchestrator/src/gate/gate-decision.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/gate/gate-broker.ts', [
     '../../../shared/check-execution.ts',
     '../../../shared/git.ts',
@@ -32,7 +32,12 @@ export const gateModules: GateModule[] = [
     '../sandbox/sandbox.ts',
     './gate-check-executions.ts',
     './gate-decision.ts',
+    './gate-index.ts',
     './host-slot-wait.ts',
+  ]),
+  module('orchestrator/src/gate/gate-index.ts', [
+    '../git/git-environment.ts',
+    './gate-decision.ts',
   ]),
   module('orchestrator/src/gate/host-slot-wait.ts', [
     '../database/db.ts',

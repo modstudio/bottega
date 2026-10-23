@@ -37,6 +37,7 @@ import {
   ACP_FIXTURE_GOOSE_PROVIDER_USAGE,
   ACP_FIXTURE_GROK,
   ACP_FIXTURE_MALFORMED,
+  ACP_FIXTURE_RATE_LIMIT,
   ACP_FIXTURE_REFUSAL,
   ACP_FIXTURE_SCHEMA,
   ACP_FIXTURE_STRUCTURED_OK,
@@ -86,6 +87,32 @@ test.each([
   expect(config.provider['orch-local'].options).toEqual({
     baseURL: 'https://example.test/v1',
     apiKey: resolved ?? 'local',
+  })
+})
+
+test('goose points every XDG state directory at the confined harness state', () => {
+  const environment = acpEnvironment({
+    agent: { ...AGENTS.codex!, harness: 'goose' },
+    cwd: '/tmp/worktree',
+    env: {},
+    prompt: 'test',
+    outPath: '/tmp/run/output',
+    startedAt: 0,
+    recipeEnvironment: {},
+    srt: {
+      profile: {} as never,
+      runtimeDir: '/tmp/runs/sandbox-root',
+    },
+  })
+
+  expect({
+    XDG_STATE_HOME: environment.XDG_STATE_HOME,
+    XDG_DATA_HOME: environment.XDG_DATA_HOME,
+    XDG_CONFIG_HOME: environment.XDG_CONFIG_HOME,
+  }).toEqual({
+    XDG_STATE_HOME: '/tmp/runs/sandbox-root/harness',
+    XDG_DATA_HOME: '/tmp/runs/sandbox-root/harness',
+    XDG_CONFIG_HOME: '/tmp/runs/sandbox-root/harness',
   })
 })
 
@@ -564,6 +591,12 @@ describe('ACP event fixtures normalize to orchestrator outcomes', () => {
     expect(refused.status).toBe('failed')
     expect(failureKindFromStop(refused.stopReason, refused.error)).toBe('content_refusal')
     expect(refused.error).toBe(stopErrorMessage('refusal'))
+  })
+
+  test('a recorded Goose daily allowance 429 is a daily quota failure, not quality evidence', () => {
+    const limited = normalizeAcpTurn(ACP_FIXTURE_RATE_LIMIT)
+    expect(limited.status).toBe('failed')
+    expect(limited.failureKind).toBe('daily_quota')
   })
 
   test('partial text does not rescue a non-end_turn stop', () => {

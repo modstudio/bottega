@@ -48,6 +48,8 @@ export type Agent = {
   maxConcurrent?: number | null
   /** Whether automatic routing may spend this metered agent on read-only jobs. */
   routeMetered?: boolean
+  /** Whether the provider may train on prompts and repository inputs. */
+  trainsOnInputs?: boolean
   bin: string
   /** Exact bottega-ask command this harness registration configures, if any. */
   askServerCommand?(environment: Record<string, string>): string[] | null
@@ -84,6 +86,8 @@ export type Agent = {
   mcpToolNamePattern?: string
   /** Transport decision and the measured ACP capabilities for this installed adapter. */
   defaultTransport: 'cli' | 'acp'
+  /** This hydrated ACP adapter resumes vendor sessions through session/load. */
+  acpSessionLoad?: boolean
   acp?: {
     mcpServers: boolean
     mcpReason: string
@@ -665,13 +669,15 @@ export const BUILTIN_AGENTS: Record<string, Agent> = {
 export function assertResumableAgent(name: string, a: Agent, requireExact: boolean): void {
   if (a.enabled === false || a.legacy) return
   const hasId = Boolean(a.mintSession ?? a.readSession)
-  if (a.caps.resumable && !(a.resumeArgv && hasId)) {
+  const cliResume = Boolean(a.resumeArgv && hasId)
+  const acpResume = a.defaultTransport === 'acp' && a.acpSessionLoad === true
+  if (a.caps.resumable && !(cliResume || acpResume)) {
     throw new Error(
       `agent "${name}" declares resumable but cannot be resumed: ` +
-        `${a.resumeArgv ? '' : 'no resumeArgv; '}${hasId ? '' : 'no way to learn its session id'}`,
+        `${a.defaultTransport === 'acp' ? 'ACP adapter has no session/load facility' : `${a.resumeArgv ? '' : 'no resumeArgv; '}${hasId ? '' : 'no way to learn its session id'}`}`,
     )
   }
-  if (requireExact && !a.caps.resumable && a.resumeArgv && hasId) {
+  if (requireExact && !a.caps.resumable && (cliResume || acpResume)) {
     throw new Error(`agent "${name}" has everything needed to resume but declares resumable: false`)
   }
 }

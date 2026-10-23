@@ -1,9 +1,11 @@
 // concern: project-settings
 /** Owns the project settings shape. Must not know stores, SQL, or HTTP. */
 
+import type { RepositoryVisibility } from '../../../shared/repository-visibility.ts'
 import type { TrackerSettings } from '../../../shared/trackers.ts'
 import type { MechanicalCheckEntry } from '../enforcement/mechanical-check-declaration.ts'
 import type { FocusedTestRunner } from '../focused-test/focused-test-decision.ts'
+import type { GateInput } from '../gate/gate-decision.ts'
 import type { Recipe } from '../recipe/recipe.ts'
 import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
 import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
@@ -106,6 +108,10 @@ export type WorktreeTool = {
 }
 
 export type ProjectSettings = {
+  /** Repository visibility established against the forge when declared. */
+  visibility?: RepositoryVisibility
+  /** Canonical owner/name whose visibility was verified at declaration time. */
+  visibilityRepository?: string
   /** Main-checkout stack consumers that require start-on-demand. */
   mainStack?: { consumers: MainStackConsumer[]; requiredServices?: string[] }
   /** Local opt-ins for semantic search corpora. */
@@ -159,6 +165,8 @@ export type ProjectSettings = {
   productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
+  /** Git state consumed by the gate. Absent keeps existing registrations compatible. */
+  gateInput?: GateInput
   /** Fixed executable and argv prefix for writer-requested project-relative test paths. */
   focusedTests?: FocusedTestRunner
   /** Ordered promotion and remote-admission facts after the landing branch merges. */
