@@ -69,7 +69,11 @@ function insertProbeTurn(input: ProbeTurnInput, started: number): string {
   return row.record_id
 }
 
-async function probeEnvironment(agent: Agent, scratch: string): Promise<Record<string, string>> {
+async function probeEnvironment(
+  name: string,
+  agent: Agent,
+  scratch: string,
+): Promise<Record<string, string>> {
   return {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
@@ -77,7 +81,9 @@ async function probeEnvironment(agent: Agent, scratch: string): Promise<Record<s
       ),
     ),
     ...(agent.env?.() ?? {}),
-    ...(await resolveEndpointApiKeyEnv(agent)),
+    ...(await resolveEndpointApiKeyEnv(agent, undefined, {
+      exhaustedRetryCommand: `${PLATFORM_SLUG} agent probe ${name}`,
+    })),
     BOTTEGA_SCRATCH: scratch,
   }
 }
@@ -116,7 +122,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
   const recordId = insertProbeTurn(input, started)
   const cwd = probeCwd(input)
   const scratchDir = probeScratchDir(input)
-  const environment = await probeEnvironment(input.agent, scratchDir)
+  const environment = await probeEnvironment(input.name, input.agent, scratchDir)
   if (input.writing) environment.HOME = input.writing.workerHomeDir
   try {
     const handle = await input.transport.start({

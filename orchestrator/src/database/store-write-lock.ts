@@ -73,7 +73,10 @@ export function probeWalWriteLock(storePath: string): WalWriteLockProbe {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null
     }
-    throw error
+    return {
+      unsupported: true,
+      reason: `cannot open ${storePath}-shm to inspect its WAL write-lock holder: ${error instanceof Error ? error.message : String(error)}`,
+    }
   }
   try {
     // Darwin struct flock: off_t start, off_t len, pid_t pid, short type, short whence.
