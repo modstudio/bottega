@@ -1,4 +1,13 @@
-import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  appendFileSync,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +24,9 @@ import {
   type CommandCpuSample,
   cpuBudgetMs,
   decideRuntimeBudget,
+  dependencyInstallMode,
   HUNG_SUITE_TIMEOUT_MS,
+  installNeeded,
   parseCheckArguments,
   runsRootSuiteTests,
   SUITE_CPU_BUDGET_MS,
@@ -297,7 +308,36 @@ function printFailedLegTails(results: LegResult[]) {
   }
 }
 
-if ((await inherit(['bun', 'install', '--silent'])) !== 0) process.exit(1)
+const lockfilePath = join(root, 'bun.lock')
+const nodeModulesPath = join(root, 'node_modules')
+const installedStatePath = join(nodeModulesPath, '.check-lockfile')
+
+async function installDependencies() {
+  const installMode = dependencyInstallMode({
+    ci: Boolean(process.env.CI),
+    linkedWorktree: !lstatSync(join(root, '.git')).isDirectory(),
+    workerRun: Boolean(process.env.ORCH_RUN_ID || process.env.ORCH_DEPTH),
+  })
+  if (installMode === 'normal') return inherit(['bun', 'install', '--silent'])
+
+  const verify = ['bun', 'install', '--offline', '--frozen-lockfile', '--dry-run', '--silent']
+  if ((await inherit(verify)) !== 0) return 1
+
+  const lockfileHash = createHash('sha256').update(readFileSync(lockfilePath)).digest('hex')
+  const installedState = {
+    lockfileHash: existsSync(installedStatePath)
+      ? readFileSync(installedStatePath, 'utf8').trim()
+      : null,
+    nodeModulesPresent: existsSync(nodeModulesPath),
+  }
+  if (!installNeeded(lockfileHash, installedState)) return 0
+
+  const exitCode = await inherit(['bun', 'install', '--offline', '--frozen-lockfile', '--silent'])
+  if (exitCode === 0) writeFileSync(installedStatePath, `${lockfileHash}\n`)
+  return exitCode
+}
+
+if ((await installDependencies()) !== 0) process.exit(1)
 
 const dependencyAuditExitCode = await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
   check: 'dependency audit',

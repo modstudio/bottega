@@ -1,7 +1,7 @@
 // concern: review-tier-classifier
 /** Pure review-tier classification over already-measured file facts. */
 
-import { categorizeFile } from '../../../shared/file-kind.ts'
+import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import type { ReviewRiskMap } from '../project/project-injection.ts'
 
 export type ReviewTier = {
@@ -45,6 +45,11 @@ const isReviewExcluded = (path: string) => {
   )
 }
 
+/** Whether a recorded path belongs to the product surface used for review decisions. */
+export function isReviewProductPath(path: string, kind: FileKind = categorizeFile(path)): boolean {
+  return kind === 'product' && !isOrdinaryConfig(path) && !isReviewExcluded(path)
+}
+
 type FileRisk = { tier: 0 | 1 | 2 | 3; reason: string; basis: string | null }
 
 function fileRisk(
@@ -52,12 +57,12 @@ function fileRisk(
   riskPaths: readonly CompiledReviewRiskPath[] | undefined,
   declaredUnlisted: 0 | 1 | 2 | undefined,
 ): FileRisk | null {
-  if (isReviewExcluded(path)) return null
   const match =
     AGENT_INSTRUCTION_PATHS.find((entry) => entry.pattern.test(path)) ??
     riskPaths?.find((entry) => entry.pattern.test(path))
   if (match)
     return { tier: match.tier, reason: `${path} (${match.reason})`, basis: match.basis ?? null }
+  if (isReviewExcluded(path)) return null
   const kind = categorizeFile(path)
   if (kind !== 'product' || isOrdinaryConfig(path)) return null
   const tier = declaredUnlisted ?? 2
@@ -105,12 +110,7 @@ export function classifyReviewTier(input: {
 }): ReviewTier {
   const { risk, reason: riskReason, basis: riskBasis } = classifyRisk(input.files, input.risk)
 
-  const productFiles = input.files.filter(
-    (file) =>
-      categorizeFile(file.path) === 'product' &&
-      !isOrdinaryConfig(file.path) &&
-      !isReviewExcluded(file.path),
-  )
+  const productFiles = input.files.filter((file) => isReviewProductPath(file.path))
   const countedFiles = input.files.filter((file) => !isReviewExcluded(file.path))
   const productLines = countedFiles.reduce((sum, file) => sum + file.insertions + file.deletions, 0)
   let size: 0 | 1 | 2 | 3 =

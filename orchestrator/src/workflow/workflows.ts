@@ -20,8 +20,10 @@ import {
   productionStepCatalogue,
   type StepCatalogueDefinition,
   selectedStepCatalogue,
+  sharedStepCataloguePromotionPorts,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
   resolveWorkflowProjectFacts,
@@ -29,6 +31,8 @@ import {
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { workflowPromotionReport } from './workflow-shared-promotion.ts'
+import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
   expandWorkflowModeSteps,
@@ -529,31 +533,40 @@ export function promoteWorkflow(
 ) {
   assertWorkflowWriteAllowed('promote workflow')
   return applyRecordWriteAuthority({
-    local: () => promoteWorkflowLocal(slug, n, reasonValue, authorValue, d),
+    local: () => {
+      promoteWorkflowLocal(slug, n, reasonValue, authorValue, d)
+      return workflowPromotionReport(n, { changed: [null], overrides: [], pinned: [] })
+    },
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
       const spaceId = await hostedSpace(d)
       const target = selectedWorkflow(slug, n, d, spaceId)
-      workflowPromotionPreflight(slug, target.definition, d, spaceId)
-      const current = d
-        .query<{ n: number }, [string, string]>(
-          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
-        )
-        .get(slug, spaceId)
-      const result = await recordApiClient().promoteWorkflow!(
-        {
-          kind: 'workflow',
-          slug,
-          n,
-          expectedProductionVersion: current?.n ?? null,
-          author: writeAuthor(authorValue),
-          reason: reasonValue.trim(),
-          sessionId: sessionId(),
-        },
-        { destinationSpaceId: spaceId },
-      )
-      await applyWorkflowWriteResponse(d, 'workflow', result)
-      return hostedWorkflowRow(slug, n, d, spaceId)
+      if (target.status === 'retired')
+        throw new Error(`workflow "${slug}" version ${n} is not a draft`)
+      const decision = await promoteSharedWorkflow(slug, n, reasonValue, spaceId, d, {
+        preflight: (definition, targetSpace, catalogue) =>
+          workflowPromotionPreflight(
+            slug,
+            definition,
+            d,
+            targetSpace,
+            catalogue as StepCatalogueDefinition,
+          ),
+        catalogue: sharedStepCataloguePromotionPorts(authorValue, d),
+        author: () => writeAuthor(authorValue),
+        missingCatalogueRefusal: HOSTED_CATALOGUE_REFUSAL,
+        draftLocal: (version) =>
+          writeDraftLocal(
+            slug,
+            JSON.parse(version.definition),
+            version.reason,
+            BUILT_IN_WORKFLOW_AUTHOR,
+            'import',
+            d,
+          ).n,
+        promoteLocal: (reason) => promoteWorkflowLocal(slug, n, reason, authorValue, d),
+      })
+      return workflowPromotionReport(n, decision)
     },
   })
 }
@@ -582,9 +595,13 @@ function workflowPromotionPreflight(
   definition: WorkflowDefinition,
   d: Database,
   spaceId: string | null,
+  catalogueOverride?: StepCatalogueDefinition,
 ): void {
   const catalogue =
-    spaceId === null ? productionStepCatalogue(d).definition : hostedProductionCatalogue(d, spaceId)
+    catalogueOverride ??
+    (spaceId === null
+      ? productionStepCatalogue(d).definition
+      : hostedProductionCatalogue(d, spaceId))
   requireValid(definition, undefined, catalogue)
   const refusal = catalogueReferenceRefusal(slug, definition, catalogue)
   if (refusal) throw new Error(refusal)

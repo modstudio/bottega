@@ -13,6 +13,7 @@ import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { createCheckpointSchedule } from '../run/checkpoint-schedule.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import {
   GATE_BASE_REFRESH_TIMEOUT_MS,
@@ -383,6 +384,8 @@ test('an occupied gate log path fails the execution without following the path',
   ).id
   const occupiedPath = join(scratch, `gate-${gateId}.log`)
   symlinkSync(sentinel, occupiedPath)
+  const checkpoints: string[] = []
+  const checkpointSchedule = createCheckpointSchedule((trigger) => checkpoints.push(trigger))
 
   const broker = startGateBroker({
     runId,
@@ -390,6 +393,11 @@ test('an occupied gate log path fails the execution without following the path',
     environment: { ORCH_MAIN_CHECKOUT: '/main/checkout' },
     confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
+    onExecutionStart: () => {
+      checkpointSchedule.executionStarted()
+      checkpointSchedule.request('scheduled')
+    },
+    onExecutionFinish: () => checkpointSchedule.executionFinished(),
   })
   try {
     await waitForFinishedGate(gateId)
@@ -406,6 +414,7 @@ test('an occupied gate log path fails the execution without following the path',
     expect(execution.output_tail).toContain(
       `gate log path is occupied: ${occupiedPath}; gate did not run`,
     )
+    expect(checkpoints).toEqual(['scheduled'])
     expect(readFileSync(sentinel, 'utf8')).toBe('original')
   } finally {
     await broker.close()

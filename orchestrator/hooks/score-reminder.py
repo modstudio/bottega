@@ -11,6 +11,8 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
+from score_reminder_decision import decide_held_tree
+
 GLOBAL_BUDGET_SECONDS = 20
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -23,6 +25,23 @@ DB = os.environ.get("ORCH_DB") or subprocess.check_output(
 def bottega_bin():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     return os.path.join(root, "bin", "bottega")
+
+
+def close_out_line(payload):
+    tree = f" {payload['worktree']}" if payload.get("worktree") else ""
+    return f"{payload.get('outcome')} run {payload.get('runId')}{tree}: {payload.get('detail', '')}"
+
+
+def classify_cleanup_holds(holds):
+    in_flight_lines = []
+    blocking_holds = []
+    for payload in holds:
+        decision = decide_held_tree(payload)
+        if decision.block:
+            blocking_holds.append(close_out_line(payload))
+        else:
+            in_flight_lines.append(decision.in_flight_line)
+    return in_flight_lines, blocking_holds
 
 
 def main() -> int:
@@ -176,15 +195,22 @@ def main() -> int:
             break
         try:
             result = subprocess.run(
-                [bottega_bin(), "run", "close-out", str(root_id), "--non-blocking"], capture_output=True,
+                [bottega_bin(), "run", "close-out", str(root_id), "--non-blocking", "--json"],
+                capture_output=True,
                 text=True, timeout=remaining,
             )
-            report = (result.stdout or result.stderr).strip()
-            if report.startswith("held "):
-                cleanup_holds.append(report)
-            elif report.startswith("kept "):
-                cleanup_kept.append(report)
-            elif not (report.startswith("released ") or report.startswith("absent ")):
+            raw = (result.stdout or result.stderr).strip()
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                cleanup_deferred.append(root_id)
+                continue
+            outcome = payload.get("outcome")
+            if outcome == "held":
+                cleanup_holds.append(payload)
+            elif outcome == "kept":
+                cleanup_kept.append(payload)
+            elif outcome not in ("released", "absent"):
                 cleanup_deferred.append(root_id)
         except subprocess.TimeoutExpired:
             cleanup_deferred.extend(root for (root,) in cleanup_roots[index:])
@@ -202,7 +228,9 @@ def main() -> int:
             file=sys.stderr,
         )
     for report in cleanup_kept:
-        print(report, file=sys.stderr)
+        print(close_out_line(report), file=sys.stderr)
+
+    in_flight_lines, blocking_holds = classify_cleanup_holds(cleanup_holds)
 
     notes = []
     try:
@@ -221,7 +249,9 @@ def main() -> int:
     except Exception:
         notes = []
 
-    if not rows and not pairs and not notes and not cleanup_holds:
+    if not rows and not pairs and not notes and not blocking_holds:
+        if in_flight_lines:
+            print(json.dumps({"systemMessage": "\n".join(in_flight_lines)}))
         return 0
 
     # A writing job takes a THIRD axis, and printing the two-axis form for one
@@ -298,11 +328,15 @@ def main() -> int:
                 f"    bottega note keep {note_label} | bottega note drop {note_label} --reason \"...\" | "
                 f"bottega note promote {note_label}"
             )
-    if cleanup_holds:
+    if blocking_holds:
         if lines:
             lines.append("")
-        lines.append(f"{len(cleanup_holds)} worktree{'s' if len(cleanup_holds) > 1 else ''} hold irreplaceable or explicitly retained work:")
-        lines.extend(f"  {hold}" for hold in cleanup_holds)
+        lines.append(f"{len(blocking_holds)} worktree{'s' if len(blocking_holds) > 1 else ''} hold irreplaceable or explicitly retained work:")
+        lines.extend(f"  {hold}" for hold in blocking_holds)
+    if in_flight_lines:
+        if lines:
+            lines.append("")
+        lines.extend(in_flight_lines)
     if rows:
         needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _ in rows)
         intro = (
@@ -316,7 +350,7 @@ def main() -> int:
     elif notes:
         intro = f"{len(notes)} note{'s' if len(notes) > 1 else ''} filed in this session:"
     else:
-        intro = f"{len(cleanup_holds)} worktree{'s' if len(cleanup_holds) > 1 else ''} must be resolved before this session ends:"
+        intro = f"{len(blocking_holds)} worktree{'s' if len(blocking_holds) > 1 else ''} must be resolved before this session ends:"
     guidance = ""
     if rows:
         guidance += (

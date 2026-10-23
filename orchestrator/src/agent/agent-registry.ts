@@ -30,6 +30,7 @@ export type AgentRow = {
   preferred_jobs: string | null
   max_concurrent: number | null
   route_metered: number
+  trains_on_inputs: number
 }
 
 export function rowAgent(row: AgentRow): Agent {
@@ -72,6 +73,7 @@ export function rowAgent(row: AgentRow): Agent {
     operatedBy: row.operated_by,
     caps: stored,
     defaultTransport: row.transport,
+    acpSessionLoad: row.transport === 'acp',
     contextTokens: Object.hasOwn(stored, 'contextTokens')
       ? stored.contextTokens === null
         ? Number.POSITIVE_INFINITY
@@ -91,6 +93,7 @@ export function rowAgent(row: AgentRow): Agent {
     preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
     maxConcurrent: row.max_concurrent,
     routeMetered: Boolean(row.route_metered),
+    trainsOnInputs: Boolean(row.trains_on_inputs),
     ...(row.base_url
       ? {
           env: () => ({
@@ -223,6 +226,7 @@ export type AgentMutation = {
   preferredJobs?: string[]
   maxConcurrent?: number | null
   routeMetered?: boolean
+  trainsOnInputs?: boolean
 }
 
 function assertApiKeySecret(value: string | null | undefined): void {
@@ -294,8 +298,8 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,api_key_secret,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent,route_metered,trains_on_inputs)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       newRecordId(),
@@ -316,6 +320,7 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
       input.preferredJobs === undefined ? null : JSON.stringify(input.preferredJobs),
       input.maxConcurrent ?? null,
       input.routeMetered ? 1 : 0,
+      input.trainsOnInputs ? 1 : 0,
     )
   refreshAgents()
   return agentRows().find((row) => row.name === name)!
@@ -345,6 +350,11 @@ function agentEnabledFields(current: AgentRow, input: AgentMutation) {
           ? null
           : current.disabled_reason,
   }
+}
+
+function storedTrainsOnInputs(current: AgentRow, input: AgentMutation): number {
+  if (input.trainsOnInputs === undefined) return current.trains_on_inputs
+  return input.trainsOnInputs ? 1 : 0
 }
 
 export function setAgent(name: string, input: AgentMutation): AgentRow {
@@ -406,7 +416,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=? WHERE name=?`,
+      `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,api_key_secret=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=?,route_metered=?,trains_on_inputs=? WHERE name=?`,
     )
     .run(
       input.harness ?? current.harness,
@@ -431,6 +441,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         : JSON.stringify(input.preferredJobs),
       input.maxConcurrent === undefined ? current.max_concurrent : input.maxConcurrent,
       input.routeMetered === undefined ? current.route_metered : input.routeMetered ? 1 : 0,
+      storedTrainsOnInputs(current, input),
       name,
     )
   refreshAgents()
@@ -460,9 +471,18 @@ export type RegistrationProbeResult = {
   schema: { ok: boolean | null; output: string }
   file?: { ok: boolean | null; output: string }
   mcp?: { verifiable: boolean | null; output: string }
+  writing?: { ok: boolean | null; output: string }
+  resuming?: { ok: boolean | null; output: string }
   jobs?: Record<
     string,
-    { reply?: boolean; tool?: boolean | null; schema?: boolean | null; mcp?: boolean | null }
+    {
+      reply?: boolean
+      tool?: boolean | null
+      schema?: boolean | null
+      mcp?: boolean | null
+      writing?: boolean | null
+      resuming?: boolean | null
+    }
   >
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null

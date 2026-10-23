@@ -462,9 +462,9 @@ def _foreign_workflow_notice(count):
     )
 
 
-def _settings_apply_notice(completed, log_path=None):
+def _settings_apply_notice(completed):
     if completed is None:
-        return f"settings apply still running; its result lands in {log_path}"
+        return None
     lines = [
         line.strip()
         for text in (completed.stdout or "", completed.stderr or "")
@@ -753,7 +753,7 @@ def main() -> int:
         settings_notice = (
             settings_start_failure
             or settings_read_failure
-            or _settings_apply_notice(settings_apply, settings_log_path)
+            or _settings_apply_notice(settings_apply)
         )
         if settings_notice:
             notices.append(settings_notice)

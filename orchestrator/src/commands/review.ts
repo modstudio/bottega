@@ -24,6 +24,7 @@ import { restoreReviewFindingsCommand } from '../review/review-finding-restore.t
 import { recordArchitectReadCommand } from '../review/review-read.ts'
 import { recordProjectReviewCommand } from '../review/review-record-command.ts'
 import { reviewBudgetCommand } from '../review/review-round-budget.ts'
+import { scopeProposalReviewCommand } from '../review/review-scope-proposal-command.ts'
 import { restoreReviewTriageCommand } from '../review/review-triage-restore.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
@@ -126,6 +127,15 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
     .option('--json', 'write the yield report as JSON')
     .action((_options, command) =>
       run(command, (_argv, flags, output) => yieldReviewCommand(flags, output)),
+    )
+
+  review
+    .command('scope-proposal')
+    .description('propose path scopes for currently unscoped review lenses')
+    .allowExcessArguments(true)
+    .option('--json', 'write the scope proposal as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => scopeProposalReviewCommand(flags, output)),
     )
 
   review
@@ -338,7 +348,7 @@ export function register(program: Command, presentation = reviewPresentation): v
     .action(() => {
       const sub = review.args[0]
       throw new Error(
-        `unknown: ${PLATFORM_SLUG} review${sub ? ` ${sub}` : ''}. Try tier | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
+        `unknown: ${PLATFORM_SLUG} review${sub ? ` ${sub}` : ''}. Try tier | yield | scope-proposal | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
       )
     })
 

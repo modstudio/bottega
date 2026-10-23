@@ -12,6 +12,8 @@ export const cleanupBoundarySpecs = [
       '../cleanup/claim-reconciliation.ts',
       '../cleanup/cleanup.ts',
       '../close/close-out.ts',
+      '../close/close-out-in-flight.ts',
+      '../close/close-out-report.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',

@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { branchMonitorConditions } from '../monitor/monitor-branches.ts'
 import { upsertProject } from '../project/projects.ts'
-import { decideBranchReclaimEvidence, reclaimWorktree } from './reclaim.ts'
+import { decideBranchReclaimEvidence, reclaimBranchesDryRun, reclaimWorktree } from './reclaim.ts'
 
 function git(cwd: string, args: string[]): void {
   const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
@@ -70,6 +71,29 @@ test('reclaim locked recheck preserves a worktree when a terminal sharer appears
 })
 
 describe('branch reclaim landing evidence', () => {
+  test('a failed report gather errors every candidate without dropping conditions', () => {
+    let gathers = 0
+    const candidates = [
+      { branch: 'first', started_at: '2026-09-30T10:00:00.000Z' },
+      { branch: 'second', started_at: '2026-09-30T11:00:00.000Z' },
+    ]
+    const actions = reclaimBranchesDryRun(
+      'sample',
+      candidates.map((candidate) => candidate.branch),
+      () => {
+        gathers += 1
+        throw new Error('GitHub unavailable')
+      },
+    )
+    expect(gathers).toBe(1)
+    const conditions = branchMonitorConditions('sample', candidates, actions)
+    expect(conditions).toHaveLength(2)
+    expect(conditions.map((condition) => condition.action)).toEqual([
+      'reported; reclaim errored: GitHub unavailable',
+      'reported; reclaim errored: GitHub unavailable',
+    ])
+  })
+
   test('refuses unreachable commits without a safe prune classification', () => {
     expect(
       decideBranchReclaimEvidence({

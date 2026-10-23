@@ -10,11 +10,7 @@ import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
-import {
-  type ConfinementEvent,
-  type FreezeFailure,
-  freezeCheckouts,
-} from '../confinement/confinement.ts'
+import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   type CanonSource,
   NO_REPO_PREAMBLE,
@@ -25,19 +21,10 @@ import {
   type WorkerReply,
   workerPreamble,
 } from '../contract/contract.ts'
-import {
-  db,
-  enableSchemaReload,
-  nowIso,
-  sessionId,
-  writableDb,
-  writeTransaction,
-} from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
-import { checkoutWatchSet } from '../git/checkout-identity.ts'
-import { gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
@@ -106,9 +93,9 @@ import {
 } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
-import { callerWatch } from './run-caller-watch.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
+import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
@@ -136,6 +123,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
+import * as runMigration from './run-schema-reload-cause.ts'
 import {
   enforceRunStartupRefusal,
   recordNeverStartedRunFailure,
@@ -280,14 +268,12 @@ export async function run(opts: {
   reserveId?: string
   /**
    * Continue a worker that stopped to ask, instead of starting a new one.
-   *
    * Threaded through `run()` rather than given its own function because
    * everything after the command line is identical — the same spawn, the same
    * timeout, the same reaping, the same `finally` that must write a terminal
    * row whatever happened. A second copy of that machinery would be a second
    * place for the bug this system has already had twice: a run that never says
    * it stopped.
-   *
    * What a resume changes is only the front: no routing (the conversation
    * belongs to the agent that started it), no new worktree (the worker is
    * mid-edit in one), and `resumeArgv` in place of `argv`.
@@ -303,21 +289,17 @@ export async function run(opts: {
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
-  enableSchemaReload(() => {})
+  runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
-  const resume = resumeFacts(
-    opts.resume?.kind ?? null,
-    opts.reserveId ?? '',
-    opts.resume?.parent ?? null,
-  )
+  const prior = opts.resume
+  const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
   const inheritedDispatch =
-    resume.workspaceSource === 'retained' ? readDispatchState(opts.resume!.parent) : null
+    resume.workspaceSource === 'retained' ? readDispatchState(prior!.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
-  const writesJob = Boolean(requestedJob.needs.writesRepo)
-  const repoJob = Boolean(requestedJob.needs.readsRepo)
+  const [writesJob, repoJob] = [!!requestedJob.needs.writesRepo, !!requestedJob.needs.readsRepo]
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd()
@@ -530,6 +512,7 @@ export async function run(opts: {
         noWaitCapacity: opts.noWaitCapacity,
         requiredMcp,
         ...transportPin,
+        project: runProjectName,
       },
       opts.probe,
       opts.lens,
@@ -640,8 +623,8 @@ export async function run(opts: {
     mcpSetupHeader,
     mcpTrustGranted,
     grokMcpEnvironment,
-    sandboxRunDir,
-    sandboxRunDirExisted,
+    runtimeDir,
+    runtimeDirExisted,
     cwd,
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
@@ -682,13 +665,14 @@ export async function run(opts: {
     replySchemaName,
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
   })
+  runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   const runProject = projectAt(callerCwd)
-  const writableRoots = acpWriter.writableRoots(worktree, writesJob, writingAcp, scratchDir)
-  const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, sandboxRunDir)
+  const writableRoots = acpWriter.runRoots(worktree, writesJob, writingAcp, scratchDir, runtimeDir)
+  const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
@@ -722,7 +706,7 @@ export async function run(opts: {
         readsRepo: repoJob,
         writesRepo: writesJob,
         worktree: worktree?.path ?? isolatedCwd,
-        runsDir: sandboxRunDir,
+        runtimeDir,
         scratchDir,
         project: runProject,
         override: process.env.ORCH_SANDBOX,
@@ -736,7 +720,7 @@ export async function run(opts: {
       const home = await workerHome.prepareWorkerHomeLaunch({
         agent: a,
         sandbox: sandboxSelection.sandbox,
-        runDir: sandboxRunDir,
+        runDir: runtimeDir,
         runNumber: claim.number,
         runRecordId: claim.recordId,
         runToken,
@@ -753,7 +737,7 @@ export async function run(opts: {
         sandboxEnvironment,
       } = home)
     } catch (e) {
-      removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
+      removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
       try {
         recordRunStartupFailure(claim.id, e, started)
@@ -776,7 +760,7 @@ export async function run(opts: {
           rootRunId,
           runId: claim.id,
           projectId: runProjectId,
-          path: sandboxRunDir,
+          path: runtimeDir,
           claimedAt: nowIso(),
         })
       }
@@ -921,29 +905,28 @@ export async function run(opts: {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  let artifactsPersisted = true
+  let artifactsPersisted = true,
+    workerEvents: StreamEvent[] = []
   let preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
-  let confinementFailures: FreezeFailure[] = []
+  const confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
-  let workerEvents: StreamEvent[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
-  // Freeze after setup; the interval says when a watched checkout changed, not who changed it.
-  const callerProject = projectAt(callerCwd)
-  const callerCheckout = callerProject
-    ? (gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd)
-    : null
-  const candidates = checkoutWatchSet(
-    callerWatch(callerCheckout, isolatedCwd, callerProject),
-    worktree?.path,
+  const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
+    srtProfile: sandboxSelection.profile,
+    agent: name,
+    cwd,
+    writableRoots,
+    tmpDir: process.env.TMPDIR,
+    codexSandbox: codexSandbox.sandbox,
+    callerCwd,
+    isolatedCwd,
+    runProject,
+    activeWorktree: worktree?.path,
     runProjectName,
-  )
-  const beforeFreeze = freezeCheckouts(candidates.watched)
+  })
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
-  // A detached child's stderr reaches nobody, so the skip also rides the output
-  // header that `bottega run result` prints (lens run 2290): the register is stale and
-  // the project unwatched on every later run until somebody reads this.
   const skipLines = confinementSkipLines(skipped)
   for (const line of skipLines) console.error(line)
   if (skipLines.length) {
@@ -952,11 +935,7 @@ export async function run(opts: {
       : skipLines.join('\n')
   }
   frozenBefore = beforeFreeze.snapshots
-  const watchedCheckouts = frozenBefore.map(({ project, path, expectedHead }) => ({
-    project,
-    path,
-    expectedHead: expectedHead ?? undefined,
-  }))
+  const watchedCheckouts = frozenBefore
   try {
     runLease = requiredRunLease(claim.id, (cause) => {
       error = String((cause as Error).message ?? cause)
@@ -986,9 +965,6 @@ export async function run(opts: {
       artifactsPersisted,
       preConfinement,
       vendorTerminatedStream,
-      confinementFailures,
-      confinementEvent,
-      frozenBefore,
       askLoopback,
       mcpSetupHeader,
       workerEvents,
@@ -1018,7 +994,7 @@ export async function run(opts: {
       mcpTrustGranted,
       writableRoots,
       gitConfigEnvironment,
-      sandboxRunDir,
+      runtimeDir,
       recipeEnvironment,
       launchEnvironment: mcpEnvironment,
       scratchDir,
@@ -1066,6 +1042,7 @@ export async function run(opts: {
         watchedCheckouts,
         confinementFailures,
         frozenBefore,
+        callerRemoval: runConfinement.callerRemovalAtRunEnd(db(), callerCheckout, started),
         removeIsolatedCwd,
         changes,
         provisionedMcpConfig,

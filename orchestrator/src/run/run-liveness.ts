@@ -18,7 +18,7 @@ import { runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
-import { coordinatorSetupError } from './run-coordinator-log.ts'
+import { coordinatorSetupError, recordedCoordinatorCause } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
@@ -233,7 +233,12 @@ function deadRunReason(row: RunningRow): string {
   return 'legacy run has no live pid'
 }
 
-type RunningDisposition = 'alive' | 'dead' | 'abandoned-bootstrap' | 'setup-death'
+type RunningDisposition =
+  | 'alive'
+  | 'dead'
+  | 'abandoned-bootstrap'
+  | 'setup-death'
+  | 'recorded-cause'
 
 function preservedFailureKindTurnId(setupDeathIds: Set<string>, lastTurnId: string): string | null {
   return setupDeathIds.has(lastTurnId) ? lastTurnId : null
@@ -242,8 +247,9 @@ function preservedFailureKindTurnId(setupDeathIds: Set<string>, lastTurnId: stri
 function runningDisposition(row: RunningRow, now: number): RunningDisposition {
   const leaseState = runLeaseState(row.record_id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
+  let disposition: RunningDisposition
   if (row.agent === '(pending)') {
-    return abandonedBootstrap({
+    disposition = abandonedBootstrap({
       agent: row.agent,
       pid: row.pid,
       pidAlive: coordinatorPidAlive,
@@ -253,8 +259,7 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
     })
       ? 'abandoned-bootstrap'
       : 'alive'
-  }
-  if (
+  } else if (
     coordinatorSetupDeath({
       agent: row.agent,
       agentPidPresent: row.agent_pid !== null,
@@ -262,19 +267,81 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
       pidAlive: coordinatorPidAlive,
     })
   ) {
-    return 'setup-death'
+    disposition = 'setup-death'
+  } else {
+    disposition = runAlive({
+      status: 'running',
+      lease: leaseState,
+      pidAlive: coordinatorPidAlive,
+    })
+      ? 'alive'
+      : 'dead'
   }
-  return runAlive({ status: 'running', lease: leaseState, pidAlive: coordinatorPidAlive })
-    ? 'alive'
-    : 'dead'
+  if (disposition !== 'alive' && recordedCoordinatorCause(row.record_id)) return 'recorded-cause'
+  return disposition
 }
 
 function coordinatorSetupDeathError(rows: RunningRow[], id: string): string {
-  return coordinatorSetupError(rows.find((candidate) => candidate.record_id === id)!.record_id)
+  const recordId = rows.find((candidate) => candidate.record_id === id)!.record_id
+  return coordinatorSetupError(recordId)
 }
 
 function setupDeathObservation(rows: RunningRow[], recordId: string): ObservedDeadRun {
-  return { record_id: recordId, reason: coordinatorSetupDeathError(rows, recordId) }
+  return {
+    record_id: recordId,
+    reason: coordinatorSetupDeathError(rows, recordId),
+  }
+}
+
+type ReapedRunGroups = {
+  dead: string[]
+  abandonedBootstraps: string[]
+  setupDeaths: string[]
+  recordedCauseDeaths: string[]
+}
+
+function groupReapedRuns(rows: RunningRow[], now: number): ReapedRunGroups {
+  const groups: ReapedRunGroups = {
+    dead: [],
+    abandonedBootstraps: [],
+    setupDeaths: [],
+    recordedCauseDeaths: [],
+  }
+  const target: Record<Exclude<RunningDisposition, 'alive'>, keyof ReapedRunGroups> = {
+    dead: 'dead',
+    'abandoned-bootstrap': 'abandonedBootstraps',
+    'setup-death': 'setupDeaths',
+    'recorded-cause': 'recordedCauseDeaths',
+  }
+  for (const row of rows) {
+    const disposition = runningDisposition(row, now)
+    if (disposition !== 'alive') groups[target[disposition]].push(row.record_id)
+  }
+  return groups
+}
+
+function terminalizeHarnessFailures(
+  database: Database,
+  ids: string[],
+  errorFor: (id: string) => string,
+  localMachineId: string,
+  finishedAt: string,
+): void {
+  if (!ids.length) return
+  const update = database.query(
+    `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL
+      WHERE record_id=? AND status='running'`,
+  )
+  for (const id of ids) {
+    const error = errorFor(id)
+    writeTransaction(() => {
+      if (update.run(error, id).changes !== 1) return
+      const authority = runMutationAuthority(database, id)
+      auditRunMutation(authority, 'reap', error, database)
+      closeRunChainQuestions(database, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
+      enqueueRunRecord(database, id, localMachineId, finishedAt)
+    }, database)
+  }
 }
 
 function finalizeReapedRuns(
@@ -297,24 +364,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     )
     .all() as RunningRow[]
 
-  const dead: string[] = []
-  const abandonedBootstraps: string[] = []
-  const setupDeaths: string[] = []
-  for (const r of rows) {
-    switch (runningDisposition(r, now)) {
-      case 'dead':
-        dead.push(r.record_id)
-        break
-      case 'abandoned-bootstrap':
-        abandonedBootstraps.push(r.record_id)
-        break
-      case 'setup-death':
-        setupDeaths.push(r.record_id)
-        break
-      case 'alive':
-        break
-    }
-  }
+  const { dead, abandonedBootstraps, setupDeaths, recordedCauseDeaths } = groupReapedRuns(rows, now)
   if (linkedWorktreeReadOnly) {
     return [
       ...dead.map((id) => {
@@ -329,9 +379,13 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         reason: `pending coordinator was abandoned after ${PENDING_BOOTSTRAP_MS}ms`,
       })),
       ...setupDeaths.map((id) => setupDeathObservation(rows, id)),
+      ...recordedCauseDeaths.map((id) => ({
+        record_id: id,
+        reason: recordedCoordinatorCause(id)!,
+      })),
     ]
   }
-  const ended = [...dead, ...abandonedBootstraps, ...setupDeaths]
+  const ended = [...dead, ...abandonedBootstraps, ...setupDeaths, ...recordedCauseDeaths]
   const localMachineId = ended.length ? machineId() : ''
   const finishedAt = new Date(now).toISOString()
   if (abandonedBootstraps.length) {
@@ -350,22 +404,20 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       }, d)
     }
   }
-  if (setupDeaths.length) {
-    const update = d.query(
-      `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL
-        WHERE record_id=? AND status='running'`,
-    )
-    for (const id of setupDeaths) {
-      const error = coordinatorSetupDeathError(rows, id)
-      writeTransaction(() => {
-        if (update.run(error, id).changes !== 1) return
-        const authority = runMutationAuthority(d, id)
-        auditRunMutation(authority, 'reap', error, d)
-        closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
-        enqueueRunRecord(d, id, localMachineId, finishedAt)
-      }, d)
-    }
-  }
+  terminalizeHarnessFailures(
+    d,
+    setupDeaths,
+    (id) => coordinatorSetupDeathError(rows, id),
+    localMachineId,
+    finishedAt,
+  )
+  terminalizeHarnessFailures(
+    d,
+    recordedCauseDeaths,
+    (id) => recordedCoordinatorCause(id)!,
+    localMachineId,
+    finishedAt,
+  )
   if (dead.length) {
     // Stamped `interrupted`, which puts these under the same NOT_EVIDENCE rule as
     // an exit-143 kill instead of leaving routing a second concept to know about.
@@ -396,6 +448,6 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
       }, d)
     }
   }
-  finalizeReapedRuns(d, ended, setupDeaths, localMachineId, finishedAt)
-  return dead.length + abandonedBootstraps.length + setupDeaths.length
+  finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
+  return dead.length + abandonedBootstraps.length + setupDeaths.length + recordedCauseDeaths.length
 }
