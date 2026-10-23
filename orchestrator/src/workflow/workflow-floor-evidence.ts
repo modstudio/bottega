@@ -839,7 +839,7 @@ function gatheredCommandEvidence(
     headCommit: row.head_commit,
     cursorBranch: identity.branch,
     output: row.output_tail,
-    withheld: row.withheld === 1,
+    outputWithheld: row.withheld === 1,
     commandWithheld: row.command_withheld === 1,
   }
   if (!url) return { exec }

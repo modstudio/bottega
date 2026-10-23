@@ -4,7 +4,7 @@
 import { evidenceSecretShapedRules } from '../../shared/secret-shaped.ts'
 
 /** Replace each secret-shaped line; keep the rest so a failure summary survives. */
-export function withholdSecretShapedGateLines(output: string): string {
+export function withholdSecretShapedLines(output: string): string {
   return output
     .split('\n')
     .map((line) => {

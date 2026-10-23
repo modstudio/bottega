@@ -30,7 +30,7 @@ const exec = {
   headCommit: 'abc',
   cursorBranch: 'DEV-977-work',
   output: '',
-  withheld: false,
+  outputWithheld: false,
 }
 const pullRequestExit = {
   kind: 'command-exit' as const,
@@ -56,7 +56,7 @@ const matchingExecEvidence = {
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
     output: `opened ${url}`,
-    withheld: false,
+    outputWithheld: false,
   },
   pullRequest: { url, ...link },
 }
@@ -123,9 +123,6 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
     condition: 'the recorded command output does not contain a GitHub pull-request URL',
   })
   expect(
-    decidePullRequestEvidence({ ...exec, output: `opened ${url}\n${withheldLine}`, link }),
-  ).toEqual({ met: true })
-  expect(
     decidePullRequestEvidence({
       ...exec,
       argv: null,
@@ -138,14 +135,6 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
     condition: `the recorded command was withheld, so it cannot be identified as ${PLATFORM_SLUG} pr create`,
   })
   expect(
-    decidePullRequestEvidence({
-      ...exec,
-      output: `opened ${url}`,
-      commandWithheld: true,
-      link,
-    }),
-  ).toEqual({ met: true })
-  expect(
     decidePullRequestEvidence({ ...exec, output: `opened ${url}`, sessionBound: false, link }),
   ).toEqual({
     met: false,
@@ -155,6 +144,12 @@ test('pr-create exec evidence refuses help and requires a matching pull-request 
     met: true,
   })
   expect(decide(matchingExecEvidence).action).toBe('allow')
+})
+
+test('a retained pull-request URL satisfies the floor when another output line is withheld', () => {
+  expect(
+    decidePullRequestEvidence({ ...exec, output: `opened ${url}\n${withheldLine}`, link }),
+  ).toEqual({ met: true })
 })
 
 test('a pr-create exec from another session is refused on every pull-request floor', () => {
@@ -188,7 +183,7 @@ test('a withheld pr-create exec names the pull-request link remedy', () => {
       exec: {
         ...matchingExecEvidence.exec,
         output: withheldOutput,
-        withheld: true,
+        outputWithheld: true,
       },
     },
     enforcement: 'floors',

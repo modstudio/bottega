@@ -20,7 +20,7 @@ import {
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
-import { withholdSecretShapedGateLines } from '../secret-shaped-output.ts'
+import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
 
 const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 
@@ -36,7 +36,7 @@ export type WorkflowOutput = Pick<ProbeRunResult, 'output' | 'secretFound'>
 /** Retains a bounded tail after redacting secret-shaped lines. */
 export function appendWorkflowOutput(current: WorkflowOutput, chunk: string): WorkflowOutput {
   const candidate = current.output + chunk
-  const redacted = withholdSecretShapedGateLines(candidate)
+  const redacted = withholdSecretShapedLines(candidate)
   return {
     output: boundedGateOutputTail(redacted, GATE_OUTPUT_TAIL_BYTES),
     secretFound: current.secretFound === true || redacted !== candidate,
@@ -177,11 +177,11 @@ async function recordWorkflowCommand(
   input: { d?: Database; commit?: string | null },
 ): Promise<RecordedArtifact> {
   const commandJson = JSON.stringify(command)
-  const redactedOutput = withholdSecretShapedGateLines(ran.output)
+  const redactedOutput = withholdSecretShapedLines(ran.output)
   const commandSecret = containsSecretShaped(commandJson)
-  const withheld = ran.secretFound === true || redactedOutput !== ran.output
   const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
   const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
+  const withheld = tail === PROBE_WITHHELD
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
     const row = d

@@ -17,7 +17,7 @@ import {
 } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
-import { withholdSecretShapedGateLines } from '../secret-shaped-output.ts'
+import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,
@@ -205,10 +205,7 @@ export async function runArchitectGate(input: {
   // A gate that rewrites the tree while it runs tested something other than HEAD.
   const commit =
     before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
-  const tail = boundedGateOutputTail(
-    withholdSecretShapedGateLines(ran.output),
-    GATE_OUTPUT_TAIL_BYTES,
-  )
+  const tail = boundedGateOutputTail(withholdSecretShapedLines(ran.output), GATE_OUTPUT_TAIL_BYTES)
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
     const row = d

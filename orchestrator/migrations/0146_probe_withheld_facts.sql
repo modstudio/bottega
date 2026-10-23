@@ -8,8 +8,7 @@ SET command_withheld=CASE
       ELSE command_withheld
     END,
     withheld=CASE
-      WHEN output_tail='[withheld: secret-shaped content]'
-        OR instr(output_tail,'[withheld line: ') > 0 THEN 1
-      ELSE 0
+      WHEN output_tail='[withheld: secret-shaped content]' THEN 1
+      ELSE withheld
     END;
 -- /BACKFILL

@@ -115,7 +115,7 @@ export type ValidatedEvidence = {
     headCommit: string | null
     cursorBranch: string | null
     output: string
-    withheld?: boolean
+    outputWithheld?: boolean
     commandWithheld?: boolean
     pullRequestCondition?: string
   }
@@ -359,7 +359,7 @@ export type PullRequestEvidenceFacts =
       headCommit: string | null
       cursorBranch: string | null
       output: string
-      withheld: boolean
+      outputWithheld: boolean
       commandWithheld?: boolean
       link?: PullRequestLinkFacts
       linkCondition?: string
@@ -373,8 +373,8 @@ const WITHHELD_PULL_REQUEST_CONDITION =
   'the recorded output was withheld, so the pull-request URL cannot be read'
 const WITHHELD_PULL_REQUEST_COMMAND_CONDITION = `the recorded command was withheld, so it cannot be identified as ${PLATFORM_SLUG} pr create`
 
-function execOutputWithheld(facts: { withheld: boolean; output: string }): boolean {
-  return facts.withheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
+function execOutputWithheld(facts: { outputWithheld: boolean; output: string }): boolean {
+  return facts.outputWithheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
 }
 
 export type BottegaCommandIdentity = {
@@ -498,7 +498,7 @@ function execPullRequestFacts(
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
     output: exec.output,
-    withheld: exec.withheld === true,
+    outputWithheld: exec.outputWithheld === true,
     commandWithheld: exec.commandWithheld === true,
     link: evidence.pullRequest ? { kind: 'link', ...evidence.pullRequest } : undefined,
     linkCondition: exec.pullRequestCondition,

@@ -1108,6 +1108,7 @@
       "version": "6",
       "when": 1793577600009,
       "tag": "0146_probe_withheld_facts",
+      "compatibility": "additive",
       "breakpoints": true
     }
   ]

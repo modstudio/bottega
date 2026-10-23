@@ -121,14 +121,14 @@ test('probe output withholds only the secret-shaped line and names the rule', as
     '[withheld line: provider-prefix]',
     'ok',
   ].join('\n')
-  expect(result.withheld).toBe(true)
+  expect(result.withheld).toBe(false)
   expect(result.outputTail).toBe(tail)
   expect(
     d.query('SELECT output_tail,withheld FROM probe').get() as {
       output_tail: string
       withheld: number
     },
-  ).toEqual({ output_tail: tail, withheld: 1 })
+  ).toEqual({ output_tail: tail, withheld: 0 })
 })
 
 test('withholds secret-shaped output', async () => {
@@ -140,11 +140,11 @@ test('withholds secret-shaped output', async () => {
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'token=ghp_exampletokenvalue' }),
   })
-  expect(result.withheld).toBe(true)
+  expect(result.withheld).toBe(false)
   expect(result.outputTail).toBe('[withheld line: assignment]')
   expect(d.query('SELECT output_tail,withheld FROM probe').get()).toEqual({
     output_tail: '[withheld line: assignment]',
-    withheld: 1,
+    withheld: 0,
   })
 })
 
@@ -251,12 +251,12 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
     expect(Buffer.byteLength(streamed.output)).toBeLessThanOrEqual(GATE_OUTPUT_TAIL_BYTES)
     expect(streamed.output).not.toContain('ghp_exampletokenvalue')
     expect(result).toMatchObject({
-      withheld: true,
+      withheld: false,
       outputTail: streamed.output,
     })
     expect(d.query('SELECT output_tail,withheld FROM probe').get()).toEqual({
       output_tail: streamed.output,
-      withheld: 1,
+      withheld: 0,
     })
   } finally {
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH
@@ -279,8 +279,6 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
       { output: '', secretFound: false },
     )
     expect(streamed.output).toBe(`--base=${'a'.repeat(40)}\nopened ${url}\n${refusal}\n`)
-    expect(streamed.output).toContain(url)
-    expect(streamed.output).toContain(refusal)
     const d = database()
     const result = await recordWorkflowExec([PLATFORM_SLUG, 'pr', 'create'], {
       cwd: probeRepository,
@@ -302,7 +300,7 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
         headCommit: 'abc',
         cursorBranch: 'DEV-977-work',
         output: result.outputTail,
-        withheld: result.withheld,
+        outputWithheld: result.withheld,
         link: {
           kind: 'link',
           repository: 'acme/app',
