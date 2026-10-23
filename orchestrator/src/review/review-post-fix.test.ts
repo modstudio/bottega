@@ -146,6 +146,39 @@ test('identifies an ancestor commit first and falls back to patch identity after
       branch: rebasedBranch,
     })
     expect(rebasedFacts).toMatchObject({ reviewedTip: rebasedReviewed })
+    git(repo, 'update-ref', pinRef(rebasedRunId), rebasedReviewed)
+    database.query('UPDATE run SET review_ref=? WHERE record_id=?').run(rebasedBranch, rebasedRunId)
+    mkdirSync(join(repo, 'critical'))
+    writeFileSync(join(repo, 'critical/fix.ts'), 'export const fixed = true\n')
+    git(repo, 'add', 'critical/fix.ts')
+    git(repo, 'commit', '-m', 'tier three fix')
+    const fixedTip = git(repo, 'rev-parse', 'HEAD')
+    const fixedFacts = gatherPostFixReviewFacts({
+      database,
+      repo,
+      to: fixedTip,
+      trunkRef: 'main',
+      project: 'fixture',
+      branch: rebasedBranch,
+    })
+    expect(fixedFacts).toMatchObject({ reviewedTip: rebasedReviewed })
+    expect(
+      postFixReviewDecision({
+        facts: fixedFacts,
+        tier: 3,
+        review: {
+          lenses: [],
+          risk: {
+            paths: [{ pattern: '^critical/', tier: 3, reason: 'critical surface' }],
+            unlisted: 2,
+          },
+        },
+      }),
+    ).toMatchObject({
+      kind: 're-lens',
+      reviewedTip: rebasedReviewed,
+      tierThreePaths: ['critical/fix.ts'],
+    })
   } finally {
     database.close()
     rmSync(repo, { recursive: true, force: true })
