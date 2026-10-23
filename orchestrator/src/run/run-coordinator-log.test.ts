@@ -41,6 +41,11 @@ describe('coordinatorErrorTail', () => {
     expect(coordinatorErrorTail(`${ROUTING_REFUSAL_MARKER}: no eligible agent\n\n${secret}`)).toBe(
       '[withheld: secret-shaped content]',
     )
+    expect(
+      coordinatorErrorTail(
+        `${ROUTING_REFUSAL_MARKER}: no eligible agent\ngrok: disabled\n${secret}`,
+      ),
+    ).toBe('[withheld: secret-shaped content]')
   })
 
   test('names an empty coordinator log', () => {

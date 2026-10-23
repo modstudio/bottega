@@ -32,11 +32,13 @@ function routingRefusalSpan(output: string): { start: number; end: number } | nu
   const start = output.indexOf(ROUTING_REFUSAL_MARKER)
   if (start < 0) return null
   const tail = output.slice(start)
-  const stackFrame = /\n[ \t]+at /.exec(tail)
-  const followingOutput = /\n[ \t]*\n(?=[ \t]*\S)/.exec(tail)
-  const boundary = [stackFrame?.index, followingOutput?.index]
-    .filter((value): value is number => value !== undefined)
-    .reduce((earliest, value) => Math.min(earliest, value), tail.length)
+  const firstLineEnd = tail.indexOf('\n')
+  if (firstLineEnd < 0) return { start, end: output.length }
+  let boundary = firstLineEnd
+  for (const match of tail.slice(firstLineEnd).matchAll(/\n([A-Za-z][A-Za-z0-9_-]*: [^\n]*)/g)) {
+    if (firstLineEnd + match.index !== boundary) break
+    boundary += match[0].length
+  }
   return { start, end: start + boundary }
 }
 
