@@ -24,14 +24,16 @@ function predictNativeMcpAttachment(input: {
   harness?: string
   transport: 'cli' | 'acp'
 }): NativeMcpAttachmentPrediction {
+  const harness = input.harness ?? input.name
+  // An ACP session launches with the launch's project selection, so a goose
+  // ACP worker reaches the project servers the way a Codex CLI worker does.
   if (input.transport === 'acp') {
+    if (harness === 'goose') return { confirmable: true, reason: null }
     return {
       confirmable: false,
-      reason:
-        'native project MCP attachment is unconfirmable: ACP session launch attaches only the ask server, not project servers',
+      reason: `native project MCP attachment is unconfirmable: ${harness} ACP launch has no verified project-server attachment`,
     }
   }
-  const harness = input.harness ?? input.name
   if (input.name === 'codex' || harness === 'grok') {
     return { confirmable: true, reason: null }
   }

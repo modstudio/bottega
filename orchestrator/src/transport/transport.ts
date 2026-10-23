@@ -4,6 +4,7 @@ import { assetPath } from '../../../shared/install-root.ts'
 import type { FailureKind } from '../failure/failure.ts'
 import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
+import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
 import type { AgentBilling, VendorUsage } from './vendor-usage.ts'
@@ -231,6 +232,8 @@ export type TransportStartOpts = {
   mcp?: boolean
   mcpServer?: string
   projectServers?: ArgvOpts['projectServers']
+  /** Project MCP servers this run attaches, and how; transports that cannot render them ignore it. */
+  projectMcpSelection?: ProjectMcpSelection | null
   trustCwd?: string
   writableRoots?: ArgvOpts['writableRoots']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']

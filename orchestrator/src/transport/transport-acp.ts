@@ -37,6 +37,7 @@ import {
   type TransportStartOpts,
   withTransportDeadline,
 } from './transport.ts'
+import { acpProjectMcpServers } from './transport-acp-mcp.ts'
 import type {
   AcpMessageUsage,
   AcpMessageUsageUpdate,
@@ -560,9 +561,19 @@ function acpUsage(response: { _meta?: unknown; usage?: unknown }): AcpTurnInput[
     : null
 }
 
-function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
-  if (opts.agent.name === 'grok' || !opts.env.BOTTEGA_RUN_ID || !opts.env.BOTTEGA_RUN_TOKEN)
-    return []
+/**
+ * The ACP session's MCP servers: the worker channel first, then the project
+ * selection. The run identity gates only the worker channel, because the ask
+ * server needs it; a registration probe carries no identity and still attaches
+ * its project servers. Grok reaches its servers through the per-run config.
+ */
+export function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
+  if (opts.agent.name === 'grok') return []
+  return [...acpWorkerChannel(opts), ...acpProjectMcpServers(opts.projectMcpSelection)]
+}
+
+function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
+  if (!opts.env.BOTTEGA_RUN_ID || !opts.env.BOTTEGA_RUN_TOKEN) return []
   if (opts.writingAcp && opts.ask?.kind === 'endpoint') {
     return [
       {

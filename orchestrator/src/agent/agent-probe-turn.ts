@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
+import { workerMcpLaunchSelection } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import type {
   AgentTransport,
@@ -142,6 +143,11 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
           }
         : {}),
       mcp: input.mcp ?? false,
+      projectMcpSelection: input.mcp
+        ? // The MCP probe turn attaches its minted stdio server directly, so it
+          // asks through the one launch-selection decision, in the writing shape.
+          workerMcpLaunchSelection({ usingMcp: true, writesJob: true, callerCwd: cwd, cwd })
+        : null,
       env: environment,
     })
     const draining = drainTransportEvents(handle.events())

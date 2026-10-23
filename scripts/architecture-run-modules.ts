@@ -25,6 +25,18 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/run/run-mcp-launch-scope.ts',
+    allowed: [
+      '../agent/agents.ts',
+      '../mcp/mcp-probe.ts',
+      '../project/projects.ts',
+      '../sandbox/codex-mcp-scope.ts',
+      '../sandbox/project-mcp-scope.ts',
+      './run-mcp-mode.ts',
+      './run-worker-home.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/run/stopped-worktree-decision.ts',
     allowed: [],
   },

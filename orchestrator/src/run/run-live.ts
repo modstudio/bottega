@@ -49,6 +49,7 @@ import {
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
+import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import {
   EMPTY_VENDOR_USAGE,
@@ -315,6 +316,7 @@ export type LiveInput = {
   usingMcp: boolean
   mcpServerName: string | null
   codexMcpScope: { servers: Record<string, CodexMcpServer> } | null
+  projectMcpSelection: ProjectMcpSelection | null
   mcpTrustGranted: boolean
   writableRoots: string[]
   gitConfigEnvironment: Record<string, string> | undefined
@@ -610,7 +612,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       checkpointMessages,
       prompt,
     )
-    const checkpointNotices = boardDelivery.notices
     prompt = boardDelivery.prompt
     const startOpts: TransportStartOpts = {
       agent: a,
@@ -635,6 +636,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
       projectServers: codexMcpScope?.servers,
+      projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
       gitConfigEnvironment,
@@ -851,7 +853,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     await recordInitialDeliveries(
       claim.id,
       checkpointMessages.map((message) => message.id),
-      [...initialBoardNoticeIds, ...checkpointNotices.map((notice) => notice.id)],
+      [...initialBoardNoticeIds, ...boardDelivery.notices.map((notice) => notice.id)],
     )
     const collected = await Promise.race([handle.collect(), forcedCollect])
     workerEvents = collected.events.filter(
