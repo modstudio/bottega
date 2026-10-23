@@ -42,7 +42,7 @@ export type PostFixReviewDecision =
   | {
       kind: 'no-round-needed'
       reviewNumber: number
-      reviewedTip: string
+      reviewedTip: string | null
       tierThreePaths: []
       applicability: ApplicableReview
     }
@@ -231,11 +231,20 @@ export function postFixReviewDecision(input: {
 }): PostFixReviewDecision {
   if (!input.facts.completed) return { kind: 'no-completed-round' }
   const { completed, reviewedTip, fixFiles } = input.facts
+  if (input.tier !== POST_FIX_RELENS_TIER) {
+    return {
+      kind: 'no-round-needed',
+      reviewNumber: completed.number,
+      reviewedTip,
+      tierThreePaths: [],
+      applicability: applicableReview(0, [], input.review),
+    }
+  }
   if (!reviewedTip || !fixFiles) {
     return { kind: 'reviewed-tip-unidentified', reviewNumber: completed.number }
   }
   const tierThreePaths = tierThreeRiskPaths(fixFiles, input.review?.risk)
-  if (input.tier !== POST_FIX_RELENS_TIER || tierThreePaths.length === 0) {
+  if (tierThreePaths.length === 0) {
     return {
       kind: 'no-round-needed',
       reviewNumber: completed.number,
