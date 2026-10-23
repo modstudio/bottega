@@ -15,15 +15,37 @@ import {
 
 describe('dependency installation', () => {
   test('a borrowed reader uses its HEAD as the provisioning base', () => {
-    expect(dependencyProvisioningBase(true, false)).toBe('head')
+    expect(dependencyProvisioningBase({ borrowedCheckout: true })).toEqual({ kind: 'head' })
   })
 
-  test('a linked writer uses the registered landing branch merge base', () => {
-    expect(dependencyProvisioningBase(false, true)).toBe('registered-landing-merge-base')
+  test('a linked writer uses the registered remote landing branch merge base', () => {
+    expect(
+      dependencyProvisioningBase({
+        borrowedCheckout: false,
+        landingBranch: 'stable',
+        remoteLandingRefResolved: true,
+      }),
+    ).toEqual({ kind: 'merge-base', landingRef: 'origin/stable' })
+  })
+
+  test('a linked writer falls back to the registered local landing branch', () => {
+    expect(
+      dependencyProvisioningBase({
+        borrowedCheckout: false,
+        landingBranch: 'stable',
+        remoteLandingRefResolved: false,
+      }),
+    ).toEqual({ kind: 'merge-base', landingRef: 'stable' })
   })
 
   test('a linked writer refuses an unreadable registered landing branch', () => {
-    expect(dependencyProvisioningBase(false, false)).toBe('unresolved')
+    expect(
+      dependencyProvisioningBase({
+        borrowedCheckout: false,
+        landingBranch: null,
+        remoteLandingRefResolved: false,
+      }),
+    ).toEqual({ kind: 'unresolved' })
   })
 
   test("a worker keeps using its base when main's lockfile advances", () => {

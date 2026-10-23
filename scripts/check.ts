@@ -336,16 +336,21 @@ function provisionedLockfile(): Buffer | null {
   const mainCheckout = mainCheckoutOf(root)
   if (!mainCheckout) return null
   const borrowedCheckout = borrowedCheckoutOf(root) !== null
-  const landingBranch = registeredLandingBranch(mainCheckout)
-  const baseChoice = dependencyProvisioningBase(borrowedCheckout, landingBranch !== null)
-  if (baseChoice === 'unresolved') return null
-  if (baseChoice === 'head') return gitOutput(root, ['show', 'HEAD:bun.lock'])
-  if (!landingBranch) return null
-  const remoteLanding = `origin/${landingBranch}`
-  const landingRef = gitOutput(root, ['rev-parse', '--verify', remoteLanding])
-    ? remoteLanding
-    : landingBranch
-  const base = gitOutput(root, ['merge-base', 'HEAD', landingRef])?.toString().trim()
+  const baseChoice = borrowedCheckout
+    ? dependencyProvisioningBase({ borrowedCheckout: true })
+    : (() => {
+        const landingBranch = registeredLandingBranch(mainCheckout)
+        return dependencyProvisioningBase({
+          borrowedCheckout: false,
+          landingBranch,
+          remoteLandingRefResolved:
+            landingBranch !== null &&
+            gitOutput(root, ['rev-parse', '--verify', `origin/${landingBranch}`]) !== null,
+        })
+      })()
+  if (baseChoice.kind === 'unresolved') return null
+  if (baseChoice.kind === 'head') return gitOutput(root, ['show', 'HEAD:bun.lock'])
+  const base = gitOutput(root, ['merge-base', 'HEAD', baseChoice.landingRef])?.toString().trim()
   if (!base) return null
   // The tracked writer recipe runs bun install after creating the tree at this base. Reading the
   // base commit keeps that provisioning source stable when the main checkout advances later.

@@ -33,15 +33,30 @@ export type DependencyInstallDecision =
   | 'refuse-missing-node-modules'
   | 'refuse-unresolved-provisioning-source'
 
-export type DependencyProvisioningBase = 'head' | 'registered-landing-merge-base' | 'unresolved'
+export type DependencyProvisioningBaseFacts =
+  | { borrowedCheckout: true }
+  | {
+      borrowedCheckout: false
+      landingBranch: string | null
+      remoteLandingRefResolved: boolean
+    }
+export type DependencyProvisioningBase =
+  | { kind: 'head' }
+  | { kind: 'merge-base'; landingRef: string }
+  | { kind: 'unresolved' }
 
 /** Select the commit whose dependencies the worktree recipe provisioned. */
 export function dependencyProvisioningBase(
-  borrowedCheckout: boolean,
-  landingBranchResolved: boolean,
+  facts: DependencyProvisioningBaseFacts,
 ): DependencyProvisioningBase {
-  if (borrowedCheckout) return 'head'
-  return landingBranchResolved ? 'registered-landing-merge-base' : 'unresolved'
+  if (facts.borrowedCheckout) return { kind: 'head' }
+  if (!facts.landingBranch) return { kind: 'unresolved' }
+  return {
+    kind: 'merge-base',
+    landingRef: facts.remoteLandingRefResolved
+      ? `origin/${facts.landingBranch}`
+      : facts.landingBranch,
+  }
 }
 
 /**
