@@ -2,18 +2,14 @@
 /** Derives windowed host pressure and wait cost from recorded plain observations. */
 
 import type { Database } from 'bun:sqlite'
+import { type ContentionWait, loadContentionWaits } from '../database/contention.ts'
 import { nearestRankPercentile } from '../state/statistics.ts'
 import type { PressureSample } from './host-pressure-decision.ts'
 import { loadHostPressureSamples } from './host-pressure-service.ts'
 
 export type HostPressureWindow = { start: string; end: string }
 
-export type HostPressureContention = {
-  at: string
-  resourceKind: string
-  resourceKey: string
-  durationMs: number | null
-}
+export type HostPressureContention = ContentionWait
 
 const inWindow = (at: number, window: HostPressureWindow) =>
   at >= Date.parse(window.start) && at < Date.parse(window.end)
@@ -41,6 +37,14 @@ export function hostPressureReport(
   return {
     window,
     sampleCount: windowSamples.length,
+    sampleSpan: windowSamples.length
+      ? {
+          start: new Date(
+            Math.min(...windowSamples.map((sample) => sample.sampledAt)),
+          ).toISOString(),
+          end: new Date(Math.max(...windowSamples.map((sample) => sample.sampledAt))).toISOString(),
+        }
+      : null,
     loadAveragePerCpu: {
       median: nearestRankPercentile(loadPerCpu, 0.5),
       p90: nearestRankPercentile(loadPerCpu, 0.9),
@@ -69,23 +73,11 @@ export function loadHostPressureReport(
   windows: { currentWindow: HostPressureWindow; previousWindow: HostPressureWindow },
 ) {
   const samples = loadHostPressureSamples(database, Date.parse(windows.currentWindow.end))
-  const contentions = database
-    .query(
-      `SELECT at,resource_kind,resource_key,duration_ms FROM contention
-       WHERE event_kind='wait' AND at>=? AND at<? ORDER BY at,record_id`,
-    )
-    .all(windows.previousWindow.start, windows.currentWindow.end) as Array<{
-    at: string
-    resource_kind: string
-    resource_key: string
-    duration_ms: number | null
-  }>
-  const rows = contentions.map((row) => ({
-    at: row.at,
-    resourceKind: row.resource_kind,
-    resourceKey: row.resource_key,
-    durationMs: row.duration_ms,
-  }))
+  const rows = loadContentionWaits(
+    database,
+    windows.previousWindow.start,
+    windows.currentWindow.end,
+  )
   return {
     current: hostPressureReport(samples, rows, windows.currentWindow),
     previous: hostPressureReport(samples, rows, windows.previousWindow),

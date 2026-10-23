@@ -44,6 +44,10 @@ test('host pressure derives nearest-rank load, pressure shares, and recorded wai
     window,
   )
   expect(report.sampleCount).toBe(3)
+  expect(report.sampleSpan).toEqual({
+    start: '2026-10-01T01:00:00.000Z',
+    end: '2026-10-01T03:00:00.000Z',
+  })
   expect(report.loadAveragePerCpu).toEqual({ median: 1, p90: 2 })
   expect(report.pressureLevels).toEqual([
     { level: 'normal', count: 1, share: 1 / 3 },

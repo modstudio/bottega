@@ -16,8 +16,8 @@ import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { bucketThrottles, type ThrottleBucket } from './throttle-health.ts'
 
 const HEALTH_DEFAULT_DAYS = 14
-const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
-type HealthClass = FailureKind | 'stale' | 'stopped'
+export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
+type HealthClass = FailureKind | 'stale'
 
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
@@ -63,12 +63,23 @@ export type HealthRunRow = {
   work_preserved: number
 }
 
-export const healthClassOf = (row: HealthRunRow): HealthClass | null =>
+const healthClassOf = (row: HealthRunRow): HealthClass | null =>
   row.status === 'stale' || row.status === 'stopped'
     ? row.status
     : row.failure_kind && FAILURE_KINDS.includes(row.failure_kind)
       ? row.failure_kind
       : null
+
+export function healthClassTotals(rows: readonly HealthRunRow[], classes: readonly HealthClass[]) {
+  return classes.map((kind) => {
+    const matching = rows.filter((row) => healthClassOf(row) === kind)
+    return {
+      kind,
+      count: matching.length,
+      totalTimeMs: matching.reduce((sum, row) => sum + Math.max(0, row.latency_ms ?? 0), 0),
+    }
+  })
+}
 
 function falseVerdictRows(database: Database, runs: HealthRunRow[]): HealthVerdictRow[] {
   const cleared = database
@@ -129,9 +140,9 @@ export function harnessHealth(
   const dayKeys = Array.from({ length: days }, (_, offset) =>
     new Date(firstDay.getTime() + offset * 86_400_000).toISOString().slice(0, 10),
   )
-  const classes = HEALTH_CLASSES.map((kind): HealthClassRow => {
+  const classTotals = healthClassTotals(runs, HEALTH_CLASSES)
+  const classes = classTotals.map(({ kind, count, totalTimeMs }): HealthClassRow => {
     const matching = runs.filter((row) => healthClassOf(row) === kind)
-    const totalTimeMs = matching.reduce((sum, row) => sum + Math.max(0, row.latency_ms ?? 0), 0)
     const grouped = new Map<
       string,
       { count: number; exampleRunRecordId: string; exampleRunNumber: number }
@@ -158,7 +169,7 @@ export function harnessHealth(
         : undefined
     return {
       kind,
-      count: matching.length,
+      count,
       totalTimeMs,
       workPreserved: matching.filter((row) => row.work_preserved === 1).length,
       ...(reclaimedMs !== undefined ? { reclaimedMs } : {}),

@@ -2,23 +2,14 @@
 /** Reuses health failure classification over an explicitly bounded run window. */
 
 import type { Database } from 'bun:sqlite'
-import { type HealthRunRow, healthClassOf } from './health.ts'
+import { HEALTH_CLASSES, type HealthRunRow, healthClassTotals } from './health.ts'
 
 export type WastedTimeWindow = { start: string; end: string }
-
-const WASTED_TIME_CLASSES = ['timeout', 'quota', 'auth', 'capacity', 'stopped'] as const
 
 export function wastedTimeReport(rows: readonly HealthRunRow[], window: WastedTimeWindow) {
   return {
     window,
-    classes: WASTED_TIME_CLASSES.map((kind) => {
-      const matching = rows.filter((row) => healthClassOf(row) === kind)
-      return {
-        kind,
-        count: matching.length,
-        totalTimeMs: matching.reduce((sum, row) => sum + Math.max(0, row.latency_ms ?? 0), 0),
-      }
-    }),
+    classes: healthClassTotals(rows, HEALTH_CLASSES),
   }
 }
 

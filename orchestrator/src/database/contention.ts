@@ -59,6 +59,13 @@ type ContentionRow = {
   at: string
 }
 
+export type ContentionWait = {
+  at: string
+  resourceKind: ResourceKind
+  resourceKey: string
+  durationMs: number | null
+}
+
 const emptyContention = (): ContentionSummary => ({
   resources: RESOURCE_KINDS.map((kind) => ({
     kind,
@@ -142,4 +149,23 @@ export function summarizeContention(d: Database, from: string): ContentionSummar
     resources,
     sessions: [...sessions.values()].sort((a, b) => a.sessionId.localeCompare(b.sessionId)),
   }
+}
+
+export function loadContentionWaits(d: Database, from: string, until: string): ContentionWait[] {
+  if (!contentionTableExists(d)) return []
+  const rows = d
+    .query(
+      `SELECT at,resource_kind,resource_key,duration_ms FROM contention
+       WHERE event_kind='wait' AND at>=? AND at<? ORDER BY at,record_id`,
+    )
+    .all(from, until) as Pick<
+    ContentionRow,
+    'at' | 'resource_kind' | 'resource_key' | 'duration_ms'
+  >[]
+  return rows.map((row) => ({
+    at: row.at,
+    resourceKind: row.resource_kind,
+    resourceKey: row.resource_key,
+    durationMs: row.duration_ms,
+  }))
 }
