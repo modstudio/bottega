@@ -448,24 +448,30 @@ export function reapStale(
       const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
       const baseError = `abandoned: process gone, no terminal state recorded${surviving}`
       const reason = deadRunReason(row) + surviving
-      writeTransaction(() => {
-        if (update.run(baseError, id).changes !== 1) return
-        const sharedGitConfigHeader = checkSharedGitConfig({
-          runId: id,
-          job: row.job,
-          worktree: row.worktree,
-        })
-        if (sharedGitConfigHeader) {
-          d.query("UPDATE run SET error=error || '\n' || ? WHERE record_id=?").run(
-            sharedGitConfigHeader,
-            id,
-          )
-        }
+      const claimed = writeTransaction(() => {
+        if (update.run(baseError, id).changes !== 1) return false
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', reason, d)
         closeRunChainQuestions(d, authority.rootId, QUESTION_CLOSE_CHAIN_STALE)
         enqueueRunRecord(d, id, localMachineId, finishedAt)
+        return true
       }, d)
+      if (!claimed) continue
+      // The check spawns git, so it runs after the claim commits rather than holding the write lock.
+      const sharedGitConfigHeader = checkSharedGitConfig({
+        runId: id,
+        job: row.job,
+        worktree: row.worktree,
+      })
+      if (sharedGitConfigHeader) {
+        writeTransaction(() => {
+          d.query("UPDATE run SET error=error || '\n' || ? WHERE record_id=?").run(
+            sharedGitConfigHeader,
+            id,
+          )
+          enqueueRunRecord(d, id, localMachineId, finishedAt)
+        }, d)
+      }
     }
   }
   finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
