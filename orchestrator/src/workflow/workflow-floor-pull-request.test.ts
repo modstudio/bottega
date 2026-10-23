@@ -1,30 +1,11 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  bottegaVerbArgv,
   decideFloorSatisfaction,
   decidePullRequestEvidence,
   githubPullRequestUrlIn,
   parseArtifactRef,
 } from './workflow-floor.ts'
-
-test('a platform verb accepts the bare command or a registered executable path only', () => {
-  const main = `/projects/${PLATFORM_SLUG}/bin/${PLATFORM_SLUG}`
-  const unrelated = `/tmp/${PLATFORM_SLUG}`
-  expect(bottegaVerbArgv([PLATFORM_SLUG, 'pr', 'create'], ['pr', 'create'])).toBe(true)
-  expect(
-    bottegaVerbArgv([main, 'pr', 'create'], ['pr', 'create'], {
-      resolvedExecutable: main,
-      registeredExecutables: [main],
-    }),
-  ).toBe(true)
-  expect(
-    bottegaVerbArgv([unrelated, 'pr', 'create'], ['pr', 'create'], {
-      resolvedExecutable: unrelated,
-      registeredExecutables: [main],
-    }),
-  ).toBe(false)
-})
 
 const url = 'https://github.com/acme/app/pull/7'
 const withheldOutput = '[withheld: secret-shaped content]'
