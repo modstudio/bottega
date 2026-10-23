@@ -351,6 +351,17 @@ export function writingAcpWritableRoots(
   return [resolve(worktree), resolve(scratchDir), resolve(runHarnessStateDir(runtimeDir))]
 }
 
+/**
+ * Paths a writing ACP run's sandbox profile denies writes to, on top of whatever
+ * the readonly-lens base denies. The linked-worktree git pointer lives here: a
+ * write to it would let the worker choose which repository the orchestrator's
+ * git operations resolve, so it is carved out of the writer's writable worktree.
+ * The SRT profile and the orchestrator-served ACP file write read this one source.
+ */
+export function writingAcpDenyWrite(worktree: string): string[] {
+  return [join(resolve(worktree), '.git')]
+}
+
 /** Read-only visibility with writes limited to one writing run's owned paths. */
 export function writerProfile(input: {
   worktree: string
@@ -389,7 +400,7 @@ export function writerProfile(input: {
     filesystem: {
       ...profile.filesystem,
       allowWrite,
-      denyWrite: [...profile.filesystem.denyWrite, join(worktree, '.git')],
+      denyWrite: [...profile.filesystem.denyWrite, ...writingAcpDenyWrite(worktree)],
     },
   }
 }

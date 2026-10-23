@@ -18,7 +18,9 @@ import {
 } from './setup-planner.ts'
 
 const applySetupActions = (actions: SetupAction[], service: SetupProjectService) =>
-  applySetupActionsWithService(actions, service, { migrateEnvironment: async () => null })
+  applySetupActionsWithService(actions, service, {
+    migrateEnvironment: async () => ({ status: 'unchanged', message: null }),
+  })
 
 const temporary: string[] = []
 afterEach(() => {

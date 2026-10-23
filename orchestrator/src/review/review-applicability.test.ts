@@ -3,7 +3,7 @@ import {
   applicablePostFixReview,
   applicableReview,
   applicableReviewForChange,
-  pathScopedLenses,
+  lensesSelectingPaths,
 } from './review-applicability.ts'
 
 describe('applicable review lenses', () => {
@@ -29,8 +29,16 @@ describe('applicable review lenses', () => {
     ])
   })
 
-  test('identifies only lenses declared with path scopes', () => {
-    expect(pathScopedLenses(review)).toEqual(['migration-safety', 'correctness'])
+  test('maps scoped lenses to the paths that select them', () => {
+    expect(
+      lensesSelectingPaths(
+        ['shared/record/migrations/next/migration.sql', 'orchestrator/src/review.ts', 'docs/a.md'],
+        review,
+      ),
+    ).toEqual({
+      'migration-safety': ['shared/record/migrations/next/migration.sql'],
+      correctness: ['orchestrator/src/review.ts'],
+    })
   })
 
   test('tier zero is empty', () => {

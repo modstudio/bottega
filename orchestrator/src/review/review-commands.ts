@@ -12,7 +12,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { type ApplicableReview, selectReviewApplicability } from './review-applicability.ts'
+import { type ReviewFunnelPlan, selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
@@ -47,9 +47,9 @@ function roundApplicabilityForTierOutput(input: {
   branch: string
   postFix: ReturnType<typeof postFixReviewDecision>
   review: Parameters<typeof reviewTierForRange>[3]
-}): ApplicableReview {
+}): ReviewFunnelPlan {
   const relevant = selectReviewApplicability(input.output, input.output.lenses)
-  if (!input.identity) return relevant
+  if (!input.identity) return { round: relevant, admissionRequired: relevant }
   return roundApplicabilityForChange({
     database: db(),
     group: {
@@ -256,7 +256,7 @@ function reviewTierOutput(value: string, cwd: string) {
     tier: output.tier,
     review: project.settings.review,
   })
-  const roundApplicability = roundApplicabilityForTierOutput({
+  const reviewPlan = roundApplicabilityForTierOutput({
     output,
     identity,
     project: project.name,
@@ -267,23 +267,23 @@ function reviewTierOutput(value: string, cwd: string) {
   const reviewBudget = reviewRoundBudgetDecision({
     tier: output.tier,
     ...branchBudget,
-    roundNeeded: roundApplicability.lenses.length > 0,
+    roundNeeded: reviewPlan.round.lenses.length > 0 || Boolean(reviewPlan.round.secondOpinion),
   })
   return {
     ...output,
-    lenses: roundApplicability.lenses,
-    secondOpinion: roundApplicability.secondOpinion,
-    lensBases: roundApplicability.lensBases,
-    secondOpinionBasis: roundApplicability.secondOpinionBasis,
+    lenses: reviewPlan.round.lenses,
+    secondOpinion: reviewPlan.round.secondOpinion,
+    lensBases: reviewPlan.round.lensBases,
+    secondOpinionBasis: reviewPlan.round.secondOpinionBasis,
     post_fix: postFix,
     review_budget: {
       ...reviewBudget,
       eligibleReviewCount: branchBudget.eligibleReviewCount,
       unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
     },
-    lens_profiles: roundApplicability.lenses.map((id) => ({
+    lens_profiles: reviewPlan.round.lenses.map((id) => ({
       id,
-      basis: roundApplicability.lensBases?.[id] ?? null,
+      basis: reviewPlan.round.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
@@ -293,11 +293,7 @@ function printReviewRoundStatus(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): void {
-  if (
-    output.lenses.length === 0 &&
-    (output.post_fix.kind === 'no-round-needed' ||
-      output.post_fix.kind === 'reviewed-tip-unidentified')
-  ) {
+  if (!output.review_budget.startsNewRound && !output.review_budget.currentChangeCounted) {
     log('no round needed: the architect reads the fix and lands it')
     return
   }
