@@ -10,7 +10,11 @@ import {
   refreshHostedBoard,
   takeHostedBoardVerificationTransition,
 } from '../board/board-hosted-cache.ts'
-import { markBoardDeliveryDelivered, pendingBoardDelivery } from '../board/board-push-service.ts'
+import {
+  deliveryWarning,
+  markBoardDeliveryDelivered,
+  pendingBoardDelivery,
+} from '../board/board-push-service.ts'
 import { requireRealSession } from '../board/board-service.ts'
 import { db, nowIso, openReadOnlyDatabase, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
@@ -305,7 +309,7 @@ async function claimMonitorNoticesWithHosted(
           }),
         ),
       ],
-      warning: [overflow, board.warning, verification].filter(Boolean).join(' ') || null,
+      warning: deliveryWarning(overflow, board.warning, verification),
     }
   } finally {
     database.close()

@@ -135,7 +135,7 @@ test('a read-only delivery defers a reply successor instead of claiming it', () 
   }
   expect(selectPushNotices('2026-10-16T12:00:00.000Z', [successor], clock, false)).toEqual({
     notices: [],
-    withheldOlderCount: 1,
+    withheldOlderCount: 0,
     deferredReplySuccessorCount: 1,
   })
 })

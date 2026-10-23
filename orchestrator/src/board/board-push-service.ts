@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
+import { deliveryWarning } from './board-delivery.ts'
 import {
   BOARD_RECEIPT_WRITE_BUDGET_MS,
   cachedAudienceAtPosting,
@@ -15,7 +16,7 @@ import {
 } from './board-hosted-cache.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { requireRealSession } from './board-policy.ts'
-import { boardPushDecision } from './board-push-policy.ts'
+import { boardPushDecision, deferredReplySuccessorWarning } from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
   noteBoardReachRecordingFailure,
@@ -50,10 +51,7 @@ type DeliveryInput = {
   claimReplySuccessors?: boolean
 }
 
-const deferredReplySuccessorWarning = (count: number): string | null =>
-  count > 0
-    ? `${count} report reply successor${count === 1 ? '' : 's'} require a writable claim and were deferred by this read-only delivery.`
-    : null
+export { deliveryWarning }
 
 const receiptAt = (database: Database, table: string, id: string | number, session: string) =>
   (database
@@ -236,16 +234,13 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     delivery: selected.messages,
     overflow: selected.overflow,
     pendingAcknowledgements,
-    warning:
-      [
-        localPush.warning,
-        hostedPush.warning,
-        deferredReplySuccessorWarning(
-          localPush.deferredReplySuccessorCount + hostedPush.deferredReplySuccessorCount,
-        ),
-      ]
-        .filter(Boolean)
-        .join(' ') || null,
+    warning: deliveryWarning(
+      localPush.warning,
+      hostedPush.warning,
+      deferredReplySuccessorWarning(
+        localPush.deferredReplySuccessorCount + hostedPush.deferredReplySuccessorCount,
+      ),
+    ),
   }
 }
 

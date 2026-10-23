@@ -160,10 +160,15 @@ export function selectPushNotices<
   })
   return {
     notices,
-    withheldOlderCount: candidates.length - notices.length,
+    withheldOlderCount: candidates.length - notices.length - deferredReplySuccessorCount,
     deferredReplySuccessorCount,
   }
 }
+
+export const deferredReplySuccessorWarning = (count: number): string | null =>
+  count > 0
+    ? `${count} report reply successor${count === 1 ? '' : 's'} require a writable claim and were deferred by this read-only delivery.`
+    : null
 
 export const missingReaderStartWarning = (reader: string): string =>
   `Board reader ${reader} has no recorded start; no messages were withheld by age.`
