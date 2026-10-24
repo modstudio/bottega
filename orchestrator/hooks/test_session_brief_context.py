@@ -483,14 +483,15 @@ class MonitorDelivery(unittest.TestCase):
 
     def test_an_id_the_acknowledgement_list_cannot_carry_is_named_while_the_rest_goes_out(self):
         unnameable = self.notice("board:\u00007")
-        rows = [self.notice(), unnameable, self.notice("board:8,9")]
+        empty = self.notice("")
+        rows = [self.notice(), unnameable, self.notice("board:8,9"), empty]
 
         delivered, warning, refused = session_brief._monitor_delivery(
             json.dumps(rows), "session-1"
         )
 
         self.assertEqual((delivered, warning), ([self.notice()], None))
-        self.assertEqual(refused, ["board: 7", "board:8 9"])
+        self.assertEqual(refused, ["board: 7", "board:8 9", "(empty notice id)"])
 
     def test_rejects_invalid_shape(self):
         with self.assertRaisesRegex(ValueError, "invalid monitor notice JSON"):

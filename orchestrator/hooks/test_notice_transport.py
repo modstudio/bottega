@@ -43,7 +43,7 @@ class TransportableNoticeId(unittest.TestCase):
 
 
 class RefusedNoticeName(unittest.TestCase):
-    def test_a_refused_id_is_named_by_its_sanitised_text(self):
+    def test_a_refused_id_is_named_by_its_sanitized_text(self):
         self.assertEqual(
             notice_transport.refused_notice_name({"noticeId": "board:\x007"}, 0),
             "board: 7",

@@ -9,8 +9,8 @@ source name or an identifier shape.
 What a hook does own is transport: a notice row is tab-separated, the
 acknowledgement list is comma-separated, and a shell cannot carry NUL, so an id
 holding a control character, DEL or a comma cannot survive the trip unchanged and
-would be acknowledged as a different id. Exactly that is refused here, by name,
-because one hook's copy of the rule and the other's had already drifted apart.
+would be acknowledged as a different id. Exactly that is refused here, by name, so
+the heartbeat and the session-start hook cannot disagree about it.
 
 Run as a script, this module renders the refusals in an acknowledgement's `--json`
 result, one `<id> (<reason>)` entry per line, so a shell hook can read them without
@@ -18,8 +18,6 @@ carrying its own parser:
 
     python3 notice_transport.py refusals <acknowledgement.json
 """
-
-from __future__ import annotations
 
 import json
 import re
@@ -46,7 +44,7 @@ def transportable_notice_id(value):
 
 
 def refused_notice_name(row, index):
-    """What to call a refused id: its sanitised text, or the position it held.
+    """What to call a refused id: its sanitized text, or the position it held.
 
     An id that is not a string has no text to report, so it is named by its position
     in the batch or by its JSON form. A name that renders empty is called empty.
