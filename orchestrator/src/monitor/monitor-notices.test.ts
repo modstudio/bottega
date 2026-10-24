@@ -18,6 +18,7 @@ import {
   claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
 } from './monitor-notices.ts'
+import type { MonitorNotice } from './monitor-types.ts'
 
 const createdAt = new Date(Date.now() - 1_000).toISOString()
 
@@ -377,13 +378,81 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
       [`condition:${condition}`, `board:${local.number}`, 'board:not-an-id'],
       new Date().toISOString(),
     ),
-  ).resolves.toBeUndefined()
+  ).resolves.toEqual({
+    acknowledged: [`condition:${condition}`, `board:${local.number}`, 'board:not-an-id'],
+    refused: [],
+    boardIds: [String(local.number), 'not-an-id'],
+  })
   expect(hostedCalls).toBe(0)
   expect(
     db().query('SELECT delivered_at FROM monitor_condition WHERE number=?').get(condition),
   ).toEqual({
     delivered_at: expect.any(String),
   })
+  expect(
+    db()
+      .query(
+        'SELECT delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(local.recordId, session),
+  ).toEqual({ delivered_at: expect.any(String) })
+})
+
+test('one refused id is named while the rest of its batch is acknowledged', async () => {
+  const session = 'monitor-partial-ack-reader'
+  db().query('DELETE FROM schema_meta WHERE key=?').run(BOARD_HOSTED_ADOPTED_KEY)
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
+  const local = postNotice(
+    {
+      audience: `session:${session}`,
+      title: 'Partial acknowledgement',
+      body: 'partial ack body',
+      ackRequired: false,
+    },
+    {},
+    Date.now(),
+  )
+  let hostedCalls = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    putBoardReceipt: async () => {
+      hostedCalls++
+      throw new Error('must not call')
+    },
+  })
+  const landing = newRecordId()
+
+  const acknowledgement = await markMonitorNoticesDeliveredWithHosted(
+    session,
+    [
+      'condition:1',
+      `landing:${landing}`,
+      `board:${local.number}`,
+      'landing:not-a-uuid',
+      'condition:007',
+      'not-a-source:1' as MonitorNotice['noticeId'],
+    ],
+    new Date().toISOString(),
+  )
+
+  expect(acknowledgement).toEqual({
+    acknowledged: ['condition:1', `landing:${landing}`, `board:${local.number}`],
+    refused: [
+      { id: 'landing:not-a-uuid', reason: 'a landing id is a version-7 UUID' },
+      { id: 'condition:007', reason: 'a condition id is a positive integer' },
+      {
+        id: 'not-a-source:1',
+        reason: 'a notice id is <source>:<identifier> with source condition, landing or board',
+      },
+    ],
+    boardIds: [String(local.number)],
+  })
+  expect(hostedCalls).toBe(0)
   expect(
     db()
       .query(

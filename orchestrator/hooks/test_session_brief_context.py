@@ -142,7 +142,8 @@ class AssembleAdditionalContext(unittest.TestCase):
             stdout=json.dumps([{"id": hosted, "text": "hosted notice", "oneLine": "hosted"}]),
         )
         self.assertEqual(session_brief._board_start_slice(completed)[1], [hosted])
-        self.assertTrue(session_brief._valid_notice_id(f"board:{hosted}"))
+        self.assertTrue(session_brief._transportable_notice_id(f"board:{hosted}"))
+        self.assertFalse(session_brief._transportable_notice_id("board:\u00007"))
 
     def test_board_start_slice_accepts_delivery_envelope_and_renders_warning(self):
         completed = SimpleNamespace(
@@ -439,20 +440,20 @@ class WorkerSessionSkip(unittest.TestCase):
 
 
 class MonitorDelivery(unittest.TestCase):
-    def notice(self):
+    def notice(self, notice_id="board:7"):
         return {
             "kind": "board-notice",
-            "subject": "board:7",
-            "label": "board:7",
+            "subject": notice_id,
+            "label": notice_id,
             "detail": "notice",
-            "noticeId": "board:7",
+            "noticeId": notice_id,
             "ownerSession": "session-1",
         }
 
     def test_accepts_old_list_shape(self):
         self.assertEqual(
             session_brief._monitor_delivery(json.dumps([self.notice()]), "session-1"),
-            ([self.notice()], None),
+            ([self.notice()], None, []),
         )
 
     def test_accepts_new_envelope_shape(self):
@@ -461,7 +462,7 @@ class MonitorDelivery(unittest.TestCase):
                 json.dumps({"notices": [self.notice()], "warning": "cache unverified"}),
                 "session-1",
             ),
-            ([self.notice()], "cache unverified"),
+            ([self.notice()], "cache unverified", []),
         )
 
     def test_warning_only_has_no_notice_to_acknowledge(self):
@@ -469,12 +470,67 @@ class MonitorDelivery(unittest.TestCase):
             session_brief._monitor_delivery(
                 json.dumps({"notices": [], "warning": "cache unverified"}), "session-1"
             ),
-            ([], "cache unverified"),
+            ([], "cache unverified", []),
         )
+
+    def test_the_notice_id_grammar_belongs_to_the_acknowledgement(self):
+        landing = "01990000-0000-7000-8000-000000000099"
+        for notice_id in (f"landing:{landing}", "landing:7", "board:7", "condition:007"):
+            self.assertEqual(
+                session_brief._monitor_delivery(
+                    json.dumps([self.notice(notice_id)]), "session-1"
+                ),
+                ([self.notice(notice_id)], None, []),
+            )
+
+    def test_an_id_the_acknowledgement_list_cannot_carry_is_named_while_the_rest_goes_out(self):
+        unnameable = self.notice("board:\u00007")
+        rows = [self.notice(), unnameable, self.notice("board:8,9")]
+
+        delivered, warning, refused = session_brief._monitor_delivery(
+            json.dumps(rows), "session-1"
+        )
+
+        self.assertEqual((delivered, warning), ([self.notice()], None))
+        self.assertEqual(refused, ["board: 7", "board:8 9"])
 
     def test_rejects_invalid_shape(self):
         with self.assertRaisesRegex(ValueError, "invalid monitor notice JSON"):
             session_brief._monitor_delivery(json.dumps({"warning": "missing notices"}), "session-1")
+
+    def test_the_acknowledgements_refusals_are_read_from_its_json_result(self):
+        stdout = json.dumps(
+            {
+                "acknowledged": ["condition:1"],
+                "refused": [
+                    {
+                        "id": "other:7",
+                        "reason": (
+                            "a notice id is <source>:<identifier> "
+                            "with source condition, landing or board"
+                        ),
+                    },
+                    {"id": "landing:7", "reason": "a landing id is a version-7 UUID"},
+                ],
+            }
+        )
+        self.assertEqual(
+            session_brief._acknowledgement_refusals(stdout),
+            [
+                "other:7 (a notice id is <source>:<identifier> with source condition, landing or board)",
+                "landing:7 (a landing id is a version-7 UUID)",
+            ],
+        )
+        self.assertEqual(session_brief._acknowledgement_refusals(""), [])
+        self.assertEqual(session_brief._acknowledgement_refusals("not json"), [])
+
+    def test_the_acknowledgement_asks_for_the_json_result_its_refusals_are_read_from(self):
+        self.assertEqual(
+            session_brief._monitor_ack_command(
+                "/bin/bottega", [{"noticeId": "condition:1"}, {"noticeId": "board:7"}]
+            ),
+            ["/bin/bottega", "machine", "monitor", "--ack-notices", "condition:1,board:7", "--json"],
+        )
 
     def test_session_start_monitor_explicitly_skips_board_refresh(self):
         self.assertEqual(

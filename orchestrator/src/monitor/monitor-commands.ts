@@ -157,7 +157,8 @@ function deliveryAuthorized(): boolean {
 
 export async function monitorCommand(options: Options, presentation: Presentation): Promise<void> {
   if (options.lockHolder) return showLockHolder(options.json, presentation)
-  if (options.ackNotices !== undefined) return acknowledge(options.ackNotices)
+  if (options.ackNotices !== undefined)
+    return acknowledge(options.ackNotices, options.json, presentation)
   if (options.notices) return showNotices(options.json, options.skipBoardRefresh, presentation)
   if (options.history) return showHistory(options.limit, options.json, presentation)
   await runMonitor(options, presentation)
@@ -187,7 +188,7 @@ function lockCondition(report: Extract<StoreWriteLockReport, { supported: true }
   }
 }
 
-async function acknowledge(ids: string): Promise<void> {
+async function acknowledge(ids: string, json: boolean, presentation: Presentation): Promise<void> {
   const sid = sessionId()
   if (!sid)
     throw new Error(
@@ -195,7 +196,20 @@ async function acknowledge(ids: string): Promise<void> {
     )
   if (!deliveryAuthorized())
     throw new Error('monitor notice acknowledgement requires a live delivery-hook capability')
-  await markMonitorNoticesDeliveredWithHosted(sid, ids.split(',') as MonitorNotice['noticeId'][])
+  const acknowledgement = await markMonitorNoticesDeliveredWithHosted(
+    sid,
+    ids.split(',') as MonitorNotice['noticeId'][],
+  )
+  // The valid ids in the batch are acknowledged and one id the grammar refuses is
+  // named in the result, instead of costing the batch. The JSON shape is the
+  // declared surface both delivery hooks read; the human lines stay readable.
+  if (json)
+    await presentation.write(
+      `${JSON.stringify({ acknowledged: acknowledgement.acknowledged, refused: acknowledgement.refused })}\n`,
+    )
+  else
+    for (const refused of acknowledgement.refused)
+      presentation.log(`notice not acknowledged: ${refused.id} (${refused.reason})`)
 }
 
 async function showNotices(

@@ -77,6 +77,7 @@ const ALLOWED = new Set([
   'orchestrator/hooks/session-brief.py',
   'orchestrator/hooks/test-substance-guard.py',
   'orchestrator/hooks/test_heartbeat_decision.py',
+  'orchestrator/hooks/test_heartbeat_notices.py',
   'orchestrator/hooks/test_heartbeat_remind.py',
   'orchestrator/hooks/test_session_brief_context.py',
   'orchestrator/hooks/workflow-cursor-reminder.py',
