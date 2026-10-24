@@ -116,12 +116,20 @@ export function migrationDrainForUpdate(
     processStartTime(pid: number): string | null
   } = { pidAlive, processStartTime },
 ): MigrationDrain | null {
-  const marker = migrationDrain(database)
+  const stored = database
+    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+    .get(MIGRATION_DRAIN_KEY)?.value
+  const marker = stored === undefined ? null : parseMigrationDrain(stored)
   if (!marker) return null
   const liveness = migrationDrainLiveness(marker, observe)
   if (liveness.state !== 'stale') return marker
-  writeTransaction(() => {
-    database.query('DELETE FROM schema_meta WHERE key=?').run(MIGRATION_DRAIN_KEY)
+  // Remove exactly the marker classified as stale, never a replacement another
+  // update installed after this read.
+  const reclaimed = writeTransaction(() => {
+    const removed = database
+      .query('DELETE FROM schema_meta WHERE key=? AND value=?')
+      .run(MIGRATION_DRAIN_KEY, stored!)
+    if (removed.changes === 0) return false
     if (contentionTableExists(database)) {
       insertContention(database, {
         resourceKind: 'store',
@@ -130,8 +138,9 @@ export function migrationDrainForUpdate(
         cause: `reclaimed stale migration drain for ${marker.migration}: ${liveness.reason}`,
       })
     }
+    return true
   }, database)
-  return null
+  return reclaimed ? null : migrationDrain(database)
 }
 
 export function setMigrationDrain(

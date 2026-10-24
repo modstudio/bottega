@@ -60,6 +60,28 @@ describe('migration drain holder', () => {
     })
   })
 
+  test('a reclaim never removes a marker that replaced the one it judged stale', () => {
+    setMigrationDrain(db(), marker.migration, 'draining', marker)
+    const replacement = { ...marker, pid: process.pid, startTime: 'replacement birth' }
+    const current = migrationDrainForUpdate(db(), {
+      pidAlive: () => {
+        // Another update reclaims the stale marker and installs its own before
+        // this reclaim deletes.
+        db()
+          .query("UPDATE schema_meta SET value=? WHERE key='migration_drain'")
+          .run(JSON.stringify(replacement))
+        return false
+      },
+      processStartTime: () => 'unused',
+    })
+    try {
+      expect(current).toEqual(replacement)
+      expect(migrationDrain(db())).toEqual(replacement)
+    } finally {
+      db().query("DELETE FROM schema_meta WHERE key='migration_drain'").run()
+    }
+  })
+
   test('a live marker refuses a new chain but admits a resume', () => {
     setMigrationDrain(db(), marker.migration, 'draining', {
       pid: process.pid,
