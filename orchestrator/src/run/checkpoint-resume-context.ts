@@ -1,7 +1,7 @@
 // concern: checkpoint-resume-context
 /** Renders checkpoint provenance without deciding which commit the resumed tree exposes. */
 
-import type { SequencerOperation } from './checkpoint-sequencer.ts'
+import type { SequenceKind } from '../../../shared/git.ts'
 
 export type CheckpointResumeValues = {
   startCommit: string | null
@@ -13,7 +13,7 @@ export type CheckpointResumeValues = {
   } | null
   recentLog: string
   /** The git operation the resumed worktree is partway through, if any. */
-  operation: SequencerOperation | null
+  operation: SequenceKind | null
 }
 
 export function renderCheckpointResumeContext(input: CheckpointResumeValues): string | null {

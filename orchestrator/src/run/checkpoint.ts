@@ -8,20 +8,15 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { inspectCheckout, type SequenceKind } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent, recordRunWarning } from '../events.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { renderCheckpointResumeContext } from './checkpoint-resume-context.ts'
-import {
-  decideCheckpointCommit,
-  SEQUENCER_MARKER_NAMES,
-  type SequencerMarkers,
-  type SequencerOperation,
-  sequencerMarkersFrom,
-} from './checkpoint-sequencer.ts'
+import { decideCheckpointCommit } from './checkpoint-sequencer.ts'
 
 export type CheckpointContainment = {
   gitDir: string | null
@@ -103,38 +98,31 @@ export type CheckpointResult = {
   checkpointNo: number
   taskPointer: string | null
   /** The unfinished git operation that stopped this checkpoint from committing. */
-  skipped: SequencerOperation | null
+  skipped: SequenceKind | null
   error: string | null
 }
 
 /**
- * Each marker lives in the worktree's own git directory, so every name is
- * resolved through git rather than joined onto a path the caller guessed.
- * A path git reports relative to the worktree is resolved against it, because
- * the checkpoint process runs from the checkout, not the worktree.
+ * The operator line for a checkpoint that declined to commit, rendered here
+ * because the wall, the signal handler and the terminal path all report the
+ * same fact. Final names the checkpoint taken on limit or stop.
  */
-function sequencerMarkers(
-  worktree: string,
-  guardEnvironment: NodeJS.ProcessEnv,
-  containment: CheckpointContainment,
-): { markers: SequencerMarkers } | { error: string } {
-  const resolved = git(
-    worktree,
-    ['rev-parse', ...SEQUENCER_MARKER_NAMES.flatMap((name) => ['--git-path', name])],
-    guardEnvironment,
-    containment,
-  )
-  if (!resolved.ok) return { error: resolved.error }
-  const paths = resolved.out ? resolved.out.split('\n') : []
-  if (paths.length !== SEQUENCER_MARKER_NAMES.length) {
-    return {
-      error: `git rev-parse reported ${paths.length} of ${SEQUENCER_MARKER_NAMES.length} sequencer marker paths`,
-    }
-  }
-  const present = new Set(
-    SEQUENCER_MARKER_NAMES.filter((_name, index) => existsSync(resolve(worktree, paths[index]!))),
-  )
-  return { markers: sequencerMarkersFrom((marker) => present.has(marker)) }
+export function checkpointSkippedLine(
+  result: Pick<CheckpointResult, 'skipped'>,
+  input: { runId: string; final: boolean },
+): string | null {
+  if (!result.skipped) return null
+  const scope = input.final ? 'final checkpoint' : 'checkpoint'
+  return `orch: run ${input.runId} ${scope} skipped: a ${result.skipped} is in progress`
+}
+
+/** The one shape a checkpoint that committed nothing hands back. */
+function noCommitCheckpoint(
+  facts: CheckpointFacts,
+  skipped: SequenceKind | null,
+  error: string | null,
+): CheckpointResult {
+  return { created: false, commit: null, ...facts, skipped, error }
 }
 
 type CheckpointFacts = { checkpointNo: number; taskPointer: string | null }
@@ -154,14 +142,13 @@ type CheckpointRunInput = {
 /** A checkpoint that committed nothing reports through the run's event log. */
 function failedCheckpoint(runId: string, error: string, facts: CheckpointFacts): CheckpointResult {
   appendRunEvent(runId, { ts: nowIso(), type: 'text', text: `checkpoint failed: ${error}` })
-  return { created: false, commit: null, ...facts, skipped: null, error }
+  return noCommitCheckpoint(facts, null, error)
 }
 
 /** Stage the tree, commit it on the run branch, and record the checkpoint row. */
 function commitCheckpoint(input: CheckpointRunInput, facts: CheckpointFacts): CheckpointResult {
-  const refusal = (error: string): CheckpointResult => failedCheckpoint(input.runId, error, facts)
   const staged = git(input.worktree, ['add', '-A'], input.guardEnvironment, input.containment)
-  if (!staged.ok) return refusal(staged.error)
+  if (!staged.ok) return failedCheckpoint(input.runId, staged.error, facts)
   // Adjacent to commit so the checked branch is the ref the commit will move.
   const currentBranch = git(
     input.worktree,
@@ -170,8 +157,10 @@ function commitCheckpoint(input: CheckpointRunInput, facts: CheckpointFacts): Ch
     input.containment,
   )
   if (!currentBranch.ok || currentBranch.out !== input.branch) {
-    return refusal(
+    return failedCheckpoint(
+      input.runId,
       `checkpoint refused: expected branch ${input.branch}, found ${currentBranch.out || currentBranch.error}`,
+      facts,
     )
   }
   const subject = input.taskKey
@@ -183,14 +172,14 @@ function commitCheckpoint(input: CheckpointRunInput, facts: CheckpointFacts): Ch
     input.guardEnvironment,
     input.containment,
   )
-  if (!committed.ok) return refusal(committed.error)
+  if (!committed.ok) return failedCheckpoint(input.runId, committed.error, facts)
   const commit = git(
     input.worktree,
     ['rev-parse', 'HEAD'],
     input.guardEnvironment,
     input.containment,
   )
-  if (!commit.ok) return refusal(commit.error)
+  if (!commit.ok) return failedCheckpoint(input.runId, commit.error, facts)
   input.database
     .query(
       `INSERT INTO run_checkpoint (record_id,run_record_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
@@ -224,12 +213,15 @@ export function checkpointRun(input: CheckpointRunInput): CheckpointResult {
     checkpointNo: previous.n + 1,
     taskPointer: readTaskPointer(input.scratchDir),
   }
-  const refusal = (error: string): CheckpointResult => failedCheckpoint(input.runId, error, facts)
   if (
     input.containment.disableHooks &&
     (!input.containment.gitDir || !input.containment.hooksDir)
   ) {
-    return refusal('checkpoint refused: writing ACP run has incomplete checkpoint containment')
+    return failedCheckpoint(
+      input.runId,
+      'checkpoint refused: writing ACP run has incomplete checkpoint containment',
+      facts,
+    )
   }
   const dirty = git(
     input.worktree,
@@ -237,22 +229,27 @@ export function checkpointRun(input: CheckpointRunInput): CheckpointResult {
     input.guardEnvironment,
     input.containment,
   )
-  if (!dirty.ok) return refusal(dirty.error)
-  if (!dirty.out) return { created: false, commit: null, ...facts, skipped: null, error: null }
+  if (!dirty.ok) return failedCheckpoint(input.runId, dirty.error, facts)
+  if (!dirty.out) return noCommitCheckpoint(facts, null, null)
   // Before staging anything: a half-applied rebase leaves unmerged entries and
   // conflict markers, and `git add -A` would resolve the conflicts it finds.
-  const sequencer = sequencerMarkers(input.worktree, input.guardEnvironment, input.containment)
-  if ('error' in sequencer) {
-    return refusal(`checkpoint refused: could not read git's sequencer state: ${sequencer.error}`)
+  // The answer is inspectCheckout's, the same one the project register and the
+  // tree refresh read, so `git am` and bisect are skipped and named too.
+  const decision = decideCheckpointCommit(inspectCheckout(input.worktree).sequence)
+  if (decision.action === 'refuse') {
+    return failedCheckpoint(
+      input.runId,
+      "checkpoint refused: could not read git's sequencer state from the worktree",
+      facts,
+    )
   }
-  const decision = decideCheckpointCommit(sequencer.markers)
-  if (!decision.commit) {
+  if (decision.action === 'skip') {
     recordRunWarning(
       input.runId,
       `checkpoint skipped: a ${decision.operation} is in progress in the worktree; ` +
         'nothing committed, so the operation stays in the tree for the worker to finish',
     )
-    return { created: false, commit: null, ...facts, skipped: decision.operation, error: null }
+    return noCommitCheckpoint(facts, decision.operation, null)
   }
   return commitCheckpoint(input, facts)
 }
@@ -330,12 +327,10 @@ export function latestCheckpoint(
  * operation. This only shapes a resume prompt, so a state git cannot report
  * counts as no operation instead of failing the continuation.
  */
-function worktreeSequencerOperation(worktree: string | null): SequencerOperation | null {
+function worktreeSequencerOperation(worktree: string | null): SequenceKind | null {
   if (!worktree) return null
-  const sequencer = sequencerMarkers(worktree, {}, READ_ONLY_CONTAINMENT)
-  if ('error' in sequencer) return null
-  const decision = decideCheckpointCommit(sequencer.markers)
-  return decision.commit ? null : decision.operation
+  const decision = decideCheckpointCommit(inspectCheckout(worktree).sequence)
+  return decision.action === 'skip' ? decision.operation : null
 }
 
 export function checkpointResumeContext(

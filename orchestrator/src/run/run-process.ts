@@ -17,7 +17,12 @@ import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
-import { type CheckpointContainment, checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import {
+  type CheckpointContainment,
+  checkpointRun,
+  checkpointSkippedLine,
+  latestCheckpoint,
+} from './checkpoint.ts'
 import { runTestWorkerEnvironment } from './run-test-workers.ts'
 
 export function childEnv(
@@ -464,11 +469,8 @@ export function bindSignals() {
         if (result.error) {
           console.error(`orch: run ${checkpoint.runId} final checkpoint failed: ${result.error}`)
         }
-        if (result.skipped) {
-          console.error(
-            `orch: run ${checkpoint.runId} final checkpoint skipped: a ${result.skipped} is in progress`,
-          )
-        }
+        const skipped = checkpointSkippedLine(result, { runId: checkpoint.runId, final: true })
+        if (skipped) console.error(skipped)
       }
       process.exit(130)
     })

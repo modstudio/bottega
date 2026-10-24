@@ -3,70 +3,38 @@ import { afterAll, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { SequenceKind, SequenceState } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import { git, gitOk } from '../git/git-environment.ts'
 import { checkpointRun } from './checkpoint.ts'
-import {
-  decideCheckpointCommit,
-  SEQUENCER_MARKER_NAMES,
-  sequencerMarkersFrom,
-} from './checkpoint-sequencer.ts'
+import { decideCheckpointCommit } from './checkpoint-sequencer.ts'
 
-const clean = {
-  rebaseMerge: false,
-  rebaseApply: false,
-  cherryPickHead: false,
-  revertHead: false,
-  mergeHead: false,
-}
+const stopped = (kind: SequenceKind): SequenceState => ({ status: 'in-progress', kind })
 
-test('a tree with no operation in progress may be checkpointed', () => {
-  expect(decideCheckpointCommit(clean)).toEqual({ commit: true, operation: null })
+test('a checkout with no operation in progress may be checkpointed', () => {
+  expect(decideCheckpointCommit({ status: 'none' })).toEqual({ action: 'commit' })
 })
 
-test('either rebase backend stops the commit, named as a rebase', () => {
-  expect(decideCheckpointCommit({ ...clean, rebaseMerge: true })).toEqual({
-    commit: false,
-    operation: 'rebase',
-  })
-  expect(decideCheckpointCommit({ ...clean, rebaseApply: true })).toEqual({
-    commit: false,
-    operation: 'rebase',
+test('a leftover pseudo-ref over a clean tree does not stop the commit', () => {
+  // projects.ts reads residue the same way: it would block an otherwise clean tree.
+  expect(decideCheckpointCommit({ status: 'residue', kind: 'cherry-pick' })).toEqual({
+    action: 'commit',
   })
 })
 
-test('a stopped cherry-pick, revert or merge each stops the commit, named by operation', () => {
-  expect(decideCheckpointCommit({ ...clean, cherryPickHead: true })).toEqual({
-    commit: false,
-    operation: 'cherry-pick',
-  })
-  expect(decideCheckpointCommit({ ...clean, revertHead: true })).toEqual({
-    commit: false,
-    operation: 'revert',
-  })
-  expect(decideCheckpointCommit({ ...clean, mergeHead: true })).toEqual({
-    commit: false,
-    operation: 'merge',
-  })
+test('every unfinished operation stops the commit, named by its own kind', () => {
+  const kinds: SequenceKind[] = ['merge', 'cherry-pick', 'rebase', 'revert', 'am', 'bisect']
+  for (const kind of kinds) {
+    // git am reports as am and bisect as bisect: the answer is git's, not a
+    // second list of markers that can disagree with it.
+    expect(decideCheckpointCommit(stopped(kind))).toEqual({ action: 'skip', operation: kind })
+  }
 })
 
-test('an unfinished rebase outranks the markers another operation may also leave', () => {
-  expect(
-    decideCheckpointCommit({ ...clean, rebaseMerge: true, cherryPickHead: true, mergeHead: true }),
-  ).toEqual({ commit: false, operation: 'rebase' })
-})
-
-test("every marker git can leave is read, and git's name reaches its own fact", () => {
-  const asked: string[] = []
-  const markers = sequencerMarkersFrom((marker) => {
-    asked.push(marker)
-    return marker === 'CHERRY_PICK_HEAD'
-  })
-
-  expect([...asked].sort()).toEqual([...SEQUENCER_MARKER_NAMES].sort())
-  expect(markers).toEqual({ ...clean, cherryPickHead: true })
+test('a state git cannot report refuses instead of committing', () => {
+  expect(decideCheckpointCommit({ status: 'indeterminate' })).toEqual({ action: 'refuse' })
 })
 
 const temporary = mkdtempSync(join(tmpdir(), 'orch-checkpoint-sequencer-'))
@@ -82,17 +50,6 @@ const commitArgs = ['-c', 'user.name=Orch Test', '-c', 'user.email=orch@example.
 
 afterAll(() => rmSync(temporary, { recursive: true, force: true }))
 
-function runIdIn(database: Database, number: number): string {
-  const runId = newRecordId()
-  database
-    .query(
-      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (?,?,'2026-10-24','codex','implement','sha',1,'checkpoint','running')`,
-    )
-    .run(number, runId)
-  return runId
-}
-
 function checkpoint(database: Database, repository: string, runId: string) {
   return checkpointRun({
     database,
@@ -106,8 +63,9 @@ function checkpoint(database: Database, repository: string, runId: string) {
   })
 }
 
-test('a real stopped rebase is left in the tree, not committed, and recorded', () => {
-  const repository = join(temporary, 'stopped-rebase')
+/** The shape that cost run 19165: two sides editing one file, stopped by a rebase. */
+function stoppedRebaseRepository(name: string): string {
+  const repository = join(temporary, name)
   mkdirSync(repository)
   git(['init', '-b', branch], repository)
   writeFileSync(join(repository, 'tracked.ts'), 'export const tracked = "initial"\n')
@@ -121,10 +79,20 @@ test('a real stopped rebase is left in the tree, not committed, and recorded', (
   git([...commitArgs, 'commit', '-qam', 'branch'], repository)
   // git leaves the conflict half-applied in the tree: this is the state run 19165 committed.
   expect(gitOk(['rebase', 'side'], repository)).toBeNull()
+  return repository
+}
 
+test('a real stopped rebase is left in the tree, not committed, and recorded', () => {
+  const repository = stoppedRebaseRepository('stopped-rebase')
   const database = new Database(':memory:')
   applyMigrations(database)
-  const runId = runIdIn(database, 1691)
+  const runId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (1691,?,'2026-10-24','codex','implement','sha',1,'checkpoint','running')`,
+    )
+    .run(runId)
   const head = git(['rev-parse', 'HEAD'], repository)
 
   const result = checkpoint(database, repository, runId)

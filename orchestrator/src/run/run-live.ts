@@ -65,6 +65,7 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type CheckpointContainment,
   checkpointRun,
+  checkpointSkippedLine,
   DEFAULT_CHECKPOINT_MINUTES,
   latestCheckpoint,
   recordFailedIdlePreservation,
@@ -404,11 +405,11 @@ function liveCheckpointSchedule(input: {
       final: trigger === 'limit',
     })
     if (result.error) console.error(`orch: run ${input.runId} checkpoint failed: ${result.error}`)
-    if (result.skipped) {
-      console.error(
-        `orch: run ${input.runId} checkpoint skipped: a ${result.skipped} is in progress`,
-      )
-    }
+    const skipped = checkpointSkippedLine(result, {
+      runId: input.runId,
+      final: trigger === 'limit',
+    })
+    if (skipped) console.error(skipped)
     return result
   })
 }

@@ -17,7 +17,7 @@ export const runResumeModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/checkpoint-resume-context.ts',
-    allowed: ['./checkpoint-sequencer.ts'],
+    allowed: ['../../../shared/git.ts'],
   },
   {
     file: 'orchestrator/src/run/continuation-checkpoint-context.ts',
