@@ -158,6 +158,21 @@ test('carry cap breaks equal completion timestamps by review number, not UUID ar
   expect(rendered).not.toContain('src/review-1.ts:1 —')
 })
 
+test('carries rejected findings from an inherited review branch', () => {
+  const rendered = renderEarlierRoundRejections({
+    project: 'fixture',
+    branch: 'DEV-1373-fix',
+    branchLineage: ['DEV-1373-fix', 'DEV-1373-reviewed'],
+    rows: [
+      finding({ branch: 'DEV-1373-reviewed', location: 'src/inherited.ts:4' }),
+      finding({ branch: 'DEV-1373-unrelated', location: 'src/unrelated.ts:4' }),
+    ],
+  })
+
+  expect(rendered).toContain('src/inherited.ts:4')
+  expect(rendered).not.toContain('src/unrelated.ts:4')
+})
+
 test('places earlier rulings after exclusions and tool enforcement', () => {
   const prompt = reviewLensPrompt({
     lens: { question: 'Is it correct?', excludes: 'Style.' },
