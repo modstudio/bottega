@@ -23,7 +23,6 @@ import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { workflowBoundarySpecs } from './architecture-workflow-boundaries.ts'
-import { workflowFloorBoundarySpecs } from './architecture-workflow-floor-modules.ts'
 import { worktreeBoundarySpecs } from './architecture-worktree-boundaries.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
@@ -56,9 +55,6 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
-  ...workflowFloorBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
   ...gateBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),

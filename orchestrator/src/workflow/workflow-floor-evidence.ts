@@ -906,6 +906,22 @@ function resolvedOfferedArtifact(d: Database, artifact: string): string {
   return /^(?:probe|exec):[0-9]+$/i.test(offered) ? resolveProbeArtifact(d, offered)! : offered
 }
 
+function evidenceCheckoutResolver(
+  identity: CursorIdentity,
+  ports: FloorEvidencePorts,
+  d: Database,
+): NonNullable<FloorEvidencePorts['resolveCheckout']> {
+  return (cwd, head, branch) =>
+    invokeFloorEvidencePort(
+      ports,
+      'resolveCheckout',
+      (at, commit, expected) => productionResolveCheckout(at, commit, expected, identity, d),
+      cwd,
+      head,
+      branch,
+    )
+}
+
 export function gatherValidatedEvidence(input: {
   cursorId: string
   identity: CursorIdentity
@@ -917,15 +933,7 @@ export function gatherValidatedEvidence(input: {
 }): ValidatedEvidence {
   const d = input.d ?? db()
   const ports = input.ports ?? {}
-  const resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']> = (cwd, head, branch) =>
-    invokeFloorEvidencePort(
-      ports,
-      'resolveCheckout',
-      (at, commit, expected) => productionResolveCheckout(at, commit, expected, input.identity, d),
-      cwd,
-      head,
-      branch,
-    )
+  const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positive(input.evidence.ruling, '--ruling')

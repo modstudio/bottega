@@ -1,4 +1,7 @@
+import { workflowFloorBoundarySpecs } from './architecture-workflow-floor-modules.ts'
+
 export const workflowBoundarySpecs = [
+  ...workflowFloorBoundarySpecs,
   {
     name: 'workflow-read-space-boundary',
     file: 'orchestrator/src/workflow/workflow-read-space.ts',
