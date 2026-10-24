@@ -4,6 +4,7 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { reviewsForTriage } from './review-group.ts'
 import {
   applicableRoundLensPlan,
+  reviewPlanForBudget,
   reviewRoundForBudget,
   roundLensFacts,
   roundLensPlan,
@@ -39,19 +40,45 @@ describe('round lens plan', () => {
     ).toBe(round)
   })
 
-  test.each([
-    ['the round ceiling is exhausted', true, true],
-    ['the architect reads the fix', false, false],
-  ] as const)('returns an empty round when %s', (_label, startsNewRound, wouldExceedCeiling) => {
+  test('returns an empty round when the round ceiling is exhausted', () => {
     expect(
       reviewRoundForBudget(round, {
         roundsUsed: 3,
         ceiling: 3,
         currentChangeCounted: false,
-        startsNewRound,
-        wouldExceedCeiling,
+        startsNewRound: true,
+        wouldExceedCeiling: true,
       }),
     ).toEqual({ lenses: [] })
+  })
+
+  test('credits only forbidden exact-tip evidence when the ceiling is exhausted', () => {
+    expect(
+      reviewPlanForBudget({
+        reviewPlan: {
+          round,
+          admissionRequired: {
+            lenses: ['correctness', 'safety'],
+            secondOpinion: 'safety',
+          },
+        },
+        budget: {
+          roundsUsed: 3,
+          ceiling: 3,
+          currentChangeCounted: false,
+          startsNewRound: true,
+          wouldExceedCeiling: true,
+        },
+        completedLenses: ['correctness'],
+        satisfiedSecondOpinionLenses: [],
+      }),
+    ).toEqual({
+      reviewPlan: {
+        round: { lenses: [] },
+        admissionRequired: { lenses: ['correctness'] },
+      },
+      creditedByArchitectRead: round,
+    })
   })
 
   test('an initial round lists every relevant lens', () => {

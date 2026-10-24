@@ -309,6 +309,7 @@ function postFixFixture(options: {
   shiftReviewedPath?: boolean
   acceptedSafetyFinding?: boolean
   priorRounds?: number
+  priorRoundLens?: string
 }): {
   repo: string
   branch: string
@@ -373,7 +374,13 @@ function postFixFixture(options: {
     },
   })
   for (let index = 0; index < (options.priorRounds ?? 0); index += 1) {
-    const priorRunId = addRun({ agent: 'codex', job: 'review-lens', lens: 'safety', repo: name })
+    const priorRoundLens = options.priorRoundLens ?? 'safety'
+    const priorRunId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      lens: priorRoundLens,
+      repo: name,
+    })
     db()
       .query(
         `UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?)
@@ -399,10 +406,10 @@ function postFixFixture(options: {
         `INSERT INTO review_lens
            (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,
             reproduced,coverage,limits,overlap)
-         VALUES (?, ?, ?, 'safety', 'codex', 'fixture-model', '[]', '[]', '[]', '[]',
+         VALUES (?, ?, ?, ?, 'codex', 'fixture-model', '[]', '[]', '[]', '[]',
                  'all', 'adequate', 'absent', 'none')`,
       )
-      .run(newRecordId(), priorReviewId, priorRunId)
+      .run(newRecordId(), priorReviewId, priorRunId, priorRoundLens)
   }
   const runId = db()
     .query<{ id: string }, [string, string, string, string, string, string]>(
@@ -504,6 +511,127 @@ test('admission follows the exhausted round budget and requires an architect rea
       )
 
     expect(admissionDecision(change, db())).toMatchObject({ complete: true })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('the architect read credits a never-reviewed tier-three path lens at the ceiling', () => {
+  const { repo, branch } = postFixFixture({
+    fixPath: 'critical/fix.ts',
+    priorRounds: 2,
+    priorRoundLens: 'correctness',
+  })
+  try {
+    const change = resolvePullRequestChange(repo)
+    expect(change.reviewPlan).toEqual({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['correctness'] },
+    })
+    const withoutRead = admissionDecision(change, db())
+    expect(withoutRead.complete).toBeFalse()
+    if (withoutRead.complete) throw new Error('expected admission to require an architect read')
+    expect(withoutRead.triage).toMatchObject({
+      architectReadRequired: true,
+      missingLenses: [],
+    })
+
+    db()
+      .query(
+        `INSERT INTO review_read
+           (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,recorded_at,session_id)
+         VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), ?, ?, ?, ?, 3,
+                 'credited never-reviewed safety lens', '2099-01-01T00:00:00Z', NULL)`,
+      )
+      .run(
+        newRecordId(),
+        change.project.name,
+        change.project.name,
+        branch,
+        change.tip,
+        change.group.patchId,
+        serializePathSet(change.group.pathSet),
+      )
+    expect(admissionDecision(change, db())).toMatchObject({ complete: true })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('the architect read credits an owed second opinion at the ceiling', () => {
+  const { repo, branch } = postFixFixture({
+    fixPath: 'critical/fix.ts',
+    priorRounds: 2,
+    priorRoundLens: 'correctness',
+    secondOpinion: true,
+  })
+  try {
+    const change = resolvePullRequestChange(repo)
+    expect(change.reviewPlan).toEqual({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['correctness'] },
+    })
+    const withoutRead = admissionDecision(change, db())
+    expect(withoutRead.complete).toBeFalse()
+    if (withoutRead.complete) throw new Error('expected admission to require an architect read')
+    expect(withoutRead.triage).toMatchObject({
+      architectReadRequired: true,
+      missingSecondOpinion: null,
+    })
+
+    db()
+      .query(
+        `INSERT INTO review_read
+           (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,recorded_at,session_id)
+         VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), ?, ?, ?, ?, 3,
+                 'credited owed second opinion', '2099-01-01T00:00:00Z', NULL)`,
+      )
+      .run(
+        newRecordId(),
+        change.project.name,
+        change.project.name,
+        branch,
+        change.tip,
+        change.group.patchId,
+        serializePathSet(change.group.pathSet),
+      )
+    expect(admissionDecision(change, db())).toMatchObject({ complete: true })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier reports the ceiling work credited by the architect read', async () => {
+  const { repo, branch } = postFixFixture({
+    fixPath: 'critical/fix.ts',
+    priorRounds: 2,
+    priorRoundLens: 'correctness',
+    secondOpinion: true,
+  })
+  try {
+    const human: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo], human)
+    const ceiling = human.findIndex((line) => line.includes('the architect rules'))
+    const paths = human.findIndex((line) => line.startsWith('tier-3 paths touched'))
+    const lens = human.findIndex(
+      (line) => line.includes('lens safety') && line.includes('credited'),
+    )
+    const opinion = human.findIndex(
+      (line) => line.includes('second opinion correctness') && line.includes('credited'),
+    )
+    expect(ceiling).toBeGreaterThan(-1)
+    expect(paths).toBeGreaterThan(ceiling)
+    expect(lens).toBeGreaterThan(paths)
+    expect(opinion).toBeGreaterThan(lens)
+    expect(human).not.toContain('no round needed: the architect reads the fix and lands it')
+    expect(human[ceiling]).toContain(`${PLATFORM_SLUG} review read`)
+
+    const json: string[] = []
+    await runReview(['review', 'tier', branch, '--cwd', repo, '--json'], json)
+    expect(JSON.parse(json[0]!).credited_by_architect_read).toMatchObject({
+      lenses: ['safety'],
+      secondOpinion: 'correctness',
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

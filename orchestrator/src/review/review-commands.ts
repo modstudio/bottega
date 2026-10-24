@@ -20,8 +20,6 @@ import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
-import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
-import { reviewRoundForBudget } from './review-round-lens-plan.ts'
 import {
   type BudgetedReviewPlan,
   budgetedRoundApplicabilityForChange,
@@ -53,23 +51,13 @@ function roundApplicabilityForTierOutput(input: {
 }): BudgetedReviewPlan {
   const relevant = selectReviewApplicability(input.output, input.output.lenses)
   if (!input.identity) {
-    const branchBudget = reviewBudgetForBranch(db(), input.project, input.branch, null)
-    const reviewBudget = reviewRoundBudgetDecision({
+    return budgetedRoundApplicabilityForChange({
+      database: db(),
+      project: input.project,
+      branch: input.branch,
+      relevant,
       tier: input.output.tier,
-      ...branchBudget,
-      roundNeeded: relevant.lenses.length > 0 || Boolean(relevant.secondOpinion),
     })
-    return {
-      reviewPlan: {
-        round: reviewRoundForBudget(relevant, reviewBudget),
-        admissionRequired: relevant,
-      },
-      reviewBudget: {
-        ...reviewBudget,
-        eligibleReviewCount: branchBudget.eligibleReviewCount,
-        unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
-      },
-    }
   }
   return budgetedRoundApplicabilityForChange({
     database: db(),
@@ -269,7 +257,7 @@ function reviewTierOutput(value: string, cwd: string) {
     tier: output.tier,
     review: project.settings.review,
   })
-  const { reviewPlan, reviewBudget } = roundApplicabilityForTierOutput({
+  const { reviewPlan, reviewBudget, creditedByArchitectRead } = roundApplicabilityForTierOutput({
     output,
     identity,
     project: project.name,
@@ -286,6 +274,12 @@ function reviewTierOutput(value: string, cwd: string) {
     secondOpinionBasis: round.secondOpinionBasis,
     post_fix: postFix,
     review_budget: reviewBudget,
+    credited_by_architect_read: creditedByArchitectRead,
+    credited_lens_profiles: creditedByArchitectRead.lenses.map((id) => ({
+      id,
+      basis: creditedByArchitectRead.lensBases?.[id] ?? null,
+      profiles: resolveLens(id, project.name)?.profiles ?? [],
+    })),
     lens_profiles: round.lenses.map((id) => ({
       id,
       basis: round.lensBases?.[id] ?? null,
@@ -301,7 +295,8 @@ function printReviewRoundStatus(
   if (
     !output.lenses.length &&
     !output.secondOpinion &&
-    !output.review_budget.currentChangeCounted
+    !output.review_budget.currentChangeCounted &&
+    !output.review_budget.wouldExceedCeiling
   ) {
     log('no round needed: the architect reads the fix and lands it')
     return
@@ -321,6 +316,40 @@ function printReviewRoundStatus(
       ? 'current change is already a counted round; no new round consumed'
       : 'current change would start a new round',
   )
+}
+
+function printCeilingArchitectCredit(
+  output: ReturnType<typeof reviewTierOutput>,
+  log: (...values: unknown[]) => void,
+): boolean {
+  if (
+    output.review_budget.unclassifiableReviewCount > 0 ||
+    !output.review_budget.wouldExceedCeiling
+  ) {
+    return false
+  }
+  log(
+    `a new round would exceed the ceiling: the architect rules. Read the fix (${PLATFORM_SLUG} review read), land with test-only fixes, and file the rest`,
+  )
+  if (output.post_fix.kind === 're-lens') {
+    log(
+      `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
+    )
+  }
+  for (const lens of output.credited_lens_profiles) {
+    const sources = lens.profiles
+      .map((profile) => formatLensProfileSource(profile, 'source'))
+      .join(', ')
+    log(
+      `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}  credited by architect read`,
+    )
+  }
+  if (output.credited_by_architect_read.secondOpinion) {
+    log(
+      `second opinion ${output.credited_by_architect_read.secondOpinion}${basisLabel(output.credited_by_architect_read.secondOpinionBasis)} credited by architect read`,
+    )
+  }
+  return true
 }
 
 function printReviewTier(
@@ -345,14 +374,8 @@ function printReviewTier(
   } else {
     log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
   }
-  printReviewRoundStatus(output, log)
-  if (
-    output.review_budget.unclassifiableReviewCount === 0 &&
-    output.review_budget.wouldExceedCeiling
-  ) {
-    log(
-      'a new round would exceed the ceiling: the architect rules. Read the fix (bottega review read), land with test-only fixes, and file the rest',
-    )
+  if (!printCeilingArchitectCredit(output, log)) {
+    printReviewRoundStatus(output, log)
   }
   for (const lens of output.lens_profiles) {
     const sources = lens.profiles
