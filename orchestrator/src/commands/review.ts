@@ -22,7 +22,10 @@ import {
 import { amendReviewFindingCommand } from '../review/review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from '../review/review-finding-restore.ts'
 import { recordArchitectReadCommand } from '../review/review-read.ts'
-import { recordProjectReviewCommand } from '../review/review-record-command.ts'
+import {
+  projectReviewRecordInputRefusal,
+  recordProjectReviewCommand,
+} from '../review/review-record-command.ts'
 import { reviewBudgetCommand } from '../review/review-round-budget.ts'
 import { scopeProposalReviewCommand } from '../review/review-scope-proposal-command.ts'
 import { restoreReviewTriageCommand } from '../review/review-triage-restore.ts'
@@ -246,7 +249,11 @@ function registerReviewOperations(review: Command, run: ReviewRunner): void {
       run(command, (_argv, flags, output) => {
         if (command.args.length !== 1) {
           throw new Error(
-            `${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`,
+            projectReviewRecordInputRefusal(
+              command.args.length === 0
+                ? 'the reviewed branch is required'
+                : `exactly one reviewed branch is expected; got ${command.args.length} arguments`,
+            ),
           )
         }
         recordProjectReviewCommand(branch, flags.flag('cwd'), flags.flag('reason'), output)
