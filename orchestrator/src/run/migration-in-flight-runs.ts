@@ -11,7 +11,7 @@ export type MigrationInFlightRun = {
   waiting: boolean
   holderPid: number | null
   leaseHolding: boolean
-  closing: boolean
+  closing?: boolean
 }
 
 export function formatMigrationInFlightRun(run: MigrationInFlightRun): string {

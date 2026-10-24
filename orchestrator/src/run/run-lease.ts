@@ -181,6 +181,33 @@ export function removeFreeRunCloseOutLease(runId: string): 'removed' | 'held' | 
   }
 }
 
+function releaseRunCloseOutLease(runId: string, lease: KernelLease | null): void {
+  lease?.release()
+  removeFreeRunCloseOutLease(runId)
+}
+
+/** Release the close-out lease when finishRun failed before closeRun could start. */
+export function releaseAbortedRunCloseOutLease(
+  finishCompleted: boolean,
+  runId: string,
+  lease: KernelLease | null,
+): void {
+  if (!finishCompleted) releaseRunCloseOutLease(runId, lease)
+}
+
+/** Hold the close-out lease through the complete closeRun call, including failures. */
+export function withRunCloseOutLease<T>(
+  runId: string,
+  lease: KernelLease | null,
+  action: () => T,
+): T {
+  try {
+    return action()
+  } finally {
+    releaseRunCloseOutLease(runId, lease)
+  }
+}
+
 /** Enumerate only well-formed run lease file identities. */
 export function runLeaseIds(): string[] {
   if (!existsSync(leaseDirectory())) return []

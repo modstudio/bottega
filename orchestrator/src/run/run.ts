@@ -94,9 +94,10 @@ import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-lau
 import {
   type acquireRunCloseOutLease,
   type acquireRunLease,
-  removeFreeRunCloseOutLease,
+  releaseAbortedRunCloseOutLease,
   requiredRunCloseOutLease,
   requiredRunLease,
+  withRunCloseOutLease,
 } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -159,34 +160,6 @@ function assertConfiguredGitGuard(
 function completeStartup(): true {
   bindSignals()
   return true
-}
-
-function releaseRunCloseOutLease(
-  runId: string,
-  lease: ReturnType<typeof acquireRunCloseOutLease> | null,
-): void {
-  lease?.release()
-  removeFreeRunCloseOutLease(runId)
-}
-
-function releaseAbortedRunCloseOutLease(
-  finishCompleted: boolean,
-  runId: string,
-  lease: ReturnType<typeof acquireRunCloseOutLease> | null,
-): void {
-  if (!finishCompleted) releaseRunCloseOutLease(runId, lease)
-}
-
-function withRunCloseOutLease<T>(
-  runId: string,
-  lease: ReturnType<typeof acquireRunCloseOutLease> | null,
-  action: () => T,
-): T {
-  try {
-    return action()
-  } finally {
-    releaseRunCloseOutLease(runId, lease)
-  }
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary

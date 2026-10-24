@@ -23,12 +23,11 @@ export type MigrationDrainLiveness =
 
 class MigrationDispatchRefusal extends Error {
   readonly migrationDispatchRefusal = true
+  readonly contention: Parameters<typeof tryWriteContention>[0]
 
-  constructor(
-    message: string,
-    readonly contention: Parameters<typeof tryWriteContention>[0],
-  ) {
+  constructor(message: string, contention: Parameters<typeof tryWriteContention>[0]) {
     super(message)
+    this.contention = contention
   }
 }
 
