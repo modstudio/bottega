@@ -12,6 +12,20 @@ import {
   runRoots,
 } from './run-acp-writer.ts'
 
+const sandboxDeniesLoopbackBinding = await (async () => {
+  try {
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: () => new Response(),
+    })
+    await server.stop(true)
+    return false
+  } catch {
+    return true
+  }
+})()
+
 const tree: Worktree = {
   path: resolve('..'),
   branch: 'DEV-1530-test',
@@ -74,11 +88,14 @@ test('recorded confinement exposes sandbox roots and leaves host workers unprove
   ).toEqual(['/run/tree', '/run/scratch', '/tmp'])
 })
 
-test('a startup failure after creating the writing ACP ask endpoint closes its listener', async () => {
-  const endpoint = startAskHttpEndpoint('missing-run', 'token')
-  expect((await fetch(endpoint.url)).status).toBe(401)
+test.skipIf(sandboxDeniesLoopbackBinding)(
+  'a startup failure after creating the writing ACP ask endpoint closes its listener (sandbox denies loopback binding)',
+  async () => {
+    const endpoint = startAskHttpEndpoint('missing-run', 'token')
+    expect((await fetch(endpoint.url)).status).toBe(401)
 
-  await disposeAskAfterStartup(endpoint, false)
+    await disposeAskAfterStartup(endpoint, false)
 
-  await expect(fetch(endpoint.url)).rejects.toThrow()
-})
+    await expect(fetch(endpoint.url)).rejects.toThrow()
+  },
+)
