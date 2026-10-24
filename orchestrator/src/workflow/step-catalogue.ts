@@ -409,7 +409,7 @@ const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
   identityTable: 'step_catalogue',
   versionTable: 'step_catalogue_version',
   eventTable: 'step_catalogue_event',
-  foreignKey: 'catalogue_id',
+  foreignKey: 'catalogue_record_id',
   validate(value) {
     requireCatalogue(value)
   },
@@ -439,7 +439,7 @@ export function selectedStepCatalogue(
   const suffix = n === undefined ? "AND v.status='production'" : 'AND v.n=?'
   const row = d
     .query(
-      `SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.id=v.catalogue_id WHERE i.slug=? AND i.space_id IS ? ${suffix}`,
+      `SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.record_id=v.catalogue_record_id WHERE i.slug=? AND i.space_id IS ? ${suffix}`,
     )
     .get(...(n === undefined ? [CATALOGUE, spaceId] : [CATALOGUE, spaceId, n])) as {
     definition: string
@@ -568,7 +568,7 @@ export const retireStepCatalogue = (
       const spaceId = await activeSpace(),
         current = d
           .query<{ n: number }, [string]>(
-            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
+            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
           )
           .get(spaceId)
       const result = await recordApiClient().retireWorkflow!(
@@ -711,7 +711,7 @@ function cataloguePromotionPreflight(
 ): void {
   const current = d
     .query<{ definition: string }, [string | null]>(
-      `SELECT v.definition FROM step_catalogue c JOIN step_catalogue_version v ON v.catalogue_id=c.id
+      `SELECT v.definition FROM step_catalogue c JOIN step_catalogue_version v ON v.catalogue_record_id=c.record_id
        WHERE c.slug='shared' AND c.space_id IS ? AND v.status='production'`,
     )
     .get(spaceId)
@@ -720,7 +720,7 @@ function cataloguePromotionPreflight(
     : []
   const currentWorkflowRows = d
     .query(
-      `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+      `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_record_id=w.record_id
        WHERE v.status='production' AND w.space_id IS ?`,
     )
     .all(spaceId) as { slug: string; definition: string }[]

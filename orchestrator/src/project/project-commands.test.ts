@@ -433,7 +433,7 @@ test('rename writes hosted once and updates the local name and release ledger', 
     'updated once-dst',
   )
   expect(hosted).toEqual([{ name: 'once-dst' }])
-  expect(readRecordInstallBinding().bound).toBe(true)
+  expect(readRecordInstallBinding(db()).bound).toBe(true)
   expect(projectByName('once-src')).toBeNull()
   expect(projectByName('once-dst')?.path).toBe('/w/once-src')
   expect(writableDb().query('SELECT project FROM release_ledger').get()).toEqual({

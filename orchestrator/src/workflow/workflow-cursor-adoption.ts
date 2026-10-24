@@ -6,6 +6,7 @@ import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 
 type AdoptionCursor = {
   id: number
+  record_id: string
   project: string
   workflow_slug: string
   mode_slug: string
@@ -21,7 +22,7 @@ export function vacateRetiredWorkflowKeySlot(
   d: Database,
 ): void {
   d.query(
-    `UPDATE workflow_cursor SET instance_id=instance_id || '#' || id
+    `UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
      WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
        AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
        AND state IN ('done','abandoned')`,
@@ -32,15 +33,15 @@ function assignWorkflowTaskKey(row: AdoptionCursor, key: string, d: Database): v
   vacateRetiredWorkflowKeySlot(row.project, row.workflow_slug, row.mode_slug, key, d)
   const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
   d.query(
-    "UPDATE workflow_cursor SET workflow_key=?,instance_id='',args=?,updated_at=? WHERE id=?",
-  ).run(key, JSON.stringify(adoptedArgs), nowIso(), row.id)
+    "UPDATE workflow_cursor SET workflow_key=?,instance_id='',args=?,updated_at=? WHERE record_id=?",
+  ).run(key, JSON.stringify(adoptedArgs), nowIso(), row.record_id)
   row.workflow_key = key
   row.args = JSON.stringify(adoptedArgs)
   const questions = d
-    .query<{ record_id: string }, [number]>(
-      'SELECT record_id FROM question WHERE workflow_cursor_id=? ORDER BY number',
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM question WHERE workflow_cursor_record_id=? ORDER BY number',
     )
-    .all(row.id)
+    .all(row.record_id)
   for (const question of questions) {
     d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE record_id=?').run(
       key,
@@ -66,7 +67,7 @@ export function adoptWorkflowTask(
   }
   const conflict = d
     .query<{ id: number }, [string, string, string, string]>(
-      `SELECT id FROM workflow_cursor
+      `SELECT number id FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND workflow_slug=? AND mode_slug=? AND workflow_key=?
          AND state NOT IN ('done','abandoned') LIMIT 1`,

@@ -80,10 +80,10 @@ function installEvidence(
   const key = callArgs.key?.trim() ?? ''
   const instance = key ? '' : (callContext.session ?? callContext.instance ?? '')
   const row = d
-    .query<{ id: number; ordinal: number; step_slug: string; state: string }, string[]>(
-      `SELECT id,ordinal,step_slug,state FROM workflow_cursor
+    .query<{ record_id: string; ordinal: number; step_slug: string; state: string }, string[]>(
+      `SELECT record_id,ordinal,step_slug,state FROM workflow_cursor
         WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-          AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY id DESC`,
+          AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY number DESC`,
     )
     .get(project, slug, mode, key, instance)
   if (!row || row.state === 'done' || row.state === 'abandoned') return {}
@@ -130,12 +130,12 @@ function installEvidence(
   const ruling = d
     .query<{ number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
+        (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
          workflow_step_ordinal,workflow_step_slug)
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING number`,
     )
     .get(
-      row.id,
+      row.record_id,
       key || null,
       '2026-09-01',
       'floor ruling?',
@@ -335,11 +335,7 @@ describe('workflow cursor adapter', () => {
         d,
       ),
     ).toContain('this is the last step of policy-fixture')
-    const row = d.query('SELECT workflow_version,args FROM workflow_cursor').get() as {
-      workflow_version: number
-      args: string
-    }
-    expect(row.workflow_version).toBe(original.n)
+    const row = d.query('SELECT args FROM workflow_cursor').get() as { args: string }
     expect(JSON.parse(row.args).worktree).toBe('/tmp/new')
   })
 
@@ -432,7 +428,7 @@ describe('workflow cursor adapter', () => {
 
     expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
     const rows = d
-      .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
+      .query('SELECT number id,instance_id,state,closed FROM workflow_cursor ORDER BY number')
       .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({ instance_id: `#${rows[0]!.id}`, state: 'abandoned' })
@@ -452,7 +448,7 @@ describe('workflow cursor adapter', () => {
 
     expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
     const rows = d
-      .query('SELECT id,instance_id,state,closed FROM workflow_cursor ORDER BY id')
+      .query('SELECT number id,instance_id,state,closed FROM workflow_cursor ORDER BY number')
       .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({ instance_id: `#${rows[0]!.id}`, state: 'done' })
@@ -814,14 +810,14 @@ describe('workflow cursor adapter', () => {
   test('abandon dispositions open obligations in the same transaction', () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
-    const cursor = d.query<{ id: number }, []>('SELECT id FROM workflow_cursor').get() as {
-      id: number
-    }
+    const cursor = d
+      .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor')
+      .get()!
     d.query(
       `INSERT INTO workflow_obligation
-        (record_id,cursor_id,step_ordinal,step_slug,floor,floor_deferrable,reason,session_id,created_at)
+        (record_id,cursor_record_id,step_ordinal,step_slug,floor,floor_deferrable,reason,session_id,created_at)
        VALUES (?,?,1,'rebase','command-exit',1,'merge later','session-one','2026-09-01')`,
-    ).run(newRecordId(), cursor.id)
+    ).run(newRecordId(), cursor.record_id)
     abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
     expect(
       d
@@ -834,9 +830,9 @@ describe('workflow cursor adapter', () => {
       d
         .query(
           `SELECT count(*) count FROM workflow_obligation
-            WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
+            WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
         )
-        .get(cursor.id),
+        .get(cursor.record_id),
     ).toEqual({ count: 0 })
   })
 

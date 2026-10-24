@@ -94,7 +94,8 @@ const rowCount = (d: Database, cursor: number) =>
   (
     d
       .query<{ count: number }, [number]>(
-        'SELECT COUNT(*) AS count FROM workflow_step_text WHERE cursor_id=?',
+        `SELECT COUNT(*) AS count FROM workflow_step_text
+          WHERE cursor_record_id=(SELECT record_id FROM workflow_cursor WHERE number=?)`,
       )
       .get(cursor) as { count: number }
   ).count
@@ -142,15 +143,15 @@ describe('workflow text decisions', () => {
 
   test('an attached-text reference is bound to its cursor and exact step', () => {
     const attachment = {
-      id: 9,
-      cursorId: 3,
+      id: 'attachment-9',
+      cursorId: 'cursor-3',
       stepOrdinal: 2,
       stepSlug: 'research',
       body: 'notes',
     }
     expect(
       attachedTextReferenceMeetsFloor({
-        cursorId: 3,
+        cursorId: 'cursor-3',
         stepOrdinal: 2,
         stepSlug: 'research',
         attachment,
@@ -158,7 +159,7 @@ describe('workflow text decisions', () => {
     ).toBe(true)
     expect(
       attachedTextReferenceMeetsFloor({
-        cursorId: 4,
+        cursorId: 'cursor-4',
         stepOrdinal: 2,
         stepSlug: 'research',
         attachment,
@@ -166,7 +167,7 @@ describe('workflow text decisions', () => {
     ).toBe(false)
     expect(
       attachedTextReferenceMeetsFloor({
-        cursorId: 3,
+        cursorId: 'cursor-3',
         stepOrdinal: 3,
         stepSlug: 'design',
         attachment,
@@ -176,9 +177,27 @@ describe('workflow text decisions', () => {
 
   test('facts carry all text only for the declared cursor-local need, ordered by step and id', () => {
     const rows = [
-      { id: 4, cursorId: 1, stepOrdinal: 2, stepSlug: 'decompose', body: 'breakdown' },
-      { id: 2, cursorId: 1, stepOrdinal: 1, stepSlug: 'research', body: 'research' },
-      { id: 3, cursorId: 1, stepOrdinal: 2, stepSlug: 'decompose', body: 'constraints' },
+      {
+        id: 'attachment-4',
+        cursorId: 'cursor-1',
+        stepOrdinal: 2,
+        stepSlug: 'decompose',
+        body: 'breakdown',
+      },
+      {
+        id: 'attachment-2',
+        cursorId: 'cursor-1',
+        stepOrdinal: 1,
+        stepSlug: 'research',
+        body: 'research',
+      },
+      {
+        id: 'attachment-3',
+        cursorId: 'cursor-1',
+        stepOrdinal: 2,
+        stepSlug: 'decompose',
+        body: 'constraints',
+      },
     ]
     expect(workflowTextFacts([], rows)).toEqual({})
     expect(workflowTextFacts(['workflow-text'], rows)).toEqual({
@@ -216,7 +235,7 @@ describe('workflow text lifecycle', () => {
     expect(rendered).toContain('research body')
     const closed = (
       d
-        .query<{ closed: string }, [number]>('SELECT closed FROM workflow_cursor WHERE id=?')
+        .query<{ closed: string }, [number]>('SELECT closed FROM workflow_cursor WHERE number=?')
         .get(cursor) as { closed: string }
     ).closed
     expect(closed).toContain('attached-text')
@@ -256,7 +275,7 @@ describe('workflow text lifecycle', () => {
     expect(rowCount(d, cursor)).toBe(0)
     expect(
       d
-        .query<{ state: string }, [number]>('SELECT state FROM workflow_cursor WHERE id=?')
+        .query<{ state: string }, [number]>('SELECT state FROM workflow_cursor WHERE number=?')
         .get(cursor)?.state,
     ).toBe('running')
   })

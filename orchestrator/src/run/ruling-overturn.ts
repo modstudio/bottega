@@ -14,7 +14,7 @@ type OverturnRow = {
   number: number
   run_record_id: string | null
   root_id: string | null
-  workflow_cursor_id: number | null
+  workflow_cursor_record_id: string | null
   workflow_owner: string | null
   workflow_updated_at: string | null
   answered_at: string | null
@@ -53,10 +53,10 @@ export function overturnRuling(input: {
   const row = db()
     .query(
       `SELECT q.number,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
-              q.workflow_cursor_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
+              q.workflow_cursor_record_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
               q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement
          FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id WHERE q.record_id=?`,
+         LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id WHERE q.record_id=?`,
     )
     .get(input.questionId) as OverturnRow | null
   if (!row)
@@ -73,7 +73,7 @@ export function overturnRuling(input: {
       owner: row.workflow_owner,
       actor,
       fromOperator: input.fromOperator,
-      subject: `workflow cursor ${row.workflow_cursor_id}`,
+      subject: `workflow cursor ${row.workflow_cursor_record_id}`,
       action: 'overturn',
       chainLastActivityAt: Date.parse(row.workflow_updated_at!),
     })

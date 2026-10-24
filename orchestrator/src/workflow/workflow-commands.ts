@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
@@ -24,7 +25,6 @@ import {
 import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,
-  cliWorkflowCursorContext,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
   listWorkflowCursors,
@@ -34,6 +34,7 @@ import {
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import {
+  cliWorkflowCursorContext,
   resolveWorkflowCursorMode,
   selectWorkflowCursor,
   type WorkflowCursorContext,
@@ -95,6 +96,14 @@ const positive = (value: string | undefined, label: string): number | undefined 
   const n = Number(value)
   if (!Number.isInteger(n) || n < 1) throw new Error(`${label} must be a positive integer`)
   return n
+}
+const obligationUuid = (value: string | undefined): string | undefined => {
+  if (value === undefined) return undefined
+  if (!hasRecordIdShape(value))
+    throw new Error(
+      `--satisfies must be an obligation UUID from ${PLATFORM_SLUG} workflow cursors --json`,
+    )
+  return value.toLowerCase()
 }
 
 export function workflowPrint(json: boolean, presentation: WorkflowPresentation): WorkflowPrint {
@@ -337,7 +346,7 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
     artifact: flagValue(argv, 'artifact'),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
-    satisfies: positive(flagValue(argv, 'satisfies'), '--satisfies'),
+    satisfies: obligationUuid(flagValue(argv, 'satisfies')),
   }
 }
 

@@ -291,21 +291,21 @@ function closeStep(
 
 function boundRuling(d: Database, answeredAt = new Date(Date.now() + 1000).toISOString()): number {
   const row = d
-    .query<{ id: number; ordinal: number; step_slug: string; workflow_key: string }, []>(
-      'SELECT id,ordinal,step_slug,workflow_key FROM workflow_cursor',
+    .query<{ record_id: string; ordinal: number; step_slug: string; workflow_key: string }, []>(
+      'SELECT record_id,ordinal,step_slug,workflow_key FROM workflow_cursor',
     )
     .get()!
   return d
     .query<{ number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
+        (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
          workflow_step_ordinal,workflow_step_slug)
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?,?,'workflow',?,'yes',?,?)
        RETURNING number`,
     )
     .get(
       newRecordId(),
-      row.id,
+      row.record_id,
       row.workflow_key,
       answeredAt,
       'floor ruling?',

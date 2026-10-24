@@ -43,7 +43,7 @@ describe('versioned lifecycle retirement', () => {
     })
     for (const row of d
       .query<{ record_id: string }, []>(
-        "SELECT record_id FROM workflow WHERE slug='withdraw-draft' UNION ALL SELECT record_id FROM workflow_version WHERE workflow_id=(SELECT id FROM workflow WHERE slug='withdraw-draft') UNION ALL SELECT record_id FROM workflow_event WHERE workflow_id=(SELECT id FROM workflow WHERE slug='withdraw-draft')",
+        "SELECT record_id FROM workflow WHERE slug='withdraw-draft' UNION ALL SELECT record_id FROM workflow_version WHERE workflow_record_id=(SELECT record_id FROM workflow WHERE slug='withdraw-draft') UNION ALL SELECT event.record_id FROM workflow_event event JOIN workflow_version version ON version.record_id=event.workflow_version_record_id WHERE version.workflow_record_id=(SELECT record_id FROM workflow WHERE slug='withdraw-draft')",
       )
       .all()) {
       expect(row.record_id).toMatch(

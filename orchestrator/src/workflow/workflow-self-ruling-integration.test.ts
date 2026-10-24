@@ -112,13 +112,15 @@ test('self-ruling records the answered question and closes the step atomically',
   expect(
     d
       .query(
-        `SELECT workflow_cursor_id,workflow_step_ordinal,workflow_step_slug,question,answer,answer_basis,
+        `SELECT workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug,question,answer,answer_basis,
                 answerer_kind,answer_channel,answered_by
            FROM question`,
       )
       .get(),
   ).toEqual({
-    workflow_cursor_id: 1,
+    workflow_cursor_record_id: (
+      d.query('SELECT record_id FROM workflow_cursor').get() as { record_id: string }
+    ).record_id,
     workflow_step_ordinal: 4,
     workflow_step_slug: 'ship-triage',
     question: 'Triage every finding',

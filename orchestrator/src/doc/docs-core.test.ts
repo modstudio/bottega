@@ -13,7 +13,7 @@ import { dir } from '../../test/fixtures/store.ts'
 import { compilePack } from '../canon/canon.ts'
 import { db } from '../database/db.ts'
 import { projects, retireProject, upsertProject } from '../project/projects.ts'
-import { rememberHostedRecord } from '../record/install-binding.ts'
+import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
 import {
   consumeDoc as consumeDocument,

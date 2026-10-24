@@ -200,6 +200,12 @@ test('document UUID-key migration preserves a path-shaped canon artifact address
   const database = migrationBoundaryTestDatabase(DOC_UUID_BOUNDARY)
   try {
     database.exec(`
+      INSERT INTO workflow(record_id,slug,created_at) VALUES ('01990000-0000-7000-8000-000000000080','flow','a');
+      INSERT INTO workflow_version(record_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at)
+      VALUES ('01990000-0000-7000-8000-000000000081',last_insert_rowid(),1,'production','{}','fixture','fixture','a','a');
+      INSERT INTO step_catalogue(record_id,slug,created_at) VALUES ('01990000-0000-7000-8000-000000000082','shared','a');
+      INSERT INTO step_catalogue_version(record_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at)
+      VALUES ('01990000-0000-7000-8000-000000000083',last_insert_rowid(),1,'production','{}','fixture','fixture','a','a');
       INSERT INTO workflow_cursor(id,project,workflow_slug,mode_slug,instance_id,workflow_version,catalogue_version,args,total_steps,created_at,updated_at,record_id)
       VALUES (999,'fixture','flow','mode','instance',1,1,'{}',1,'a','a','01990000-0000-7000-8000-000000000087');
       INSERT INTO doc(id,record_id,scope,subject,slug,title,body,delivery,created_at,updated_at,audiences)

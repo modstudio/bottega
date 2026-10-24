@@ -95,7 +95,7 @@ function newestDefinitions(
   const catalogueRows = database
     .query<{ definition: string; status: string }, [string | null]>(
       `SELECT v.definition,v.status FROM step_catalogue_version v
-       JOIN step_catalogue c ON c.id=v.catalogue_id
+       JOIN step_catalogue c ON c.record_id=v.catalogue_record_id
        WHERE c.slug='shared' AND c.space_id IS ? AND v.status IN ('production','draft')
        ORDER BY v.status='draft' DESC,v.n DESC`,
     )
@@ -103,7 +103,7 @@ function newestDefinitions(
   const workflowRows = database
     .query<{ slug: string; definition: string; status: string; n: number }, [string | null]>(
       `SELECT w.slug,v.definition,v.status,v.n FROM workflow_version v
-       JOIN workflow w ON w.id=v.workflow_id
+       JOIN workflow w ON w.record_id=v.workflow_record_id
        WHERE w.space_id IS ? AND v.status IN ('production','draft')
        ORDER BY w.slug,v.status='draft' DESC,v.n DESC`,
     )

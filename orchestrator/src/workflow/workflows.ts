@@ -301,8 +301,8 @@ function assertWorkflowWriteAllowed(operation: string): void {
 }
 
 type VersionRow = {
-  id: number
-  workflow_id: number
+  record_id: string
+  workflow_record_id: string
   slug: string
   n: number
   status: 'draft' | 'production' | 'retired'
@@ -327,7 +327,7 @@ function versionRow(
       : `AND v.n=?`
   const row = d
     .query(
-      `SELECT v.*, w.slug FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id IS ? ${where}`,
+      `SELECT v.*, w.slug FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id IS ? ${where}`,
     )
     .get(...(n === undefined ? [slug, spaceId] : [slug, spaceId, n])) as VersionRow | null
   if (!row)
@@ -344,7 +344,7 @@ const parseVersion = (row: VersionRow) => ({
 function productionVersionRow(slug: string, d: Database, spaceId: string | null): VersionRow {
   const row = d
     .query(`SELECT v.*, w.slug FROM workflow_version v
-    JOIN workflow w ON w.id=v.workflow_id
+    JOIN workflow w ON w.record_id=v.workflow_record_id
     WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`)
     .get(slug, spaceId) as VersionRow | null
   if (!row)
@@ -365,12 +365,12 @@ function workflowSlugs(d: Database, spaceId: string | null): string[] {
 export function listResolvedWorkflows(spaceId: string | null, d: Database = db()) {
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const row = d
-      .query(`SELECT w.id,w.slug,
-    (SELECT n FROM workflow_version WHERE workflow_id=w.id AND status='production') production_n,
-    (SELECT MAX(n) FROM workflow_version WHERE workflow_id=w.id AND status='draft') draft_n
+      .query(`SELECT w.record_id,w.slug,
+    (SELECT n FROM workflow_version WHERE workflow_record_id=w.record_id AND status='production') production_n,
+    (SELECT MAX(n) FROM workflow_version WHERE workflow_record_id=w.record_id AND status='draft') draft_n
     FROM workflow w WHERE w.slug=? AND w.space_id IS ?`)
       .get(slug, spaceId) as {
-      id: number
+      record_id: string
       slug: string
       production_n: number | null
       draft_n: number | null
@@ -392,7 +392,7 @@ export function productionWorkflows(d: Database, spaceId: string | null) {
   return (
     d
       .query(
-        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+        `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_record_id=w.record_id
          WHERE v.status='production' AND w.space_id IS ? ORDER BY w.slug`,
       )
       .all(spaceId) as { slug: string; definition: string }[]
@@ -415,7 +415,7 @@ const workflowLifecycleFor = (knownCatalogue?: StepCatalogueDefinition) =>
     identityTable: 'workflow',
     versionTable: 'workflow_version',
     eventTable: 'workflow_event',
-    foreignKey: 'workflow_id',
+    foreignKey: 'workflow_record_id',
     validate(value, d) {
       requireValid(value, d, knownCatalogue)
     },
@@ -429,7 +429,7 @@ function hostedWorkflowRow(
   spaceId: string,
 ): LocalWorkflowRow {
   const row = selectedWorkflow(slug, n, d, spaceId)
-  return { ...row, owner_id: row.workflow_id }
+  return { ...row, owner_record_id: row.workflow_record_id }
 }
 function writeDraftLocal(
   slug: string,
@@ -622,7 +622,7 @@ export function retireWorkflow(
       hostedProductionCatalogue(d, spaceId)
       const current = d
         .query<{ n: number }, [string, string]>(
-          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
+          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
         )
         .get(slug, spaceId)
       const result = await recordApiClient().retireWorkflow!(
@@ -705,7 +705,7 @@ export function resolvedProductionWorkflows(project: string, d: Database = db())
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const exists = d
       .query(
-        `SELECT 1 FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+        `SELECT 1 FROM workflow w JOIN workflow_version v ON v.workflow_record_id=w.record_id
          WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`,
       )
       .get(slug, spaceId)
@@ -833,6 +833,7 @@ export function composeWorkflow(
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   return {
     workflow: {
+      record_id: row.record_id,
       slug,
       title: definition.title,
       description: definition.description,
@@ -840,7 +841,7 @@ export function composeWorkflow(
       version: row.n,
     },
     project: projectName,
-    catalogue: { version: catalogue.n },
+    catalogue: { record_id: catalogue.record_id, version: catalogue.n },
     mode: mode ? { slug: mode.slug, title: mode.title } : null,
     declaredArguments: definition.arguments,
     arguments: args,

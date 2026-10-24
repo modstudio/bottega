@@ -13,11 +13,11 @@ const OPERATOR_EMAIL_DELAY_SETTING = 'operator_email_delay_minutes'
 
 export type WaitingEmailLedgerKey = Pick<
   OperatorWaitingItem,
-  'kind' | 'id' | 'question_record_id' | 'episode'
+  'kind' | 'id' | 'workflow_cursor_record_id' | 'question_record_id' | 'episode'
 >
 
 const ledgerKey = (item: WaitingEmailLedgerKey) =>
-  `${item.kind}\u0000${item.kind === 'question' ? item.question_record_id : item.id}\u0000${item.episode}`
+  `${item.kind}\u0000${item.kind === 'question' ? item.question_record_id : item.workflow_cursor_record_id}\u0000${item.episode}`
 
 /** Question text reaches the caller only after this pure decision says the episode is due. */
 export function dueOperatorWaitingEmails(
@@ -60,7 +60,7 @@ function pushedEpisodes(): WaitingEmailLedgerKey[] {
     .query<
       {
         kind: 'question' | 'workflow'
-        item_id: number | null
+        item_id: string | null
         question_record_id: string | null
         episode: string
       },
@@ -71,7 +71,8 @@ function pushedEpisodes(): WaitingEmailLedgerKey[] {
     .all()
     .map((row) => ({
       kind: row.kind,
-      id: row.kind === 'workflow' ? row.item_id! : 0,
+      id: 0,
+      workflow_cursor_record_id: row.kind === 'workflow' ? row.item_id! : null,
       question_record_id: row.kind === 'question' ? row.question_record_id! : '',
       episode: row.episode,
     }))
@@ -86,7 +87,7 @@ function recordPushed(item: OperatorWaitingItem): void {
       )
       .run(
         item.kind,
-        item.kind === 'workflow' ? item.id : null,
+        item.kind === 'workflow' ? item.workflow_cursor_record_id : null,
         item.kind === 'question' ? item.question_record_id : null,
         item.episode,
         nowIso(),

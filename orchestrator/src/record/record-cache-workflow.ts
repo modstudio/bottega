@@ -94,7 +94,8 @@ function names(table: RecordWorkflowTable) {
     identity: workflow ? 'workflow' : 'step_catalogue',
     version: workflow ? 'workflow_version' : 'step_catalogue_version',
     event: workflow ? 'workflow_event' : 'step_catalogue_event',
-    foreign: workflow ? 'workflow_id' : 'catalogue_id',
+    foreign: workflow ? 'workflow_record_id' : 'catalogue_record_id',
+    eventForeign: workflow ? 'workflow_version_record_id' : 'catalogue_version_record_id',
   }
 }
 function parentPresent(
@@ -107,13 +108,13 @@ function parentPresent(
   if (table.endsWith('_version'))
     return Boolean(
       local
-        .query(`SELECT id FROM ${n.identity} WHERE record_id=? AND space_id=?`)
+        .query(`SELECT record_id FROM ${n.identity} WHERE record_id=? AND space_id=?`)
         .get(String(item.ownerId), spaceId),
     )
   if (table.endsWith('_event'))
     return Boolean(
       local
-        .query(`SELECT id FROM ${n.version} WHERE record_id=? AND space_id=?`)
+        .query(`SELECT record_id FROM ${n.version} WHERE record_id=? AND space_id=?`)
         .get(String(item.ownerVersionId), spaceId),
     )
   return true
@@ -150,27 +151,29 @@ function applyIdentity(
   spaceId: string,
 ): boolean {
   const byRecordId = local
-    .query<{ id: number; generation: number }, [string, string]>(
-      `SELECT id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
+    .query<{ record_id: string; generation: number }, [string, string]>(
+      `SELECT record_id,generation FROM ${n.identity} WHERE record_id=? AND space_id=?`,
     )
     .get(recordId, spaceId)
   const found =
     byRecordId ??
     local
-      .query<{ id: number; generation: number }, [string, string]>(
-        `SELECT id,generation FROM ${n.identity} WHERE space_id=? AND slug=?`,
+      .query<{ record_id: string; generation: number }, [string, string]>(
+        `SELECT record_id,generation FROM ${n.identity} WHERE space_id=? AND slug=?`,
       )
       .get(spaceId, String(item.slug))
   const generation = Number(item.generation ?? 1)
   const reconciled = Boolean(found && (generation !== found.generation || !byRecordId))
   if (found) {
     if (reconciled) {
-      deleteIdentityHistory(local, n, spaceId, found.id)
+      deleteIdentityHistory(local, n, spaceId, found.record_id)
       resetIdentityHistoryCursors(local, n, spaceId)
     }
     local
-      .query(`UPDATE ${n.identity} SET record_id=?,slug=?,generation=?,created_at=? WHERE id=?`)
-      .run(recordId, String(item.slug), generation, String(item.createdAt), found.id)
+      .query(
+        `UPDATE ${n.identity} SET record_id=?,slug=?,generation=?,created_at=? WHERE record_id=?`,
+      )
+      .run(recordId, String(item.slug), generation, String(item.createdAt), found.record_id)
   } else
     local
       .query(
@@ -186,20 +189,24 @@ function resetIdentityHistoryCursors(local: Database, n: Names, spaceId: string)
     .run(`${CURSOR}:${spaceId}:${n.version}`, `${CURSOR}:${spaceId}:${n.event}`)
 }
 
-function deleteIdentityHistory(local: Database, n: Names, spaceId: string, parentId: number): void {
+function deleteIdentityHistory(local: Database, n: Names, spaceId: string, parentId: string): void {
   if (n.event === 'workflow_event') {
     local
-      .query('DELETE FROM workflow_event WHERE space_id=? AND workflow_id=?')
+      .query(
+        'DELETE FROM workflow_event WHERE space_id=? AND workflow_version_record_id IN (SELECT record_id FROM workflow_version WHERE workflow_record_id=?)',
+      )
       .run(spaceId, parentId)
     local
-      .query('DELETE FROM workflow_version WHERE space_id=? AND workflow_id=?')
+      .query('DELETE FROM workflow_version WHERE space_id=? AND workflow_record_id=?')
       .run(spaceId, parentId)
   } else {
     local
-      .query('DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_id=?')
+      .query(
+        'DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?)',
+      )
       .run(spaceId, parentId)
     local
-      .query('DELETE FROM step_catalogue_version WHERE space_id=? AND catalogue_id=?')
+      .query('DELETE FROM step_catalogue_version WHERE space_id=? AND catalogue_record_id=?')
       .run(spaceId, parentId)
   }
 }
@@ -212,26 +219,26 @@ function applyVersion(
   spaceId: string,
 ): void {
   const parent = local
-    .query<{ id: number }, [string, string]>(
-      `SELECT id FROM ${n.identity} WHERE record_id=? AND space_id=?`,
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT record_id FROM ${n.identity} WHERE record_id=? AND space_id=?`,
     )
     .get(String(item.ownerId), spaceId)!
   const byRecordId = local
-    .query<{ id: number }, [string, string]>(
-      `SELECT id FROM ${n.version} WHERE record_id=? AND space_id=?`,
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT record_id FROM ${n.version} WHERE record_id=? AND space_id=?`,
     )
     .get(recordId, spaceId)
   const found =
     byRecordId ??
     local
-      .query<{ id: number }, [number, number]>(
-        `SELECT id FROM ${n.version} WHERE ${n.foreign}=? AND n=?`,
+      .query<{ record_id: string }, [string, number]>(
+        `SELECT record_id FROM ${n.version} WHERE ${n.foreign}=? AND n=?`,
       )
-      .get(parent.id, Number(item.n))
+      .get(parent.record_id, Number(item.n))
   const values = [
     recordId,
     spaceId,
-    parent.id,
+    parent.record_id,
     Number(item.n),
     String(item.status),
     String(item.definition),
@@ -242,12 +249,13 @@ function applyVersion(
     item.retiredAt == null ? null : String(item.retiredAt),
   ]
   if (found) {
-    if (!byRecordId) deleteReplacedVersionEvents(local, n, spaceId, parent.id, Number(item.n))
+    if (!byRecordId)
+      deleteReplacedVersionEvents(local, n, spaceId, parent.record_id, Number(item.n))
     local
       .query(
-        `UPDATE ${n.version} SET record_id=?,space_id=?,${n.foreign}=?,n=?,status=?,definition=?,author=?,reason=?,created_at=?,promoted_at=?,retired_at=? WHERE id=?`,
+        `UPDATE ${n.version} SET record_id=?,space_id=?,${n.foreign}=?,n=?,status=?,definition=?,author=?,reason=?,created_at=?,promoted_at=?,retired_at=? WHERE record_id=?`,
       )
-      .run(...values, found.id)
+      .run(...values, found.record_id)
   } else
     local
       .query(
@@ -260,16 +268,20 @@ function deleteReplacedVersionEvents(
   local: Database,
   n: Names,
   spaceId: string,
-  parentId: number,
+  parentId: string,
   version: number,
 ): void {
   if (n.event === 'workflow_event')
     local
-      .query('DELETE FROM workflow_event WHERE space_id=? AND workflow_id=? AND version_n=?')
+      .query(
+        'DELETE FROM workflow_event WHERE space_id=? AND workflow_version_record_id IN (SELECT record_id FROM workflow_version WHERE workflow_record_id=? AND n=?)',
+      )
       .run(spaceId, parentId, version)
   else
     local
-      .query('DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_id=? AND version_n=?')
+      .query(
+        'DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=? AND n=?)',
+      )
       .run(spaceId, parentId, version)
 }
 
@@ -286,14 +298,14 @@ function applyEvent(
     )
     .get(String(item.ownerVersionId), spaceId)!
   const found = local
-    .query<{ id: number }, [string, string]>(
-      `SELECT id FROM ${n.event} WHERE record_id=? AND space_id=?`,
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT record_id FROM ${n.event} WHERE record_id=? AND space_id=?`,
     )
     .get(recordId, spaceId)
   const values = [
     recordId,
     spaceId,
-    Number(version[n.foreign]),
+    String(version.record_id),
     Number(version.n),
     String(item.event),
     String(item.author),
@@ -304,13 +316,13 @@ function applyEvent(
   if (found)
     local
       .query(
-        `UPDATE ${n.event} SET record_id=?,space_id=?,${n.foreign}=?,version_n=?,event=?,author=?,reason=?,session_id=?,at=? WHERE id=?`,
+        `UPDATE ${n.event} SET record_id=?,space_id=?,${n.eventForeign}=?,version_n=?,event=?,author=?,reason=?,session_id=?,at=? WHERE record_id=?`,
       )
-      .run(...values, found.id)
+      .run(...values, found.record_id)
   else
     local
       .query(
-        `INSERT INTO ${n.event} (record_id,space_id,${n.foreign},version_n,event,author,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO ${n.event} (record_id,space_id,${n.eventForeign},version_n,event,author,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?,?)`,
       )
       .run(...values)
 }

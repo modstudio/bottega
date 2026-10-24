@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { notificationCommand } from '../../../shared/operator-notification.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import {
   claimOperatorNotifications,
@@ -117,19 +118,22 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
-        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
+        (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version_record_id,catalogue_version_record_id,
          args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,session_id)
-       VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-943','',1,1,'{"key":"DEV-943"}',0,'rebase',
-               'awaiting-ruling','[]','Workflow question?',1,'2026-09-24','2026-09-25','session-1') RETURNING id`,
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','fixture-workflow','default','DEV-943','',?,?,'{"key":"DEV-943"}',0,'rebase',
+               'awaiting-ruling','[]','Workflow question?',1,'2026-09-24','2026-09-25','session-1') RETURNING record_id,number`,
     )
-    .get() as { id: number }
+    .get(workflowVersionRecordId(db()), catalogueVersionRecordId(db())) as {
+    record_id: string
+    number: number
+  }
   db()
     .query(
       `INSERT INTO question
-      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+      (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
      VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-943','2026-09-25','Workflow question?','workflow','2026-09-25')`,
     )
-    .run(cursor.id)
+    .run(cursor.record_id)
 
   const waiting = operatorWaiting()
   expect(waiting).toMatchObject([
@@ -150,7 +154,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
     },
     {
       kind: 'workflow',
-      id: cursor.id,
+      id: cursor.number,
       run_record_id: null,
       project: 'fixture',
       task_key: 'DEV-943',
@@ -185,23 +189,26 @@ test('notification claims return each waiting episode once', () => {
   const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
-        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
+        (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version_record_id,catalogue_version_record_id,
          args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
-       VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-943','',1,1,'{}',0,'rebase','awaiting-ruling',
-               '[]','Workflow?',1,'2026-09-25','2026-09-25') RETURNING id`,
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','fixture-workflow','default','DEV-943','',?,?,'{}',0,'rebase','awaiting-ruling',
+               '[]','Workflow?',1,'2026-09-25','2026-09-25') RETURNING record_id,number`,
     )
-    .get() as { id: number }
+    .get(workflowVersionRecordId(db()), catalogueVersionRecordId(db())) as {
+    record_id: string
+    number: number
+  }
   db()
     .query(
       `INSERT INTO question
-      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+      (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
      VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-943','2026-09-25','Workflow?','workflow','2026-09-25')`,
     )
-    .run(cursor.id)
+    .run(cursor.record_id)
   const first = claimOperatorNotifications(db())
   expect(first.map(({ kind, id }) => ({ kind, id }))).toEqual([
     { kind: 'question', id: question.number },
-    { kind: 'workflow', id: cursor.id },
+    { kind: 'workflow', id: cursor.number },
   ])
   expect(first[0]?.notification).toEqual({
     title: 'Ruling needed: fixture DEV-943',
@@ -225,9 +232,9 @@ test('notification claims return each waiting episode once', () => {
   db().query("UPDATE workflow_cursor SET state='running', updated_at='2026-09-26'").run()
   db()
     .query(
-      "UPDATE question SET closed_at='2026-09-26',close_reason='advanced-without-ruling' WHERE workflow_cursor_id=?",
+      "UPDATE question SET closed_at='2026-09-26',close_reason='advanced-without-ruling' WHERE workflow_cursor_record_id=?",
     )
-    .run(cursor.id)
+    .run(cursor.record_id)
   db()
     .query(
       "UPDATE workflow_cursor SET state='awaiting-ruling', question='Again?', updated_at='2026-09-27'",
@@ -236,17 +243,17 @@ test('notification claims return each waiting episode once', () => {
   db()
     .query(
       `INSERT INTO question
-      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+      (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
      VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-943','2026-09-27','Again?','workflow','2026-09-27')`,
     )
-    .run(cursor.id)
+    .run(cursor.record_id)
   expect(
     claimOperatorNotifications(db()).map(({ kind, id, waiting_since }) => ({
       kind,
       id,
       waiting_since,
     })),
-  ).toEqual([{ kind: 'workflow', id: cursor.id, waiting_since: '2026-09-27' }])
+  ).toEqual([{ kind: 'workflow', id: cursor.number, waiting_since: '2026-09-27' }])
   expect(claimOperatorNotifications(db())).toEqual([])
 })
 

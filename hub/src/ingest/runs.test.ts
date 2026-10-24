@@ -152,7 +152,7 @@ describe('run ingest', () => {
           record_id: '00000000-0000-4000-8000-000000008001',
           run_number: null,
           run_record_id: null,
-          workflow_cursor_id: 7001,
+          workflow_cursor_id: '00000000-0000-4000-8000-000000007001',
           workflow_key: 'DEV-964',
           project: 'alpha',
           workflow_slug: 'ship',
@@ -191,7 +191,7 @@ describe('run ingest', () => {
     ).toEqual({
       run_ref: null,
       root_ref: null,
-      workflow_cursor_id: 7001,
+      workflow_cursor_id: '00000000-0000-4000-8000-000000007001',
       workflow_key: 'DEV-964',
       project: 'alpha',
       asked_via: 'workflow',

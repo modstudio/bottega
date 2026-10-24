@@ -22,6 +22,8 @@ unrecognised = "unrecognised"
 # Generated SQL statement hashes are exact exemption keys.
 e80ba02884c78ef6 = "e80ba02884c78ef6"
 56b2a34b8ba485c3 = "56b2a34b8ba485c3"
+5ebf145dbe0d5ad1 = "5ebf145dbe0d5ad1"
+342ba0a333bd0ef6 = "342ba0a333bd0ef6"
 # `ba` is a regex fragment that includes both `bash` and `sh`.
 ba = "ba"
 # `DOUB` is a SQLite type-affinity prefix that matches DOUBLE.

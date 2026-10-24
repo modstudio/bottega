@@ -76,7 +76,8 @@ type QuestionRow = {
   number: number
   run_record_id: string | null
   root_id: string | null
-  workflow_cursor_id: number | null
+  workflow_cursor_record_id: string | null
+  workflow_cursor_number: number | null
   workflow_slug: string | null
   mode_slug: string | null
   workflow_owner: string | null
@@ -182,7 +183,7 @@ function refusal(
   }
   if (decision.code === 'foreign-project') {
     return (
-      `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} belongs to project ${row.repo ?? 'none'}; ` +
+      `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_record_id}` : `run ${row.root_id}`} belongs to project ${row.repo ?? 'none'}; ` +
       `the owner path files within the run's own project. ` +
       `Pass --from-operator to file under another scope or subject`
     )
@@ -197,11 +198,11 @@ function ownerRefusal(
 ): string {
   if (!decision.actor && !authority.actor)
     return (
-      `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
+      `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_record_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
       callerIdentityRefusal(callerIdentity(), 'file its ruling')
     )
   return (
-    `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
+    `${row.run_record_id === null ? `workflow cursor ${row.workflow_cursor_record_id}` : `run ${row.root_id}`} is owned by session ${decision.owner ?? authority.owner}; ` +
     `current session ${decision.actor ?? authority.actor} cannot file its ruling ` +
     '(owner active within the window)'
   )
@@ -211,7 +212,7 @@ function loadQuestion(questionId: string): QuestionRow {
   const row = db()
     .query(
       `SELECT q.number,q.record_id,q.run_record_id,r.record_id run_record_id,COALESCE(r.parent_run_record_id,r.record_id) root_id,
-              q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
+              q.workflow_cursor_record_id,c.number workflow_cursor_number,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
               q.question, q.answer, q.answer_basis,
               q.answered_at, q.answered_by, q.answerer_kind, q.overturned_at, q.overturned_by,
@@ -219,7 +220,7 @@ function loadQuestion(questionId: string): QuestionRow {
               COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
               COALESCE(r.launch_key,q.workflow_key) launch_key,p.path project_path
          FROM question q LEFT JOIN run r ON r.record_id = q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
+         LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
          LEFT JOIN project p ON p.record_id=c.project_record_id AND p.retired_at IS NULL
          WHERE q.record_id=?`,
     )
@@ -380,7 +381,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
       owner: row.workflow_owner,
       actor,
       fromOperator: input.fromOperator,
-      subject: `workflow cursor ${row.workflow_cursor_id}`,
+      subject: `workflow cursor ${row.workflow_cursor_record_id}`,
       action: 'file',
       chainLastActivityAt: workflowActivity,
     })
@@ -409,12 +410,12 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     runId: row.run_record_id,
     runRecordId: row.run_record_id,
     workflow:
-      row.workflow_cursor_id === null
+      row.workflow_cursor_record_id === null
         ? null
         : {
             slug: row.workflow_slug!,
             mode: row.mode_slug!,
-            cursorId: row.workflow_cursor_id,
+            cursorId: row.workflow_cursor_number!,
           },
     taskKey: row.launch_key,
     date: at,

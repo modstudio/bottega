@@ -2,9 +2,6 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from './migrations.ts'
 
-// K7b-2 owns the remaining workflow and step-catalogue indexes.
-const K7B_2_EXCLUSIONS = ['step_catalogue_event.version_n', 'workflow_event.version_n']
-
 function leadingIndexColumns(database: Database, table: string): Set<string> {
   const indexes = database
     .query<{ name: string; partial: number }, [string]>(
@@ -53,7 +50,7 @@ test('every declared orchestrator foreign key leads an index', () => {
   const database = new Database(':memory:')
   try {
     applyMigrations(database)
-    expect(unindexedForeignKeys(database)).toEqual(K7B_2_EXCLUSIONS)
+    expect(unindexedForeignKeys(database)).toEqual([])
   } finally {
     database.close()
   }

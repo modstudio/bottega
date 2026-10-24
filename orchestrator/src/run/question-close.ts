@@ -128,14 +128,14 @@ export function closeQuestionByOperator(
         answered_at: string | null
         closed_at: string | null
         run_record_id: number | null
-        workflow_cursor_id: number | null
+        workflow_cursor_record_id: string | null
         cursor_state: string | null
         root_id: string | null
         latest_status: string | null
       },
       [string]
     >(
-      `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_id,c.state cursor_state,
+      `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_record_id,c.state cursor_state,
               COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               (SELECT latest.status FROM run latest
                 WHERE latest.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
@@ -143,14 +143,14 @@ export function closeQuestionByOperator(
                 ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status
          FROM question q
          LEFT JOIN run owner ON owner.record_id=q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
+         LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
         WHERE q.record_id=?`,
     )
     .get(questionId)
   if (!row) throw new Error(`no question ${questionId}`)
   if (row.answered_at) throw new Error(`question ${questionId} is already answered`)
   if (row.closed_at) throw new Error(`question ${questionId} is already closed`)
-  if (row.workflow_cursor_id !== null && row.cursor_state === 'awaiting-ruling') {
+  if (row.workflow_cursor_record_id !== null && row.cursor_state === 'awaiting-ruling') {
     throw new Error(
       `question ${questionId} belongs to a workflow awaiting a ruling; use ${PLATFORM_SLUG} workflow rule or ${PLATFORM_SLUG} workflow abandon`,
     )

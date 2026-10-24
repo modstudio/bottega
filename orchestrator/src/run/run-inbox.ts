@@ -127,9 +127,9 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
   const rows = db()
     .query(
-      `SELECT q.number,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
+      `SELECT q.number,q.record_id,q.asked_at,q.question,c.number cursor_record_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
-         FROM question q JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
+         FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
         ORDER BY q.asked_at,q.number`,
     )
@@ -138,7 +138,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     record_id: string
     asked_at: string
     question: string
-    cursor_id: number
+    cursor_record_id: number
     project: string
     project_record_id: string | null
     workflow_slug: string
@@ -174,7 +174,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
       question: row.question,
       answer_command: canAnswer
         ? `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
-          `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.cursor_id).cli}${flags} --ruling "<ruling>"`
+          `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.cursor_record_id).cli}${flags} --ruling "<ruling>"`
         : null,
       ownership_notice: canAnswer
         ? null

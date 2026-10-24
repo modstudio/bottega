@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
 import {
@@ -13,6 +14,7 @@ import {
   resolveProjectAutonomy,
 } from './autonomy-scopes.ts'
 import { writeSessionContextCache } from './session-context-cache.ts'
+import { seedWorkflows } from './workflow-seeds.ts'
 
 const steps = [
   { slug: 'design', stage: 'plan' as const, autonomy: 'ask' as const },
@@ -20,6 +22,7 @@ const steps = [
 ]
 const database = (settings = '{}') => {
   const d = migratedTestDatabase()
+  seedWorkflows(d)
   d.query(
     'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
   ).run('fixture', '/fixture', settings)
@@ -351,14 +354,16 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
   const d = database(JSON.stringify({ autonomy: { rulings: 'agent' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
-      (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
-       catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version_record_id,
+       catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
        created_at,updated_at)
-     VALUES (?,'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-866',?,NULL,?,?,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
   )
   insert.run(
     newRecordId(),
     'older',
+    workflowVersionRecordId(d),
+    catalogueVersionRecordId(d),
     JSON.stringify({ rulings: { value: 'agent', scope: 'session' } }),
     'running',
     '1',
@@ -367,6 +372,8 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
   insert.run(
     newRecordId(),
     'newer',
+    workflowVersionRecordId(d),
+    catalogueVersionRecordId(d),
     JSON.stringify({ rulings: { value: 'user', scope: 'session' } }),
     'awaiting-ruling',
     '2',
@@ -379,6 +386,8 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
   insert.run(
     newRecordId(),
     'incomplete',
+    workflowVersionRecordId(d),
+    catalogueVersionRecordId(d),
     JSON.stringify({
       rulings: {
         value: 'agent',

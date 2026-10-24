@@ -161,6 +161,47 @@ export function relayQuestion(
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
+type WorkflowWaitingRow = {
+  id: number
+  workflow_cursor_record_id: string
+  question_record_id: string
+  project: string
+  task_key: string | null
+  question: string
+  waiting_since: string
+  workflow_slug: string
+  mode_slug: string
+  args: string
+  session_id: string | null
+}
+
+function workflowWaitingEpisode(row: WorkflowWaitingRow) {
+  const flags = Object.entries(JSON.parse(row.args) as Record<string, string>)
+    .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
+    .join('')
+  return {
+    episode: row.waiting_since,
+    item: {
+      kind: 'workflow' as const,
+      id: row.id,
+      workflow_cursor_record_id: row.workflow_cursor_record_id,
+      question_record_id: row.question_record_id,
+      run_number: null,
+      run_record_id: null,
+      project: row.project,
+      task_key: row.task_key,
+      session_id: row.session_id,
+      question: row.question,
+      options: [],
+      recommendation: null,
+      why: null,
+      waiting_since: row.waiting_since,
+      episode: row.waiting_since,
+      answer_command: `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>" --from-operator`,
+    },
+  }
+}
+
 function operatorWaitingWithEpisodes(
   d: Database,
 ): Array<{ item: OperatorWaitingItem; episode: string }> {
@@ -188,29 +229,19 @@ function operatorWaitingWithEpisodes(
   }>
   const workflows = d
     .query(
-      `SELECT c.id,c.project,q.record_id question_record_id,q.workflow_key task_key,q.question,q.asked_at waiting_since,
+      `SELECT c.number id,c.record_id workflow_cursor_record_id,c.project,q.record_id question_record_id,q.workflow_key task_key,q.question,q.asked_at waiting_since,
               c.workflow_slug,c.mode_slug,c.args,c.session_id
-         FROM workflow_cursor c JOIN question q ON q.workflow_cursor_id=c.id
+         FROM workflow_cursor c JOIN question q ON q.workflow_cursor_record_id=c.record_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}`,
     )
-    .all() as Array<{
-    id: number
-    question_record_id: string
-    project: string
-    task_key: string | null
-    question: string
-    waiting_since: string
-    workflow_slug: string
-    mode_slug: string
-    args: string
-    session_id: string | null
-  }>
+    .all() as WorkflowWaitingRow[]
   return [
     ...questions.map((row) => ({
       episode: row.awaiting_operator_at,
       item: {
         kind: 'question' as const,
         id: row.number,
+        workflow_cursor_record_id: null,
         question_record_id: row.question_record_id,
         run_number: row.root_number,
         run_record_id: row.root_record_id,
@@ -226,32 +257,7 @@ function operatorWaitingWithEpisodes(
         answer_command: `${PLATFORM_SLUG} question answer ${row.root_number} --q${row.number} --from-operator "<ruling>"`,
       },
     })),
-    ...workflows.map((row) => {
-      const args = JSON.parse(row.args) as Record<string, string>
-      const flags = Object.entries(args)
-        .map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`)
-        .join('')
-      return {
-        episode: row.waiting_since,
-        item: {
-          kind: 'workflow' as const,
-          id: row.id,
-          question_record_id: row.question_record_id,
-          run_number: null,
-          run_record_id: null,
-          project: row.project,
-          task_key: row.task_key,
-          session_id: row.session_id,
-          question: row.question,
-          options: [],
-          recommendation: null,
-          why: null,
-          waiting_since: row.waiting_since,
-          episode: row.waiting_since,
-          answer_command: `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>" --from-operator`,
-        },
-      }
-    }),
+    ...workflows.map(workflowWaitingEpisode),
   ].sort(
     (a, b) =>
       a.item.waiting_since.localeCompare(b.item.waiting_since) ||

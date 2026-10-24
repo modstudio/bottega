@@ -12,7 +12,7 @@ import { installRecordSessionRunner } from '../../test/fixtures/record-session.t
 import { db } from '../database/db.ts'
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
-import { rememberHostedRecord } from '../record/install-binding.ts'
+import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import {
   settingsImportCommand,

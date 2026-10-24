@@ -17,6 +17,50 @@ import {
 
 const seedDefinition = JSON.stringify
 
+function seedCatalogueEvent(
+  d: Database,
+  catalogueId: string,
+  n: number,
+  event: 'set' | 'promote' | 'retire',
+  reason: string,
+  now: string,
+): void {
+  d.query(`INSERT INTO step_catalogue_event
+    (record_id,catalogue_version_record_id,version_n,event,author,reason,session_id,at)
+    VALUES (?,(SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=? AND n=?),?,?,?,?,NULL,?)`).run(
+    newRecordId(),
+    catalogueId,
+    n,
+    n,
+    event,
+    BUILT_IN_WORKFLOW_AUTHOR,
+    reason,
+    now,
+  )
+}
+
+function seedWorkflowEvent(
+  d: Database,
+  workflowId: string,
+  n: number,
+  event: 'set' | 'promote' | 'retire',
+  reason: string,
+  now: string,
+): void {
+  d.query(`INSERT INTO workflow_event
+    (record_id,workflow_version_record_id,version_n,event,author,reason,session_id,at)
+    VALUES (?,(SELECT record_id FROM workflow_version WHERE workflow_record_id=? AND n=?),?,?,?,?,NULL,?)`).run(
+    newRecordId(),
+    workflowId,
+    n,
+    n,
+    event,
+    BUILT_IN_WORKFLOW_AUTHOR,
+    reason,
+    now,
+  )
+}
+
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),
@@ -24,37 +68,43 @@ function seedCatalogue(d: Database, now: string): void {
     reason = `seed r${revision}`
   requireValidSeedCatalogue(seeded)
   let catalogue = d
-    .query("SELECT id FROM step_catalogue WHERE slug='shared' AND space_id IS NULL")
+    .query("SELECT record_id FROM step_catalogue WHERE slug='shared' AND space_id IS NULL")
     .get() as {
-    id: number
+    record_id: string
   } | null
   if (!catalogue) {
     catalogue = d
       .query(
-        "INSERT INTO step_catalogue (record_id,slug,created_at) VALUES (?,'shared',?) RETURNING id",
+        "INSERT INTO step_catalogue (record_id,slug,created_at) VALUES (?,'shared',?) RETURNING record_id",
       )
-      .get(newRecordId(), now) as { id: number }
+      .get(newRecordId(), now) as { record_id: string }
     d.query(
-      `INSERT INTO step_catalogue_version (record_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,1,'production',?,?,?,?,?)`,
-    ).run(newRecordId(), catalogue.id, seededDefinition, BUILT_IN_WORKFLOW_AUTHOR, reason, now, now)
-    d.query(
-      `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,1,'set',?,?,NULL,?)`,
-    ).run(newRecordId(), catalogue.id, BUILT_IN_WORKFLOW_AUTHOR, reason, now)
+      `INSERT INTO step_catalogue_version (record_id,catalogue_record_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,1,'production',?,?,?,?,?)`,
+    ).run(
+      newRecordId(),
+      catalogue.record_id,
+      seededDefinition,
+      BUILT_IN_WORKFLOW_AUTHOR,
+      reason,
+      now,
+      now,
+    )
+    seedCatalogueEvent(d, catalogue.record_id, 1, 'set', reason, now)
     return
   }
   if (
     !seedMayPromote({
       seedRevision: revision,
-      storedSeedRevision: storedCatalogueSeedRevision(d, catalogue.id),
-      operatorPromoted: operatorPromotedCatalogue(d, catalogue.id),
+      storedSeedRevision: storedCatalogueSeedRevision(d, catalogue.record_id),
+      operatorPromoted: operatorPromotedCatalogue(d, catalogue.record_id),
     })
   )
     return
   const prior = d
     .query(
-      "SELECT n,definition FROM step_catalogue_version WHERE catalogue_id=? AND status='production'",
+      "SELECT n,definition FROM step_catalogue_version WHERE catalogue_record_id=? AND status='production'",
     )
-    .get(catalogue.id) as { n: number; definition: string } | null
+    .get(catalogue.record_id) as { n: number; definition: string } | null
   const assembled = prior
     ? {
         steps: mergeSeededSteps(
@@ -72,26 +122,29 @@ function seedCatalogue(d: Database, now: string): void {
   const definition = JSON.stringify(assembled)
   if (prior?.definition === definition) return
   const { n: maxN } = d
-    .query('SELECT COALESCE(MAX(n),0) AS n FROM step_catalogue_version WHERE catalogue_id=?')
-    .get(catalogue.id) as { n: number }
+    .query('SELECT COALESCE(MAX(n),0) AS n FROM step_catalogue_version WHERE catalogue_record_id=?')
+    .get(catalogue.record_id) as { n: number }
   const n = maxN + 1
   if (prior) {
     d.query(
-      "UPDATE step_catalogue_version SET status='retired',retired_at=? WHERE catalogue_id=? AND status='production'",
-    ).run(now, catalogue.id)
-    d.query(
-      `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'retire',?,?,NULL,?)`,
-    ).run(newRecordId(), catalogue.id, prior.n, BUILT_IN_WORKFLOW_AUTHOR, reason, now)
+      "UPDATE step_catalogue_version SET status='retired',retired_at=? WHERE catalogue_record_id=? AND status='production'",
+    ).run(now, catalogue.record_id)
+    seedCatalogueEvent(d, catalogue.record_id, prior.n, 'retire', reason, now)
   }
   d.query(
-    `INSERT INTO step_catalogue_version (record_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,?,'production',?,?,?,?,?)`,
-  ).run(newRecordId(), catalogue.id, n, definition, BUILT_IN_WORKFLOW_AUTHOR, reason, now, now)
-  d.query(
-    `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'set',?,?,NULL,?)`,
-  ).run(newRecordId(), catalogue.id, n, BUILT_IN_WORKFLOW_AUTHOR, reason, now)
-  d.query(
-    `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'promote',?,?,NULL,?)`,
-  ).run(newRecordId(), catalogue.id, n, BUILT_IN_WORKFLOW_AUTHOR, reason, now)
+    `INSERT INTO step_catalogue_version (record_id,catalogue_record_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,?,'production',?,?,?,?,?)`,
+  ).run(
+    newRecordId(),
+    catalogue.record_id,
+    n,
+    definition,
+    BUILT_IN_WORKFLOW_AUTHOR,
+    reason,
+    now,
+    now,
+  )
+  seedCatalogueEvent(d, catalogue.record_id, n, 'set', reason, now)
+  seedCatalogueEvent(d, catalogue.record_id, n, 'promote', reason, now)
 }
 
 function requireValidSeedCatalogue(definition: unknown): void {
@@ -102,9 +155,11 @@ function requireValidSeedCatalogue(definition: unknown): void {
     )
 }
 
-function storedCatalogueSeedRevision(d: Database, catalogueId: number): number {
+function storedCatalogueSeedRevision(d: Database, catalogueId: string): number {
   const events = d
-    .query('SELECT reason FROM step_catalogue_event WHERE catalogue_id=? AND author=?')
+    .query(
+      'SELECT e.reason FROM step_catalogue_event e JOIN step_catalogue_version v ON v.record_id=e.catalogue_version_record_id WHERE v.catalogue_record_id=? AND e.author=?',
+    )
     .all(catalogueId, BUILT_IN_WORKFLOW_AUTHOR) as { reason: string }[]
   return events.reduce((highest, { reason }) => {
     const revision = reason.match(/^seed r(\d+)$/)?.[1]
@@ -112,19 +167,21 @@ function storedCatalogueSeedRevision(d: Database, catalogueId: number): number {
   }, 0)
 }
 
-function operatorPromotedCatalogue(d: Database, catalogueId: number): boolean {
+function operatorPromotedCatalogue(d: Database, catalogueId: string): boolean {
   return (
     d
       .query(
-        "SELECT 1 FROM step_catalogue_event WHERE catalogue_id=? AND event='promote' AND author!=? LIMIT 1",
+        "SELECT 1 FROM step_catalogue_event e JOIN step_catalogue_version v ON v.record_id=e.catalogue_version_record_id WHERE v.catalogue_record_id=? AND e.event='promote' AND e.author!=? LIMIT 1",
       )
       .get(catalogueId, BUILT_IN_WORKFLOW_AUTHOR) != null
   )
 }
 
-function storedSeedRevision(d: Database, workflowId: number): number {
+function storedSeedRevision(d: Database, workflowId: string): number {
   const events = d
-    .query('SELECT reason FROM workflow_event WHERE workflow_id=? AND author=?')
+    .query(
+      'SELECT e.reason FROM workflow_event e JOIN workflow_version v ON v.record_id=e.workflow_version_record_id WHERE v.workflow_record_id=? AND e.author=?',
+    )
     .all(workflowId, BUILT_IN_WORKFLOW_AUTHOR) as { reason: string }[]
   return events.reduce((highest, { reason }) => {
     if (reason === 'DEV-257 seed') return Math.max(highest, 1)
@@ -133,11 +190,11 @@ function storedSeedRevision(d: Database, workflowId: number): number {
   }, 0)
 }
 
-function operatorPromotedWorkflow(d: Database, workflowId: number): boolean {
+function operatorPromotedWorkflow(d: Database, workflowId: string): boolean {
   return (
     d
       .query(
-        "SELECT 1 FROM workflow_event WHERE workflow_id=? AND event='promote' AND author!=? LIMIT 1",
+        "SELECT 1 FROM workflow_event e JOIN workflow_version v ON v.record_id=e.workflow_version_record_id WHERE v.workflow_record_id=? AND e.event='promote' AND e.author!=? LIMIT 1",
       )
       .get(workflowId, BUILT_IN_WORKFLOW_AUTHOR) != null
   )
@@ -146,72 +203,57 @@ function operatorPromotedWorkflow(d: Database, workflowId: number): boolean {
 function seedWorkflow(d: Database, seed: (typeof seeds)[number], now: string): void {
   const reason = `seed r${seed.revision}`
   let workflow = d
-    .query('SELECT id FROM workflow WHERE slug=? AND space_id IS NULL')
+    .query('SELECT record_id FROM workflow WHERE slug=? AND space_id IS NULL')
     .get(seed.slug) as {
-    id: number
+    record_id: string
   } | null
   if (!workflow) {
     workflow = d
-      .query('INSERT INTO workflow (record_id, slug, created_at) VALUES (?, ?, ?) RETURNING id')
-      .get(newRecordId(), seed.slug, now) as { id: number }
+      .query(
+        'INSERT INTO workflow (record_id, slug, created_at) VALUES (?, ?, ?) RETURNING record_id',
+      )
+      .get(newRecordId(), seed.slug, now) as { record_id: string }
     d.query(`INSERT INTO workflow_version
-          (record_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at)
+          (record_id,workflow_record_id,n,status,definition,author,reason,created_at,promoted_at)
           VALUES (?,?,1,'production',?,?,?,?,?)`).run(
       newRecordId(),
-      workflow.id,
+      workflow.record_id,
       seedDefinition(workflowDefinition(seed)),
       BUILT_IN_WORKFLOW_AUTHOR,
       reason,
       now,
       now,
     )
-    d.query(`INSERT INTO workflow_event
-          (record_id,workflow_id,version_n,event,author,reason,session_id,at)
-          VALUES (?,?,1,'set',?,?,NULL,?)`).run(
-      newRecordId(),
-      workflow.id,
-      BUILT_IN_WORKFLOW_AUTHOR,
-      reason,
-      now,
-    )
+    seedWorkflowEvent(d, workflow.record_id, 1, 'set', reason, now)
     return
   }
   if (
     !seedMayPromote({
       seedRevision: seed.revision,
-      storedSeedRevision: storedSeedRevision(d, workflow.id),
-      operatorPromoted: operatorPromotedWorkflow(d, workflow.id),
+      storedSeedRevision: storedSeedRevision(d, workflow.record_id),
+      operatorPromoted: operatorPromotedWorkflow(d, workflow.record_id),
     })
   )
     return
   // A workflow may have no production version (a draft never promoted); then there is nothing to retire.
   const prior = d
-    .query("SELECT n FROM workflow_version WHERE workflow_id=? AND status='production'")
-    .get(workflow.id) as { n: number } | null
+    .query("SELECT n FROM workflow_version WHERE workflow_record_id=? AND status='production'")
+    .get(workflow.record_id) as { n: number } | null
   const { n: maxN } = d
-    .query('SELECT COALESCE(MAX(n),0) AS n FROM workflow_version WHERE workflow_id=?')
-    .get(workflow.id) as { n: number }
+    .query('SELECT COALESCE(MAX(n),0) AS n FROM workflow_version WHERE workflow_record_id=?')
+    .get(workflow.record_id) as { n: number }
   const n = maxN + 1
   if (prior) {
     d.query(
-      "UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_id=? AND status='production'",
-    ).run(now, workflow.id)
-    d.query(`INSERT INTO workflow_event
-          (record_id,workflow_id,version_n,event,author,reason,session_id,at)
-          VALUES (?,?,?,'retire',?,?,NULL,?)`).run(
-      newRecordId(),
-      workflow.id,
-      prior.n,
-      BUILT_IN_WORKFLOW_AUTHOR,
-      reason,
-      now,
-    )
+      "UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_record_id=? AND status='production'",
+    ).run(now, workflow.record_id)
+    seedWorkflowEvent(d, workflow.record_id, prior.n, 'retire', reason, now)
   }
   d.query(`INSERT INTO workflow_version
-        (record_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at)
+        (record_id,workflow_record_id,n,status,definition,author,reason,created_at,promoted_at)
         VALUES (?,?,?,'production',?,?,?,?,?)`).run(
     newRecordId(),
-    workflow.id,
+    workflow.record_id,
     n,
     seedDefinition(workflowDefinition(seed)),
     BUILT_IN_WORKFLOW_AUTHOR,
@@ -219,29 +261,14 @@ function seedWorkflow(d: Database, seed: (typeof seeds)[number], now: string): v
     now,
     now,
   )
-  d.query(`INSERT INTO workflow_event
-        (record_id,workflow_id,version_n,event,author,reason,session_id,at)
-        VALUES (?,?,?,'set',?,?,NULL,?)`).run(
-    newRecordId(),
-    workflow.id,
-    n,
-    BUILT_IN_WORKFLOW_AUTHOR,
-    reason,
-    now,
-  )
-  d.query(`INSERT INTO workflow_event
-        (record_id,workflow_id,version_n,event,author,reason,session_id,at)
-        VALUES (?,?,?,'promote',?,?,NULL,?)`).run(
-    newRecordId(),
-    workflow.id,
-    n,
-    BUILT_IN_WORKFLOW_AUTHOR,
-    reason,
-    now,
-  )
+  seedWorkflowEvent(d, workflow.record_id, n, 'set', reason, now)
+  seedWorkflowEvent(d, workflow.record_id, n, 'promote', reason, now)
 }
 
 export function seedWorkflows(d: Database): void {
+  // A bound store caches the hosted catalogue. Built-ins are authored only by
+  // an unbound machine; seeding a bound store would recreate stale local rows.
+  if (d.query('SELECT 1 FROM record_install_binding WHERE id=1').get()) return
   const now = nowIso()
   writeTransaction(() => {
     seedCatalogue(d, now)

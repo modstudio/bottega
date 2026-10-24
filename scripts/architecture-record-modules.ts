@@ -77,6 +77,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-push-catalogues.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     '../../../shared/record-space-membership.ts',
     '../database/db.ts',
     '../project-space.ts',
@@ -368,12 +369,15 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-write-allowed.ts',
     './record-doc-audience-sql.ts',
   ]),
-  module('orchestrator/src/record/install-binding.ts', ['bun:sqlite', '../database/db.ts']),
+  module('orchestrator/src/record/install-binding.ts', ['bun:sqlite']),
+  module('orchestrator/src/record/install-binding-write.ts', ['bun:sqlite', '../database/db.ts']),
   module('orchestrator/src/record/record-write-decision.ts', []),
   module('orchestrator/src/record/record-write-authority.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-api-url.ts',
+    '../database/db.ts',
     './install-binding.ts',
+    './install-binding-write.ts',
     './record-write-decision.ts',
   ]),
   module('orchestrator/src/run/question-delivery.ts', [

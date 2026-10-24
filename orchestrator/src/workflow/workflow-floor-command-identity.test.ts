@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST, INSTALL_HOME_ENV } from '../../../shared/install-root.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { bottegaVerbArgv, decideFloorSatisfaction, type Floor } from './workflow-floor.ts'
 import {
@@ -90,13 +91,13 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
       database
         .query(
           `INSERT INTO workflow_cursor
-          (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-           workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+          (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+           workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at,enforcement)
-         VALUES ('${newRecordId()}','fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','flow','default','DEV-977','','s',?,?,'{}',0,'rebase','running','[]',NULL,
                  1,'2026-09-01','2026-09-01','floors')`,
         )
-        .run()
+        .run(workflowVersionRecordId(database), catalogueVersionRecordId(database))
     })()
     const url = 'https://github.com/acme/app/pull/15'
     const insertExec = (path: string) =>
@@ -150,7 +151,7 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
       decideFloorSatisfaction({
         floors: [floor],
         evidence: gatherValidatedEvidence({
-          cursorId: 1,
+          cursorId: '00000000-0000-4000-8000-000000000001',
           identity,
           stepOrdinal: 1,
           stepSlug: 'rebase',

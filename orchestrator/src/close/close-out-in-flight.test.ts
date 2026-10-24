@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -23,11 +24,11 @@ function insertCursor(input: {
   const row = db()
     .query(
       `INSERT INTO workflow_cursor
-        (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-         workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at)
-       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),'ship-task','merge',?,?,?,1,1,?,0,?,'running','[]',NULL,1,'2026-10-22','2026-10-22')
-       RETURNING id`,
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),'ship-task','merge',?,?,?,?,?, ?,0,?,'running','[]',NULL,1,'2026-10-22','2026-10-22')
+       RETURNING number id`,
     )
     .get(
       newRecordId(),
@@ -36,6 +37,8 @@ function insertCursor(input: {
       input.branch,
       input.worktree,
       input.session,
+      workflowVersionRecordId(db()),
+      catalogueVersionRecordId(db()),
       JSON.stringify({ branch: input.branch, worktree: input.worktree }),
       input.step ?? 'merge-pr',
     ) as { id: number }

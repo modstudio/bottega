@@ -36,6 +36,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-cursor-selection.ts', [
     'bun:sqlite',
+    'node:crypto',
     '../database/db.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-trail.ts',

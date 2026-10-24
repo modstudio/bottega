@@ -12,6 +12,10 @@ import {
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
+import {
+  prepareWorkflowUuidMigration,
+  workflowUuidReferenceOrphanCounts,
+} from './workflow-uuid-migration-preflight.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
@@ -22,6 +26,7 @@ const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKF
 const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'
 const LENS_PORT_UUID_KEY_MIGRATION = '0131_lens_port_uuid_key'
 const MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION = '0156_monitor_release_claim_uuid_keys'
+const WORKFLOW_UUID_KEY_MIGRATION = '0157_workflow_uuid_key'
 
 export type BeforeMigrationApply = {
   migration: string
@@ -758,11 +763,19 @@ function compatibleBackfillEntries(
       n: number
     }
   ).n
+  const cursorHasIntegerId = (
+    d
+      .query("SELECT COUNT(*) AS n FROM pragma_table_info('workflow_cursor') WHERE name='id'")
+      .get() as {
+      n: number
+    }
+  ).n
   return entries.filter(
     (entry) =>
       !INTEGER_PROJECT_BACKFILLS.has(entry.tag) &&
       (runHasIntegerId > 0 || entry.tag !== '0117_project_uuid_key') &&
-      (reviewHasIntegerId > 0 || entry.tag !== '0124_run_uuid_key'),
+      (reviewHasIntegerId > 0 || entry.tag !== '0124_run_uuid_key') &&
+      (cursorHasIntegerId > 0 || entry.tag !== '0056_workflow_questions'),
   )
 }
 
@@ -917,6 +930,7 @@ function migrationOrphanCounts(d: Database, tag: string): string[] {
     ).n
     return count ? [`monitor_condition.invocation_record_id=${count}`] : []
   }
+  if (tag === WORKFLOW_UUID_KEY_MIGRATION) return workflowUuidReferenceOrphanCounts(d)
   return []
 }
 
@@ -930,6 +944,8 @@ function migrationEntityLabel(tag: string): { migration: string; parent: string 
     return { migration: 'lens/port catalogue', parent: 'catalogue row' }
   if (tag === MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION)
     return { migration: 'monitor', parent: 'monitor invocation' }
+  if (tag === WORKFLOW_UUID_KEY_MIGRATION)
+    return { migration: 'workflow/step-catalogue', parent: 'workflow row' }
   return { migration: 'board', parent: 'board row' }
 }
 
@@ -957,6 +973,7 @@ function prepareMigrationEntry(
       )
     }
   }
+  if (entry.tag === WORKFLOW_UUID_KEY_MIGRATION) prepareWorkflowUuidMigration(d)
 }
 
 function applyMigrationRange(

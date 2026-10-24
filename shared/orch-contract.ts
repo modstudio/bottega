@@ -104,6 +104,7 @@ export const OperatorWaitingItemSchema = z
   .object({
     kind: z.enum(['question', 'workflow'] satisfies [OperatorInboxKind, ...OperatorInboxKind[]]),
     id: z.number().int().positive(),
+    workflow_cursor_record_id: z.string().uuid().nullable(),
     question_record_id: z.string().uuid(),
     run_number: z.number().int().positive().nullable(),
     run_record_id: z.string().uuid().nullable(),
@@ -292,7 +293,7 @@ const RulingListRowSchema = z
     record_id: z.string().uuid(),
     run_number: z.number().int().positive().nullable(),
     run_record_id: z.string().uuid().nullable(),
-    workflow_cursor_id: z.number().int().positive().nullable(),
+    workflow_cursor_id: z.string().uuid().nullable(),
     workflow_key: nullableString,
     project: nullableString,
     workflow_slug: nullableString,
@@ -410,6 +411,15 @@ const QuestionIdentitySchema = z
   .strict()
 export const QuestionIdentityListSchema = z.array(QuestionIdentitySchema)
 export type QuestionIdentity = z.infer<typeof QuestionIdentitySchema>
+
+const WorkflowCursorIdentityRowSchema = z
+  .object({
+    number: z.number().int().positive(),
+    record_id: z.string().uuid(),
+  })
+  .strict()
+export const WorkflowCursorIdentityRowListSchema = z.array(WorkflowCursorIdentityRowSchema)
+export type WorkflowCursorIdentityRow = z.infer<typeof WorkflowCursorIdentityRowSchema>
 
 const guideCandidate = z
   .object({

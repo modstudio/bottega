@@ -6,6 +6,7 @@ import { createOperatorRouter } from './operator.ts'
 const item: OperatorWaitingItem = {
   kind: 'question',
   id: 7,
+  workflow_cursor_record_id: null,
   question_record_id: '00000000-0000-4000-8000-000000000007',
   run_number: 42,
   run_record_id: '00000000-0000-4000-8000-000000000042',

@@ -267,6 +267,13 @@
       "when": 1792793336000,
       "tag": "0037_foreign_key_leading_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792879736000,
+      "tag": "0038_workflow_cursor_uuid_key",
+      "breakpoints": true
     }
   ]
 }

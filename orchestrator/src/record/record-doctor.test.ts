@@ -4,7 +4,9 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { seedWorkflows } from '../workflow/workflow-seeds.ts'
 import {
   agentSecretChecks,
   decideRecordDoctorChecks,
@@ -200,6 +202,7 @@ describe('record doctor decisions', () => {
   test('counts synced questions for projects whose effective space is active', () => {
     const database = new Database(':memory:')
     applyMigrations(database)
+    seedWorkflows(database)
     database
       .query(
         `INSERT INTO project (record_id,name,path,settings) VALUES
@@ -226,21 +229,22 @@ describe('record doctor decisions', () => {
          (4,'${newRecordId()}','01990000-0000-7000-8000-000000000004','2026-09-25','unknown')`,
       )
       .run()
+    const cursorRecordId = newRecordId()
     database
       .query(
         `INSERT INTO workflow_cursor
-         (record_id,project,project_record_id,workflow_slug,mode_slug,instance_id,session_id,workflow_version,catalogue_version,
+         (record_id,number,project,project_record_id,workflow_slug,mode_slug,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
           args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
-         VALUES ('${newRecordId()}','default','01990000-0000-7000-8000-000000000101','test','default','','session',1,1,'{}',0,'step','awaiting-ruling','[]',1,
+         VALUES (?,1,'default','01990000-0000-7000-8000-000000000101','test','default','','session',?,?,'{}',0,'step','awaiting-ruling','[]',1,
                  '2026-09-25','2026-09-25')`,
       )
-      .run()
+      .run(cursorRecordId, workflowVersionRecordId(database), catalogueVersionRecordId(database))
     database
       .query(
-        `INSERT INTO question (number,record_id,workflow_cursor_id,asked_at,question)
-         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',last_insert_rowid(),'2026-09-25','workflow')`,
+        `INSERT INTO question (number,record_id,workflow_cursor_record_id,asked_at,question)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-25','workflow')`,
       )
-      .run()
+      .run(cursorRecordId)
     database
       .query(
         `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (?,'run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25'),

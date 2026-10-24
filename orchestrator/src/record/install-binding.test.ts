@@ -2,22 +2,25 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrationsBefore } from '../database/migrations.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   NEVER_BOUND,
   type RecordInstallBinding,
   readRecordInstallBinding,
-  rememberHostedRecord,
 } from './install-binding.ts'
+import { rememberHostedRecord } from './install-binding-write.ts'
 
 test('the record install binding is monotonic and records its first binding time', () => {
-  expect(readRecordInstallBinding()).toEqual(NEVER_BOUND)
+  const database = migratedTestDatabase()
+  expect(readRecordInstallBinding(database)).toEqual(NEVER_BOUND)
 
-  rememberHostedRecord()
-  const first = readRecordInstallBinding()
+  rememberHostedRecord(database)
+  const first = readRecordInstallBinding(database)
   expect(first.bound).toBe(true)
 
-  rememberHostedRecord()
-  expect(readRecordInstallBinding()).toEqual(first)
+  rememberHostedRecord(database)
+  expect(readRecordInstallBinding(database)).toEqual(first)
+  database.close()
 })
 
 function databaseBeforeBindingMigration(): Database {

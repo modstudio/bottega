@@ -90,23 +90,16 @@ type CursorRow = SelectableCursorRow & {
   enforcement: EnforcementMode
 }
 
-const MCP_INSTANCE = randomUUID()
-export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
-  session: sessionId(),
-  instance: MCP_INSTANCE,
-})
-export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
-
 function closeOpenWorkflowQuestion(
-  cursorId: number,
+  cursorId: string,
   reason: 'advanced-without-ruling' | 'abandoned',
   at: string,
   d: Database,
 ): void {
   const questions = d
-    .query<{ record_id: string }, [number]>(
+    .query<{ record_id: string }, [string]>(
       `SELECT record_id FROM question
-       WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
+       WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
     )
     .all(cursorId)
   closeQuestions(
@@ -145,6 +138,7 @@ function insertCursor(
   d: Database,
   autonomy?: AutonomyResolution,
 ): CursorRow {
+  const cursorRecordId = newRecordId()
   const key = keyOf(composition.arguments)
   const instance = key ? '' : randomUUID()
   const at = nowIso()
@@ -181,15 +175,15 @@ function insertCursor(
     : undefined
   d.query(
     `INSERT INTO workflow_cursor
-      (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version,catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,
+      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
      ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
   ).run(
-    newRecordId(),
+    cursorRecordId,
     composition.project,
     composition.project,
     composition.workflow.slug,
@@ -197,8 +191,8 @@ function insertCursor(
     key,
     instance,
     context.session ?? null,
-    composition.workflow.version,
-    composition.catalogue.version,
+    composition.workflow.record_id,
+    composition.catalogue.record_id,
     JSON.stringify(composition.arguments),
     JSON.stringify(
       autonomySnapshot ?? {
@@ -222,7 +216,9 @@ function insertCursor(
         context,
         d,
       )!
-    : (d.query('SELECT * FROM workflow_cursor WHERE id=last_insert_rowid()').get() as CursorRow)
+    : (d
+        .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
+        .get(cursorRecordId) as CursorRow)
 }
 
 export type CursorSummary = {
@@ -373,11 +369,11 @@ function getWorkflowStepWithCursorImpl(
   if (!row) row = insertCursor(composition, context, d, autonomy)
   if (decision.move || decision.resume) {
     if (row.state === 'awaiting-ruling')
-      closeOpenWorkflowQuestion(row.id, 'advanced-without-ruling', nowIso(), d)
+      closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', nowIso(), d)
     d.query(
       `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-    ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.id)
+       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+    ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.record_id)
   }
   const served = withWorkflowTextFacts(
     getWorkflowStep(
@@ -389,7 +385,7 @@ function getWorkflowStepWithCursorImpl(
       input.selection,
       cursorAutonomy(row),
     ),
-    row.id,
+    row.record_id,
     d,
   )
   const openNotice = opensCursor
@@ -462,7 +458,7 @@ function applyFloorDecision(
 ): FloorDecision {
   const args = JSON.parse(row.args) as Record<string, string>
   const gathered = gatherValidatedEvidence({
-    cursorId: row.id,
+    cursorId: row.record_id,
     identity: {
       project: row.project,
       workflowKey: row.workflow_key,
@@ -486,7 +482,7 @@ function applyFloorDecision(
     evidence: gathered,
     enforcement: row.enforcement ?? 'note-only',
     finishing,
-    openObligations: openWorkflowObligations(row.id, d),
+    openObligations: openWorkflowObligations(row.record_id, d),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
 }
@@ -502,15 +498,15 @@ function persistFloorClose(
   if (decision.defer) {
     const floor = floors.find((item) => item.kind === decision.defer?.floor)
     const inserted = d
-      .query<{ id: number }, (string | number | null)[]>(
+      .query<{ id: string }, (string | number | null)[]>(
         `INSERT INTO workflow_obligation
-          (record_id,cursor_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
+          (record_id,cursor_record_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
            expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id id`,
       )
       .get(
         newRecordId(),
-        row.id,
+        row.record_id,
         row.ordinal + 1,
         row.step_slug,
         decision.defer.floor,
@@ -530,14 +526,14 @@ function persistFloorClose(
     d.query(
       `UPDATE workflow_obligation
           SET satisfied_at=?,satisfied_step_ordinal=?,satisfied_step_slug=?,satisfied_evidence=?
-        WHERE id=? AND cursor_id=? AND satisfied_at IS NULL`,
+        WHERE record_id=? AND cursor_record_id=? AND satisfied_at IS NULL`,
     ).run(
       at,
       row.ordinal + 1,
       row.step_slug,
       JSON.stringify(decision.refs),
       decision.satisfyId,
-      row.id,
+      row.record_id,
     )
   }
   return {
@@ -609,7 +605,7 @@ function closeFloorsForStep(
       floors,
       bindCloseSelfRuling(
         {
-          cursorId: row.id,
+          cursorId: row.record_id,
           workflowKey: row.workflow_key,
           stepOrdinal: row.ordinal + 1,
           stepSlug: row.step_slug,
@@ -646,7 +642,7 @@ function persistWorkflowAdvance(
 ): void {
   const at = nowIso()
   if (row.state === 'awaiting-ruling')
-    closeOpenWorkflowQuestion(row.id, 'advanced-without-ruling', at, d)
+    closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
   appendWorkflowClose(
     row,
     composition,
@@ -661,19 +657,26 @@ function persistWorkflowAdvance(
     d,
   )
   if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
-    deleteWorkflowText(row.id, d)
+    deleteWorkflowText(row.record_id, d)
   if (advance.ordinal === null) {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-    ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
+       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+    ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
     return
   }
   const next = composition.steps[advance.ordinal]!
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-  ).run(advance.ordinal, next.slug, JSON.stringify(closed), context.session ?? null, at, row.id)
+     session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+  ).run(
+    advance.ordinal,
+    next.slug,
+    JSON.stringify(closed),
+    context.session ?? null,
+    at,
+    row.record_id,
+  )
 }
 
 function nextWorkflowStepImpl(
@@ -799,7 +802,7 @@ function abandonSelectedWorkflowCursor(
   const mode = row.mode_slug
   refuseTerminalCursor(row)
   const at = nowIso()
-  if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.id, 'abandoned', at, d)
+  if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.record_id, 'abandoned', at, d)
   const closed = JSON.parse(row.closed) as CursorTrailEntry[]
   closed.push({
     n: row.ordinal + 1,
@@ -810,13 +813,13 @@ function abandonSelectedWorkflowCursor(
   d.query(
     `UPDATE workflow_obligation
         SET abandoned_at=?, abandoned_reason=?
-      WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
-  ).run(at, reason.trim(), row.id)
-  deleteWorkflowText(row.id, d)
+      WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
+  ).run(at, reason.trim(), row.record_id)
+  deleteWorkflowText(row.record_id, d)
   d.query(
     `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-  ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
+     session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+  ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
   return `${cursorName(slug, mode, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
 }
 
@@ -858,7 +861,7 @@ function awaitWorkflowRulingImpl(
   context: WorkflowCursorContext,
   d: Database = writableDb(),
   cursor?: number,
-): { summary: CursorSummary & { questionId: number }; cursorId: number } {
+): { summary: CursorSummary & { questionId: number }; cursorId: string } {
   if (!question?.trim()) throw new Error('--question is required')
   const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
@@ -870,11 +873,11 @@ function awaitWorkflowRulingImpl(
   const at = nowIso()
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
-     session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-  ).run(question.trim(), context.session ?? null, at, row.id)
+     session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+  ).run(question.trim(), context.session ?? null, at, row.record_id)
   const recordedQuestion = upsertWorkflowQuestion(
     {
-      cursorId: row.id,
+      cursorId: row.record_id,
       workflowKey: row.workflow_key,
       stepOrdinal: row.ordinal + 1,
       stepSlug: row.step_slug,
@@ -892,7 +895,7 @@ function awaitWorkflowRulingImpl(
       opened: false,
       questionId: recordedQuestion.number,
     },
-    cursorId: row.id,
+    cursorId: row.record_id,
   }
 }
 
@@ -929,17 +932,17 @@ export function ruleWorkflow(
     })
     const at = nowIso()
     const question = d
-      .query<{ record_id: string; number: number }, [number]>(
+      .query<{ record_id: string; number: number }, [string]>(
         `SELECT record_id,number FROM question
-         WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
+         WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
       )
-      .get(row.id)
+      .get(row.record_id)
     if (!question)
       throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
     answerWorkflowQuestion(
       {
         questionId: question.record_id,
-        cursorId: row.id,
+        cursorId: row.record_id,
         ruling: ruling.trim(),
         at,
         actor,
@@ -951,8 +954,8 @@ export function ruleWorkflow(
     )
     d.query(
       `UPDATE workflow_cursor SET state='running',question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
-    ).run(adoptionReason ? null : (context.session ?? null), at, row.id)
+       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+    ).run(adoptionReason ? null : (context.session ?? null), at, row.record_id)
     return {
       summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
       questionId: question.number,
@@ -1008,11 +1011,11 @@ export function listWorkflowCursors(
   }
   const rows = d
     .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`,
+      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,number`,
     )
     .all(...values) as CursorRow[]
   return rows.map((row) => {
-    const open = openWorkflowObligations(row.id, d)
+    const open = openWorkflowObligations(row.record_id, d)
     const listed = {
       ...row,
       next_slug: cursorComposition(row, d).steps[row.ordinal + 1]?.slug ?? 'finished',

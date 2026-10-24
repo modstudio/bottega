@@ -13,6 +13,7 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
@@ -85,13 +86,13 @@ describe('orch MCP', () => {
     db()
       .query(
         `INSERT INTO workflow_cursor
-        (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-         workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES ('${newRecordId()}','fixture',(SELECT record_id FROM project WHERE name='fixture'),'fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture',(SELECT record_id FROM project WHERE name='fixture'),'fix-defect','default','DEV-1069','',NULL,?,?,'{"key":"DEV-1069"}',
                0,'diagnose','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
       )
-      .run()
+      .run(workflowVersionRecordId(db(), 'fix-defect'), catalogueVersionRecordId(db()))
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -365,16 +366,18 @@ describe('orch MCP', () => {
     const args = (key: string) => ({ key, branch: `${key}-work`, worktree: `/tmp/${key}` })
     const insert = db().prepare(
       `INSERT INTO workflow_cursor
-        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-         workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+        (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES (?,?,'fix-defect','default',?,'',NULL,1,1,?,0,'diagnose','running','[]',NULL,
-               3,'2026-10-01','2026-10-01','note-only') RETURNING id`,
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,'fix-defect','default',?,'',NULL,?,?,?,0,'diagnose','running','[]',NULL,
+               3,'2026-10-01','2026-10-01','note-only') RETURNING number id`,
     )
     const first = insert.get(
       newRecordId(),
       project,
       'DEV-1082-MCP-A',
+      workflowVersionRecordId(db(), 'fix-defect'),
+      catalogueVersionRecordId(db()),
       JSON.stringify(args('DEV-1082-MCP-A')),
     ) as {
       id: number
@@ -383,6 +386,8 @@ describe('orch MCP', () => {
       newRecordId(),
       project,
       'DEV-1082-MCP-B',
+      workflowVersionRecordId(db(), 'fix-defect'),
+      catalogueVersionRecordId(db()),
       JSON.stringify(args('DEV-1082-MCP-B')),
     ) as {
       id: number
@@ -443,11 +448,13 @@ describe('orch MCP', () => {
       await call('abandon_workflow', { cursor: second.id, reason: 'stopped through MCP handle' })
 
       expect(
-        db().query('SELECT ordinal,state FROM workflow_cursor WHERE id=?').get(first.id),
+        db().query('SELECT ordinal,state FROM workflow_cursor WHERE number=?').get(first.id),
       ).toEqual({ ordinal: 1, state: 'running' })
-      expect(db().query('SELECT state FROM workflow_cursor WHERE id=?').get(second.id)).toEqual({
-        state: 'abandoned',
-      })
+      expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(second.id)).toEqual(
+        {
+          state: 'abandoned',
+        },
+      )
     } finally {
       await client.close()
       await server.close()

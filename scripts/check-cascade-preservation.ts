@@ -38,6 +38,7 @@ const MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF = new Set([
   '0115_project_identity_contract',
   '0117_project_uuid_key',
   '0124_run_uuid_key',
+  '0157_workflow_uuid_key',
 ])
 
 const PROJECT_UUID_REBUILD_CASCADE_EDGES = [
@@ -68,6 +69,15 @@ const PROJECT_UUID_REBUILD_CASCADE_EDGES = [
 // These migrations may already be applied. The repair restores every
 // missing review_finding row from its outbox payload, whichever migration removed it.
 const EXEMPTIONS: readonly CascadeExemption[] = [
+  ...['question_delivery', 'question_mutation_audit', 'run_carried_ruling'].map(
+    (dependentTable) => ({
+      migration: '0157_workflow_uuid_key',
+      deletedTable: 'question',
+      dependentTable,
+      remedy:
+        'DEV-1214: question keeps its record_id primary key across the direct rebuild; the migration runner disables foreign keys and refuses any foreign_key_check violation before commit',
+    }),
+  ),
   ...[
     ['project_lens_profile', 'project_lens_profile_revision'],
     ['lens_profile', 'lens_profile_revision'],
@@ -758,6 +768,16 @@ function probeDestructiveMigration(
       .all()
     const fill = database.query('UPDATE project SET record_id=? WHERE id=?')
     for (const row of missing) fill.run(newRecordId(), row.id)
+  }
+  if (migration.tag === '0157_workflow_uuid_key') {
+    database.exec(`
+      DELETE FROM record_install_binding;
+      UPDATE step_catalogue SET slug='shared' WHERE id=(SELECT id FROM step_catalogue WHERE space_id IS NULL LIMIT 1);
+      UPDATE workflow_cursor SET
+        workflow_slug=(SELECT w.slug FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.space_id IS NULL LIMIT 1),
+        workflow_version=(SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.space_id IS NULL LIMIT 1),
+        catalogue_version=(SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' AND c.space_id IS NULL LIMIT 1)
+    `)
   }
   const before = counts(database)
   const relationships = foreignKeys(database)

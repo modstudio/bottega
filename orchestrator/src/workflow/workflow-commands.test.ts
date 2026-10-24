@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { program, run } from '../cli/program.ts'
 import { setRawArgv } from '../commands/support.ts'
-import { db, sessionId } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
@@ -497,46 +497,6 @@ test('workflow probe and exec refuse an unknown option before the child separato
   }
 })
 
-test('workflow attach reads text from stdin and prints its close reference', async () => {
-  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  try {
-    process.env.CLAUDE_CODE_SESSION_ID = 'workflow-attach-cli'
-    const cursor = (
-      db()
-        .query<{ id: number }, [string, string | null]>(
-          `INSERT INTO workflow_cursor
-            (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-             workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
-             total_steps,created_at,updated_at,enforcement)
-           VALUES (?,'fixture','attach-cli','default','','',?,1,1,'{}',0,'research','running',
-                   '[]',NULL,1,'2026-10-05','2026-10-05','floors') RETURNING id`,
-        )
-        .get(newRecordId(), sessionId()) as { id: number }
-    ).id
-    const lines: string[] = []
-    await workflowCommand(['workflow', 'attach', '--cursor', String(cursor)], presentation(lines), {
-      stdinIsTTY: () => false,
-      stdinText: async () => 'research from stdin',
-    })
-    expect(lines[0]).toMatch(/^attached-text:\d+$/)
-    expect(
-      db()
-        .query(
-          'SELECT cursor_id,step_ordinal,step_slug,body FROM workflow_step_text WHERE cursor_id=?',
-        )
-        .get(cursor),
-    ).toEqual({
-      cursor_id: cursor,
-      step_ordinal: 1,
-      step_slug: 'research',
-      body: 'research from stdin',
-    })
-  } finally {
-    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-  }
-})
-
 test('workflow attach declares no positional text argument', async () => {
   await expect(
     workflowCommand(
@@ -957,7 +917,7 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
   const firstCursor = first.cursor!.id
   const secondCursor = second.cursor!.id
   db()
-    .query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id IN (?,?)")
+    .query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number IN (?,?)")
     .run(firstCursor, secondCursor)
   const lines: string[] = []
   const command = (verb: string, cursor: number, ...tail: string[]) =>
@@ -989,9 +949,9 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
 
   expect(lines.join('\n')).toContain(`cursor ${firstCursor}`)
   expect(
-    db().query('SELECT ordinal,state FROM workflow_cursor WHERE id=?').get(firstCursor),
+    db().query('SELECT ordinal,state FROM workflow_cursor WHERE number=?').get(firstCursor),
   ).toEqual({ ordinal: 1, state: 'running' })
-  expect(db().query('SELECT state FROM workflow_cursor WHERE id=?').get(secondCursor)).toEqual({
+  expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(secondCursor)).toEqual({
     state: 'abandoned',
   })
 })

@@ -17,8 +17,8 @@ export type VersionedStoreConfig<T> = {
 }
 
 type Row = {
-  id: number
-  owner_id: number
+  record_id: string
+  owner_record_id: string
   slug: string
   n: number
   status: VersionStatus
@@ -40,12 +40,12 @@ const required = (value: string | undefined, name: string) => {
 }
 const author = (value?: string) => value?.trim() || sessionId() || 'unknown'
 
-function insertOwner(d: Database, table: string, slug: string, at: string): { id: number } {
+function insertOwner(d: Database, table: string, slug: string, at: string): { record_id: string } {
   return d
     .query(
-      `INSERT INTO ${table} (record_id,slug,created_at,space_id) VALUES (?,?,?,NULL) RETURNING id`,
+      `INSERT INTO ${table} (record_id,slug,created_at,space_id) VALUES (?,?,?,NULL) RETURNING record_id`,
     )
-    .get(newRecordId(), slug, at) as { id: number }
+    .get(newRecordId(), slug, at) as { record_id: string }
 }
 
 function assertWorkerStoreWriteAllowed<T>(
@@ -61,10 +61,10 @@ function ownerId<T>(
   slug: string,
   d: Database,
   spaceId: string | null,
-): number {
+): string {
   const row = (
-    d.query(`SELECT id,space_id FROM ${config.identityTable} WHERE slug=?`).all(slug) as {
-      id: number
+    d.query(`SELECT record_id,space_id FROM ${config.identityTable} WHERE slug=?`).all(slug) as {
+      record_id: string
       space_id: string | null
     }[]
   ).find((candidate) => candidate.space_id === spaceId)
@@ -72,7 +72,7 @@ function ownerId<T>(
     throw new Error(
       `unknown ${config.noun} "${slug}"${spaceId === null ? '' : ` in hosted space ${spaceId}`}`,
     )
-  return row.id
+  return row.record_id
 }
 
 export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
@@ -83,7 +83,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
         : `AND v.n=?`
     const found = d
       .query(
-        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL ${suffix}`,
+        `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL ${suffix}`,
       )
       .get(...(n === undefined ? [slug] : [slug, n])) as Row | null
     if (!found)
@@ -101,7 +101,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   const production = (slug: string, d: Database) => {
     const found = d
       .query(
-        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL AND v.status='production'`,
+        `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL AND v.status='production'`,
       )
       .get(slug) as Row | null
     if (!found) throw new Error(`${config.noun} "${slug}" has no production version; promote one`)
@@ -109,7 +109,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   }
   const event = (
     d: Database,
-    id: number,
+    ownerRecordId: string,
     n: number,
     kind: VersionEvent,
     by: string,
@@ -118,9 +118,9 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   ) =>
     d
       .query(
-        `INSERT INTO ${config.eventTable} (record_id,${config.foreignKey},version_n,event,author,reason,session_id,at,space_id) VALUES (?,?,?,?,?,?,?,?,NULL)`,
+        `INSERT INTO ${config.eventTable} (record_id,${config.noun === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'},version_n,event,author,reason,session_id,at,space_id) VALUES (?,(SELECT record_id FROM ${config.versionTable} WHERE ${config.foreignKey}=? AND n=?),?,?,?,?,?, ?,NULL)`,
       )
-      .run(newRecordId(), id, n, kind, by, reason, sessionId(), at)
+      .run(newRecordId(), ownerRecordId, n, n, kind, by, reason, sessionId(), at)
 
   const write = (
     slug: string,
@@ -137,21 +137,21 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       at = nowIso()
     return writeTransaction(() => {
       let identity = d
-        .query(`SELECT id FROM ${config.identityTable} WHERE slug=? AND space_id IS NULL`)
+        .query(`SELECT record_id FROM ${config.identityTable} WHERE slug=? AND space_id IS NULL`)
         .get(slug) as {
-        id: number
+        record_id: string
       } | null
       if (!identity) identity = insertOwner(d, config.identityTable, slug, at)
       const max = d
         .query(
           `SELECT COALESCE(MAX(n),0) n FROM ${config.versionTable} WHERE ${config.foreignKey}=?`,
         )
-        .get(identity.id) as { n: number }
+        .get(identity.record_id) as { n: number }
       const n = max.n + 1
       d.query(
         `INSERT INTO ${config.versionTable} (record_id,${config.foreignKey},n,status,definition,author,reason,created_at,space_id) VALUES (?,?,?,'draft',?,?,?,?,NULL)`,
-      ).run(newRecordId(), identity.id, n, JSON.stringify(definition), by, why, at)
-      event(d, identity.id, n, kind, by, why, at)
+      ).run(newRecordId(), identity.record_id, n, JSON.stringify(definition), by, why, at)
+      event(d, identity.record_id, n, kind, by, why, at)
       return show(slug, n, d)
     }, d)
   }
@@ -224,7 +224,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       ...version,
       events: d
         .query(
-          `SELECT event,author,reason,session_id,at FROM ${config.eventTable} WHERE ${config.foreignKey}=? AND version_n=? ORDER BY id`,
+          `SELECT e.event,e.author,e.reason,e.session_id,e.at FROM ${config.eventTable} e JOIN ${config.versionTable} v ON v.record_id=e.${config.noun === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'} WHERE v.${config.foreignKey}=? AND e.version_n=? ORDER BY e.rowid`,
         )
         .all(id, version.n as number),
     }))

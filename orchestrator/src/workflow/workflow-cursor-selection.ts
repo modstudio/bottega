@@ -1,7 +1,8 @@
 // concern: workflow cursor selection
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
+import { randomUUID } from 'node:crypto'
+import { db, sessionId } from '../database/db.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -9,9 +10,9 @@ import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
-  'id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,ordinal,step_slug,state,workflow_version,catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
+  'number id,record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,ordinal,step_slug,state,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
 
-export type WorkflowCursorIdentity = {
+export type WorkflowCursorSelector = {
   project?: string
   workflow?: string
   mode?: string
@@ -19,6 +20,15 @@ export type WorkflowCursorIdentity = {
 }
 
 export type WorkflowCursorContext = { session?: string | null; instance?: string }
+
+const MCP_INSTANCE = randomUUID()
+
+export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
+  session: sessionId(),
+  instance: MCP_INSTANCE,
+})
+
+export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
 
 export function workflowCursorProjectScope(
   options: { all?: boolean; project?: string; session?: string },
@@ -33,6 +43,7 @@ export function workflowCursorProjectScope(
 
 export type SelectableCursorRow = {
   id: number
+  record_id: string
   project: string
   workflow_slug: string
   mode_slug: string
@@ -62,7 +73,7 @@ function refuseAmbiguousKeylessCursors(rows: SelectableCursorRow[]): never {
 
 function validateIdentity(
   row: SelectableCursorRow,
-  identity: WorkflowCursorIdentity,
+  identity: WorkflowCursorSelector,
 ): SelectableCursorRow {
   if (identity.project && identity.project !== row.project)
     mismatch(row.id, 'project', identity.project, row.project)
@@ -77,11 +88,11 @@ function validateIdentity(
 
 function selectByHandle(
   cursor: number,
-  identity: WorkflowCursorIdentity,
+  identity: WorkflowCursorSelector,
   d: Database,
 ): SelectableCursorRow {
   const row = d
-    .query('SELECT * FROM workflow_cursor WHERE id=?')
+    .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE number=?`)
     .get(cursor) as SelectableCursorRow | null
   if (!row) throw new Error(`workflow cursor ${cursor} does not exist`)
   validateIdentity(row, identity)
@@ -93,7 +104,7 @@ function selectByHandle(
 }
 
 export function selectWorkflowCursor(
-  identity: WorkflowCursorIdentity,
+  identity: WorkflowCursorSelector,
   cursor: number | undefined,
   ownerSession: string | null | undefined,
   d: Database,
@@ -103,10 +114,10 @@ export function selectWorkflowCursor(
   if (identity.key) {
     return d
       .query(
-        `SELECT * FROM workflow_cursor
+        `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
            AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-           AND instance_id='' ORDER BY id DESC LIMIT 1`,
+           AND instance_id='' ORDER BY number DESC LIMIT 1`,
       )
       .get(
         identity.project,
@@ -118,10 +129,10 @@ export function selectWorkflowCursor(
   if (!ownerSession) return null
   const rows = d
     .query(
-      `SELECT * FROM workflow_cursor
+      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND workflow_slug=? AND mode_slug=? AND workflow_key=''
-         AND session_id=? AND state NOT IN ('done','abandoned') ORDER BY id`,
+         AND session_id=? AND state NOT IN ('done','abandoned') ORDER BY number`,
     )
     .all(identity.project, identity.workflow, identity.mode, ownerSession) as SelectableCursorRow[]
   if (rows.length > 1) {
@@ -131,18 +142,18 @@ export function selectWorkflowCursor(
 }
 
 export function selectUntouchedKeylessWorkflowCursor(
-  identity: Required<Pick<WorkflowCursorIdentity, 'project' | 'workflow' | 'mode'>>,
+  identity: Required<Pick<WorkflowCursorSelector, 'project' | 'workflow' | 'mode'>>,
   ownerSession: string | null | undefined,
   d: Database,
 ): SelectableCursorRow | null {
   if (!ownerSession) return null
   const rows = d
     .query(
-      `SELECT * FROM workflow_cursor
+      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND workflow_slug=? AND mode_slug=? AND workflow_key=''
          AND session_id=? AND state NOT IN ('done','abandoned')
-         AND ordinal=0 ORDER BY id`,
+         AND ordinal=0 ORDER BY number`,
     )
     .all(identity.project, identity.workflow, identity.mode, ownerSession)
     .filter(

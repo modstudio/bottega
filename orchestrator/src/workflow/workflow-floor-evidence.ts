@@ -62,7 +62,7 @@ export type WorkflowEvidenceInput = {
   artifact?: string
   task?: string
   defer?: string
-  satisfies?: number
+  satisfies?: string
 }
 
 export type CursorIdentity = {
@@ -75,12 +75,12 @@ export type CursorIdentity = {
   stepActivatedAt: string
 }
 
-export function openWorkflowObligations(cursorId: number, d: Database): OpenObligation[] {
+export function openWorkflowObligations(cursorId: string, d: Database): OpenObligation[] {
   return d
-    .query<OpenObligation, [number]>(
-      `SELECT id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor
+    .query<OpenObligation, [string]>(
+      `SELECT record_id id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor
          FROM workflow_obligation
-        WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY id`,
+        WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
     )
     .all(cursorId)
 }
@@ -190,7 +190,7 @@ function positive(value: number | undefined, flag: string): number | undefined {
 
 function gatherRuling(
   id: number,
-  cursorId: number,
+  cursorId: string,
   stepOrdinal: number,
   stepSlug: string,
   d: Database,
@@ -198,16 +198,16 @@ function gatherRuling(
   const row = d
     .query<
       {
-        id: number
+        id: string
         answered_at: string | null
         answerer_kind: string | null
-        workflow_cursor_id: number | null
+        workflow_cursor_record_id: string | null
         workflow_step_ordinal: number | null
         workflow_step_slug: string | null
       },
       [number]
     >(
-      `SELECT number id,answered_at,answerer_kind,workflow_cursor_id,workflow_step_ordinal,workflow_step_slug
+      `SELECT number id,answered_at,answerer_kind,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
          FROM question WHERE number=?`,
     )
     .get(id)
@@ -216,7 +216,7 @@ function gatherRuling(
     id,
     answered: row.answered_at !== null,
     answeredByOperator: row.answerer_kind === 'operator',
-    boundToCursor: row.workflow_cursor_id === cursorId,
+    boundToCursor: row.workflow_cursor_record_id === cursorId,
     boundToStep: row.workflow_step_ordinal === stepOrdinal && row.workflow_step_slug === stepSlug,
     answeredAt: row.answered_at,
   }
@@ -323,22 +323,22 @@ function loadRunBinding(runId: string, d: Database): BoundRun | null {
 }
 
 function loadAdoptionReasons(
-  cursorId: number,
+  cursorId: string,
   actorSession: string,
   d: Database,
 ): Array<string | null> {
   return d
-    .query<{ reason: string | null }, [number, string]>(
+    .query<{ reason: string | null }, [string, string]>(
       `SELECT a.reason
          FROM question q JOIN question_mutation_audit a ON a.question_record_id=q.record_id
-        WHERE q.workflow_cursor_id=? AND a.action='rule' AND a.actor_session=?`,
+        WHERE q.workflow_cursor_record_id=? AND a.action='rule' AND a.actor_session=?`,
     )
     .all(cursorId, actorSession)
     .map(({ reason }) => reason)
 }
 
 function sessionOrAdopterFor(
-  cursorId: number,
+  cursorId: string,
   cursorSession: string | null,
   actorSession: string | null,
   d: Database,
@@ -358,7 +358,7 @@ function requireRunBinding(
   flag: string,
   run: BoundRun,
   identity: CursorIdentity,
-  cursorId: number,
+  cursorId: string,
   d: Database,
 ): void {
   const session = sessionOrAdopterFor(cursorId, identity.session, run.sessionId, d)
@@ -408,7 +408,7 @@ function requireCheckout(
 function gatherGate(
   id: number,
   identity: CursorIdentity,
-  cursorId: number,
+  cursorId: string,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   d: Database,
 ): ValidatedEvidence['gate'] {
@@ -454,7 +454,7 @@ function gatherGate(
 function gatherRun(
   id: string,
   identity: CursorIdentity,
-  cursorId: number,
+  cursorId: string,
   d: Database,
 ): ValidatedEvidence['run'] {
   const row = d
@@ -493,7 +493,7 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
 function resolveNumericArtifact(
   id: number,
   identity: CursorIdentity,
-  cursorId: number,
+  cursorId: string,
   d: Database,
   runHasArtifacts: (runId: string) => boolean,
 ): { ref: string; exists: boolean } {
@@ -539,7 +539,7 @@ function resolveArtifact(
   ref: ArtifactRef,
   raw: string,
   identity: CursorIdentity,
-  binding: { cursorId: number; stepOrdinal: number; stepSlug: string },
+  binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
   ports: FloorEvidencePorts,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
@@ -548,22 +548,22 @@ function resolveArtifact(
     const row = d
       .query<
         {
-          id: number
-          cursor_id: number
+          id: string
+          cursor_record_id: string
           step_ordinal: number
           step_slug: string
           body: string
         },
-        [number]
+        [string]
       >(
-        `SELECT id,cursor_id,step_ordinal,step_slug,body
-           FROM workflow_step_text WHERE id=?`,
+        `SELECT record_id id,cursor_record_id,step_ordinal,step_slug,body
+           FROM workflow_step_text WHERE record_id=?`,
       )
       .get(ref.id)
     const attachment: WorkflowTextRow | null = row
       ? {
           id: row.id,
-          cursorId: row.cursor_id,
+          cursorId: row.cursor_record_id,
           stepOrdinal: row.step_ordinal,
           stepSlug: row.step_slug,
           body: row.body,
@@ -700,12 +700,12 @@ function gatherTask(
   }
 }
 
-function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvidence['satisfy'] {
+function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvidence['satisfy'] {
   const row = d
     .query<
       {
         id: number
-        cursor_id: number
+        cursor_record_id: string
         floor: string
         require_pull_request: number
         operator_ruling: number
@@ -715,11 +715,11 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
         satisfied_at: string | null
         abandoned_at: string | null
       },
-      [number]
+      [string]
     >(
-      `SELECT id,cursor_id,floor,require_pull_request,operator_ruling,expected_exit_code,expected_status,floor_deferrable,
+      `SELECT record_id id,cursor_record_id,floor,require_pull_request,operator_ruling,expected_exit_code,expected_status,floor_deferrable,
               satisfied_at,abandoned_at
-         FROM workflow_obligation WHERE id=?`,
+         FROM workflow_obligation WHERE record_id=?`,
     )
     .get(id)
   if (!row) return { id, found: false }
@@ -738,7 +738,7 @@ function gatherSatisfy(id: number, cursorId: number, d: Database): ValidatedEvid
     found: true,
     open: row.satisfied_at === null && row.abandoned_at === null,
     abandoned: row.abandoned_at !== null,
-    cursorMatches: row.cursor_id === cursorId,
+    cursorMatches: row.cursor_record_id === cursorId,
     floor,
   }
 }
@@ -758,7 +758,7 @@ function gatheredCommandEvidence(
     command_withheld: number
   },
   identity: CursorIdentity,
-  cursorId: number,
+  cursorId: string,
   d: Database,
   checkout: CheckoutResolution,
   ports: FloorEvidencePorts,
@@ -879,7 +879,7 @@ function gatherTreeEvidence(
 }
 
 export function gatherValidatedEvidence(input: {
-  cursorId: number
+  cursorId: string
   identity: CursorIdentity
   stepOrdinal: number
   stepSlug: string
@@ -904,7 +904,7 @@ export function gatherValidatedEvidence(input: {
   const review = input.evidence.review
   const gate = positive(input.evidence.gate, '--gate')
   const run = input.evidence.run
-  const satisfies = positive(input.evidence.satisfies, '--satisfies')
+  const satisfies = input.evidence.satisfies
   if (ruling)
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
   if (review) gathered.review = gatherReview(resolveReviewIdentifier(d, review), input.identity, d)

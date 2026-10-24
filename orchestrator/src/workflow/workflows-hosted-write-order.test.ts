@@ -751,7 +751,7 @@ test('shared hosted promotion skips a local override whose catalogue cannot carr
   expect(
     local
       .query<{ n: number }, [string]>(
-        `SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id
+        `SELECT v.n FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id
          WHERE w.slug=? AND w.space_id IS NULL AND v.status='production'`,
       )
       .get(fixture.slug),

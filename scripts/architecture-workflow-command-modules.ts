@@ -12,6 +12,11 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-cursor-identity.ts', [
+    'bun:sqlite',
+    '../../../shared/orch-contract.ts',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-catalogue-commands.ts', [
     'node:path',
     '../cli/args.ts',

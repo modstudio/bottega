@@ -17,7 +17,7 @@ export type WorkflowSelfRulingInput = {
 
 export function recordWorkflowSelfRuling(
   input: {
-    cursorId: number
+    cursorId: string
     workflowKey: string
     stepOrdinal: number
     stepSlug: string

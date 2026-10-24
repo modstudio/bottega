@@ -689,6 +689,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/workflow/workflow-shared-promotion-store.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../record/install-binding.ts',
     '../record/record-api-client.ts',
     '../record/record-cache-workflow.ts',
     '../record/record-space.ts',

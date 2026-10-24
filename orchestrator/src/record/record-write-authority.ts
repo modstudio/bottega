@@ -4,14 +4,16 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { readRecordInstallBinding, rememberHostedRecord } from './install-binding.ts'
+import { db } from '../database/db.ts'
+import { readRecordInstallBinding } from './install-binding.ts'
+import { rememberHostedRecord } from './install-binding-write.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 export const BOUND_RECORD_WRITE_REFUSAL =
   'this install is bound to a hosted record, but BOTTEGA_RECORD_API_URL is not set in this environment\n' +
   `cleared by: ${PLATFORM_SLUG} record use <address>`
 
 export function currentRecordWriteDecision(
-  database?: Database,
+  database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): RecordWriteDecision {
   return decideRecordWrite({
