@@ -9,7 +9,7 @@ import {
   rewriteScratchDirPaths,
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
-import { failoverRefused, FAILS_OVER } from '../failure/failure.ts'
+import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
