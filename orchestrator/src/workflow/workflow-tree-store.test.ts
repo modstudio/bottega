@@ -8,6 +8,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import {
   productionStepCatalogue,
@@ -32,6 +33,59 @@ const database = testDatabaseFixture((d) => {
 const HOSTED_SPACE = '01990000-0000-7000-8000-000000000224'
 const hostedAt = '2026-10-20T12:00:00.000Z'
 
+function seedHostedProduction(
+  d: Database,
+  spaceId: string,
+  catalogueDefinition: ReturnType<typeof productionStepCatalogue>['definition'],
+  workflowDefinition: ReturnType<typeof productionWorkflows>[number]['definition'],
+  title: string,
+) {
+  const catalogueId = newRecordId()
+  applyWorkflowCatalogueRow(d, 'step_catalogue', {
+    id: catalogueId,
+    spaceId,
+    slug: 'shared',
+    createdAt: hostedAt,
+    updatedAt: hostedAt,
+  })
+  applyWorkflowCatalogueRow(d, 'step_catalogue_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: catalogueId,
+    n: 1,
+    status: 'production',
+    definition: JSON.stringify(catalogueDefinition),
+    author: 'test',
+    reason: 'fixture',
+    createdAt: hostedAt,
+    promotedAt: hostedAt,
+    retiredAt: null,
+    updatedAt: hostedAt,
+  })
+  const workflowId = newRecordId()
+  applyWorkflowCatalogueRow(d, 'workflow', {
+    id: workflowId,
+    spaceId,
+    slug: 'space-fixture',
+    createdAt: hostedAt,
+    updatedAt: hostedAt,
+  })
+  applyWorkflowCatalogueRow(d, 'workflow_version', {
+    id: newRecordId(),
+    spaceId,
+    ownerId: workflowId,
+    n: 1,
+    status: 'production',
+    definition: JSON.stringify({ ...workflowDefinition, title }),
+    author: 'test',
+    reason: 'fixture',
+    createdAt: hostedAt,
+    promotedAt: hostedAt,
+    retiredAt: null,
+    updatedAt: hostedAt,
+  })
+}
+
 afterEach(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
@@ -39,6 +93,37 @@ afterEach(() => {
 
 const renderedTree = (d: Database) =>
   planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
+
+test('bound production reads use the active space without a project and the routed space with one', () => {
+  const d = database()
+  const activeSpace = newRecordId()
+  const projectSpace = newRecordId()
+  const project = 'routed-workflow-project'
+  const catalogue = productionStepCatalogue(d).definition
+  const workflow = productionWorkflows(d, null)[0]!.definition
+
+  const activeCatalogue = structuredClone(catalogue)
+  activeCatalogue.steps[0]!.body = 'Active-space step'
+  const projectCatalogue = structuredClone(catalogue)
+  projectCatalogue.steps[0]!.body = 'Project-space step'
+
+  seedHostedProduction(d, activeSpace, activeCatalogue, workflow, 'Active-space workflow')
+  seedHostedProduction(d, projectSpace, projectCatalogue, workflow, 'Project-space workflow')
+  rememberActiveRecordSpace(d, activeSpace)
+  rememberProjectSpace(d, project, projectSpace)
+  d.exec(
+    'DELETE FROM workflow WHERE space_id IS NULL; DELETE FROM step_catalogue WHERE space_id IS NULL',
+  )
+
+  expect(productionStepCatalogue(d).definition.steps[0]!.body).toBe('Active-space step')
+  expect(showStepCatalogue(1, d).definition.steps[0]!.body).toBe('Active-space step')
+  const activeTree = productionWorkflowTree(d)
+  expect(activeTree.steps[0]!.body).toBe('Active-space step')
+  expect(activeTree.workflows[0]!.definition.title).toBe('Active-space workflow')
+  const projectTree = productionWorkflowTree(d, project)
+  expect(projectTree.steps[0]!.body).toBe('Project-space step')
+  expect(projectTree.workflows[0]!.definition.title).toBe('Project-space workflow')
+})
 
 const importAndPromoteCurrentTree = async (d: Database) => {
   const root = fileURLToPath(new URL('../../..', import.meta.url))

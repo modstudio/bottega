@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
+import { effectiveProjectSpace, workflowReadSpace, workflowReadSpaceFor } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -405,7 +405,7 @@ export function showResolvedWorkflow(
   project: string | null,
   d: Database = db(),
 ) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return parseVersion(versionRow(slug, n, d, spaceId))
 }
 
@@ -472,7 +472,11 @@ export const setWorkflow = (
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
 async function hostedSpace(d: Database, project?: string) {
   const identity = await recordApiClient().whoami()
-  const spaceId = project ? effectiveProjectSpace(d, project) : identity.activeSpaceId
+  const spaceId = workflowReadSpace({
+    project: project ?? null,
+    projectSpace: effectiveProjectSpace(d, project ?? null),
+    activeSpace: identity.activeSpaceId,
+  })
   if (!spaceId) throw new Error('record session has no active space')
   return spaceId
 }
@@ -654,8 +658,8 @@ export function forkWorkflow(
     local: () => {
       const definition = (
         from === undefined
-          ? workflowLifecycle.production(slug, d)
-          : workflowLifecycle.show(slug, from, d)
+          ? workflowLifecycle.production(slug, d, workflowReadSpaceFor(d, null))
+          : workflowLifecycle.show(slug, from, d, workflowReadSpaceFor(d, null))
       ).definition
       return writeDraftLocal(slug, definition, reason, author, 'fork', d)
     },
@@ -690,18 +694,18 @@ function forkWorkflowLocal(
 ) {
   const definition = (
     from === undefined
-      ? workflowLifecycle.production(slug, d)
-      : workflowLifecycle.show(slug, from, d)
+      ? workflowLifecycle.production(slug, d, workflowReadSpaceFor(d, null))
+      : workflowLifecycle.show(slug, from, d, workflowReadSpaceFor(d, null))
   ).definition
   return writeDraftLocal(slug, definition, reason, author, 'fork', d)
 }
 export function resolvedWorkflowVersions(slug: string, project: string | null, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return workflowLifecycle.versions(slug, d, spaceId)
 }
 
 export function resolvedProductionWorkflows(project: string, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const exists = d
       .query(
@@ -750,7 +754,7 @@ export function workflowModeStepLists(
   d: Database = db(),
   selection: WorkflowSelection = {},
 ): WorkflowModeStepList[] {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   const workflow = selectedWorkflow(slug, selection.version, d, spaceId)
   const catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
   return workflow.definition.modes.map((mode) => ({
@@ -792,7 +796,7 @@ export function composeWorkflow(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const spaceId = effectiveProjectSpace(d, projectName)
+  const spaceId = workflowReadSpaceFor(d, projectName)
   const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
@@ -906,7 +910,7 @@ export function getWorkflowStep(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const spaceId = effectiveProjectSpace(d, projectName)
+  const spaceId = workflowReadSpaceFor(d, projectName)
   const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId),

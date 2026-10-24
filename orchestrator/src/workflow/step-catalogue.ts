@@ -7,7 +7,7 @@ import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
+import { effectiveProjectSpace, workflowReadSpace, workflowReadSpaceFor } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -428,9 +428,9 @@ const compatibleCatalogue = <T extends { definition: StepCatalogueDefinition }>(
   },
 })
 export const showStepCatalogue = (n?: number, d: Database = db()) =>
-  compatibleCatalogue(lifecycle.show(CATALOGUE, n, d))
+  compatibleCatalogue(lifecycle.show(CATALOGUE, n, d, workflowReadSpaceFor(d, null)))
 export const productionStepCatalogue = (d: Database = db()) =>
-  compatibleCatalogue(lifecycle.production(CATALOGUE, d))
+  compatibleCatalogue(lifecycle.production(CATALOGUE, d, workflowReadSpaceFor(d, null)))
 export function selectedStepCatalogue(
   n: number | undefined,
   d: Database,
@@ -472,7 +472,11 @@ export const setStepCatalogueLocal = (
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
 async function activeSpace(d?: Database, project?: string) {
   const identity = await recordApiClient().whoami()
-  const spaceId = project && d ? effectiveProjectSpace(d, project) : identity.activeSpaceId
+  const spaceId = workflowReadSpace({
+    project: project ?? null,
+    projectSpace: project && d ? effectiveProjectSpace(d, project) : null,
+    activeSpace: identity.activeSpaceId,
+  })
   if (!spaceId) throw new Error('record session has no active space')
   return spaceId
 }
@@ -522,7 +526,7 @@ export const forkStepCatalogue = (
   assertCatalogueWriteAllowed('fork step catalogue')
   return applyRecordWriteAuthority({
     local: () => {
-      const source = selectedStepCatalogue(from, d, effectiveProjectSpace(d, project))
+      const source = selectedStepCatalogue(from, d, workflowReadSpaceFor(d, project))
       return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
     },
     hosted: async () => {
@@ -595,11 +599,11 @@ const retireStepCatalogueLocal = (
   d: Database = writableDb(),
 ) => lifecycle.retire(CATALOGUE, n, reason, author, d)
 export function showResolvedStepCatalogue(project: string | null, n?: number, d: Database = db()) {
-  return selectedStepCatalogue(n, d, effectiveProjectSpace(d, project))
+  return selectedStepCatalogue(n, d, workflowReadSpaceFor(d, project))
 }
 
 export function resolvedStepCatalogueVersions(project: string | null, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return lifecycle.versions(CATALOGUE, d, spaceId)
 }
 

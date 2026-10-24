@@ -75,36 +75,72 @@ function ownerId<T>(
   return row.record_id
 }
 
+const hostedSpaceSuffix = (spaceId: string | null) =>
+  spaceId === null ? '' : ` in hosted space ${spaceId}`
+
+function missingVersion<T>(
+  config: VersionedStoreConfig<T>,
+  slug: string,
+  n: number | undefined,
+  spaceId: string | null,
+): Error {
+  return new Error(
+    n === undefined
+      ? `unknown ${config.noun} "${slug}"${hostedSpaceSuffix(spaceId)}`
+      : `${config.noun} "${slug}" has no version ${n}${hostedSpaceSuffix(spaceId)}`,
+  )
+}
+
+function versionRow<T>(
+  config: VersionedStoreConfig<T>,
+  slug: string,
+  n: number | undefined,
+  d: Database,
+  spaceId: string | null,
+): Row {
+  const suffix =
+    n === undefined
+      ? `ORDER BY CASE status WHEN 'production' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, n DESC LIMIT 1`
+      : `AND v.n=?`
+  const found = d
+    .query(
+      `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS ? ${suffix}`,
+    )
+    .get(...(n === undefined ? [slug, spaceId] : [slug, spaceId, n])) as Row | null
+  if (!found) throw missingVersion(config, slug, n, spaceId)
+  return found
+}
+
+function productionRow<T>(
+  config: VersionedStoreConfig<T>,
+  slug: string,
+  d: Database,
+  spaceId: string | null,
+): Row {
+  const found = d
+    .query(
+      `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS ? AND v.status='production'`,
+    )
+    .get(slug, spaceId) as Row | null
+  if (!found)
+    throw new Error(
+      `${config.noun} "${slug}" has no production version${hostedSpaceSuffix(spaceId)}; promote one`,
+    )
+  return found
+}
+
 export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
-  const row = (slug: string, n: number | undefined, d: Database): Row => {
-    const suffix =
-      n === undefined
-        ? `ORDER BY CASE status WHEN 'production' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, n DESC LIMIT 1`
-        : `AND v.n=?`
-    const found = d
-      .query(
-        `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL ${suffix}`,
-      )
-      .get(...(n === undefined ? [slug] : [slug, n])) as Row | null
-    if (!found)
-      throw new Error(
-        n === undefined
-          ? `unknown ${config.noun} "${slug}"`
-          : `${config.noun} "${slug}" has no version ${n}`,
-      )
-    return found
-  }
-  const show = (slug: string, n: number | undefined, d: Database) => {
-    const found = row(slug, n, d)
+  const show = (
+    slug: string,
+    n: number | undefined,
+    d: Database,
+    spaceId: string | null = null,
+  ) => {
+    const found = versionRow(config, slug, n, d, spaceId)
     return { ...found, definition: JSON.parse(found.definition) as T }
   }
-  const production = (slug: string, d: Database) => {
-    const found = d
-      .query(
-        `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS NULL AND v.status='production'`,
-      )
-      .get(slug) as Row | null
-    if (!found) throw new Error(`${config.noun} "${slug}" has no production version; promote one`)
+  const production = (slug: string, d: Database, spaceId: string | null = null) => {
+    const found = productionRow(config, slug, d, spaceId)
     return { ...found, definition: JSON.parse(found.definition) as T }
   }
   const event = (

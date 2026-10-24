@@ -58,3 +58,24 @@ export function activeRecordSpace(local: Database): string | null {
     .get(ACTIVE_SPACE)?.value
   return value ?? null
 }
+
+/**
+ * Chooses the only space from which workflow and step-catalogue reads may resolve.
+ * Local lifecycle writes remain NULL-space: record write authority reaches them only on an
+ * unbound machine, where this decision also resolves project-less reads to NULL.
+ */
+export function workflowReadSpace(input: {
+  project: string | null
+  projectSpace: string | null
+  activeSpace: string | null
+}): string | null {
+  return input.project ? input.projectSpace : input.activeSpace
+}
+
+export function workflowReadSpaceFor(local: Database, project: string | null): string | null {
+  return workflowReadSpace({
+    project,
+    projectSpace: effectiveProjectSpace(local, project),
+    activeSpace: activeRecordSpace(local),
+  })
+}
