@@ -201,24 +201,27 @@ describe('worker gate eligibility', () => {
 
 test('worker gate requests join, return an undelivered result, or start', () => {
   const join = decideGateRequest({
-    execution: { id: 7, finished: false },
+    execution: { recordId: 'gate-7', number: 7, finished: false },
     resultPending: false,
   })
-  expect(join).toEqual({ action: 'join', executionId: 7 })
+  expect(join).toEqual({ action: 'join', executionRecordId: 'gate-7', executionNumber: 7 })
   expect(formatGateRequestDecision(join)).toBe(
     'Gate execution 7 was already running; this call waited for the same execution.',
   )
   const late = decideGateRequest({
-    execution: { id: 8, finished: true },
+    execution: { recordId: 'gate-8', number: 8, finished: true },
     resultPending: true,
   })
-  expect(late).toEqual({ action: 'return', executionId: 8 })
+  expect(late).toEqual({ action: 'return', executionRecordId: 'gate-8', executionNumber: 8 })
   expect(formatGateRequestDecision(late)).toBe(
     'Gate execution 8 finished after an earlier run_gate call stopped waiting; returning that result.',
   )
-  expect(decideGateRequest({ execution: { id: 8, finished: true }, resultPending: false })).toEqual(
-    { action: 'start' },
-  )
+  expect(
+    decideGateRequest({
+      execution: { recordId: 'gate-8', number: 8, finished: true },
+      resultPending: false,
+    }),
+  ).toEqual({ action: 'start' })
   expect(decideGateRequest({ execution: null, resultPending: false })).toEqual({ action: 'start' })
 })
 

@@ -48,13 +48,18 @@ import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 const GATE_REQUEST_POLL_MS = 1000
 export const GATE_BASE_REFRESH_TIMEOUT_MS = 30_000
 
-type PendingGate = { id: number; run_record_id: string; startedAt: string }
+type PendingGate = {
+  record_id: string
+  number: number
+  run_record_id: string
+  startedAt: string
+}
 type ActiveGate = {
   completion: Promise<void>
   cancel(reason: string): Promise<void>
 }
 type HostSlotRunner = typeof withGateSlot
-export type GateExecutionMoment = { executionId: number; at: string }
+export type GateExecutionMoment = { executionRecordId: string; at: string }
 type GateBaseRefresh = (input: {
   mainCheckout: string
   landingBranch: string | null
@@ -73,8 +78,9 @@ type GateProcessState = {
   exitCode: number
 }
 
-const PENDING_GATE_SQL = `SELECT id,run_record_id FROM gate_execution
-  WHERE run_record_id=? AND started_at IS NULL AND finished_at IS NULL ORDER BY id LIMIT 1`
+const PENDING_GATE_SQL = `SELECT record_id,number,run_record_id FROM gate_execution
+  WHERE run_record_id=? AND started_at IS NULL AND finished_at IS NULL
+  ORDER BY requested_at,record_id LIMIT 1`
 
 function claimPendingGate(runId: string): PendingGate | null {
   if (!db().query(PENDING_GATE_SQL).get(runId)) return null
@@ -83,8 +89,8 @@ function claimPendingGate(runId: string): PendingGate | null {
     if (!row) return null
     const startedAt = nowIso()
     const claimed = db()
-      .query('UPDATE gate_execution SET started_at=? WHERE id=? AND started_at IS NULL')
-      .run(startedAt, row.id)
+      .query('UPDATE gate_execution SET started_at=? WHERE record_id=? AND started_at IS NULL')
+      .run(startedAt, row.record_id)
     return claimed.changes === 1 ? { ...row, startedAt } : null
   })
 }
@@ -306,7 +312,7 @@ function gateExecutionEnvironment(
 }
 
 function recordFinishedGate(input: {
-  requestId: number
+  requestRecordId: string
   finishedAt: string
   exitCode: number
   timedOut: boolean
@@ -323,7 +329,7 @@ function recordFinishedGate(input: {
       .query(
         `UPDATE gate_execution SET finished_at=?,exit_code=?,timed_out=?,elapsed_ms=?,
        output_tail=?,output_artifact=?,cancelled_reason=?,resolved_command=COALESCE(resolved_command,?)
-       WHERE id=?`,
+       WHERE record_id=?`,
       )
       .run(
         input.finishedAt,
@@ -334,9 +340,9 @@ function recordFinishedGate(input: {
         input.artifactPath,
         input.cancelledReason,
         input.command,
-        input.requestId,
+        input.requestRecordId,
       )
-    insertGateCheckExecutions(database, input.requestId, input.checkExecutions)
+    insertGateCheckExecutions(database, input.requestRecordId, input.checkExecutions)
   }, database)
 }
 
@@ -407,7 +413,9 @@ function gateWaitCallbacks(request: PendingGate) {
   return hostSlotWaitCallbacks({
     runId: request.run_record_id,
     writeProgress: (message) => {
-      db().query('UPDATE gate_execution SET output_tail=? WHERE id=?').run(message, request.id)
+      db()
+        .query('UPDATE gate_execution SET output_tail=? WHERE record_id=?')
+        .run(message, request.record_id)
     },
   })
 }
@@ -434,8 +442,8 @@ function prepareGateExecution(input: {
   const command = resolveGateCommand(plan.command, plan.worktree)
   const toolingPaths = changedGateTooling(plan, input.record)
   db()
-    .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=? WHERE id=?')
-    .run(JSON.stringify(toolingPaths), command, input.request.id)
+    .query('UPDATE gate_execution SET tooling_paths=?,resolved_command=? WHERE record_id=?')
+    .run(JSON.stringify(toolingPaths), command, input.request.record_id)
   return {
     command,
     worktree: plan.worktree,
@@ -446,7 +454,7 @@ function prepareGateExecution(input: {
 }
 
 async function runPreparedGate(input: {
-  requestId: number
+  requestRecordId: string
   prepared: ReturnType<typeof prepareGateExecution>
   refreshBase: GateBaseRefresh
   environment: Record<string, string>
@@ -462,9 +470,9 @@ async function runPreparedGate(input: {
       input.record(`${refresh.message} (${refresh.elapsedMs}ms)\n`)
       db()
         .query(
-          'UPDATE gate_execution SET base_refresh_elapsed_ms=?,base_refresh_result=? WHERE id=?',
+          'UPDATE gate_execution SET base_refresh_elapsed_ms=?,base_refresh_result=? WHERE record_id=?',
         )
-        .run(refresh.elapsedMs, refresh.message, input.requestId)
+        .run(refresh.elapsedMs, refresh.message, input.requestRecordId)
     },
     runGate: async () => {
       const trackedPorcelainPaths = gitPaths(input.prepared.worktree, [
@@ -497,8 +505,8 @@ async function runPreparedGate(input: {
         porcelainPaths,
       })
       db()
-        .query('UPDATE gate_execution SET head_commit=? WHERE id=?')
-        .run(headCommit, input.requestId)
+        .query('UPDATE gate_execution SET head_commit=? WHERE record_id=?')
+        .run(headCommit, input.requestRecordId)
       if (gateInput.kind === 'committed') {
         await runGateProcess({
           command: input.prepared.command,
@@ -554,7 +562,7 @@ function completeGateExecution(input: {
     artifactPath: input.artifactPath,
   })
   recordFinishedGate({
-    requestId: input.request.id,
+    requestRecordId: input.request.record_id,
     finishedAt: input.finishedAt,
     exitCode: finalization.exitCode,
     timedOut: finalization.timedOut,
@@ -569,7 +577,7 @@ function completeGateExecution(input: {
     recordGateLogEvent(
       input.request.run_record_id,
       input.finishedAt,
-      gateScratchLogPath(input.scratchDir, input.request.id),
+      gateScratchLogPath(input.scratchDir, input.request.number),
     )
   }
 }
@@ -612,12 +620,12 @@ function startGateExecution(
       await completion
     })
   } catch (error) {
-    onFinish?.({ executionId: request.id, at: nowIso() })
+    onFinish?.({ executionRecordId: request.record_id, at: nowIso() })
     throw error
   }
   completion = (async () => {
     mkdirSync(scratchDir, { recursive: true })
-    const artifactPath = join(runArtifactsDir(request.run_record_id), `gate-${request.id}.log`)
+    const artifactPath = join(runArtifactsDir(request.run_record_id), `gate-${request.number}.log`)
     const started = Date.now()
     let fd: number | null = null
     let tail = ''
@@ -631,13 +639,13 @@ function startGateExecution(
       tail = boundedGateOutputTail(tail + bytes.toString())
     }
     try {
-      fd = createGateLog(gateScratchLogPath(scratchDir, request.id))
+      fd = createGateLog(gateScratchLogPath(scratchDir, request.number))
       const prepared = prepareGateExecution({ request, environment, record })
       command = prepared.command
       await hostSlot(
         () =>
           runPreparedGate({
-            requestId: request.id,
+            requestRecordId: request.record_id,
             prepared,
             refreshBase,
             environment: gateExecutionEnvironment(environment, checkExecutionPath),
@@ -677,7 +685,9 @@ function startGateExecution(
       checkExecutions,
     })
   })()
-    .finally(() => onFinish?.({ executionId: request.id, at: finishedAt ?? nowIso() }))
+    .finally(() =>
+      onFinish?.({ executionRecordId: request.record_id, at: finishedAt ?? nowIso() }),
+    )
     .finally(unregister)
   return { completion, cancel: (reason) => stop(reason) }
 }
@@ -704,7 +714,7 @@ export function startGateBroker(input: {
     const request = claimPendingGate(input.runId)
     if (!request) return
     input.onExecutionStart?.({
-      executionId: request.id,
+      executionRecordId: request.record_id,
       at: request.startedAt,
     })
     const execution = startGateExecution(

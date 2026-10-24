@@ -177,12 +177,18 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
     answeredAt: '2026-09-01',
   })
   expect(gathered.gate).toEqual({
+    recordId: expect.any(String),
+    number: 1,
     id: 1,
     finished: true,
     exitCode: 0,
     project: 'fixture',
     commit: 'abc',
   })
+  const gateRecordId = d
+    .query<{ record_id: string }, []>('SELECT record_id FROM gate_execution WHERE number=1')
+    .get()!.record_id
+  expect(gather(d, { gate: gateRecordId }).gate).toEqual(gathered.gate)
 })
 
 test('resolves probe artifacts and task comments through injected ports', () => {
@@ -391,6 +397,8 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(matching)
   expect(gather(d, { gate: 2 }).gate).toEqual({
+    recordId: expect.any(String),
+    number: 2,
     id: 2,
     finished: true,
     exitCode: 0,
@@ -426,6 +434,8 @@ test('a foreign architect gate is refused and a matching architect gate is allow
      VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   expect(gather(d, { gate: 2 }).gate).toEqual({
+    recordId: expect.any(String),
+    number: 2,
     id: 2,
     finished: true,
     exitCode: 0,

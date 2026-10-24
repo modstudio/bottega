@@ -89,18 +89,25 @@ function installEvidence(
   if (!row || row.state === 'done' || row.state === 'abandoned') return {}
   const gate =
     d
-      .query<{ id: number }, []>(
-        `SELECT id FROM gate_execution WHERE finished_at IS NOT NULL AND exit_code=0 LIMIT 1`,
+      .query<{ number: number }, []>(
+        `SELECT number FROM gate_execution WHERE finished_at IS NOT NULL AND exit_code=0 LIMIT 1`,
       )
-      .get()?.id ??
+      .get()?.number ??
     (
-      d
-        .query<{ id: number }, []>(
+      (() => {
+        const recordId = newRecordId()
+        d.query(
           `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
-         VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/tmp/work','abc') RETURNING id`,
+         VALUES (?, NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/tmp/work','abc')`,
         )
-        .get() as { id: number }
-    ).id
+          .run(recordId)
+        return d
+          .query<{ number: number }, [string]>(
+            'SELECT number FROM gate_execution WHERE record_id=?',
+          )
+          .get(recordId)!.number
+      })()
+    )
   const probe =
     d.query<{ id: number }, []>('SELECT id FROM probe LIMIT 1').get()?.id ??
     (

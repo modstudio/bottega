@@ -57,7 +57,7 @@ export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
 export type WorkflowEvidenceInput = {
   ruling?: number
   review?: string
-  gate?: number
+  gate?: string | number
   run?: string
   artifact?: string
   task?: string
@@ -406,7 +406,7 @@ function requireCheckout(
 }
 
 function gatherGate(
-  id: number,
+  identifier: string,
   identity: CursorIdentity,
   cursorId: string,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
@@ -415,26 +415,32 @@ function gatherGate(
   const row = d
     .query<
       {
+        record_id: string
+        number: number
         finished_at: string | null
         exit_code: number | null
         run_record_id: string | null
         cwd: string | null
         head_commit: string | null
       },
-      [number]
-    >('SELECT finished_at,exit_code,run_record_id,cwd,head_commit FROM gate_execution WHERE id=?')
-    .get(id)
-  if (!row) throw new Error(`--gate ${id} does not exist`)
+      [string, string, string, string]
+    >(
+      `SELECT record_id,number,finished_at,exit_code,run_record_id,cwd,head_commit
+         FROM gate_execution
+        WHERE record_id=? OR (number=? AND ? GLOB '[0-9]*' AND ? NOT GLOB '*[^0-9]*')`,
+    )
+    .get(identifier, identifier, identifier, identifier)
+  if (!row) throw new Error(`--gate ${identifier} does not exist`)
   let project: string | null
   if (row.run_record_id !== null) {
     const run = loadRunBinding(row.run_record_id, d)
-    if (!run) throw new Error(`--gate ${id} run ${row.run_record_id} does not exist`)
-    requireRunBinding(`--gate ${id}`, run, identity, cursorId, d)
+    if (!run) throw new Error(`--gate ${identifier} run ${row.run_record_id} does not exist`)
+    requireRunBinding(`--gate ${identifier}`, run, identity, cursorId, d)
     project = run.project
   } else {
-    if (!row.cwd) throw new Error(`--gate ${id} architect row has no cwd`)
+    if (!row.cwd) throw new Error(`--gate ${identifier} architect row has no cwd`)
     project = requireCheckout(
-      `--gate ${id}`,
+      `--gate ${identifier}`,
       row.cwd,
       row.head_commit,
       identity,
@@ -443,7 +449,9 @@ function gatherGate(
     ).project
   }
   return {
-    id,
+    recordId: row.record_id,
+    number: row.number,
+    id: row.number,
     finished: row.finished_at !== null && row.exit_code !== null,
     exitCode: row.exit_code,
     project,
@@ -902,7 +910,7 @@ export function gatherValidatedEvidence(input: {
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positive(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
-  const gate = positive(input.evidence.gate, '--gate')
+  const gate = input.evidence.gate === undefined ? undefined : String(input.evidence.gate).trim()
   const run = input.evidence.run
   const satisfies = input.evidence.satisfies
   if (ruling)

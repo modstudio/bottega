@@ -52,7 +52,15 @@ const gradedReview: ValidatedEvidence = {
   review: { recordId: 'review-4', number: 4, allFindingsDisposed: true, allLensesGraded: true },
 }
 const passingGate: ValidatedEvidence = {
-  gate: { id: 2, finished: true, exitCode: 0, project: 'fixture', commit: 'abc' },
+  gate: {
+    recordId: '00000000-0000-4000-8000-000000000002',
+    number: 2,
+    id: 2,
+    finished: true,
+    exitCode: 0,
+    project: 'fixture',
+    commit: 'abc',
+  },
   tree: { project: 'fixture', commit: 'abc' },
 }
 const passingRun: ValidatedEvidence = { run: { id: '8', terminal: true, exitCode: 0 } }
@@ -265,7 +273,7 @@ test('an unbound or unanswered ruling does not satisfy', () => {
 test('a finished gate with the expected exit satisfies command-exit', () => {
   expect(decide({ floors: [commandExit], evidence: passingGate })).toMatchObject({
     action: 'allow',
-    refs: [{ flag: '--gate', value: '2' }],
+    refs: [{ flag: '--gate', value: '00000000-0000-4000-8000-000000000002' }],
   })
 })
 
@@ -497,7 +505,7 @@ test('a non-zero gate fails unless the floor states otherwise', () => {
     decide({
       floors: [commandExit],
       evidence: {
-        gate: { id: 2, finished: true, exitCode: 1, project: null, commit: null },
+        gate: { ...passingGate.gate!, exitCode: 1, project: null, commit: null },
       },
     }).action,
   ).toBe('refuse')
@@ -505,7 +513,7 @@ test('a non-zero gate fails unless the floor states otherwise', () => {
     decide({
       floors: [{ ...commandExit, expectedExitCode: 1 }],
       evidence: {
-        gate: { id: 2, finished: true, exitCode: 1, project: null, commit: null },
+        gate: { ...passingGate.gate!, exitCode: 1, project: null, commit: null },
       },
     }).action,
   ).toBe('allow')
@@ -889,7 +897,7 @@ test('evidence wins over an unused deferral', () => {
   ).toEqual({
     action: 'allow',
     enforcement: 'floors',
-    refs: [{ flag: '--gate', value: '2' }],
+    refs: [{ flag: '--gate', value: '00000000-0000-4000-8000-000000000002' }],
   })
 })
 

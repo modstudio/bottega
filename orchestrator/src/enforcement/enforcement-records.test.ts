@@ -10,7 +10,7 @@ const row = (overrides: Partial<CategoryExecutionRow> = {}): CategoryExecutionRo
   wallMs: 10,
   remaining: 4,
   finishedAt: '2026-10-12T10:00:00.000Z',
-  gateId: 1,
+  gateRecordId: '1',
   gateExitCode: 0,
   headCommit: 'a'.repeat(40),
   cwd: '/work/project',
@@ -21,10 +21,10 @@ test('category records prefer the newest eligible passing project gate', () => {
   const selected = newestCategoryExecutions(
     [
       row(),
-      row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z', wallMs: 20 }),
-      row({ gateId: 3, finishedAt: '2026-10-12T12:00:00.000Z', gateExitCode: 1 }),
-      row({ gateId: 4, finishedAt: '2026-10-12T13:00:00.000Z', headCommit: null }),
-      row({ gateId: 5, finishedAt: '2026-10-12T14:00:00.000Z', cwd: '/work/other' }),
+      row({ gateRecordId: '2', finishedAt: '2026-10-12T11:00:00.000Z', wallMs: 20 }),
+      row({ gateRecordId: '3', finishedAt: '2026-10-12T12:00:00.000Z', gateExitCode: 1 }),
+      row({ gateRecordId: '4', finishedAt: '2026-10-12T13:00:00.000Z', headCommit: null }),
+      row({ gateRecordId: '5', finishedAt: '2026-10-12T14:00:00.000Z', cwd: '/work/other' }),
     ],
     '/work/project',
   )
@@ -38,7 +38,7 @@ test('category records prefer the newest eligible passing project gate', () => {
 test('zero followed by a positive count reports the refill', () => {
   expect(
     refilledCategoryExecutions(
-      [row({ remaining: 0 }), row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z' })],
+      [row({ remaining: 0 }), row({ gateRecordId: '2', finishedAt: '2026-10-12T11:00:00.000Z' })],
       '/work/project',
     ),
   ).toEqual([
@@ -56,20 +56,20 @@ test.each([
     name: 'positive then zero then zero',
     rows: [
       row(),
-      row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z', remaining: 0 }),
-      row({ gateId: 3, finishedAt: '2026-10-12T12:00:00.000Z', remaining: 0 }),
+      row({ gateRecordId: '2', finishedAt: '2026-10-12T11:00:00.000Z', remaining: 0 }),
+      row({ gateRecordId: '3', finishedAt: '2026-10-12T12:00:00.000Z', remaining: 0 }),
     ],
   },
   {
     name: 'never zero',
-    rows: [row(), row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z' })],
+    rows: [row(), row({ gateRecordId: '2', finishedAt: '2026-10-12T11:00:00.000Z' })],
   },
   {
     name: 'zero then positive then zero',
     rows: [
       row({ remaining: 0 }),
-      row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z' }),
-      row({ gateId: 3, finishedAt: '2026-10-12T12:00:00.000Z', remaining: 0 }),
+      row({ gateRecordId: '2', finishedAt: '2026-10-12T11:00:00.000Z' }),
+      row({ gateRecordId: '3', finishedAt: '2026-10-12T12:00:00.000Z', remaining: 0 }),
     ],
   },
 ])('$name does not report a refill', ({ rows }) => {
@@ -79,7 +79,7 @@ test.each([
 test('a failed positive gate after zero is ignored', () => {
   expect(
     refilledCategoryExecutions(
-      [row({ remaining: 0 }), row({ gateId: 2, gateExitCode: 1 })],
+      [row({ remaining: 0 }), row({ gateRecordId: '2', gateExitCode: 1 })],
       '/work/project',
     ),
   ).toEqual([])
@@ -88,7 +88,7 @@ test('a failed positive gate after zero is ignored', () => {
 test('another project rows are ignored', () => {
   expect(
     refilledCategoryExecutions(
-      [row({ remaining: 0 }), row({ gateId: 2, cwd: '/work/other' })],
+      [row({ remaining: 0 }), row({ gateRecordId: '2', cwd: '/work/other' })],
       '/work/project',
     ),
   ).toEqual([])
@@ -101,12 +101,12 @@ test('categories are judged independently', () => {
       row({ category: 'dead-code', remaining: 3 }),
       row({
         category: 'file-length',
-        gateId: 2,
+        gateRecordId: '2',
         finishedAt: '2026-10-12T11:00:00.000Z',
       }),
       row({
         category: 'dead-code',
-        gateId: 2,
+        gateRecordId: '2',
         finishedAt: '2026-10-12T11:00:00.000Z',
         remaining: 0,
       }),

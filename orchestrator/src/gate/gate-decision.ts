@@ -163,27 +163,37 @@ export function decideGateEligibility(input: {
 
 export type GateRequestDecision =
   | { action: 'start' }
-  | { action: 'join'; executionId: number }
-  | { action: 'return'; executionId: number }
+  | { action: 'join'; executionRecordId: string; executionNumber: number }
+  | { action: 'return'; executionRecordId: string; executionNumber: number }
 
 /** Decide whether one worker call starts, joins, or collects a gate execution. */
 export function decideGateRequest(input: {
-  execution: { id: number; finished: boolean } | null
+  execution: { recordId: string; number: number; finished: boolean } | null
   resultPending: boolean
 }): GateRequestDecision {
   if (!input.execution) return { action: 'start' }
-  if (!input.execution.finished) return { action: 'join', executionId: input.execution.id }
-  if (input.resultPending) return { action: 'return', executionId: input.execution.id }
+  if (!input.execution.finished)
+    return {
+      action: 'join',
+      executionRecordId: input.execution.recordId,
+      executionNumber: input.execution.number,
+    }
+  if (input.resultPending)
+    return {
+      action: 'return',
+      executionRecordId: input.execution.recordId,
+      executionNumber: input.execution.number,
+    }
   return { action: 'start' }
 }
 
 /** Present how a repeated call reached an existing execution. */
 export function formatGateRequestDecision(decision: GateRequestDecision): string | null {
   if (decision.action === 'join') {
-    return `Gate execution ${decision.executionId} was already running; this call waited for the same execution.`
+    return `Gate execution ${decision.executionNumber} was already running; this call waited for the same execution.`
   }
   if (decision.action === 'return') {
-    return `Gate execution ${decision.executionId} finished after an earlier run_gate call stopped waiting; returning that result.`
+    return `Gate execution ${decision.executionNumber} finished after an earlier run_gate call stopped waiting; returning that result.`
   }
   return null
 }

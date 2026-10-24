@@ -36,20 +36,24 @@ test('gate request cancellation changes only an unfinished execution', () => {
       .get(newRecordId(), new Date().toISOString()) as { id: string }
   ).id
   const pending = requestGateExecution(runId)
-  expect(cancelPendingGateExecution(pending.id, 'coordinator cancelled')).toBe(true)
+  expect(cancelPendingGateExecution(pending.recordId, 'coordinator cancelled')).toBe(true)
   expect(
-    db().query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE id=?').get(pending.id),
+    db()
+      .query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE record_id=?')
+      .get(pending.recordId),
   ).toEqual({ exit_code: -1, cancelled_reason: 'coordinator cancelled' })
 
   const finished = requestGateExecution(runId)
   db()
     .query(
-      'UPDATE gate_execution SET finished_at=?,exit_code=0,timed_out=0,elapsed_ms=1 WHERE id=?',
+      'UPDATE gate_execution SET finished_at=?,exit_code=0,timed_out=0,elapsed_ms=1 WHERE record_id=?',
     )
-    .run(new Date().toISOString(), finished.id)
-  expect(cancelPendingGateExecution(finished.id, 'late cancellation')).toBe(false)
+    .run(new Date().toISOString(), finished.recordId)
+  expect(cancelPendingGateExecution(finished.recordId, 'late cancellation')).toBe(false)
   expect(
-    db().query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE id=?').get(finished.id),
+    db()
+      .query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE record_id=?')
+      .get(finished.recordId),
   ).toEqual({ exit_code: 0, cancelled_reason: null })
 })
 
@@ -83,9 +87,11 @@ test('a writing ACP gate broker launches with the run writer profile unchanged',
   expect(profiles[0]!.network).toBe(writer.network)
 })
 
-async function waitForFinishedGate(id: number): Promise<void> {
+async function waitForFinishedGate(recordId: string): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const row = db().query('SELECT finished_at FROM gate_execution WHERE id=?').get(id) as {
+    const row = db()
+      .query('SELECT finished_at FROM gate_execution WHERE record_id=?')
+      .get(recordId) as {
       finished_at: string | null
     }
     if (row.finished_at) return
@@ -142,13 +148,13 @@ test('records machine-readable checks emitted by a worker gate against its execu
       id: string
     }
   ).id
-  const gateId = (
+  const gateRecordId = (
     db()
       .query(
-        `INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES ('${newRecordId()}',?,?) RETURNING id`,
+        `INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES ('${newRecordId()}',?,?) RETURNING record_id`,
       )
-      .get(runId, new Date().toISOString()) as { id: number }
-  ).id
+      .get(runId, new Date().toISOString()) as { record_id: string }
+  ).record_id
 
   const broker = startGateBroker({
     runId,
@@ -158,16 +164,16 @@ test('records machine-readable checks emitted by a worker gate against its execu
     withHostSlot: async (run) => run(),
   })
   try {
-    await waitForFinishedGate(gateId)
+    await waitForFinishedGate(gateRecordId)
     expect(
       db()
         .query(
-          `SELECT gate_execution_id,check_name,category,exit_code
-           FROM check_execution WHERE gate_execution_id=?`,
+          `SELECT gate_execution_record_id,check_name,category,exit_code
+           FROM check_execution WHERE gate_execution_record_id=?`,
         )
-        .get(gateId),
+        .get(gateRecordId),
     ).toEqual({
-      gate_execution_id: gateId,
+      gate_execution_record_id: gateRecordId,
       check_name: 'unit suite',
       category: 'unit-tests',
       exit_code: 0,
@@ -375,14 +381,17 @@ test('an occupied gate log path fails the execution without following the path',
         'head',
       ) as { id: string }
   ).id
-  const gateId = (
+  const gate = (
     db()
       .query(
-        `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`,
+        `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING record_id`,
       )
-      .get(runId, new Date().toISOString()) as { id: number }
-  ).id
-  const occupiedPath = join(scratch, `gate-${gateId}.log`)
+      .get(runId, new Date().toISOString()) as { record_id: string }
+  )
+  const gateNumber = db()
+    .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+    .get(gate.record_id)!.number
+  const occupiedPath = join(scratch, `gate-${gateNumber}.log`)
   symlinkSync(sentinel, occupiedPath)
   const checkpoints: string[] = []
   const checkpointSchedule = createCheckpointSchedule((trigger) => checkpoints.push(trigger))
@@ -400,10 +409,10 @@ test('an occupied gate log path fails the execution without following the path',
     onExecutionFinish: () => checkpointSchedule.executionFinished(),
   })
   try {
-    await waitForFinishedGate(gateId)
+    await waitForFinishedGate(gate.record_id)
     const execution = db()
-      .query('SELECT exit_code,output_tail,output_artifact FROM gate_execution WHERE id=?')
-      .get(gateId) as {
+      .query('SELECT exit_code,output_tail,output_artifact FROM gate_execution WHERE record_id=?')
+      .get(gate.record_id) as {
       exit_code: number
       output_tail: string
       output_artifact: string | null

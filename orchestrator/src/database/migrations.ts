@@ -931,6 +931,19 @@ function migrationOrphanCounts(d: Database, tag: string): string[] {
     return count ? [`monitor_condition.invocation_record_id=${count}`] : []
   }
   if (tag === WORKFLOW_UUID_KEY_MIGRATION) return workflowUuidReferenceOrphanCounts(d)
+  if (tag === '0158_gate_check_execution_uuid_keys') {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) n FROM check_execution child
+           WHERE NOT EXISTS (
+             SELECT 1 FROM gate_execution parent WHERE parent.id=child.gate_execution_id
+           )`,
+        )
+        .get() as { n: number }
+    ).n
+    return count ? [`check_execution.gate_execution_record_id=${count}`] : []
+  }
   return []
 }
 
@@ -946,6 +959,8 @@ function migrationEntityLabel(tag: string): { migration: string; parent: string 
     return { migration: 'monitor', parent: 'monitor invocation' }
   if (tag === WORKFLOW_UUID_KEY_MIGRATION)
     return { migration: 'workflow/step-catalogue', parent: 'workflow row' }
+  if (tag === '0158_gate_check_execution_uuid_keys')
+    return { migration: 'gate/check execution', parent: 'gate execution' }
   return { migration: 'board', parent: 'board row' }
 }
 

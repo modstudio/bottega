@@ -142,12 +142,14 @@ test('inserts valid check records in the transaction with the gate row', async (
   expect(
     d
       .query(
-        `SELECT gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count
+        `SELECT gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count
            FROM check_execution`,
       )
       .get(),
   ).toEqual({
-    gate_execution_id: 1,
+    gate_execution_record_id: d
+      .query<{ record_id: string }, []>('SELECT record_id FROM gate_execution')
+      .get()!.record_id,
     check_name: 'scripts/check-file-ceiling.ts',
     category: 'file-length',
     wall_ms: 12.5,

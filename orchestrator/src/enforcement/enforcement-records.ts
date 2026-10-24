@@ -10,7 +10,7 @@ export type CategoryExecutionRow = {
   wallMs: number
   remaining: number | null
   finishedAt: string
-  gateId: number
+  gateRecordId: string
   gateExitCode: number
   headCommit: string | null
   cwd: string | null
@@ -44,7 +44,10 @@ function compareCategoryExecutionRecency(
   left: CategoryExecutionRow,
   right: CategoryExecutionRow,
 ): number {
-  return left.finishedAt.localeCompare(right.finishedAt) || left.gateId - right.gateId
+  return (
+    left.finishedAt.localeCompare(right.finishedAt) ||
+    left.gateRecordId.localeCompare(right.gateRecordId)
+  )
 }
 
 export function newestCategoryExecutions(
@@ -105,11 +108,11 @@ export function categoryExecutionRows(database: Database = db()): CategoryExecut
   return database
     .query(
       `SELECT c.category,c.wall_ms wallMs,c.remaining_count remaining,
-              g.finished_at finishedAt,g.id gateId,g.exit_code gateExitCode,
+              g.finished_at finishedAt,g.record_id gateRecordId,g.exit_code gateExitCode,
               g.head_commit headCommit,g.cwd
-         FROM check_execution c JOIN gate_execution g ON g.id=c.gate_execution_id
+         FROM check_execution c JOIN gate_execution g ON g.record_id=c.gate_execution_record_id
         WHERE c.category IS NOT NULL AND g.finished_at IS NOT NULL
-        ORDER BY g.finished_at,g.id`,
+        ORDER BY g.finished_at,g.record_id`,
     )
     .all() as CategoryExecutionRow[]
 }

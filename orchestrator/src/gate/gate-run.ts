@@ -56,26 +56,30 @@ type ArchitectGateTopLevel = (cwd: string) => string | null
 export type ArchitectGateRecord = { id: number; exitCode: number }
 
 /** Record a worker-style gate request; the broker remains the only executor. */
-export function requestGateExecution(runId: string): { id: number; requestedAt: string } {
+export function requestGateExecution(
+  runId: string,
+): { recordId: string; number: number; requestedAt: string } {
   const requestedAt = nowIso()
+  const recordId = newRecordId()
+  db()
+    .query('INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?)')
+    .run(recordId, runId, requestedAt)
   const inserted = db()
-    .query<{ id: number }, [string, string, string]>(
-      'INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?) RETURNING id',
-    )
-    .get(newRecordId(), runId, requestedAt)
-  if (!inserted) throw new Error('gate execution request was not inserted')
-  return { id: inserted.id, requestedAt }
+    .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+    .get(recordId)
+  if (!inserted?.number) throw new Error('gate execution request was not inserted')
+  return { recordId, number: inserted.number, requestedAt }
 }
 
 /** Cancel one request only while it remains unfinished. */
-export function cancelPendingGateExecution(id: number, reason: string): boolean {
+export function cancelPendingGateExecution(recordId: string, reason: string): boolean {
   return (
     db()
       .query(
         `UPDATE gate_execution SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=0,
-         cancelled_reason=? WHERE id=? AND finished_at IS NULL`,
+         cancelled_reason=? WHERE record_id=? AND finished_at IS NULL`,
       )
-      .run(nowIso(), reason, id).changes === 1
+      .run(nowIso(), reason, recordId).changes === 1
   )
 }
 
@@ -212,15 +216,15 @@ export async function runArchitectGate(input: {
   )
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
-    const row = d
-      .query<{ id: number }, (string | number | null)[]>(
+    const recordId = newRecordId()
+    d.query(
         `INSERT INTO gate_execution
           (record_id,run_record_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
            output_tail,output_artifact,tooling_paths,resolved_command,head_commit,session_id,cwd)
-         VALUES (?,NULL,?,?,?,?,0,?,?,NULL,'[]',?,?,?,?) RETURNING id`,
+         VALUES (?,NULL,?,?,?,?,0,?,?,NULL,'[]',?,?,?,?)`,
       )
-      .get(
-        newRecordId(),
+      .run(
+        recordId,
         ran.startedAt,
         ran.startedAt,
         ran.finishedAt,
@@ -232,8 +236,11 @@ export async function runArchitectGate(input: {
         caller,
         checkoutTopLevel,
       )
-    if (!row) throw new Error('gate_execution row was not inserted')
-    insertGateCheckExecutions(d, row.id, checkExecutions)
-    return { id: row.id, exitCode: ran.exitCode }
+    const row = d
+      .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+      .get(recordId)
+    if (!row?.number) throw new Error('gate_execution row was not inserted')
+    insertGateCheckExecutions(d, recordId, checkExecutions)
+    return { id: row.number, exitCode: ran.exitCode }
   }, d)
 }

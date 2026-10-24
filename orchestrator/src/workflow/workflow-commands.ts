@@ -341,7 +341,7 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
       flagValue(argv, 'review') === undefined
         ? undefined
         : resolveReviewIdentifier(db(), flagValue(argv, 'review')!),
-    gate: positive(flagValue(argv, 'gate'), '--gate'),
+    gate: flagValue(argv, 'gate'),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
     artifact: flagValue(argv, 'artifact'),
     task: flagValue(argv, 'task'),
