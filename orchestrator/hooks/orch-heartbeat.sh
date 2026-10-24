@@ -269,7 +269,10 @@ for ((i = 1; i <= MAX; i++)); do
     fi
     # A run fails before its automatic failover successor claims its row, so the
     # tick that reports the failure can precede the successor. Ask again for the
-    # failures the observer says still await one, until it stops saying so.
+    # failures the observer says still await one, until it stops saying so. The
+    # roots just seen to disappear and the roots already under watch are read in
+    # one request but told apart: only the former must be terminal, because the
+    # latter may have been continued live instead of failing over.
     completion_request="$missing_live_roots"
     if [ -n "$watched_failover_roots" ]; then
       completion_request="${completion_request}${completion_request:+,}$watched_failover_roots"
@@ -283,10 +286,11 @@ for ((i = 1; i <= MAX; i++)); do
       completion_raw=$("$BOTTEGA" "${completion_args[@]}" 2>/dev/null); completion_rc=$?
       completion_observed=$(printf '%s' "$completion_raw" | \
         python3 "$ROOT/hooks/heartbeat-run-observation.py" completion \
-          "$completion_request" "$live_statuses_csv" 2>/dev/null); completion_parse_rc=$?
+          "$missing_live_roots" "$watched_failover_roots" "$live_statuses_csv" 2>/dev/null)
+      completion_parse_rc=$?
       if [ "$completion_rc" -eq 0 ] && [ "$completion_parse_rc" -eq 0 ]; then
         completion_watch_next=$(printf '%s\n' "$completion_observed" | \
-          awk -F '\t' '$1 == "STATE" {print $2; exit}')
+          awk -F '\t' '$1 == "WATCH" {print $2; exit}')
         completion_watch_read=1
       fi
     fi

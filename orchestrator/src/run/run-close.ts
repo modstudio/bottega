@@ -12,6 +12,7 @@ import { db, writeTransaction } from '../database/db.ts'
 import {
   billingHoldForFailure,
   type classify,
+  FAILOVER_REFUSAL_MARKER,
   FAILS_OVER,
   NEEDS_HUMAN,
   NEEDS_HUMAN_TITLE,
@@ -106,7 +107,7 @@ export type CloseInput = {
 
 function failoverRefusalMessage(id: string, reason: string, retryCommand: boolean): string {
   const remedy = retryCommand ? `; retry with ${PLATFORM_SLUG} run retry ${id} --agent <name>` : ''
-  return `Failover refused: ${reason}${remedy}`
+  return `${FAILOVER_REFUSAL_MARKER} ${reason}${remedy}`
 }
 
 function appendFailoverRefusal(id: string, reason: string, retryCommand = false): void {

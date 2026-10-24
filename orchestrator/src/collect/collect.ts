@@ -9,7 +9,7 @@ import {
   rewriteScratchDirPaths,
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
-import { FAILS_OVER } from '../failure/failure.ts'
+import { failoverRefused, FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
@@ -148,16 +148,13 @@ function resolveAsking(database: Database, runId: string): AskingResolution {
     : { state: 'recoverable', rootId }
 }
 
-/** What the closing run writes onto a run whose automatic failover it refused. */
-const FAILOVER_REFUSAL_MARKER = 'Failover refused:'
-
 /**
  * Whether a failed run can still gain an automatic failover successor.
  *
  * Only these kinds fail over at all, and a recorded refusal is the one durable
- * answer that none will follow. `resolveFailover`'s settling and the run
- * listing's failover watch both ask this here, so neither restates the kinds or
- * the refusal wording to reach its own verdict.
+ * answer that none will follow — both owned by `failure.ts`. `resolveFailover`'s
+ * settling and the run listing's failover watch both ask this here, so neither
+ * restates the kinds or the refusal wording to reach its own verdict.
  */
 export function mayStillFailOver(row: {
   status: string
@@ -168,7 +165,7 @@ export function mayStillFailOver(row: {
     row.status === 'failed' &&
     row.failure_kind !== null &&
     (FAILS_OVER as readonly string[]).includes(row.failure_kind) &&
-    !row.error?.includes(FAILOVER_REFUSAL_MARKER)
+    !failoverRefused(row.error)
   )
 }
 

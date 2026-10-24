@@ -175,14 +175,22 @@ def live(session_id: str) -> None:
     )
 
 
-def completion(expected_csv: str, live_statuses_csv: str) -> None:
+def completion(expected_csv: str, watched_csv: str, live_statuses_csv: str) -> None:
     """Report every listed terminal run, and which of them still await a successor.
 
-    The STATE row hands the caller the roots worth rereading: a failed run whose
-    automatic failover successor has not appeared yet, while the instant the run
-    listing publishes as the end of that wait is still ahead.
+    Two requests arrive together and are treated differently. A root the caller
+    has just watched disappear is *expected* to be terminal, so a live member
+    there is a disagreement to raise. A root the caller has been watching for a
+    successor may instead have been continued: one whose latest member is live
+    again leaves the watch silently, with no line, and is announced normally at
+    its next terminal state.
+
+    The WATCH row hands the caller back the roots worth rereading: a failed run
+    whose automatic failover successor has not appeared yet, while the instant
+    the run listing publishes as the end of that wait is still ahead.
     """
     expected = set(filter(None, expected_csv.split(",")))
+    watched_in = set(filter(None, watched_csv.split(",")))
     live_statuses = set(filter(None, live_statuses_csv.split(",")))
     if not live_statuses:
         raise ValueError("live statuses unavailable")
@@ -190,11 +198,16 @@ def completion(expected_csv: str, live_statuses_csv: str) -> None:
     seen, watched = set(), []
     for row in lines():
         root_id = row["record_id"]
-        if root_id not in expected or root_id in seen:
+        if root_id not in expected and root_id not in watched_in:
             raise ValueError("unexpected completion row")
+        if root_id in seen:
+            raise ValueError("duplicated completion row")
         seen.add(root_id)
         status = row["live_member_status"]
         if status in live_statuses:
+            if root_id not in expected:
+                # A watched failure that is live again was continued, not lost.
+                continue
             raise ValueError("disappeared chain is still live")
         outcome = "FINISHED" if status == "ok" else "FAILED"
         if outcome == "FAILED" and row.get("failure_kind") == "harness":
@@ -218,16 +231,16 @@ def completion(expected_csv: str, live_statuses_csv: str) -> None:
             row["job"], row["agent"], row.get("failure_kind") or "-", duration, note or "-",
             sep="\t",
         )
-    if seen != expected:
+    if seen != expected | watched_in:
         raise ValueError("completion row missing")
-    print("STATE", ",".join(sorted(watched)), sep="\t")
+    print("WATCH", ",".join(sorted(watched)), sep="\t")
 
 
 try:
     if sys.argv[1:2] == ["live"] and len(sys.argv) == 3:
         live(sys.argv[2])
-    elif sys.argv[1:2] == ["completion"] and len(sys.argv) == 4:
-        completion(sys.argv[2], sys.argv[3])
+    elif sys.argv[1:2] == ["completion"] and len(sys.argv) == 5:
+        completion(sys.argv[2], sys.argv[3], sys.argv[4])
     else:
         raise ValueError("invalid heartbeat observation command")
 except (ValueError, json.JSONDecodeError):

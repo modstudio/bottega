@@ -706,6 +706,54 @@ describe('run listing', () => {
         Date.parse(startedAt) + 2000 + RUN_HOST_WAIT_MAX_MS,
       ).toISOString(),
     })
+
+    // The window is anchored on the member that failed, not on the root that
+    // started the conversation, so a two-turn chain whose root ended long
+    // before its last turn must use the last turn's terminal.
+    const chainedRoot = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'ok',
+      startedAt: '2026-10-22T10:00:00.000Z',
+      latency: 1000,
+    })
+    const chainedMember = addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      parent: chainedRoot,
+      turn: 2,
+      startedAt: '2026-10-22T11:00:00.000Z',
+      latency: 3000,
+    })
+    const chainedRows = (await command({ json: true })).map(runJson) as unknown as {
+      record_id: string
+      automatic_failover_successor: { number: number; agent: string } | null
+      automatic_failover_watch_until: string | null
+    }[]
+    expect(chainedRows.find((row) => row.record_id === chainedRoot)).toMatchObject({
+      automatic_failover_successor: null,
+      automatic_failover_watch_until: new Date(
+        Date.parse('2026-10-22T11:00:00.000Z') + 3000 + RUN_HOST_WAIT_MAX_MS,
+      ).toISOString(),
+    })
+
+    // A successor that retries the failed member, not the root, is still the
+    // row's successor — and its appearance closes the watch.
+    const memberSuccessor = addRun({ agent: 'codex', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(chainedMember, memberSuccessor)
+    const withMemberSuccessor = (await command({ json: true })).map(runJson) as unknown as {
+      record_id: string
+      automatic_failover_successor: { number: number; agent: string } | null
+      automatic_failover_watch_until: string | null
+    }[]
+    expect(withMemberSuccessor.find((row) => row.record_id === chainedRoot)).toMatchObject({
+      automatic_failover_successor: { number: runNumber(memberSuccessor), agent: 'codex' },
+      automatic_failover_watch_until: null,
+    })
   })
 
   test('the failover watch closes only for a failure that can still fail over', async () => {
