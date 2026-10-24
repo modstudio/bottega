@@ -248,7 +248,13 @@ function registerReviewOperations(review: Command, run: ReviewRunner): void {
     .action((branch, _options, command) =>
       run(command, (_argv, flags, output) => {
         if (command.args.length !== 1) {
-          throw new Error(projectReviewRecordInputRefusal('the reviewed branch is required'))
+          throw new Error(
+            projectReviewRecordInputRefusal(
+              command.args.length === 0
+                ? 'the reviewed branch is required'
+                : `exactly one reviewed branch is expected; got ${command.args.length} arguments`,
+            ),
+          )
         }
         recordProjectReviewCommand(branch, flags.flag('cwd'), flags.flag('reason'), output)
       }),
