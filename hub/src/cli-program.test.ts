@@ -64,3 +64,8 @@ test('Commander binds scalar, repeatable, and presence options without losing ta
     if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
   }
 })
+
+test('note list text searches the notes while --new keeps the filing remedy', async () => {
+  expect(await run(createHubProgram(), ['note', 'list', '--new', 'list'])).toBe(1)
+  expect(await run(createHubProgram(), ['note', 'list', 'any-text'])).toBe(0)
+})

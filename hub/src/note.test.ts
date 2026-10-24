@@ -680,6 +680,32 @@ describe('suggestion notes', () => {
     expect(listActionableNotes({ session }).map((note) => note.record_id)).toEqual([open.record_id])
   })
 
+  test('text search matches a case-insensitive substring and combines with project', async () => {
+    const token = `Needle${crypto.randomUUID().replace(/-/g, '')}`
+    const workshop = (
+      await fileNote({
+        text: `shop ${token} record`,
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
+    const alpha = (
+      await fileNote({ text: `alpha ${token} record`, cwd: '/fixtures/repos/alpha', forceNew: true })
+    ).note
+    const matched = listNotes({ text: token.toLowerCase(), stale: false }).map(
+      (row) => row.record_id,
+    )
+    expect(matched).toContain(workshop.record_id)
+    expect(matched).toContain(alpha.record_id)
+    expect(
+      listNotes({ text: token.toUpperCase(), stale: false }).map((row) => row.record_id),
+    ).toContain(workshop.record_id)
+    expect(
+      listNotes({ text: token, project: 'workshop', stale: false }).map((row) => row.record_id),
+    ).toEqual([workshop.record_id])
+    expect(listNotes({ text: `absent-${crypto.randomUUID()}`, stale: false })).toEqual([])
+  })
+
   test('keep acknowledges one session idempotently and a further sighting clears it', async () => {
     const session = `keep-${crypto.randomUUID()}`
     const otherSession = `other-${crypto.randomUUID()}`

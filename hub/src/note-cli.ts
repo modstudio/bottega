@@ -51,7 +51,7 @@ function explicitNoteAnchor(value: string | undefined): Parameters<typeof create
   return value ? parseExplicitNoteAnchor(JSON.parse(value)) : undefined
 }
 
-function listNoteCommand(options: NoteOptions): void {
+function listNoteCommand(text: string | undefined, options: NoteOptions): void {
   if (options.actionable && options.kept)
     throw new Error('--actionable and --kept are mutually exclusive')
   const sessions = [...(options.session ?? [])]
@@ -62,12 +62,13 @@ function listNoteCommand(options: NoteOptions): void {
     )
   const session = sessions.length ? sessions : undefined
   const rows = options.actionable
-    ? listActionableNotes({ project: options.project, session })
+    ? listActionableNotes({ project: options.project, session, text })
     : listNotes({
         project: options.project,
         stale: Boolean(options.stale),
         session,
         kept: Boolean(options.kept),
+        text,
       })
   if (options.json) console.log(JSON.stringify(rows))
   else if (!rows.length) console.log('no notes')
@@ -272,7 +273,8 @@ export function registerNoteCommands(program: Command): void {
       await newNoteCommand(text, options)
     })
   note
-    .command('list [text]')
+    .command('list')
+    .argument('[text]', 'list only notes whose text contains this text')
     .description('list notes from the local record')
     .option('--project <X>', 'limit notes to this project')
     .option('--stale', 'include stale notes')
@@ -282,9 +284,9 @@ export function registerNoteCommands(program: Command): void {
     .option('--json', 'write the note rows as JSON')
     .option('--new', 'treat list as note text and show the filing remedy')
     .action((text: string | undefined, options: NoteOptions) => {
-      if (text !== undefined || options.new) throw listAsTextHint()
+      if (options.new) throw listAsTextHint()
       open()
-      listNoteCommand(options)
+      listNoteCommand(text, options)
     })
   registerNoteReferenceCommands(note)
   registerNoteMaintenanceCommands(note)

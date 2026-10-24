@@ -306,6 +306,7 @@ export function listNotes(
     session?: string | string[]
     actionable?: boolean
     kept?: boolean
+    text?: string
   } = {},
 ): NoteRow[] {
   const clauses: string[] = []
@@ -347,11 +348,13 @@ export function listNotes(
      ORDER BY note.last_seen_at DESC, note.record_id DESC`,
     )
     .all(...values)
-  return rows.map(decode)
+  const search = filters.text?.toLowerCase()
+  const matched = search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows
+  return matched.map(decode)
 }
 
 export function listActionableNotes(
-  filters: { project?: string; session?: string | string[] } = {},
+  filters: { project?: string; session?: string | string[]; text?: string } = {},
 ): NoteRow[] {
   return listNotes({ ...filters, actionable: true })
 }
