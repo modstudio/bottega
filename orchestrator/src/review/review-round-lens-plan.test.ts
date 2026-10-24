@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { reviewsForTriage } from './review-group.ts'
-import { applicableRoundLensPlan, roundLensFacts, roundLensPlan } from './review-round-lens-plan.ts'
+import {
+  applicableRoundLensPlan,
+  reviewPlanForBudget,
+  reviewRoundForBudget,
+  roundLensFacts,
+  roundLensPlan,
+} from './review-round-lens-plan.ts'
 
 const facts = (
   overrides: Partial<Parameters<typeof applicableRoundLensPlan>[0]['facts']> = {},
@@ -15,6 +21,66 @@ const facts = (
 })
 
 describe('round lens plan', () => {
+  const round = {
+    lenses: ['safety'],
+    secondOpinion: 'safety',
+    lensBases: { safety: 'critical paths' },
+    secondOpinionBasis: 'independent evidence',
+  }
+
+  test('keeps the funnel round when the budget starts it', () => {
+    expect(
+      reviewRoundForBudget(round, {
+        roundsUsed: 1,
+        ceiling: 3,
+        currentChangeCounted: false,
+        startsNewRound: true,
+        wouldExceedCeiling: false,
+      }),
+    ).toBe(round)
+  })
+
+  test('returns an empty round when the round ceiling is exhausted', () => {
+    expect(
+      reviewRoundForBudget(round, {
+        roundsUsed: 3,
+        ceiling: 3,
+        currentChangeCounted: false,
+        startsNewRound: true,
+        wouldExceedCeiling: true,
+      }),
+    ).toEqual({ lenses: [] })
+  })
+
+  test('credits only forbidden exact-tip evidence when the ceiling is exhausted', () => {
+    expect(
+      reviewPlanForBudget({
+        reviewPlan: {
+          round,
+          admissionRequired: {
+            lenses: ['correctness', 'safety'],
+            secondOpinion: 'safety',
+          },
+        },
+        budget: {
+          roundsUsed: 3,
+          ceiling: 3,
+          currentChangeCounted: false,
+          startsNewRound: true,
+          wouldExceedCeiling: true,
+        },
+        completedLenses: ['correctness'],
+        satisfiedSecondOpinionLenses: [],
+      }),
+    ).toEqual({
+      reviewPlan: {
+        round: { lenses: [] },
+        admissionRequired: { lenses: ['correctness'] },
+      },
+      creditedByArchitectRead: round,
+    })
+  })
+
   test('an initial round lists every relevant lens', () => {
     expect(
       applicableRoundLensPlan({

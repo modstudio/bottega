@@ -8,6 +8,7 @@ import {
 } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
+import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 
 export type RoundLensFacts = {
@@ -15,6 +16,58 @@ export type RoundLensFacts = {
   completedLenses: readonly string[]
   satisfiedSecondOpinionLenses: readonly string[]
   latestAcceptedOrModifiedLenses: readonly string[]
+}
+
+/** Return the review round that the budget permits to run. */
+export function reviewRoundForBudget(
+  round: ApplicableReview,
+  budget: ReviewRoundBudgetDecision,
+): ApplicableReview {
+  return budget.wouldExceedCeiling ? selectReviewApplicability(round, []) : round
+}
+
+export type BudgetedReviewPlanDecision = {
+  reviewPlan: ReviewFunnelPlan
+  creditedByArchitectRead: ApplicableReview
+}
+
+/** Apply the round ceiling to both work dispatched and exact-tip admission evidence. */
+export function reviewPlanForBudget(input: {
+  reviewPlan: ReviewFunnelPlan
+  budget: ReviewRoundBudgetDecision
+  completedLenses: readonly string[]
+  satisfiedSecondOpinionLenses: readonly string[]
+}): BudgetedReviewPlanDecision {
+  if (!input.budget.wouldExceedCeiling) {
+    return {
+      reviewPlan: input.reviewPlan,
+      creditedByArchitectRead: { lenses: [] },
+    }
+  }
+  const credited = input.reviewPlan.round
+  const creditedLenses = new Set(credited.lenses)
+  const completed = new Set(input.completedLenses)
+  const admissionLenses = input.reviewPlan.admissionRequired.lenses.filter(
+    (lens) => !creditedLenses.has(lens) || completed.has(lens),
+  )
+  const admissionRequired = selectReviewApplicability(
+    input.reviewPlan.admissionRequired,
+    admissionLenses,
+  )
+  const creditedOwedSecondOpinion =
+    credited.secondOpinion !== undefined &&
+    !input.satisfiedSecondOpinionLenses.includes(credited.secondOpinion)
+  if (creditedOwedSecondOpinion) {
+    delete admissionRequired.secondOpinion
+    delete admissionRequired.secondOpinionBasis
+  }
+  return {
+    reviewPlan: {
+      round: reviewRoundForBudget(input.reviewPlan.round, input.budget),
+      admissionRequired,
+    },
+    creditedByArchitectRead: credited,
+  }
 }
 
 /**

@@ -12,17 +12,18 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { type ReviewFunnelPlan, selectReviewApplicability } from './review-applicability.ts'
+import { selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
-import { serializePathSet } from './review-group.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { measureChangeIdentity, reviewPins } from './review-pins.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
-import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
-import { roundApplicabilityForChange } from './review-round-lens-service.ts'
+import {
+  type BudgetedReviewPlan,
+  budgetedRoundApplicabilityForChange,
+} from './review-round-lens-service.ts'
 import {
   resolveReviewBase,
   reviewRemoteTrunkRefExists,
@@ -33,7 +34,7 @@ import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './revi
 import { reviewTierForRange } from './review-tier-service.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
 import { DISPOSITIONS, type Disposition, REVIEW_SEVERITY } from './review-vocabulary.ts'
-import { type ReviewYieldCostContext, reviewRoundIdentity } from './review-yield.ts'
+import type { ReviewYieldCostContext } from './review-yield.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void }
@@ -47,10 +48,18 @@ function roundApplicabilityForTierOutput(input: {
   branch: string
   postFix: ReturnType<typeof postFixReviewDecision>
   review: Parameters<typeof reviewTierForRange>[3]
-}): ReviewFunnelPlan {
+}): BudgetedReviewPlan {
   const relevant = selectReviewApplicability(input.output, input.output.lenses)
-  if (!input.identity) return { round: relevant, admissionRequired: relevant }
-  return roundApplicabilityForChange({
+  if (!input.identity) {
+    return budgetedRoundApplicabilityForChange({
+      database: db(),
+      project: input.project,
+      branch: input.branch,
+      relevant,
+      tier: input.output.tier,
+    })
+  }
+  return budgetedRoundApplicabilityForChange({
     database: db(),
     group: {
       project: input.project,
@@ -61,6 +70,7 @@ function roundApplicabilityForTierOutput(input: {
     relevant,
     postFix: input.postFix,
     review: input.review,
+    tier: input.output.tier,
   })
 }
 
@@ -235,15 +245,6 @@ function reviewTierOutput(value: string, cwd: string) {
   const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
   const output = reviewTierForRange(repo, from, to, project.settings.review)
   const identity = measureChangeIdentity(repo, from, to)
-  const currentRoundIdentity = identity
-    ? reviewRoundIdentity({
-        launch_key: null,
-        branch,
-        patch_id: identity.patchId,
-        path_set: serializePathSet(identity.paths),
-      }).identity
-    : null
-  const branchBudget = reviewBudgetForBranch(db(), project.name, branch, currentRoundIdentity)
   const postFix = postFixReviewDecision({
     facts: gatherPostFixReviewFacts({
       database: db(),
@@ -256,7 +257,7 @@ function reviewTierOutput(value: string, cwd: string) {
     tier: output.tier,
     review: project.settings.review,
   })
-  const reviewPlan = roundApplicabilityForTierOutput({
+  const { reviewPlan, reviewBudget, creditedByArchitectRead } = roundApplicabilityForTierOutput({
     output,
     identity,
     project: project.name,
@@ -264,26 +265,24 @@ function reviewTierOutput(value: string, cwd: string) {
     postFix,
     review: project.settings.review,
   })
-  const reviewBudget = reviewRoundBudgetDecision({
-    tier: output.tier,
-    ...branchBudget,
-    roundNeeded: reviewPlan.round.lenses.length > 0 || Boolean(reviewPlan.round.secondOpinion),
-  })
+  const round = reviewPlan.round
   return {
     ...output,
-    lenses: reviewPlan.round.lenses,
-    secondOpinion: reviewPlan.round.secondOpinion,
-    lensBases: reviewPlan.round.lensBases,
-    secondOpinionBasis: reviewPlan.round.secondOpinionBasis,
+    lenses: round.lenses,
+    secondOpinion: round.secondOpinion,
+    lensBases: round.lensBases,
+    secondOpinionBasis: round.secondOpinionBasis,
     post_fix: postFix,
-    review_budget: {
-      ...reviewBudget,
-      eligibleReviewCount: branchBudget.eligibleReviewCount,
-      unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
-    },
-    lens_profiles: reviewPlan.round.lenses.map((id) => ({
+    review_budget: reviewBudget,
+    credited_by_architect_read: creditedByArchitectRead,
+    credited_lens_profiles: creditedByArchitectRead.lenses.map((id) => ({
       id,
-      basis: reviewPlan.round.lensBases?.[id] ?? null,
+      basis: creditedByArchitectRead.lensBases?.[id] ?? null,
+      profiles: resolveLens(id, project.name)?.profiles ?? [],
+    })),
+    lens_profiles: round.lenses.map((id) => ({
+      id,
+      basis: round.lensBases?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
   }
@@ -293,7 +292,12 @@ function printReviewRoundStatus(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): void {
-  if (!output.review_budget.startsNewRound && !output.review_budget.currentChangeCounted) {
+  if (
+    !output.lenses.length &&
+    !output.secondOpinion &&
+    !output.review_budget.currentChangeCounted &&
+    !output.review_budget.wouldExceedCeiling
+  ) {
     log('no round needed: the architect reads the fix and lands it')
     return
   }
@@ -312,6 +316,40 @@ function printReviewRoundStatus(
       ? 'current change is already a counted round; no new round consumed'
       : 'current change would start a new round',
   )
+}
+
+function printCeilingArchitectCredit(
+  output: ReturnType<typeof reviewTierOutput>,
+  log: (...values: unknown[]) => void,
+): boolean {
+  if (
+    output.review_budget.unclassifiableReviewCount > 0 ||
+    !output.review_budget.wouldExceedCeiling
+  ) {
+    return false
+  }
+  log(
+    `a new round would exceed the ceiling: the architect rules. Read the fix (${PLATFORM_SLUG} review read), land with test-only fixes, and file the rest`,
+  )
+  if (output.post_fix.kind === 're-lens') {
+    log(
+      `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
+    )
+  }
+  for (const lens of output.credited_lens_profiles) {
+    const sources = lens.profiles
+      .map((profile) => formatLensProfileSource(profile, 'source'))
+      .join(', ')
+    log(
+      `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}  credited by architect read`,
+    )
+  }
+  if (output.credited_by_architect_read.secondOpinion) {
+    log(
+      `second opinion ${output.credited_by_architect_read.secondOpinion}${basisLabel(output.credited_by_architect_read.secondOpinionBasis)} credited by architect read`,
+    )
+  }
+  return true
 }
 
 function printReviewTier(
@@ -336,12 +374,8 @@ function printReviewTier(
   } else {
     log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
   }
-  printReviewRoundStatus(output, log)
-  if (
-    output.review_budget.unclassifiableReviewCount === 0 &&
-    output.review_budget.wouldExceedCeiling
-  ) {
-    log('a new round would exceed the ceiling; stop and ask the operator')
+  if (!printCeilingArchitectCredit(output, log)) {
+    printReviewRoundStatus(output, log)
   }
   for (const lens of output.lens_profiles) {
     const sources = lens.profiles
