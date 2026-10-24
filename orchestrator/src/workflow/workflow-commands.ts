@@ -39,8 +39,7 @@ import {
   selectWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { parseWorkflowEvidencePayload } from './workflow-evidence-payload.ts'
-import { RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
+import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,
