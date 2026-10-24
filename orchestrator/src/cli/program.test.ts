@@ -9,7 +9,13 @@ import {
 } from '../database/database-commands.ts'
 import { CLI_COMMANDS } from './args.ts'
 import { isHelpShapedInvocation, isStoreFreeInvocation, runCliEntryForTest } from './orch.ts'
-import { exitCodeFor, lockedStoreMessage, program, run, usesReadOnlyStoreHandle } from './program.ts'
+import {
+  exitCodeFor,
+  lockedStoreMessage,
+  program,
+  run,
+  usesReadOnlyStoreHandle,
+} from './program.ts'
 
 test('the outer CLI classifies every informational invocation without consulting the store', () => {
   for (const argv of [
