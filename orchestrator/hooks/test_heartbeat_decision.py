@@ -23,14 +23,17 @@ CHILD_PROCESS_TIMEOUT_SECONDS = 10
 SUCCESSOR = {"number": 900, "agent": "grok"}
 
 
-def install_shell_temp_directory():
-    """Point every fixture shell's `mktemp` at a directory this process owns.
+_SHELL_TEMP = {}
+
+
+def setUpModule():
+    """Point every fixture shell's `mktemp` at a directory this module owns.
 
     The hook screens every read through a `mktemp` file, and a confined runner
     may deny the machine temporary directory `mktemp` prefers, where a bare
     `mktemp` then fails and degrades every tick. Every fixture builds its child
-    environment from `os.environ`, so installing the shim there once carries it
-    into all of them and no test has to remember it.
+    environment from `os.environ`, so installing the shim there for the module
+    carries it into all of them; tearDownModule restores the environment.
     """
     real_mktemp = shutil.which("mktemp")
     if not real_mktemp:
@@ -44,11 +47,25 @@ exec {real_mktemp} -p "$MKTEMP_DIR" "$@"
         encoding="utf-8",
     )
     shim.chmod(0o755)
+    _SHELL_TEMP.update(
+        directory=directory,
+        path=os.environ.get("PATH"),
+        mktemp_dir=os.environ.get("MKTEMP_DIR"),
+    )
     os.environ["PATH"] = f"{directory}{os.pathsep}{os.environ['PATH']}"
     os.environ["MKTEMP_DIR"] = str(directory)
 
 
-install_shell_temp_directory()
+def tearDownModule():
+    if not _SHELL_TEMP:
+        return
+    for name, key in (("PATH", "path"), ("MKTEMP_DIR", "mktemp_dir")):
+        if _SHELL_TEMP[key] is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = _SHELL_TEMP[key]
+    shutil.rmtree(_SHELL_TEMP["directory"], ignore_errors=True)
+    _SHELL_TEMP.clear()
 
 
 class HeartbeatDecisionTest(unittest.TestCase):
