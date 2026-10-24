@@ -21,16 +21,17 @@ export function startReleaseLedgerEntry(
     commitsBehindTrunk: number
     behindTrunkReason: string | null
   },
-): number {
+): { recordId: string; number: number } {
   return writeTransaction(() => {
-    const row = database
-      .query<{ id: number }, (string | number | null)[]>(
+    const recordId = newRecordId()
+    database
+      .query<void, (string | number | null)[]>(
         `INSERT INTO release_ledger
        (record_id,project,project_record_id,rung,candidate_commit,live_commit_before,rollback,rollback_reason,trunk,trunk_tip,commits_behind_trunk,behind_trunk_reason,actor,session_id,started_at)
-       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .get(
-        newRecordId(),
+      .run(
+        recordId,
         input.project,
         input.project,
         input.rung,
@@ -46,18 +47,23 @@ export function startReleaseLedgerEntry(
         sessionId(),
         nowIso(),
       )
+    const row = database
+      .query<{ record_id: string; number: number }, [string]>(
+        'SELECT record_id,number FROM release_ledger WHERE record_id=?',
+      )
+      .get(recordId)
     if (!row)
       throw new Error(
         `release ledger entry was not inserted; run ${PLATFORM_SLUG} machine migrate, then retry`,
       )
-    enqueueReleaseRecord(database, row.id)
-    return row.id
+    enqueueReleaseRecord(database, row.record_id)
+    return { recordId: row.record_id, number: row.number }
   }, database)
 }
 
 export function finishReleaseLedgerEntry(
   database: Database,
-  id: number,
+  recordId: string,
   result: { exitCode: number; output: string },
   outputTail: string,
   after: string | null,
@@ -67,7 +73,7 @@ export function finishReleaseLedgerEntry(
   writeTransaction(() => {
     database
       .query(
-        `UPDATE release_ledger SET finished_at=?,exit_code=?,output_tail=?,live_commit_after=?,live_matches_candidate=?,warning=? WHERE id=?`,
+        `UPDATE release_ledger SET finished_at=?,exit_code=?,output_tail=?,live_commit_after=?,live_matches_candidate=?,warning=? WHERE record_id=?`,
       )
       .run(
         nowIso(),
@@ -76,8 +82,8 @@ export function finishReleaseLedgerEntry(
         after,
         matches === null ? null : matches ? 1 : 0,
         warning,
-        id,
+        recordId,
       )
-    enqueueReleaseRecord(database, id)
+    enqueueReleaseRecord(database, recordId)
   }, database)
 }

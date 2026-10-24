@@ -219,19 +219,23 @@ function persistAddressedCondition(
     db()
       .query(
         `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
-     VALUES (?,?,?, 'backstop', 1, 0) RETURNING id`,
+     VALUES (?,?,?, 'backstop', 1, 0) RETURNING record_id`,
       )
-      .get(newRecordId(), since, since) as { id: number }
-  ).id
+      .get(newRecordId(), since, since) as { record_id: string }
+  ).record_id
+  const conditionRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO monitor_condition
+       (record_id,invocation_record_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
+     VALUES (?,?,?,?,?,0,'recorded condition','reported',?)`,
+    )
+    .run(conditionRecordId, invocation, kind, subject, since, ownerSession)
   return (
-    db()
-      .query(
-        `INSERT INTO monitor_condition
-       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
-     VALUES (?,?,?,?,?,0,'recorded condition','reported',?) RETURNING id`,
-      )
-      .get(newRecordId(), invocation, kind, subject, since, ownerSession) as { id: number }
-  ).id
+    db().query('SELECT number FROM monitor_condition WHERE record_id=?').get(conditionRecordId) as {
+      number: number
+    }
+  ).number
 }
 
 describe('operational monitor conditions', () => {

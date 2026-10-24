@@ -233,20 +233,24 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
       '1234567890abcdef1234567890abcdef12345678',
       child,
     )
-  const claimId = Number(
-    db()
-      .query(
-        `INSERT INTO resource_claim
+  const claimRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO resource_claim
          (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
-         VALUES ('${newRecordId()}', ?,?,?,'branch',?,'claimed','2026-10-06T00:00:00.000Z')`,
-      )
-      .run(fixture.id, child, projectId, `refs/heads/${turnBranch}`).lastInsertRowid,
-  )
+         VALUES (?, ?,?,?,'branch',?,'claimed','2026-10-06T00:00:00.000Z')`,
+    )
+    .run(claimRecordId, fixture.id, child, projectId, `refs/heads/${turnBranch}`)
+  const claimId = (
+    db().query('SELECT number FROM resource_claim WHERE record_id=?').get(claimRecordId) as {
+      number: number
+    }
+  ).number
 
   try {
     expect(closeOutRun(child, { intent: 'terminal' }).outcome).toBe('released')
     expect(
-      db().query('SELECT state,settled_detail FROM resource_claim WHERE id=?').get(claimId),
+      db().query('SELECT state,settled_detail FROM resource_claim WHERE number=?').get(claimId),
     ).toEqual({
       state: 'retained',
       settled_detail: 'branch retained at 1234567890abcdef1234567890abcdef12345678',

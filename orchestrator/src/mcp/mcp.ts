@@ -94,7 +94,12 @@ const reporterFields = {
     .describe(
       'Omit to derive the calling session or authenticated orchestrator worker from the environment.',
     ),
-  monitor_invocation_id: z.number().int().positive().optional(),
+  monitor_invocation_id: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("The monitor invocation's display number."),
   affected_project: z.string().trim().min(1).optional(),
   reporting_project: z
     .string()
@@ -313,7 +318,7 @@ export async function fileIssue(
     reporterId = `run:${worker.record_id}`
   } else if (reporter.kind === 'monitor') {
     const invocation = db()
-      .query('SELECT id FROM monitor_invocation WHERE id=?')
+      .query('SELECT record_id FROM monitor_invocation WHERE number=?')
       .get(reporter.invocationId)
     if (!invocation) throw new Error(`no monitor invocation ${reporter.invocationId}`)
     reporterId = reporter.invocationId

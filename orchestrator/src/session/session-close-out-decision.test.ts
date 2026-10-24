@@ -13,7 +13,7 @@ const facts = (overrides: Partial<SessionOwnershipFacts> = {}): SessionOwnership
   runs: [],
   branches: [],
   heldRunResources: [],
-  claimIds: [],
+  claims: [],
   landingIds: [],
   reviewIds: [],
   ...overrides,
@@ -77,14 +77,17 @@ describe('session close-out decisions', () => {
             unknown: false,
           },
         ],
-        claimIds: [4, 4],
+        claims: [
+          { recordId: 'claim-4', number: 4 },
+          { recordId: 'claim-4', number: 4 },
+        ],
         landingIds: ['l', 'l'],
         reviewIds: ['r', 'r'],
       }),
     )
     expect(owned.runs.map((run) => run.recordId)).toEqual(['root', 'turn'])
     expect(owned.branches).toHaveLength(1)
-    expect(owned.claimIds).toEqual([4])
+    expect(owned.claims).toEqual([{ recordId: 'claim-4', number: 4 }])
   })
 
   test('ownership excludes a root dispatched by another session', () => {
@@ -172,7 +175,7 @@ describe('session close-out decisions', () => {
             unknown: false,
           },
         ],
-        claimIds: [9],
+        claims: [{ recordId: 'claim-9', number: 9 }],
         landingIds: ['landing'],
         reviewIds: ['review'],
       }),

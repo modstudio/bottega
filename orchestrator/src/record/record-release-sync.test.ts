@@ -97,7 +97,7 @@ test('release sender upserts the finished state by record id in the project spac
   source.query("UPDATE outbox SET synced_at='2026-10-12T00:05:00.000Z'").run()
   finishReleaseLedgerEntry(
     source,
-    releaseId,
+    releaseId.recordId,
     { exitCode: 0, output: '' },
     'local deploy output',
     'candidate-sha',

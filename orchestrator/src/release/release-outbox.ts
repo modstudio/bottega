@@ -8,17 +8,17 @@ import { machineId } from '../record/machine-identity.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
-type ReleaseRow = Record<string, unknown> & { id: number; record_id: string }
+type ReleaseRow = Record<string, unknown> & { record_id: string }
 
-export function enqueueReleaseRecord(database: Database, releaseId: number): void {
+export function enqueueReleaseRecord(database: Database, releaseRecordId: string): void {
   const row = database
-    .query<ReleaseRow, [number]>(
+    .query<ReleaseRow, [string]>(
       `SELECT release_ledger.*, project.record_id AS project_record_id
        FROM release_ledger LEFT JOIN project ON project.record_id=release_ledger.project_record_id
-       WHERE release_ledger.id=?`,
+       WHERE release_ledger.record_id=?`,
     )
-    .get(releaseId)
-  if (!row) throw new Error(`release ${releaseId} does not exist and cannot be enqueued`)
+    .get(releaseRecordId)
+  if (!row) throw new Error(`release ${releaseRecordId} does not exist and cannot be enqueued`)
   const at = nowIso()
   const payload = stringifyOutboxPayload('release', {
     id: row.record_id,
@@ -26,7 +26,7 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
     projectId: row.project_record_id,
     projectName: row.project,
     machineId: machineId(),
-    localId: row.id,
+    localId: null,
     rung: row.rung,
     candidateCommit: row.candidate_commit,
     trunk: row.trunk,
@@ -71,12 +71,12 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
 
 export function backfillReleaseRecords(database: Database): { enqueued: number } {
   const releases = database
-    .query<{ id: number }, []>(
-      `SELECT id FROM release_ledger WHERE NOT EXISTS (
+    .query<{ record_id: string }, []>(
+      `SELECT record_id FROM release_ledger WHERE NOT EXISTS (
          SELECT 1 FROM outbox WHERE kind='release' AND row_id=release_ledger.record_id
-       ) ORDER BY id`,
+       ) ORDER BY started_at,record_id`,
     )
     .all()
-  for (const row of releases) enqueueReleaseRecord(database, row.id)
+  for (const row of releases) enqueueReleaseRecord(database, row.record_id)
   return { enqueued: releases.length }
 }

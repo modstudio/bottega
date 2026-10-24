@@ -154,7 +154,8 @@ describe('operational monitor conditions', () => {
         db()
           .query(
             `SELECT kind, subject FROM monitor_condition
-           WHERE invocation_id=? AND kind='canon-pack-drift' AND subject=?`,
+           WHERE invocation_record_id=(SELECT record_id FROM monitor_invocation WHERE number=?)
+             AND kind='canon-pack-drift' AND subject=?`,
           )
           .all(result.id, subject),
       ).toEqual([{ kind: 'canon-pack-drift', subject }])
@@ -180,7 +181,7 @@ describe('operational monitor conditions', () => {
       const invocation = db()
         .query(
           `SELECT finished_at IS NOT NULL finished, findings, errors
-           FROM monitor_invocation ORDER BY id DESC LIMIT 1`,
+           FROM monitor_invocation ORDER BY started_at DESC,record_id DESC LIMIT 1`,
         )
         .get() as { finished: number; findings: number; errors: number }
       expect(invocation.finished).toBe(1)
@@ -356,23 +357,27 @@ describe('operational monitor conditions', () => {
   })
 
   test('records condition ages and reads them back by invocation', () => {
-    const invocation = (
-      db()
-        .query(
-          `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
-       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
-        )
-        .get(newRecordId()) as { id: number }
-    ).id
+    const invocationRecordId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
+       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0)`,
+      )
+      .run(invocationRecordId)
+    const invocation = db()
+      .query<{ record_id: string; number: number }, [string]>(
+        'SELECT record_id,number FROM monitor_invocation WHERE record_id=?',
+      )
+      .get(invocationRecordId)!
     db()
       .query(
         `INSERT INTO monitor_condition
-       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       (record_id,invocation_record_id,kind,subject,condition_since,age_ms,detail,action)
        VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(
         newRecordId(),
-        invocation,
+        invocation.record_id,
         'stale-run',
         'run:7',
         '2026-09-03T08:00:00Z',
@@ -382,7 +387,7 @@ describe('operational monitor conditions', () => {
       )
     expect(monitorHistory(1)).toEqual([
       expect.objectContaining({
-        id: invocation,
+        id: invocation.number,
         trigger: 'backstop',
         findings: 1,
         conditions: [

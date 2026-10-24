@@ -269,7 +269,8 @@ function recordedWorktreeState(rootId: string): ResourceClaimState | 'no-tree' {
   const claim = db()
     .query(
       `SELECT state FROM resource_claim
-       WHERE root_run_record_id=? AND kind='worktree' ORDER BY id DESC LIMIT 1`,
+       WHERE root_run_record_id=? AND kind='worktree'
+       ORDER BY claimed_at DESC,record_id DESC LIMIT 1`,
     )
     .get(rootId) as { state: ResourceClaimState } | null
   if (claim) return claim.state

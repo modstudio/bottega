@@ -356,31 +356,31 @@ describe('resource claim decisions', () => {
        (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
        VALUES (?, ?,?,?,?, 'claimed',?)`,
     )
-    const previousId = Number(
-      insert.run(newRecordId(), root, root, 'database', 'postgres:existing', nowIso())
-        .lastInsertRowid,
-    )
-    const attemptId = Number(
-      insert.run(newRecordId(), root, root, 'index', 'index:1:2', nowIso()).lastInsertRowid,
-    )
-    const databaseId = Number(
-      database
-        .query(
-          `INSERT INTO resource_claim
-           (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
-           VALUES (?, ?,?,'database','postgres:app_1','claimed',?)`,
-        )
-        .run(newRecordId(), root, root, nowIso()).lastInsertRowid,
-    )
+    const previousId = newRecordId()
+    insert.run(previousId, root, root, 'database', 'postgres:existing', nowIso())
+    const attemptId = newRecordId()
+    insert.run(attemptId, root, root, 'index', 'index:1:2', nowIso())
+    const databaseId = newRecordId()
+    database
+      .query(
+        `INSERT INTO resource_claim
+         (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?,?,'database','postgres:app_1','claimed',?)`,
+      )
+      .run(databaseId, root, root, nowIso())
     releaseRecipeAllocationClaims(database, {
       claimIds: [attemptId, databaseId],
       settledAt: nowIso(),
       reason: 'pre failed',
     })
-    expect(database.query('SELECT id,state FROM resource_claim ORDER BY id').all()).toEqual([
-      { id: previousId, state: 'claimed' },
-      { id: attemptId, state: 'released' },
-      { id: databaseId, state: 'released' },
+    expect(
+      database
+        .query('SELECT record_id,state FROM resource_claim ORDER BY claimed_at,record_id')
+        .all(),
+    ).toEqual([
+      { record_id: previousId, state: 'claimed' },
+      { record_id: attemptId, state: 'released' },
+      { record_id: databaseId, state: 'released' },
     ])
   })
 

@@ -71,6 +71,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',
+    ['e0d77cabdacd8826'],
+    'monitor migration orphan preflight reads controlled legacy columns before the UUID-key rebuild',
+  ),
+  ...exempt(
+    'orchestrator/src/database/migrations.ts',
     ['4ec7c53222c8a758', 'a29c2123a01df1d0'],
     'migration runner executes SQL loaded from journal files',
   ),

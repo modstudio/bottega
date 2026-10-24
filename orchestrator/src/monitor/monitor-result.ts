@@ -11,7 +11,7 @@ import type {
 } from './monitor-types.ts'
 
 export function finishMonitorResult(
-  id: number,
+  number: number,
   startedAt: string,
   finishedAt: string,
   trigger: MonitorResult['trigger'],
@@ -22,7 +22,7 @@ export function finishMonitorResult(
   hostPressure: MonitorHostPressure,
 ): MonitorResult {
   return {
-    id,
+    id: number,
     startedAt,
     finishedAt,
     trigger,

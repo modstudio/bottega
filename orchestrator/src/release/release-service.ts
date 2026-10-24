@@ -61,7 +61,7 @@ export function validateReleaseTagVersion(
 }
 
 export type ReleaseLedgerRow = {
-  id: number
+  number: number
   record_id: string
   project: string
   rung: string
@@ -159,7 +159,7 @@ function checkoutFacts(path: string, branch: string) {
 export function newestSuccessfulReleasedCommit(project: string, rung: string): string | null {
   const row = writableDb()
     .query<{ candidate_commit: string }, [string, string]>(
-      'SELECT candidate_commit FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND exit_code=0 ORDER BY id DESC LIMIT 1',
+      'SELECT candidate_commit FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND exit_code=0 ORDER BY started_at DESC,record_id DESC LIMIT 1',
     )
     .get(project, rung)
   return row?.candidate_commit ?? null
@@ -283,6 +283,7 @@ function postDeployFacts(
 }
 
 export type ReleaseResult = {
+  /** The release ledger row's display number. */
   id: number
   project: string
   rung: string
@@ -352,7 +353,7 @@ export function releaseProject(
         rollbackReason,
       })
       if (!forward.ok) throw new Error(forward.message)
-      const id = startReleaseLedgerEntry(writableDb(), {
+      const ledger = startReleaseLedgerEntry(writableDb(), {
         project: projectName,
         rung: selected.name,
         candidate: checkout.head,
@@ -376,7 +377,7 @@ export function releaseProject(
       const outputTail = capturedOutputTail(deployed.output)
       finishReleaseLedgerEntry(
         writableDb(),
-        id,
+        ledger.recordId,
         deployed,
         outputTail,
         checked.liveAfter,
@@ -384,7 +385,7 @@ export function releaseProject(
         checked.warning,
       )
       return {
-        id,
+        id: ledger.number,
         project: projectName,
         rung: selected.name,
         branch: selected.branch,
@@ -411,12 +412,12 @@ export function releaseLog(project: string, rung?: string): ReleaseLedgerRow[] {
   return rung
     ? (db()
         .query(
-          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? ORDER BY id DESC',
+          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? ORDER BY started_at DESC,record_id DESC',
         )
         .all(project, rung) as ReleaseLedgerRow[])
     : (db()
         .query(
-          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY id DESC',
+          'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY started_at DESC,record_id DESC',
         )
         .all(project) as ReleaseLedgerRow[])
 }

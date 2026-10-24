@@ -67,15 +67,19 @@ test("a turn's guard or retained ref makes its terminal root planned", () => {
   for (const runId of [guardRoot, guardTurn, retainedRoot, retainedTurn])
     attachRunToProject(runId, projectId, project)
   mkdirSync(join(repo, '.git', 'orch-guards', guardTurn), { recursive: true })
-  const claimId = Number(
-    db()
-      .query(
-        `INSERT INTO resource_claim
-         (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
-         VALUES (?, ?, ?, ?, 'database', 'fixture', 'claimed', '2026-10-20T00:00:00.000Z')`,
-      )
-      .run(newRecordId(), retainedRoot, retainedTurn, projectId).lastInsertRowid,
-  )
+  const claimRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
+       VALUES (?, ?, ?, ?, 'database', 'fixture', 'claimed', '2026-10-20T00:00:00.000Z')`,
+    )
+    .run(claimRecordId, retainedRoot, retainedTurn, projectId)
+  const claimId = (
+    db().query('SELECT number FROM resource_claim WHERE record_id=?').get(claimRecordId) as {
+      number: number
+    }
+  ).number
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     if (command.includes('--git-common-dir')) return spawnResult('.git\n')
     if (command.includes('for-each-ref')) return spawnResult(`refs/orch/retained/${retainedTurn}\n`)

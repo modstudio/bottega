@@ -4,16 +4,17 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { settleCreateTimeBranchCleanup } from './create-time-settlement.ts'
 
-function claimedBranch(runId: string): number {
-  return Number(
+function claimedBranch(runId: string): string {
+  return (
     db()
       .query(
         `INSERT INTO resource_claim
          (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
-         VALUES ('${newRecordId()}', ?,?,'branch','refs/heads/DEV-991','claimed',?)`,
+         VALUES ('${newRecordId()}', ?,?,'branch','refs/heads/DEV-991','claimed',?)
+         RETURNING record_id`,
       )
-      .run(runId, runId, nowIso()).lastInsertRowid,
-  )
+      .get(runId, runId, nowIso()) as { record_id: string }
+  ).record_id
 }
 
 test('create-time cleanup releases a deleted branch claim', () => {
@@ -24,7 +25,7 @@ test('create-time cleanup releases a deleted branch claim', () => {
     runId,
     { database: db(), observeRef: () => ({ outcome: 'absent' }) },
   )
-  expect(db().query('SELECT state FROM resource_claim WHERE id=?').get(claimId)).toEqual({
+  expect(db().query('SELECT state FROM resource_claim WHERE record_id=?').get(claimId)).toEqual({
     state: 'released',
   })
 })
@@ -37,7 +38,7 @@ test('create-time cleanup leaves a surviving branch claimed', () => {
     runId,
     { database: db(), observeRef: () => ({ outcome: 'present' }) },
   )
-  expect(db().query('SELECT state FROM resource_claim WHERE id=?').get(claimId)).toEqual({
+  expect(db().query('SELECT state FROM resource_claim WHERE record_id=?').get(claimId)).toEqual({
     state: 'claimed',
   })
 })

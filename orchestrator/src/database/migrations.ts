@@ -21,6 +21,7 @@ export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictl
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'
 const LENS_PORT_UUID_KEY_MIGRATION = '0131_lens_port_uuid_key'
+const MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION = '0156_monitor_release_claim_uuid_keys'
 
 export type BeforeMigrationApply = {
   migration: string
@@ -903,6 +904,19 @@ function migrationOrphanCounts(d: Database, tag: string): string[] {
   if (tag === '0127_board_uuid_key') return boardReferenceOrphanCounts(d)
   if (tag === '0130_doc_uuid_key') return docReferenceOrphanCounts(d)
   if (tag === LENS_PORT_UUID_KEY_MIGRATION) return lensPortReferenceOrphanCounts(d)
+  if (tag === MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION) {
+    const count = (
+      d
+        .query(
+          `SELECT COUNT(*) n FROM monitor_condition child
+           WHERE NOT EXISTS (
+             SELECT 1 FROM monitor_invocation parent WHERE parent.id=child.invocation_id
+           )`,
+        )
+        .get() as { n: number }
+    ).n
+    return count ? [`monitor_condition.invocation_record_id=${count}`] : []
+  }
   return []
 }
 
@@ -914,6 +928,8 @@ function migrationEntityLabel(tag: string): { migration: string; parent: string 
   if (tag === '0130_doc_uuid_key') return { migration: 'document', parent: 'document row' }
   if (tag === LENS_PORT_UUID_KEY_MIGRATION)
     return { migration: 'lens/port catalogue', parent: 'catalogue row' }
+  if (tag === MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION)
+    return { migration: 'monitor', parent: 'monitor invocation' }
   return { migration: 'board', parent: 'board row' }
 }
 

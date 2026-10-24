@@ -22,7 +22,7 @@ function fixture(): Database {
   return database
 }
 
-function started(database: Database): number {
+function started(database: Database): { recordId: string; number: number } {
   return startReleaseLedgerEntry(database, {
     project: PLATFORM_SLUG,
     rung: 'production',
@@ -69,15 +69,15 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   })
   expect(startedPayload).not.toHaveProperty('outputTail')
   expect(startedPayload).not.toHaveProperty('output_tail')
-  expect(database.query('SELECT project_record_id FROM release_ledger WHERE id=?').get(id)).toEqual(
-    {
-      project_record_id: RELEASE_PROJECT_RECORD_ID,
-    },
-  )
+  expect(
+    database
+      .query('SELECT project_record_id FROM release_ledger WHERE record_id=?')
+      .get(id.recordId),
+  ).toEqual({ project_record_id: RELEASE_PROJECT_RECORD_ID })
 
   finishReleaseLedgerEntry(
     database,
-    id,
+    id.recordId,
     { exitCode: 0, output: 'deploy secret' },
     'local output',
     'candidate-sha',
@@ -111,7 +111,7 @@ test('finishing after the started payload was sent appends the same record ident
 
   finishReleaseLedgerEntry(
     database,
-    id,
+    id.recordId,
     { exitCode: 1, output: '' },
     'failed',
     null,
@@ -133,7 +133,7 @@ test('release ledger and outbox mutations roll back together', () => {
   startDatabase.exec(`CREATE TRIGGER fail_release_enqueue BEFORE INSERT ON outbox
     WHEN NEW.kind='release' BEGIN SELECT RAISE(ABORT, 'enqueue failed'); END`)
   expect(() => started(startDatabase)).toThrow('enqueue failed')
-  expect(startDatabase.query('SELECT id FROM release_ledger').all()).toEqual([])
+  expect(startDatabase.query('SELECT record_id FROM release_ledger').all()).toEqual([])
   expect(startDatabase.query("SELECT id FROM outbox WHERE kind='release'").all()).toEqual([])
 
   const finishDatabase = fixture()
@@ -143,7 +143,7 @@ test('release ledger and outbox mutations roll back together', () => {
   expect(() =>
     finishReleaseLedgerEntry(
       finishDatabase,
-      id,
+      id.recordId,
       { exitCode: 0, output: '' },
       'tail',
       'after',
@@ -153,8 +153,8 @@ test('release ledger and outbox mutations roll back together', () => {
   ).toThrow('update failed')
   expect(
     finishDatabase
-      .query('SELECT finished_at,exit_code,output_tail FROM release_ledger WHERE id=?')
-      .get(id),
+      .query('SELECT finished_at,exit_code,output_tail FROM release_ledger WHERE record_id=?')
+      .get(id.recordId),
   ).toEqual({ finished_at: null, exit_code: null, output_tail: '' })
 })
 
@@ -162,13 +162,13 @@ test('release sanitizer withholds warning and release reasons while local values
   const database = fixture()
   const secret = 'Authorization: Bearer top-secret-value'
   const id = database
-    .query<{ id: number }, [string, string, string, string]>(
+    .query<{ record_id: string }, [string, string, string, string]>(
       `INSERT INTO release_ledger
        (record_id,project,rung,candidate_commit,rollback,rollback_reason,behind_trunk_reason,actor,started_at,warning)
        VALUES ('01990000-0000-7000-8000-000000000077',?,'production','sha',1,?,?,'operator','2026-10-12T00:00:00.000Z',?)
-       RETURNING id`,
+       RETURNING record_id`,
     )
-    .get(PLATFORM_SLUG, secret, secret, secret)!.id
+    .get(PLATFORM_SLUG, secret, secret, secret)!.record_id
   enqueueReleaseRecord(database, id)
   const payload = JSON.parse(
     database.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload,

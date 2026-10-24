@@ -36,7 +36,13 @@ import {
 
 export const SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE = 1
 
-type OwnedClaim = { id: number; kind: string; allocation_key: string; state: string }
+type OwnedClaim = {
+  record_id: string
+  number: number
+  kind: string
+  allocation_key: string
+  state: string
+}
 type ActiveLanding = { record_id: string; project: string; branch: string; status: string }
 type IncompleteReview = { record_id: string; number: number }
 
@@ -141,8 +147,9 @@ function ownedClaims(database: Database, roots: readonly string[]): OwnedClaim[]
   const placeholders = roots.map(() => '?').join(',')
   return database
     .query(
-      `SELECT id,kind,allocation_key,state FROM resource_claim
-        WHERE root_run_record_id IN (${placeholders}) AND state='claimed' ORDER BY id`,
+      `SELECT record_id,number,kind,allocation_key,state FROM resource_claim
+        WHERE root_run_record_id IN (${placeholders}) AND state='claimed'
+        ORDER BY claimed_at,record_id`,
     )
     .all(...roots) as OwnedClaim[]
 }
@@ -450,7 +457,7 @@ function gather(database: Database, session: string, dryRun: boolean) {
     runs,
     branches: branchInventory.branches,
     heldRunResources: held.resources,
-    claimIds: claims.map((claim) => claim.id),
+    claims: claims.map((claim) => ({ recordId: claim.record_id, number: claim.number })),
     landingIds: landings.map((landing) => landing.record_id),
     reviewIds: reviews.map((review) => review.record_id),
   }
@@ -473,7 +480,8 @@ const silentPresentation: CleanupPresentation = {
 }
 
 function mechanicalLabel(action: SessionMechanicalAction): string {
-  if (action.kind === 'reconcile-claims') return `reconcile claims ${action.claimIds.join(',')}`
+  if (action.kind === 'reconcile-claims')
+    return `reconcile claims ${action.claims.map((claim) => claim.number).join(',')}`
   if (action.kind === 'close-run') return `close run ${action.runId}`
   if (action.kind === 'remove-tree') return `remove tree ${action.path}`
   return `${action.kind} ${action.project}:${action.branch}`
@@ -558,7 +566,7 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
   }
   reconcileAbsentClaims({
     dryRun: false,
-    claimIds: action.claimIds,
+    claimIds: action.claims.map((claim) => claim.recordId),
     presentation: silentPresentation,
     trust: observeGrokTrustHeadings(),
     database,
@@ -744,7 +752,7 @@ export function closeOutSession(
   const plannedClaimIds = new Set(
     dryRun
       ? initial.classification.mechanical.flatMap((action) =>
-          action.kind === 'reconcile-claims' ? action.claimIds : [],
+          action.kind === 'reconcile-claims' ? action.claims.map((claim) => claim.recordId) : [],
         )
       : [],
   )
@@ -760,7 +768,7 @@ export function closeOutSession(
         ),
     ).length,
     remainingBranches: final.evidence.length,
-    remainingClaims: final.claims.filter((claim) => !plannedClaimIds.has(claim.id)).length,
+    remainingClaims: final.claims.filter((claim) => !plannedClaimIds.has(claim.record_id)).length,
     remainingLandings: final.landings.length,
     remainingReviews: final.reviews.length,
     processItems: report.process.length,

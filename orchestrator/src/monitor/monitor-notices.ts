@@ -193,22 +193,28 @@ export function claimMonitorNotices(
   requireRealSession(ownerSession, 'monitor notices')
   const rows = database
     .query(
-      `SELECT c.id, c.kind, c.subject, c.condition_since, c.age_ms,
+      `SELECT c.number, c.kind, c.subject, c.condition_since, c.age_ms,
               c.issue_key, c.severity, c.owner_session_id,
               r.number run_number, r.status run_status, r.repo run_project
          FROM monitor_condition c
+         JOIN monitor_invocation invocation ON invocation.record_id=c.invocation_record_id
          LEFT JOIN run r ON c.subject=('run:' || r.record_id)
         WHERE c.owner_session_id=? AND c.delivered_at IS NULL
-          AND c.id = (
-            SELECT MAX(newest.id) FROM monitor_condition newest
+          AND NOT EXISTS (
+            SELECT 1 FROM monitor_condition newest
+            JOIN monitor_invocation newest_invocation
+              ON newest_invocation.record_id=newest.invocation_record_id
              WHERE newest.kind=c.kind AND newest.subject=c.subject
                AND newest.condition_since IS c.condition_since
                AND newest.owner_session_id=c.owner_session_id
+               AND (newest_invocation.started_at>invocation.started_at OR
+                    (newest_invocation.started_at=invocation.started_at AND
+                     newest.record_id>c.record_id))
           )
-        ORDER BY c.id`,
+        ORDER BY invocation.started_at,c.record_id`,
     )
     .all(ownerSession) as {
-    id: number
+    number: number
     kind: string
     subject: string
     condition_since: string | null
@@ -229,7 +235,7 @@ export function claimMonitorNotices(
         current.get(row.kind)?.has(row.subject),
     )
     .map((row) => ({
-      noticeId: `condition:${row.id}` as const,
+      noticeId: `condition:${row.number}` as const,
       kind: row.kind,
       subject: row.subject,
       label: noticeLabel(row.subject, row.run_number),
@@ -358,7 +364,7 @@ export function markMonitorNoticesDelivered(
   const database = writableDb()
   writeTransaction(() => {
     const mark = database.query(
-      `UPDATE monitor_condition SET delivered_at=? WHERE id=? AND owner_session_id=? AND delivered_at IS NULL`,
+      `UPDATE monitor_condition SET delivered_at=? WHERE number=? AND owner_session_id=? AND delivered_at IS NULL`,
     )
     const conditions = new Set(
       parsed.filter(({ source }) => source === 'condition').map(({ id }) => Number(id)),

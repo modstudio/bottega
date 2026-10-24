@@ -342,7 +342,7 @@ describe('tracked recipe execution', () => {
   test('a pre failure releases only the claims inserted by this allocation attempt', () => {
     const attempt: AllocationAttempt = {
       allocations: { index: 2, ports: { web: 21001 }, databases: {}, strings: {} },
-      insertedClaimIds: [12, 14],
+      insertedClaimIds: ['claim-12', 'claim-14'],
     }
     const released: { attempt: AllocationAttempt; reason: string }[] = []
     const allocator: TrackedAllocator = {
@@ -362,7 +362,7 @@ describe('tracked recipe execution', () => {
         reason: 'worktree pre-check failed at "pre" (run): pre broke',
       },
     ])
-    expect(released[0]!.attempt.insertedClaimIds).toEqual([12, 14])
+    expect(released[0]!.attempt.insertedClaimIds).toEqual(['claim-12', 'claim-14'])
   })
 
   test('a create failure compensates itself and every earlier step despite an undo failure', () => {

@@ -18,4 +18,4 @@ export type RecipeAllocations = {
   strings: Record<string, string>
 }
 
-export type AllocationAttempt = { allocations: RecipeAllocations; insertedClaimIds: number[] }
+export type AllocationAttempt = { allocations: RecipeAllocations; insertedClaimIds: string[] }

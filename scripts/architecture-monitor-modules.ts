@@ -55,6 +55,12 @@ export const monitorModules: MonitorModule[] = [
     '../run/run-host-capacity.ts',
     './monitor-types.ts',
   ]),
+  module('orchestrator/src/monitor/monitor-issue-filing.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../mcp/mcp.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-customer-guides.ts', [
     '../../../shared/brand.ts',
     '../doc/doc-command-check.ts',
@@ -93,6 +99,7 @@ export const monitorModules: MonitorModule[] = [
     './ratcheted-rule-conditions.ts',
     './monitor-stray-worktrees.ts',
     './monitor-harness-load.ts',
+    './monitor-issue-filing.ts',
     './monitor-canon-drift.ts',
     './monitor-canon-summary.ts',
     './monitor-customer-guides.ts',
