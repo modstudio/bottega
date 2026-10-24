@@ -1,7 +1,7 @@
 // concern: cli
 /** Registers workflow command adapters. Must not own workflow decisions. */
 
-import type { Command, OptionValues } from 'commander'
+import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -22,6 +22,7 @@ import {
   probeCommand,
   promoteCatalogueCommand,
   promoteWorkflowCommand,
+  recordEvidenceCommand,
   renderCheckCommand,
   retireCatalogueCommand,
   retireWorkflowCommand,
@@ -37,6 +38,7 @@ import {
   workflowVersionsCommand,
 } from '../workflow/workflow-commands.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
+import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-recording.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
@@ -351,26 +353,59 @@ function registerWorkflowChildCommands({
     ['probe', 'run and record a workflow probe command', probeCommand],
     ['exec', 'run and record a workflow execution command', execCommand],
   ] as const) {
-    jsonOption(
-      workflow
-        .command(`${verb} [command...]`)
-        .description(description)
-        .option('--cwd <value>', 'run the child command from this directory'),
-    ).action((commandArgs, options, command) => {
+    const child = workflow
+      .command(`${verb} [command...]`)
+      .description(description)
+      .option('--cwd <value>', 'run the child command from this directory')
+    // The receiving form of the exec hand-off is not an operator verb; it exists for the process that ran the child.
+    if (verb === 'exec')
+      child.addOption(
+        new Option(
+          RECORD_EVIDENCE_FLAG,
+          'record the evidence payload read as JSON on stdin',
+        ).hideHelp(),
+      )
+    jsonOption(child).action((commandArgs, options, command) => {
       const source = rawArgv(command)
-      const separator = source.indexOf('--')
-      const argv = [
-        'workflow',
-        verb,
-        ...(separator < 0 ? commandArgs : ['--', ...source.slice(separator + 1)]),
-      ]
-      return handler(argv, output(options), workflowPresentation, {
+      const argv = workflowChildArgv(verb, source, commandArgs)
+      const childOptions = {
         ...handlerOptions,
         cwd: options.cwd ?? handlerOptions.cwd,
         json: options.json === undefined ? handlerOptions.json : Boolean(options.json),
-      })
+      }
+      if (receivingEvidenceInvocation(source, commandArgs, options.recordEvidence))
+        return recordEvidenceCommand(argv, output(options), childOptions)
+      return handler(argv, output(options), workflowPresentation, childOptions)
     })
   }
+}
+
+/** The child's argv: the tokens the separator kept for it stay its own. */
+function workflowChildArgv(verb: string, source: string[], commandArgs: string[]): string[] {
+  const separator = source.indexOf('--')
+  return [
+    'workflow',
+    verb,
+    ...(separator < 0 ? commandArgs : ['--', ...source.slice(separator + 1)]),
+  ]
+}
+
+/**
+ * The parsed `--record-evidence` option, and not the child's own arguments, declares the
+ * receiving form of the exec hand-off, which takes no child command. A positional token
+ * before the flag is the separator-less child shape (`workflow exec <child> --record-evidence`):
+ * the ordinary exec path still owns that one and refuses it for want of `--`.
+ */
+function receivingEvidenceInvocation(
+  source: string[],
+  commandArgs: string[],
+  recordEvidence: boolean | undefined,
+): boolean {
+  if (recordEvidence !== true) return false
+  const flag = source.indexOf(RECORD_EVIDENCE_FLAG)
+  if (flag < 2) return false
+  const firstPositional = commandArgs.length ? source.indexOf(commandArgs[0]!, 2) : -1
+  return firstPositional < 0 || firstPositional > flag
 }
 
 function registerWorkflowTreeCommands({

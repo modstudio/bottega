@@ -3,8 +3,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { program, run } from '../cli/program.ts'
-import { setRawArgv } from '../commands/support.ts'
+import { run } from '../cli/program.ts'
 import { db } from '../database/db.ts'
 import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
@@ -12,7 +11,7 @@ import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { commandOutcome, workflowProjectRefusal } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
-import { recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
+import { recordWorkflowProbe } from './workflow-probe.ts'
 import {
   hostedWorkflowRepositoryFixture,
   installHostedWorkflowTreeFixture as installHostedWorkflowTree,
@@ -473,21 +472,9 @@ test('workflow next refuses --basis without --self-ruling at the command edge', 
   ).rejects.toThrow('--basis requires --self-ruling')
 })
 
-test('workflow exec refuses a missing command', async () => {
-  expect(workflowCommand(['workflow', 'exec', '--'], presentation([]))).rejects.toThrow(
-    `${PLATFORM_SLUG} workflow exec needs a command after --`,
-  )
-})
-
 test('workflow probe requires a separator before the child command', async () => {
   expect(workflowCommand(['workflow', 'probe', '/usr/bin/true'], presentation([]))).rejects.toThrow(
     `${PLATFORM_SLUG} workflow probe requires -- before the child command; use ${PLATFORM_SLUG} workflow probe [--cwd <dir>] -- <command…>`,
-  )
-})
-
-test('workflow exec requires a separator before the child command', async () => {
-  expect(workflowCommand(['workflow', 'exec', '/usr/bin/true'], presentation([]))).rejects.toThrow(
-    `${PLATFORM_SLUG} workflow exec requires -- before the child command; use ${PLATFORM_SLUG} workflow exec [--cwd <dir>] -- <command…>`,
   )
 })
 
@@ -521,40 +508,6 @@ test('workflow child command invocation preserves an embedded separator in exec 
     },
   )
   expect(received?.command).toEqual(['/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'])
-})
-
-test('Commander refuses workflow exec without a separator before running the child', async () => {
-  const priorDepth = process.env.BOTTEGA_DEPTH
-  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  try {
-    delete process.env.BOTTEGA_DEPTH
-    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
-    const before = (db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n
-    setRawArgv(['workflow', 'exec', '/usr/bin/printf', '%s', '--cwd', 'child-dir', '--json'])
-
-    await expect(
-      program.parseAsync([
-        'bun',
-        'orch',
-        'workflow',
-        'exec',
-        '/usr/bin/printf',
-        '%s',
-        '--cwd',
-        'child-dir',
-        '--json',
-      ]),
-    ).rejects.toThrow(
-      `${PLATFORM_SLUG} workflow exec requires -- before the child command; use ${PLATFORM_SLUG} workflow exec [--cwd <dir>] -- <command…>`,
-    )
-
-    expect((db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n).toBe(before)
-  } finally {
-    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
-    else process.env.BOTTEGA_DEPTH = priorDepth
-    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-  }
 })
 
 test('workflow probe and exec preserve child options after the real argv separator', async () => {
@@ -597,47 +550,6 @@ test('workflow probe and exec preserve child options after the real argv separat
         .get()
       expect(row).toEqual({ command: JSON.stringify(expected.command), cwd: expected.cwd })
     }
-  }
-})
-
-test('workflow exec service returns each child exit code after recording its row', async () => {
-  const priorDepth = process.env.BOTTEGA_DEPTH
-  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-  try {
-    delete process.env.BOTTEGA_DEPTH
-    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
-    upsertProject({
-      recordId: newRecordId(),
-      name: 'workflow-exec-status',
-      path: process.cwd(),
-      stack: 'bun',
-      settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
-    })
-    const passing = await recordWorkflowExec(['passing'], {
-      registeredProject: true,
-      runner: () => ({ exitCode: 0, output: '' }),
-    })
-    const failing = await recordWorkflowExec(['failing'], {
-      registeredProject: true,
-      runner: () => ({ exitCode: 7, output: '' }),
-    })
-
-    expect(passing.exitCode).toBe(0)
-    expect(failing.exitCode).toBe(7)
-    expect(
-      db()
-        .query("SELECT command,exit_code FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 2")
-        .all()
-        .reverse(),
-    ).toEqual([
-      { command: '["passing"]', exit_code: 0 },
-      { command: '["failing"]', exit_code: 7 },
-    ])
-  } finally {
-    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
-    else process.env.BOTTEGA_DEPTH = priorDepth
-    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
   }
 })
 

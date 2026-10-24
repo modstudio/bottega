@@ -1,7 +1,6 @@
 // concern: workflows
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
 import { readFileSync } from 'node:fs'
-import { constants } from 'node:os'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
@@ -39,6 +38,8 @@ import {
   selectWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { parseWorkflowEvidencePayload } from './workflow-evidence-payload.ts'
+import { RECORD_EVIDENCE_FLAG } from './workflow-evidence-recording.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,
@@ -48,8 +49,10 @@ import { workflowImportLines } from './workflow-import-output.ts'
 import {
   type ProbeRecord,
   type ProbeRunner,
+  recordWorkflowEvidence,
   recordWorkflowExec,
   recordWorkflowProbe,
+  wrappedCommandExitCode,
 } from './workflow-probe.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import {
@@ -270,16 +273,32 @@ export async function execCommand(
     cwd,
     registeredProject,
   })
-  print(
-    {
-      id: result.id,
-      withheld: result.withheld,
-      exitCode: result.exitCode,
-      signal: result.signal,
-    },
-    String(result.id),
-  )
+  print(execPrintRecord(result), String(result.id))
   presentCommandOutcome('exec', result, presentation)
+}
+
+/**
+ * The receiving form of the hand-off: it takes no child command, records the payload
+ * an exec could not, and prints the id exactly as exec does. Its own exit status
+ * reports whether the row was recorded, never the wrapped command's status, because
+ * the wrapping process owns that and reads a non-zero receiver as lost evidence.
+ */
+export async function recordEvidenceCommand(
+  argv: string[],
+  print: (value: unknown, line?: string) => void,
+  options: WorkflowCommandOptions,
+): Promise<void> {
+  if (argv.length > 2)
+    throw new Error(
+      `${PLATFORM_SLUG} workflow exec ${RECORD_EVIDENCE_FLAG} takes no command; pipe the evidence payload as JSON on stdin`,
+    )
+  if ((options.stdinIsTTY?.() ?? process.stdin.isTTY) === true)
+    throw new Error(
+      `${PLATFORM_SLUG} workflow exec ${RECORD_EVIDENCE_FLAG} reads the evidence payload as JSON on stdin; pipe it from the process that ran the command`,
+    )
+  const payload = parseWorkflowEvidencePayload(await (options.stdinText?.() ?? Bun.stdin.text()))
+  const result = await recordWorkflowEvidence(payload)
+  print(execPrintRecord(result), String(result.id))
 }
 
 export async function probeCommand(
@@ -310,10 +329,22 @@ function probePrintRecord(result: ProbeRecord): ProbePrintRecord {
   return { id: result.id, withheld: result.withheld }
 }
 
+type ExecPrintRecord = Pick<ProbeRecord, 'id' | 'withheld' | 'exitCode' | 'signal'>
+
+/** The exec record exec and its receiving form both print, read back as the hand-off's answer. */
+function execPrintRecord(result: ProbeRecord): ExecPrintRecord {
+  return {
+    id: result.id,
+    withheld: result.withheld,
+    exitCode: result.exitCode,
+    signal: result.signal,
+  }
+}
+
 export function commandOutcome(verb: 'exec' | 'probe', result: ProbeRecord): CommandOutcome {
   if (result.signal)
     return {
-      exitCode: 128 + constants.signals[result.signal],
+      exitCode: wrappedCommandExitCode(result),
       errorLine: `${PLATFORM_SLUG} workflow ${verb}: command was killed by ${result.signal}`,
     }
   return { exitCode: result.exitCode }

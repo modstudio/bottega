@@ -241,6 +241,17 @@ export function enableSchemaReload(
   schemaReloadRefusal = onRefusal ?? null
 }
 
+/**
+ * Enable the exec-style reload only when this process registered none. Recording a
+ * command's evidence after its child migrated the store needs a reload, but replacing
+ * the registration a long-lived process already made would drop that process's own
+ * reload and refusal callbacks.
+ */
+export function enableSchemaReloadUnlessRegistered(): void {
+  if (schemaReload) return
+  enableSchemaReload()
+}
+
 function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   if (handle && d !== handle) return d
   const actual = readUserVersion(d)
@@ -270,6 +281,16 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
       `restart this process after ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight)`,
     ),
   )
+}
+
+/**
+ * The schema version this process opened and the store's current one, or null when
+ * this process never opened the store. A child may migrate between them, so a
+ * command that runs one compares the pair after that child exits.
+ */
+export function storeSchemaVersions(): { opened: number; store: number } | null {
+  if (openedUserVersion === null || !handle) return null
+  return { opened: openedUserVersion, store: readUserVersion(handle) }
 }
 
 export function db(writable = false): Database {
