@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { classify, clusterErrorText } from './failure.ts'
 
 describe('stale-login classification', () => {
@@ -14,6 +15,22 @@ describe('stale-login classification', () => {
       'Not signed in. To authenticate without a browser, run:\n  grok login --device-code\n\nAlternatively, set the XAI_API_KEY environment variable or run `grok login` on a machine with a browser.'
     expect(classify(notSignedIn, 1)).toBe('auth')
     expect(classify('not logged in', 1)).toBe('auth')
+  })
+
+  test.each([
+    [
+      'classifies the exact error recorded for run 19328 as auth',
+      `Authentication required\nreply.json missing at /Users/shmuel/.local/state/${PLATFORM_SLUG}/orchestrator/runs/01a16ded-6847-743f-a95b-03a5556b1c13/scratch/reply.json; used final-message fallback`,
+      'auth',
+    ],
+    ['does not match the phrase inside other words', 'xxAuthentication requiredxx', 'other'],
+    [
+      'keeps billing ahead of authentication',
+      'Please check your account with your provider to add more credits. Authentication required.',
+      'billing',
+    ],
+  ] as const)('%s', (_name, error, expected) => {
+    expect(classify(error)).toBe(expected)
   })
 
   /** Waiting fixes a spent plan and does not fix a stale login, so quota keeps its precedence. */
