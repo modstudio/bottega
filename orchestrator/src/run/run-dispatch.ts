@@ -133,6 +133,18 @@ function assertDispatchDatabase(resume: boolean): void {
   assertMigrationDispatchAllowed(db(), resume)
 }
 
+function claimWithMigrationAdmission<T>(
+  beforeClaim: () => void,
+  existingChain: boolean,
+  claim: () => T,
+): T {
+  beforeClaim()
+  return writeTransaction(() => {
+    assertMigrationDispatchAllowed(db(), existingChain)
+    return claim()
+  })
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -196,9 +208,7 @@ export async function detach(
   // A resume is claimed as a chain member in this same INSERT. One SQLite
   // statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
-  beforeClaim()
-  const claimed = writeTransaction(() => {
-    assertMigrationDispatchAllowed(db(), spec.resume !== undefined)
+  const claimed = claimWithMigrationAdmission(beforeClaim, spec.resume !== undefined, () => {
     const identity = claimIdentity(spec.resume)
     const { projectName, projectId } = detachedProject(cwd, spec)
     refuseLiveRetryOwner(spec)

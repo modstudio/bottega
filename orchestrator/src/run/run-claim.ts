@@ -186,6 +186,13 @@ function claimableRow<T>(
   return row
 }
 
+function claimTransaction<T>(assertAllowed: () => void, claim: () => T): T {
+  return writeTransaction(() => {
+    assertAllowed()
+    return claim()
+  })
+}
+
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -424,8 +431,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         transportName,
         startedByUserId,
       ) as { record_id: string; number: number }
-  const claim = writeTransaction(() => {
-    input.assertDispatchAllowed()
+  const claim = claimTransaction(input.assertDispatchAllowed, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
     /**
