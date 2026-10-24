@@ -1223,7 +1223,7 @@ case \"$*\" in
   \"run list --live --json\") exit 0 ;;
   \"machine monitor --notices --json --skip-board-refresh\")
     printf '%s\\n' '[{\"noticeId\":\"condition:1\",\"kind\":\"worker-gate-tooling-change\",\"subject\":\"run:01990000-0000-7000-8000-000000000002\",\"label\":\"run 16709\",\"detail\":\"detected (age unknown, status ok, project bottega); inspect the run deliberately.\",\"ownerSession\":\"fixture-session\"}]' ;;
-  \"machine monitor --ack-notices condition:1\") exit 0 ;;
+  \"machine monitor --ack-notices condition:1 --json\") exit 0 ;;
   *) exit 0 ;;
 esac
 """,

@@ -89,10 +89,14 @@ prev_key="${HEARTBEAT_PREVIOUS_STATE_KEY:-}"
 since_emit="${HEARTBEAT_SINCE_EMIT:-0}"
 prev_monitor_failure_key=""
 monitor_failure_ticks=0
+prev_skipped_key=""
+skip_ticks=0
 prev_cap_failure_state=""
 cap_failure_ticks=0
 prev_ack_failure_state=""
 ack_failure_ticks=0
+prev_ack_refusal_report=""
+ack_refusal_ticks=0
 reported_ids="${HEARTBEAT_REPORTED_IDS:-}"
 previous_live_roots="${HEARTBEAT_PREVIOUS_LIVE_ROOTS:-}"
 live_statuses_csv="${HEARTBEAT_LIVE_STATUSES:-}"
@@ -461,7 +465,31 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
   monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '
-import sys, json, os, uuid
+import sys, json, os, re
+
+# The notice-id grammar belongs to the acknowledgement validator
+# (markMonitorNoticesDelivered in orchestrator/src/monitor/monitor-notices.ts),
+# which accepts what it accepts and names every id it refuses. Copies of that rule
+# drift, so this parser passes ids through and lets the acknowledgement judge them.
+# What it does own is transport: a row is tab-separated, the acknowledgement list
+# is comma-separated, and command substitution drops NUL, so an id carrying a
+# control character or a comma cannot survive the trip unchanged and would be
+# acknowledged as a different id. Exactly that is refused here, by name.
+UNTRANSPORTABLE = re.compile(r"[\x00-\x1f\x7f,]")
+FIELDS = ("kind", "subject", "label", "detail")
+
+
+def refused_name(row, index):
+    token = row.get("noticeId") if isinstance(row, dict) else None
+    if isinstance(token, str):
+        text = token
+    elif token is None:
+        text = "#" + str(index + 1)
+    else:
+        text = json.dumps(token)
+    return UNTRANSPORTABLE.sub(" ", text)[:80]
+
+
 try:
     result = json.load(sys.stdin)
 except Exception:
@@ -478,23 +506,25 @@ if not isinstance(rows, list) or (warning is not None and not isinstance(warning
     raise SystemExit(2)
 if warning:
     print("warning\t" + warning.replace("\t", " ").replace("\r", " ").replace("\n", " "))
-for row in rows:
+for index, row in enumerate(rows):
+    # A notice this parser cannot carry unchanged is named and skipped; it never
+    # costs the batch its other notices, and it is never acknowledged. Every other
+    # id is passed through for the acknowledgement to judge. Only the envelope
+    # above turns a whole batch into a failure.
     if not isinstance(row, dict) or not isinstance(row.get("noticeId"), str):
-        raise SystemExit(2)
-    source, separator, identifier = row["noticeId"].partition(":")
-    numeric = identifier.isdigit() and int(identifier) > 0
-    try:
-        hosted = source == "board" and str(uuid.UUID(identifier)) == identifier.lower() if not numeric else False
-    except (ValueError, AttributeError):
-        raise SystemExit(2)
-    if source not in ("condition", "landing", "board") or separator != ":" or not (numeric or hosted):
-        raise SystemExit(2)
-    if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "label", "detail")):
-        raise SystemExit(2)
+        print("degraded\t" + refused_name(row, index) + " (notice id is missing or not a string)")
+        continue
+    if UNTRANSPORTABLE.search(row["noticeId"]):
+        print("degraded\t" + refused_name(row, index) + " (notice id cannot be transported unchanged)")
+        continue
+    if not all(isinstance(row.get(key), str) for key in FIELDS):
+        print("degraded\t" + refused_name(row, index) + " (notice fields are incomplete)")
+        continue
     if row.get("ownerSession") != os.environ["SID"]:
-        raise SystemExit(2)
+        print("degraded\t" + refused_name(row, index) + " (notice belongs to another session)")
+        continue
     values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
-              for key in ("kind", "subject", "label", "detail")]
+              for key in FIELDS]
     directly_reported = set(filter(None, os.environ["STALLED_SUBJECTS"].split(",")))
     message = "" if values[0] == "stalled-run" and values[1] in directly_reported else (values[3] if values[0].startswith("landing-") else (
         "MONITOR " + values[0] + " " + values[2] + ": " + values[3]
@@ -516,6 +546,44 @@ for row in rows:
   else
     prev_monitor_failure_key=""
     monitor_failure_ticks=0
+  fi
+  # A refused notice is contained: it is named here and skipped while every
+  # other notice in the same batch is still delivered and acknowledged. Only
+  # the batch envelope above can fail a tick.
+  monitor_skip_rows=""
+  monitor_skipped_count=""
+  monitor_skipped_names=""
+  monitor_notice_rows=""
+  if [ -n "$monitor_observed" ]; then
+    monitor_notice_rows=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "warning"' | wc -l | tr -d ' ')
+    monitor_skip_rows=$(printf '%s\n' "$monitor_observed" | awk -F '\t' \
+      '$1 == "degraded" {count++; names = names (count > 1 ? "; " : "") $2}
+       END {if (count) printf "%d\t%s", count, names}')
+  fi
+  if [ -n "$monitor_skip_rows" ]; then
+    monitor_observed=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "degraded"')
+    monitor_skipped_count=${monitor_skip_rows%%$'\t'*}
+    monitor_skipped_names=${monitor_skip_rows#*$'\t'}
+  fi
+  if [ "$monitor_rc" -eq 0 ] && [ "$monitor_parse_rc" -eq 0 ] && [ -n "$monitor_skip_rows" ]; then
+    skip_ticks=$((skip_ticks + 1))
+    if [ "$monitor_skip_rows" != "$prev_skipped_key" ] || \
+       [ "$skip_ticks" -ge "$KEEPALIVE_TICKS" ]; then
+      prev_skipped_key="$monitor_skip_rows"
+      skip_ticks=0
+      # Say what actually happened to the batch: nothing was delivered when every
+      # notice in it was refused.
+      if [ "$monitor_skipped_count" = "$monitor_notice_rows" ]; then
+        monitor_delivery_phrase="and delivered nothing from this batch"
+      else
+        monitor_delivery_phrase="and delivered the rest of the batch"
+      fi
+      printf '[%s] DEGRADED - %s refused %s notice(s) %s: %s. Inspect the notice producer.\n' \
+        "$(date +%H:%M:%S)" "$monitor_label" "$monitor_skipped_count" "$monitor_delivery_phrase" "$monitor_skipped_names"
+    fi
+  else
+    prev_skipped_key=""
+    skip_ticks=0
   fi
   if [ "$monitor_rc" -eq 0 ] && [ "$monitor_parse_rc" -eq 0 ] && [ -n "$monitor_observed" ]; then
     monitor_ids=$(printf '%s\n' "$monitor_observed" | awk -F '\t' '$1 != "warning" {print $1}' | paste -sd, -)
@@ -552,7 +620,9 @@ print(token)
           export BOTTEGA_MONITOR_CAPABILITY_PATH="$CAP_PATH"
           export BOTTEGA_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
           ack_timed_out=$(mktemp)
-          CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
+          ack_out=$(mktemp)
+          ack_err=$(mktemp)
+          CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --ack-notices "$monitor_ids" --json >"$ack_out" 2>"$ack_err" &
           ACTIVE_GUARDED_PID=$!
           start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out" "$NOTICE_TIMEOUT_SECONDS"
           ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
@@ -562,9 +632,43 @@ print(token)
           ACTIVE_WATCHDOG_PID=""
           if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
           rm -f "$ack_timed_out"
+          # The acknowledgement is the owner of the notice-id grammar and names
+          # every id it refused; this hook passes ids through and reports them.
+          # Its --json result is the declared surface: count and name the refused
+          # entries, never a human line that could be reworded.
+          ack_report=""
+          if [ "$ack_rc" -eq 0 ]; then
+            ack_report=$(python3 - "$ack_out" <<'PY' 2>/dev/null
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as report:
+        result = json.load(report)
+except Exception:
+    raise SystemExit(0)
+refused = result.get("refused") if isinstance(result, dict) else None
+if not isinstance(refused, list):
+    raise SystemExit(0)
+rows = []
+for item in refused:
+    if not isinstance(item, dict):
+        continue
+    name = item.get("id")
+    reason = item.get("reason")
+    name = name if isinstance(name, str) else "#?"
+    reason = reason if isinstance(reason, str) else "unspecified"
+    rows.append(name + " (" + reason + ")")
+if rows:
+    print(str(len(rows)) + "\t" + "; ".join(rows))
+PY
+)
+          fi
+          rm -f "$ack_out" "$ack_err"
           rm -rf "$CAP_DIR"
           unset BOTTEGA_MONITOR_CAPABILITY_PATH BOTTEGA_MONITOR_CAPABILITY_TOKEN
           if [ "$ack_rc" -ne 0 ]; then
+            prev_ack_refusal_report=""
+            ack_refusal_ticks=0
             ack_failure_state="$ack_rc"
             ack_failure_ticks=$((ack_failure_ticks + 1))
             if [ "$ack_failure_state" != "$prev_ack_failure_state" ] || \
@@ -576,6 +680,22 @@ print(token)
           else
             prev_ack_failure_state=""
             ack_failure_ticks=0
+            ack_sent_count=$(printf '%s\n' "$monitor_ids" | awk -F ',' '{print NF}')
+            if [ -n "$ack_report" ]; then
+              ack_refused_count=${ack_report%%$'\t'*}
+              ack_refused_names=${ack_report#*$'\t'}
+              ack_refusal_ticks=$((ack_refusal_ticks + 1))
+              if [ "$ack_report" != "$prev_ack_refusal_report" ] || \
+                 [ "$ack_refusal_ticks" -ge "$KEEPALIVE_TICKS" ]; then
+                prev_ack_refusal_report="$ack_report"
+                ack_refusal_ticks=0
+                printf '[%s] DEGRADED - %s: the acknowledgement refused %s of the %s id(s) in this batch: %s. A refused id stays undelivered and repeats; inspect the notice producer.\n' \
+                  "$(date +%H:%M:%S)" "$monitor_label" "$ack_refused_count" "$ack_sent_count" "$ack_refused_names"
+              fi
+            else
+              prev_ack_refusal_report=""
+              ack_refusal_ticks=0
+            fi
           fi
         fi
       fi

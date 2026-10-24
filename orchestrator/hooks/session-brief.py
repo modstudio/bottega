@@ -276,16 +276,54 @@ def _emitted_board_ids(output, board_text, board_ids):
     return list(board_ids) if board_ids and board_text and board_text in emitted_context else []
 
 
-def _valid_notice_id(value):
-    source, separator, identifier = value.partition(":") if isinstance(value, str) else ("", "", "")
-    if source not in ("condition", "landing", "board") or separator != ":":
-        return False
-    if identifier.isdigit():
-        return int(identifier) > 0
+_UNTRANSPORTABLE_NOTICE_ID = re.compile(r"[\x00-\x1f\x7f,]")
+
+
+def _transportable_notice_id(value):
+    """Whether the notice row and the comma-separated acknowledgement list can carry this id.
+
+    The notice-id grammar belongs to the acknowledgement validator
+    (markMonitorNoticesDelivered in orchestrator/src/monitor/monitor-notices.ts),
+    which accepts what it accepts and names every id it refuses. This hook passes
+    ids through and reports the refusals rather than keeping a copy of the rule.
+    What it does own is transport: a control character or a comma cannot survive
+    the trip into the acknowledgement list unchanged.
+    """
+    return (
+        isinstance(value, str)
+        and value != ""
+        and not _UNTRANSPORTABLE_NOTICE_ID.search(value)
+    )
+
+
+def _refused_notice_name(item, index):
+    token = item.get("noticeId") if isinstance(item, dict) else None
+    if isinstance(token, str):
+        text = token
+    elif token is None:
+        text = f"#{index + 1}"
+    else:
+        text = json.dumps(token)
+    return _UNTRANSPORTABLE_NOTICE_ID.sub(" ", text)[:80]
+
+
+def _acknowledgement_refusals(stdout):
+    """The names and reasons the acknowledgement refused, from its declared JSON result."""
     try:
-        return source == "board" and str(uuid.UUID(identifier)) == identifier.lower()
-    except ValueError:
-        return False
+        result = json.loads(stdout)
+    except Exception:
+        return []
+    refused = result.get("refused") if isinstance(result, dict) else None
+    if not isinstance(refused, list):
+        return []
+    names = []
+    for item in refused:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("id") if isinstance(item.get("id"), str) else "#?"
+        reason = item.get("reason") if isinstance(item.get("reason"), str) else "unspecified"
+        names.append(f"{name} ({reason})")
+    return names
 
 
 def _monitor_delivery(stdout, owner_session):
@@ -307,12 +345,20 @@ def _monitor_delivery(stdout, owner_session):
         and isinstance(item.get("label"), str)
         and isinstance(item.get("detail"), str)
         and isinstance(item.get("noticeId"), str)
-        and _valid_notice_id(item["noticeId"])
         and item.get("ownerSession") == owner_session
         for item in rows
     ):
         raise ValueError("invalid monitor notice JSON")
-    return rows, warning
+    # A notice this hook cannot carry into the acknowledgement list is named and
+    # skipped; the rest of the batch is still delivered and acknowledged.
+    delivered = []
+    refused = []
+    for index, item in enumerate(rows):
+        if _transportable_notice_id(item["noticeId"]):
+            delivered.append(item)
+        else:
+            refused.append(_refused_notice_name(item, index))
+    return delivered, warning, refused
 
 
 def _monitor_notice_command(bottega, skip_board_refresh=False):
@@ -320,6 +366,14 @@ def _monitor_notice_command(bottega, skip_board_refresh=False):
     if skip_board_refresh:
         command.append("--skip-board-refresh")
     return command
+
+
+def _monitor_ack_command(bottega, monitor_notices):
+    """The acknowledgement call; --json selects the declared result _acknowledgement_refusals reads."""
+    return [
+        bottega, "machine", "monitor", "--ack-notices",
+        ",".join(str(item["noticeId"]) for item in monitor_notices), "--json",
+    ]
 
 
 def assemble_additional_context(
@@ -879,7 +933,16 @@ def main() -> int:
             try:
                 monitor = _wait(monitor_p, notice_deadline)
                 if monitor.returncode == 0:
-                    monitor_notices, monitor_warning = _monitor_delivery(monitor.stdout, sid)
+                    monitor_notices, monitor_warning, monitor_refused = _monitor_delivery(
+                        monitor.stdout, sid
+                    )
+                    if monitor_refused:
+                        noun = "notice" if len(monitor_refused) == 1 else "notices"
+                        monitor_failure = (
+                            f"Monitor refused {len(monitor_refused)} {noun} this session start: "
+                            + "; ".join(monitor_refused)
+                            + ". Inspect the notice producer."
+                        )
                 elif monitor.returncode == -1:
                     monitor_failure = "Monitor notice observation timed out; addressed condition state is unknown."
                 else:
@@ -964,16 +1027,28 @@ def main() -> int:
                 pass
         if monitor_notices and inbox_env is not None:
             try:
-                subprocess.run(
-                    [bottega, "machine", "monitor", "--ack-notices", ",".join(
-                        str(item["noticeId"]) for item in monitor_notices
-                    )],
+                completed = subprocess.run(
+                    _monitor_ack_command(bottega, monitor_notices),
                     env=inbox_env,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
                     timeout=acknowledgement_timeout,
                     check=False,
                 )
+                # The acknowledgement owns the notice-id grammar and names every id
+                # it refused. It runs after this hook has answered the harness, because
+                # an id may only be acknowledged once its notice was emitted to its
+                # consumer, so the names go to stderr rather than into the context.
+                # A refused id is left unacknowledged, so it repeats on the next claim
+                # instead of disappearing.
+                refusals = _acknowledgement_refusals(completed.stdout)
+                if refusals:
+                    print(
+                        "session-brief: the monitor notice acknowledgement refused "
+                        + "; ".join(refusals)
+                        + "; inspect the notice producer.",
+                        file=sys.stderr,
+                    )
             except Exception:
                 pass
         _kill(resumes_p)

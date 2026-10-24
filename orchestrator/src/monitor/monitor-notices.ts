@@ -334,32 +334,75 @@ export async function claimMonitorNoticesForCommand(
   return claimMonitorNoticesWithHosted(ownerSession, verificationSource)
 }
 
-/** Acknowledge only rows the hook has already emitted to its consumer. */
+/**
+ * The one definition of the notice-id grammar.
+ *
+ * A notice id is `<source>:<identifier>`: `condition` takes a positive integer,
+ * `landing` a version-7 UUID, and `board` any non-empty identifier. Every other
+ * reader of a notice id -- the heartbeat hook and the session brief -- passes ids
+ * through and reports the names this rule refuses, because a second copy of the
+ * rule is a copy that drifts.
+ */
+function parseNoticeId(
+  token: string,
+): { source: 'condition' | 'landing' | 'board'; id: string } | { refusal: string } {
+  const match = /^(condition|landing|board):(.+)$/.exec(token)
+  if (!match)
+    return {
+      refusal: 'a notice id is <source>:<identifier> with source condition, landing or board',
+    }
+  const source = match[1] as 'condition' | 'landing' | 'board'
+  const id = match[2]!
+  if (source === 'condition' && !/^[1-9]\d*$/.test(id))
+    return { refusal: 'a condition id is a positive integer' }
+  if (
+    source === 'landing' &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+  )
+    return { refusal: 'a landing id is a version-7 UUID' }
+  return { source, id }
+}
+
+/** A refused id is named in output, where a control character or a long name would forge a line. */
+function refusedNoticeName(token: string): string {
+  const name = Array.from(String(token), (character) =>
+    character < ' ' || character === String.fromCharCode(127) ? ' ' : character,
+  ).join('')
+  return name === '' ? '(empty notice id)' : name.slice(0, 80)
+}
+
+export type MonitorNoticeAcknowledgement = {
+  acknowledged: MonitorNotice['noticeId'][]
+  refused: { id: string; reason: string }[]
+  /** Board identifiers exactly as parseNoticeId read them; no caller re-derives them. */
+  boardIds: string[]
+}
+
+/**
+ * Acknowledge only the rows the hook has already emitted to its consumer.
+ *
+ * One id the grammar refuses is contained: it is named in the result for the
+ * caller to report, and every valid id in the same batch is still acknowledged.
+ */
 export function markMonitorNoticesDelivered(
   ownerSession: string,
   ids: MonitorNotice['noticeId'][],
   deliveredAt = nowIso(),
-): void {
+): MonitorNoticeAcknowledgement {
   requireRealSession(ownerSession, 'monitor notice acknowledgement')
-  const parsed = ids.map((token) => {
-    const match = /^(condition|landing|board):(.+)$/.exec(token)
-    if (!match)
-      throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
-    return {
-      source: match[1] as 'condition' | 'landing' | 'board',
-      id: match[2]!,
+  const parsed: {
+    source: 'condition' | 'landing' | 'board'
+    id: string
+    token: MonitorNotice['noticeId']
+  }[] = []
+  const refused: { id: string; reason: string }[] = []
+  for (const token of ids) {
+    const parsedId = parseNoticeId(token)
+    if ('refusal' in parsedId) {
+      refused.push({ id: refusedNoticeName(token), reason: parsedId.refusal })
+      continue
     }
-  })
-  if (
-    !parsed.length ||
-    parsed.some(
-      ({ source, id }) =>
-        (source === 'condition' && !/^[1-9]\d*$/.test(id)) ||
-        (source === 'landing' &&
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)),
-    )
-  ) {
-    throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
+    parsed.push({ ...parsedId, token })
   }
   const database = writableDb()
   writeTransaction(() => {
@@ -382,15 +425,22 @@ export function markMonitorNoticesDelivered(
     )
     for (const id of landings) markLanding.run(deliveredAt, id, ownerSession)
   }, database)
+  return {
+    acknowledged: parsed.map(({ token }) => token),
+    refused,
+    boardIds: parsed.filter(({ source }) => source === 'board').map(({ id }) => id),
+  }
 }
 
 export async function markMonitorNoticesDeliveredWithHosted(
   ownerSession: string,
   ids: MonitorNotice['noticeId'][],
   deliveredAt = nowIso(),
-): Promise<void> {
-  markMonitorNoticesDelivered(ownerSession, ids, deliveredAt)
-  const board = ids.map((token) => /^board:(.+)$/.exec(token)?.[1] ?? '').filter((id) => id !== '')
+): Promise<MonitorNoticeAcknowledgement> {
+  const acknowledgement = markMonitorNoticesDelivered(ownerSession, ids, deliveredAt)
+  // Only an acknowledged board id reaches the hosted receipt; a refused one is
+  // named in the result instead of being asked for as if it were a board id.
+  const board = acknowledgement.boardIds
   if (board.length)
     await markBoardDeliveryDelivered({
       session: ownerSession,
@@ -399,4 +449,5 @@ export async function markMonitorNoticesDeliveredWithHosted(
       deliveryPoint: 'heartbeat-monitor',
       emissionId: randomUUID(),
     })
+  return acknowledgement
 }
