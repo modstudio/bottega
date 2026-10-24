@@ -3,15 +3,31 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
 import {
+  formatMigrationInFlightRun,
   type MigrationInFlightRun,
   migrationInFlightRuns,
 } from '../run/migration-in-flight-runs.ts'
 import { reconcileRun } from '../run/run-artifacts.ts'
 import { existingDatabaseMigrationRefusal } from './database-location.ts'
-import { backfillSpecSha, DB_PATH, migrateDatabase, withDatabaseForMigrationStep } from './db.ts'
-import { migrationApplied } from './migrations.ts'
+import {
+  backfillSpecSha,
+  DB_PATH,
+  migrateDatabase,
+  openReadOnlyDatabase,
+  tryWriteContention,
+  withDatabaseForMigrationStep,
+  withSynchronousDatabaseForMigrationStep,
+} from './db.ts'
+import {
+  clearMigrationDrain,
+  migrationDrainForUpdate,
+  setMigrationDrain,
+} from './migration-drain.ts'
+import { decideMigrationDrain } from './migration-drain-decision.ts'
+import { migrationApplied, migrationJournal, storeJournalPosition } from './migrations.ts'
 import {
   applyRunFilesystemIdentityMigration,
   discoverRunFilesystemIdentityMigration,
@@ -35,12 +51,25 @@ type MigrateCommandActions = {
   contracted(): Promise<boolean>
   fill(): Promise<unknown>
   backfill(): { updated: number; missing: number }
+  migrationDecision?(): ReturnType<typeof decideMigrationDrain>
+  withMigrationFence?(migration: string, action: () => Promise<void>): Promise<void>
+  recordOverride?(reason: string): void
 }
 
 const PROJECT_IDENTITY_CONTRACT_MIGRATION = '0115_project_identity_contract'
 const RUN_FILESYSTEM_IDENTITY_CUTOVER = '0121_run_filesystem_identity_cutover'
 
-type MigrateCommandOptions = { authorityRefusal?: () => string | null }
+type MigrateCommandOptions = {
+  authorityRefusal?: () => string | null
+  forceInFlight?: string
+  fromOperator?: boolean
+}
+
+export const MIGRATION_DRAIN_REFUSAL_EXIT_CODE = 75
+
+export class MigrationDrainRefusalError extends Error {
+  readonly exitCode = MIGRATION_DRAIN_REFUSAL_EXIT_CODE
+}
 
 /** Runs only from the migration runner while its BEGIN IMMEDIATE lock is held. */
 export function applyRunFilesystemIdentityCutover(
@@ -71,6 +100,58 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
         : Promise.resolve(false),
     fill: () => withDatabaseForMigrationStep((database) => fillProjectRecordIds(database)),
     backfill: backfillSpecSha,
+    migrationDecision: () => {
+      if (!existsSync(DB_PATH)) return { action: 'apply-now' }
+      const database = openReadOnlyDatabase()
+      try {
+        const journal = migrationJournal()
+        const position = storeJournalPosition(database, journal)
+        if (position.state === 'pending-not-found') {
+          throw new Error(
+            `migration journal does not contain pending migration ${position.migration}`,
+          )
+        }
+        return decideMigrationDrain({
+          journal,
+          storeVersion: position.index,
+        })
+      } finally {
+        database.close()
+      }
+    },
+    withMigrationFence: async (migration, action) => {
+      const inherited = withSynchronousDatabaseForMigrationStep((database) => {
+        const active = migrationDrainForUpdate(database)
+        if (
+          active?.phase === 'migrating' &&
+          active.migration === migration &&
+          active.pid === process.ppid
+        ) {
+          return true
+        }
+        if (active) {
+          throw new Error(
+            `migration drain is already active for ${active.migration} (holder pid ${active.pid})`,
+          )
+        }
+        setMigrationDrain(database, migration, 'migrating')
+        return false
+      })
+      try {
+        await action()
+      } finally {
+        if (!inherited) {
+          withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
+        }
+      }
+    },
+    recordOverride: (reason) =>
+      tryWriteContention({
+        resourceKind: 'store',
+        resourceKey: 'migration-drain',
+        eventKind: 'invalidation',
+        cause: `operator forced an in-flight migration: ${reason}`,
+      }),
     migrateCutover: () => {
       let files: RunFilesystemMigrationReport | undefined
       const migrated = migrateDatabase({
@@ -86,18 +167,88 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
   }
 }
 
+function assertInFlightMigrationAllowed(input: {
+  decision: ReturnType<typeof decideMigrationDrain> | undefined
+  runs: MigrationInFlightRun[]
+  force: boolean
+  presentation: DatabaseCommandPresentation
+}): void {
+  if (!input.decision || input.decision.action === 'apply-now' || input.runs.length === 0) return
+  const names = input.runs.map(formatMigrationInFlightRun).join(', ')
+  if (!input.force) {
+    throw new MigrationDrainRefusalError(
+      `refusing non-additive migration while orchestrator runs are in flight: ${names}\n` +
+        `cleared by: ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  input.presentation.log(`forcing migration; these orchestrator runs will fail: ${names}`)
+}
+
+function validateMigrationOverride(options: MigrateCommandOptions): string | undefined {
+  const reason = options.forceInFlight
+  if (reason === undefined) return undefined
+  if (!reason.trim()) throw new Error('--force-in-flight requires a non-empty reason')
+  if (!options.fromOperator) {
+    throw new Error(
+      'refusing migration override without operator attribution; rerun with --force-in-flight "<reason>" --from-operator',
+    )
+  }
+  if (process.env.BOTTEGA_DEPTH !== undefined) {
+    throw new Error('migration overrides are reserved for architect sessions; BOTTEGA_DEPTH is set')
+  }
+  return reason.trim()
+}
+
+function reportInFlightRuns(
+  presentation: DatabaseCommandPresentation,
+  runs: MigrationInFlightRun[],
+): void {
+  presentation.log(`runs in flight before migration: ${runs.length}`)
+  for (const run of runs) presentation.log(`  ${formatMigrationInFlightRun(run)}`)
+}
+
+async function performMigration(
+  presentation: DatabaseCommandPresentation,
+  actions: MigrateCommandActions,
+  decision: ReturnType<typeof decideMigrationDrain> | undefined,
+  overrideReason: string | undefined,
+): Promise<void> {
+  const inFlight = await actions.inFlightRuns()
+  reportInFlightRuns(presentation, inFlight)
+  assertInFlightMigrationAllowed({
+    decision,
+    runs: inFlight,
+    force: overrideReason !== undefined,
+    presentation,
+  })
+  if (overrideReason !== undefined && decision?.action === 'fence' && inFlight.length > 0) {
+    actions.recordOverride?.(overrideReason)
+  }
+  await finishMigration(presentation, actions)
+}
+
 export async function migrateCommand(
   presentation: DatabaseCommandPresentation,
   actions?: MigrateCommandActions,
   options: MigrateCommandOptions = {},
 ): Promise<void> {
+  const overrideReason = validateMigrationOverride(options)
   actions ??= defaultMigrateCommandActions(options)
   actions.assertAuthority?.()
-  const inFlight = await actions.inFlightRuns()
-  presentation.log(`runs in flight before migration: ${inFlight.length}`)
-  for (const run of inFlight) {
-    presentation.log(`  ${run.name}: ${run.waiting ? 'waiting for host capacity' : run.status}`)
+  const decision = actions.migrationDecision?.()
+  if (decision?.action === 'fence' && actions.withMigrationFence) {
+    await actions.withMigrationFence(decision.migration, () =>
+      performMigration(presentation, actions!, decision, overrideReason),
+    )
+    return
   }
+  await performMigration(presentation, actions, decision, overrideReason)
+}
+
+async function finishMigration(
+  presentation: DatabaseCommandPresentation,
+  actions: MigrateCommandActions,
+): Promise<void> {
   const alreadyContracted = await actions.contracted()
   const before = alreadyContracted
     ? { path: '', versions: [] }

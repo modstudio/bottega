@@ -185,6 +185,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-mcp-attachment.ts',
   ]),
   module('orchestrator/src/run/run-live.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/git.ts',
     '../agent/agents.ts',
     '../ask/ask.ts',
@@ -243,6 +244,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-host-capacity.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../database/migration-drain.ts',
     '../gate-load.ts',
   ]),
   module('orchestrator/src/run/run-reply-source.ts', [

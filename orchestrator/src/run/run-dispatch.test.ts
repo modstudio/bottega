@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
 
@@ -82,4 +83,35 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
     failure_kind: 'harness',
     error: expect.stringContaining('detach handoff failed during await coordinator spawn'),
   })
+})
+
+test('a migration drain refuses dispatch before reserving a run', async () => {
+  const before = (db().query('SELECT count(*) count FROM run').get() as { count: number }).count
+  setMigrationDrain(db(), '0155_rebuild', 'draining', { pid: process.pid, startTime: null })
+  try {
+    await expect(detach('summarize', 'migration drain fixture', { cwd: dir })).rejects.toThrow(
+      /refusing dispatch while draining for migration 0155_rebuild .*holder pid .*re-dispatch after .* machine update finishes/,
+    )
+    const after = (db().query('SELECT count(*) count FROM run').get() as { count: number }).count
+    expect(after).toBe(before)
+  } finally {
+    clearMigrationDrain(db())
+  }
+})
+
+test('a migrating marker that wins before the detached claim refuses without a run row', async () => {
+  const prompt = 'migration drain claim race fixture'
+  try {
+    await expect(
+      detach('summarize', prompt, { cwd: dir }, undefined, undefined, () => {
+        setMigrationDrain(db(), '0155_rebuild', 'migrating', {
+          pid: process.pid,
+          startTime: null,
+        })
+      }),
+    ).rejects.toThrow(/refusing dispatch while migrating for migration 0155_rebuild/)
+    expect(db().query('SELECT record_id FROM run WHERE prompt_head=?').get(prompt)).toBeNull()
+  } finally {
+    clearMigrationDrain(db())
+  }
 })

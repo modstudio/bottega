@@ -20,6 +20,7 @@ import {
   workerPreamble,
 } from '../contract/contract.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { assertMigrationDispatchAllowed } from '../database/migration-drain.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
@@ -245,6 +246,7 @@ export async function run(opts: {
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
+  assertMigrationDispatchAllowed(db(), opts.resume !== undefined)
   runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),
@@ -303,9 +305,8 @@ export async function run(opts: {
       resumeParent: opts.resume?.parent,
       launchBase: opts.launchBase,
     })
-  // Reachability is routing input, not a run outcome. Configuration alone stays
-  // true while a model host is off, causing jobs and failures to be misrouted.
-  // This cheap probe replaces a run that would fail anyway.
+  // Reachability is routing input, not a run outcome. Configuration stays true while a model host
+  // is off, causing jobs and failures to be misrouted; this cheap probe replaces a doomed run.
   //
   // Awaited before pick() and cached so a fan-out probes once rather than per run.
   const health = await ensureLocalHealth()
@@ -519,7 +520,7 @@ export async function run(opts: {
   const { decideMcpLaunchRuling } = mcpAttachment
   const mcpLaunchRuling = decideMcpLaunchRuling(mcpRequest, requiredMcp, a, transportPin)
   enforceRunStartupRefusal(opts.reserveId, mcpLaunchRuling.refusalReason)
-  // Append after routing but before prompt files, hashes, or metadata are written.
+  // Append after routing, before prompt files, hashes, or metadata.
   if (requestedJob.findings && resume.isFirstTurn) {
     const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
     if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES) {
@@ -635,6 +636,7 @@ export async function run(opts: {
     startedByUserId,
     replySchemaName,
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
+    assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
   })
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath

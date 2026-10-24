@@ -1,10 +1,21 @@
 import { expect, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { CommanderError } from 'commander'
 import { dir } from '../../test/fixtures/store.ts'
+import {
+  MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
+  MigrationDrainRefusalError,
+} from '../database/database-commands.ts'
 import { CLI_COMMANDS } from './args.ts'
 import { isHelpShapedInvocation, isStoreFreeInvocation, runCliEntryForTest } from './orch.ts'
-import { lockedStoreMessage, program, usesReadOnlyStoreHandle } from './program.ts'
+import {
+  exitCodeFor,
+  lockedStoreMessage,
+  program,
+  run,
+  usesReadOnlyStoreHandle,
+} from './program.ts'
 
 test('the outer CLI classifies every informational invocation without consulting the store', () => {
   for (const argv of [
@@ -35,6 +46,14 @@ test('canon command recognition is pinned to the Commander registry', () => {
 
 test('the retired top-level probe spelling is not registered', () => {
   expect(program.commands.some((command) => command.name() === 'probe')).toBeFalse()
+})
+
+test('an unknown command keeps exit 2 and migration drain refusals carry their declared code', async () => {
+  expect(exitCodeFor(new CommanderError(1, 'commander.unknownCommand', 'unknown command'))).toBe(2)
+  expect(await run(['definitely-not-a-command'])).toBe(2)
+  expect(exitCodeFor(new MigrationDrainRefusalError('draining'))).toBe(
+    MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
+  )
 })
 
 test('run query verbs use the read-only store handle', () => {

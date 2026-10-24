@@ -26,6 +26,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { assertMigrationDispatchAllowed } from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
@@ -127,23 +128,39 @@ function preflightDetachMcp(
   return preflightedAgent
 }
 
+function assertDispatchDatabase(resume: boolean): void {
+  writableDb()
+  assertMigrationDispatchAllowed(db(), resume)
+}
+
+function claimWithMigrationAdmission<T>(
+  beforeClaim: () => void,
+  existingChain: boolean,
+  claim: () => T,
+): T {
+  beforeClaim()
+  return writeTransaction(() => {
+    assertMigrationDispatchAllowed(db(), existingChain)
+    return claim()
+  })
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
   spec: DetachSpec,
   selectedAgent?: string,
   spawnCoordinator: typeof spawn = spawn,
+  beforeClaim: () => void = () => {},
 ): Promise<string> {
-  writableDb()
+  assertDispatchDatabase(spec.resume !== undefined)
   /**
    * The depth check happens HERE TOO, before a row exists.
    *
    * run() already refuses to delegate from inside a delegated agent, but by
    * then this function has inserted a placeholder row — so a worker that tries
    * to hire someone leaves a `(pending)` row behind that nobody ever fills in
-   * and the stale sweep later marks `interrupted`. Observed: a grok worker read
-   * the `bottega run start` instructions in AGENTS.md, tried twice, and left two abandoned
-   * rows in the run table.
+   * and the stale sweep later marks `interrupted`. Two observed attempts left abandoned rows.
    *
    * They cost routing nothing, because `(pending)` is not an agent any query
    * groups by — but they are litter in the one table that is supposed to be
@@ -191,7 +208,7 @@ export async function detach(
   // A resume is claimed as a chain member in this same INSERT. One SQLite
   // statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
-  const claimed = writeTransaction(() => {
+  const claimed = claimWithMigrationAdmission(beforeClaim, spec.resume !== undefined, () => {
     const identity = claimIdentity(spec.resume)
     const { projectName, projectId } = detachedProject(cwd, spec)
     refuseLiveRetryOwner(spec)

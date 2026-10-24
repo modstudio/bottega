@@ -477,6 +477,7 @@ export const CLI_COMMANDS = new Set([
   'tell',
   'test-substance',
   'tree',
+  'update',
   'wait',
   'waiting',
   'workflow',

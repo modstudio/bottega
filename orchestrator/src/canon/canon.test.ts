@@ -78,7 +78,9 @@ describe('Drizzle migration journal', () => {
     expect(migrationRefusal(d)).toContain(
       "invariant: Only the main checkout's binary migrates the store.",
     )
-    expect(migrationRefusal(d)).toContain(`cleared by: ${PLATFORM_SLUG} machine migrate`)
+    expect(migrationRefusal(d)).toContain(
+      `cleared by: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight)`,
+    )
     d.close()
   })
 
