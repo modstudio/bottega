@@ -48,6 +48,7 @@ describe('retry path decision', () => {
 
 test('a retry carries the latest transport recorded for the retry agent', () => {
   const turns = [
+    { agent: 'grok', transport: null },
     { agent: 'codex', transport: 'cli' as const },
     { agent: 'grok', transport: 'acp' as const },
   ]

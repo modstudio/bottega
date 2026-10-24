@@ -32,7 +32,8 @@ export function retryTransport(
   turns: Array<{ agent: string; transport: 'cli' | 'acp' | null }>,
 ): 'cli' | 'acp' | undefined {
   if (agentChanged) return undefined
-  return turns.find((turn) => turn.agent === retryAgent)?.transport ?? undefined
+  // A turn that ended before its transport was recorded says nothing; look past it.
+  return turns.find((turn) => turn.agent === retryAgent && turn.transport)?.transport ?? undefined
 }
 
 export function decideWritingRetryWorkspace(input: {
