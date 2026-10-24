@@ -33,7 +33,10 @@
 # CLEAR is silent so this stays cheap to run often: the answer to "should this
 # session still be waiting" is only worth a notification when it is yes, or when
 # it needs something. Exit 0 with no output is the "nothing to say" answer, and
-# the Monitor tool reports the exit itself.
+# the Monitor tool reports the exit itself. A CLEAR tick is held open while a
+# failure it already reported still awaits an automatic failover successor,
+# because CLEAR is not the end of that run's story and an exit here would drop
+# the successor the FAILED line is owed.
 #
 # Detection remains deliberately machine-wide in `bottega machine monitor`.
 # This hook also classifies stalled runs from the canonical run listing so the
@@ -93,8 +96,11 @@ ack_failure_ticks=0
 reported_ids="${HEARTBEAT_REPORTED_IDS:-}"
 previous_live_roots="${HEARTBEAT_PREVIOUS_LIVE_ROOTS:-}"
 live_statuses_csv="${HEARTBEAT_LIVE_STATUSES:-}"
+# Failed runs the heartbeat has already reported while an automatic failover
+# successor could still start for them; see the completion read below.
+watched_failover_roots="${HEARTBEAT_WATCHED_ROOTS:-}"
 unset HEARTBEAT_PREVIOUS_STATE_KEY HEARTBEAT_SINCE_EMIT HEARTBEAT_REPORTED_IDS
-unset HEARTBEAT_PREVIOUS_LIVE_ROOTS HEARTBEAT_LIVE_STATUSES
+unset HEARTBEAT_PREVIOUS_LIVE_ROOTS HEARTBEAT_LIVE_STATUSES HEARTBEAT_WATCHED_ROOTS
 ACTIVE_GUARDED_PID=""
 ACTIVE_WATCHDOG_PID=""
 
@@ -206,6 +212,7 @@ for ((i = 1; i <= MAX; i++)); do
     export HEARTBEAT_PREVIOUS_LIVE_ROOTS="$previous_live_roots"
     export HEARTBEAT_REPORTED_IDS="$reported_ids"
     export HEARTBEAT_LIVE_STATUSES="$live_statuses_csv"
+    export HEARTBEAT_WATCHED_ROOTS="$watched_failover_roots"
     remaining_ticks=$((MAX - i + 1))
     exec "$SCRIPT_PATH" "$SID" "$INTERVAL" "$remaining_ticks"
   fi
@@ -240,6 +247,10 @@ for ((i = 1; i <= MAX; i++)); do
   completion_observed=""
   completion_rc=0
   completion_parse_rc=0
+  # This tick's watch, held back until the tick is known healthy and its
+  # announcements have been made; see the assignment after the EVENT loop.
+  completion_watch_next=""
+  completion_watch_read=0
   current_live_roots=""
   if [ "$runs_rc" -eq 0 ] && [ "$runs_parse_rc" -eq 0 ]; then
     current_live_roots=$(printf '%s\n' "$observed" | awk -F '\t' '$1 == "STATE" {print $8; exit}')
@@ -256,16 +267,32 @@ for ((i = 1; i <= MAX; i++)); do
         esac
       done
     fi
-    if [ -n "$missing_live_roots" ]; then
+    # A run fails before its automatic failover successor claims its row, so the
+    # tick that reports the failure can precede the successor. Ask again for the
+    # failures the observer says still await one, until it stops saying so. The
+    # roots just seen to disappear and the roots already under watch are read in
+    # one request but told apart: only the former must be terminal, because the
+    # latter may have been continued live instead of failing over.
+    completion_request="$missing_live_roots"
+    if [ -n "$watched_failover_roots" ]; then
+      completion_request="${completion_request}${completion_request:+,}$watched_failover_roots"
+    fi
+    if [ -n "$completion_request" ]; then
       completion_args=(run list --json)
-      IFS=',' read -r -a missing_roots <<< "$missing_live_roots"
-      for root_id in "${missing_roots[@]}"; do
+      IFS=',' read -r -a completion_roots <<< "$completion_request"
+      for root_id in "${completion_roots[@]}"; do
         completion_args+=(--id "$root_id")
       done
       completion_raw=$("$BOTTEGA" "${completion_args[@]}" 2>/dev/null); completion_rc=$?
       completion_observed=$(printf '%s' "$completion_raw" | \
         python3 "$ROOT/hooks/heartbeat-run-observation.py" completion \
-          "$missing_live_roots" "$live_statuses_csv" 2>/dev/null); completion_parse_rc=$?
+          "$missing_live_roots" "$watched_failover_roots" "$live_statuses_csv" 2>/dev/null)
+      completion_parse_rc=$?
+      if [ "$completion_rc" -eq 0 ] && [ "$completion_parse_rc" -eq 0 ]; then
+        completion_watch_next=$(printf '%s\n' "$completion_observed" | \
+          awk -F '\t' '$1 == "WATCH" {print $2; exit}')
+        completion_watch_read=1
+      fi
     fi
   fi
 
@@ -341,20 +368,34 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   landing_detail=${landing_rest%%$'\t'*}; landing_ids=${landing_rest#*$'\t'}
   landing_n=${landing_n:-0}
 
-  while IFS=$'\t' read -r record record_id terminal_id id outcome job agent failure_kind latency; do
+  while IFS=$'\t' read -r record record_id terminal_id id outcome job agent failure_kind latency failover_note; do
     [ "$record" = "EVENT" ] || continue
     case " $reported_ids " in
-      *" $terminal_id "*) continue ;;
+      *" $terminal_id "*)
+        # Already reported terminal. A successor that started afterwards is the
+        # only news left, and only while a failure is still worth rereading.
+        [ "$failover_note" = "-" ] || echo "FAILOVER $id/$job $failure_kind$failover_note"
+        continue ;;
     esac
     reported_ids="$reported_ids $terminal_id"
     if [ "$outcome" = "FINISHED" ]; then
       echo "FINISHED $id/$job $agent $latency"
     elif [ "$outcome" = "HARNESS-REFUSED" ]; then
       echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
+    elif [ "$failover_note" != "-" ]; then
+      echo "FAILED $id/$job $agent $failure_kind $latency$failover_note"
     else
       echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     fi
   done <<< "$completion_observed"
+  # A root leaves the watch only once its FAILOVER line has been printed or its
+  # window has closed, and this tick's announcements are what print it. A
+  # degraded tick announces nothing, so it also keeps the watch it came in
+  # with: replacing it there would drop the root whose successor just appeared,
+  # and no later tick would name it.
+  if [ "$completion_watch_read" -eq 1 ]; then
+    watched_failover_roots="$completion_watch_next"
+  fi
   previous_live_roots="$live_roots"
 
   key="$inbox_ids|$n|$ids|$landing_n|$landing_ids"
@@ -541,7 +582,11 @@ print(token)
     fi
   fi
 
-  if [ "$should_exit" -eq 1 ]; then
+  # CLEAR with a failure still inside its late-failover window is not the end of
+  # the session's work: the successor the FAILED line must name can only start
+  # after the failure was durable. Stay quiet and keep the watch, so leaving
+  # here cannot be what loses the successor.
+  if [ "$should_exit" -eq 1 ] && [ -z "$watched_failover_roots" ]; then
     exit 0
   else
     sleep "$INTERVAL"

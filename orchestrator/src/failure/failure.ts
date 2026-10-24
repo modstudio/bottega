@@ -384,6 +384,20 @@ export const FAILS_OVER: FailureKind[] = [
 ]
 
 /**
+ * What the run whose automatic failover it refused writes onto a run's error.
+ *
+ * The refusing run is the only writer and the failover settling the only
+ * reader, so the wording lives with the kinds it belongs to rather than being
+ * spelled once to write and again to parse.
+ */
+export const FAILOVER_REFUSAL_MARKER = 'Failover refused:'
+
+/** Whether a run's recorded error is its closing refusal to fail over. */
+export function failoverRefused(error: string | null | undefined): boolean {
+  return typeof error === 'string' && error.includes(FAILOVER_REFUSAL_MARKER)
+}
+
+/**
  * Kinds that must never count as evidence about an agent.
  *
  * Separate from NEEDS_HUMAN, which is about who can fix it. Capacity, quota and

@@ -622,6 +622,200 @@ describe('run listing', () => {
     ).toBe(true)
   })
 
+  test('runs --json names the automatic failover successor of the run a caller asked for', async () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens', status: 'failed', kind: 'contract' })
+    const successor = addRun({ agent: 'grok', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(root, successor)
+    const rows = (await command({ json: true, id: [String(root)] })).map(runJson) as unknown as {
+      record_id: string
+      number: number
+      automatic_failover_successor: { number: number; agent: string } | null
+    }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.automatic_failover_successor).toEqual({
+      number: runNumber(successor),
+      agent: 'grok',
+    })
+
+    // A successor is a root of its own, so the field answers for the run asked
+    // for: the successor's own successor, not the one that started it.
+    const later = addRun({ agent: 'codex', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(successor, later)
+    const successorRows = (await command({ json: true, id: [String(successor)] })).map(
+      runJson,
+    ) as unknown as { automatic_failover_successor: { number: number; agent: string } | null }[]
+    expect(successorRows[0]!.automatic_failover_successor).toEqual({
+      number: runNumber(later),
+      agent: 'codex',
+    })
+  })
+
+  test('runs --json reports no automatic failover successor for a manual retry or a plain run', async () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens', status: 'failed', kind: 'contract' })
+    const manual = addRun({ agent: 'grok', job: 'review-lens' })
+    db().query('UPDATE run SET retry_of_record_id=? WHERE record_id=?').run(root, manual)
+    for (const id of [root, manual]) {
+      const rows = (await command({ json: true, id: [String(id)] })).map(runJson) as unknown as {
+        automatic_failover_successor: unknown
+      }[]
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.automatic_failover_successor).toBeNull()
+    }
+  })
+
+  test('runs --json publishes the failover successor and watch on every row, not only requested ones', async () => {
+    const startedAt = '2026-10-22T12:00:00.000Z'
+    const failed = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      startedAt,
+      latency: 2000,
+    })
+    const successor = addRun({ agent: 'grok', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(failed, successor)
+    const waiting = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      startedAt,
+      latency: 2000,
+    })
+    const rows = (await command({ json: true })).map(runJson) as unknown as {
+      record_id: string
+      automatic_failover_successor: { number: number; agent: string } | null
+      automatic_failover_watch_until: string | null
+    }[]
+    const byRecord = new Map(rows.map((row) => [row.record_id, row]))
+    expect(byRecord.get(failed)).toMatchObject({
+      automatic_failover_successor: { number: runNumber(successor), agent: 'grok' },
+      automatic_failover_watch_until: null,
+    })
+    // No caller named this one, and its window is still what the heartbeat reads.
+    expect(byRecord.get(waiting)).toMatchObject({
+      automatic_failover_successor: null,
+      automatic_failover_watch_until: new Date(
+        Date.parse(startedAt) + 2000 + RUN_HOST_WAIT_MAX_MS,
+      ).toISOString(),
+    })
+
+    // The window is anchored on the member that failed, not on the root that
+    // started the conversation, so a two-turn chain whose root ended long
+    // before its last turn must use the last turn's terminal.
+    const chainedRoot = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'ok',
+      startedAt: '2026-10-22T10:00:00.000Z',
+      latency: 1000,
+    })
+    const chainedMember = addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      parent: chainedRoot,
+      turn: 2,
+      startedAt: '2026-10-22T11:00:00.000Z',
+      latency: 3000,
+    })
+    const chainedRows = (await command({ json: true })).map(runJson) as unknown as {
+      record_id: string
+      automatic_failover_successor: { number: number; agent: string } | null
+      automatic_failover_watch_until: string | null
+    }[]
+    expect(chainedRows.find((row) => row.record_id === chainedRoot)).toMatchObject({
+      automatic_failover_successor: null,
+      automatic_failover_watch_until: new Date(
+        Date.parse('2026-10-22T11:00:00.000Z') + 3000 + RUN_HOST_WAIT_MAX_MS,
+      ).toISOString(),
+    })
+
+    // A successor that retries the failed member, not the root, is still the
+    // row's successor — and its appearance closes the watch.
+    const memberSuccessor = addRun({ agent: 'codex', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(chainedMember, memberSuccessor)
+    const withMemberSuccessor = (await command({ json: true })).map(runJson) as unknown as {
+      record_id: string
+      automatic_failover_successor: { number: number; agent: string } | null
+      automatic_failover_watch_until: string | null
+    }[]
+    expect(withMemberSuccessor.find((row) => row.record_id === chainedRoot)).toMatchObject({
+      automatic_failover_successor: { number: runNumber(memberSuccessor), agent: 'codex' },
+      automatic_failover_watch_until: null,
+    })
+  })
+
+  test('the failover watch closes only for a failure that can still fail over', async () => {
+    const cases: { label: string; kind: string | null; error: string | null; status?: string }[] = [
+      { label: 'a kind that never fails over', kind: 'harness', error: null },
+      { label: 'a recorded failover refusal', kind: 'contract', error: 'Failover refused: no' },
+    ]
+    for (const failing of cases) {
+      const id = addRun({
+        agent: 'codex',
+        job: 'review-lens',
+        status: failing.status ?? 'failed',
+        ...(failing.kind ? { kind: failing.kind } : {}),
+        startedAt: '2026-10-22T12:00:00.000Z',
+        latency: 2000,
+      })
+      if (failing.error)
+        db().query('UPDATE run SET error=? WHERE record_id=?').run(failing.error, id)
+      const rows = (await command({ json: true, id: [String(id)] })).map(runJson) as unknown as {
+        automatic_failover_watch_until: unknown
+      }[]
+      expect([failing.label, rows[0]!.automatic_failover_watch_until]).toEqual([
+        failing.label,
+        null,
+      ])
+    }
+  })
+
+  test('the failover watch stays open for a stranded failure that can still fail over', async () => {
+    // A FAILS_OVER failure keeps its answered ruling pending delivery until the
+    // successor claims it, and the listing presents that chain as `stranded`.
+    // The label is a presentation of the member's status, not a different fact:
+    // the window the heartbeat reads must survive it.
+    const startedAt = '2026-10-22T12:00:00.000Z'
+    const failed = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      startedAt,
+      latency: 2000,
+    })
+    db()
+      .query(
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), failed, startedAt, 'which shape?', 'that shape', startedAt, startedAt)
+
+    const rows = (await command({ json: true, id: [String(failed)] })).map(runJson) as unknown as {
+      status: string
+      automatic_failover_successor: unknown
+      automatic_failover_watch_until: string | null
+    }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.status).toBe('stranded')
+    expect(rows[0]!.automatic_failover_successor).toBeNull()
+    expect(rows[0]!.automatic_failover_watch_until).toBe(
+      new Date(Date.parse(startedAt) + 2000 + RUN_HOST_WAIT_MAX_MS).toISOString(),
+    )
+  })
+
   test('runs --json reports amortized subscription cost and ignores a stored estimate', async () => {
     const id = addRun({
       agent: 'grok',

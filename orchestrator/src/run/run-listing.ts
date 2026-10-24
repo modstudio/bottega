@@ -3,7 +3,12 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RunIdentity } from '../../../shared/orch-contract.ts'
-import { resolveFailover } from '../collect/collect.ts'
+import {
+  type FailoverSuccessor,
+  failoverSuccessors,
+  mayStillFailOver,
+  resolveFailover,
+} from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
@@ -18,7 +23,7 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
-import { isFreshRunHostWait } from './run-host-capacity.ts'
+import { isFreshRunHostWait, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
@@ -218,6 +223,71 @@ function processSamplesForRows(
 
 function freshListedRunHostWait(row: Record<string, unknown>, now: number): boolean {
   return isFreshRunHostWait(String(row.status), (row.host_wait_since as string | null) ?? null, now)
+}
+
+/** The member's own terminal instant, the point a successor's wait starts from. */
+function terminalInstantMs(row: Record<string, unknown>): number | null {
+  const startedAt = (row.current_started_at ?? row.started_at) as string | null
+  const latency = (row.current_latency_ms ?? row.latency_ms) as number | null
+  if (!startedAt || typeof latency !== 'number') return null
+  const started = Date.parse(startedAt)
+  return Number.isFinite(started) ? started + latency : null
+}
+
+/**
+ * Until when this failed run's automatic failover successor is worth waiting
+ * for, or null when none can still start.
+ *
+ * A caller that already reported the failure has no other way to learn that a
+ * successor started afterwards, since the successor is a separate root that a
+ * read of this one does not return. The closing run picks that successor's
+ * agent, and its selection can wait for host capacity first — bounded by
+ * RUN_HOST_WAIT_MAX_MS — so the wait this publishes is the run's own terminal
+ * instant plus that bound. It is published whether or not it has already
+ * passed: the reader holds the clock, and a cutoff is a fact about the run.
+ */
+function automaticFailoverWatchUntil(
+  row: Record<string, unknown>,
+  successor: FailoverSuccessor | null,
+): string | null {
+  if (successor) return null
+  const failed = {
+    // The member's own status, not the listing's status column: a FAILS_OVER
+    // failure whose chain holds an answered ruling still pending delivery is
+    // presented as `stranded`, and that label is exactly the state whose late
+    // successor this window covers — the successor is what claims the delivery.
+    status: String(row.live_member_status ?? row.status),
+    failure_kind: (row.failure_kind as string | null) ?? null,
+    error: (row.error as string | null) ?? null,
+  }
+  if (!mayStillFailOver(failed)) return null
+  const ended = terminalInstantMs(row)
+  return ended === null ? null : new Date(ended + RUN_HOST_WAIT_MAX_MS).toISOString()
+}
+
+/**
+ * Publish each listed run's automatic failover successor, and the instant its
+ * wait for one ends.
+ *
+ * Every listed row can be a failure awaiting a successor, so one read answers
+ * for all of them rather than one query per row. The member timing column the
+ * wait is anchored on is internal to the listing and does not reach the row.
+ */
+function withFailoverWatch(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const successorByRoot = failoverSuccessors(
+    db(),
+    rows.map((row) => String(row.record_id)),
+  )
+  return rows.map((row) => {
+    const { current_latency_ms: _currentLatencyMs, ...published } = row
+    const successor = successorByRoot.get(String(row.record_id)) ?? null
+    return {
+      ...published,
+      automatic_failover_successor:
+        successor === null ? null : { number: successor.number, agent: successor.agent },
+      automatic_failover_watch_until: automaticFailoverWatchUntil(row, successor),
+    }
+  })
 }
 
 function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown> {
@@ -428,10 +498,8 @@ export async function runListingCommand(
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
   // satisfy the query signature, which is why this file never typechecked.
   const args: (string | number)[] = []
-  const jobFlag = flag('job')
-  addExactFilter(where, args, 'r.job = ?', jobFlag)
-  const agentFlag = flag('agent')
-  addExactFilter(where, args, 'r.agent = ?', agentFlag)
+  addExactFilter(where, args, 'r.job = ?', flag('job'))
+  addExactFilter(where, args, 'r.agent = ?', flag('agent'))
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
@@ -465,6 +533,7 @@ export async function runListingCommand(
      SELECT r.record_id, r.number, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
+            current_run.latency_ms AS current_latency_ms,
             current_run.number AS live_member_number, current_run.status AS live_member_status,
             current_run.record_id AS live_member_id, current_run.record_id AS live_member_record_id,
             current_run.agent AS current_agent,
@@ -538,6 +607,9 @@ export async function runListingCommand(
         })),
     )
   }
+  // Every listed row can be a failure awaiting a successor, so one read over
+  // all of them answers for all of them, rather than one query per row.
+  rows = withFailoverWatch(rows)
   const processSamples = processSamplesForRows(rows, processObservation.sampleProcesses)
   rows = rows.map((r) => {
     const live = r.status === 'running'

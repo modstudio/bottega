@@ -9,7 +9,7 @@ import {
   rewriteScratchDirPaths,
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
-import { FAILS_OVER } from '../failure/failure.ts'
+import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
@@ -148,6 +148,70 @@ function resolveAsking(database: Database, runId: string): AskingResolution {
     : { state: 'recoverable', rootId }
 }
 
+/**
+ * Whether a failed run can still gain an automatic failover successor.
+ *
+ * Only these kinds fail over at all, and a recorded refusal is the one durable
+ * answer that none will follow — both owned by `failure.ts`. `resolveFailover`'s
+ * settling and the run listing's failover watch both ask this here, so neither
+ * restates the kinds or the refusal wording to reach its own verdict.
+ */
+export function mayStillFailOver(row: {
+  status: string
+  failure_kind: string | null
+  error: string | null
+}): boolean {
+  return (
+    row.status === 'failed' &&
+    row.failure_kind !== null &&
+    (FAILS_OVER as readonly string[]).includes(row.failure_kind) &&
+    !failoverRefused(row.error)
+  )
+}
+
+export type FailoverSuccessor = { record_id: string; number: number; agent: string }
+
+/**
+ * The automatic failover successor each of these conversations has claimed, in
+ * one read.
+ *
+ * A successor is anchored on the run it retries rather than on the origin of a
+ * chain, because a successor is itself a root that can fail and be succeeded in
+ * turn. The lowest-numbered successor wins, which is the one the closing run
+ * started first.
+ */
+export function failoverSuccessors(
+  database: Database,
+  rootIds: string[],
+): Map<string, FailoverSuccessor> {
+  const successors = new Map<string, FailoverSuccessor>()
+  if (!rootIds.length) return successors
+  const marks = rootIds.map(() => '?').join(',')
+  const rows = database
+    .query<FailoverSuccessor & { root_id: string }, string[]>(
+      `SELECT member_root.root_id, successor.record_id, successor.number, successor.agent
+         FROM run successor
+         JOIN (
+           SELECT member.record_id,
+                  COALESCE(member.parent_run_record_id, member.record_id) root_id
+             FROM run member
+            WHERE COALESCE(member.parent_run_record_id, member.record_id) IN (${marks})
+         ) member_root ON member_root.record_id = successor.retry_of_record_id
+        WHERE successor.automatic_failover = 1
+        ORDER BY successor.number`,
+    )
+    .all(...rootIds)
+  for (const row of rows) {
+    if (successors.has(row.root_id)) continue
+    successors.set(row.root_id, {
+      record_id: row.record_id,
+      number: row.number,
+      agent: row.agent,
+    })
+  }
+  return successors
+}
+
 /** Resolve conversation turns backward, then failover successors forward. */
 export function resolveFailover(
   database: Database,
@@ -188,13 +252,7 @@ export function resolveFailover(
       )
       .get(rootId, rootId) as Omit<FailoverAttempt, 'rootId'>
     attempts.push({ rootId, ...latest })
-    const successor = database
-      .query(
-        `SELECT record_id FROM run WHERE automatic_failover=1 AND retry_of_record_id IN
-         (SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?)
-        ORDER BY number LIMIT 1`,
-      )
-      .get(rootId, rootId) as { record_id: string } | null
+    const successor = failoverSuccessors(database, [rootId]).get(rootId)
     if (!successor) break
     rootId = successor.record_id
   }
@@ -214,13 +272,7 @@ export function resolveFailover(
       /* terminal worker */
     }
   }
-  const settling =
-    last.status === 'failed' &&
-    last.failure_kind != null &&
-    (FAILS_OVER as readonly string[]).includes(last.failure_kind) &&
-    !pending.no_failover &&
-    !last.error?.includes('Failover refused:') &&
-    workerAlive
+  const settling = mayStillFailOver(last) && !pending.no_failover && workerAlive
   return { requestedId, attempts, finalId: last.record_id, settling }
 }
 

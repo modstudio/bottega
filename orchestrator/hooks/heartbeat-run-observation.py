@@ -3,7 +3,20 @@
 
 import datetime
 import json
+import os
 import sys
+
+
+def observation_now_ms() -> int:
+    """The instant this observation is made.
+
+    BOTTEGA_HEARTBEAT_NOW_MS pins it so a test can judge a run's failover
+    watch against a known instant rather than the clock it happens to run on.
+    """
+    pinned = os.environ.get("BOTTEGA_HEARTBEAT_NOW_MS")
+    if pinned is not None and pinned.strip():
+        return int(pinned)
+    return int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
 
 
 def run_row(line: str) -> dict:
@@ -26,6 +39,16 @@ def run_row(line: str) -> dict:
         raise ValueError("run latency is invalid")
     if value.get("failure_kind") is not None and not isinstance(value.get("failure_kind"), str):
         raise ValueError("run failure kind is invalid")
+    successor = value.get("automatic_failover_successor")
+    if successor is not None and (
+        not isinstance(successor, dict)
+        or not isinstance(successor.get("number"), int)
+        or not isinstance(successor.get("agent"), str)
+    ):
+        raise ValueError("run automatic failover successor is invalid")
+    watch_until = value.get("automatic_failover_watch_until")
+    if watch_until is not None and not isinstance(watch_until, str):
+        raise ValueError("run automatic failover watch is invalid")
     if not isinstance(value.get("live_member_id"), str):
         raise ValueError("run member id is invalid")
     if not isinstance(value.get("live_member_number"), int):
@@ -53,6 +76,31 @@ def timing_row(row: dict) -> dict:
     if len(matching) != 1:
         raise ValueError("run member turn is missing or duplicated")
     return matching[0]
+
+
+def successor_note(row: dict) -> str | None:
+    """The clause naming a started automatic failover successor, or nothing."""
+    successor = row.get("automatic_failover_successor")
+    if not isinstance(successor, dict):
+        return None
+    return "; automatic failover started run %s on %s" % (successor["number"], successor["agent"])
+
+
+def failover_watch_open(row: dict, now_ms: int) -> bool:
+    """Whether this run may still gain an automatic failover successor.
+
+    The run listing owns the window: it publishes the instant after which the
+    successor is no longer worth waiting for, and publishes nothing when none
+    can start at all. This only holds the clock against that instant.
+    """
+    until = row.get("automatic_failover_watch_until")
+    if not isinstance(until, str):
+        return False
+    try:
+        watch_until = datetime.datetime.fromisoformat(until.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return int(watch_until.timestamp() * 1000) > now_ms
 
 
 def lines() -> list[dict]:
@@ -127,19 +175,39 @@ def live(session_id: str) -> None:
     )
 
 
-def completion(expected_csv: str, live_statuses_csv: str) -> None:
+def completion(expected_csv: str, watched_csv: str, live_statuses_csv: str) -> None:
+    """Report every listed terminal run, and which of them still await a successor.
+
+    Two requests arrive together and are treated differently. A root the caller
+    has just watched disappear is *expected* to be terminal, so a live member
+    there is a disagreement to raise. A root the caller has been watching for a
+    successor may instead have been continued: one whose latest member is live
+    again leaves the watch silently, with no line, and is announced normally at
+    its next terminal state.
+
+    The WATCH row hands the caller back the roots worth rereading: a failed run
+    whose automatic failover successor has not appeared yet, while the instant
+    the run listing publishes as the end of that wait is still ahead.
+    """
     expected = set(filter(None, expected_csv.split(",")))
+    watched_in = set(filter(None, watched_csv.split(",")))
     live_statuses = set(filter(None, live_statuses_csv.split(",")))
     if not live_statuses:
         raise ValueError("live statuses unavailable")
-    seen = set()
+    now_ms = observation_now_ms()
+    seen, watched = set(), []
     for row in lines():
         root_id = row["record_id"]
-        if root_id not in expected or root_id in seen:
+        if root_id not in expected and root_id not in watched_in:
             raise ValueError("unexpected completion row")
+        if root_id in seen:
+            raise ValueError("duplicated completion row")
         seen.add(root_id)
         status = row["live_member_status"]
         if status in live_statuses:
+            if root_id not in expected:
+                # A watched failure that is live again was continued, not lost.
+                continue
             raise ValueError("disappeared chain is still live")
         outcome = "FINISHED" if status == "ok" else "FAILED"
         if outcome == "FAILED" and row.get("failure_kind") == "harness":
@@ -155,19 +223,24 @@ def completion(expected_csv: str, live_statuses_csv: str) -> None:
         else:
             seconds = round(latency / 1000)
             duration = "%dm%02ds" % (seconds // 60, seconds % 60)
+        note = successor_note(row) if outcome == "FAILED" else None
+        if outcome == "FAILED" and failover_watch_open(row, now_ms):
+            watched.append(root_id)
         print(
             "EVENT", root_id, row["live_member_id"], row["live_member_number"], outcome,
-            row["job"], row["agent"], row.get("failure_kind") or "-", duration, sep="\t",
+            row["job"], row["agent"], row.get("failure_kind") or "-", duration, note or "-",
+            sep="\t",
         )
-    if seen != expected:
+    if seen != expected | watched_in:
         raise ValueError("completion row missing")
+    print("WATCH", ",".join(sorted(watched)), sep="\t")
 
 
 try:
     if sys.argv[1:2] == ["live"] and len(sys.argv) == 3:
         live(sys.argv[2])
-    elif sys.argv[1:2] == ["completion"] and len(sys.argv) == 4:
-        completion(sys.argv[2], sys.argv[3])
+    elif sys.argv[1:2] == ["completion"] and len(sys.argv) == 5:
+        completion(sys.argv[2], sys.argv[3], sys.argv[4])
     else:
         raise ValueError("invalid heartbeat observation command")
 except (ValueError, json.JSONDecodeError):
