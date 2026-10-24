@@ -9,6 +9,7 @@ import { PRELOAD_RUNS } from '../../test/preload.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
+import type { MigrationDrainDecision } from './migration-drain-decision.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -41,6 +42,7 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
         calls.push('backfill')
         return { updated: 0, missing: 0 }
       },
+      migrationDecision: (): MigrationDrainDecision => ({ action: 'apply-now' }),
     },
   }
 }

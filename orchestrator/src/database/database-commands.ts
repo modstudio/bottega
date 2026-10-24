@@ -110,6 +110,23 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
   }
 }
 
+function assertInFlightMigrationAllowed(input: {
+  decision: ReturnType<typeof decideMigrationDrain> | undefined
+  runs: MigrationInFlightRun[]
+  force: boolean
+  presentation: DatabaseCommandPresentation
+}): void {
+  if (!input.decision || input.decision.action === 'apply-now') return
+  const names = input.runs.map((run) => run.name).join(', ')
+  if (!input.force) {
+    throw new Error(
+      `refusing non-additive migration while orchestrator runs are in flight: ${names}\n` +
+        `cleared by: ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  input.presentation.log(`forcing migration; these orchestrator runs will fail: ${names}`)
+}
+
 export async function migrateCommand(
   presentation: DatabaseCommandPresentation,
   actions?: MigrateCommandActions,
@@ -122,17 +139,12 @@ export async function migrateCommand(
   for (const run of inFlight) {
     presentation.log(`  ${run.name}: ${run.waiting ? 'waiting for host capacity' : run.status}`)
   }
-  const decision = actions.migrationDecision?.(inFlight)
-  if (decision && decision.action !== 'apply-now') {
-    const names = inFlight.map((run) => run.name).join(', ')
-    if (!options.forceInFlight) {
-      throw new Error(
-        `refusing non-additive migration while orchestrator runs are in flight: ${names}\n` +
-          `cleared by: ${PLATFORM_SLUG} machine update`,
-      )
-    }
-    presentation.log(`forcing migration; these orchestrator runs will fail: ${names}`)
-  }
+  assertInFlightMigrationAllowed({
+    decision: actions.migrationDecision?.(inFlight),
+    runs: inFlight,
+    force: options.forceInFlight ?? false,
+    presentation,
+  })
   const alreadyContracted = await actions.contracted()
   const before = alreadyContracted
     ? { path: '', versions: [] }

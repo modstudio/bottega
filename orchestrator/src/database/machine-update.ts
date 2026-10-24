@@ -16,8 +16,8 @@ import {
 import { clearMigrationDrain, migrationDrain, setMigrationDrain } from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
 
-export const MIGRATION_DRAIN_WAIT_MAX_MS = 61 * 60_000
-export const MIGRATION_DRAIN_POLL_MS = 1_000
+const MIGRATION_DRAIN_WAIT_MAX_MS = 61 * 60_000
+const MIGRATION_DRAIN_POLL_MS = 1_000
 
 type Presentation = { log(value: string): void }
 
@@ -54,7 +54,7 @@ function store<T>(action: (database: Database) => T): T {
 }
 
 function runMigration(cwd: string): void {
-  const result = Bun.spawnSync(['./bin/bottega', 'machine', 'migrate'], {
+  const result = Bun.spawnSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
     cwd,
     env: targetGitEnvironment(cwd),
     stdout: 'inherit',
@@ -62,6 +62,31 @@ function runMigration(cwd: string): void {
   })
   if (result.exitCode !== 0)
     throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
+}
+
+async function waitForDrain(input: {
+  migration: string
+  presentation: Presentation
+  now: () => number
+  sleep: (ms: number) => Promise<unknown>
+}): Promise<void> {
+  const started = input.now()
+  let lastReport = ''
+  for (;;) {
+    const runs = store((database) => migrationInFlightRuns(database))
+    if (runs.length === 0) return
+    const report = runs.map((run) => `${run.name} (${run.status})`).join(', ')
+    if (report !== lastReport) {
+      input.presentation.log(`draining for migration ${input.migration}; waiting on ${report}`)
+      lastReport = report
+    }
+    if (input.now() - started >= MIGRATION_DRAIN_WAIT_MAX_MS) {
+      throw new Error(
+        `migration drain wait bound reached; runs still in flight: ${runs.map((run) => run.name).join(', ')}`,
+      )
+    }
+    await input.sleep(MIGRATION_DRAIN_POLL_MS)
+  }
 }
 
 export async function machineUpdateCommand(
@@ -112,23 +137,7 @@ export async function machineUpdateCommand(
     try {
       const now = deps.now ?? Date.now
       const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
-      const started = now()
-      let lastReport = ''
-      for (;;) {
-        const runs = store((database) => migrationInFlightRuns(database))
-        if (runs.length === 0) break
-        const report = runs.map((run) => `${run.name} (${run.status})`).join(', ')
-        if (report !== lastReport) {
-          presentation.log(`draining for migration ${migration}; waiting on ${report}`)
-          lastReport = report
-        }
-        if (now() - started >= MIGRATION_DRAIN_WAIT_MAX_MS) {
-          throw new Error(
-            `migration drain wait bound reached; runs still in flight: ${runs.map((run) => run.name).join(', ')}`,
-          )
-        }
-        await sleep(MIGRATION_DRAIN_POLL_MS)
-      }
+      await waitForDrain({ migration, presentation, now, sleep })
       git(cwd, ['pull', '--ff-only', 'origin', branch])
       runMigration(cwd)
     } finally {

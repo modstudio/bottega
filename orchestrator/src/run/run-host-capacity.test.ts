@@ -201,6 +201,7 @@ describe('run host capacity', () => {
         waitedMs: 1,
         heldOn: ['load'],
         boundReached: false,
+        drainingFor: null,
       }),
       isRunning: () => false,
       spawn: async () => {
