@@ -6,6 +6,7 @@
  * reply means, and which effects follow it - is a plain function over supplied
  * facts; the runner supplies the facts and the adapters do the I/O.
  */
+import type { DocForm } from '../../../shared/docs.ts'
 import { FAILURE_KINDS, type FailureKind } from '../failure/failure.ts'
 
 /**
@@ -134,7 +135,7 @@ export function orderDocsDriftQueue<T extends { checkedAtMs: number | null }>(
 export type DriftDocFacts = DriftQueueItem & {
   project: string
   path: string
-  form: string | null
+  form: DocForm | null
   visibility: string
   visibilityRepository: string | null
   currentRepository: string | null
