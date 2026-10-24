@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
-const MIGRATION = '0156_run_lifecycle_side_table_uuid_keys'
+const MIGRATION = '0155_run_lifecycle_side_table_uuid_keys'
 const ids = {
   run: '01990000-0000-7000-8000-000000001693',
   message: '01990000-0000-7000-8000-000000001694',
