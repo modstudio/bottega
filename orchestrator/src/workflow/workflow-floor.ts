@@ -98,7 +98,6 @@ export type ValidatedEvidence = {
   }
   gate?: {
     recordId: string
-    number: number
     finished: boolean
     exitCode: number | null
     project: string | null

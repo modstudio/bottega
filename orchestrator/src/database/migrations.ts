@@ -4,10 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
-import {
-  gateCheckExecutionOrphanCounts,
-  monitorReleaseClaimOrphanCounts,
-} from './execution-uuid-migration-preflight.ts'
+import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
   lensPortReferenceOrphanCounts,
   portStaleCopyConflicts,
@@ -16,6 +13,7 @@ import {
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
+import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
 import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,

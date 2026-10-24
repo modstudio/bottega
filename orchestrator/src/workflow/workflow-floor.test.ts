@@ -54,7 +54,6 @@ const gradedReview: ValidatedEvidence = {
 const passingGate: ValidatedEvidence = {
   gate: {
     recordId: '00000000-0000-4000-8000-000000000002',
-    number: 2,
     finished: true,
     exitCode: 0,
     project: 'fixture',

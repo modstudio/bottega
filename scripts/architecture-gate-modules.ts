@@ -4,6 +4,8 @@ import { dirname, normalize } from 'node:path'
 
 type GateModule = { file: string; allowed: string[] }
 
+export type GateBoundarySpec = GateModule & { name: string; reason: string }
+
 const module = (file: string, allowed: string[]): GateModule => ({
   file,
   allowed: allowed.map((target) =>
@@ -67,6 +69,10 @@ export const gateModules: GateModule[] = [
     'node:fs',
     'node:path',
   ]),
+  module('orchestrator/src/gate/gate-identifier.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+  ]),
   module('orchestrator/src/gate/gate-passed.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
@@ -78,4 +84,13 @@ export const gateModules: GateModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
   ]),
+]
+
+export const gateBoundarySpecs: GateBoundarySpec[] = [
+  {
+    name: 'gate-identifier-boundary',
+    file: 'orchestrator/src/gate/gate-identifier.ts',
+    allowed: ['bun:sqlite', '../../../shared/record-id.ts'],
+    reason: 'Keep gate number-or-UUID edge resolution inside the gate identity concern.',
+  },
 ]

@@ -178,7 +178,6 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
   })
   expect(gathered.gate).toEqual({
     recordId: expect.any(String),
-    number: 1,
     finished: true,
     exitCode: 0,
     project: 'fixture',
@@ -399,7 +398,6 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
   ).run(matching)
   expect(gather(d, { gate: 2 }).gate).toEqual({
     recordId: expect.any(String),
-    number: 2,
     finished: true,
     exitCode: 0,
     project: 'fixture',
@@ -435,7 +433,6 @@ test('a foreign architect gate is refused and a matching architect gate is allow
   ).run()
   expect(gather(d, { gate: 2 }).gate).toEqual({
     recordId: expect.any(String),
-    number: 2,
     finished: true,
     exitCode: 0,
     project: 'fixture',

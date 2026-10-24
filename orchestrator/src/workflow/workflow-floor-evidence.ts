@@ -452,7 +452,6 @@ function gatherGate(
   }
   return {
     recordId: row.record_id,
-    number: row.number,
     finished: row.finished_at !== null && row.exit_code !== null,
     exitCode: row.exit_code,
     project,

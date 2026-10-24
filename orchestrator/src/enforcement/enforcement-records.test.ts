@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   type CategoryExecutionRow,
+  categoryExecutionRows,
   newestCategoryExecutions,
   refilledCategoryExecutions,
 } from './enforcement-records.ts'
@@ -15,6 +18,38 @@ const row = (overrides: Partial<CategoryExecutionRow> = {}): CategoryExecutionRo
   headCommit: 'a'.repeat(40),
   cwd: '/work/project',
   ...overrides,
+})
+
+test('category execution rows join checks to their gate by UUID', () => {
+  using database = migratedTestDatabase()
+  const gateRecordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO gate_execution
+        (record_id,requested_at,finished_at,exit_code,head_commit,cwd)
+       VALUES (?,'2026-10-12T10:00:00.000Z','2026-10-12T10:01:00.000Z',0,?,?)`,
+    )
+    .run(gateRecordId, 'a'.repeat(40), '/work/project')
+  database
+    .query(
+      `INSERT INTO check_execution
+        (record_id,gate_execution_record_id,check_name,category,wall_ms,exit_code,remaining_count)
+       VALUES (?,?, 'file-length-check','file-length',125,0,4)`,
+    )
+    .run(newRecordId(), gateRecordId)
+
+  expect(categoryExecutionRows(database)).toEqual([
+    {
+      category: 'file-length',
+      wallMs: 125,
+      remaining: 4,
+      finishedAt: '2026-10-12T10:01:00.000Z',
+      gateRecordId,
+      gateExitCode: 0,
+      headCommit: 'a'.repeat(40),
+      cwd: '/work/project',
+    },
+  ])
 })
 
 test('category records prefer the newest eligible passing project gate', () => {

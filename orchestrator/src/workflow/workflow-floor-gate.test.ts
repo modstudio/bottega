@@ -27,7 +27,6 @@ describe('gate command-exit evidence', () => {
   const failedGate: ValidatedEvidence = {
     gate: {
       recordId: '00000000-0000-4000-8000-000000000002',
-      number: 2,
       finished: true,
       exitCode: 1,
       project: null,

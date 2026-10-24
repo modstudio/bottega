@@ -73,7 +73,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'question migration orphan preflight reads controlled legacy table/column names before the UUID-key rebuild',
   ),
   ...exempt(
-    'orchestrator/src/database/execution-uuid-migration-preflight.ts',
+    'orchestrator/src/database/gate-check-execution-uuid-migration-preflight.ts',
     ['faf93b9a220976e3'],
     'gate check migration orphan preflight reads controlled legacy columns before the UUID-key rebuild',
   ),
@@ -99,7 +99,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'board migration orphan preflight reads controlled legacy table and column references before the UUID-key rebuild',
   ),
   ...exempt(
-    'orchestrator/src/database/execution-uuid-migration-preflight.ts',
+    'orchestrator/src/database/monitor-release-claim-uuid-migration-preflight.ts',
     ['e0d77cabdacd8826'],
     'monitor migration orphan preflight reads controlled legacy columns before the UUID-key rebuild',
   ),
