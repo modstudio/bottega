@@ -19,7 +19,7 @@ import {
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
-import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
+import { budgetedRoundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
   type AdmissionDecision,
@@ -102,6 +102,14 @@ export function resolvePullRequestChange(
     tier: measured.tier.tier,
     review: project.settings.review,
   })
+  const { reviewPlan } = budgetedRoundApplicabilityForChange({
+    database,
+    group: measured.group,
+    relevant: measured.applicability,
+    postFix,
+    review: project.settings.review,
+    tier: measured.tier.tier,
+  })
   return {
     project,
     branch,
@@ -110,13 +118,7 @@ export function resolvePullRequestChange(
     group: measured.group,
     tier: measured.tier.tier,
     applicability: measured.applicability,
-    reviewPlan: roundApplicabilityForChange({
-      database,
-      group: measured.group,
-      relevant: measured.applicability,
-      postFix,
-      review: project.settings.review,
-    }),
+    reviewPlan,
   }
 }
 

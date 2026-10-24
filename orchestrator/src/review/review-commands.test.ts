@@ -12,7 +12,11 @@ import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
-import { resolvePullRequestChange } from '../pull-request/pr-admission.ts'
+import {
+  admissionDecision,
+  resolvePullRequestChange,
+  triageRefusal,
+} from '../pull-request/pr-admission.ts'
 import { serializePathSet } from './review-group.ts'
 import { pinRef } from './review-pins.ts'
 import { completeReview, recordReview, triageFinding } from './review-triage.ts'
@@ -303,6 +307,8 @@ function postFixFixture(options: {
   resolveConflict?: boolean
   secondOpinion?: boolean
   shiftReviewedPath?: boolean
+  acceptedSafetyFinding?: boolean
+  priorRounds?: number
 }): {
   repo: string
   branch: string
@@ -366,6 +372,38 @@ function postFixFixture(options: {
       },
     },
   })
+  for (let index = 0; index < (options.priorRounds ?? 0); index += 1) {
+    const priorRunId = addRun({ agent: 'codex', job: 'review-lens', lens: 'safety', repo: name })
+    db()
+      .query(
+        `UPDATE run SET branch=?,project_record_id=(SELECT record_id FROM project WHERE name=?)
+         WHERE record_id=?`,
+      )
+      .run(branch, name, priorRunId)
+    const priorReviewId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO review
+           (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,3,?,?)`,
+      )
+      .run(
+        priorReviewId,
+        `2026-10-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+        `2026-10-${String(index + 1).padStart(2, '0')}T01:00:00Z`,
+        `prior-patch-${index}`,
+        JSON.stringify([`prior-${index}.ts`]),
+      )
+    db()
+      .query(
+        `INSERT INTO review_lens
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,
+            reproduced,coverage,limits,overlap)
+         VALUES (?, ?, ?, 'safety', 'codex', 'fixture-model', '[]', '[]', '[]', '[]',
+                 'all', 'adequate', 'absent', 'none')`,
+      )
+      .run(newRecordId(), priorReviewId, priorRunId)
+  }
   const runId = db()
     .query<{ id: string }, [string, string, string, string, string, string]>(
       `INSERT INTO run
@@ -377,7 +415,11 @@ function postFixFixture(options: {
        RETURNING record_id AS id`,
     )
     .get(name, name, branch, base, reviewed, reviewed)!.id
-  const reviewId = recordReview(runId, reviewReply(0), db())
+  if (options.acceptedSafetyFinding) {
+    db().query("UPDATE run SET lens='safety' WHERE record_id=?").run(runId)
+  }
+  const reviewId = recordReview(runId, reviewReply(options.acceptedSafetyFinding ? 1 : 0), db())
+  if (options.acceptedSafetyFinding) triageFinding(reviewId, 1, 'accepted', undefined, 'high')
   completeReview(reviewId, db())
   if (options.fixPath && !options.fixAfterMerge) {
     const absoluteFix = join(repo, options.fixPath)
@@ -419,6 +461,53 @@ function postFixFixture(options: {
   }
   return { repo, branch, runId, reviewed, mergeTip }
 }
+
+test('admission follows the exhausted round budget and requires an architect read on the tip', () => {
+  const { repo, branch } = postFixFixture({
+    shiftReviewedPath: true,
+    fixPath: 'critical/fix.ts',
+    priorRounds: 2,
+    acceptedSafetyFinding: true,
+  })
+  try {
+    const change = resolvePullRequestChange(repo)
+    expect(change.tier).toBe(3)
+    expect(change.reviewPlan).toMatchObject({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['safety'] },
+    })
+
+    const withoutRead = admissionDecision(change, db())
+    expect(withoutRead.complete).toBeFalse()
+    if (withoutRead.complete) throw new Error('expected admission to require an architect read')
+    const triage = withoutRead.triage
+    if (triage.complete) throw new Error('expected incomplete triage without an architect read')
+    expect(triageRefusal(change, triage)).toContain(
+      `${PLATFORM_SLUG} review read --sha ${change.tip}`,
+    )
+
+    db()
+      .query(
+        `INSERT INTO review_read
+           (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,recorded_at,session_id)
+         VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), ?, ?, ?, ?, 3,
+                 'reviewed exhausted-round fix', '2099-01-01T00:00:00Z', NULL)`,
+      )
+      .run(
+        newRecordId(),
+        change.project.name,
+        change.project.name,
+        branch,
+        change.tip,
+        change.group.patchId,
+        serializePathSet(change.group.pathSet),
+      )
+
+    expect(admissionDecision(change, db())).toMatchObject({ complete: true })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
 
 test('review tier needs no round when the only post-review commit is a clean trunk merge', async () => {
   const { repo, branch, reviewed } = postFixFixture({ shiftReviewedPath: true })

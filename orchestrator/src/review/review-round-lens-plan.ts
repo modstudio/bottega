@@ -8,6 +8,7 @@ import {
 } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
+import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 
 export type RoundLensFacts = {
@@ -15,6 +16,17 @@ export type RoundLensFacts = {
   completedLenses: readonly string[]
   satisfiedSecondOpinionLenses: readonly string[]
   latestAcceptedOrModifiedLenses: readonly string[]
+}
+
+/** Return the review round that the budget permits to run. */
+export function reviewRoundForBudget(
+  round: ApplicableReview,
+  budget: ReviewRoundBudgetDecision,
+): ApplicableReview {
+  const architectReadsFix = !budget.startsNewRound && !budget.currentChangeCounted
+  return budget.wouldExceedCeiling || architectReadsFix
+    ? selectReviewApplicability(round, [])
+    : round
 }
 
 /**
