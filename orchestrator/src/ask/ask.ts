@@ -736,7 +736,7 @@ export function createAskMcpServer(
         if (!authorized()) throw new Error(unauthorized())
         const saved = messageArchitect(runId, body)
         return text(
-          `Message ${saved.id} recorded on run ${saved.root_run_record_id}. Keep working.`,
+          `Message ${saved.number} recorded on run ${saved.root_run_record_id}. Keep working.`,
         )
       } catch (error) {
         return text(`The message was not recorded (${String(error)}).`, true)
@@ -763,7 +763,7 @@ export function createAskMcpServer(
           delivery.notices.map((notice) => notice.id),
         )
         const items = [
-          ...messages.map((note) => `[message ${note.id}] ${note.body}`),
+          ...messages.map((note) => `[message ${note.number}] ${note.body}`),
           ...delivery.notices.map((notice) => notice.text),
           ...(delivery.warning ? [delivery.warning] : []),
         ]

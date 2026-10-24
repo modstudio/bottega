@@ -26,7 +26,11 @@ describe('run mailbox', () => {
     try {
       if (args[0] === 'tell') {
         const message = tellRun(String(args[1]), args.slice(2).join(' '))
-        return { code: 0, out: `queued message ${message.id}; it has not been read`, err: '' }
+        return {
+          code: 0,
+          out: `queued message ${message.number}; it has not been read`,
+          err: '',
+        }
       }
       if (args[0] === 'run') {
         const rows = args.includes('--receipt')
@@ -39,13 +43,12 @@ describe('run mailbox', () => {
         if (!runId)
           return {
             code: 0,
-            out:
-              JSON.stringify({
-                result: {
-                  isError: true,
-                  content: [{ text: 'this process is not a recognized orchestrator worker' }],
-                },
-              }) + '\n',
+            out: `${JSON.stringify({
+              result: {
+                isError: true,
+                content: [{ text: 'this process is not a recognized orchestrator worker' }],
+              },
+            })}\n`,
             err: '',
           }
         const requests = String(stdin)
@@ -70,7 +73,7 @@ describe('run mailbox', () => {
         })
         return {
           code: 0,
-          out: replies.map((reply) => JSON.stringify(reply)).join('\n') + '\n',
+          out: `${replies.map((reply) => JSON.stringify(reply)).join('\n')}\n`,
           err: '',
         }
       }
@@ -280,29 +283,28 @@ describe('run mailbox', () => {
       .query('UPDATE run SET vendor_session=?, run_token=? WHERE record_id=?')
       .run('worker-session', 'mailbox-token', root)
     expect(mailboxOrch('tell', String(root), 'new context').code).toBe(0)
-    const calls =
-      [
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/call',
-          params: {
-            name: 'message_orchestrator',
-            arguments: { body: 'progress without stopping' },
-          },
+    const calls = `${[
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'message_orchestrator',
+          arguments: { body: 'progress without stopping' },
         },
-        {
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'tools/call',
-          params: {
-            name: 'check_orchestrator_messages',
-            arguments: {},
-          },
+      },
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'check_orchestrator_messages',
+          arguments: {},
         },
-      ]
-        .map((line) => JSON.stringify(line))
-        .join('\n') + '\n'
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n')}\n`
     const result = mailboxOrchInput(['ask-server'], calls, {
       BOTTEGA_RUN_ID: String(root),
       BOTTEGA_RUN_TOKEN: 'mailbox-token',
@@ -337,7 +339,7 @@ describe('run mailbox', () => {
 
     const unrecognized = mailboxOrchInput(
       ['ask-server'],
-      JSON.stringify({
+      `${JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
@@ -345,7 +347,7 @@ describe('run mailbox', () => {
           name: 'check_orchestrator_messages',
           arguments: {},
         },
-      }) + '\n',
+      })}\n`,
       { BOTTEGA_RUN_ID: '', BOTTEGA_RUN_TOKEN: '' },
     )
     expect(unrecognized.code).toBe(0)
@@ -353,7 +355,7 @@ describe('run mailbox', () => {
 
     const resumed = mailboxOrchInput(
       ['ask-server'],
-      JSON.stringify({
+      `${JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
@@ -361,7 +363,7 @@ describe('run mailbox', () => {
           name: 'check_orchestrator_messages',
           arguments: {},
         },
-      }) + '\n',
+      })}\n`,
       { BOTTEGA_RUN_ID: String(child), BOTTEGA_RUN_TOKEN: 'turn-token' },
     )
     expect(resumed.code).toBe(0)

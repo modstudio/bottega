@@ -92,9 +92,11 @@ test('host broker retries a claim that throws on a later poll tick', async () =>
   const request = db()
     .query(
       `INSERT INTO worker_note_request (record_id,run_record_id,text,file,requested_at,status)
-       VALUES (?,?,?,NULL,?,'requested') RETURNING id`,
+       VALUES (?,?,?,NULL,?,'requested') RETURNING record_id`,
     )
-    .get(newRecordId(), runId, 'retry this note', new Date().toISOString()) as { id: number }
+    .get(newRecordId(), runId, 'retry this note', new Date().toISOString()) as {
+    record_id: string
+  }
   const database = db()
   const transaction = database.transaction.bind(database)
   let attempts = 0
@@ -112,8 +114,8 @@ test('host broker retries a claim that throws on a later poll tick', async () =>
     let filed = false
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const row = db()
-        .query(`SELECT status FROM worker_note_request WHERE id=?`)
-        .get(request.id) as { status: string }
+        .query(`SELECT status FROM worker_note_request WHERE record_id=?`)
+        .get(request.record_id) as { status: string }
       if (row.status === 'filed') {
         filed = true
         break

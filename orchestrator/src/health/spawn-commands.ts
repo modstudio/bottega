@@ -18,7 +18,8 @@ export function spawnsCommand(limit: number, presentation: { log(value: string):
     )
   const recent = db()
     .query(
-      'SELECT at, decision, why, subagent_type, description FROM spawn ORDER BY id DESC LIMIT ?',
+      `SELECT at, decision, why, subagent_type, description FROM spawn
+       ORDER BY at DESC, record_id DESC LIMIT ?`,
     )
     .all(limit) as Record<string, string>[]
   presentation.log('\n  when                 decision  why             what')

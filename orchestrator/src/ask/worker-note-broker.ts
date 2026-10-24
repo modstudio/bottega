@@ -12,7 +12,8 @@ import {
 
 const WORKER_NOTE_POLL_MS = 100
 type PendingNote = {
-  id: number
+  record_id: string
+  number: number
   run_record_id: string
   text: string
   project: string | null
@@ -24,14 +25,15 @@ function claim(runId: string): PendingNote | null {
   return writeTransaction(() => {
     const row = db()
       .query(
-        `SELECT id,run_record_id,text,project,file,same_as FROM worker_note_request
-         WHERE run_record_id=? AND status='requested' AND claimed_at IS NULL ORDER BY id LIMIT 1`,
+        `SELECT record_id,number,run_record_id,text,project,file,same_as FROM worker_note_request
+         WHERE run_record_id=? AND status='requested' AND claimed_at IS NULL
+         ORDER BY requested_at,record_id LIMIT 1`,
       )
       .get(runId) as PendingNote | null
     if (!row) return null
     const changed = db()
-      .query(`UPDATE worker_note_request SET claimed_at=? WHERE id=? AND claimed_at IS NULL`)
-      .run(nowIso(), row.id)
+      .query(`UPDATE worker_note_request SET claimed_at=? WHERE record_id=? AND claimed_at IS NULL`)
+      .run(nowIso(), row.record_id)
     return changed.changes === 1 ? row : null
   })
 }
@@ -80,7 +82,7 @@ function finish(request: PendingNote, outcome: WorkerNoteOutcome): void {
     .query(
       `UPDATE worker_note_request SET status=?,finished_at=?,note_record_id=?,note_label=?,
        candidate_ids=?,candidate_labels=?,refusal_class=?,detail=?
-       WHERE id=? AND status='requested'`,
+       WHERE record_id=? AND status='requested'`,
     )
     .run(
       update.status,
@@ -91,7 +93,7 @@ function finish(request: PendingNote, outcome: WorkerNoteOutcome): void {
       update.candidateLabels,
       update.refusalClass,
       update.detail,
-      request.id,
+      request.record_id,
     )
 }
 
@@ -113,7 +115,7 @@ async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void>
     appendRunEvent(request.run_record_id, {
       ts: nowIso(),
       type: 'text',
-      text: `worker note request ${request.id} was refused: ${detail}`,
+      text: `worker note request ${request.number} was refused: ${detail}`,
     })
   }
   try {
@@ -122,7 +124,7 @@ async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void>
     appendRunEvent(request.run_record_id, {
       ts: nowIso(),
       type: 'text',
-      text: `worker note request ${request.id} could not record its result: ${String(error)}`,
+      text: `worker note request ${request.number} could not record its result: ${String(error)}`,
     })
   }
 }

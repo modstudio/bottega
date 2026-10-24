@@ -315,7 +315,8 @@ export function latestCheckpoint(
     .query(
       `SELECT c.commit_sha,c.checkpoint_no,c.task_pointer
        FROM run_checkpoint c JOIN run r ON r.record_id=c.run_record_id
-      WHERE r.record_id=? OR r.parent_run_record_id=? ORDER BY c.id DESC LIMIT 1`,
+      WHERE r.record_id=? OR r.parent_run_record_id=?
+      ORDER BY c.created_at DESC, c.record_id DESC LIMIT 1`,
     )
     .get(rootId, rootId) as {
     commit_sha: string
