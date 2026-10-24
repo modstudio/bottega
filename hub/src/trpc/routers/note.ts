@@ -5,7 +5,7 @@ import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 
-function createNoteRouter(deps = { listNotes, promoteNote }) {
+export function createNoteRouter(deps = { listNotes, promoteNote }) {
   return t.router({
     list: t.procedure
       .input(
@@ -15,17 +15,24 @@ function createNoteRouter(deps = { listNotes, promoteNote }) {
         }),
       )
       .query(({ input }) => deps.listNotes(input)),
-    promote: t.procedure.input(z.object({ id: z.uuid() })).mutation(async ({ input }) => {
-      try {
-        return await deps.promoteNote(input.id)
-      } catch (cause) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: cause instanceof Error ? cause.message : String(cause),
-          cause,
-        })
-      }
-    }),
+    promote: t.procedure
+      .input(
+        z.object({
+          id: z.uuid(),
+          title: z.string().trim().min(1, 'a promoted task needs a title stating its point'),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        try {
+          return await deps.promoteNote(input.id, { title: input.title })
+        } catch (cause) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          })
+        }
+      }),
   })
 }
 

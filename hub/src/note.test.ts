@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import type { TrackerProject } from '../../shared/trackers.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -21,11 +22,13 @@ import {
   type NoteAnchor,
   parseNoteAnchor,
   promoteNote,
+  promotionTaskInput,
   resolveNoteReference,
   staleNotes,
 } from './note.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
+import { trackerTaskInput } from './tracker-new.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 beforeAll(resetFixtureStore)
@@ -386,8 +389,62 @@ describe('suggestion notes', () => {
       expect(kept.alreadyAcknowledged).toBe(false)
       expect((await acknowledgeNote(same.note.record_id, session)).alreadyAcknowledged).toBe(true)
 
-      const promoted = await promoteNote(same.note.record_id)
+      const promoted = await promoteNote(same.note.record_id, {
+        title: 'Merged sightings worth one task',
+      })
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
+      const promotedDetail = showTask(promoted.promoted_task!, { project: 'workshop' })
+      expect(promotedDetail.task.title).toBe('Merged sightings worth one task')
+      expect(promotedDetail.task.body).toContain(same.note.text)
+      expect(promotedDetail.task.body).toContain('SIGHTINGS (2)')
+    })
+
+    test('a tracker promotion carries the supplied title and keeps the note text in the body', async () => {
+      const note = (
+        await createNote({
+          text: `Tracker promotion ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const trackerProject: TrackerProject = {
+        name: 'tasks',
+        settings: {
+          tracker: {
+            kind: 'Array',
+            protocol: 'array-mcp',
+            openStatuses: ['Todo'],
+            states: { Todo: 'open', Doing: 'active', Done: 'done' },
+          },
+        },
+      }
+      const input = trackerTaskInput(
+        trackerProject,
+        promotionTaskInput(getNote(note.record_id), 'The tracker task title'),
+      )
+      expect(input.title).toBe('The tracker task title')
+      expect(input.body).toContain(note.text)
+      expect(input.body).toContain('SIGHTINGS (1)')
+    })
+
+    test('a creating promotion refuses a missing or blank title and writes nothing', async () => {
+      const note = (
+        await createNote({
+          text: `Untitled promotion ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const before = db()
+        .query<{ count: number }, []>('SELECT count(*) count FROM task')
+        .get()!.count
+      const refusal = `${PLATFORM_SLUG} note promote ${note.label} --title "<the point>"`
+      await expect(promoteNote(note.record_id)).rejects.toThrow(refusal)
+      await expect(promoteNote(note.record_id, { title: '  ' })).rejects.toThrow(refusal)
+      expect(
+        db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count,
+      ).toBe(before)
+      expect(getNote(note.record_id).promoted_task).toBeNull()
     })
 
     test('a hub-protocol note promotion mints or links an existing local task with evidence', async () => {
@@ -398,8 +455,14 @@ describe('suggestion notes', () => {
           forceNew: true,
         })
       ).note
-      const promoted = await promoteNote(created.record_id)
+      const promoted = await promoteNote(created.record_id, {
+        title: 'Hub-owned promotion states its point',
+      })
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
+      const minted = showTask(promoted.promoted_task!, { project: 'workshop' })
+      expect(minted.task.title).toBe('Hub-owned promotion states its point')
+      expect(minted.task.body).toContain(created.text)
+      expect(minted.task.body).toContain('SIGHTINGS (1)')
 
       const another = (
         await createNote({

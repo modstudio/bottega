@@ -134,12 +134,13 @@ file a new observation or another sighting
 
 ## bottega note promote
 
-**Synopsis:** `bottega note promote <reference> [--task <key>] [--project <name>]`
+**Synopsis:** `bottega note promote <reference> [--title <text>] [--task <key>] [--project <name>]`
 
 promote a note to current task work
 
 ### Options
 
+- `--title <text>`: title the created task
 - `--task <key>`: link the note to this existing task
 - `--project <name>`: resolve the note in this project
 

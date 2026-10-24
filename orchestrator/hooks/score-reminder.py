@@ -326,7 +326,7 @@ def main() -> int:
             lines.append(
                 f"  {note_label}  {note_text[:80]}\n"
                 f"    bottega note keep {note_label} | bottega note drop {note_label} --reason \"...\" | "
-                f"bottega note promote {note_label}"
+                f'bottega note promote {note_label} --title "<the point>"'
             )
     if blocking_holds:
         if lines:

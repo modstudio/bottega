@@ -186,7 +186,7 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
     expect(hook).toContain('row["label"]')
     expect(hook).toContain(`${PLATFORM_SLUG} note keep {note_label}`)
     expect(hook).toContain(`${PLATFORM_SLUG} note drop {note_label}`)
-    expect(hook).toContain(`${PLATFORM_SLUG} note promote {note_label}`)
+    expect(hook).toContain(`${PLATFORM_SLUG} note promote {note_label} --title "<the point>"`)
   })
 
   const predicateDrift = (tsWhere: string, hookWhere: string) => {

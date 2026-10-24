@@ -124,9 +124,9 @@ describe('hosted-only note safety', () => {
         .run(id, at, at),
     )
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count
-    await expect(promoteNote(id, { hosted: unreachable })).rejects.toThrow(
-      'hosted hub is unreachable',
-    )
+    await expect(
+      promoteNote(id, { hosted: unreachable, title: 'Promotion failure' }),
+    ).rejects.toThrow('hosted hub is unreachable')
     expect(db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count).toBe(
       before,
     )
