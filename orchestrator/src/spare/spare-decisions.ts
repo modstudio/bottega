@@ -6,6 +6,7 @@
  * reply means, and which effects follow it - is a plain function over supplied
  * facts; the runner supplies the facts and the adapters do the I/O.
  */
+import type { DocForm } from '../../../shared/docs.ts'
 import { FAILURE_KINDS, type FailureKind } from '../failure/failure.ts'
 
 /**
@@ -134,6 +135,7 @@ export function orderDocsDriftQueue<T extends { checkedAtMs: number | null }>(
 export type DriftDocFacts = DriftQueueItem & {
   project: string
   path: string
+  form: DocForm | null
   visibility: string
   visibilityRepository: string | null
   currentRepository: string | null
@@ -145,13 +147,18 @@ export type DriftDocFacts = DriftQueueItem & {
  * document could never record its check and would head the queue for ever. The
  * free provider may train on its inputs, so the existing training-data
  * eligibility - public visibility with a verified repository - is what admits a
- * document to the queue. Ordered least recently checked first.
+ * document to the queue. A generated reference article never qualifies, because
+ * `bottega doc reference publish` regenerates it from code so it cannot drift
+ * and recording a checked commit on it is refused
+ * (`orchestrator/src/doc/doc-write-allowed.ts:referenceWriteRefusal`). Ordered
+ * least recently checked first.
  */
 export function selectDocsDriftQueue(docs: readonly DriftDocFacts[]): DriftDocFacts[] {
   const eligible = docs.filter(
     (doc) =>
       doc.scope === 'project' &&
       doc.kind === 'article' &&
+      doc.form !== 'reference' &&
       doc.visibility === 'public' &&
       Boolean(doc.visibilityRepository) &&
       doc.visibilityRepository === doc.currentRepository,

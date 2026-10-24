@@ -164,6 +164,7 @@ describe('selectDocsDriftQueue', () => {
     slug: 'doc',
     scope: 'project',
     kind: 'article',
+    form: null,
     checkedAtMs: null,
     project: 'acme',
     path: '/tmp/acme',
@@ -192,6 +193,14 @@ describe('selectDocsDriftQueue', () => {
       doc({ slug: 'article' }),
     ])
     expect(selected.map((d) => d.slug)).toEqual(['article'])
+  })
+
+  test('never queues a generated reference article, an ordinary article still queues', () => {
+    const selected = selectDocsDriftQueue([
+      doc({ slug: 'cli-reference', form: 'reference' }),
+      doc({ slug: 'overview', form: 'overview' }),
+    ])
+    expect(selected.map((d) => d.slug)).toEqual(['overview'])
   })
 })
 
