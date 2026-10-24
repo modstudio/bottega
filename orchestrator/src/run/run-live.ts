@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectCodeGitEnv } from '../../../shared/git.ts'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
@@ -253,6 +254,7 @@ async function startAfterHostCapacity(input: {
         ? waitForRunHostCapacity({
             database: db(),
             runId,
+            existingChain: input.opts.resume !== undefined,
           })
         : Promise.resolve(null),
     isRunning: () =>
@@ -272,6 +274,11 @@ async function startAfterHostCapacity(input: {
     stop: (handle) => input.transport.cancel(handle),
   })
   const hostWait = result.wait
+  if (hostWait?.drainingFor) {
+    throw new Error(
+      `run stopped for migration drain ${hostWait.drainingFor}; re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
+    )
+  }
   if (hostWait?.boundReached) {
     const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
     console.error(`orch: ${message}`)

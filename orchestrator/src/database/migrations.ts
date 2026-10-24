@@ -150,7 +150,7 @@ function tableExists(d: Database, table: string): boolean {
   return !!d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)
 }
 
-function migrationState(
+export function migrationState(
   d: Database,
   folder = MIGRATIONS_FOLDER,
 ): { pending: MigrationJournalEntry[]; ahead: string | null } {
@@ -174,6 +174,25 @@ function migrationState(
         ? (applied.at(-1)?.version ?? String(applied.at(-1)?.created_at))
         : null,
   }
+}
+
+export type StoreJournalPosition =
+  | { state: 'positioned'; index: number }
+  | { state: 'pending-not-found'; migration: string }
+
+/** Locate the store's first pending migration in one candidate journal. */
+export function storeJournalPosition(
+  d: Database,
+  journal: MigrationJournalEntry[],
+  folder = MIGRATIONS_FOLDER,
+): StoreJournalPosition {
+  const state = migrationState(d, folder)
+  const firstPending = state.pending[0]
+  if (!firstPending) return { state: 'positioned', index: migrationJournal(folder).length }
+  const index = journal.findIndex((entry) => entry.tag === firstPending.tag)
+  return index < 0
+    ? { state: 'pending-not-found', migration: firstPending.tag }
+    : { state: 'positioned', index }
 }
 
 export function storeMigrationState(
@@ -209,7 +228,7 @@ export function migrationRefusal(d: Database): string | null {
   if (state.pending.length) {
     return (
       `refusing to open a store behind this binary's migration journal: ${state.pending[0]!.tag}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
+      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight)`
     )
   }
   return null

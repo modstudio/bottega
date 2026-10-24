@@ -170,7 +170,7 @@ describe('schema coexistence', () => {
       })
     } catch (error) {
       expect(String(error)).toContain(
-        `cleared by: restart this process after ${PLATFORM_SLUG} machine migrate`,
+        `cleared by: restart this process after ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight)`,
       )
     }
   })

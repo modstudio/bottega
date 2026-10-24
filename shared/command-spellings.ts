@@ -185,6 +185,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine spare run',
   'machine storage',
   'machine sweep',
+  'machine update',
   'mcp',
   'mcp ask-server',
   'mcp serve',

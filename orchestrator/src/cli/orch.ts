@@ -40,7 +40,7 @@ async function fullCli(
   recoverMissingWorkingDirectory()
   const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
   registerStandardRuntime()
-  if (!storeFree && argv[0] !== 'migrate') {
+  if (!storeFree && argv[0] !== 'migrate' && argv[0] !== 'update') {
     const { ensureDatabase } = await import('../database/db.ts')
     ensureDatabase()
   }

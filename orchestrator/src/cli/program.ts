@@ -103,6 +103,7 @@ const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result'] as const
 const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
   'mcp-reader-proxy',
   'migrate',
+  'update',
   'ratchet',
   ...READ_ONLY_STORE_COMMANDS,
 ])
@@ -168,9 +169,12 @@ export async function lockedStoreMessage(
 }
 
 /** The exit code for a failure that escaped a command: Commander's own signals map to 0 or 2, everything else is 1. */
-function exitCodeFor(error: unknown): number {
-  if (!(error instanceof CommanderError)) return 1
-  return error.code === 'commander.helpDisplayed' || error.code === 'commander.version' ? 0 : 2
+export function exitCodeFor(error: unknown): number {
+  if (error instanceof CommanderError)
+    return error.code === 'commander.helpDisplayed' || error.code === 'commander.version' ? 0 : 2
+  const explicit = (error as { exitCode?: unknown } | null)?.exitCode
+  if (typeof explicit === 'number' && Number.isInteger(explicit)) return explicit
+  return 1
 }
 
 /**

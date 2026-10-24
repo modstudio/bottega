@@ -267,7 +267,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
     staleWriteRefusal(
       actual,
       opened,
-      `restart this process after ${PLATFORM_SLUG} machine migrate`,
+      `restart this process after ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight)`,
     ),
   )
 }
@@ -559,6 +559,17 @@ export async function withDatabaseForMigrationStep<T>(
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     return await action(database)
+  } finally {
+    database.close()
+  }
+}
+
+/** Give a synchronous migration adapter a handle while the store is intentionally mid-journal. */
+export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Database) => T): T {
+  const database = new Database(DB_PATH, { readwrite: true, create: false })
+  try {
+    database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    return action(database)
   } finally {
     database.close()
   }

@@ -67,6 +67,7 @@ upkeep of this machine
 - [bottega machine spare run](#bottega-machine-spare-run)
 - [bottega machine storage](#bottega-machine-storage)
 - [bottega machine sweep](#bottega-machine-sweep)
+- [bottega machine update](#bottega-machine-update)
 
 ## bottega machine
 
@@ -95,6 +96,7 @@ upkeep of this machine
 - [bottega machine spare](./machine.md#bottega-machine-spare)
 - [bottega machine storage](./machine.md#bottega-machine-storage)
 - [bottega machine sweep](./machine.md#bottega-machine-sweep)
+- [bottega machine update](./machine.md#bottega-machine-update)
 
 ## bottega machine blockers
 
@@ -411,13 +413,15 @@ report legacy orchestrator and hub invocations
 
 ## bottega machine migrate
 
-**Synopsis:** `bottega machine migrate [--backfill-spec-sha]`
+**Synopsis:** `bottega machine migrate [--backfill-spec-sha] [--force-in-flight <reason>] [--from-operator]`
 
 migrate the orchestrator and hub stores
 
 ### Options
 
 - `--backfill-spec-sha`: backfill missing run specification hashes
+- `--force-in-flight <reason>`: apply a non-additive migration for this operator reason
+- `--from-operator`: confirm the override came directly from the operator
 
 ### Related
 
@@ -990,6 +994,16 @@ release terminal runs and reclaim safe stale resources
 - `--force`: continue despite a project sweep failure
 - `--dry-run`: report releases without applying them
 - `--verbose`: list every kept run artifact
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine update
+
+**Synopsis:** `bottega machine update`
+
+update the main checkout after draining runs
 
 ### Related
 

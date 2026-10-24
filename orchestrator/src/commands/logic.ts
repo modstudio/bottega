@@ -13,7 +13,6 @@ import { parseContinueArgs } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
-import { migrateCommand, reconcileCommand } from '../database/database-commands.ts'
 import { db, sessionId } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
 import { enforcementCommand } from '../enforcement/enforcement-commands.ts'
@@ -55,6 +54,7 @@ import { answerCommand, continueCommand, retryCommand } from '../run/run-message
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
+import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
 import { registerLensCommands } from './lens.ts'
@@ -381,6 +381,7 @@ async function epicAction(
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
+  registerDatabaseCommands(program, presentation)
   program
     .command('enforcement')
     .description('show the mechanical checks resolved for registered projects')
@@ -421,15 +422,6 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       }),
     )
   registerTreeCommands(program)
-  program
-    .command('migrate')
-    .description('apply pending orchestrator store migrations')
-    .option('--backfill-spec-sha', 'backfill missing run specification hashes')
-    .allowExcessArguments(false)
-    .action(() => migrateCommand(presentation))
-  describedCommand(program, 'reconcile <id>', 'reconcile a completed run with its saved artifacts')
-    .allowExcessArguments(false)
-    .action((id) => reconcileCommand(localRunId(id), presentation))
   describedCommand(program, 'contract <job>', 'print the worker reply contract for a job')
     .allowExcessArguments(false)
     .action((job) => contractCommand(job, { write }))

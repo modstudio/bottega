@@ -6,9 +6,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PRELOAD_RUNS } from '../../test/preload.ts'
-import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
+import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
+import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
+import { migrationDrain } from './migration-drain.ts'
+import type { MigrationDrainDecision } from './migration-drain-decision.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -23,7 +26,7 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
     value: {
       async inFlightRuns() {
         calls.push('in-flight')
-        return [] as ReturnType<typeof migrationInFlightRuns>
+        return [] as MigrationInFlightRun[]
       },
       async contracted() {
         calls.push('contracted')
@@ -40,6 +43,10 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
       backfill() {
         calls.push('backfill')
         return { updated: 0, missing: 0 }
+      },
+      migrationDecision: (): MigrationDrainDecision => ({ action: 'apply-now' }),
+      recordOverride(reason: string) {
+        calls.push(`override:${reason}`)
       },
     },
   }
@@ -88,81 +95,98 @@ test('migrate skips the boundary and fill when the identity contract is recorded
   ])
 })
 
-test('migrate reports live and host-waiting runs before its first migration', async () => {
-  const database = db()
-  database.run("UPDATE run SET status='ok' WHERE status IN ('running','asking')")
-  const insert = database.query(
-    `INSERT INTO run
-     (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,host_wait_since)
-     VALUES (?, ?, datetime('now'), 'codex', 'migration-fixture', 'sha', 0, '', ?, ?)`,
-  )
-  insert.run(randomUUID(), 99001, 'running', '2026-10-22T21:34:00.000Z')
-  insert.run(randomUUID(), 99002, 'asking', null)
-  insert.run(randomUUID(), 99003, 'running', '2026-10-22T21:00:00.000Z')
-  const lines: string[] = []
-  const scenario = actions(async () => undefined, true)
-  scenario.value.inFlightRuns = async () =>
-    migrationInFlightRuns(database, Date.parse('2026-10-22T21:34:01.000Z'))
-
-  await migrateCommand({ log: (line) => lines.push(line) }, scenario.value)
-
-  expect(lines[0]).toBe('runs in flight before migration: 3')
-  expect(lines.slice(1, 4)).toEqual(
-    expect.arrayContaining([
-      expect.stringContaining(': waiting for host capacity'),
-      expect.stringContaining(': asking'),
-      expect.stringContaining(': running'),
-    ]),
-  )
-})
-
-async function reportFromStoreBefore(
-  beforeMigration: string,
-  insert: (database: Database) => void,
-): Promise<string[]> {
-  const database = new Database(':memory:')
-  try {
-    applyMigrationsBefore(database, beforeMigration)
-    insert(database)
-    const lines: string[] = []
-    const scenario = actions(async () => undefined, true)
-    scenario.value.inFlightRuns = async () => migrationInFlightRuns(database)
-    await migrateCommand({ log: (line) => lines.push(line) }, scenario.value)
-    return lines
-  } finally {
-    database.close()
+test('migrate refuses a non-additive pending range under live runs unless explicitly forced', async () => {
+  const run = {
+    name: 'run-live',
+    status: 'running' as const,
+    waiting: false,
+    holderPid: 4321,
+    leaseHolding: true,
   }
-}
+  const refused = actions(async () => undefined, true)
+  refused.value.inFlightRuns = async () => [run]
+  refused.value.migrationDecision = () => ({ action: 'fence', migration: '0155_rebuild' })
+  await expect(migrateCommand({ log: () => {} }, refused.value)).rejects.toThrow(
+    `run-live (running, holder pid 4321)\ncleared by: ${PLATFORM_SLUG} machine update`,
+  )
 
-test('migrate reports a live run from a store before run record ids', async () => {
-  const lines = await reportFromStoreBefore('0029_run_record_outbox', (database) => {
-    database
-      .query(
-        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (datetime('now'),'codex','migration-fixture','sha',0,'','running')`,
-      )
-      .run()
+  const forced = actions(async () => undefined, true)
+  forced.value.inFlightRuns = async () => [run]
+  forced.value.migrationDecision = refused.value.migrationDecision
+  const lines: string[] = []
+  await migrateCommand({ log: (line) => lines.push(line) }, forced.value, {
+    forceInFlight: 'emergency maintenance',
+    fromOperator: true,
   })
-
-  expect(lines.slice(0, 2)).toEqual(['runs in flight before migration: 1', '  #1: running'])
+  expect(lines).toContain(
+    'forcing migration; these orchestrator runs will fail: run-live (running, holder pid 4321)',
+  )
+  expect(forced.calls).toContain('override:emergency maintenance')
 })
 
-test('migrate reports a live run from a store before host wait tracking', async () => {
-  const recordId = '01990000-0000-7000-8000-000000001576'
-  const lines = await reportFromStoreBefore('0139_run_host_wait', (database) => {
-    database
-      .query(
-        `INSERT INTO run
-         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (?,1576,datetime('now'),'codex','migration-fixture','sha',0,'','running')`,
-      )
-      .run(recordId)
-  })
+test('the in-flight override requires operator attribution and is unavailable to workers', async () => {
+  const scenario = actions(async () => undefined, true)
+  await expect(
+    migrateCommand({ log: () => {} }, scenario.value, { forceInFlight: 'because' }),
+  ).rejects.toThrow('--from-operator')
+  const prior = process.env.BOTTEGA_DEPTH
+  process.env.BOTTEGA_DEPTH = '1'
+  try {
+    await expect(
+      migrateCommand({ log: () => {} }, scenario.value, {
+        forceInFlight: 'because',
+        fromOperator: true,
+      }),
+    ).rejects.toThrow('BOTTEGA_DEPTH is set')
+  } finally {
+    if (prior === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = prior
+  }
+})
 
-  expect(lines.slice(0, 2)).toEqual([
-    'runs in flight before migration: 1',
-    `  ${recordId}: running`,
-  ])
+test('default migrate fences before sampling a held run lease', async () => {
+  const database = db()
+  const pending = migrationJournal().at(-1)!
+  const applied = database
+    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
+      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
+    )
+    .get(pending.when)!
+  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  const runId = randomUUID()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fence','sha',0,'','ok',?)`,
+    )
+    .run(runId, process.pid)
+  const lease = acquireRunLease(runId)
+  let drainAtRunReport: ReturnType<typeof migrationDrain> | undefined
+  try {
+    const presentation = {
+      log(line: string) {
+        if (line.startsWith('runs in flight before migration:') && !drainAtRunReport) {
+          drainAtRunReport = migrationDrain(db())
+        }
+      },
+    }
+    await expect(migrateCommand(presentation)).rejects.toThrow(
+      `${runId} (ok, holder pid ${process.pid})`,
+    )
+    expect(drainAtRunReport).toMatchObject({ phase: 'migrating', migration: pending.tag })
+    await expect(migrateCommand(presentation)).rejects.toThrow(
+      `cleared by: ${PLATFORM_SLUG} machine update`,
+    )
+    expect(migrationDrain(db())).toBeNull()
+  } finally {
+    lease.release()
+    removeFreeRunLease(runId)
+    database.query('DELETE FROM run WHERE record_id=?').run(runId)
+    database
+      .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
+      .run(applied.hash, applied.created_at, applied.version)
+  }
 })
 
 const FENCE = '0121_run_filesystem_identity_cutover'
@@ -301,7 +325,7 @@ test('a populated pre-0117 store reaches the fence before filesystem discovery',
 test('pending conversion with a live run changes neither files nor schema', async () => {
   const fixture = pendingFenceFixture('asking', false)
   await expect(migrateCommand({ log: () => {} })).rejects.toThrow(
-    'wait for it to finish or stop it',
+    `cleared by: ${PLATFORM_SLUG} machine update`,
   )
   expect(existsSync(join(PRELOAD_RUNS, String(fixture.id)))).toBeFalse()
   expect(existsSync(join(PRELOAD_RUNS, fixture.recordId))).toBeFalse()

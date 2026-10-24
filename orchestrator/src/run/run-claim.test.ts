@@ -73,6 +73,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
       carriedQuestionIds: [carriedQuestionRecordId],
+      assertDispatchAllowed: () => {},
     }
     const claimed = await claimRun(claimInput)
 

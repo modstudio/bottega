@@ -67,6 +67,9 @@ export type Job = {
 /** Idle must sit below the wall so the two timers cannot race. */
 export const IDLE_BELOW_WALL_MS = 60_000
 
+/** Absolute wall-time ceiling for every coordinator, held just below the stale cutoff. */
+export const RUN_WALL_TIME_CEILING_MS = STALE_AFTER_MS - 1
+
 export function jobDeclaredWallMs(name: string): number | null {
   const bounds = JOB_TIMEOUTS[name as keyof typeof JOB_TIMEOUTS]
   if (!bounds) return null
@@ -142,7 +145,7 @@ export function isReadOnlyRepositoryJob(name: string): boolean {
 export function jobTimeoutCeilingMs(j: Job): number {
   const declared =
     j.timeoutCeilingMs ?? JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS].ceilingMinutes * 60_000
-  return Math.min(declared, STALE_AFTER_MS - 1)
+  return Math.min(declared, RUN_WALL_TIME_CEILING_MS)
 }
 
 export function jobTimeoutCeilingMinutes(j: Job): number {

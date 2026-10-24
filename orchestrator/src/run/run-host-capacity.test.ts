@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import type { HostLoad } from '../gate-load.ts'
 import {
   RUN_HOST_WAIT_MAX_MS,
@@ -34,6 +35,56 @@ const repositoryRun = (repo: string | null = '/repo') => {
 }
 
 describe('run host capacity', () => {
+  test('a pre-spawn host-capacity waiter stops when a migration drain appears', async () => {
+    const runId = repositoryRun()
+    repositoryRun()
+    let insertedDrain = false
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      measure: loaded,
+      sleep: async () => {
+        insertedDrain = true
+        setMigrationDrain(db(), '0155_rebuild')
+      },
+    })
+    expect(insertedDrain).toBe(true)
+    expect(result).toMatchObject({
+      outcome: 'stopped',
+      heldOn: ['load', 'migration'],
+      drainingFor: '0155_rebuild',
+    })
+    expect(
+      (
+        db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
+          host_wait_since: string | null
+        }
+      ).host_wait_since,
+    ).toBeNull()
+    clearMigrationDrain(db())
+  })
+
+  test('a resume already waiting for host capacity continues through the draining phase', async () => {
+    const runId = repositoryRun()
+    const blocker = repositoryRun()
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      existingChain: true,
+      env: {},
+      platform: 'linux',
+      measure: loaded,
+      sleep: async () => {
+        setMigrationDrain(db(), '0155_rebuild')
+        db().query("UPDATE run SET status='ok' WHERE record_id=?").run(blocker)
+      },
+    })
+    expect(result).toMatchObject({ outcome: 'admitted', heldOn: ['load'], drainingFor: null })
+    clearMigrationDrain(db())
+  })
+
   test('a run never counts itself as held work', async () => {
     const runId = repositoryRun()
     let slept = false
@@ -171,6 +222,7 @@ describe('run host capacity', () => {
         waitedMs: 1,
         heldOn: ['load'],
         boundReached: false,
+        drainingFor: null,
       }),
       isRunning: () => false,
       spawn: async () => {
