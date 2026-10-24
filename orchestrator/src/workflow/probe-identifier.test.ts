@@ -1,6 +1,22 @@
 import { expect, test } from 'bun:test'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { resolveProbeArtifact, resolveProbeIdentifier } from './probe-identifier.ts'
+import {
+  parseProbeArtifact,
+  resolveProbeArtifact,
+  resolveProbeIdentifier,
+} from './probe-identifier.ts'
+
+test('parses probe and exec artifact references in one owner', () => {
+  expect(parseProbeArtifact('probe:7')).toEqual({
+    kind: 'probe',
+    identifier: { kind: 'number', number: 7 },
+  })
+  expect(parseProbeArtifact('exec:01990000-0000-7000-8000-000000001708')).toEqual({
+    kind: 'exec',
+    identifier: { kind: 'record-id', recordId: '01990000-0000-7000-8000-000000001708' },
+  })
+  expect(parseProbeArtifact('task:DEV-1708')).toBeUndefined()
+})
 
 test('resolves a probe number or UUID to the probe UUID', () => {
   const d = migratedTestDatabase()

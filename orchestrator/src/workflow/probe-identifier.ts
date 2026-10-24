@@ -1,12 +1,22 @@
 // concern: workflow floor evidence
 /** Resolves a user-facing probe number or UUID once, at the edge. */
 
-import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+
+type ProbeDatabase = {
+  query(sql: string): unknown
+}
+
+type ProbeRecordIdQuery = { get(identifier: string | number): { record_id: string } | null }
 
 type ParsedProbeIdentifier =
   | { kind: 'number'; number: number }
   | { kind: 'record-id'; recordId: string }
+
+export type ParsedProbeArtifact = {
+  kind: 'probe' | 'exec'
+  identifier: ParsedProbeIdentifier
+}
 
 const ACCEPTED_PROBE_IDENTIFIERS = 'a positive decimal probe number or a full probe UUID'
 
@@ -22,18 +32,27 @@ function parseProbeIdentifier(input: string | number): ParsedProbeIdentifier {
   )
 }
 
-export function resolveProbeIdentifier(database: Database, input: string | number): string {
+export function parseProbeArtifact(artifact: string): ParsedProbeArtifact | undefined {
+  const parsed = /^(probe|exec):(.+)$/i.exec(artifact.trim())
+  if (!parsed) return undefined
+  return {
+    kind: parsed[1]!.toLowerCase() as ParsedProbeArtifact['kind'],
+    identifier: parseProbeIdentifier(parsed[2]!),
+  }
+}
+
+export function resolveProbeIdentifier(database: ProbeDatabase, input: string | number): string {
   const parsed = parseProbeIdentifier(input)
   if (parsed.kind === 'number') {
-    const row = database
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM probe WHERE number=?')
-      .get(parsed.number)
+    const query = database.query('SELECT record_id FROM probe WHERE number=?') as ProbeRecordIdQuery
+    const row = query.get(parsed.number)
     if (row) return row.record_id
     throw new Error(`no probe has number ${parsed.number}; pass ${ACCEPTED_PROBE_IDENTIFIERS}`)
   }
-  const row = database
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM probe WHERE record_id=?')
-    .get(parsed.recordId)
+  const query = database.query(
+    'SELECT record_id FROM probe WHERE record_id=?',
+  ) as ProbeRecordIdQuery
+  const row = query.get(parsed.recordId)
   if (row) return row.record_id
   throw new Error(
     `no probe has UUID ${JSON.stringify(String(input))}; pass ${ACCEPTED_PROBE_IDENTIFIERS}`,
@@ -41,11 +60,13 @@ export function resolveProbeIdentifier(database: Database, input: string | numbe
 }
 
 export function resolveProbeArtifact(
-  database: Database,
+  database: ProbeDatabase,
   artifact: string | undefined,
 ): string | undefined {
   if (artifact === undefined) return undefined
-  const parsed = /^(probe|exec):(.+)$/i.exec(artifact.trim())
+  const parsed = parseProbeArtifact(artifact)
   if (!parsed) return artifact
-  return `${parsed[1]!.toLowerCase()}:${resolveProbeIdentifier(database, parsed[2]!)}`
+  const identifier =
+    parsed.identifier.kind === 'number' ? parsed.identifier.number : parsed.identifier.recordId
+  return `${parsed.kind}:${resolveProbeIdentifier(database, identifier)}`
 }

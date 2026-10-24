@@ -21,7 +21,7 @@ import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-gr
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { resolveProbeArtifact } from './probe-identifier.ts'
+import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -903,7 +903,12 @@ function gatherTreeEvidence(
 
 function resolvedOfferedArtifact(d: Database, artifact: string): string {
   const offered = artifact.trim()
-  return /^(?:probe|exec):[0-9]+$/i.test(offered) ? resolveProbeArtifact(d, offered)! : offered
+  try {
+    const parsed = parseProbeArtifact(offered)
+    return parsed?.identifier.kind === 'number' ? resolveProbeArtifact(d, offered)! : offered
+  } catch {
+    return offered
+  }
 }
 
 function evidenceCheckoutResolver(
