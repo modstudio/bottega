@@ -320,6 +320,22 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
+  {
+    store: 'orchestrator',
+    table: 'outbox',
+    reason:
+      'machine-local sync delivery queue (DEV-1214 out of scope: the outbox builds on the record); hosted identity is the payload UUID, and the integer is a per-machine insertion sequence and transport correlation',
+  },
+  {
+    store: 'orchestrator',
+    table: 'outbox_quarantine_audit',
+    reason: 'machine-local forensics of the outbox queue; not synced',
+  },
+  {
+    store: 'orchestrator',
+    table: 'outbox_redaction_audit',
+    reason: 'machine-local forensics of the outbox queue; not synced',
+  },
   { store: 'orchestrator', table: 'orch_schema_lock', reason: 'schema migration lock' },
   { store: 'orchestrator', table: 'record_install_binding', reason: 'singleton install binding' },
   { store: 'orchestrator', table: 'board_reach_recording', reason: 'singleton reach cursor' },
