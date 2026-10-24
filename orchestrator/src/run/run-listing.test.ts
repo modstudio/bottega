@@ -783,6 +783,40 @@ describe('run listing', () => {
     }
   })
 
+  test('the failover watch stays open for a stranded failure that can still fail over', async () => {
+    // A FAILS_OVER failure keeps its answered ruling pending delivery until the
+    // successor claims it, and the listing presents that chain as `stranded`.
+    // The label is a presentation of the member's status, not a different fact:
+    // the window the heartbeat reads must survive it.
+    const startedAt = '2026-10-22T12:00:00.000Z'
+    const failed = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      startedAt,
+      latency: 2000,
+    })
+    db()
+      .query(
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,answer,answered_at,delivery_pending_at)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), failed, startedAt, 'which shape?', 'that shape', startedAt, startedAt)
+
+    const rows = (await command({ json: true, id: [String(failed)] })).map(runJson) as unknown as {
+      status: string
+      automatic_failover_successor: unknown
+      automatic_failover_watch_until: string | null
+    }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.status).toBe('stranded')
+    expect(rows[0]!.automatic_failover_successor).toBeNull()
+    expect(rows[0]!.automatic_failover_watch_until).toBe(
+      new Date(Date.parse(startedAt) + 2000 + RUN_HOST_WAIT_MAX_MS).toISOString(),
+    )
+  })
+
   test('runs --json reports amortized subscription cost and ignores a stored estimate', async () => {
     const id = addRun({
       agent: 'grok',

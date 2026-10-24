@@ -23,6 +23,34 @@ CHILD_PROCESS_TIMEOUT_SECONDS = 10
 SUCCESSOR = {"number": 900, "agent": "grok"}
 
 
+def install_shell_temp_directory():
+    """Point every fixture shell's `mktemp` at a directory this process owns.
+
+    The hook screens every read through a `mktemp` file, and a confined runner
+    may deny the machine temporary directory `mktemp` prefers, where a bare
+    `mktemp` then fails and degrades every tick. Every fixture builds its child
+    environment from `os.environ`, so installing the shim there once carries it
+    into all of them and no test has to remember it.
+    """
+    real_mktemp = shutil.which("mktemp")
+    if not real_mktemp:
+        return
+    directory = Path(tempfile.mkdtemp(prefix="heartbeat-shell-temp-"))
+    shim = directory / "mktemp"
+    shim.write_text(
+        f'''#!/bin/sh
+exec {real_mktemp} -p "$MKTEMP_DIR" "$@"
+''',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    os.environ["PATH"] = f"{directory}{os.pathsep}{os.environ['PATH']}"
+    os.environ["MKTEMP_DIR"] = str(directory)
+
+
+install_shell_temp_directory()
+
+
 class HeartbeatDecisionTest(unittest.TestCase):
     def test_live_operational_status_uses_the_row_wording(self):
         base = {
@@ -636,7 +664,6 @@ esac
                 "FAKE_TICK": str(checkout / "tick"),
                 "FAKE_COMPLETION_CALLS": str(calls),
             }
-            self.install_mktemp_shim(binary, checkout, environment)
 
             completed = subprocess.run(
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "4"],
@@ -665,37 +692,11 @@ esac
                 [f"run list --json --id {record_id}", f"run list --json --id {record_id}"],
             )
 
-    @staticmethod
-    def install_mktemp_shim(binary, checkout, environment):
-        """Point the hook's `mktemp` at the fixture checkout.
-
-        A confined runner may deny the machine temporary directory mktemp
-        prefers, which the hook needs for every read it screens. The shim is
-        scoped to the test that installed it.
-        """
-        real_mktemp = shutil.which("mktemp")
-        if not real_mktemp:
-            return
-        shim = binary / "mktemp"
-        shim.write_text(
-            f'''#!/bin/sh
-exec {real_mktemp} -p "$MKTEMP_DIR" "$@"
-''',
-            encoding="utf-8",
-        )
-        shim.chmod(0o755)
-        environment["PATH"] = f"{binary}{os.pathsep}{environment['PATH']}"
-        environment["MKTEMP_DIR"] = str(checkout)
-
     def run_failover_fixture(self, first_successor, later_successor=None, degraded_inbox_call=None):
         """Announce one failed chain, whose successor may exist at the first read or later.
 
         `degraded_inbox_call` fails the inbox read on that 1-based tick, which is
         the tick whose observation is discarded without being announced.
-
-        The hook is run with the system temporary directory inside the fixture
-        checkout: a restricted runner may not permit mktemp in the machine's own
-        temporary directory, which the hook needs for every read it screens.
         """
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)
@@ -796,21 +797,6 @@ esac
                 "FAKE_INBOX_CALLS": str(checkout / "inbox-calls"),
                 "FAKE_INBOX_FAIL_CALL": "" if degraded_inbox_call is None else str(degraded_inbox_call),
             }
-            # The hook screens every read through a mktemp file, and a confined
-            # runner may deny the machine temporary directory mktemp prefers, so
-            # point the same command at the fixture checkout instead.
-            real_mktemp = shutil.which("mktemp")
-            if real_mktemp:
-                (binary / "mktemp").write_text(
-                    f'''#!/bin/sh
-exec {real_mktemp} -p "$MKTEMP_DIR" "$@"
-''',
-                    encoding="utf-8",
-                )
-                (binary / "mktemp").chmod(0o755)
-                environment["PATH"] = f"{binary}{os.pathsep}{environment['PATH']}"
-                environment["MKTEMP_DIR"] = str(checkout)
-
             completed = subprocess.run(
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "4"],
                 cwd=checkout,
@@ -1155,7 +1141,6 @@ esac
                 "FAKE_UPDATED": str(checkout / "updated"),
                 "FAKE_OBSERVATION_HELPER": str(hooks / "heartbeat-run-observation.py"),
             }
-            self.install_mktemp_shim(binary, checkout, environment)
 
             completed = subprocess.run(
                 ["bash", "orchestrator/hooks/orch-heartbeat.sh", "fixture-session", "0.01", "3"],

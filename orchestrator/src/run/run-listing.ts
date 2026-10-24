@@ -252,7 +252,11 @@ function automaticFailoverWatchUntil(
 ): string | null {
   if (successor) return null
   const failed = {
-    status: String(row.status),
+    // The member's own status, not the listing's status column: a FAILS_OVER
+    // failure whose chain holds an answered ruling still pending delivery is
+    // presented as `stranded`, and that label is exactly the state whose late
+    // successor this window covers — the successor is what claims the delivery.
+    status: String(row.live_member_status ?? row.status),
     failure_kind: (row.failure_kind as string | null) ?? null,
     error: (row.error as string | null) ?? null,
   }
