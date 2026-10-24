@@ -437,7 +437,7 @@ describe('collection records', () => {
       spy.mockRestore()
     }
     expect(logs.join('\n')).toContain(`${id}\tok`)
-    expect(logs.join('\n')).not.toContain('300\t')
+    expect(logs.every((line) => line.split('\t')[0] !== '300')).toBe(true)
   })
 
   test('wait names the root, not the asking tip, when a question is open', async () => {
