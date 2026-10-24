@@ -19,6 +19,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   mintedBranch: 'DEV-1392-c3',
   launchKey: 'DEV-1392',
   judged: true,
+  failureKind: null,
   rootFailureKind: null,
   worktree: '/trees/1',
   ...overrides,
@@ -54,12 +55,36 @@ describe('ship cleanup decision', () => {
     ])
   })
 
-  test('keeps an unscored run artifacts and names the missing verdict', () => {
-    expect(decide([run({ judged: false })])[0]).toMatchObject({
-      artifacts: 'keep',
-      worktreeAction: 'close',
-      reason: 'run has no recorded verdict',
-    })
+  test.each([
+    [
+      'unjudged billing run',
+      { judged: false, failureKind: 'billing' },
+      {
+        artifacts: 'remove',
+        worktreeAction: 'close',
+        reason: 'provider did not serve the run (billing); nothing to judge',
+      },
+    ],
+    [
+      'unjudged truncated run',
+      { judged: false, failureKind: 'truncated' },
+      {
+        artifacts: 'keep',
+        worktreeAction: 'close',
+        reason: 'run has no recorded verdict',
+      },
+    ],
+    [
+      'judged run',
+      { judged: true, failureKind: null },
+      {
+        artifacts: 'remove',
+        worktreeAction: 'close',
+        reason: 'terminal judged run on merged branch',
+      },
+    ],
+  ] as const)('handles a terminal %s', (_case, overrides, expected) => {
+    expect(decide([run(overrides)])[0]).toMatchObject(expected)
   })
 
   test.each([

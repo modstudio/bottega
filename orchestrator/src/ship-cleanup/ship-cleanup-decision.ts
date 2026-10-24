@@ -2,7 +2,11 @@
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
 import type { BranchStateDecision } from '../branch/branch-state.ts'
-import { decideUnjudgedRunRemedy, type UnjudgedRunRemedy } from '../cleanup/unjudged-run-remedy.ts'
+import {
+  decideUnjudgedRunRemedy,
+  providerDidNotServeRun,
+  type UnjudgedRunRemedy,
+} from '../cleanup/unjudged-run-remedy.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
 const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -22,6 +26,7 @@ export type ShipCleanupRunFact = {
   mintedBranch: string | null
   launchKey: string | null
   judged: boolean
+  failureKind: string | null
   rootFailureKind: string | null
   worktree: string | null
 }
@@ -146,6 +151,68 @@ function scopeFor(
   return 'outside'
 }
 
+function outsideScopeReason(run: ShipCleanupRunFact, landingMergedAt: string): string {
+  if (!startedByLanding(run.startedAt, landingMergedAt)) {
+    return `run started after branch landed at ${landingMergedAt}`
+  }
+  if (!run.launchKey) return 'run has no task key'
+  if (!run.branch) return 'run has no branch'
+  return `run belongs to branch ${run.branch}`
+}
+
+function decideScopedRun(
+  run: ShipCleanupRunFact,
+  scope: ShipCleanupRunDecision['scope'],
+  landingMergedAt: string,
+): ShipCleanupRunDecision {
+  if (scope === 'outside') {
+    return {
+      ...run,
+      scope,
+      artifacts: 'ignore',
+      worktreeAction: 'ignore',
+      reason: outsideScopeReason(run, landingMergedAt),
+    }
+  }
+  if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status)) {
+    return {
+      ...run,
+      scope,
+      artifacts: 'keep',
+      worktreeAction: 'keep',
+      reason: `run is live (${run.status})`,
+    }
+  }
+  if (!run.judged) {
+    if (providerDidNotServeRun(run.failureKind)) {
+      return {
+        ...run,
+        scope,
+        artifacts: 'remove',
+        worktreeAction: 'close',
+        reason: `provider did not serve the run (${run.failureKind}); nothing to judge`,
+      }
+    }
+    return {
+      ...run,
+      scope,
+      artifacts: 'keep',
+      worktreeAction: 'close',
+      reason: 'run has no recorded verdict',
+      ...(run.record_id === run.root_record_id
+        ? { remedy: decideUnjudgedRunRemedy(run.rootFailureKind) }
+        : {}),
+    }
+  }
+  return {
+    ...run,
+    scope,
+    artifacts: 'remove',
+    worktreeAction: 'close',
+    reason: 'terminal judged run on merged branch',
+  }
+}
+
 /** Decide removal independently for each run; turns inherit their root verdict in gathered facts. */
 export function decideShipCleanup(
   taskKey: string,
@@ -168,48 +235,6 @@ export function decideShipCleanup(
   )
   return runs.map((run) => {
     const scope = scopeFor(run, taskKey, landedBranches, landingMergedAt, branchChainRoots)
-    if (scope === 'outside') {
-      return {
-        ...run,
-        scope,
-        artifacts: 'ignore',
-        worktreeAction: 'ignore',
-        reason: !startedByLanding(run.startedAt, landingMergedAt)
-          ? `run started after branch landed at ${landingMergedAt}`
-          : !run.launchKey
-            ? 'run has no task key'
-            : !run.branch
-              ? 'run has no branch'
-              : `run belongs to branch ${run.branch}`,
-      }
-    }
-    if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status)) {
-      return {
-        ...run,
-        scope,
-        artifacts: 'keep',
-        worktreeAction: 'keep',
-        reason: `run is live (${run.status})`,
-      }
-    }
-    if (!run.judged) {
-      return {
-        ...run,
-        scope,
-        artifacts: 'keep',
-        worktreeAction: 'close',
-        reason: 'run has no recorded verdict',
-        ...(run.record_id === run.root_record_id
-          ? { remedy: decideUnjudgedRunRemedy(run.rootFailureKind) }
-          : {}),
-      }
-    }
-    return {
-      ...run,
-      scope,
-      artifacts: 'remove',
-      worktreeAction: 'close',
-      reason: 'terminal judged run on merged branch',
-    }
+    return decideScopedRun(run, scope, landingMergedAt)
   })
 }

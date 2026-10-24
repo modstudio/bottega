@@ -436,6 +436,17 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'abandoned',
 ]
 
+/** Provider failures where no answer exists for a person to judge. */
+export const PROVIDER_UNSERVED: ReadonlySet<FailureKind> = new Set([
+  'billing',
+  'auth',
+  'quota',
+  'daily_quota',
+  'capacity',
+  'entitlement',
+  'unreachable',
+])
+
 export type BillingHold = { enabled: 0; disabledReason: string }
 
 /** A durable routing hold whose only release is the named operator action. */

@@ -100,6 +100,15 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     worktree: '/trees/unscored',
     failureKind: 'unevidenced',
   })
+  const unservedRoot = addRun(project, {
+    worktree: '/trees/unserved-root',
+    failureKind: 'truncated',
+  })
+  const unservedTurn = addRun(project, {
+    parent: unservedRoot,
+    worktree: '/trees/unserved-root',
+    failureKind: 'billing',
+  })
   const live = addRun(project, { status: 'running', worktree: '/trees/live' })
   const sibling = addRun(project, {
     branch: 'DEV-1392-c2',
@@ -187,9 +196,9 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
       .number
 
-  expect(report.removed.artifacts).toEqual([root, turn, lens, landing])
-  expect(report.removed.scratch).toEqual([root, turn, lens, landing])
-  expect(closed).toEqual([root, lens, unscored])
+  expect(report.removed.artifacts).toEqual([root, turn, lens, unservedTurn, landing])
+  expect(report.removed.scratch).toEqual([root, turn, lens, unservedTurn, landing])
+  expect(closed).toEqual([root, lens, unscored, unservedRoot])
   expect(removedLandingTrees).toEqual(['/trees/landing'])
   expect(closed).not.toContain(live)
   expect(closed).not.toContain(sibling)
@@ -203,6 +212,16 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     remedy: `${PLATFORM_SLUG} score ${numberOf(unscored)} none --void --note "<why>"`,
   })
   expect(report.kept).toContainEqual({
+    item: `run ${numberOf(unservedRoot)} artifacts and scratch`,
+    reason: 'run has no recorded verdict',
+    reasonKind: 'unjudged-run',
+    owner: 'other',
+    remedy: `${PLATFORM_SLUG} score ${numberOf(unservedRoot)} none --void --note "<why>"`,
+  })
+  expect(report.kept.map((item) => item.item)).not.toContain(
+    `run ${numberOf(unservedTurn)} artifacts and scratch`,
+  )
+  expect(report.kept).toContainEqual({
     item: `run ${numberOf(live)} artifacts and scratch and worktree`,
     reason: 'run is live (running)',
     reasonKind: 'live-run',
@@ -213,12 +232,14 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     'stopped /trees/root',
     'stopped /trees/lens',
     'stopped /trees/unscored',
+    'stopped /trees/unserved-root',
     'stopped /trees/landing',
   ])
   expect(report.reclaimed.compose).toEqual([
     'stack:/trees/root',
     'stack:/trees/lens',
     'stack:/trees/unscored',
+    'stack:/trees/unserved-root',
     'stack:/trees/landing',
   ])
   expect(formatShipCleanup(report)).toContain('reclaimed process: stopped /trees/root')

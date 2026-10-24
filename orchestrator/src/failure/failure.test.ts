@@ -1,6 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { classify, clusterErrorText } from './failure.ts'
+import { classify, clusterErrorText, NOT_EVIDENCE, PROVIDER_UNSERVED } from './failure.ts'
+
+test('provider-unserved failures are exactly the no-answer subset of non-evidence', () => {
+  expect([...PROVIDER_UNSERVED]).toEqual([
+    'billing',
+    'auth',
+    'quota',
+    'daily_quota',
+    'capacity',
+    'entitlement',
+    'unreachable',
+  ])
+  for (const kind of PROVIDER_UNSERVED) expect(NOT_EVIDENCE).toContain(kind)
+})
 
 describe('stale-login classification', () => {
   /**
