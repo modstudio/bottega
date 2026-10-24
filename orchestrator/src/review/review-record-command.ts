@@ -14,6 +14,7 @@ import {
   reviewRoundTriageComplete,
   reviewsForTriage,
 } from './review-group.ts'
+import { reviewLineage } from './review-lineage-store.ts'
 import { type ReviewRecordRow, reviewRecordFindings } from './review-record-findings.ts'
 import { writeReviewRecordFindings } from './review-record-findings-file.ts'
 
@@ -63,6 +64,7 @@ export function readProjectReview(
 ): { complete: boolean; rows: ReviewRecordRow[] } {
   const selectedReviews = reviewsForTriage(database, group).branchReviews
   const selectedIds = new Set(selectedReviews.map(({ reviewRecordId }) => reviewRecordId))
+  const lineage = reviewLineage(database, group.project, group.branch)
   const rows = database
     .query<
       {
@@ -75,7 +77,7 @@ export function readProjectReview(
         severity: string | null
         location: string | null
       },
-      [string, string]
+      [string, ...string[]]
     >(
       `SELECT r.record_id AS review,rf.record_id AS finding,rl.lens,rl.run_record_id AS run,rf.disposition,
               rf.rejection_category AS category,
@@ -83,10 +85,11 @@ export function readProjectReview(
          FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
          JOIN review r ON r.record_id=rl.review_record_id
          LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
-        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?) AND run.branch=?
+        WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND run.branch IN (${lineage.map(() => '?').join(',')})
         ORDER BY run.started_at,rl.record_id,rf.ordinal`,
     )
-    .all(group.project, group.branch)
+    .all(group.project, ...lineage)
     .filter(({ review }) => selectedIds.has(review))
   return {
     complete: selectedReviews.every(reviewRoundTriageComplete),

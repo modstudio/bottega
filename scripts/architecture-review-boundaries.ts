@@ -8,6 +8,14 @@ export type ReviewBoundarySpec = {
 
 export const reviewModuleSpecs = [
   {
+    file: 'orchestrator/src/review/review-lineage.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/review/review-lineage-store.ts',
+    allowed: ['bun:sqlite', './review-lineage.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-duplicate-link.ts',
     allowed: [],
   },
@@ -92,6 +100,7 @@ export const reviewModuleSpecs = [
       '../project/projects.ts',
       '../project/review-record-template.ts',
       './review-group.ts',
+      './review-lineage-store.ts',
       './review-record-findings-file.ts',
       './review-record-findings.ts',
     ],
@@ -274,6 +283,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-applicability.ts',
       './review-evidence-sql.ts',
       './review-group.ts',
+      './review-lineage-store.ts',
       './review-pins.ts',
       './review-tier.ts',
       './review-tier-classifier.ts',
@@ -305,6 +315,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       'bun:sqlite',
       '../database/db.ts',
       './review-evidence-sql.ts',
+      './review-lineage-store.ts',
       './review-yield.ts',
     ],
     reason: 'Keep review budget policy and reporting inside eligible review evidence.',
@@ -376,6 +387,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../project/projects.ts',
       './review-command-cwd.ts',
       './review-group.ts',
+      './review-lineage-store.ts',
       './review-outbox.ts',
     ],
     reason: 'Keep architect review reads inside the review evidence concern.',

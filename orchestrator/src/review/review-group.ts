@@ -7,6 +7,7 @@ import {
   applicableReviewForChange,
   type ReviewPlan,
 } from './review-applicability.ts'
+import { reviewLineage } from './review-lineage-store.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
@@ -203,6 +204,7 @@ function reviewsForBranch(
   branch: string,
   includeReviewId?: string,
 ): TriageReviewRow[] {
+  const lineage = reviewLineage(database, project, branch)
   const rows = database
     .query<
       {
@@ -225,7 +227,7 @@ function reviewsForBranch(
         ordinal: number | null
         disposition: string | null
       },
-      [string, string, string | null]
+      [string, ...string[], string | null]
     >(
       `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
@@ -234,9 +236,10 @@ function reviewsForBranch(
          JOIN run ON run.record_id=rl.run_record_id
          LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND (run.branch=? OR r.record_id=?) ORDER BY r.number DESC,rl.record_id,rf.ordinal`,
+          AND (run.branch IN (${lineage.map(() => '?').join(',')}) OR r.record_id=?)
+        ORDER BY r.number DESC,rl.record_id,rf.ordinal`,
     )
-    .all(project, branch, includeReviewId ?? null)
+    .all(project, ...lineage, includeReviewId ?? null)
   const reviews = new Map<string, TriageReviewRow>()
   for (const row of rows) {
     const review = reviews.get(row.review_record_id) ?? {

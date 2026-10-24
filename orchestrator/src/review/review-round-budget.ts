@@ -4,6 +4,7 @@ import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import { reviewLineage } from './review-lineage-store.ts'
 import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
 export type ReviewTierNumber = 0 | 1 | 2 | 3
 
@@ -68,6 +69,11 @@ export function eligibleReviewRoundRows(
   since?: string,
   target?: { project: string; branch: string },
 ): ReviewRoundEvidenceRow[] {
+  const lineage = target ? reviewLineage(database, target.project, target.branch) : []
+  const targetFilter = target
+    ? `AND run.project_record_id=(SELECT record_id FROM project WHERE name=?)
+       AND run.branch IN (${lineage.map(() => '?').join(',')})`
+    : ''
   return database
     .query(
       `SELECT rl.record_id AS lens_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier,
@@ -80,22 +86,32 @@ export function eligibleReviewRoundRows(
          LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE ${reviewRunEvidenceSql('run', 'rl')}
           AND (? IS NULL OR r.recorded_at >= ?)
-          AND (? IS NULL OR run.project_record_id=(SELECT record_id FROM project WHERE name=?))
-          AND (? IS NULL OR run.branch = ?)
+          ${targetFilter}
         ORDER BY r.recorded_at,r.number,run.number`,
     )
     .all(
       since ?? null,
       since ?? null,
-      target?.project ?? null,
-      target?.project ?? null,
-      target?.branch ?? null,
-      target?.branch ?? null,
+      ...(target ? [target.project, ...lineage] : []),
     ) as ReviewRoundEvidenceRow[]
 }
 
 const branchKey = (project: string | null, branch: string): string =>
   JSON.stringify([project, branch])
+
+function lineageRoot(
+  database: Database,
+  roots: Map<string, string>,
+  project: string | null,
+  branch: string,
+): string {
+  const key = branchKey(project, branch)
+  const cached = roots.get(key)
+  if (cached) return cached
+  const root = project ? (reviewLineage(database, project, branch).at(-1) ?? branch) : branch
+  roots.set(key, root)
+  return root
+}
 
 function branchEvidence(
   database: Database,
@@ -103,9 +119,12 @@ function branchEvidence(
   target?: { project: string; branch: string },
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
+  const lineageRoots = new Map<string, string>()
   for (const row of eligibleReviewRoundRows(database, since, target)) {
     if (!row.branch) continue
-    const key = branchKey(row.run_repo, row.branch)
+    const evidenceBranch =
+      target?.branch ?? lineageRoot(database, lineageRoots, row.run_repo, row.branch)
+    const key = branchKey(row.run_repo, evidenceBranch)
     const branch = branches.get(key) ?? {
       firstReviewAt: row.recorded_at,
       tier: null,

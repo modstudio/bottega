@@ -116,7 +116,7 @@ async function compose(
   const earlier =
     requested.findings && project
       ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch(reviewRef))
-      : { project: project?.name ?? '', branch: null, rows: [] }
+      : { project: project?.name ?? '', branch: null, branchLineage: [], rows: [] }
   return lensPromptFor(project, requested.findings, lens, await presentation.readPrompt(), earlier)
 }
 

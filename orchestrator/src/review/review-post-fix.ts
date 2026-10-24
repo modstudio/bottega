@@ -10,6 +10,7 @@ import {
 } from './review-applicability.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
+import { reviewLineage } from './review-lineage-store.ts'
 import { git, measureChangeIdentity, pinRef } from './review-pins.ts'
 import { diffNumstat } from './review-tier.ts'
 import {
@@ -65,19 +66,20 @@ function latestCompletedReview(
   project: string,
   branch: string,
 ): CompletedReview | null {
+  const lineage = reviewLineage(database, project, branch)
   const rows = database
-    .query<CompletedReviewEvidenceRow, [string, string]>(
+    .query<CompletedReviewEvidenceRow, [string, ...string[]]>(
       `SELECT r.record_id AS review_record_id,r.number AS review_number,
               run.record_id AS run_id,run.launch_key,run.branch,r.patch_id,r.path_set
          FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND run.branch=?
+          AND run.branch IN (${lineage.map(() => '?').join(',')})
           AND ${completedReviewEvidenceSql('r', 'run', 'rl')}
         ORDER BY r.number DESC,rl.record_id`,
     )
-    .all(project, branch)
+    .all(project, ...lineage)
   const first = rows[0]
   if (!first) return null
   const roundRows = rows.filter(

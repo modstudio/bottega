@@ -18,6 +18,7 @@ import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
+import { reviewLineage } from '../review/review-lineage-store.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   type CheckoutResolution,
@@ -247,18 +248,17 @@ function gatherReview(
     throw new Error(
       `--review ${review.number} project is ${review.project_name ?? 'unset'}, not this cursor's ${identity.project}`,
     )
+  const lineage = identity.branch ? reviewLineage(d, identity.project, identity.branch) : []
+  const branchMatch = identity.branch ? `ru.branch IN (${lineage.map(() => '?').join(',')})` : '0'
   const bound = d
-    .query<
-      { branch: string | null },
-      [string, string | null, string | null, string, string | null]
-    >(
+    .query<{ branch: string | null }, string[]>(
       `SELECT ru.branch
          FROM review_lens rl JOIN run ru ON ru.record_id=rl.run_record_id
         WHERE rl.review_record_id=?
-          AND ((? IS NOT NULL AND ru.branch=?) OR ru.launch_key=?)
-        ORDER BY CASE WHEN ru.branch=? THEN 0 ELSE 1 END, ru.started_at,rl.record_id LIMIT 1`,
+          AND (${branchMatch} OR ru.launch_key=?)
+        ORDER BY CASE WHEN ${branchMatch} THEN 0 ELSE 1 END, ru.started_at,rl.record_id LIMIT 1`,
     )
-    .get(recordId, identity.branch, identity.branch, identity.workflowKey, identity.branch)
+    .get(recordId, ...lineage, identity.workflowKey, ...lineage)
   if (!bound)
     throw new Error(
       `--review ${review.number} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,

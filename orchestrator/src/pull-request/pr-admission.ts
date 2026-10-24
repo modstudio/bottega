@@ -17,6 +17,7 @@ import {
   serializePathSet,
   type TriageReviewRow,
 } from '../review/review-group.ts'
+import { reviewLineage } from '../review/review-lineage-store.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import { roundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
@@ -121,6 +122,7 @@ export function resolvePullRequestChange(
 
 function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
   const reviews = reviewsForTriage(database, change.group)
+  const lineage = reviewLineage(database, change.project.name, change.branch)
   const grouped = new Map<string, TriageReviewRow[]>()
   for (const review of reviews.branchReviews) {
     if (review.patchId === null || review.pathSet === null) continue
@@ -152,13 +154,14 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
           recorded_at: string
           session_id: string | null
         },
-        [string, string]
+        string[]
       >(
         `SELECT record_id,tip,patch_id,path_set,recorded_at,session_id FROM review_read
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND branch=? ORDER BY recorded_at DESC,record_id DESC`,
+          AND branch IN (${lineage.map(() => '?').join(',')})
+        ORDER BY recorded_at DESC,record_id DESC`,
       )
-      .all(change.project.name, change.branch)
+      .all(change.project.name, ...lineage)
       .map((row) => ({
         recordId: row.record_id,
         tip: row.tip,

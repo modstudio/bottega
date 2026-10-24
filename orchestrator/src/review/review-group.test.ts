@@ -5,6 +5,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
 import type { ReviewPlan } from './review-applicability.ts'
 import { measureChangeGroup, reviewsForTriage } from './review-group.ts'
+import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
 
 test('change-group lookup carries the same patch after rebase and rejects a different patch', () => {
@@ -132,6 +133,62 @@ test('a rebase credits the complete round from the same branch and never another
     snapshot: {
       reviewRecordIds: selected.branchReviews.map((row) => row.reviewRecordId).sort(),
     },
+  })
+})
+
+test('a fix branch inherits its parent review and starts at round two', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const projectId = newRecordId()
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(projectId)
+  const addRun = (columns: { branch?: string; minted?: string; base?: string }) =>
+    database
+      .query<{ record_id: string }, [string, string | null, string | null, string | null]>(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+            project_record_id,branch,minted_branch,launch_base,launch_key)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25',
+                 'codex','review-lens','sha',1,'head','ok','fixture',?,?,?,?, 'DEV-1686')
+         RETURNING record_id`,
+      )
+      .get(projectId, columns.branch ?? null, columns.minted ?? null, columns.base ?? null)!
+  addRun({ minted: 'branch-a', base: 'main' })
+  addRun({ minted: 'branch-b', base: 'branch-a' })
+  const lensRun = addRun({ branch: 'branch-a' })
+  const reviewId = newRecordId()
+  database
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,path_set,tier)
+       VALUES (?,1,'2026-09-25','2026-09-25','reviewed-patch','["a.ts"]',3)`,
+    )
+    .run(reviewId)
+  database
+    .query(
+      `INSERT INTO review_lens
+         (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,
+          commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+       VALUES (?,?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]',
+               'all','adequate','named','unique')`,
+    )
+    .run(newRecordId(), reviewId, lensRun.record_id)
+
+  const inherited = reviewsForTriage(database, {
+    project: 'fixture',
+    branch: 'branch-b',
+    patchId: 'fixed-patch',
+    pathSet: ['a.ts'],
+  })
+  expect(inherited.branchReviews.map(({ reviewNumber }) => reviewNumber)).toEqual([1])
+
+  const budget = reviewBudgetForBranch(database, 'fixture', 'branch-b', null)
+  expect(budget.roundsUsed).toBe(1)
+  expect(reviewRoundBudgetDecision({ tier: 3, ...budget, roundNeeded: true })).toMatchObject({
+    roundsUsed: 1,
+    startsNewRound: true,
   })
 })
 

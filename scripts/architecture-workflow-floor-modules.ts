@@ -99,6 +99,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../project/projects.ts',
     '../review/review-group.ts',
     '../review/review-identifier.ts',
+    '../review/review-lineage-store.ts',
     '../run/run-identifier.ts',
     './workflow-floor.ts',
     './workflow-checkout-landing.ts',

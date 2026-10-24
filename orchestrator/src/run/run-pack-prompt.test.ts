@@ -85,7 +85,7 @@ describe('review instructions', () => {
     const initial = reviewLensPrompt({
       lens: { question, excludes: 'Other questions.' },
       mechanicallyEnforced: [],
-      earlierRejections: { project: 'fixture', branch: null, rows: [] },
+      earlierRejections: { project: 'fixture', branch: null, branchLineage: [], rows: [] },
       supplied: 'Inspect the change.',
     })
     const prompt = bindReviewInstructions({

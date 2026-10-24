@@ -227,7 +227,7 @@ function registerReviewOperations(review: Command, run: ReviewRunner): void {
 
   review
     .command('budget')
-    .description('report branches whose eligible review rounds exceed their tier ceiling')
+    .description('report review lineages whose eligible review rounds exceed their tier ceiling')
     .allowExcessArguments(true)
     .option('--since <value>', 'include reviews at or after this ISO date')
     .option('--json', 'write the budget report as JSON')

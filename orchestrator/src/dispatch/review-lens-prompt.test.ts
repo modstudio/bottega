@@ -7,7 +7,7 @@ import {
 import type { ReviewFindingMemory } from './review-memory.ts'
 
 const lens = { question: 'Does the change actually hold?', excludes: 'taste and style nits' }
-const noEarlierRejections = { project: 'fixture', branch: null, rows: [] }
+const noEarlierRejections = { project: 'fixture', branch: null, branchLineage: [], rows: [] }
 
 describe('reviewLensPrompt', () => {
   test('no-prompt mutation: a lens question is the prompt', () => {
@@ -112,6 +112,7 @@ test('carries only current same-branch completed rejections and reports the cap'
   const rendered = renderEarlierRoundRejections({
     project: 'fixture',
     branch: 'DEV-1373',
+    branchLineage: ['DEV-1373'],
     rows: [
       ...older,
       finding(),
@@ -149,6 +150,7 @@ test('carry cap breaks equal completion timestamps by review number, not UUID ar
   const rendered = renderEarlierRoundRejections({
     project: 'fixture',
     branch: 'DEV-1373',
+    branchLineage: ['DEV-1373'],
     rows,
   })
 
@@ -158,6 +160,21 @@ test('carry cap breaks equal completion timestamps by review number, not UUID ar
   expect(rendered).not.toContain('src/review-1.ts:1 —')
 })
 
+test('carries rejected findings from an inherited review branch', () => {
+  const rendered = renderEarlierRoundRejections({
+    project: 'fixture',
+    branch: 'DEV-1373-fix',
+    branchLineage: ['DEV-1373-fix', 'DEV-1373-reviewed'],
+    rows: [
+      finding({ branch: 'DEV-1373-reviewed', location: 'src/inherited.ts:4' }),
+      finding({ branch: 'DEV-1373-unrelated', location: 'src/unrelated.ts:4' }),
+    ],
+  })
+
+  expect(rendered).toContain('src/inherited.ts:4')
+  expect(rendered).not.toContain('src/unrelated.ts:4')
+})
+
 test('places earlier rulings after exclusions and tool enforcement', () => {
   const prompt = reviewLensPrompt({
     lens: { question: 'Is it correct?', excludes: 'Style.' },
@@ -165,6 +182,7 @@ test('places earlier rulings after exclusions and tool enforcement', () => {
     earlierRejections: {
       project: 'fixture',
       branch: 'DEV-1373',
+      branchLineage: ['DEV-1373'],
       rows: [finding()],
     },
     supplied: 'Inspect this change.',
