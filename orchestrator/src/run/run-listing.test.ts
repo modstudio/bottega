@@ -622,6 +622,51 @@ describe('run listing', () => {
     ).toBe(true)
   })
 
+  test('runs --json names the automatic failover successor of the run a caller asked for', async () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens', status: 'failed', kind: 'contract' })
+    const successor = addRun({ agent: 'grok', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(root, successor)
+    const rows = (await command({ json: true, id: [String(root)] })).map(runJson) as unknown as {
+      record_id: string
+      number: number
+      automatic_failover_successor: { number: number; agent: string } | null
+    }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.automatic_failover_successor).toEqual({
+      number: runNumber(successor),
+      agent: 'grok',
+    })
+
+    // A successor is a root of its own, so the field answers for the run asked
+    // for: the successor's own successor, not the one that started it.
+    const later = addRun({ agent: 'codex', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(successor, later)
+    const successorRows = (await command({ json: true, id: [String(successor)] })).map(
+      runJson,
+    ) as unknown as { automatic_failover_successor: { number: number; agent: string } | null }[]
+    expect(successorRows[0]!.automatic_failover_successor).toEqual({
+      number: runNumber(later),
+      agent: 'codex',
+    })
+  })
+
+  test('runs --json reports no automatic failover successor for a manual retry or a plain run', async () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens', status: 'failed', kind: 'contract' })
+    const manual = addRun({ agent: 'grok', job: 'review-lens' })
+    db().query('UPDATE run SET retry_of_record_id=? WHERE record_id=?').run(root, manual)
+    for (const id of [root, manual]) {
+      const rows = (await command({ json: true, id: [String(id)] })).map(runJson) as unknown as {
+        automatic_failover_successor: unknown
+      }[]
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.automatic_failover_successor).toBeNull()
+    }
+  })
+
   test('runs --json reports amortized subscription cost and ignores a stored estimate', async () => {
     const id = addRun({
       agent: 'grok',

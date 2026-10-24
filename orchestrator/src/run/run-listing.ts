@@ -220,6 +220,31 @@ function freshListedRunHostWait(row: Record<string, unknown>, now: number): bool
   return isFreshRunHostWait(String(row.status), (row.host_wait_since as string | null) ?? null, now)
 }
 
+/**
+ * The automatic failover successor started for this run's own conversation.
+ *
+ * Anchored on the run the caller named rather than on the conversation's origin,
+ * because a successor is itself a root that can fail and be succeeded in turn.
+ * A caller that already reported the failure has no other way to learn that a
+ * successor started afterwards, since the successor is a separate root and is
+ * not returned by asking for this one.
+ */
+function automaticFailoverSuccessor(recordId: string): { number: number; agent: string } | null {
+  return (
+    db()
+      .query<{ number: number; agent: string }, [string, string]>(
+        `SELECT successor.number, successor.agent FROM run successor
+          WHERE successor.automatic_failover = 1
+            AND successor.retry_of_record_id IN (
+              SELECT member.record_id FROM run member
+               WHERE member.record_id = ? OR member.parent_run_record_id = ?
+            )
+          ORDER BY successor.number LIMIT 1`,
+      )
+      .get(recordId, recordId) ?? null
+  )
+}
+
 function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown> {
   row.retry_record_id = row.retry_of_record_id ?? null
   delete row.retry_of_record_id
@@ -535,6 +560,7 @@ export async function runListingCommand(
           requested_record_id: requested.requested_record_id,
           requested_number: requested.requested_number,
           resolved_from: requested.requested_id === String(row.record_id) ? 'root' : 'turn',
+          automatic_failover_successor: automaticFailoverSuccessor(requested.root_id),
         })),
     )
   }

@@ -20,6 +20,8 @@ SPEC.loader.exec_module(heartbeat_decision)
 
 CHILD_PROCESS_TIMEOUT_SECONDS = 10
 
+SUCCESSOR = {"number": 900, "agent": "grok"}
+
 
 class HeartbeatDecisionTest(unittest.TestCase):
     def test_live_operational_status_uses_the_row_wording(self):
@@ -383,6 +385,159 @@ esac
                 completed.stdout,
             )
             self.assertNotIn("ignored second line", completed.stdout)
+
+    def test_a_failed_chain_with_a_successor_names_it_on_the_failed_line(self):
+        completed = self.run_failover_fixture(SUCCESSOR)
+        self.assertEqual(
+            completed.count(
+                "FAILED 8/fixture codex contract 2.0s; automatic failover started run 900 on grok"
+            ),
+            1,
+            completed,
+        )
+        self.assertNotIn("inspect with", completed)
+
+    def test_a_failed_chain_without_a_successor_keeps_the_inspect_hint(self):
+        completed = self.run_failover_fixture(None)
+        self.assertEqual(
+            completed.count("FAILED 8/fixture codex contract 2.0s; inspect with 'bottega run show 8'"),
+            1,
+            completed,
+        )
+        self.assertNotIn("automatic failover", completed)
+
+    def test_a_successor_started_after_the_failed_line_is_announced_once(self):
+        completed = self.run_failover_fixture(None, SUCCESSOR)
+        self.assertEqual(
+            completed.count("FAILED 8/fixture codex contract 2.0s; inspect with 'bottega run show 8'"),
+            1,
+            completed,
+        )
+        self.assertEqual(
+            completed.count(
+                "FAILOVER 8/fixture contract; automatic failover started run 900 on grok"
+            ),
+            1,
+            completed,
+        )
+        self.assertEqual(completed.count("FAILED 8/fixture"), 1, completed)
+
+    def run_failover_fixture(self, first_successor, later_successor=None):
+        """Announce one failed chain, whose successor may exist at the first read or later.
+
+        The hook is run with the system temporary directory inside the fixture
+        checkout: a restricted runner may not permit mktemp in the machine's own
+        temporary directory, which the hook needs for every read it screens.
+        """
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            for name in (
+                "orch-heartbeat.sh",
+                "heartbeat-decision.py",
+                "heartbeat-run-observation.py",
+                "inbox_question_decision.py",
+            ):
+                shutil.copy2(PATH.with_name(name), hooks)
+            record_id = "01990000-0000-7000-8000-000000000001"
+            member_id = "01990000-0000-7000-8000-000000000002"
+            started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+            live = json.dumps(
+                {
+                    "record_id": record_id,
+                    "number": 7,
+                    "job": "fixture",
+                    "agent": "codex",
+                    "status": "running",
+                    "live_statuses": ["queued", "reserved", "attached", "running", "asking"],
+                    "session_id": "fixture-session",
+                    "started_at": started,
+                    "latency_ms": None,
+                    "live_member_id": member_id,
+                    "live_member_number": 8,
+                    "live_member_status": "running",
+                    "waiting_for_host_capacity": False,
+                    "host_wait_since": None,
+                    "stall_state": "healthy",
+                    "stall": None,
+                    "turns": [{"started_at": started, "latency_ms": None}],
+                }
+            )
+            terminal = {
+                "record_id": record_id,
+                "number": 7,
+                "job": "fixture",
+                "agent": "codex",
+                "status": "failed",
+                "live_member_status": "failed",
+                "live_member_id": member_id,
+                "live_member_number": 8,
+                "failure_kind": "contract",
+                "latency_ms": 2000,
+                "started_at": started,
+            }
+            first = json.dumps(
+                terminal
+                if first_successor is None
+                else {**terminal, "automatic_failover_successor": first_successor}
+            )
+            later = (
+                first
+                if later_successor is None
+                else json.dumps({**terminal, "automatic_failover_successor": later_successor})
+            )
+            fake = binary / "bottega"
+            fake.write_text(
+                f'''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --active --json") printf '[]\\n' ;;
+  "run list --live --json")
+    if [ -f "$FAKE_LIVE_SEEN" ]; then exit 0; else : >"$FAKE_LIVE_SEEN"; printf '%s\\n' '{live}'; fi ;;
+  "run list --json --id {record_id}")
+    if [ -f "$FAKE_TERMINAL_SEEN" ]; then printf '%s\\n' '{later}'
+    else : >"$FAKE_TERMINAL_SEEN"; printf '%s\\n' '{first}'; fi ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
+  *) exit 1 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            environment = {
+                **os.environ,
+                "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
+                "FAKE_TERMINAL_SEEN": str(checkout / "terminal-seen"),
+            }
+            # The hook screens every read through a mktemp file, and a confined
+            # runner may deny the machine temporary directory mktemp prefers, so
+            # point the same command at the fixture checkout instead.
+            real_mktemp = shutil.which("mktemp")
+            if real_mktemp:
+                (binary / "mktemp").write_text(
+                    f'''#!/bin/sh
+exec {real_mktemp} -p "$MKTEMP_DIR" "$@"
+''',
+                    encoding="utf-8",
+                )
+                (binary / "mktemp").chmod(0o755)
+                environment["PATH"] = f"{binary}{os.pathsep}{environment['PATH']}"
+                environment["MKTEMP_DIR"] = str(checkout)
+
+            completed = subprocess.run(
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "4"],
+                cwd=checkout,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
+                check=True,
+            )
+            return completed.stdout
 
     def test_a_chain_finishing_between_ticks_is_announced_once(self):
         self.assert_completion_announcement("ok", None, "FINISHED 8/fixture codex 2.0s")

@@ -5,6 +5,14 @@ import datetime
 import json
 import sys
 
+# How long a failed run with no automatic failover successor yet stays worth
+# rereading, measured from the failed run's own terminal instant. The successor
+# claims its row only after the failure is durable, and its agent selection can
+# wait for capacity first, so the successful read can land a tick or many later.
+# Bounded by RUN_HOST_WAIT_MAX_MS in orchestrator/src/run/run-host-capacity.ts,
+# which owns that wait.
+LATE_FAILOVER_WATCH_MS = 15 * 60 * 1000
+
 
 def run_row(line: str) -> dict:
     value = json.loads(line)
@@ -26,6 +34,13 @@ def run_row(line: str) -> dict:
         raise ValueError("run latency is invalid")
     if value.get("failure_kind") is not None and not isinstance(value.get("failure_kind"), str):
         raise ValueError("run failure kind is invalid")
+    successor = value.get("automatic_failover_successor")
+    if successor is not None and (
+        not isinstance(successor, dict)
+        or not isinstance(successor.get("number"), int)
+        or not isinstance(successor.get("agent"), str)
+    ):
+        raise ValueError("run automatic failover successor is invalid")
     if not isinstance(value.get("live_member_id"), str):
         raise ValueError("run member id is invalid")
     if not isinstance(value.get("live_member_number"), int):
@@ -53,6 +68,28 @@ def timing_row(row: dict) -> dict:
     if len(matching) != 1:
         raise ValueError("run member turn is missing or duplicated")
     return matching[0]
+
+
+def successor_note(row: dict) -> str | None:
+    """The clause naming a started automatic failover successor, or nothing."""
+    successor = row.get("automatic_failover_successor")
+    if not isinstance(successor, dict):
+        return None
+    return "; automatic failover started run %s on %s" % (successor["number"], successor["agent"])
+
+
+def terminal_ms(row: dict) -> int | None:
+    """The row's terminal instant, which bounds how long its successor is worth waiting for."""
+    timing = timing_row(row)
+    started_at = timing.get("started_at")
+    latency = timing.get("latency_ms")
+    if not isinstance(started_at, str) or not isinstance(latency, (int, float)):
+        return None
+    try:
+        started = datetime.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return int(started.timestamp() * 1000) + int(latency)
 
 
 def lines() -> list[dict]:
@@ -128,11 +165,18 @@ def live(session_id: str) -> None:
 
 
 def completion(expected_csv: str, live_statuses_csv: str) -> None:
+    """Report every listed terminal run, and which of them still await a successor.
+
+    The STATE row hands the caller the roots worth rereading: a failed run whose
+    automatic failover successor has not appeared yet, while the wait for one can
+    still end within LATE_FAILOVER_WATCH_MS of the run's own terminal instant.
+    """
     expected = set(filter(None, expected_csv.split(",")))
     live_statuses = set(filter(None, live_statuses_csv.split(",")))
     if not live_statuses:
         raise ValueError("live statuses unavailable")
-    seen = set()
+    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+    seen, watched = set(), []
     for row in lines():
         root_id = row["record_id"]
         if root_id not in expected or root_id in seen:
@@ -155,12 +199,19 @@ def completion(expected_csv: str, live_statuses_csv: str) -> None:
         else:
             seconds = round(latency / 1000)
             duration = "%dm%02ds" % (seconds // 60, seconds % 60)
+        note = successor_note(row) if outcome == "FAILED" else None
+        if outcome == "FAILED" and note is None:
+            ended = terminal_ms(row)
+            if ended is not None and ended + LATE_FAILOVER_WATCH_MS > now_ms:
+                watched.append(root_id)
         print(
             "EVENT", root_id, row["live_member_id"], row["live_member_number"], outcome,
-            row["job"], row["agent"], row.get("failure_kind") or "-", duration, sep="\t",
+            row["job"], row["agent"], row.get("failure_kind") or "-", duration, note or "-",
+            sep="\t",
         )
     if seen != expected:
         raise ValueError("completion row missing")
+    print("STATE", ",".join(sorted(watched)), sep="\t")
 
 
 try:
