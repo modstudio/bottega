@@ -65,10 +65,13 @@ const livePath = runtime.livePath
 const legacyPath = runtime.legacyPath
 export const DB_PATH = livePath
 
-const RESTRICTED_ACTOR_WRITE_REFUSAL =
-  'refusing to write hub rows to the shared store from a worker, linked worktree, or borrowed clone\n' +
-  'invariant: A restricted process reads the shared hub store and never writes or migrates it.\n' +
-  'cleared by: run the command as an operator from the main checkout, or set BOTTEGA_HUB_DB to a temporary scratch copy'
+function restrictedActorWriteRefusal(): string {
+  return (
+    'refusing to write hub rows to the shared store from a worker, linked worktree, or borrowed clone\n' +
+    'invariant: A restricted process reads the shared hub store and never writes or migrates it.\n' +
+    `cleared by: run the command as an operator from the main checkout, or set BOTTEGA_HUB_DB to a scratch copy under the OS temporary directory (${resolve(tmpdir())})`
+  )
+}
 
 /** Gather hub-specific path and caller facts for the shared store-access decision. */
 export function hubStoreAccess(
@@ -91,7 +94,7 @@ const restrictedActor = linkedCheckout || classifyCaller(process.env).kind === '
 
 function assertHubStoreWritable(): void {
   if (hubStoreAccess(restrictedActor, DB_PATH).writesRefused)
-    throw new Error(RESTRICTED_ACTOR_WRITE_REFUSAL)
+    throw new Error(restrictedActorWriteRefusal())
 }
 
 function legacyDatabaseRefusal(): string | null {
@@ -348,7 +351,7 @@ export async function questionIdentitiesForMigrations(
 
 function openMigrationDatabase(): { database: Database; create: boolean } {
   if (hubStoreAccess(restrictedActor, DB_PATH).migrationsRefused)
-    throw new Error(RESTRICTED_ACTOR_WRITE_REFUSAL)
+    throw new Error(restrictedActorWriteRefusal())
   const refusal = legacyDatabaseRefusal()
   if (refusal) throw new Error(refusal)
   const create = !existsSync(DB_PATH)

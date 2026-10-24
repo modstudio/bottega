@@ -40,6 +40,12 @@ type ReviewRecordCommandOperations = {
   run(argv: string[], cwd: string): ReviewRecordCommandResult
 }
 
+const PROJECT_REVIEW_RECORD_USAGE = `${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`
+
+export function projectReviewRecordInputRefusal(condition: string): string {
+  return `${condition}\ncleared by: ${PROJECT_REVIEW_RECORD_USAGE}`
+}
+
 type Presentation = { log(...values: unknown[]): void }
 
 function git(cwd: string, argv: string[]): string {
@@ -162,10 +168,12 @@ export function recordProjectReviewCommand(
 ): void {
   if (!cwd)
     throw new Error(
-      `${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`,
+      projectReviewRecordInputRefusal(
+        "--cwd <tree> is required to name the reviewed branch's worktree",
+      ),
     )
   if (!reason?.trim() || /[\r\n]/.test(reason)) {
-    throw new Error('--reason must be one non-empty line')
+    throw new Error(projectReviewRecordInputRefusal('--reason must be one non-empty line'))
   }
   const project = operations.project(cwd)
   if (!project) {

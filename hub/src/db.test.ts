@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import { runHubFixtureProcess } from '../test/run-fixtures.ts'
@@ -109,8 +109,10 @@ test('a worker refuses hub writes and migrations before touching a shared path',
     'refusing to write hub rows to the shared store from a worker, linked worktree, or borrowed clone'
   expect(write.exitCode).toBe(0)
   expect(write.stdout.toString()).toContain(refusal)
+  expect(write.stdout.toString()).toContain(resolve(tmpdir()))
   expect(migration.exitCode).toBe(0)
   expect(migration.stdout.toString()).toContain(refusal)
+  expect(migration.stdout.toString()).toContain(resolve(tmpdir()))
   expect(existsSync(parent)).toBeFalse()
 })
 

@@ -49,6 +49,22 @@ function operations(overrides: Partial<Operations> = {}): Operations {
   }
 }
 
+test('refuses an absent reason before doing project work', () => {
+  expect(() =>
+    recordProjectReviewCommand(
+      'DEV-1110-record',
+      '/worktree',
+      undefined,
+      { log() {} },
+      operations({
+        project: () => {
+          throw new Error('project work must not start')
+        },
+      }),
+    ),
+  ).toThrow('--reason must be one non-empty line')
+})
+
 test('writes finished review findings and runs the declared argv in the requested tree', () => {
   let written: ReviewRecordFindingsFile | undefined
   let invocation: { argv: string[]; cwd: string } | undefined

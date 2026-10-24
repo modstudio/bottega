@@ -159,6 +159,27 @@ test('review project-record runs through Commander to the handler refusal', asyn
   }
 })
 
+test('review project-record names a missing reviewed branch and its remedy', async () => {
+  const output: string[] = []
+
+  await expect(runReview(['review', 'project-record'], output)).rejects.toThrow(
+    `the reviewed branch is required\ncleared by: ${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`,
+  )
+})
+
+test('review project-record names a missing worktree and its remedy', async () => {
+  const output: string[] = []
+
+  await expect(
+    runReview(
+      ['review', 'project-record', 'DEV-fixture', '--reason', 'record fixture review'],
+      output,
+    ),
+  ).rejects.toThrow(
+    `--cwd <tree> is required to name the reviewed branch's worktree\ncleared by: ${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`,
+  )
+})
+
 test('review restore-findings runs through Commander in report-only mode', async () => {
   const output: string[] = []
 
