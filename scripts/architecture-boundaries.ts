@@ -22,6 +22,7 @@ import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
+import { workflowBoundarySpecs } from './architecture-workflow-boundaries.ts'
 import { worktreeBoundarySpecs } from './architecture-worktree-boundaries.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
@@ -975,6 +976,9 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep task branch identity independent of transports, contracts, and routing.',
     ['../run/run-types.ts'],
+  ),
+  ...workflowBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
   boundary(
     'workflow-built-ins-boundary',

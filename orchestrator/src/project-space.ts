@@ -66,16 +66,21 @@ export function activeRecordSpace(local: Database): string | null {
  */
 export function workflowReadSpace(input: {
   project: string | null
-  projectSpace: string | null
+  projectSpace: string | null | undefined
   activeSpace: string | null
-}): string | null {
-  return input.project ? input.projectSpace : input.activeSpace
-}
-
-export function workflowReadSpaceFor(local: Database, project: string | null): string | null {
-  return workflowReadSpace({
-    project,
-    projectSpace: effectiveProjectSpace(local, project),
-    activeSpace: activeRecordSpace(local),
-  })
+  localAuthoritative: boolean
+  missingActiveSpaceRefusal: string
+  missingProjectRouteRefusal: string
+  rejectedProjectRouteRefusal: string
+}): { spaceId: string | null } | { refused: string } {
+  const routed = input.project ? input.projectSpace : input.activeSpace
+  if (routed) return { spaceId: routed }
+  if (input.localAuthoritative) return { spaceId: null }
+  if (!input.project) return { refused: input.missingActiveSpaceRefusal }
+  return {
+    refused:
+      input.projectSpace === undefined
+        ? input.missingProjectRouteRefusal
+        : input.rejectedProjectRouteRefusal,
+  }
 }

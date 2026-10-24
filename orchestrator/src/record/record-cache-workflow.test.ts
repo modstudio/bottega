@@ -196,8 +196,12 @@ test('the same workflow slug resolves through each project space without consumi
     upsertProject({ name: project, path: `/tmp/${project}`, recordId: newRecordId() })
     rememberProjectSpace(local, project, space!)
   }
-  expect(productionWorkflowTree(local, 'space-1').workflows[0]!.definition.title).toBe('Space 1')
-  expect(productionWorkflowTree(local, 'space-2').workflows[0]!.definition.title).toBe('Space 2')
+  expect(
+    productionWorkflowTree({ database: local, project: 'space-1' }).workflows[0]!.definition.title,
+  ).toBe('Space 1')
+  expect(
+    productionWorkflowTree({ database: local, project: 'space-2' }).workflows[0]!.definition.title,
+  ).toBe('Space 2')
   expect(productionWorkflows(local, null)[0]!.definition.title).not.toMatch(/^Space /)
 })
 

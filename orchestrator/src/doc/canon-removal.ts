@@ -5,10 +5,7 @@ import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import { decideCanonRemoval } from '../canon/canon-write-gate.ts'
 import { projectByName } from '../project/projects.ts'
-import {
-  productionWorkflowTree,
-  productionWorkflowTreeFor,
-} from '../workflow/workflow-tree-store.ts'
+import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { type CanonWriteTree, canonRemovalRefusal } from './doc-write-allowed.ts'
@@ -76,7 +73,7 @@ export function storedCanonRemovalRefusal(
       subject,
       current,
       next,
-      workflowSteps: productionWorkflowTreeFor(subject).steps.map(({ slug, body }) => ({
+      workflowSteps: productionWorkflowTree({ project: subject }).steps.map(({ slug, body }) => ({
         slug,
         body,
       })),

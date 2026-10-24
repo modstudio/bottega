@@ -4,7 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { workflowReadSpaceFor } from '../project-space.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
@@ -14,6 +13,7 @@ import {
   stepCatalogueLocalLifecycle,
   validateStepCatalogue,
 } from './step-catalogue.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import {
   importWorkflow,
@@ -23,22 +23,17 @@ import {
 } from './workflows.ts'
 
 export function productionWorkflowTree(
-  d: Database = db(),
-  project: string | null = null,
+  input: { database?: Database; project?: string | null } = {},
 ): WorkflowTreeStore {
-  const spaceId = workflowReadSpaceFor(d, project)
-  const catalogue = selectedStepCatalogue(undefined, d, spaceId)
+  const database = input.database ?? db()
+  const spaceId = workflowReadSpaceFor(database, input.project ?? null)
+  const catalogue = selectedStepCatalogue(undefined, database, spaceId)
   return {
     steps: catalogue.definition.steps,
     sequences: catalogue.definition.sequences ?? [],
-    workflows: productionWorkflows(d, spaceId),
+    workflows: productionWorkflows(database, spaceId),
   }
 }
-
-export const productionWorkflowTreeFor = (
-  project: string | null,
-  d: Database = db(),
-): WorkflowTreeStore => productionWorkflowTree(d, project)
 
 const same = (left: unknown, right: unknown) => isDeepStrictEqual(left, right)
 
@@ -356,7 +351,7 @@ export function importWorkflowTree(
   if (!reason?.trim()) throw new Error('reason is required')
   const database = d ?? writableDb()
   return writeTransaction(() => {
-    const production = productionWorkflowTree(database, project ?? null)
+    const production = productionWorkflowTree({ database, project: project ?? null })
     const spaceId = workflowReadSpaceFor(database, project ?? null)
     const plan = planWorkflowTreeImport(tree, production, newestDefinitions(database, spaceId))
     if (!plan.catalogueChanged && !plan.workflowsToWrite.length)

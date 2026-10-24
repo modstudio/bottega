@@ -153,7 +153,7 @@ test('pushes a seeded local store through bulk routes and sync resolves routed c
     local.query("SELECT 1 FROM lens WHERE id='correctness' AND space_id=?").get(spaceId),
   ).not.toBeNull()
   expect(
-    productionWorkflowTree(local, 'catalogue-target').workflows.some(
+    productionWorkflowTree({ database: local, project: 'catalogue-target' }).workflows.some(
       (row) => row.slug === 'fix-defect',
     ),
   ).toBeTrue()

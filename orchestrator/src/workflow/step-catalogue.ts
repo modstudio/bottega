@@ -7,7 +7,7 @@ import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
-import { effectiveProjectSpace, workflowReadSpace, workflowReadSpaceFor } from '../project-space.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -26,6 +26,7 @@ import {
   workflowsAfterReplacement,
 } from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
@@ -472,11 +473,7 @@ export const setStepCatalogueLocal = (
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
 async function activeSpace(d?: Database, project?: string) {
   const identity = await recordApiClient().whoami()
-  const spaceId = workflowReadSpace({
-    project: project ?? null,
-    projectSpace: project && d ? effectiveProjectSpace(d, project) : null,
-    activeSpace: identity.activeSpaceId,
-  })
+  const spaceId = project && d ? effectiveProjectSpace(d, project) : identity.activeSpaceId
   if (!spaceId) throw new Error('record session has no active space')
   return spaceId
 }

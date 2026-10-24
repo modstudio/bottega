@@ -152,7 +152,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-workflow-space.ts', [
     '../database/db.ts',
     '../project/projects.ts',
-    '../project-space.ts',
+    '../workflow/workflow-read-space.ts',
     '../workflow/workflows.ts',
   ]),
 ]

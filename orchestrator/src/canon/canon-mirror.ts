@@ -24,7 +24,7 @@ import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { CANON_MIRROR_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
-import { productionWorkflowTreeFor } from '../workflow/workflow-tree-store.ts'
+import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { inspectTreeOwnership, readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
@@ -624,7 +624,7 @@ async function mirrorProject(
           project.name,
           undefined,
           undefined,
-          productionWorkflowTreeFor(project.name).steps,
+          productionWorkflowTree({ project: project.name }).steps,
           {},
           undefined,
           undefined,

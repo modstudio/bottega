@@ -92,7 +92,7 @@ afterEach(() => {
 })
 
 const renderedTree = (d: Database) =>
-  planWorkflowHydration({ store: productionWorkflowTree(d), tree: [] }).writes
+  planWorkflowHydration({ store: productionWorkflowTree({ database: d }), tree: [] }).writes
 
 test('bound production reads use the active space without a project and the routed space with one', () => {
   const d = database()
@@ -117,10 +117,10 @@ test('bound production reads use the active space without a project and the rout
 
   expect(productionStepCatalogue(d).definition.steps[0]!.body).toBe('Active-space step')
   expect(showStepCatalogue(1, d).definition.steps[0]!.body).toBe('Active-space step')
-  const activeTree = productionWorkflowTree(d)
+  const activeTree = productionWorkflowTree({ database: d })
   expect(activeTree.steps[0]!.body).toBe('Active-space step')
   expect(activeTree.workflows[0]!.definition.title).toBe('Active-space workflow')
-  const projectTree = productionWorkflowTree(d, project)
+  const projectTree = productionWorkflowTree({ database: d, project })
   expect(projectTree.steps[0]!.body).toBe('Project-space step')
   expect(projectTree.workflows[0]!.definition.title).toBe('Project-space workflow')
 })
@@ -173,10 +173,12 @@ describe('importWorkflowTree', () => {
         .get(slug) as { n: number }
       promoteWorkflowLocal(slug, workflowDraft.n, 'round-trip fixture', 'test', d)
     }
-    expect(planWorkflowHydration({ store: productionWorkflowTree(d), tree })).toEqual({
-      writes: [],
-      deletes: [],
-    })
+    expect(planWorkflowHydration({ store: productionWorkflowTree({ database: d }), tree })).toEqual(
+      {
+        writes: [],
+        deletes: [],
+      },
+    )
   })
 
   test('an edited step becomes a catalogue draft while production remains unchanged', async () => {
@@ -569,7 +571,7 @@ describe('importWorkflowTree', () => {
 
   test('a hosted failure reports drafts already written and drafts still pending', async () => {
     const d = database()
-    const production = productionWorkflowTree(d)
+    const production = productionWorkflowTree({ database: d })
     const catalogueOwnerId = newRecordId()
     applyWorkflowCatalogueRow(d, 'step_catalogue', {
       id: catalogueOwnerId,

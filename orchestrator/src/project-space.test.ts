@@ -1,23 +1,46 @@
 import { expect, test } from 'bun:test'
 import { workflowReadSpace } from './project-space.ts'
 
-test('workflow reads choose a project route when a project is present', () => {
-  expect(
-    workflowReadSpace({
+const refusals = {
+  missingActiveSpaceRefusal: 'switch the active space',
+  missingProjectRouteRefusal: 'pull the project route',
+  rejectedProjectRouteRefusal: 'accept the space invitation',
+}
+
+test.each([
+  {
+    name: 'a routed project space',
+    input: {
       project: 'routed-project',
       projectSpace: 'project-space',
       activeSpace: 'active-space',
-    }),
-  ).toBe('project-space')
-})
-
-test('workflow reads choose the active record space without a project', () => {
-  expect(
-    workflowReadSpace({
+      localAuthoritative: false,
+      ...refusals,
+    },
+    expected: { spaceId: 'project-space' },
+  },
+  {
+    name: 'the unbound NULL space',
+    input: {
       project: null,
-      projectSpace: null,
+      projectSpace: undefined,
+      activeSpace: null,
+      localAuthoritative: true,
+      ...refusals,
+    },
+    expected: { spaceId: null },
+  },
+  {
+    name: 'a bound project whose route has not been pulled',
+    input: {
+      project: 'unrouted-project',
+      projectSpace: undefined,
       activeSpace: 'active-space',
-    }),
-  ).toBe('active-space')
-  expect(workflowReadSpace({ project: null, projectSpace: null, activeSpace: null })).toBeNull()
+      localAuthoritative: false,
+      ...refusals,
+    },
+    expected: { refused: 'pull the project route' },
+  },
+])('workflow reads resolve $name', ({ input, expected }) => {
+  expect(workflowReadSpace(input)).toEqual(expected)
 })

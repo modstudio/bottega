@@ -17,7 +17,7 @@ import {
   projectByName,
   projectRepositoryRefusal,
 } from '../project/projects.ts'
-import { productionWorkflowTreeFor } from '../workflow/workflow-tree-store.ts'
+import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import {
   acceptPackDiff,
   allInjectChecks,
@@ -191,10 +191,12 @@ function projectCanonImportPlan(
     trackedPaths: collected.trackedPaths,
     packageScripts: collected.packageScripts,
     sourceTexts: collected.sourceTexts,
-    workflowSteps: productionWorkflowTreeFor(project.name).steps.map(({ slug, body }) => ({
-      slug,
-      body,
-    })),
+    workflowSteps: productionWorkflowTree({ project: project.name }).steps.map(
+      ({ slug, body }) => ({
+        slug,
+        body,
+      }),
+    ),
   })
   return { plan, rows }
 }

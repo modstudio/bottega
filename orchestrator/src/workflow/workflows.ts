@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
-import { effectiveProjectSpace, workflowReadSpace, workflowReadSpaceFor } from '../project-space.ts'
+import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -30,6 +30,7 @@ import {
   stepNeedsCloseState,
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
@@ -472,11 +473,7 @@ export const setWorkflow = (
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
 async function hostedSpace(d: Database, project?: string) {
   const identity = await recordApiClient().whoami()
-  const spaceId = workflowReadSpace({
-    project: project ?? null,
-    projectSpace: effectiveProjectSpace(d, project ?? null),
-    activeSpace: identity.activeSpaceId,
-  })
+  const spaceId = project ? effectiveProjectSpace(d, project) : identity.activeSpaceId
   if (!spaceId) throw new Error('record session has no active space')
   return spaceId
 }
