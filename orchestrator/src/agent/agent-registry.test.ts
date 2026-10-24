@@ -8,6 +8,29 @@ function codexRow(probeResult: unknown): AgentRow {
   return { ...row, probe_result: JSON.stringify(probeResult) }
 }
 
+function gooseRow(contextTokens?: number): AgentRow {
+  const row = codexRow({ ok: true })
+  const { contextTokens: _contextTokens, ...caps } = JSON.parse(row.caps)
+  return {
+    ...row,
+    harness: 'goose',
+    model: 'fixture-model',
+    base_url: 'http://fixture.invalid/v1',
+    caps: JSON.stringify({
+      ...caps,
+      ...(contextTokens === undefined ? {} : { contextTokens }),
+    }),
+  }
+}
+
+test('a goose row with a declared context window passes it to goose', () => {
+  expect(rowAgent(gooseRow(1_048_576)).env?.().GOOSE_CONTEXT_LIMIT).toBe('1048576')
+})
+
+test('a goose row without a declared context window keeps the goose default', () => {
+  expect(rowAgent(gooseRow()).env?.()).not.toHaveProperty('GOOSE_CONTEXT_LIMIT')
+})
+
 test('a probe result with no ok verdict is unknown', () => {
   expect(rowAgent(codexRow({ source: 'legacy' })).probePassed).toBeNull()
 })

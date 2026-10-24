@@ -34,6 +34,25 @@ export type AgentRow = {
   trains_on_inputs: number
 }
 
+function rowLaunchEnvironment(row: AgentRow): Record<string, string> {
+  if (!row.base_url) return {}
+  const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
+  return {
+    BOTTEGA_MODEL_HOST_URL: row.base_url,
+    OPENAI_BASE_URL: row.base_url,
+    ...(row.harness === 'goose'
+      ? {
+          GOOSE_PROVIDER: 'openai',
+          GOOSE_MODEL: row.model,
+          GOOSE_TELEMETRY_ENABLED: 'false',
+          ...(typeof stored.contextTokens === 'number'
+            ? { GOOSE_CONTEXT_LIMIT: String(stored.contextTokens) }
+            : {}),
+        }
+      : {}),
+  }
+}
+
 export function rowAgent(row: AgentRow): Agent {
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const probeResult = row.probe_result ? JSON.parse(row.probe_result) : null
@@ -99,15 +118,7 @@ export function rowAgent(row: AgentRow): Agent {
       ? {
           env: () => ({
             ...(base.env?.() ?? {}),
-            BOTTEGA_MODEL_HOST_URL: row.base_url!,
-            OPENAI_BASE_URL: row.base_url!,
-            ...(row.harness === 'goose'
-              ? {
-                  GOOSE_PROVIDER: 'openai',
-                  GOOSE_MODEL: row.model,
-                  GOOSE_TELEMETRY_ENABLED: 'false',
-                }
-              : {}),
+            ...rowLaunchEnvironment(row),
           }),
         }
       : {}),
