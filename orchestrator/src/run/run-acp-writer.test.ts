@@ -23,8 +23,11 @@ const sandboxDeniesLoopbackBinding = await (async () => {
     })
     await server.stop(true)
     return false
-  } catch {
-    return true
+  } catch (error) {
+    // Only a sandbox's denial skips the test; any other failure must stay visible.
+    const code = (error as { code?: unknown }).code
+    if (code === 'EADDRINUSE' || code === 'EPERM' || code === 'EACCES') return true
+    throw error
   }
 })()
 
