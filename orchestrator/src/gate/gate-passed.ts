@@ -13,7 +13,7 @@ type GateCandidate = {
   cwd: string | null
 }
 
-export function selectPassingGateId(
+export function selectPassingGateNumber(
   candidates: readonly GateCandidate[],
   projectId: string,
   architectProjectId: (cwd: string) => string | null,
@@ -30,7 +30,7 @@ export function passingGateForCommit(
   commit: string,
   cwd = process.cwd(),
   d: Database = db(),
-): { project: string; commit: string; gateId: number | null } {
+): { project: string; commit: string; gateNumber: number | null } {
   const project = projectAt(cwd, d)
   if (!project)
     throw new Error(`${PLATFORM_SLUG} gate passed: no registered project contains ${cwd}`)
@@ -47,7 +47,7 @@ export function passingGateForCommit(
   return {
     project: project.name,
     commit: normalized,
-    gateId: selectPassingGateId(
+    gateNumber: selectPassingGateNumber(
       candidates,
       project.recordId,
       (gateCwd) => projectAt(gateCwd, d)?.recordId ?? null,
@@ -56,7 +56,7 @@ export function passingGateForCommit(
 }
 
 export function formatPassingGate(result: ReturnType<typeof passingGateForCommit>): string {
-  return result.gateId === null
+  return result.gateNumber === null
     ? `no passing gate recorded for ${result.project} commit ${result.commit}`
-    : `passing gate ${result.gateId} recorded for ${result.project} commit ${result.commit}`
+    : `passing gate ${result.gateNumber} recorded for ${result.project} commit ${result.commit}`
 }

@@ -334,8 +334,8 @@ function collectMergeProof(
       checks,
     }
   }
-  const passingGateId = passingGateForCommit(pullRequest.headCommit, cwd, database).gateId
-  if (passingGateId === null) {
+  const passingGateNumber = passingGateForCommit(pullRequest.headCommit, cwd, database).gateNumber
+  if (passingGateNumber === null) {
     const currentHeadCommit = adapter.view(cwd, String(pullRequest.number)).headCommit
     return {
       kind: 'local-gate',

@@ -283,8 +283,8 @@ async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
   })
 }
 
-function gateScratchLogPath(scratchDir: string, executionId: number): string {
-  return join(scratchDir, `gate-${executionId}.log`)
+function gateScratchLogPath(scratchDir: string, gateNumber: number): string {
+  return join(scratchDir, `gate-${gateNumber}.log`)
 }
 
 function createGateLog(path: string): number {

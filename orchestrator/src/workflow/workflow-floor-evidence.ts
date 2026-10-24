@@ -15,6 +15,7 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
+import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectByName } from '../project/projects.ts'
 import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -406,7 +407,7 @@ function requireCheckout(
 }
 
 function gatherGate(
-  identifier: string,
+  recordId: string,
   identity: CursorIdentity,
   cursorId: string,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
@@ -423,24 +424,25 @@ function gatherGate(
         cwd: string | null
         head_commit: string | null
       },
-      [string, string, string, string]
+      [string]
     >(
       `SELECT record_id,number,finished_at,exit_code,run_record_id,cwd,head_commit
          FROM gate_execution
-        WHERE record_id=? OR (number=? AND ? GLOB '[0-9]*' AND ? NOT GLOB '*[^0-9]*')`,
+        WHERE record_id=?`,
     )
-    .get(identifier, identifier, identifier, identifier)
-  if (!row) throw new Error(`--gate ${identifier} does not exist`)
+    .get(recordId)
+  if (!row) throw new Error(`--gate ${recordId} does not exist`)
+  const flag = `--gate ${row.number}`
   let project: string | null
   if (row.run_record_id !== null) {
     const run = loadRunBinding(row.run_record_id, d)
-    if (!run) throw new Error(`--gate ${identifier} run ${row.run_record_id} does not exist`)
-    requireRunBinding(`--gate ${identifier}`, run, identity, cursorId, d)
+    if (!run) throw new Error(`${flag} run ${row.run_record_id} does not exist`)
+    requireRunBinding(flag, run, identity, cursorId, d)
     project = run.project
   } else {
-    if (!row.cwd) throw new Error(`--gate ${identifier} architect row has no cwd`)
+    if (!row.cwd) throw new Error(`${flag} architect row has no cwd`)
     project = requireCheckout(
-      `--gate ${identifier}`,
+      flag,
       row.cwd,
       row.head_commit,
       identity,
@@ -456,6 +458,11 @@ function gatherGate(
     project,
     commit: row.head_commit,
   }
+}
+
+function resolveOfferedGate(d: Database, identifier: string | number | undefined): string | undefined {
+  if (identifier === undefined || String(identifier).trim() === '') return undefined
+  return resolveGateIdentifier(d, identifier)
 }
 
 function gatherRun(
@@ -909,13 +916,14 @@ export function gatherValidatedEvidence(input: {
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positive(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
-  const gate = input.evidence.gate === undefined ? undefined : String(input.evidence.gate).trim()
+  const gateRecordId = resolveOfferedGate(d, input.evidence.gate)
   const run = input.evidence.run
   const satisfies = input.evidence.satisfies
   if (ruling)
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
   if (review) gathered.review = gatherReview(resolveReviewIdentifier(d, review), input.identity, d)
-  if (gate) gathered.gate = gatherGate(gate, input.identity, input.cursorId, resolveCheckout, d)
+  if (gateRecordId)
+    gathered.gate = gatherGate(gateRecordId, input.identity, input.cursorId, resolveCheckout, d)
   if (run) {
     gathered.runOffered = run
     gathered.run = gatherRun(run, input.identity, input.cursorId, d)

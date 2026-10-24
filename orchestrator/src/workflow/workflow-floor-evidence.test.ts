@@ -214,7 +214,9 @@ test('resolves probe artifacts and task comments through injected ports', () => 
 })
 
 test('a missing gate id names the flag', () => {
-  expect(() => gather(database(), { gate: 99 })).toThrow('--gate 99 does not exist')
+  expect(() => gather(database(), { gate: 99 })).toThrow(
+    'no gate has number 99; pass a positive decimal gate number or a full gate UUID',
+  )
 })
 
 test('a foreign review is refused and a matching review is allowed', () => {

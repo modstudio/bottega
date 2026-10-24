@@ -53,7 +53,7 @@ export type ArchitectGateGitState = (cwd: string) => {
 
 type ArchitectGateTopLevel = (cwd: string) => string | null
 
-export type ArchitectGateRecord = { id: number; exitCode: number }
+export type ArchitectGateRecord = { number: number; exitCode: number }
 
 /** Record a worker-style gate request; the broker remains the only executor. */
 export function requestGateExecution(runId: string): {
@@ -242,6 +242,6 @@ export async function runArchitectGate(input: {
       .get(recordId)
     if (!row?.number) throw new Error('gate_execution row was not inserted')
     insertGateCheckExecutions(d, recordId, checkExecutions)
-    return { id: row.number, exitCode: ran.exitCode }
+    return { number: row.number, exitCode: ran.exitCode }
   }, d)
 }

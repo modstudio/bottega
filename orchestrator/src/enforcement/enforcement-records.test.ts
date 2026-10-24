@@ -38,8 +38,8 @@ test('category records prefer the newest eligible passing project gate', () => {
 test('category recency breaks a shared finish timestamp by gate UUID', () => {
   const selected = newestCategoryExecutions(
     [
-      row({ gateRecordId: '01990000-0000-7000-8000-000000000020', wallMs: 20 }),
       row({ gateRecordId: '01990000-0000-7000-8000-000000000010', wallMs: 10 }),
+      row({ gateRecordId: '01990000-0000-7000-8000-000000000020', wallMs: 20 }),
     ],
     '/work/project',
   )

@@ -107,9 +107,11 @@ test('issue verification records one passing gate through the worker broker', as
       scratch,
     )
     expect(result.ok).toBe(true)
-    expect(result.id).toBeGreaterThan(0)
+    expect(result.number).toBeGreaterThan(0)
     expect(
-      db().query('SELECT exit_code,head_commit FROM gate_execution WHERE number=?').get(result.id),
+      db()
+        .query('SELECT exit_code,head_commit FROM gate_execution WHERE number=?')
+        .get(result.number),
     ).toEqual({ exit_code: 0, head_commit: head })
   } finally {
     rmSync(main, { recursive: true, force: true })
@@ -125,7 +127,7 @@ test('issue verification rejects a nonzero gate completed by the worker broker',
     expect(result.ok).toBe(false)
     expect(result.fixTreeSafeToRelease).toBe(true)
     expect(
-      db().query('SELECT exit_code FROM gate_execution WHERE number=?').get(result.id),
+      db().query('SELECT exit_code FROM gate_execution WHERE number=?').get(result.number),
     ).toEqual({
       exit_code: 1,
     })
@@ -174,7 +176,7 @@ test.each([
     expect(
       db()
         .query('SELECT exit_code,timed_out,cancelled_reason FROM gate_execution WHERE number=?')
-        .get(result.id),
+        .get(result.number),
     ).toEqual({
       exit_code: 0,
       timed_out: gateResult.timedOut,
@@ -246,7 +248,7 @@ test('issue verification bounds an unfinished broker gate and records its cancel
       GIT_CONFIG_KEY_0: 'core.hooksPath',
       BOTTEGA_MAIN_CHECKOUT: main,
     })
-    expect(result.id).toBeGreaterThan(0)
+    expect(result.number).toBeGreaterThan(0)
     expect(result).toMatchObject({
       ok: false,
       fixTreeSafeToRelease: true,
@@ -257,7 +259,7 @@ test('issue verification bounds an unfinished broker gate and records its cancel
         .query(
           'SELECT exit_code,timed_out,cancelled_reason,finished_at FROM gate_execution WHERE number=?',
         )
-        .get(result.id),
+        .get(result.number),
     ).toEqual({
       exit_code: -1,
       timed_out: 0,
@@ -328,7 +330,7 @@ test('issue verification retains the fix tree when an expired gate cannot be rea
     expect(
       db()
         .query('SELECT finished_at,cancelled_reason FROM gate_execution WHERE number=?')
-        .get(result.id),
+        .get(result.number),
     ).toEqual({ finished_at: null, cancelled_reason: null })
   } finally {
     rmSync(main, { recursive: true, force: true })

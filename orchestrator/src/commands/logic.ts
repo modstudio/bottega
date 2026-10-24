@@ -590,7 +590,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowExcessArguments(false)
     .action(async () => {
       const result = await runArchitectGate({ write: (chunk) => write(chunk) })
-      log(String(result.id))
+      log(String(result.number))
       presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
     })
   gate
@@ -600,7 +600,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .action((commit) => {
       const result = passingGateForCommit(commit)
       log(formatPassingGate(result))
-      presentation.setExitCode(result.gateId === null ? 1 : 0)
+      presentation.setExitCode(result.gateNumber === null ? 1 : 0)
     })
   describedCommand(program, 'pick <job>', 'preview the agent selected for a job')
     .option('--agent <value>', 'select this agent if it is eligible')

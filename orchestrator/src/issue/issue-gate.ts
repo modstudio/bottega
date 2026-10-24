@@ -11,7 +11,7 @@ import type { RunResult } from '../run/run-types.ts'
 import { trackedWorkerEnvironment } from '../run/run-worker-home.ts'
 
 export type IssueGateResult = {
-  id: number
+  number: number
   ok: boolean
   text: string
   fixTreeSafeToRelease: boolean
@@ -48,7 +48,7 @@ export async function runIssueGate(
 ): Promise<IssueGateResult> {
   if (!fixRun.worktree)
     return {
-      id: -1,
+      number: -1,
       ok: false,
       text: 'fix worktree is unavailable',
       fixTreeSafeToRelease: true,
@@ -76,7 +76,7 @@ export async function runIssueGate(
   } catch (error) {
     const reason = `issue coordinator gate broker failed to start: ${String(error)}`
     cancelPendingGateExecution(inserted.recordId, reason)
-    return { id: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: true }
+    return { number: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: true }
   }
   const completed = await (dependencies.wait ?? waitForIssueGate)(finished, ISSUE_GATE_WAIT_MS)
   if (!completed) {
@@ -85,21 +85,21 @@ export async function runIssueGate(
       await broker.close()
     } catch (error) {
       return {
-        id: inserted.number,
+        number: inserted.number,
         ok: false,
         text: `${reason}; gate process could not be reaped for run ${fixRun.record_id}: ${String(error)}`,
         fixTreeSafeToRelease: false,
       }
     }
     cancelPendingGateExecution(inserted.recordId, reason)
-    return { id: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: true }
+    return { number: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: true }
   }
   try {
     await broker.close()
   } catch (error) {
     const reason = `issue coordinator gate broker failed to close: ${String(error)}`
     cancelPendingGateExecution(inserted.recordId, reason)
-    return { id: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: false }
+    return { number: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: false }
   }
   const row = db()
     .query<
@@ -117,7 +117,7 @@ export async function runIssueGate(
   if (!row) throw new Error(`issue coordinator gate execution ${inserted.number} disappeared`)
   const ok = row.exit_code === 0 && row.timed_out === 0 && row.cancelled_reason === null
   return {
-    id: inserted.number,
+    number: inserted.number,
     ok,
     fixTreeSafeToRelease: true,
     text:

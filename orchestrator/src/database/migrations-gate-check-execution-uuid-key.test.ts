@@ -77,12 +77,43 @@ test('K8b-4 keys gate and check executions by UUID and rewrites gate evidence', 
     })
     expect(
       database
-        .query('SELECT "from","table","to" FROM pragma_foreign_key_list(\'check_execution\')')
+        .query<{ name: string; unique: number; partial: number }, []>(
+          "SELECT name,\"unique\",partial FROM pragma_index_list('gate_execution')",
+        )
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        { name: 'gate_execution_one_active', unique: 1, partial: 1 },
+        { name: 'gate_execution_run', unique: 0, partial: 0 },
+      ]),
+    )
+    expect(
+      database
+        .query<{ name: string; unique: number; partial: number }, []>(
+          "SELECT name,\"unique\",partial FROM pragma_index_list('check_execution')",
+        )
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        { name: 'check_execution_category_newest', unique: 0, partial: 0 },
+        {
+          name: 'check_execution_gate_execution_record_id_idx',
+          unique: 0,
+          partial: 0,
+        },
+      ]),
+    )
+    expect(
+      database
+        .query(
+          'SELECT "from","table","to",on_delete FROM pragma_foreign_key_list(\'check_execution\')',
+        )
         .get(),
     ).toEqual({
       from: 'gate_execution_record_id',
       table: 'gate_execution',
       to: 'record_id',
+      on_delete: 'CASCADE',
     })
     expect(
       database

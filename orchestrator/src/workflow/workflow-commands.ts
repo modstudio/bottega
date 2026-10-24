@@ -9,6 +9,7 @@ import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { effectiveProjectSpace } from '../project-space.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -341,7 +342,10 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
       flagValue(argv, 'review') === undefined
         ? undefined
         : resolveReviewIdentifier(db(), flagValue(argv, 'review')!),
-    gate: flagValue(argv, 'gate'),
+    gate:
+      flagValue(argv, 'gate') === undefined
+        ? undefined
+        : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
     artifact: flagValue(argv, 'artifact'),
     task: flagValue(argv, 'task'),

@@ -3,7 +3,11 @@ import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { formatPassingGate, passingGateForCommit, selectPassingGateId } from './gate-passed.ts'
+import {
+  formatPassingGate,
+  passingGateForCommit,
+  selectPassingGateNumber,
+} from './gate-passed.ts'
 
 const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -13,16 +17,16 @@ test('a passing gate belongs to the exact project', () => {
     { recordId: 'b', number: 2, projectId: null, cwd: '/projects/fixture/worktree' },
     { recordId: 'a', number: 1, projectId: 'project-1', cwd: null },
   ]
-  expect(selectPassingGateId(candidates, 'project-1', () => 'project-1')).toBe(2)
-  expect(selectPassingGateId(candidates, 'project-1', () => 'project-2')).toBe(1)
-  expect(selectPassingGateId(candidates, 'project-4', () => 'project-2')).toBeNull()
+  expect(selectPassingGateNumber(candidates, 'project-1', () => 'project-1')).toBe(2)
+  expect(selectPassingGateNumber(candidates, 'project-1', () => 'project-2')).toBe(1)
+  expect(selectPassingGateNumber(candidates, 'project-4', () => 'project-2')).toBeNull()
 })
 
 test('the hook result is one line for either outcome', () => {
-  expect(formatPassingGate({ project: 'fixture', commit: 'abc', gateId: 9 })).toBe(
+  expect(formatPassingGate({ project: 'fixture', commit: 'abc', gateNumber: 9 })).toBe(
     'passing gate 9 recorded for fixture commit abc',
   )
-  expect(formatPassingGate({ project: 'fixture', commit: 'abc', gateId: null })).toBe(
+  expect(formatPassingGate({ project: 'fixture', commit: 'abc', gateNumber: null })).toBe(
     'no passing gate recorded for fixture commit abc',
   )
 })
@@ -43,11 +47,11 @@ test('a timed-out zero-exit gate is not a passing gate', () => {
     )
     .get(commit, repositoryPath) as { record_id: string; number: number }
 
-  expect(passingGateForCommit(commit, repositoryPath, d).gateId).toBeNull()
+  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBeNull()
 
   d.query('UPDATE gate_execution SET timed_out=0 WHERE record_id=?').run(gate.record_id)
   const number = d
     .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
     .get(gate.record_id)!.number
-  expect(passingGateForCommit(commit, repositoryPath, d).gateId).toBe(number)
+  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBe(number)
 })
