@@ -56,9 +56,9 @@ type MigrateCommandOptions = {
   fromOperator?: boolean
 }
 
-export const MIGRATION_DRAIN_REFUSAL_EXIT_CODE = 75
+const MIGRATION_DRAIN_REFUSAL_EXIT_CODE = 75
 
-export class MigrationDrainRefusalError extends Error {
+class MigrationDrainRefusalError extends Error {
   readonly exitCode = MIGRATION_DRAIN_REFUSAL_EXIT_CODE
 }
 
@@ -149,32 +149,41 @@ function assertInFlightMigrationAllowed(input: {
   input.presentation.log(`forcing migration; these orchestrator runs will fail: ${names}`)
 }
 
+function validateMigrationOverride(options: MigrateCommandOptions): string | undefined {
+  const reason = options.forceInFlight
+  if (reason === undefined) return undefined
+  if (!reason.trim()) throw new Error('--force-in-flight requires a non-empty reason')
+  if (!options.fromOperator) {
+    throw new Error(
+      'refusing migration override without operator attribution; rerun with --force-in-flight "<reason>" --from-operator',
+    )
+  }
+  if (process.env.BOTTEGA_DEPTH !== undefined) {
+    throw new Error('migration overrides are reserved for architect sessions; BOTTEGA_DEPTH is set')
+  }
+  return reason.trim()
+}
+
+function reportInFlightRuns(
+  presentation: DatabaseCommandPresentation,
+  runs: MigrationInFlightRun[],
+): void {
+  presentation.log(`runs in flight before migration: ${runs.length}`)
+  for (const run of runs) {
+    presentation.log(`  ${run.name}: ${run.waiting ? 'waiting for host capacity' : run.status}`)
+  }
+}
+
 export async function migrateCommand(
   presentation: DatabaseCommandPresentation,
   actions?: MigrateCommandActions,
   options: MigrateCommandOptions = {},
 ): Promise<void> {
-  const overrideReason = options.forceInFlight
-  if (overrideReason !== undefined) {
-    if (!overrideReason.trim()) throw new Error('--force-in-flight requires a non-empty reason')
-    if (!options.fromOperator) {
-      throw new Error(
-        'refusing migration override without operator attribution; rerun with --force-in-flight "<reason>" --from-operator',
-      )
-    }
-    if (process.env.BOTTEGA_DEPTH !== undefined) {
-      throw new Error(
-        'migration overrides are reserved for architect sessions; BOTTEGA_DEPTH is set',
-      )
-    }
-  }
+  const overrideReason = validateMigrationOverride(options)
   actions ??= defaultMigrateCommandActions(options)
   actions.assertAuthority?.()
   const inFlight = await actions.inFlightRuns()
-  presentation.log(`runs in flight before migration: ${inFlight.length}`)
-  for (const run of inFlight) {
-    presentation.log(`  ${run.name}: ${run.waiting ? 'waiting for host capacity' : run.status}`)
-  }
+  reportInFlightRuns(presentation, inFlight)
   const decision = actions.migrationDecision?.(inFlight)
   assertInFlightMigrationAllowed({
     decision,
@@ -183,7 +192,7 @@ export async function migrateCommand(
     presentation,
   })
   if (overrideReason !== undefined && decision && decision.action !== 'apply-now') {
-    actions.recordOverride?.(overrideReason.trim())
+    actions.recordOverride?.(overrideReason)
   }
   const alreadyContracted = await actions.contracted()
   const before = alreadyContracted

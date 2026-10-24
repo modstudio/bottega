@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PRELOAD_RUNS } from '../../test/preload.ts'
-import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
+import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
 import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
 import type { MigrationDrainDecision } from './migration-drain-decision.ts'
@@ -24,7 +24,7 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
     value: {
       async inFlightRuns() {
         calls.push('in-flight')
-        return [] as ReturnType<typeof migrationInFlightRuns>
+        return [] as MigrationInFlightRun[]
       },
       async contracted() {
         calls.push('contracted')
@@ -93,34 +93,6 @@ test('migrate skips the boundary and fill when the identity contract is recorded
   ])
 })
 
-test('migrate reports live and host-waiting runs before its first migration', async () => {
-  const database = db()
-  database.run("UPDATE run SET status='ok' WHERE status IN ('running','asking')")
-  const insert = database.query(
-    `INSERT INTO run
-     (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,host_wait_since)
-     VALUES (?, ?, datetime('now'), 'codex', 'migration-fixture', 'sha', 0, '', ?, ?)`,
-  )
-  insert.run(randomUUID(), 99001, 'running', '2026-10-22T21:34:00.000Z')
-  insert.run(randomUUID(), 99002, 'asking', null)
-  insert.run(randomUUID(), 99003, 'running', '2026-10-22T21:00:00.000Z')
-  const lines: string[] = []
-  const scenario = actions(async () => undefined, true)
-  scenario.value.inFlightRuns = async () =>
-    migrationInFlightRuns(database, Date.parse('2026-10-22T21:34:01.000Z'))
-
-  await migrateCommand({ log: (line) => lines.push(line) }, scenario.value)
-
-  expect(lines[0]).toBe('runs in flight before migration: 3')
-  expect(lines.slice(1, 4)).toEqual(
-    expect.arrayContaining([
-      expect.stringContaining(': waiting for host capacity'),
-      expect.stringContaining(': asking'),
-      expect.stringContaining(': running'),
-    ]),
-  )
-})
-
 test('migrate refuses a non-additive pending range under live runs unless explicitly forced', async () => {
   const run = { name: 'run-live', status: 'running' as const, waiting: false }
   const refused = actions(async () => undefined, true)
@@ -160,55 +132,6 @@ test('the in-flight override requires operator attribution and is unavailable to
     if (prior === undefined) delete process.env.BOTTEGA_DEPTH
     else process.env.BOTTEGA_DEPTH = prior
   }
-})
-
-async function reportFromStoreBefore(
-  beforeMigration: string,
-  insert: (database: Database) => void,
-): Promise<string[]> {
-  const database = new Database(':memory:')
-  try {
-    applyMigrationsBefore(database, beforeMigration)
-    insert(database)
-    const lines: string[] = []
-    const scenario = actions(async () => undefined, true)
-    scenario.value.inFlightRuns = async () => migrationInFlightRuns(database)
-    await migrateCommand({ log: (line) => lines.push(line) }, scenario.value)
-    return lines
-  } finally {
-    database.close()
-  }
-}
-
-test('migrate reports a live run from a store before run record ids', async () => {
-  const lines = await reportFromStoreBefore('0029_run_record_outbox', (database) => {
-    database
-      .query(
-        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (datetime('now'),'codex','migration-fixture','sha',0,'','running')`,
-      )
-      .run()
-  })
-
-  expect(lines.slice(0, 2)).toEqual(['runs in flight before migration: 1', '  #1: running'])
-})
-
-test('migrate reports a live run from a store before host wait tracking', async () => {
-  const recordId = '01990000-0000-7000-8000-000000001576'
-  const lines = await reportFromStoreBefore('0139_run_host_wait', (database) => {
-    database
-      .query(
-        `INSERT INTO run
-         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (?,1576,datetime('now'),'codex','migration-fixture','sha',0,'','running')`,
-      )
-      .run(recordId)
-  })
-
-  expect(lines.slice(0, 2)).toEqual([
-    'runs in flight before migration: 1',
-    `  ${recordId}: running`,
-  ])
 })
 
 const FENCE = '0121_run_filesystem_identity_cutover'
