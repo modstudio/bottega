@@ -13,11 +13,14 @@ export function failingDefaultCanonEvals(): FailingDefaultCanonEval[] {
   return db()
     .query(
       `SELECT slug, agent
-       FROM canon_eval
-      WHERE agent=? AND (pass=0 OR canon_sha=?) AND id IN (
-        SELECT MAX(id) FROM canon_eval WHERE agent=? GROUP BY slug
-      )
+       FROM (
+         SELECT slug, agent, pass, canon_sha,
+                ROW_NUMBER() OVER (PARTITION BY slug ORDER BY at DESC, record_id DESC) AS recency
+         FROM canon_eval
+         WHERE agent=?
+       )
+      WHERE recency=1 AND (pass=0 OR canon_sha=?)
       ORDER BY slug`,
     )
-    .all(DEFAULT_EVAL_AGENT, EMPTY_CANON_SHA, DEFAULT_EVAL_AGENT) as FailingDefaultCanonEval[]
+    .all(DEFAULT_EVAL_AGENT, EMPTY_CANON_SHA) as FailingDefaultCanonEval[]
 }

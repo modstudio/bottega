@@ -87,7 +87,12 @@ describe('recalibrating the scorer', () => {
     expect(r.out).toContain('fidelity: n=2 kappa=0.000 ac1=0.385 reading=ambiguous rubric')
     expect(
       db()
-        .query(`SELECT delivery, quality, fidelity, session_id FROM calibration ORDER BY id`)
+        .query(
+          `SELECT calibration.delivery, calibration.quality, calibration.fidelity,
+                  calibration.session_id
+             FROM calibration JOIN run ON run.record_id=calibration.run_record_id
+            ORDER BY run.number`,
+        )
         .all(),
     ).toEqual(
       Array.from({ length: 3 }, () => ({
@@ -104,9 +109,15 @@ describe('recalibrating the scorer', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       )
     }
-    expect(db().query('SELECT delivery, quality, fidelity FROM score ORDER BY id').all()).toEqual(
-      originals.map(([delivery, quality, fidelity]) => ({ delivery, quality, fidelity })),
-    )
+    expect(
+      db()
+        .query(
+          `SELECT score.delivery, score.quality, score.fidelity
+             FROM score JOIN run ON run.record_id=score.run_record_id
+            ORDER BY run.number`,
+        )
+        .all(),
+    ).toEqual(originals.map(([delivery, quality, fidelity]) => ({ delivery, quality, fidelity })))
   })
 
   test('age and scorer identity filter the sample, while force skips only identity', async () => {

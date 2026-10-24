@@ -198,7 +198,7 @@ test('a review-lens run scored with only delivery names every remaining required
         `${PLATFORM_SLUG} score ${id} full right --reproduced all --coverage adequate --limits named --overlap unique --finding 1=accepted:high --finding 2=accepted:high`,
     ),
   )
-  expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+  expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
 })
 
 test('an implement run scored with only full names quality and fidelity together', async () => {
@@ -229,7 +229,7 @@ test('an implement run scored with only full names quality and fidelity together
         `${PLATFORM_SLUG} score ${id} full right faithful`,
     ),
   )
-  expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+  expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
 })
 
 test('a suggested form preserves supplied finding verdicts and succeeds through the command', async () => {

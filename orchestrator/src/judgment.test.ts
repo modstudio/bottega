@@ -243,7 +243,7 @@ describe('score ruling', () => {
     await expect(score(id, ['full', 'right'], { reproduced: 'all' })).rejects.toThrow(
       'not a findings-producing lens',
     )
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('score refuses review grades when a findings job delivered none', async () => {
@@ -251,7 +251,7 @@ describe('score ruling', () => {
     await expect(score(id, ['none'], { reproduced: 'all' })).rejects.toThrow(
       `review-lens run ${id} was scored delivery none, which takes no findings or review grades (--reproduced); if the lens delivered a review, score its delivery partial or full and grade it; otherwise drop these flags and put the facts in --note`,
     )
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
     expect(db().query('SELECT record_id FROM review_lens WHERE run_record_id=?').get(id)).toBeNull()
   })
 
@@ -308,7 +308,7 @@ describe('score ruling', () => {
         finding: '1=accepted:high',
       }),
     ).rejects.toThrow(expected)
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('--same-as marks a scored pair compared without adding a duel', async () => {
@@ -478,7 +478,7 @@ describe('judge ruling', () => {
       .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('safety', 'm', output, id)
     await expect(score(id, ['full', 'right'])).rejects.toThrow(/reproduced/)
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('lens scoring updates an already-recorded review row instead of creating another review', async () => {
@@ -580,7 +580,7 @@ describe('judge ruling', () => {
     await expect(
       score(id, ['full', 'right'], { coverage: 'empty', limits: 'named' }),
     ).rejects.toThrow('unevidenced review')
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('duplicate singleton review grades are refused without recording a score or review', async () => {
@@ -714,7 +714,7 @@ describe('judge ruling', () => {
       }),
     ).rejects.toThrow(integrity)
     expect(() => completeReview(reviewId, db())).toThrow(integrity)
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
     expect(db().query('SELECT completed_at FROM review WHERE record_id=?').get(reviewId)).toEqual({
       completed_at: null,
     })
@@ -733,7 +733,7 @@ describe('judge ruling', () => {
         finding: ['2=accepted:high'],
       }),
     ).rejects.toThrow('has no finding 2')
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('score and judge read notes from files and reject shell-fragment notes', async () => {
@@ -783,7 +783,7 @@ describe('judge ruling', () => {
   test('judge lists every missing writer axis in one refusal', async () => {
     const id = insert('ok', 'implement')
     await expect(judge(id, [])).rejects.toThrow(/<none\|partial\|full>[\s\S]*<wrong\|mixed\|right>/)
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('a lens without axes and finding verdicts names every score remedy', async () => {
@@ -802,7 +802,7 @@ describe('judge ruling', () => {
           'critical\\|high\\|medium\\|low[\\s\\S]*lowercase stable category ID of 1-64 characters',
       ),
     )
-    expect(db().query('SELECT id FROM score WHERE run_record_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT record_id FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
   test('judge none closes review debt without entering reviewer calibration', async () => {
