@@ -1025,10 +1025,17 @@ describe('retry command', () => {
     db()
       .query('UPDATE run SET cwd=?,worktree=?,base_commit=? WHERE record_id=?')
       .run(released, released, baseCommit, id)
+    const dispatchedId = addRun({
+      agent: 'grok',
+      job: 'file-question',
+      status: 'ok',
+      session: 'orch-test-session',
+      repo: 'continuation-fixture',
+    })
     const dispatched: Parameters<typeof detach>[2][] = []
     const dispatch: typeof detach = async (_job, _prompt, spec) => {
       dispatched.push(spec)
-      return insert('ok')
+      return dispatchedId
     }
 
     await retryRun(id, { flags }, { ...helpers, dispatch })
