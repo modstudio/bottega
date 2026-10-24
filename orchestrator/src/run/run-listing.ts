@@ -316,12 +316,6 @@ function lifecyclePresentation(
   if (row.stranded === true) return { status: 'stranded', detail: String(row.recovery_hint) }
   const status = outcome.line.split(' - ', 1)[0]!
   const hostWaitSince = row.host_wait_since as string | null
-  const migrationDrain = row.migration_drain as string | null
-  if (migrationDrain && isFreshRunHostWait(String(row.status), hostWaitSince))
-    return {
-      status: 'waiting',
-      detail: `draining for migration ${migrationDrain} since ${hostWaitSince}`,
-    }
   if (row.waiting_for_capacity === true)
     return { status: 'waiting', detail: row.live_status_detail as string }
   if (row.throttled) return { status: 'throttled', detail: row.live_status_detail as string }
@@ -546,8 +540,6 @@ export async function runListingCommand(
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
             current_run.agent_start_time AS current_agent_start_time,
             current_run.host_wait_since,
-            (SELECT json_extract(value, '$.migration') FROM schema_meta
-              WHERE key='migration_drain') AS migration_drain,
             s.delivery, s.quality,
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${

@@ -128,9 +128,9 @@ function preflightDetachMcp(
   return preflightedAgent
 }
 
-function assertDispatchDatabase(): void {
+function assertDispatchDatabase(resume: boolean): void {
   writableDb()
-  assertMigrationDispatchAllowed(db())
+  assertMigrationDispatchAllowed(db(), resume)
 }
 
 export async function detach(
@@ -140,7 +140,7 @@ export async function detach(
   selectedAgent?: string,
   spawnCoordinator: typeof spawn = spawn,
 ): Promise<string> {
-  assertDispatchDatabase()
+  assertDispatchDatabase(spec.resume !== undefined)
   /**
    * The depth check happens HERE TOO, before a row exists.
    *

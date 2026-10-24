@@ -20,11 +20,13 @@ export function registerDatabaseCommands(
     .command('migrate')
     .description('apply pending orchestrator store migrations')
     .option('--backfill-spec-sha', 'backfill missing run specification hashes')
-    .option('--force-in-flight', 'apply a non-additive migration and fail named in-flight runs')
+    .option('--force-in-flight <reason>', 'apply a non-additive migration for this operator reason')
+    .option('--from-operator', 'confirm the override came directly from the operator')
     .allowExcessArguments(false)
     .action((options) =>
       migrateCommand(presentation, undefined, {
-        forceInFlight: Boolean(options.forceInFlight),
+        forceInFlight: options.forceInFlight,
+        fromOperator: Boolean(options.fromOperator),
       }),
     )
   program

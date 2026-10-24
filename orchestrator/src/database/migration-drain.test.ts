@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { db } from './db.ts'
 import {
+  assertMigrationDispatchAllowed,
   migrationDrain,
   migrationDrainForUpdate,
   migrationDrainLiveness,
@@ -52,5 +53,24 @@ describe('migration drain holder', () => {
         cause: expect.stringContaining('dead holder pid 4321'),
       }),
     ])
+  })
+
+  test('a live marker refuses a new chain but admits a resume', () => {
+    setMigrationDrain(db(), marker.migration, { pid: process.pid, startTime: null })
+    try {
+      expect(() => assertMigrationDispatchAllowed(db())).toThrow(
+        /refusing new dispatch.*re-dispatch/,
+      )
+      expect(() => assertMigrationDispatchAllowed(db(), true)).not.toThrow()
+      expect(
+        db()
+          .query(
+            "SELECT event_kind FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' ORDER BY at DESC, record_id DESC LIMIT 1",
+          )
+          .get(),
+      ).toEqual({ event_kind: 'refusal' })
+    } finally {
+      db().query("DELETE FROM schema_meta WHERE key='migration_drain'").run()
+    }
   })
 })

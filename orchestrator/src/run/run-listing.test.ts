@@ -4,7 +4,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { setMigrationDrain } from '../database/migration-drain.ts'
 import { appendRunEvent } from '../events.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { runDetail } from '../state/serve.ts'
@@ -65,17 +64,6 @@ function runNumber(recordId: string): number {
 }
 
 describe('run listing', () => {
-  test('a migration-drain waiter publishes its migration status', async () => {
-    const waiting = insert('running')
-    db()
-      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
-      .run(new Date().toISOString(), waiting)
-    setMigrationDrain(db(), '0155_rebuild')
-    expect((await command({ id: [waiting] })).join('\n')).toContain(
-      'draining for migration 0155_rebuild',
-    )
-  })
-
   test('run identity mapping includes roots and turns', () => {
     const root = insert('asking')
     const turn = insert('running')

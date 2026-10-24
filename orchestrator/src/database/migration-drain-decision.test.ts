@@ -18,7 +18,6 @@ describe('migration drain decision', () => {
         storeVersion: 3,
         runs: [running],
         canDrain: true,
-        waitBoundReached: false,
       }),
     ).toEqual({ action: 'apply-now' })
   })
@@ -30,7 +29,6 @@ describe('migration drain decision', () => {
         storeVersion: 1,
         runs: [running],
         canDrain: true,
-        waitBoundReached: false,
       }),
     ).toEqual({ action: 'apply-now' })
   })
@@ -42,7 +40,6 @@ describe('migration drain decision', () => {
         storeVersion: 2,
         runs: [],
         canDrain: true,
-        waitBoundReached: false,
       }),
     ).toEqual({ action: 'apply-now' })
   })
@@ -54,21 +51,8 @@ describe('migration drain decision', () => {
         storeVersion: 2,
         runs: [running, asking],
         canDrain: true,
-        waitBoundReached: false,
       }),
     ).toEqual({ action: 'drain', migration: '0002_rebuild' })
-  })
-
-  test('refuses when the wait bound is reached', () => {
-    expect(
-      decideMigrationDrain({
-        journal,
-        storeVersion: 2,
-        runs: [running],
-        canDrain: true,
-        waitBoundReached: true,
-      }),
-    ).toEqual({ action: 'refuse', reason: 'wait-bound-reached' })
   })
 
   test('refuses when an incompatible range cannot be drained', () => {
@@ -78,7 +62,6 @@ describe('migration drain decision', () => {
         storeVersion: 2,
         runs: [running],
         canDrain: false,
-        waitBoundReached: false,
       }),
     ).toEqual({ action: 'refuse', reason: 'drain-impossible' })
   })

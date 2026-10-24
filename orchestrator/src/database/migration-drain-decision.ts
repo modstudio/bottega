@@ -8,14 +8,13 @@ import { inFlightMigrationCompatibility } from './migration-compatibility.ts'
 export type MigrationDrainDecision =
   | { action: 'apply-now' }
   | { action: 'drain'; migration: string }
-  | { action: 'refuse'; reason: 'drain-impossible' | 'wait-bound-reached' }
+  | { action: 'refuse'; reason: 'drain-impossible' }
 
 export function decideMigrationDrain(input: {
   journal: MigrationJournalEntry[]
   storeVersion: number
   runs: MigrationInFlightRun[]
   canDrain: boolean
-  waitBoundReached: boolean
 }): MigrationDrainDecision {
   const incomingVersion = input.journal.length
   if (incomingVersion <= input.storeVersion) return { action: 'apply-now' }
@@ -26,7 +25,6 @@ export function decideMigrationDrain(input: {
     return { action: 'apply-now' }
   }
   if (input.runs.length === 0) return { action: 'apply-now' }
-  if (input.waitBoundReached) return { action: 'refuse', reason: 'wait-bound-reached' }
   if (!input.canDrain) return { action: 'refuse', reason: 'drain-impossible' }
   return { action: 'drain', migration: input.journal[input.storeVersion]!.tag }
 }

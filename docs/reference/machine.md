@@ -413,14 +413,15 @@ report legacy orchestrator and hub invocations
 
 ## bottega machine migrate
 
-**Synopsis:** `bottega machine migrate [--backfill-spec-sha] [--force-in-flight]`
+**Synopsis:** `bottega machine migrate [--backfill-spec-sha] [--force-in-flight <reason>] [--from-operator]`
 
 migrate the orchestrator and hub stores
 
 ### Options
 
 - `--backfill-spec-sha`: backfill missing run specification hashes
-- `--force-in-flight`: apply a non-additive migration and fail named in-flight runs
+- `--force-in-flight <reason>`: apply a non-additive migration for this operator reason
+- `--from-operator`: confirm the override came directly from the operator
 
 ### Related
 

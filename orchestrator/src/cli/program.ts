@@ -170,6 +170,8 @@ export async function lockedStoreMessage(
 
 /** The exit code for a failure that escaped a command: Commander's own signals map to 0 or 2, everything else is 1. */
 function exitCodeFor(error: unknown): number {
+  const explicit = (error as { exitCode?: unknown } | null)?.exitCode
+  if (typeof explicit === 'number' && Number.isInteger(explicit)) return explicit
   if (!(error instanceof CommanderError)) return 1
   return error.code === 'commander.helpDisplayed' || error.code === 'commander.version' ? 0 : 2
 }

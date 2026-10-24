@@ -86,13 +86,20 @@ export function activeMigrationDrain(
   return liveness.state === 'stale' ? null : { marker, liveness }
 }
 
-export function assertMigrationDispatchAllowed(database: Database): void {
+export function assertMigrationDispatchAllowed(database: Database, existingChain = false): void {
+  if (existingChain) return
   const active = activeMigrationDrain(database)
   if (!active) return
   const holder =
     active.liveness.state === 'unknown'
       ? `${active.liveness.reason}; holder pid ${active.marker.pid}`
       : `holder pid ${active.marker.pid}`
+  tryWriteContention({
+    resourceKind: 'store',
+    resourceKey: 'migration-drain',
+    eventKind: 'refusal',
+    cause: `refused new dispatch for ${active.marker.migration}: ${holder}`,
+  })
   throw new Error(
     `refusing new dispatch while draining for migration ${active.marker.migration} (${holder}); ` +
       `re-dispatch after ${PLATFORM_SLUG} machine update finishes`,

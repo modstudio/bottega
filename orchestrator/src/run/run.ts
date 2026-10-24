@@ -246,7 +246,7 @@ export async function run(opts: {
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
-  assertMigrationDispatchAllowed(db())
+  assertMigrationDispatchAllowed(db(), opts.resume !== undefined)
   runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),

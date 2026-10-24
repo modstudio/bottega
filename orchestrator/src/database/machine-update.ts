@@ -2,15 +2,20 @@
 /** Adapts Git, the live store, and migration execution around the drain decision. */
 
 import { Database } from 'bun:sqlite'
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { RUN_WALL_TIME_CEILING_MS } from '../jobs/jobs.ts'
 import { projectAt } from '../project/projects.ts'
-import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
-import { existingDatabaseMigrationRefusal } from './database-location.ts'
+import { migrationLeaseHoldingRuns } from '../run/migration-in-flight-runs.ts'
+import {
+  DATABASE_RESOLUTION,
+  existingDatabaseMigrationRefusal,
+  missingDatabaseMessage,
+} from './database-location.ts'
 import { DB_PATH } from './db.ts'
 import {
+  inFlightMigrationCompatibility,
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
@@ -19,7 +24,7 @@ import {
   migrationDrainForUpdate,
   setMigrationDrain,
 } from './migration-drain.ts'
-import { decideMigrationDrain } from './migration-drain-decision.ts'
+import { migrationJournal, migrationState } from './migrations.ts'
 
 const MIGRATION_DRAIN_POLL_MS = 1_000
 /** One poll beyond the longest coordinator wall-time, so every admitted run can terminalise. */
@@ -86,7 +91,7 @@ async function waitForDrain(input: {
   const started = input.now()
   let lastReport = ''
   for (;;) {
-    const runs = store((database) => migrationInFlightRuns(database))
+    const runs = store((database) => migrationLeaseHoldingRuns(database))
     if (runs.length === 0) return
     const report = runs.map((run) => `${run.name} (${run.status})`).join(', ')
     if (report !== lastReport) {
@@ -95,7 +100,8 @@ async function waitForDrain(input: {
     }
     if (input.now() - started >= MIGRATION_DRAIN_WAIT_MAX_MS) {
       throw new Error(
-        `migration drain wait bound reached; runs still in flight: ${runs.map((run) => run.name).join(', ')}`,
+        `migration drain wait bound reached; runs still in flight: ${runs.map((run) => `${run.name} (${run.status})`).join(', ')}; ` +
+          `answer or stop them, then re-run ${PLATFORM_SLUG} machine update`,
       )
     }
     await input.sleep(MIGRATION_DRAIN_POLL_MS)
@@ -121,6 +127,12 @@ export async function machineUpdateCommand(
     } | null
   } = {},
 ): Promise<void> {
+  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  if (!deps.authorityRefusal && DATABASE_RESOLUTION.method === 'BOTTEGA_ORCHESTRATOR_DB') {
+    throw new Error(
+      `refusing machine update through BOTTEGA_ORCHESTRATOR_DB; run it from the main checkout without the override`,
+    )
+  }
   const authorityRefusal = (deps.authorityRefusal ?? existingDatabaseMigrationRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
   const cwd = deps.cwd ?? process.cwd()
@@ -128,44 +140,53 @@ export async function machineUpdateCommand(
   const migrate = deps.migrate ?? runMigration
   const project = store((database) => (deps.project ?? projectAt)(cwd, database))
   if (!project || realpathSync(cwd) !== realpathSync(project.path)) {
-    throw new Error('refusing machine update outside a registered main checkout')
+    throw new Error(
+      'refusing machine update outside a registered main checkout; run it from the registered main checkout root',
+    )
   }
   const branch = project.settings.trunk?.trim()
   if (!branch) throw new Error(`${project.name}: no registered landing branch`)
   runGit(cwd, ['fetch', 'origin', branch])
   const journal = incomingJournal(cwd, branch, runGit)
   const initial = store((database) => {
-    const storeVersion = (database.query('PRAGMA user_version').get() as { user_version: number })
-      .user_version
-    const runs = migrationInFlightRuns(database)
+    const local = migrationState(database)
+    if (local.ahead) throw new Error(`store is ahead at migration ${local.ahead}`)
+    const firstPending = local.pending[0]
+    const storeVersion = firstPending
+      ? journal.findIndex((entry) => entry.tag === firstPending.tag)
+      : migrationJournal().length
+    if (storeVersion < 0) {
+      throw new Error(`incoming journal does not contain pending migration ${firstPending!.tag}`)
+    }
     const activeDrain = migrationDrainForUpdate(database)
+    const compatibility =
+      journal.length <= storeVersion
+        ? null
+        : inFlightMigrationCompatibility(journal, storeVersion, journal.length)
     return {
-      runs,
       activeDrain,
-      decision: decideMigrationDrain({
-        journal,
-        storeVersion,
-        runs,
-        canDrain: activeDrain === null,
-        waitBoundReached: false,
-      }),
+      storeVersion,
+      compatibility,
     }
   })
-  if (initial.decision.action === 'refuse') {
+  if (initial.activeDrain) {
     throw new Error(
-      initial.decision.reason === 'drain-impossible'
-        ? `migration drain is already active for ${initial.activeDrain?.migration} ` +
-            `(holder pid ${initial.activeDrain?.pid}); wait for ${PLATFORM_SLUG} machine update to finish`
-        : `migration update refused: ${initial.decision.reason}`,
+      `migration drain is already active for ${initial.activeDrain.migration} ` +
+        `(holder pid ${initial.activeDrain.pid}); wait for ${PLATFORM_SLUG} machine update to finish`,
     )
   }
-  if (initial.decision.action === 'drain') {
-    const migration = initial.decision.migration
+  if (initial.compatibility === 'incompatible') {
+    const migration = journal[initial.storeVersion]!.tag
     store((database) => setMigrationDrain(database, migration))
     try {
       const now = deps.now ?? Date.now
       const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
-      await waitForDrain({ migration, presentation, now, sleep })
+      await waitForDrain({
+        migration,
+        presentation,
+        now,
+        sleep,
+      })
       runGit(cwd, ['pull', '--ff-only', 'origin', branch])
       migrate(cwd)
     } finally {

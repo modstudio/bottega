@@ -133,3 +133,22 @@ export function runLeaseIds(): string[] {
     return match ? [match[1]!.toLowerCase()] : []
   })
 }
+
+/** Return the coordinator identities whose kernel leases are held right now. */
+export function heldRunLeaseIds(): string[] {
+  if (!existsSync(leaseDirectory())) return []
+  const identities = readdirSync(leaseDirectory()).flatMap((name) => {
+    const match =
+      /^((?:[1-9]\d*)|(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))\.lock$/i.exec(
+        name,
+      )
+    return match ? [match[1]!.toLowerCase()] : []
+  })
+  return identities.filter((id) => {
+    const path = join(leaseDirectory(), `${id}.lock`)
+    const lease = tryKernelLease(path)
+    if (!lease) return existsSync(path)
+    lease.release()
+    return false
+  })
+}

@@ -43,6 +43,9 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
         return { updated: 0, missing: 0 }
       },
       migrationDecision: (): MigrationDrainDecision => ({ action: 'apply-now' }),
+      recordOverride(reason: string) {
+        calls.push(`override:${reason}`)
+      },
     },
   }
 }
@@ -132,9 +135,31 @@ test('migrate refuses a non-additive pending range under live runs unless explic
   forced.value.migrationDecision = refused.value.migrationDecision
   const lines: string[] = []
   await migrateCommand({ log: (line) => lines.push(line) }, forced.value, {
-    forceInFlight: true,
+    forceInFlight: 'emergency maintenance',
+    fromOperator: true,
   })
   expect(lines).toContain('forcing migration; these orchestrator runs will fail: run-live')
+  expect(forced.calls).toContain('override:emergency maintenance')
+})
+
+test('the in-flight override requires operator attribution and is unavailable to workers', async () => {
+  const scenario = actions(async () => undefined, true)
+  await expect(
+    migrateCommand({ log: () => {} }, scenario.value, { forceInFlight: 'because' }),
+  ).rejects.toThrow('--from-operator')
+  const prior = process.env.BOTTEGA_DEPTH
+  process.env.BOTTEGA_DEPTH = '1'
+  try {
+    await expect(
+      migrateCommand({ log: () => {} }, scenario.value, {
+        forceInFlight: 'because',
+        fromOperator: true,
+      }),
+    ).rejects.toThrow('BOTTEGA_DEPTH is set')
+  } finally {
+    if (prior === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = prior
+  }
 })
 
 async function reportFromStoreBefore(

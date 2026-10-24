@@ -217,7 +217,11 @@ export const ROUTES = (
           owner: 'orch',
           argv: ['migrate'],
           label: 'orchestrator migrate',
-          options: { '--backfill-spec-sha': false, '--force-in-flight': false },
+          options: {
+            '--backfill-spec-sha': false,
+            '--force-in-flight': true,
+            '--from-operator': false,
+          },
         },
         { owner: 'hub', argv: ['migrate'], label: 'hub migration' },
       ],

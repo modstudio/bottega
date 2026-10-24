@@ -150,7 +150,7 @@ function tableExists(d: Database, table: string): boolean {
   return !!d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)
 }
 
-function migrationState(
+export function migrationState(
   d: Database,
   folder = MIGRATIONS_FOLDER,
 ): { pending: MigrationJournalEntry[]; ahead: string | null } {
