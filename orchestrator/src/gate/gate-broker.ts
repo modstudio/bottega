@@ -78,6 +78,10 @@ type GateProcessState = {
   exitCode: number
 }
 
+function newGateProcessState(): GateProcessState {
+  return { child: null, termination: null, timedOut: false, exitCode: -1 }
+}
+
 const PENDING_GATE_SQL = `SELECT record_id,number,run_record_id FROM gate_execution
   WHERE run_record_id=? AND started_at IS NULL AND finished_at IS NULL
   ORDER BY requested_at,record_id LIMIT 1`
@@ -592,12 +596,7 @@ function startGateExecution(
   hostSlot: HostSlotRunner,
   refreshBase: GateBaseRefresh,
 ): ActiveGate {
-  const state: GateProcessState = {
-    child: null,
-    termination: null,
-    timedOut: false,
-    exitCode: -1,
-  }
+  const state = newGateProcessState()
   let cancelledReason: string | null = null
   const slotWait = new AbortController()
   const stop = (reason?: string): Promise<void> => {
@@ -685,9 +684,7 @@ function startGateExecution(
       checkExecutions,
     })
   })()
-    .finally(() =>
-      onFinish?.({ executionRecordId: request.record_id, at: finishedAt ?? nowIso() }),
-    )
+    .finally(() => onFinish?.({ executionRecordId: request.record_id, at: finishedAt ?? nowIso() }))
     .finally(unregister)
   return { completion, cancel: (reason) => stop(reason) }
 }

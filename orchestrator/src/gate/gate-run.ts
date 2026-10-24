@@ -56,9 +56,11 @@ type ArchitectGateTopLevel = (cwd: string) => string | null
 export type ArchitectGateRecord = { id: number; exitCode: number }
 
 /** Record a worker-style gate request; the broker remains the only executor. */
-export function requestGateExecution(
-  runId: string,
-): { recordId: string; number: number; requestedAt: string } {
+export function requestGateExecution(runId: string): {
+  recordId: string
+  number: number
+  requestedAt: string
+} {
   const requestedAt = nowIso()
   const recordId = newRecordId()
   db()
@@ -218,24 +220,23 @@ export async function runArchitectGate(input: {
   return writeTransaction(() => {
     const recordId = newRecordId()
     d.query(
-        `INSERT INTO gate_execution
+      `INSERT INTO gate_execution
           (record_id,run_record_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
            output_tail,output_artifact,tooling_paths,resolved_command,head_commit,session_id,cwd)
          VALUES (?,NULL,?,?,?,?,0,?,?,NULL,'[]',?,?,?,?)`,
-      )
-      .run(
-        recordId,
-        ran.startedAt,
-        ran.startedAt,
-        ran.finishedAt,
-        ran.exitCode,
-        ran.elapsedMs,
-        tail,
-        command,
-        commit,
-        caller,
-        checkoutTopLevel,
-      )
+    ).run(
+      recordId,
+      ran.startedAt,
+      ran.startedAt,
+      ran.finishedAt,
+      ran.exitCode,
+      ran.elapsedMs,
+      tail,
+      command,
+      commit,
+      caller,
+      checkoutTopLevel,
+    )
     const row = d
       .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
       .get(recordId)

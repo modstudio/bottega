@@ -35,6 +35,17 @@ test('category records prefer the newest eligible passing project gate', () => {
   })
 })
 
+test('category recency breaks a shared finish timestamp by gate UUID', () => {
+  const selected = newestCategoryExecutions(
+    [
+      row({ gateRecordId: '01990000-0000-7000-8000-000000000020', wallMs: 20 }),
+      row({ gateRecordId: '01990000-0000-7000-8000-000000000010', wallMs: 10 }),
+    ],
+    '/work/project',
+  )
+  expect(selected.get('file-length')?.wallMs).toBe(20)
+})
+
 test('zero followed by a positive count reports the refill', () => {
   expect(
     refilledCategoryExecutions(

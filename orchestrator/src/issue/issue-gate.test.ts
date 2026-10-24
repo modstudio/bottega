@@ -124,7 +124,9 @@ test('issue verification rejects a nonzero gate completed by the worker broker',
 
     expect(result.ok).toBe(false)
     expect(result.fixTreeSafeToRelease).toBe(true)
-    expect(db().query('SELECT exit_code FROM gate_execution WHERE number=?').get(result.id)).toEqual({
+    expect(
+      db().query('SELECT exit_code FROM gate_execution WHERE number=?').get(result.id),
+    ).toEqual({
       exit_code: 1,
     })
   } finally {

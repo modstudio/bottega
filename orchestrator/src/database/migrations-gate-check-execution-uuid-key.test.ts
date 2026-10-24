@@ -53,7 +53,9 @@ test('K8b-4 keys gate and check executions by UUID and rewrites gate evidence', 
           )
           .get(),
       ).toEqual({ name: 'record_id', notnull: 1, pk: 1 })
-      expect(database.query(`SELECT name FROM pragma_table_info('${table}') WHERE name='id'`).get()).toBeNull()
+      expect(
+        database.query(`SELECT name FROM pragma_table_info('${table}') WHERE name='id'`).get(),
+      ).toBeNull()
       expect(database.query(`SELECT COUNT(*) count FROM ${table}`).get()).toEqual({ count: 1 })
     }
     expect(database.query('SELECT * FROM gate_execution').get()).toMatchObject({
@@ -83,7 +85,9 @@ test('K8b-4 keys gate and check executions by UUID and rewrites gate evidence', 
       to: 'record_id',
     })
     expect(
-      database.query('SELECT satisfied_evidence FROM workflow_obligation ORDER BY step_ordinal').all(),
+      database
+        .query('SELECT satisfied_evidence FROM workflow_obligation ORDER BY step_ordinal')
+        .all(),
     ).toEqual([
       { satisfied_evidence: `[{"flag":"--gate","value":"${gateRecordId}"}]` },
       { satisfied_evidence: '[{"flag":"--gate","value":"404"}]' },

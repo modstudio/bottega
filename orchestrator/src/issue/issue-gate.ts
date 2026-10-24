@@ -110,7 +110,9 @@ export async function runIssueGate(
         cancelled_reason: string | null
       },
       [string]
-    >('SELECT exit_code,timed_out,output_tail,cancelled_reason FROM gate_execution WHERE record_id=?')
+    >(
+      'SELECT exit_code,timed_out,output_tail,cancelled_reason FROM gate_execution WHERE record_id=?',
+    )
     .get(inserted.recordId)
   if (!row) throw new Error(`issue coordinator gate execution ${inserted.number} disappeared`)
   const ok = row.exit_code === 0 && row.timed_out === 0 && row.cancelled_reason === null

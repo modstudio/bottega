@@ -534,7 +534,7 @@ describe('the live ask channel always answers', () => {
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'gate-result-fixture','/fixture','bun','{}') RETURNING record_id AS id`,
       )
-      .get() as { number: number }
+      .get() as { id: string }
     const reader = addRun({
       agent: 'codex',
       job: 'review-lens',

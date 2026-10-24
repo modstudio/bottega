@@ -97,7 +97,7 @@ async function waitForFinishedGate(recordId: string): Promise<void> {
     if (row.finished_at) return
     await Bun.sleep(10)
   }
-  throw new Error(`gate execution ${id} did not finish`)
+  throw new Error(`gate execution ${recordId} did not finish`)
 }
 
 function git(root: string, ...args: string[]): string {
@@ -381,13 +381,11 @@ test('an occupied gate log path fails the execution without following the path',
         'head',
       ) as { id: string }
   ).id
-  const gate = (
-    db()
-      .query(
-        `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING record_id`,
-      )
-      .get(runId, new Date().toISOString()) as { record_id: string }
-  )
+  const gate = db()
+    .query(
+      `INSERT INTO gate_execution (record_id, run_record_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING record_id`,
+    )
+    .get(runId, new Date().toISOString()) as { record_id: string }
   const gateNumber = db()
     .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
     .get(gate.record_id)!.number

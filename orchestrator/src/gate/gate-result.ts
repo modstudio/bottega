@@ -41,10 +41,8 @@ export function selectRecordedGateResult(
     .reduce<RecordedGateCandidate | null>((latest, candidate) => {
       if (!latest) return candidate
       const finishedOrder = candidate.finishedAt.localeCompare(latest.finishedAt)
-      return (
-        finishedOrder > 0 ||
+      return finishedOrder > 0 ||
         (finishedOrder === 0 && candidate.recordId.localeCompare(latest.recordId) > 0)
-      )
         ? candidate
         : latest
     }, null)

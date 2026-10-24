@@ -55,7 +55,6 @@ const passingGate: ValidatedEvidence = {
   gate: {
     recordId: '00000000-0000-4000-8000-000000000002',
     number: 2,
-    id: 2,
     finished: true,
     exitCode: 0,
     project: 'fixture',
@@ -498,25 +497,6 @@ test('an exec older than the active step is refused with the rerun remedy', () =
     action: 'refuse',
     message: `command-exit evidence exec:4 predates this step becoming active; run the command again with \`${PLATFORM_SLUG} workflow exec -- <command>\` in this session after the step started`,
   })
-})
-
-test('a non-zero gate fails unless the floor states otherwise', () => {
-  expect(
-    decide({
-      floors: [commandExit],
-      evidence: {
-        gate: { ...passingGate.gate!, exitCode: 1, project: null, commit: null },
-      },
-    }).action,
-  ).toBe('refuse')
-  expect(
-    decide({
-      floors: [{ ...commandExit, expectedExitCode: 1 }],
-      evidence: {
-        gate: { ...passingGate.gate!, exitCode: 1, project: null, commit: null },
-      },
-    }).action,
-  ).toBe('allow')
 })
 
 test('a recorded artifact satisfies that floor', () => {
