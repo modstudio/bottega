@@ -15,10 +15,12 @@ import {
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
 import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
+import { schemaTableRows } from './schema-table-inventory.ts'
 import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,
 } from './workflow-uuid-migration-preflight.ts'
+import { WRITE_PROBE_TABLE_PREFIX } from './write-probe.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
@@ -351,13 +353,11 @@ function quoteIdentifier(value: string): string {
 }
 
 function schemaInventory(d: Database): SchemaInventory {
-  const tableRows = d
-    .query(
-      `SELECT name, sql FROM sqlite_master
-     WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
-     ORDER BY name`,
-    )
-    .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { name: string; sql: string }[]
+  const tableRows = schemaTableRows(
+    d,
+    [MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE],
+    WRITE_PROBE_TABLE_PREFIX,
+  )
   const tables = tableRows.map((row) => row.name).sort()
   const columns: ColumnShape[] = []
   const foreignKeys: ForeignKeyShape[] = []

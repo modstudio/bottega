@@ -41,6 +41,7 @@ import {
   staleWriteRefusal,
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
+import { staleWriteProbe, WRITE_PROBE_TABLE_PREFIX } from './write-probe.ts'
 
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -204,16 +205,51 @@ function openWritableHandle(): Database | null {
  */
 function databaseWritable(d: Database): boolean {
   if (connectionWritable !== null) return connectionWritable
-  const probe = `__orch_write_probe_${process.pid}`
+  const probe = `${WRITE_PROBE_TABLE_PREFIX}${process.pid}`
   try {
     // Committing the create matters: on WAL databases SQLite can prepare a
     // write transaction against a chmod-444 main file and fail only at commit.
-    d.exec(`CREATE TABLE "${probe}" (value INTEGER); DROP TABLE "${probe}";`)
+    d.exec('BEGIN IMMEDIATE')
+    try {
+      d.exec(`CREATE TABLE "${probe}" (value INTEGER); DROP TABLE "${probe}"; COMMIT`)
+    } catch (error) {
+      try {
+        d.exec('ROLLBACK')
+      } catch {
+        /* preserve the write-probe failure */
+      }
+      throw error
+    }
+    sweepWriteProbes(d)
     connectionWritable = true
   } catch {
     connectionWritable = false
   }
   return connectionWritable
+}
+
+/** Drop probe tables whose numeric owner pid is no longer alive. */
+function sweepWriteProbes(d: Database): void {
+  const tables = d
+    .query(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND substr(name, 1, ?) = ?`,
+    )
+    .all(WRITE_PROBE_TABLE_PREFIX.length, WRITE_PROBE_TABLE_PREFIX) as { name: string }[]
+  const stale = tables.filter(({ name }) => staleWriteProbe(name, process.pid))
+  if (stale.length === 0) return
+  d.exec('BEGIN IMMEDIATE')
+  try {
+    for (const { name } of stale) d.exec(`DROP TABLE "${name}"`)
+    d.exec('COMMIT')
+  } catch (error) {
+    try {
+      d.exec('ROLLBACK')
+    } catch {
+      /* preserve the sweep failure */
+    }
+    throw error
+  }
 }
 
 /**

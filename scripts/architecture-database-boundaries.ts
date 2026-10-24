@@ -25,6 +25,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       `${source}migration-compatibility.ts`,
       `${source}migrations.ts`,
       `${source}project-register-store.ts`,
+      `${source}write-probe.ts`,
     ],
     typeOnlyAllowed: [],
     reason: 'Enforce the database concern boundary.',
