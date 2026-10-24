@@ -33,7 +33,7 @@ import {
   worktreePathSpellings,
 } from '../resources/resource-ownership.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
-import { removeFreeRunLease } from '../run/run-lease.ts'
+import { removeFreeRunCloseOutLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -1022,7 +1022,10 @@ export function closeOutRun(
         'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number',
       )
       .all(result.runId, result.runId) as { record_id: string }[]
-    for (const turn of turns) removeFreeRunLease(turn.record_id)
+    for (const turn of turns) {
+      removeFreeRunLease(turn.record_id)
+      removeFreeRunCloseOutLease(turn.record_id)
+    }
   }
   return result
 }

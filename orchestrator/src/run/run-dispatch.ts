@@ -25,8 +25,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { assertMigrationDispatchAllowed } from '../database/migration-drain.ts'
+import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import {
+  assertMigrationDispatchAllowed,
+  recordMigrationDispatchRefusal,
+} from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
@@ -35,6 +38,7 @@ import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
+import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
@@ -133,16 +137,15 @@ function assertDispatchDatabase(resume: boolean): void {
   assertMigrationDispatchAllowed(db(), resume)
 }
 
-function claimWithMigrationAdmission<T>(
-  beforeClaim: () => void,
-  existingChain: boolean,
-  claim: () => T,
-): T {
+function claimDetachedRun<T>(beforeClaim: () => void, existingChain: boolean, claim: () => T): T {
   beforeClaim()
-  return writeTransaction(() => {
-    assertMigrationDispatchAllowed(db(), existingChain)
-    return claim()
-  })
+  return claimWithMigrationAdmission(
+    {
+      assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), existingChain),
+      recordDispatchRefusal: recordMigrationDispatchRefusal,
+    },
+    claim,
+  )
 }
 
 export async function detach(
@@ -208,7 +211,7 @@ export async function detach(
   // A resume is claimed as a chain member in this same INSERT. One SQLite
   // statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
-  const claimed = claimWithMigrationAdmission(beforeClaim, spec.resume !== undefined, () => {
+  const claimed = claimDetachedRun(beforeClaim, spec.resume !== undefined, () => {
     const identity = claimIdentity(spec.resume)
     const { projectName, projectId } = detachedProject(cwd, spec)
     refuseLiveRetryOwner(spec)

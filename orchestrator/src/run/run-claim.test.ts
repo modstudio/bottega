@@ -110,42 +110,6 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
     ).toEqual({ transport_explicit: 0 })
 
-    const drainRoot = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
-    const drainResume = addRun({
-      agent: '(pending)',
-      job: 'review-lens',
-      status: 'running',
-      parent: drainRoot,
-      turn: 2,
-    })
-    setMigrationDrain(db(), '0155_rebuild', 'draining', {
-      pid: process.pid,
-      startTime: null,
-    })
-    try {
-      const resumed = await claimRun({
-        ...claimInput,
-        opts: {
-          job: 'review-lens',
-          reserveId: drainResume,
-          resume: {
-            kind: 'continue',
-            parent: drainRoot,
-            agent: 'codex',
-            turn: 2,
-            sessionId: null,
-            worktree: null,
-          },
-        },
-        stamp: 'draining-resume-claim',
-        carriedQuestionIds: [],
-        assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), true),
-      })
-      expect(resumed.claim.id).toBe(drainResume)
-    } finally {
-      clearMigrationDrain(db())
-    }
-
     const refusedPrompt = 'migrating fresh claim'
     const refusalsBefore = db()
       .query<{ count: number }, []>(

@@ -94,10 +94,9 @@ import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-lau
 import {
   type acquireRunCloseOutLease,
   type acquireRunLease,
-  releaseAbortedRunCloseOutLease,
+  releaseRunCloseOutLease,
   requiredRunCloseOutLease,
   requiredRunLease,
-  withRunCloseOutLease,
 } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
@@ -912,7 +911,6 @@ export async function run(opts: {
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   let closeOutLease: ReturnType<typeof acquireRunCloseOutLease> | null = null
-  let finishCompleted = false
   const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
     srtProfile: sandboxSelection.profile,
     agent: name,
@@ -936,163 +934,162 @@ export async function run(opts: {
   }
   frozenBefore = beforeFreeze.snapshots
   const watchedCheckouts = frozenBefore
+  // The close-out lease covers both terminal recording and closeRun, even when either rejects.
   try {
-    runLease = requiredRunLease(claim.id, (cause) => {
-      error = String((cause as Error).message ?? cause)
-      failureKind = 'harness'
-    })
-    closeOutLease = requiredRunCloseOutLease(claim.id, (cause) => {
-      error = String((cause as Error).message ?? cause)
-      failureKind = 'harness'
-    })
-    ;({
-      proc,
-      timer,
-      checkpointTimer,
-      resourceObserver,
-      idleUnkillable,
-      idleTreePids,
-      idleTreePgid,
-      exitCode,
-      output,
-      vendorTokens,
-      costUsd,
-      vendorUsage,
-      resolvedSession,
-      effectiveModel,
-      contract,
-      contractObjects,
-      acceptedQuestions,
-      status,
-      error,
-      failureKind,
-      artifactsPersisted,
-      preConfinement,
-      vendorTerminatedStream,
-      askLoopback,
-      mcpSetupHeader,
-      workerEvents,
-    } = await runLive({
-      repoJob,
-      name,
-      worktree,
-      claim,
-      provisionedMcpConfig,
-      reviewTarget,
-      sandboxSelection,
-      runToken,
-      transportName,
-      a,
-      cwd,
-      prompt,
-      outPath,
-      vendorSession,
-      schemaPath,
-      originalSchemaPath,
-      opts,
-      sandboxEnvironment,
-      writes: repoJob,
-      usingMcp,
-      mcpServerName,
-      codexMcpScope: mcpLaunch.codex,
-      projectMcpSelection: projectSelectionForLaunch(usingMcp, mcpLaunch.projectSelection),
-      mcpTrustGranted,
-      writableRoots,
-      gitConfigEnvironment,
-      runtimeDir,
-      recipeEnvironment,
-      launchEnvironment: mcpEnvironment,
-      scratchDir,
-      writesJob,
-      codexSandbox,
-      launchKey,
-      requestedJob,
-      boundMs,
-      started,
-      textReplyContract,
-      resolvedDialect,
-      mcpSetupHeader,
-      initialBoardNoticeIds: initialBoard.noticeIds,
-      throttleConcurrency: () => runningRunCountForAgent('codex'),
-      askLoopback,
-      ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
-    }))
-  } finally {
-    const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
     try {
+      runLease = requiredRunLease(claim.id, (cause) => {
+        error = String((cause as Error).message ?? cause)
+        failureKind = 'harness'
+      })
+      closeOutLease = requiredRunCloseOutLease(claim.id, (cause) => {
+        error = String((cause as Error).message ?? cause)
+        failureKind = 'harness'
+      })
       ;({
-        status,
-        error,
-        failureKind,
-        changes,
-        output,
-        acceptedQuestions,
-        confinementEvent,
-        preConfinement,
-        artifactsPersisted,
-      } = await finishRun({
+        proc,
         timer,
         checkpointTimer,
         resourceObserver,
-        proc,
-        askLoopback,
-        claim,
-        writesJob,
-        worktree,
-        launchKey,
-        failureKind,
-        scratchDir,
-        gitConfigEnvironment,
-        ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
-        opts,
-        watchedCheckouts,
-        confinementFailures,
-        frozenBefore,
-        callerRemoval: runConfinement.callerRemovalAtRunEnd(db(), callerCheckout, started),
-        removeIsolatedCwd,
-        changes,
-        provisionedMcpConfig,
-        started,
-        retargetDiagnostic,
-        error,
-        contract,
-        status,
-        contractObjects,
-        vendorTerminatedStream,
-        acceptedQuestions,
-        requestedJob,
-        checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
-        output,
-        confinementEvent,
-        parsedReply: resolvedDialect.parse(output).reply as TerminalInput['parsedReply'],
-        runProjectName,
-        mcpConnection,
-        mcpMode,
-        declaredDeliverables,
-        mcpSetupHeader,
-        outPath,
-        preConfinement,
-        callerCwd,
-        promptPath,
+        idleUnkillable,
+        idleTreePids,
+        idleTreePgid,
         exitCode,
+        output,
         vendorTokens,
         costUsd,
         vendorUsage,
-        effectiveModel,
         resolvedSession,
-        name,
+        effectiveModel,
+        contract,
+        contractObjects,
+        acceptedQuestions,
+        status,
+        error,
+        failureKind,
         artifactsPersisted,
-        mcpRuling,
+        preConfinement,
+        vendorTerminatedStream,
+        askLoopback,
+        mcpSetupHeader,
         workerEvents,
+      } = await runLive({
+        repoJob,
+        name,
+        worktree,
+        claim,
+        provisionedMcpConfig,
+        reviewTarget,
+        sandboxSelection,
+        runToken,
+        transportName,
+        a,
+        cwd,
+        prompt,
+        outPath,
+        vendorSession,
+        schemaPath,
+        originalSchemaPath,
+        opts,
+        sandboxEnvironment,
+        writes: repoJob,
+        usingMcp,
+        mcpServerName,
+        codexMcpScope: mcpLaunch.codex,
+        projectMcpSelection: projectSelectionForLaunch(usingMcp, mcpLaunch.projectSelection),
+        mcpTrustGranted,
+        writableRoots,
+        gitConfigEnvironment,
+        runtimeDir,
+        recipeEnvironment,
+        launchEnvironment: mcpEnvironment,
+        scratchDir,
+        writesJob,
+        codexSandbox,
+        launchKey,
+        requestedJob,
+        boundMs,
+        started,
+        textReplyContract,
+        resolvedDialect,
+        mcpSetupHeader,
+        initialBoardNoticeIds: initialBoard.noticeIds,
+        throttleConcurrency: () => runningRunCountForAgent('codex'),
+        askLoopback,
+        ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
       }))
-      finishCompleted = true
     } finally {
-      runLease?.release()
-      releaseAbortedRunCloseOutLease(finishCompleted, claim.id, closeOutLease)
+      const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
+      try {
+        ;({
+          status,
+          error,
+          failureKind,
+          changes,
+          output,
+          acceptedQuestions,
+          confinementEvent,
+          preConfinement,
+          artifactsPersisted,
+        } = await finishRun({
+          timer,
+          checkpointTimer,
+          resourceObserver,
+          proc,
+          askLoopback,
+          claim,
+          writesJob,
+          worktree,
+          launchKey,
+          failureKind,
+          scratchDir,
+          gitConfigEnvironment,
+          ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
+          opts,
+          watchedCheckouts,
+          confinementFailures,
+          frozenBefore,
+          callerRemoval: runConfinement.callerRemovalAtRunEnd(db(), callerCheckout, started),
+          removeIsolatedCwd,
+          changes,
+          provisionedMcpConfig,
+          started,
+          retargetDiagnostic,
+          error,
+          contract,
+          status,
+          contractObjects,
+          vendorTerminatedStream,
+          acceptedQuestions,
+          requestedJob,
+          checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
+          output,
+          confinementEvent,
+          parsedReply: resolvedDialect.parse(output).reply as TerminalInput['parsedReply'],
+          runProjectName,
+          mcpConnection,
+          mcpMode,
+          declaredDeliverables,
+          mcpSetupHeader,
+          outPath,
+          preConfinement,
+          callerCwd,
+          promptPath,
+          exitCode,
+          vendorTokens,
+          costUsd,
+          vendorUsage,
+          effectiveModel,
+          resolvedSession,
+          name,
+          artifactsPersisted,
+          mcpRuling,
+          workerEvents,
+        }))
+      } finally {
+        runLease?.release()
+      }
     }
-  }
-  return withRunCloseOutLease(claim.id, closeOutLease, () =>
-    closeRun({
+    return closeRun({
       failureKind,
       name,
       opts,
@@ -1121,6 +1118,8 @@ export async function run(opts: {
       contract,
       error,
       run,
-    }),
-  )
+    })
+  } finally {
+    releaseRunCloseOutLease(claim.id, closeOutLease)
+  }
 }

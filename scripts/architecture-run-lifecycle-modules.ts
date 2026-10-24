@@ -37,6 +37,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './resume-tree.ts',
   ]),
   module('orchestrator/src/run/run-claim-inheritance.ts', ['../database/db.ts']),
+  module('orchestrator/src/run/run-claim-transaction.ts', ['../database/db.ts']),
   module('orchestrator/src/run/run-retry-claim.ts', [
     '../git/git-environment.ts',
     '../worktree/worktree.ts',
@@ -95,6 +96,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-artifacts.ts',
     './run-number.ts',
     './run-claim-types.ts',
+    './run-claim-transaction.ts',
     './question-close.ts',
     './branch-owner-guard.ts',
     './run-process.ts',
