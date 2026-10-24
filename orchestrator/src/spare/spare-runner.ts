@@ -114,6 +114,7 @@ function docsDriftQueue(): DriftDocFacts[] {
       slug: doc.slug,
       scope: doc.scope,
       kind: doc.kind,
+      form: doc.form,
       checkedAtMs: checked ? commitTimeMs(project.path, checked) : null,
       project: project.name,
       path: project.path,
