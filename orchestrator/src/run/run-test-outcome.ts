@@ -68,7 +68,7 @@ function gateTestObservations(database: Database, runId: string): TestExecutionO
   const rows = database
     .query<{ exit_code: number }, [string, string]>(
       `SELECT c.exit_code FROM check_execution c
-       JOIN gate_execution g ON g.id=c.gate_execution_id
+       JOIN gate_execution g ON g.record_id=c.gate_execution_record_id
        WHERE g.run_record_id=? AND g.finished_at IS NOT NULL AND c.category=?`,
     )
     .all(runId, UNIT_TEST_CHECK_CATEGORY)

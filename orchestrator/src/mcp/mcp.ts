@@ -12,6 +12,7 @@ import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown, listDocs } from '../doc/docs.ts'
+import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -231,6 +232,7 @@ async function advanceWorkflow({
   const workflowArgs = args ?? {}
   const context = mcpWorkflowCursorContext()
   const resolvedReview = review === undefined ? undefined : resolveReviewIdentifier(db(), review)
+  const resolvedGate = gate === undefined ? undefined : resolveGateIdentifier(db(), gate)
   return text(
     nextWorkflowStep(
       slug,
@@ -253,7 +255,7 @@ async function advanceWorkflow({
       {
         ruling,
         review: resolvedReview,
-        gate,
+        gate: resolvedGate,
         run: workflowRunEvidence(run),
         artifact,
         task,

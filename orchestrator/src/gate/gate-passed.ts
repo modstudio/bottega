@@ -7,12 +7,13 @@ import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 
 type GateCandidate = {
-  id: number
+  recordId: string
+  number: number
   projectId: string | null
   cwd: string | null
 }
 
-export function selectPassingGateId(
+export function selectPassingGateNumber(
   candidates: readonly GateCandidate[],
   projectId: string,
   architectProjectId: (cwd: string) => string | null,
@@ -20,7 +21,7 @@ export function selectPassingGateId(
   for (const candidate of candidates) {
     const candidateProject =
       candidate.projectId ?? (candidate.cwd ? architectProjectId(candidate.cwd) : null)
-    if (candidateProject === projectId) return candidate.id
+    if (candidateProject === projectId) return candidate.number
   }
   return null
 }
@@ -29,7 +30,7 @@ export function passingGateForCommit(
   commit: string,
   cwd = process.cwd(),
   d: Database = db(),
-): { project: string; commit: string; gateId: number | null } {
+): { project: string; commit: string; gateNumber: number | null } {
   const project = projectAt(cwd, d)
   if (!project)
     throw new Error(`${PLATFORM_SLUG} gate passed: no registered project contains ${cwd}`)
@@ -37,16 +38,16 @@ export function passingGateForCommit(
   if (!normalized) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
   const candidates = d
     .query<GateCandidate, [string]>(
-      `SELECT g.id,r.project_record_id AS projectId,g.cwd
+      `SELECT g.record_id recordId,g.number,r.project_record_id AS projectId,g.cwd
          FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
         WHERE g.head_commit=? AND g.finished_at IS NOT NULL AND g.exit_code=0 AND g.timed_out=0
-        ORDER BY g.id DESC`,
+        ORDER BY g.finished_at DESC,g.record_id DESC`,
     )
     .all(normalized)
   return {
     project: project.name,
     commit: normalized,
-    gateId: selectPassingGateId(
+    gateNumber: selectPassingGateNumber(
       candidates,
       project.recordId,
       (gateCwd) => projectAt(gateCwd, d)?.recordId ?? null,
@@ -55,7 +56,7 @@ export function passingGateForCommit(
 }
 
 export function formatPassingGate(result: ReturnType<typeof passingGateForCommit>): string {
-  return result.gateId === null
+  return result.gateNumber === null
     ? `no passing gate recorded for ${result.project} commit ${result.commit}`
-    : `passing gate ${result.gateId} recorded for ${result.project} commit ${result.commit}`
+    : `passing gate ${result.gateNumber} recorded for ${result.project} commit ${result.commit}`
 }

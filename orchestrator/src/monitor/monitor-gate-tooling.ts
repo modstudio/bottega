@@ -58,10 +58,16 @@ function toolingRows(database: Database): ToolingRow[] {
   return database
     .query(
       `WITH latest_tooling AS (
-         SELECT run_record_id,MAX(id) gate_id
-           FROM gate_execution
+         SELECT run_record_id,record_id gate_record_id
+           FROM gate_execution candidate
           WHERE run_record_id IS NOT NULL AND tooling_paths <> '[]'
-          GROUP BY run_record_id
+            AND NOT EXISTS (
+              SELECT 1 FROM gate_execution newer
+               WHERE newer.run_record_id=candidate.run_record_id
+                 AND newer.tooling_paths <> '[]'
+                 AND (newer.requested_at>candidate.requested_at OR
+                   (newer.requested_at=candidate.requested_at AND newer.record_id>candidate.record_id))
+            )
        )
        SELECT g.run_record_id,g.tooling_paths,g.resolved_command,r.started_at,r.session_id,
               p.record_id project_record_id,p.name project_name,COALESCE(r.minted_branch,r.branch) branch,
@@ -73,10 +79,11 @@ function toolingRows(database: Database): ToolingRow[] {
               ) THEN 1 ELSE 0 END admitted
        FROM gate_execution g
        JOIN latest_tooling latest ON latest.run_record_id=g.run_record_id
-       JOIN gate_execution latest_gate ON latest_gate.id=latest.gate_id
+       JOIN gate_execution latest_gate ON latest_gate.record_id=latest.gate_record_id
        JOIN run r ON r.record_id=g.run_record_id
        LEFT JOIN project p ON p.record_id=r.project_record_id
-       WHERE g.run_record_id IS NOT NULL AND g.tooling_paths <> '[]' ORDER BY g.run_record_id,g.id`,
+       WHERE g.run_record_id IS NOT NULL AND g.tooling_paths <> '[]'
+       ORDER BY g.run_record_id,g.requested_at,g.record_id`,
     )
     .all() as ToolingRow[]
 }

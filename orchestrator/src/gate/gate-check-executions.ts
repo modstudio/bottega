@@ -45,18 +45,18 @@ export function readGateCheckExecutions(
 
 export function insertGateCheckExecutions(
   database: Database,
-  gateExecutionId: number,
+  gateExecutionRecordId: string,
   records: readonly CheckExecutionRecord[],
 ): void {
   const insert = database.query(
     `INSERT INTO check_execution
-      (record_id,gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count)
+      (record_id,gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count)
      VALUES (?,?,?,?,?,?,?,?)`,
   )
   for (const check of records) {
     insert.run(
       newRecordId(),
-      gateExecutionId,
+      gateExecutionRecordId,
       check.check,
       check.category ?? null,
       check.wallMs,

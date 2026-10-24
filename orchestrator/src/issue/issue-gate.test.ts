@@ -107,9 +107,11 @@ test('issue verification records one passing gate through the worker broker', as
       scratch,
     )
     expect(result.ok).toBe(true)
-    expect(result.id).toBeGreaterThan(0)
+    expect(result.number).toBeGreaterThan(0)
     expect(
-      db().query('SELECT exit_code,head_commit FROM gate_execution WHERE id=?').get(result.id),
+      db()
+        .query('SELECT exit_code,head_commit FROM gate_execution WHERE number=?')
+        .get(result.number),
     ).toEqual({ exit_code: 0, head_commit: head })
   } finally {
     rmSync(main, { recursive: true, force: true })
@@ -124,7 +126,9 @@ test('issue verification rejects a nonzero gate completed by the worker broker',
 
     expect(result.ok).toBe(false)
     expect(result.fixTreeSafeToRelease).toBe(true)
-    expect(db().query('SELECT exit_code FROM gate_execution WHERE id=?').get(result.id)).toEqual({
+    expect(
+      db().query('SELECT exit_code FROM gate_execution WHERE number=?').get(result.number),
+    ).toEqual({
       exit_code: 1,
     })
   } finally {
@@ -142,24 +146,27 @@ test.each([
     const result = await runIssueGate(fixture.run, fixture.scratch, {
       startBroker: (input) => {
         const execution = db()
-          .query<{ id: number }, [string]>(
-            'SELECT id FROM gate_execution WHERE run_record_id=? AND finished_at IS NULL',
+          .query<{ record_id: string }, [string]>(
+            'SELECT record_id FROM gate_execution WHERE run_record_id=? AND finished_at IS NULL',
           )
           .get(fixture.run.record_id)!
         db()
           .query(
             `UPDATE gate_execution
              SET started_at=?,finished_at=?,exit_code=0,timed_out=?,cancelled_reason=?
-             WHERE id=?`,
+             WHERE record_id=?`,
           )
           .run(
             new Date().toISOString(),
             new Date().toISOString(),
             gateResult.timedOut,
             gateResult.cancelledReason,
-            execution.id,
+            execution.record_id,
           )
-        input.onExecutionFinish?.({ executionId: execution.id, at: new Date().toISOString() })
+        input.onExecutionFinish?.({
+          executionRecordId: execution.record_id,
+          at: new Date().toISOString(),
+        })
         return { close: async () => {} }
       },
     })
@@ -168,8 +175,8 @@ test.each([
     expect(result.fixTreeSafeToRelease).toBe(true)
     expect(
       db()
-        .query('SELECT exit_code,timed_out,cancelled_reason FROM gate_execution WHERE id=?')
-        .get(result.id),
+        .query('SELECT exit_code,timed_out,cancelled_reason FROM gate_execution WHERE number=?')
+        .get(result.number),
     ).toEqual({
       exit_code: 0,
       timed_out: gateResult.timedOut,
@@ -241,7 +248,7 @@ test('issue verification bounds an unfinished broker gate and records its cancel
       GIT_CONFIG_KEY_0: 'core.hooksPath',
       BOTTEGA_MAIN_CHECKOUT: main,
     })
-    expect(result.id).toBeGreaterThan(0)
+    expect(result.number).toBeGreaterThan(0)
     expect(result).toMatchObject({
       ok: false,
       fixTreeSafeToRelease: true,
@@ -250,9 +257,9 @@ test('issue verification bounds an unfinished broker gate and records its cancel
     expect(
       db()
         .query(
-          'SELECT exit_code,timed_out,cancelled_reason,finished_at FROM gate_execution WHERE id=?',
+          'SELECT exit_code,timed_out,cancelled_reason,finished_at FROM gate_execution WHERE number=?',
         )
-        .get(result.id),
+        .get(result.number),
     ).toEqual({
       exit_code: -1,
       timed_out: 0,
@@ -322,8 +329,8 @@ test('issue verification retains the fix tree when an expired gate cannot be rea
     })
     expect(
       db()
-        .query('SELECT finished_at,cancelled_reason FROM gate_execution WHERE id=?')
-        .get(result.id),
+        .query('SELECT finished_at,cancelled_reason FROM gate_execution WHERE number=?')
+        .get(result.number),
     ).toEqual({ finished_at: null, cancelled_reason: null })
   } finally {
     rmSync(main, { recursive: true, force: true })

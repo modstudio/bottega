@@ -79,11 +79,11 @@ describe('deriveObservedTestOutcome', () => {
       logName: 'launch-failure.log',
       logPath: '/scratch/launch-failure.log',
     })
-    const gateId = db()
-      .query<{ id: number }, [string, string, string, string, string]>(
+    const gateRecordId = db()
+      .query<{ record_id: string }, [string, string, string, string, string]>(
         `INSERT INTO gate_execution
             (record_id,run_record_id,requested_at,started_at,finished_at,exit_code)
-           VALUES (?,?,?,?,?,1) RETURNING id`,
+           VALUES (?,?,?,?,?,1) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -91,14 +91,14 @@ describe('deriveObservedTestOutcome', () => {
         '2026-10-21T00:00:02.000Z',
         '2026-10-21T00:00:02.000Z',
         '2026-10-21T00:00:03.000Z',
-      )!.id
+      )!.record_id
     db()
       .query(
         `INSERT INTO check_execution
-          (record_id,gate_execution_id,check_name,category,wall_ms,exit_code)
+          (record_id,gate_execution_record_id,check_name,category,wall_ms,exit_code)
          VALUES (?,?,?,?,?,?)`,
       )
-      .run(newRecordId(), gateId, 'unit suite', UNIT_TEST_CHECK_CATEGORY, 100, 1)
+      .run(newRecordId(), gateRecordId, 'unit suite', UNIT_TEST_CHECK_CATEGORY, 100, 1)
 
     expect(observedTestOutcome(db(), runId, { ran: true, passed: false })).toEqual({
       ran: true,

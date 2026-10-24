@@ -15,7 +15,7 @@ export const nextWorkflowStepInputSchema = z.object({
   self_ruling_basis: z.string().optional(),
   question: z.string().trim().min(1).optional(),
   review: z.union([z.number().int().positive(), z.uuid()]).optional(),
-  gate: z.number().int().positive().optional(),
+  gate: z.union([z.number().int().positive(), z.uuid()]).optional(),
   run: z.union([z.number().int().positive(), z.string().trim().min(1)]).optional(),
   artifact: z.string().trim().min(1).optional(),
   task: z.string().trim().min(1).optional(),

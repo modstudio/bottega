@@ -211,7 +211,8 @@ const defaultGateWaitDependencies: GateWaitDependencies = {
 }
 
 type GateExecutionSelection = {
-  id: number
+  record_id: string
+  number: number
   requested_at: string
   finished_at: string | null
 }
@@ -219,19 +220,19 @@ type GateExecutionSelection = {
 function latestGateExecution(runId: string): GateExecutionSelection | null {
   return db()
     .query(
-      `SELECT id,requested_at,finished_at FROM gate_execution
-        WHERE run_record_id=? ORDER BY id DESC LIMIT 1`,
+      `SELECT record_id,number,requested_at,finished_at FROM gate_execution
+        WHERE run_record_id=? ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
     )
     .get(runId) as GateExecutionSelection | null
 }
 
 type RequestedGate =
-  | { id: number; requestedAt: string; introduction: string | null }
+  | { recordId: string; number: number; requestedAt: string; introduction: string | null }
   | { message: string }
 
 function selectGateExecutionOnce(
   runId: string,
-  pendingResults: ReadonlySet<number>,
+  pendingResults: ReadonlySet<string>,
 ): RequestedGate {
   return writeTransaction(() => {
     const run = db()
@@ -247,23 +248,35 @@ function selectGateExecutionOnce(
     if (cancellation) return { message: cancellation }
     const latest = latestGateExecution(runId)
     const decision = decideGateRequest({
-      execution: latest ? { id: latest.id, finished: latest.finished_at !== null } : null,
-      resultPending: latest ? pendingResults.has(latest.id) : false,
+      execution: latest
+        ? {
+            recordId: latest.record_id,
+            number: latest.number,
+            finished: latest.finished_at !== null,
+          }
+        : null,
+      resultPending: latest ? pendingResults.has(latest.record_id) : false,
     })
     if (decision.action !== 'start') {
       return {
-        id: decision.executionId,
+        recordId: decision.executionRecordId,
+        number: decision.executionNumber,
         requestedAt: latest!.requested_at,
         introduction: formatGateRequestDecision(decision),
       }
     }
     const inserted = requestGateExecution(runId)
     const requestedAt = inserted.requestedAt
-    return { id: inserted.id, requestedAt, introduction: null }
+    return {
+      recordId: inserted.recordId,
+      number: inserted.number,
+      requestedAt,
+      introduction: null,
+    }
   })
 }
 
-function selectGateExecution(runId: string, pendingResults: ReadonlySet<number>): RequestedGate {
+function selectGateExecution(runId: string, pendingResults: ReadonlySet<string>): RequestedGate {
   try {
     return selectGateExecutionOnce(runId, pendingResults)
   } catch (error) {
@@ -288,10 +301,10 @@ function waitForGatePoll(ms: number, signal: AbortSignal, wait: (ms: number) => 
   })
 }
 
-function gateResultLogPaths(runId: string, executionId: number, artifactPath: string | null) {
+function gateResultLogPaths(runId: string, executionNumber: number, artifactPath: string | null) {
   if (!artifactPath) return {}
   return {
-    outputPath: `${runScratchDir(runId)}/gate-${executionId}.log`,
+    outputPath: `${runScratchDir(runId)}/gate-${executionNumber}.log`,
     artifactPath,
   }
 }
@@ -303,12 +316,12 @@ function formatPendingGateWait(message: string, outputTail: string | null): stri
 async function waitForGateExecution(
   runId: string,
   requested: Exclude<RequestedGate, { message: string }>,
-  pendingResults: Set<number>,
+  pendingResults: Set<string>,
   dependencies: GateWaitDependencies,
   signal: AbortSignal,
 ): Promise<string> {
-  const id = requested.id
-  pendingResults.add(id)
+  const recordId = requested.recordId
+  pendingResults.add(recordId)
   const waitStartedAt = dependencies.now()
   // A caller that disappears without sending cancellation can still consume a later result.
   for (;;) {
@@ -317,9 +330,9 @@ async function waitForGateExecution(
       .query(
         `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,
                 g.cancelled_reason,r.status,r.gate_requests_closed
-         FROM gate_execution g JOIN run r ON r.record_id=g.run_record_id WHERE g.id=?`,
+         FROM gate_execution g JOIN run r ON r.record_id=g.run_record_id WHERE g.record_id=?`,
       )
-      .get(id) as {
+      .get(recordId) as {
       exit_code: number | null
       timed_out: number | null
       elapsed_ms: number | null
@@ -346,14 +359,14 @@ async function waitForGateExecution(
       waitMs: dependencies.waitMs,
     })
     if (finished) {
-      pendingResults.delete(id)
+      pendingResults.delete(recordId)
       const result = formatGateResult(
         shapeGateResult({
           exitCode: row.exit_code!,
           timedOut: row.timed_out === 1,
           elapsedMs: row.elapsed_ms!,
           output: row.output_tail ?? '',
-          ...gateResultLogPaths(runId, id, row.output_artifact),
+          ...gateResultLogPaths(runId, requested.number, row.output_artifact),
         }),
       )
       return requested.introduction ? `${requested.introduction}\n${result}` : result
@@ -369,7 +382,7 @@ async function waitForGateExecution(
 
 async function requestGate(
   runId: string,
-  pendingResults: Set<number>,
+  pendingResults: Set<string>,
   signal: AbortSignal,
   dependencies: GateWaitDependencies = defaultGateWaitDependencies,
 ): Promise<string> {
@@ -499,7 +512,7 @@ function registerRunGateTool(input: {
   registerTool: McpServer['registerTool']
   runId: string
   token: string
-  pendingResults: Set<number>
+  pendingResults: Set<string>
   dependencies?: GateWaitDependencies
   text(
     value: string,
@@ -537,7 +550,7 @@ function registerRunGateTool(input: {
 }
 
 function askServerState(runId: string, dependencies: AskServerDependencies) {
-  return [new Set<number>(), dependencies.lifecycle ?? askLifecycle(runId), [] as string[]] as const
+  return [new Set<string>(), dependencies.lifecycle ?? askLifecycle(runId), [] as string[]] as const
 }
 
 export function createAskMcpServer(
