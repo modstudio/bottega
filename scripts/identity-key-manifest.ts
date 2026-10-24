@@ -135,6 +135,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'outbox.attempts',
     'outbox_quarantine_audit.attempts',
     'probe.exit_code',
+    'probe.number',
     'question.revision',
     'question.number',
     'board_message.number',

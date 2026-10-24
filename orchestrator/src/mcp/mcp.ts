@@ -40,6 +40,7 @@ import { getReview, listReviews } from '../review/review.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
@@ -257,7 +258,7 @@ async function advanceWorkflow({
         review: resolvedReview,
         gate: resolvedGate,
         run: workflowRunEvidence(run),
-        artifact,
+        artifact: resolveProbeArtifact(db(), artifact),
         task,
         defer,
         satisfies,

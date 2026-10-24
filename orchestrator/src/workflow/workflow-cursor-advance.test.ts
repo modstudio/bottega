@@ -122,11 +122,11 @@ function installConditionalFixture(
 
 function closeChoice(d: Database, slug: string, outcome?: string): string {
   const probe = d
-    .query<{ id: number }, [string]>(
-      `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
-       VALUES (?,'["true"]','/tmp','abc',0,'','2026-10-20') RETURNING id`,
+    .query<{ number: number }, [string]>(
+      `INSERT INTO probe (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM probe),'["true"]','/tmp','abc',0,'','2026-10-20') RETURNING number`,
     )
-    .get(newRecordId())!.id
+    .get(newRecordId())!.number
   return nextWorkflowStep(
     slug,
     'fixture',
@@ -268,11 +268,11 @@ function closeStep(
   extra: { review?: string } = {},
 ): string {
   const probe = d
-    .query<{ id: number }, [string]>(
-      `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
-       VALUES (?,'["true"]','/tmp','abc',0,'','2026-10-20') RETURNING id`,
+    .query<{ number: number }, [string]>(
+      `INSERT INTO probe (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM probe),'["true"]','/tmp','abc',0,'','2026-10-20') RETURNING number`,
     )
-    .get(newRecordId())!.id
+    .get(newRecordId())!.number
   return nextWorkflowStep(
     slug,
     'fixture',
@@ -372,12 +372,12 @@ describe('ruling outcomes and bounded re-entry', () => {
     open(d, 'command-close')
     const recordExec = (exitCode: number) =>
       d
-        .query<{ id: number }, (string | number)[]>(
+        .query<{ number: number }, (string | number)[]>(
           `INSERT INTO probe
-            (record_id,command,cwd,head_commit,exit_code,output_tail,session_id,created_at,kind)
-           VALUES (?,?,'/tmp','abc',?,'','flow-session','9999-01-01','exec') RETURNING id`,
+            (record_id,number,command,cwd,head_commit,exit_code,output_tail,session_id,created_at,kind)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM probe),?,'/tmp','abc',?,'','flow-session','9999-01-01','exec') RETURNING number`,
         )
-        .get(newRecordId(), JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), exitCode)!.id
+        .get(newRecordId(), JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), exitCode)!.number
     const close = (id: number) =>
       nextWorkflowStep(
         'command-close',
@@ -416,12 +416,12 @@ describe('ruling outcomes and bounded re-entry', () => {
     }
     const recordExec = (d: Database, exitCode: number) =>
       d
-        .query<{ id: number }, (string | number)[]>(
+        .query<{ number: number }, (string | number)[]>(
           `INSERT INTO probe
-            (record_id,command,cwd,head_commit,exit_code,output_tail,session_id,created_at,kind)
-           VALUES (?,?,'/tmp','abc',?,'','flow-session','9999-01-01','exec') RETURNING id`,
+            (record_id,number,command,cwd,head_commit,exit_code,output_tail,session_id,created_at,kind)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM probe),?,'/tmp','abc',?,'','flow-session','9999-01-01','exec') RETURNING number`,
         )
-        .get(newRecordId(), JSON.stringify([PLATFORM_SLUG, 'pr', 'merge']), exitCode)!.id
+        .get(newRecordId(), JSON.stringify([PLATFORM_SLUG, 'pr', 'merge']), exitCode)!.number
     const close = (d: Database, slug: string, id: number, outcome: string) =>
       nextWorkflowStep(
         slug,

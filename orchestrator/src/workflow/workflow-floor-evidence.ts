@@ -21,6 +21,7 @@ import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-gr
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -613,15 +614,19 @@ function resolveArtifact(
           head_commit: string | null
           exit_code: number
           kind: string
+          number: number
           session_id: string | null
           created_at: string
         },
-        [number]
-      >('SELECT cwd,head_commit,exit_code,kind,session_id,created_at FROM probe WHERE id=?')
-      .get(ref.id)
-    const flag = `--artifact ${ref.kind}:${ref.id}`
-    if (!row) throw new Error(`${flag} does not exist`)
-    if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${ref.id}`)
+        [string]
+      >(
+        'SELECT cwd,head_commit,exit_code,kind,number,session_id,created_at FROM probe WHERE record_id=?',
+      )
+      .get(ref.recordId)
+    const unresolvedFlag = `--artifact ${ref.kind}:${ref.recordId}`
+    if (!row) throw new Error(`${unresolvedFlag} does not exist`)
+    const flag = `--artifact ${ref.kind}:${row.number}`
+    if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${row.number}`)
     requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout, false)
     return { ref: raw, exists: true }
   }
@@ -762,6 +767,7 @@ function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvid
 function gatheredCommandEvidence(
   kind: 'probe' | 'exec',
   id: number,
+  recordId: string,
   row: {
     command: string
     cwd: string
@@ -788,6 +794,7 @@ function gatheredCommandEvidence(
     : undefined
   const exec: NonNullable<ValidatedEvidence['exec']> = {
     id,
+    recordId,
     command: recordedCommand(row.command),
     argv,
     commandIdentity,
@@ -894,6 +901,32 @@ function gatherTreeEvidence(
   }
 }
 
+function resolvedOfferedArtifact(d: Database, artifact: string): string {
+  const offered = artifact.trim()
+  try {
+    const parsed = parseProbeArtifact(offered)
+    return parsed?.identifier.kind === 'number' ? resolveProbeArtifact(d, offered)! : offered
+  } catch {
+    return offered
+  }
+}
+
+function evidenceCheckoutResolver(
+  identity: CursorIdentity,
+  ports: FloorEvidencePorts,
+  d: Database,
+): NonNullable<FloorEvidencePorts['resolveCheckout']> {
+  return (cwd, head, branch) =>
+    invokeFloorEvidencePort(
+      ports,
+      'resolveCheckout',
+      (at, commit, expected) => productionResolveCheckout(at, commit, expected, identity, d),
+      cwd,
+      head,
+      branch,
+    )
+}
+
 export function gatherValidatedEvidence(input: {
   cursorId: string
   identity: CursorIdentity
@@ -905,15 +938,7 @@ export function gatherValidatedEvidence(input: {
 }): ValidatedEvidence {
   const d = input.d ?? db()
   const ports = input.ports ?? {}
-  const resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']> = (cwd, head, branch) =>
-    invokeFloorEvidencePort(
-      ports,
-      'resolveCheckout',
-      (at, commit, expected) => productionResolveCheckout(at, commit, expected, input.identity, d),
-      cwd,
-      head,
-      branch,
-    )
+  const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positive(input.evidence.ruling, '--ruling')
@@ -931,11 +956,12 @@ export function gatherValidatedEvidence(input: {
     gathered.run = gatherRun(run, input.identity, input.cursorId, d)
   }
   if (input.evidence.artifact?.trim()) {
-    const parsed = parseArtifactRef(input.evidence.artifact)
+    const offeredArtifact = resolvedOfferedArtifact(d, input.evidence.artifact)
+    const parsed = parseArtifactRef(offeredArtifact)
     if ('error' in parsed) throw new Error(parsed.error)
     gathered.artifact = resolveArtifact(
       parsed,
-      input.evidence.artifact.trim(),
+      offeredArtifact,
       input.identity,
       {
         cursorId: input.cursorId,
@@ -953,6 +979,7 @@ export function gatherValidatedEvidence(input: {
       const row = d
         .query<
           {
+            number: number
             command: string
             cwd: string
             head_commit: string | null
@@ -963,17 +990,18 @@ export function gatherValidatedEvidence(input: {
             withheld: number
             command_withheld: number
           },
-          [number]
+          [string]
         >(
-          'SELECT command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE id=?',
+          'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
         )
-        .get(parsed.id)!
+        .get(parsed.recordId)!
       const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
       Object.assign(
         gathered,
         gatheredCommandEvidence(
           parsed.kind,
-          parsed.id,
+          row.number,
+          parsed.recordId,
           row,
           input.identity,
           input.cursorId,

@@ -73,7 +73,9 @@ test('workflow exec service returns each child exit code after recording its row
     expect(failing.exitCode).toBe(7)
     expect(
       db()
-        .query("SELECT command,exit_code FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 2")
+        .query(
+          "SELECT command,exit_code FROM probe WHERE kind='exec' ORDER BY created_at DESC,record_id DESC LIMIT 2",
+        )
         .all()
         .reverse(),
     ).toEqual([
@@ -112,7 +114,7 @@ test('workflow exec --record-evidence records the payload row with the receiving
     expect(shown.stdout[0]).toMatch(/^\d+$/)
     expect(
       db()
-        .query('SELECT kind,exit_code,output_tail,session_id FROM probe WHERE id=?')
+        .query('SELECT kind,exit_code,output_tail,session_id FROM probe WHERE number=?')
         .get(Number(shown.stdout[0])),
     ).toEqual({
       kind: 'exec',
@@ -147,7 +149,9 @@ test('workflow exec runs a child whose own argument is --record-evidence', async
     expect(shown.stdout[0]).toMatch(/^\d+$/)
     expect(
       db()
-        .query("SELECT command,exit_code FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1")
+        .query(
+          "SELECT command,exit_code FROM probe WHERE kind='exec' ORDER BY created_at DESC,record_id DESC LIMIT 1",
+        )
         .get(),
     ).toEqual({
       command: JSON.stringify(['/usr/bin/printf', '%s', '--record-evidence']),

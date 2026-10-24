@@ -14,6 +14,7 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
+import { resolveProbeArtifact } from './probe-identifier.ts'
 import {
   promoteStepCatalogue,
   resolvedStepCatalogueVersions,
@@ -377,7 +378,7 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
         ? undefined
         : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
-    artifact: flagValue(argv, 'artifact'),
+    artifact: resolveProbeArtifact(db(), flagValue(argv, 'artifact')),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
     satisfies: obligationUuid(flagValue(argv, 'satisfies')),
