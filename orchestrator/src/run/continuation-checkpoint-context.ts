@@ -21,6 +21,13 @@ function synthesizedResumeContext(plan: ResumeTreePlan | null): string | null {
   return `CHECKPOINT RESUME\nResume from retained work at ${plan.tip}.`
 }
 
+/** What the continuation prompt needs to know about checkpoint reconstruction. */
+export type ContinuationCheckpointContext = {
+  context: string | null
+  hasCheckpoint: boolean
+  hasCheckpointRow: boolean
+}
+
 /**
  * The block names the tree state to resume from, and a checkpoint row (or a
  * tree plan that recreated the tree) is what makes that state reconstructed
@@ -31,12 +38,6 @@ function synthesizedResumeContext(plan: ResumeTreePlan | null): string | null {
  * continues, so a block is context carried in front of the continuation message
  * rather than a reason to demand the reaped original prompt file.
  */
-export type ContinuationCheckpointContext = {
-  context: string | null
-  hasCheckpoint: boolean
-  hasCheckpointRow: boolean
-}
-
 export function continuationCheckpointContext(input: {
   database: Database
   rootId: string
