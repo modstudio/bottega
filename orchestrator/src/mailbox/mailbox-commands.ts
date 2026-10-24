@@ -30,7 +30,7 @@ export async function tellCommand(
   assertWorkerText(body, 'message', TELL_WORKING_FORMS)
   const message = tellRun(id, body)
   presentation.log(
-    `queued message ${message.id} for run ${message.root_run_record_id} (turn ${message.run_record_id}); it has not been read`,
+    `queued message ${message.number} for run ${message.root_run_record_id} (turn ${message.run_record_id}); it has not been read`,
   )
   const notice = deferredWorkerMessageNotice(
     message.root_run_record_id,

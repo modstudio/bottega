@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { git } from '../git/git-environment.ts'
-import { checkpointRun } from './checkpoint.ts'
+import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 
 const temporary = mkdtempSync(join(tmpdir(), 'orch-checkpoint-'))
 const branch = 'DEV-835-checkpoint-test'
@@ -124,6 +124,31 @@ test('checkpoint does not commit a gitignored file', () => {
 
     expect(checkpoint(database, repository, runId).created).toBe(true)
     expect(git(['show', '--format=', '--name-only', 'HEAD'], repository)).toBe('.gitignore')
+  } finally {
+    database.close()
+  }
+})
+
+test('latest checkpoint uses creation time and UUID as its deterministic tie-break', () => {
+  const { database, runId } = fixture('latest-checkpoint')
+  try {
+    database.exec(`
+      INSERT INTO run_checkpoint(record_id,run_record_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+      VALUES ('01990000-0000-7000-8000-000000000002','${runId}',1,'earlier','earlier',0,'2026-10-24T01:00:00.000Z'),
+             ('01990000-0000-7000-8000-000000000001','${runId}',2,'later','later',0,'2026-10-24T02:00:00.000Z');
+    `)
+    expect(latestCheckpoint(database, runId)).toEqual({
+      commit_sha: 'later',
+      checkpoint_no: 2,
+      task_pointer: 'later',
+    })
+    // Same millisecond: only the UUID tie-break picks the greater record id.
+    database.exec(`
+      INSERT INTO run_checkpoint(record_id,run_record_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+      VALUES ('01990000-0000-7000-8000-0000000000b2','${runId}',3,'tie-greater','tie-greater',0,'2026-10-24T03:00:00.000Z'),
+             ('01990000-0000-7000-8000-0000000000b1','${runId}',4,'tie-smaller','tie-smaller',0,'2026-10-24T03:00:00.000Z');
+    `)
+    expect(latestCheckpoint(database, runId)?.commit_sha).toBe('tie-greater')
   } finally {
     database.close()
   }

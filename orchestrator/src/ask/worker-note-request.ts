@@ -63,7 +63,7 @@ export async function requestWorkerNote(
     .query(
       `INSERT INTO worker_note_request
        (record_id,run_record_id,text,project,project_record_id,file,same_as,requested_at,status)
-       VALUES (?,?,?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,'requested') RETURNING id`,
+       VALUES (?,?,?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,'requested') RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -74,15 +74,15 @@ export async function requestWorkerNote(
       input.file ?? null,
       input.sameAs ?? null,
       nowIso(),
-    ) as { id: number }
+    ) as { record_id: string }
   const deadline = Date.now() + WORKER_NOTE_WAIT_MS
   while (Date.now() < deadline) {
     const row = db()
       .query(
         `SELECT status,note_record_id,note_label,candidate_ids,candidate_labels,refusal_class,detail
-         FROM worker_note_request WHERE id=?`,
+         FROM worker_note_request WHERE record_id=?`,
       )
-      .get(request.id) as {
+      .get(request.record_id) as {
       status: 'requested' | 'filed' | 'refused'
       note_record_id: string | null
       note_label: string | null

@@ -74,13 +74,13 @@ export async function prepareRunBoard(
 export async function prepareLaterRunBoardPrompt(
   runId: string,
   laterTurn: boolean,
-  mailbox: { id: number; body: string }[],
+  mailbox: { number: number; body: string }[],
   prompt: string,
 ): Promise<{ prompt: string; notices: RunNotice[] }> {
   const delivery = laterTurn ? await claimRunBoardNotices(runId) : { notices: [], warning: null }
   const notices = delivery.notices
   const items = [
-    ...mailbox.map((message) => `[message ${message.id}] ${message.body}`),
+    ...mailbox.map((message) => `[message ${message.number}] ${message.body}`),
     ...notices.map((notice) => notice.text),
     ...(delivery.warning ? [delivery.warning] : []),
   ]

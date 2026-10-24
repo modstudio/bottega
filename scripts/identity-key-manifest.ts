@@ -170,6 +170,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.agent_pgid',
     'run_checkpoint.checkpoint_no',
     'spawn.prompt_bytes',
+    'run_message.number',
+    'worker_note_request.number',
     'step_catalogue.generation',
     'step_catalogue_version.n',
     'subject.position',

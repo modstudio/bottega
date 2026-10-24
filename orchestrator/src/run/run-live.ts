@@ -101,7 +101,7 @@ function outputCeilingReached(
 
 async function recordInitialDeliveries(
   runId: string,
-  messageIds: number[],
+  messageIds: string[],
   noticeIds: Array<number | string>,
 ): Promise<void> {
   receiptWorkerMessages(runId, messageIds)
@@ -728,7 +728,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,
-      checkpointMessages.map((message) => message.id),
+      checkpointMessages.map((message) => message.record_id),
       [...initialBoardNoticeIds, ...boardDelivery.notices.map((notice) => notice.id)],
     )
     const collected = await Promise.race([handle.collect(), forcedCollect])
@@ -831,7 +831,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         t.canInjectMidTurn,
       )
       const header = [
-        `undelivered worker messages: ${undelivered.map((message) => message.id).join(', ')}`,
+        `undelivered worker messages: ${undelivered.map((message) => message.number).join(', ')}`,
         remedy,
       ]
         .filter(Boolean)

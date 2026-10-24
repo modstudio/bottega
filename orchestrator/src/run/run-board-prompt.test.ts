@@ -43,6 +43,16 @@ test('persisting a board-bound prompt leaves the original prompt unchanged', () 
   expect(readFileSync(join(directory, 'bound-prompt.txt'), 'utf8')).toContain('notice')
 })
 
+test('later-run prompt labels mailbox messages by their display number', async () => {
+  const prepared = await prepareLaterRunBoardPrompt(
+    newRecordId(),
+    false,
+    [{ number: 42, body: 'queued context' }],
+    'NEXT',
+  )
+  expect(prepared.prompt).toContain('[message 42] queued context')
+})
+
 beforeEach(() => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 })
