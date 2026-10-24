@@ -460,7 +460,10 @@ function gatherGate(
   }
 }
 
-function resolveOfferedGate(d: Database, identifier: string | number | undefined): string | undefined {
+function resolveOfferedGate(
+  d: Database,
+  identifier: string | number | undefined,
+): string | undefined {
   if (identifier === undefined || String(identifier).trim() === '') return undefined
   return resolveGateIdentifier(d, identifier)
 }

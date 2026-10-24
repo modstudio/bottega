@@ -3,11 +3,7 @@ import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import {
-  formatPassingGate,
-  passingGateForCommit,
-  selectPassingGateNumber,
-} from './gate-passed.ts'
+import { formatPassingGate, passingGateForCommit, selectPassingGateNumber } from './gate-passed.ts'
 
 const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 

@@ -78,7 +78,7 @@ test('K8b-4 keys gate and check executions by UUID and rewrites gate evidence', 
     expect(
       database
         .query<{ name: string; unique: number; partial: number }, []>(
-          "SELECT name,\"unique\",partial FROM pragma_index_list('gate_execution')",
+          'SELECT name,"unique",partial FROM pragma_index_list(\'gate_execution\')',
         )
         .all(),
     ).toEqual(
@@ -90,7 +90,7 @@ test('K8b-4 keys gate and check executions by UUID and rewrites gate evidence', 
     expect(
       database
         .query<{ name: string; unique: number; partial: number }, []>(
-          "SELECT name,\"unique\",partial FROM pragma_index_list('check_execution')",
+          'SELECT name,"unique",partial FROM pragma_index_list(\'check_execution\')',
         )
         .all(),
     ).toEqual(
