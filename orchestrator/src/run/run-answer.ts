@@ -369,6 +369,7 @@ type RetryRunRow = {
   schema_path: string | null
   model: string | null
   lens: string | null
+  review_ref: string | null
   launch_cwd: string | null
   launch_seed: string | null
   launch_key: string | null
@@ -396,9 +397,8 @@ export async function retryRun(
       `SELECT requested.record_id, COALESCE(requested.parent_run_record_id,requested.record_id) root_record_id,
           requested.agent, requested.job, requested.cwd, requested.prompt_path,
           requested.probe, requested.status, requested.failure_kind, requested.mcp, requested.mcp_error,
-          requested.schema_path, requested.model, requested.lens, requested.launch_cwd,
-          requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover,
-          requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
+          requested.schema_path, requested.model, requested.lens, COALESCE(requested.review_ref, root.review_ref) review_ref, requested.launch_cwd,
+          requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover, requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
           requested.started_at, root.repo, root.project_record_id, root.cwd root_cwd,
           root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip, root.agent_explicit
      FROM run requested JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
@@ -464,11 +464,7 @@ export async function retryRun(
     rootCwd: row.root_cwd,
     rootRepo: row.repo,
   })
-  const continuationInstructions = continuationInstructionsForFreshRetry(
-    writesRepo,
-    id,
-    row.root_record_id,
-  )
+  const instructions = continuationInstructionsForFreshRetry(writesRepo, id, row.root_record_id)
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
   const workspace = writesRepo
@@ -513,7 +509,7 @@ export async function retryRun(
   const retryPrompt = workspace
     ? renderWritingRetryPrompt({
         originalSpec: originalPrompt,
-        continuationInstructions,
+        continuationInstructions: instructions,
         rulings: renderedRulings,
         commit: workspace.commit,
         taskPointer: previousAttemptTaskPointer({
@@ -539,6 +535,7 @@ export async function retryRun(
         mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
         model: retryModelForAgent(row.agent, row.model, agent, options.model),
         lens: row.lens ?? undefined,
+        review: row.review_ref ?? undefined,
         probe: !!row.probe,
         retryOf: id,
         cwd: workspace?.cwd ?? retryTree.cwd,
