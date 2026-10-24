@@ -47,6 +47,19 @@ export function recordMigrationDispatchRefusal(
   return true
 }
 
+/** Assert direct pre-claim admission and persist a refusal after the assertion unwinds. */
+export function assertMigrationDispatchAllowedAndRecord(
+  database: Database,
+  existingChain = false,
+): void {
+  try {
+    assertMigrationDispatchAllowed(database, existingChain)
+  } catch (cause) {
+    recordMigrationDispatchRefusal(cause)
+    throw cause
+  }
+}
+
 export function migrationDrainLiveness(
   marker: MigrationDrain,
   observe: {
@@ -134,7 +147,6 @@ export function assertMigrationDispatchAllowed(database: Database, existingChain
       `re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
     contention,
   )
-  recordMigrationDispatchRefusal(refusal)
   throw refusal
 }
 

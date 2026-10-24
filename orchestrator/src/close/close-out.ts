@@ -49,6 +49,7 @@ import {
   successfulReleaseResult,
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
+import { withCloseOutLease } from './close-out-lease.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
 import { landingTreeReleaseHold, protectRetainedBranch } from './close-out-release-holds.ts'
 import {
@@ -63,6 +64,7 @@ import {
 } from './conversation-liveness.ts'
 import {
   archiveReaderScratchForRelease,
+  extractionRunId,
   prepareReaderScratchCloseOut,
   readerScratchReleaseDetail,
 } from './reader-scratch-close-out.ts'
@@ -86,6 +88,15 @@ export type CloseOutResult = {
   hold?: LandingTreeHoldKind
   inFlightRef?: string | null
   suppressBlock?: boolean
+}
+
+type CloseOutOptions = {
+  intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
+  dryRun?: boolean
+  lockTimeoutMs?: number
+  extraPids?: number[]
+  pgid?: number | null
+  closeOutLeaseHeld?: boolean
 }
 
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
@@ -897,11 +908,6 @@ function attemptCloseOutRun(
   }
 }
 
-/** Extraction evidence belongs to the turn whose tree is being removed. */
-export function extractionRunId(row: { record_id: string }): string {
-  return row.record_id
-}
-
 function settlementLivenessResult(result: CloseOutAttemptResult): CloseOutAttemptResult {
   if (!['released', 'absent', 'forgotten'].includes(result.outcome)) return result
   return (
@@ -928,16 +934,7 @@ function appendRetainedBranchDetail(result: CloseOutAttemptResult): CloseOutAtte
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
-export function closeOutRun(
-  runId: string,
-  options: {
-    intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
-    dryRun?: boolean
-    lockTimeoutMs?: number
-    extraPids?: number[]
-    pgid?: number | null
-  },
-): CloseOutResult {
+function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): CloseOutResult {
   const root = db()
     .query(
       'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
@@ -1030,14 +1027,27 @@ export function closeOutRun(
   return result
 }
 
+/** Run close-out under its own non-blocking lease unless the coordinator already holds it. */
+export function closeOutRun(runId: string, options: CloseOutOptions): CloseOutResult {
+  return withCloseOutLease(runId, Boolean(options.closeOutLeaseHeld), () =>
+    closeOutRunHoldingLease(runId, options),
+  )
+}
+
 export function reclaimTerminalTree(
   runId: string,
-  worktree: Worktree,
+  _worktree: Worktree,
   extraPids: number[] = [],
   pgid: number | null = null,
+  closeOutLeaseHeld = false,
 ): void {
   try {
-    const result = closeOutRun(runId, { intent: 'terminal', extraPids, pgid })
+    const result = closeOutRun(runId, {
+      intent: 'terminal',
+      extraPids,
+      pgid,
+      closeOutLeaseHeld,
+    })
     if (result.outcome !== 'released' && result.outcome !== 'absent') {
       console.error(`orch: close-out ${result.outcome} worktree for run ${runId}: ${result.detail}`)
     }

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { db } from './db.ts'
 import {
   assertMigrationDispatchAllowed,
+  assertMigrationDispatchAllowedAndRecord,
   clearMigrationDrain,
   migrationDrain,
   migrationDrainForUpdate,
@@ -99,15 +100,22 @@ describe('migration drain holder', () => {
       startTime: null,
     })
     try {
-      expect(() => assertMigrationDispatchAllowed(db())).toThrow(/refusing dispatch.*re-dispatch/)
+      const refusalsBefore = db()
+        .query<{ count: number }, []>(
+          "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
+        )
+        .get()!.count
+      expect(() => assertMigrationDispatchAllowedAndRecord(db())).toThrow(
+        /refusing dispatch.*re-dispatch/,
+      )
       expect(() => assertMigrationDispatchAllowed(db(), true)).not.toThrow()
       expect(
         db()
           .query(
-            "SELECT event_kind FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' ORDER BY at DESC, record_id DESC LIMIT 1",
+            "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
           )
           .get(),
-      ).toEqual({ event_kind: 'refusal' })
+      ).toEqual({ count: refusalsBefore + 1 })
     } finally {
       db().query("DELETE FROM schema_meta WHERE key='migration_drain'").run()
     }

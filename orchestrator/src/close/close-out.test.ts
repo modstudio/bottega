@@ -6,13 +6,14 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { heldRunCloseOutLeaseIds } from '../run/run-lease.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,
-  extractionRunId,
   releaseRunFailoverAttempts,
 } from './close-out.ts'
 import { closeOutCommand } from './close-out-command.ts'
+import { extractionRunId } from './reader-scratch-close-out.ts'
 
 afterEach(() => {
   mock.restore()
@@ -424,6 +425,33 @@ test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a sweep close-out holds its close-out lease while persisting the outcome', () => {
+  const runId = addRun({ agent: 'codex', job: 'sweep-close-out-lease', status: 'ok' })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run('/missing-sweep-tree', runId)
+  let observed = false
+  ;(
+    db() as unknown as {
+      function(name: string, callback: () => number): void
+    }
+  ).function('observe_close_out_lease', () => {
+    observed = true
+    expect(heldRunCloseOutLeaseIds()).toContain(runId)
+    return 1
+  })
+  db().exec(
+    `CREATE TEMP TRIGGER observe_close_out_lease
+     BEFORE UPDATE OF close_out_outcome ON run
+     WHEN OLD.record_id='${runId}'
+     BEGIN SELECT observe_close_out_lease(); END`,
+  )
+  try {
+    expect(closeOutRun(runId, { intent: 'sweep' }).outcome).toBe('absent')
+    expect(observed).toBe(true)
+  } finally {
+    db().exec('DROP TRIGGER IF EXISTS observe_close_out_lease')
   }
 })
 

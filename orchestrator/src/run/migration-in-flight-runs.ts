@@ -10,18 +10,18 @@ export type MigrationInFlightRun = {
   status: string
   waiting: boolean
   holderPid: number | null
-  leaseHolding: boolean
-  closing?: boolean
+  kind: 'run-lease' | 'close-out' | 'row'
 }
 
 export function formatMigrationInFlightRun(run: MigrationInFlightRun): string {
-  const holder = run.leaseHolding
-    ? `, holder pid ${run.holderPid ?? 'unknown'}`
-    : run.closing
-      ? ', closing'
-      : run.holderPid
-        ? `, coordinator pid ${run.holderPid}`
-        : ''
+  const holder =
+    run.kind === 'run-lease'
+      ? `, holder pid ${run.holderPid ?? 'unknown'}`
+      : run.kind === 'close-out'
+        ? ', closing'
+        : run.holderPid
+          ? `, coordinator pid ${run.holderPid}`
+          : ''
   return `${run.name} (${run.status}${holder})`
 }
 
@@ -71,8 +71,7 @@ function migrationHeldRuns(
         status: row?.status ?? 'unknown',
         waiting: row ? isFreshRunHostWait(row.status, row.host_wait_since) : false,
         holderPid: row?.pid ?? null,
-        leaseHolding: kind === 'run',
-        closing: kind === 'close-out',
+        kind: kind === 'run' ? ('run-lease' as const) : ('close-out' as const),
       }
     })
     .sort((left, right) => left.name.localeCompare(right.name))
@@ -113,8 +112,7 @@ export function migrationInFlightRuns(database: Database): MigrationInFlightRun[
       status: row.status,
       waiting: isFreshRunHostWait(row.status, row.host_wait_since),
       holderPid: existing?.holderPid ?? row.pid ?? null,
-      leaseHolding: existing?.leaseHolding ?? false,
-      closing: existing?.closing ?? false,
+      kind: existing?.kind ?? 'row',
     })
   }
   return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name))

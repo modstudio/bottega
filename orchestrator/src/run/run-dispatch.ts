@@ -28,6 +28,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
+  assertMigrationDispatchAllowedAndRecord,
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
@@ -134,7 +135,7 @@ function preflightDetachMcp(
 
 function assertDispatchDatabase(resume: boolean): void {
   writableDb()
-  assertMigrationDispatchAllowed(db(), resume)
+  assertMigrationDispatchAllowedAndRecord(db(), resume)
 }
 
 function claimDetachedRun<T>(beforeClaim: () => void, existingChain: boolean, claim: () => T): T {

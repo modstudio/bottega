@@ -101,7 +101,7 @@ test('migrate refuses a non-additive pending range under live runs unless explic
     status: 'running' as const,
     waiting: false,
     holderPid: 4321,
-    leaseHolding: true,
+    kind: 'run-lease' as const,
   }
   const refused = actions(async () => undefined, true)
   refused.value.inFlightRuns = async () => [run]

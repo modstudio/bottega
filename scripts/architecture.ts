@@ -188,6 +188,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../run/question-close.ts',
   ]),
+  module('orchestrator/src/close/close-out-lease.ts', ['../database/db.ts', '../run/run-lease.ts']),
   module('orchestrator/src/close/absent-close-out-residue.ts', [
     '../database/db.ts',
     '../reclaim/reclaim-residue.ts',
