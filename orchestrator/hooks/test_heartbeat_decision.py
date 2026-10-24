@@ -566,6 +566,11 @@ esac
         )
         self.assertEqual(completed.count("FAILED 8/fixture"), 1, completed)
 
+    def test_a_watched_failure_with_no_successor_stays_quiet(self):
+        completed = self.run_failover_fixture(None)
+        self.assertEqual(completed.count("FAILED 8/fixture"), 1, completed)
+        self.assertEqual(completed.count("FAILOVER"), 0, completed)
+
     def test_a_successor_appearing_on_a_degraded_tick_is_still_announced_once(self):
         """A degraded tick announces nothing, so it must not spend the watch.
 

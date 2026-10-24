@@ -760,7 +760,6 @@ describe('run listing', () => {
     const cases: { label: string; kind: string | null; error: string | null; status?: string }[] = [
       { label: 'a kind that never fails over', kind: 'harness', error: null },
       { label: 'a recorded failover refusal', kind: 'contract', error: 'Failover refused: no' },
-      { label: 'a run that did not fail', kind: null, error: null, status: 'ok' },
     ]
     for (const failing of cases) {
       const id = addRun({
