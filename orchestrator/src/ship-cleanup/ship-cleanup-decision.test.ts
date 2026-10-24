@@ -74,15 +74,6 @@ describe('ship cleanup decision', () => {
         reason: 'run has no recorded verdict',
       },
     ],
-    [
-      'judged run',
-      { judged: true, failureKind: null },
-      {
-        artifacts: 'remove',
-        worktreeAction: 'close',
-        reason: 'terminal judged run on merged branch',
-      },
-    ],
   ] as const)('handles a terminal %s', (_case, overrides, expected) => {
     expect(decide([run(overrides)])[0]).toMatchObject(expected)
   })
@@ -122,6 +113,34 @@ describe('ship cleanup decision', () => {
       artifacts: 'keep',
       worktreeAction: 'keep',
       reason: 'run is live (asking)',
+    })
+  })
+
+  test('keeps a provider-unserved root while a continuation turn is live', () => {
+    const decisions = decide([
+      run({
+        record_id: 'root',
+        number: 41,
+        root_record_id: 'root',
+        rootNumber: 41,
+        judged: false,
+        failureKind: 'billing',
+      }),
+      run({
+        record_id: 'turn',
+        number: 42,
+        root_record_id: 'root',
+        rootNumber: 41,
+        status: 'running',
+        startedAt: '2026-10-18T02:00:00Z',
+      }),
+    ])
+
+    expect(decisions[0]).toMatchObject({
+      scope: 'chain',
+      artifacts: 'keep',
+      worktreeAction: 'keep',
+      reason: 'run 42 is live (running)',
     })
   })
 

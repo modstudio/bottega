@@ -164,6 +164,7 @@ function decideScopedRun(
   run: ShipCleanupRunFact,
   scope: ShipCleanupRunDecision['scope'],
   landingMergedAt: string,
+  liveChainRun: ShipCleanupRunFact | undefined,
 ): ShipCleanupRunDecision {
   if (scope === 'outside') {
     return {
@@ -172,6 +173,15 @@ function decideScopedRun(
       artifacts: 'ignore',
       worktreeAction: 'ignore',
       reason: outsideScopeReason(run, landingMergedAt),
+    }
+  }
+  if (scope === 'chain' && liveChainRun && liveChainRun.record_id !== run.record_id) {
+    return {
+      ...run,
+      scope,
+      artifacts: 'keep',
+      worktreeAction: 'keep',
+      reason: `run ${liveChainRun.number} is live (${liveChainRun.status})`,
     }
   }
   if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status)) {
@@ -213,7 +223,7 @@ function decideScopedRun(
   }
 }
 
-/** Decide removal independently for each run; turns inherit their root verdict in gathered facts. */
+/** Decide removal for each run while keeping every member of a chain with a live turn. */
 export function decideShipCleanup(
   taskKey: string,
   landedBranches: ReadonlySet<string>,
@@ -233,8 +243,14 @@ export function decideShipCleanup(
       )
       .map((run) => run.root_record_id),
   )
+  const liveChainRuns = new Map<string, ShipCleanupRunFact>()
+  for (const run of runs) {
+    if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status) && !liveChainRuns.has(run.root_record_id)) {
+      liveChainRuns.set(run.root_record_id, run)
+    }
+  }
   return runs.map((run) => {
     const scope = scopeFor(run, taskKey, landedBranches, landingMergedAt, branchChainRoots)
-    return decideScopedRun(run, scope, landingMergedAt)
+    return decideScopedRun(run, scope, landingMergedAt, liveChainRuns.get(run.root_record_id))
   })
 }
