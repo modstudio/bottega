@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { constants, homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -12,15 +12,26 @@ import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
   db,
+  enableSchemaReloadUnlessRegistered,
   nowIso,
   sessionId,
+  storeSchemaVersions,
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
+import { inFlightMigrationCompatibility } from '../database/migration-compatibility.ts'
+import { migrationJournal } from '../database/migrations.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
+import { handOffWorkflowEvidence } from './workflow-evidence-handoff.ts'
+import type { WorkflowEvidencePayload } from './workflow-evidence-payload.ts'
+import {
+  decideWorkflowEvidenceRecording,
+  type WorkflowEvidenceRecordingDecision,
+  workflowEvidenceNotRecordedRefusal,
+} from './workflow-evidence-recording.ts'
 
 const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 
@@ -265,6 +276,53 @@ async function recordWorkflowCommand(
   }, d)
 }
 
+/** A finished child whose evidence row was not written; it carries that child's own status. */
+class WorkflowEvidenceNotRecordedError extends Error {
+  readonly exitCode: number
+  constructor(message: string, exitCode: number) {
+    super(message)
+    this.exitCode = exitCode
+  }
+}
+
+/** Refusals exec and its receiving form share: only an architect session records exec evidence. */
+function assertWorkflowExecCaller(): void {
+  if (process.env.BOTTEGA_DEPTH !== undefined)
+    throw new Error(
+      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; BOTTEGA_DEPTH is set`,
+    )
+  if (!sessionId())
+    throw new Error(
+      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
+    )
+}
+
+/** The shell status a child reports: its exit code, or the signal's offset. */
+export function wrappedCommandExitCode(ran: {
+  exitCode: number
+  signal?: NodeJS.Signals | null
+}): number {
+  return ran.signal ? 128 + constants.signals[ran.signal] : ran.exitCode
+}
+
+/**
+ * Gathers the versions the child may have moved between, then asks the decision.
+ * `workflow probe` shares the row writer but not this seam: handing a probe off
+ * would need a kind-carrying payload and a second receiving form, so a probe whose
+ * child migrated the store keeps its own loud stale-schema refusal.
+ */
+function evidenceRecordingDecision(): WorkflowEvidenceRecordingDecision {
+  const versions = storeSchemaVersions()
+  return decideWorkflowEvidenceRecording({
+    openedSchemaVersion: versions?.opened ?? null,
+    storeSchemaVersion: versions?.store ?? null,
+    compatibility: () =>
+      versions
+        ? inFlightMigrationCompatibility(migrationJournal(), versions.opened, versions.store)
+        : 'incompatible',
+  })
+}
+
 export async function recordWorkflowExec(
   command: string[],
   input: {
@@ -278,19 +336,15 @@ export async function recordWorkflowExec(
   } = {},
 ): Promise<ProbeRecord> {
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
-  if (process.env.BOTTEGA_DEPTH !== undefined)
-    throw new Error(
-      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; BOTTEGA_DEPTH is set`,
-    )
-  if (!sessionId())
-    throw new Error(
-      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
-    )
+  assertWorkflowExecCaller()
   const cwd = input.cwd ?? process.cwd()
   // Capture the head the exec command will run against.
   const commandHead = resolveEvidenceHead(cwd, input)
   if (input.registeredProject === false)
     throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
+  // A child may migrate the store; an additive range then reloads instead of refusing the row
+  // below. A process that already registered its own reload and refusal keeps them.
+  enableSchemaReloadUnlessRegistered()
   const ran = input.runner
     ? await input.runner({ command, cwd })
     : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)), [
@@ -298,10 +352,63 @@ export async function recordWorkflowExec(
       ])
   // Capture the head the completed exec proves, retaining the prior head if its cwd disappeared.
   const evidenceHead = resolveEvidenceHead(cwd, input) ?? commandHead
+  const decision = evidenceRecordingDecision()
+  const wrappedExitCode = wrappedCommandExitCode(ran)
+  if (decision.action === 'refuse')
+    throw new WorkflowEvidenceNotRecordedError(decision.reason, wrappedExitCode)
+  if (decision.action === 'hand-off') {
+    const handed = handOffWorkflowEvidence({
+      command,
+      cwd,
+      exitCode: ran.exitCode,
+      signal: ran.signal ?? null,
+      output: ran.output,
+      headCommit: evidenceHead,
+      preCommandHeadCommit: commandHead,
+    })
+    if (handed.kind === 'not-recorded')
+      throw new WorkflowEvidenceNotRecordedError(
+        workflowEvidenceNotRecordedRefusal({ exitCode: wrappedExitCode, detail: handed.detail }),
+        wrappedExitCode,
+      )
+    // The receiving process holds the row and its redacted tail. Exec presents no tail
+    // (`presentCommandOutcome` shows one for probe only), so this returns none: the raw
+    // output never comes back as a tail the caller could print unredacted.
+    return {
+      id: handed.id,
+      withheld: handed.withheld,
+      exitCode: ran.exitCode,
+      signal: ran.signal ?? null,
+      outputTail: '',
+    }
+  }
   const recorded = await recordWorkflowCommand(command, cwd, ran, 'exec', {
     ...input,
     commit: evidenceHead,
     preCommandCommit: commandHead,
+  })
+  return finishRecord(recorded, ran)
+}
+
+/**
+ * Records the row a hand-off carries. The row is built here, from the payload,
+ * through the same writer as exec, so the store's own redaction and tail bounding
+ * apply and session identity comes from this process's inherited environment.
+ */
+export async function recordWorkflowEvidence(
+  payload: WorkflowEvidencePayload,
+  input: { d?: Database } = {},
+): Promise<ProbeRecord> {
+  assertWorkflowExecCaller()
+  const ran: ProbeRunResult = {
+    exitCode: payload.exitCode,
+    output: payload.output,
+    signal: payload.signal as NodeJS.Signals | null,
+  }
+  const recorded = await recordWorkflowCommand(payload.command, payload.cwd, ran, 'exec', {
+    d: input.d,
+    commit: payload.headCommit,
+    preCommandCommit: payload.preCommandHeadCommit,
   })
   return finishRecord(recorded, ran)
 }

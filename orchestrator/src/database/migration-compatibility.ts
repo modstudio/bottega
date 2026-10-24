@@ -1,6 +1,8 @@
 // concern: database migration compatibility
 /** Decides whether a process may keep its open store handle after the journal advances. */
 
+export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
+
 export type InFlightMigrationCompatibility = 'additive' | 'incompatible'
 
 export type MigrationJournalEntry = {
