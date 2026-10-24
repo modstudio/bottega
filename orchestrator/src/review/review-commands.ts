@@ -350,7 +350,9 @@ function printReviewTier(
     output.review_budget.unclassifiableReviewCount === 0 &&
     output.review_budget.wouldExceedCeiling
   ) {
-    log('a new round would exceed the ceiling; stop and ask the operator')
+    log(
+      'a new round would exceed the ceiling: the architect rules. Read the fix (bottega review read), land with test-only fixes, and file the rest',
+    )
   }
   for (const lens of output.lens_profiles) {
     const sources = lens.profiles
