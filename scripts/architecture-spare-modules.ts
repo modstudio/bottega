@@ -12,7 +12,10 @@ const module = (file: string, allowed: string[]): SpareModule => ({
 })
 
 export const spareModules: SpareModule[] = [
-  module('orchestrator/src/spare/spare-decisions.ts', ['../failure/failure.ts']),
+  module('orchestrator/src/spare/spare-decisions.ts', [
+    '../../../shared/docs.ts',
+    '../failure/failure.ts',
+  ]),
   module('orchestrator/src/spare/spare-runner.ts', [
     'node:fs',
     '../../../shared/brand.ts',

@@ -22,7 +22,7 @@ function fixture(): Database {
       record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, parent_run_record_id TEXT, launch_key TEXT,
       started_at TEXT NOT NULL, output_path TEXT
     );
-    CREATE TABLE score (id INTEGER PRIMARY KEY, run_record_id TEXT, note TEXT);
+    CREATE TABLE score (number INTEGER UNIQUE, run_record_id TEXT, note TEXT);
     CREATE TABLE question (
       record_id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, run_record_id TEXT, question TEXT, options TEXT,
       recommendation TEXT, why TEXT, answer TEXT

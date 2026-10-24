@@ -233,6 +233,35 @@ describe('behavioral canon evals', () => {
 })
 
 describe('canon eval establishment', () => {
+  test('latest and last-known-good evals follow their timestamps, not insertion order', () => {
+    const olderRunId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
+    const newerRunId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
+    db()
+      .query(
+        `INSERT INTO canon_eval (record_id, slug, run_record_id, canon_sha, agent, model, pass, why, at)
+         VALUES (?, 'timestamp-order', ?, 'new-sha', 'codex', 'new-model', 0, 'new failure', '2026-10-23T12:00:00.000Z'),
+                (?, 'timestamp-order', ?, 'old-sha', 'codex', 'old-model', 1, 'old pass', '2026-10-22T12:00:00.000Z')`,
+      )
+      .run(newRecordId(), newerRunId, newRecordId(), olderRunId)
+
+    expect(latestCanonEvals()).toEqual([
+      expect.objectContaining({
+        slug: 'timestamp-order',
+        run_record_id: newerRunId,
+        pass: false,
+        at: '2026-10-23T12:00:00.000Z',
+      }),
+    ])
+    expect(canonEvalsReport().last_known_good).toEqual([
+      {
+        slug: 'timestamp-order',
+        agent: 'codex',
+        canon_sha: 'old-sha',
+        at: '2026-10-22T12:00:00.000Z',
+      },
+    ])
+  })
+
   test('a legacy pass against the empty pack is reported as not established', () => {
     const runId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()

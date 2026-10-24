@@ -191,7 +191,7 @@ export function registrationProbeCacheReusable(
       replyFile === true &&
       writingCapabilityPolicy(transport, previous.writing?.ok).jobSuccess &&
       (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess) &&
-      (!mcpRequired || previous.mcp?.verifiable != null),
+      (!mcpRequired || previous.mcp?.verifiable === true),
   )
 }
 

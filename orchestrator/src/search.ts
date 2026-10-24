@@ -64,6 +64,19 @@ function rulingCandidates(d: Database): Record<string, unknown>[] {
     })
 }
 
+function scoreCandidates(d: Database): Record<string, unknown>[] {
+  return d
+    .query(
+      `SELECT s.number AS id, r.number AS run_number, r.record_id AS run_record_id,
+          root.number AS root_run_number, root.record_id AS root_run_record_id,
+          root.launch_key AS task_key, r.started_at, s.note
+       FROM score s JOIN run r ON r.record_id=s.run_record_id
+       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
+      WHERE s.note IS NOT NULL AND trim(s.note) <> ''`,
+    )
+    .all() as Record<string, unknown>[]
+}
+
 /** A compact excerpt around the first literal match. Never returns the whole record by default. */
 export function searchSnippet(text: string, query: string, directlyLinked: boolean): string {
   const clean = text.replace(/\s+/g, ' ').trim()
@@ -113,20 +126,7 @@ export function searchRecords(
     }
   }
 
-  add(
-    'score',
-    d
-      .query(
-        `SELECT s.id, r.number AS run_number, r.record_id AS run_record_id,
-            root.number AS root_run_number, root.record_id AS root_run_record_id,
-            root.launch_key AS task_key, r.started_at, s.note
-       FROM score s JOIN run r ON r.record_id=s.run_record_id
-       JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
-      WHERE s.note IS NOT NULL AND trim(s.note) <> ''`,
-      )
-      .all() as Record<string, unknown>[],
-    (row) => String(row.note),
-  )
+  add('score', scoreCandidates(d), (row) => String(row.note))
 
   add('ruling', rulingCandidates(d), (row) =>
     [row.question, row.options, row.recommendation, row.why, row.answer]

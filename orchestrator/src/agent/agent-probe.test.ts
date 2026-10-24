@@ -123,7 +123,10 @@ test('a cached probe that skipped the MCP turn is not reused once that turn is r
   expect(registrationProbeCacheReusable('acp', skipped, true, false, gooseNeedsMcp)).toBe(false)
   // A harness whose declared jobs keep the skip still reuses the cached row.
   expect(registrationProbeCacheReusable('acp', skipped, true, false, false)).toBe(true)
-  // A stored MCP verdict is an answer, so it is reusable.
+  // A failed MCP handshake is not an answer, so it is re-probed.
+  const failedMcp = { ...result(true), mcp: { verifiable: false, output: 'handshake failed' } }
+  expect(registrationProbeCacheReusable('acp', failedMcp, true, false, true)).toBe(false)
+  // A stored passing MCP verdict is an answer, so it is reusable.
   expect(registrationProbeCacheReusable('acp', result(true), true, false, true)).toBe(true)
 })
 
