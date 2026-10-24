@@ -690,7 +690,11 @@ describe('suggestion notes', () => {
       })
     ).note
     const alpha = (
-      await fileNote({ text: `alpha ${token} record`, cwd: '/fixtures/repos/alpha', forceNew: true })
+      await fileNote({
+        text: `alpha ${token} record`,
+        cwd: '/fixtures/repos/alpha',
+        forceNew: true,
+      })
     ).note
     const matched = listNotes({ text: token.toLowerCase(), stale: false }).map(
       (row) => row.record_id,
