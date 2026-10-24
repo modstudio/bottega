@@ -89,7 +89,7 @@ export function BoardPage() {
             <b> 189</b> <span className="c">rate limiter counts retries … 3 sightings</span>
             {`\n`}
             <b> 204</b> <span className="c">export job has no timeout 1 sighting</span>
-            {`\n\n`}$ <b>{PLATFORM_SLUG} note promote</b> 189{`\n`}
+            {`\n\n`}$ <b>{PLATFORM_SLUG} note promote</b> 189{` --title "<the point>"\n`}
             <span className="c">
               {' '}
               HBR-212 opened, carrying the note and{`\n`} its sightings as evidence

@@ -7,6 +7,7 @@ import {
   updateArrayMcpTaskStatus,
 } from '../../shared/trackers.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
+import type { HostedEditDelivery } from './offline-task-edits.ts'
 import { classifyTaskBranches } from './orch.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import {
@@ -21,6 +22,7 @@ import {
 } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
+import type { HostedTaskWriteOptions } from './task-write-destination.ts'
 import { type TrackerConnectionDependencies, withTrackerConnection } from './tracker-connection.ts'
 
 type TrackerWriteDependencies = TrackerConnectionDependencies & {
@@ -31,7 +33,15 @@ type TrackerWriteDependencies = TrackerConnectionDependencies & {
   localClose?: typeof closeTask
   localComment?: typeof commentTask
 }
-type TrackerWriteOptions = { force?: boolean; abandonReason?: string; confirm: string }
+type TrackerWriteOptions = {
+  force?: boolean
+  abandonReason?: string
+  confirm: string
+  /** The destination the write belongs to, so a hosted local row lands where its caller read it. */
+  hosted?: HostedTaskWriteOptions
+  /** Receives the hosted drain result; a throw here propagates to the caller. */
+  onHostedDelivery?: (delivery: HostedEditDelivery) => void
+}
 
 function registeredProjectFor(
   task: TaskRow,

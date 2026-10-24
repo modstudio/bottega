@@ -8,6 +8,7 @@ import {
   requiredPromotionTitle,
 } from './note.ts'
 import { projects } from './projects.ts'
+import { machineAttribution } from './task-machine-attribution.ts'
 import {
   createAdvertisedTrackerTaskKey,
   taskCreationDestination,
@@ -75,8 +76,9 @@ export async function promoteNoteCommand(id: string, flags: PromotionFlags) {
       await client.close()
     }
   }
+  const attribution = await machineAttribution()
   try {
-    return await promoteNote(id, { existingTaskKey, title: target.title })
+    return await promoteNote(id, { existingTaskKey, title: target.title, attribution })
   } catch (error) {
     if (!created) throw error
     throw new Error(

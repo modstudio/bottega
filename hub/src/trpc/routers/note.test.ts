@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { UNATTRIBUTED } from '../../task-attribution.ts'
 import { createNoteRouter } from './note.ts'
 
 const NOTE_ID = '11111111-1111-4111-8111-111111111111'
@@ -11,13 +12,16 @@ function recordingRouter() {
       calls.push({ id, title: options?.title })
       return { promoted_task: 'LOC-1' }
     }) as never,
+    machineAttribution: (async () => UNATTRIBUTED) as never,
   })
   return { calls, caller: router.createCaller({}) }
 }
 
 test('the promote input refuses a missing or blank title before the service runs', async () => {
   const { calls, caller } = recordingRouter()
-  await expect(caller.promote({ id: NOTE_ID } as never)).rejects.toThrow()
+  await expect(caller.promote({ id: NOTE_ID } as never)).rejects.toThrow(
+    'Invalid input: expected string, received undefined',
+  )
   await expect(caller.promote({ id: NOTE_ID, title: '   ' })).rejects.toThrow(
     'a promoted task needs a title stating its point',
   )

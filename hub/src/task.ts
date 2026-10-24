@@ -6,7 +6,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import type { TaskWriteMode } from './hosted-write-mode.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { drainHostedEditOutbox } from './offline-task-edits.ts'
+import { drainHostedEditOutbox, type HostedEditDelivery } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
@@ -856,7 +856,10 @@ export async function setTask(
     }
     return row
   })
-  if (hosted) await drainHostedEditOutbox(at, options.hosted)
+  if (hosted) {
+    const delivery = await drainHostedEditOutbox(at, options.hosted)
+    options.onHostedDelivery?.(delivery)
+  }
   return result
 }
 

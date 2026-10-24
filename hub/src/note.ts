@@ -46,9 +46,9 @@ import {
   duplicateCandidates,
   type TaskRow,
 } from './task.ts'
+import { type Attribution, UNATTRIBUTED } from './task-attribution.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
-import { machineAttribution } from './task-machine-attribution.ts'
 import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 import { setTaskThroughTracker } from './tracker-task-write.ts'
@@ -655,7 +655,13 @@ export function requiredPromotionTitle(label: string, supplied: string | undefin
 
 export async function promoteNote(
   recordId: string,
-  options: { hosted?: NoteClientOptions; existingTaskKey?: string; title?: string } = {},
+  options: {
+    hosted?: NoteClientOptions
+    existingTaskKey?: string
+    title?: string
+    /** The caller's machine identity, so the hosted title correction needs no ambient lookup. */
+    attribution?: Attribution
+  } = {},
 ): Promise<NoteRow> {
   const note = getNote(recordId)
   if (note.promoted_task)
@@ -665,7 +671,9 @@ export async function promoteNote(
   const project = projects().find((candidate) => candidate.name === note.project)!
   const destination = taskCreationDestination(project)
   if (destination === 'tracker' && !options.existingTaskKey)
-    throw new Error(`project ${note.project} owns task creation in its tracker`)
+    throw new Error(
+      `project ${note.project} owns task creation in its tracker; create the task there, then link it with: ${PLATFORM_SLUG} note promote ${note.label} --task <KEY>`,
+    )
   if (options.existingTaskKey) {
     const prefixes = project.settings.keyPrefixes ?? []
     const prefix = options.existingTaskKey.split('-', 1)[0]?.toUpperCase()
@@ -738,7 +746,11 @@ export async function promoteNote(
     if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
     applyHostedNote(conn, hosted.note)
   })
-  if (creating && hosted.task) await setPromotedTaskTitle(hosted.task, title)
+  if (creating && hosted.task)
+    await setPromotedTaskTitle(hosted.task, title, {
+      hosted: hostedOptions,
+      attribution: options.attribution ?? UNATTRIBUTED,
+    })
   return getNote(note.record_id)
 }
 
@@ -758,16 +770,30 @@ function promotionBody(note: NoteRow): string {
 
 /**
  * The hosted server titles a promoted task with the note text, so the creating client corrects it
- * through the same hosted-aware write `bottega task set --title` uses.
+ * through the same hosted-aware write `bottega task set --title` uses, aimed at the destination the
+ * promotion itself wrote to. Only a delivered correction counts: a queued change may never arrive
+ * (a destination that cannot push task rows) and a rejected one is quarantined, and either leaves
+ * the hosted record titled by the note text while the promotion reported success.
  */
-async function setPromotedTaskTitle(task: HostedTask, title: string): Promise<void> {
+async function setPromotedTaskTitle(
+  task: HostedTask,
+  title: string,
+  options: { hosted: NoteClientOptions; attribution: Attribution },
+): Promise<void> {
   try {
     await setTaskThroughTracker(
       task.key,
       { recordId: task.id },
       { title },
-      await machineAttribution(),
-      { confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM },
+      options.attribution,
+      {
+        confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
+        hosted: options.hosted,
+        onHostedDelivery: (delivery) => {
+          if (delivery.kind !== 'sent')
+            throw new Error(`the correction was not delivered (${delivery.kind}: ${delivery.reason})`)
+        },
+      },
     )
   } catch (error) {
     throw new Error(
