@@ -528,6 +528,39 @@ export async function setDocStatus(
   })
 }
 
+/**
+ * Record the commit a document was checked against, leaving every other field
+ * as the stored document has it. `commit` is normalized by the article-field
+ * rules, which own its shape and its article-only restriction.
+ */
+export async function setDocCheckedAgainst(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  commit: string,
+  context: DocWriteContext,
+  owner: string | null = null,
+): Promise<Doc> {
+  const current = getDoc(scope, subject, slug, owner)
+  if (!current)
+    throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
+  return setDoc({
+    scope: current.scope,
+    subject: current.subject,
+    owner: current.owner,
+    slug: current.slug,
+    title: current.title,
+    body: current.body,
+    delivery: current.delivery,
+    audiences: current.audiences,
+    parentSlug: current.parent_slug,
+    position: current.position,
+    featured: current.featured,
+    checkedAgainstCommit: commit,
+    ...context,
+  })
+}
+
 export async function importDoc(
   input: {
     scope: string

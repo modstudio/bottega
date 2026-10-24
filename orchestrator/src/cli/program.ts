@@ -36,6 +36,7 @@ import { register as registerRunListing } from '../commands/run-listing.ts'
 import { register as registerSession } from '../commands/session.ts'
 import { register as registerSettings } from '../commands/settings.ts'
 import { register as registerSetup } from '../commands/setup.ts'
+import { register as registerSpare } from '../commands/spare.ts'
 import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
@@ -86,6 +87,7 @@ registerLogic(program)
 registerSettings(program)
 registerSession(program)
 registerSetup(program)
+registerSpare(program)
 registerSync(program)
 registerTestSubstance(program)
 

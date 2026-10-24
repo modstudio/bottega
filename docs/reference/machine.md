@@ -62,6 +62,9 @@ upkeep of this machine
 - [bottega machine setup plan](#bottega-machine-setup-plan)
 - [bottega machine setup restore](#bottega-machine-setup-restore)
 - [bottega machine setup-ask](#bottega-machine-setup-ask)
+- [bottega machine spare](#bottega-machine-spare)
+- [bottega machine spare help](#bottega-machine-spare-help)
+- [bottega machine spare run](#bottega-machine-spare-run)
 - [bottega machine storage](#bottega-machine-storage)
 - [bottega machine sweep](#bottega-machine-sweep)
 
@@ -89,6 +92,7 @@ upkeep of this machine
 - [bottega machine settings](./machine.md#bottega-machine-settings)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
 - [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
+- [bottega machine spare](./machine.md#bottega-machine-spare)
 - [bottega machine storage](./machine.md#bottega-machine-storage)
 - [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
@@ -922,6 +926,43 @@ install the live worker question channel
 ### Related
 
 - [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine spare
+
+**Synopsis:** `bottega machine spare`
+
+the spare-hands lane: best-effort jobs for free-tier agents
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+- [bottega machine spare help](./machine.md#bottega-machine-spare-help)
+- [bottega machine spare run](./machine.md#bottega-machine-spare-run)
+
+## bottega machine spare help
+
+**Synopsis:** `bottega machine spare help [command]`
+
+display help for command
+
+### Related
+
+- [bottega machine spare](./machine.md#bottega-machine-spare)
+
+## bottega machine spare run
+
+**Synopsis:** `bottega machine spare run [--job <name>] [--until <HH:MM>]`
+
+work the spare queue once and print the night summary
+
+### Options
+
+- `--job <name>`: which spare job to run (default: docs-drift)
+- `--until <HH:MM>`: stop at this clock time instead of spare.stop_time
+
+### Related
+
+- [bottega machine spare](./machine.md#bottega-machine-spare)
 
 ## bottega machine storage
 

@@ -16,6 +16,21 @@ RECORD_TUNNEL_APP="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" 
 RECORD_TUNNEL_LOCAL_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get record.tunnel_local_port)"
 RECORD_TUNNEL_REMOTE_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get record.tunnel_remote_port)"
 FLYCTL="$(command -v flyctl || true)"
+# The spare night starts when spare.start_time says; the template's start hour
+# and minute are derived from it here so the installed plist follows the same
+# source the runner reads, and never carries a literal placeholder into an
+# <integer> element that launchd would refuse.
+SPARE_START_TIME="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get spare.start_time)"
+if [[ ! "$SPARE_START_TIME" =~ ^([0-9]{1,2}):([0-9]{2})$ ]]; then
+  echo "refusing to install: spare.start_time is not HH:MM (got '${SPARE_START_TIME}')" >&2
+  exit 1
+fi
+SPARE_START_HOUR=$((10#${BASH_REMATCH[1]}))
+SPARE_START_MINUTE=$((10#${BASH_REMATCH[2]}))
+if ((SPARE_START_HOUR > 23 || SPARE_START_MINUTE > 59)); then
+  echo "refusing to install: spare.start_time is not HH:MM (got '${SPARE_START_TIME}')" >&2
+  exit 1
+fi
 if ! ENV_FILES_OUTPUT="$(bun --no-env-file "$INSTALL_ROOT/shared/config-directory.ts" env-paths)"; then
   exit 1
 fi
@@ -83,7 +98,8 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/doc
   "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
   "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-canon-audit" \
-  "$HOME/Library/Logs/orch-canon-mirror" "$HOME/Library/Logs/orch-board-watch"
+  "$HOME/Library/Logs/orch-canon-mirror" "$HOME/Library/Logs/orch-board-watch" \
+  "$HOME/Library/Logs/orch-spare"
 
 remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
 
@@ -139,7 +155,9 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   #   __INSTALL_ROOT__ -> the resolved checkout or distribution root,
   #   __CONCERN__ -> the installed template owner's directory,
   #   __HOME__ -> this user's home,
-  #   __MODEL_HOST__ -> the configured SSH alias, and tunnel port placeholders
+  #   __MODEL_HOST__ -> the configured SSH alias, tunnel port placeholders,
+  #   __SPARE_START_HOUR__/__SPARE_START_MINUTE__ -> the hour and minute parsed
+  #     from the spare.start_time configuration value.
   sed -e "s#__INSTALL_ROOT__#${INSTALL_ROOT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
@@ -150,11 +168,12 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       -e "s#__TUNNEL_LOCAL_PORT__#${TUNNEL_LOCAL_PORT}#g" \
       -e "s#__TUNNEL_REMOTE_PORT__#${TUNNEL_REMOTE_PORT}#g" \
       -e "s#__FLYCTL__#${FLYCTL}#g" \
+      -e "s#__SPARE_START_HOUR__#${SPARE_START_HOUR}#g" \
+      -e "s#__SPARE_START_MINUTE__#${SPARE_START_MINUTE}#g" \
       -e "s#__RECORD_TUNNEL_APP__#${RECORD_TUNNEL_APP}#g" \
       -e "s#__RECORD_TUNNEL_LOCAL_PORT__#${RECORD_TUNNEL_LOCAL_PORT}#g" \
       -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" \
       -e "s#__HUB_HOSTED_URL__#${BOTTEGA_HOSTED_URL:-}#g" "$tmpl" > "$target"
-
   if ! bun --no-env-file "$INSTALL_ROOT/orchestrator/src/setup/environment-name-migration.ts" check-file "$target"; then
     echo "refusing installed plist with a legacy environment name: $target" >&2
     FAILED_LABELS+=("$label")
@@ -172,7 +191,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|docker-prune|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|orch-board-watch|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|docker-prune|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|orch-board-watch|hub-note-maintenance|orch-spare' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

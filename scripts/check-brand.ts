@@ -60,6 +60,7 @@ const ALLOWED = new Set([
   'ops/bin/orch-record-sync.sh',
   'ops/bin/orch-canon-audit.sh',
   'ops/bin/orch-canon-mirror.sh',
+  'ops/bin/orch-spare.sh',
   // Hook programs cannot import the TypeScript brand module; these command-facing hooks
   // must name the front-door executable while the legacy command migration is in flight.
   'orchestrator/hooks/block-agent.py',
