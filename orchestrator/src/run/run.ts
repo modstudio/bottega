@@ -20,6 +20,7 @@ import {
   workerPreamble,
 } from '../contract/contract.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { assertMigrationDispatchAllowed } from '../database/migration-drain.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
@@ -245,6 +246,7 @@ export async function run(opts: {
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
+  assertMigrationDispatchAllowed(db())
   runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job),

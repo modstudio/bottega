@@ -5,6 +5,7 @@ import { Database } from 'bun:sqlite'
 import { realpathSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { RUN_WALL_TIME_CEILING_MS } from '../jobs/jobs.ts'
 import { projectAt } from '../project/projects.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { existingDatabaseMigrationRefusal } from './database-location.ts'
@@ -13,11 +14,16 @@ import {
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
-import { clearMigrationDrain, migrationDrain, setMigrationDrain } from './migration-drain.ts'
+import {
+  clearMigrationDrain,
+  migrationDrainForUpdate,
+  setMigrationDrain,
+} from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
 
-const MIGRATION_DRAIN_WAIT_MAX_MS = 61 * 60_000
 const MIGRATION_DRAIN_POLL_MS = 1_000
+/** One poll beyond the longest coordinator wall-time, so every admitted run can terminalise. */
+const MIGRATION_DRAIN_WAIT_MAX_MS = RUN_WALL_TIME_CEILING_MS + MIGRATION_DRAIN_POLL_MS
 
 type Presentation = { log(value: string): void }
 
@@ -36,8 +42,15 @@ function git(cwd: string, args: string[]): string {
   return result.stdout.toString().trim()
 }
 
-function incomingJournal(cwd: string, branch: string): MigrationJournalEntry[] {
-  const source = git(cwd, ['show', `origin/${branch}:orchestrator/migrations/meta/_journal.json`])
+function incomingJournal(
+  cwd: string,
+  branch: string,
+  runGit: (cwd: string, args: string[]) => string,
+): MigrationJournalEntry[] {
+  const source = runGit(cwd, [
+    'show',
+    `origin/${branch}:orchestrator/migrations/meta/_journal.json`,
+  ])
   const parsed = JSON.parse(source) as { entries?: unknown[] }
   if (!Array.isArray(parsed.entries)) throw new Error('incoming migration journal has no entries')
   return validatedMigrationJournalEntries(parsed.entries)
@@ -94,24 +107,38 @@ export async function machineUpdateCommand(
   deps: {
     now?: () => number
     sleep?: (ms: number) => Promise<void>
+    cwd?: string
+    authorityRefusal?: () => string | null
+    git?: (cwd: string, args: string[]) => string
+    migrate?: (cwd: string) => void
+    project?: (
+      cwd: string,
+      database: Database,
+    ) => {
+      name: string
+      path: string
+      settings: { trunk?: string }
+    } | null
   } = {},
 ): Promise<void> {
-  const authorityRefusal = existingDatabaseMigrationRefusal()
+  const authorityRefusal = (deps.authorityRefusal ?? existingDatabaseMigrationRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
-  const cwd = process.cwd()
-  const project = store((database) => projectAt(cwd, database))
+  const cwd = deps.cwd ?? process.cwd()
+  const runGit = deps.git ?? git
+  const migrate = deps.migrate ?? runMigration
+  const project = store((database) => (deps.project ?? projectAt)(cwd, database))
   if (!project || realpathSync(cwd) !== realpathSync(project.path)) {
     throw new Error('refusing machine update outside a registered main checkout')
   }
   const branch = project.settings.trunk?.trim()
   if (!branch) throw new Error(`${project.name}: no registered landing branch`)
-  git(cwd, ['fetch', 'origin', branch])
-  const journal = incomingJournal(cwd, branch)
+  runGit(cwd, ['fetch', 'origin', branch])
+  const journal = incomingJournal(cwd, branch, runGit)
   const initial = store((database) => {
     const storeVersion = (database.query('PRAGMA user_version').get() as { user_version: number })
       .user_version
     const runs = migrationInFlightRuns(database)
-    const activeDrain = migrationDrain(database)
+    const activeDrain = migrationDrainForUpdate(database)
     return {
       runs,
       activeDrain,
@@ -127,7 +154,8 @@ export async function machineUpdateCommand(
   if (initial.decision.action === 'refuse') {
     throw new Error(
       initial.decision.reason === 'drain-impossible'
-        ? `migration drain is already active for ${initial.activeDrain}; wait for ${PLATFORM_SLUG} machine update to finish`
+        ? `migration drain is already active for ${initial.activeDrain?.migration} ` +
+            `(holder pid ${initial.activeDrain?.pid}); wait for ${PLATFORM_SLUG} machine update to finish`
         : `migration update refused: ${initial.decision.reason}`,
     )
   }
@@ -138,13 +166,13 @@ export async function machineUpdateCommand(
       const now = deps.now ?? Date.now
       const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
       await waitForDrain({ migration, presentation, now, sleep })
-      git(cwd, ['pull', '--ff-only', 'origin', branch])
-      runMigration(cwd)
+      runGit(cwd, ['pull', '--ff-only', 'origin', branch])
+      migrate(cwd)
     } finally {
       store((database) => clearMigrationDrain(database))
     }
     return
   }
-  git(cwd, ['pull', '--ff-only', 'origin', branch])
-  runMigration(cwd)
+  runGit(cwd, ['pull', '--ff-only', 'origin', branch])
+  migrate(cwd)
 }

@@ -546,7 +546,8 @@ export async function runListingCommand(
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
             current_run.agent_start_time AS current_agent_start_time,
             current_run.host_wait_since,
-            (SELECT value FROM schema_meta WHERE key='migration_drain') AS migration_drain,
+            (SELECT json_extract(value, '$.migration') FROM schema_meta
+              WHERE key='migration_drain') AS migration_drain,
             s.delivery, s.quality,
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${

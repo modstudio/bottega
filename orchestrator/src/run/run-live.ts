@@ -273,9 +273,9 @@ async function startAfterHostCapacity(input: {
     stop: (handle) => input.transport.cancel(handle),
   })
   const hostWait = result.wait
-  if (hostWait?.boundReached && hostWait.drainingFor) {
+  if (hostWait?.drainingFor) {
     throw new Error(
-      `migration drain wait bound reached for ${hostWait.drainingFor}; retry after ${PLATFORM_SLUG} machine update finishes`,
+      `run stopped for migration drain ${hostWait.drainingFor}; re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
     )
   }
   if (hostWait?.boundReached) {

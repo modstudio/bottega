@@ -26,6 +26,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { assertMigrationDispatchAllowed } from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
 import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
@@ -127,6 +128,11 @@ function preflightDetachMcp(
   return preflightedAgent
 }
 
+function assertDispatchDatabase(): void {
+  writableDb()
+  assertMigrationDispatchAllowed(db())
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -134,7 +140,7 @@ export async function detach(
   selectedAgent?: string,
   spawnCoordinator: typeof spawn = spawn,
 ): Promise<string> {
-  writableDb()
+  assertDispatchDatabase()
   /**
    * The depth check happens HERE TOO, before a row exists.
    *

@@ -35,10 +35,10 @@ const repositoryRun = (repo: string | null = '/repo') => {
 }
 
 describe('run host capacity', () => {
-  test('a migration drain visibly waits and proceeds when its marker clears', async () => {
+  test('a pre-spawn host-capacity waiter stops when a migration drain appears', async () => {
     const runId = repositoryRun()
-    setMigrationDrain(db(), '0155_rebuild')
-    let sawWait = false
+    repositoryRun()
+    let insertedDrain = false
     const result = await waitForRunHostCapacity({
       database: db(),
       runId,
@@ -46,22 +46,24 @@ describe('run host capacity', () => {
       platform: 'linux',
       measure: loaded,
       sleep: async () => {
-        sawWait = Boolean(
-          (
-            db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
-              host_wait_since: string | null
-            }
-          ).host_wait_since,
-        )
-        clearMigrationDrain(db())
+        insertedDrain = true
+        setMigrationDrain(db(), '0155_rebuild')
       },
     })
-    expect(sawWait).toBe(true)
+    expect(insertedDrain).toBe(true)
     expect(result).toMatchObject({
-      outcome: 'admitted',
-      heldOn: ['migration'],
+      outcome: 'stopped',
+      heldOn: ['load', 'migration'],
       drainingFor: '0155_rebuild',
     })
+    expect(
+      (
+        db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
+          host_wait_since: string | null
+        }
+      ).host_wait_since,
+    ).toBeNull()
+    clearMigrationDrain(db())
   })
 
   test('a run never counts itself as held work', async () => {

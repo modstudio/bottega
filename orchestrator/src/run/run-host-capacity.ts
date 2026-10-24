@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso, tryWriteContention } from '../database/db.ts'
-import { migrationDrain } from '../database/migration-drain.ts'
+import { activeMigrationDrain } from '../database/migration-drain.ts'
 import {
   decideHostCapacityAdmission,
   HOST_LOAD_RESERVATION_MS,
@@ -215,45 +215,6 @@ function admittedWaitStep(
   return { done: true, result: finish('admitted', decision.boundReached) }
 }
 
-async function waitForMigrationDrain(input: {
-  database: Database
-  runId: string
-  at: () => number
-  started: number
-  waiting: boolean
-  sleep: (ms: number) => Promise<void>
-  observed: (migration: string) => void
-  finish: (
-    at: number,
-    outcome: RunHostCapacityWait['outcome'],
-    boundReached?: boolean,
-  ) => RunHostCapacityWait
-}): Promise<{
-  waiting: boolean
-  result: RunHostCapacityWait | null
-}> {
-  let { waiting } = input
-  for (;;) {
-    const at = input.at()
-    const drain = migrationDrain(input.database)
-    if (!drain) return { waiting, result: null }
-    input.observed(drain)
-    if (!waiting) {
-      waiting = true
-      input.database
-        .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
-        .run(nowIso(), input.runId)
-    }
-    if (!runIsRunning(input.database, input.runId)) {
-      return { waiting, result: input.finish(at, 'stopped') }
-    }
-    if (at - input.started >= RUN_HOST_WAIT_MAX_MS) {
-      return { waiting, result: input.finish(at, 'stopped', true) }
-    }
-    await input.sleep(RUN_HOST_WAIT_POLL_MS)
-  }
-}
-
 async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityWait | null> {
   const started = input.now()
   const heldOn = new Set<HostHoldCondition | 'migration'>()
@@ -276,21 +237,12 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       finish(at, outcome),
     )
     if (stopped.done) return stopped.result
-    const migrationWait = await waitForMigrationDrain({
-      database: input.database,
-      runId: input.runId,
-      at: input.now,
-      started,
-      waiting,
-      sleep: input.sleep,
-      observed: (migration) => {
-        drainingFor = migration
-        heldOn.add('migration')
-      },
-      finish,
-    })
-    waiting = migrationWait.waiting
-    if (migrationWait.result) return migrationWait.result
+    const drain = activeMigrationDrain(input.database)
+    if (drain) {
+      drainingFor = drain.marker.migration
+      heldOn.add('migration')
+      return finish(at, 'stopped')
+    }
     const decision = capacityDecision({ ...input, at, started })
     const admitted = admittedWaitStep(
       decision,

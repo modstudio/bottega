@@ -267,7 +267,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
     staleWriteRefusal(
       actual,
       opened,
-      `restart this process after ${PLATFORM_SLUG} machine migrate`,
+      `restart this process after ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight)`,
     ),
   )
 }

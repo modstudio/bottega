@@ -144,6 +144,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../../../shared/self-spawn.ts',
       '../../../shared/process-identity.ts',
       '../database/db.ts',
+      '../database/migration-drain.ts',
       '../dispatch/dispatch-preflight.ts',
       '../jobs/jobs.ts',
       '../mcp/mcp-preflight.ts',
