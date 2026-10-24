@@ -11,7 +11,7 @@ export function listRulings(options: {
 }): RulingListRow[] {
   const clauses: string[] = []
   const values: string[] = []
-  if (options.kind === 'workflow') clauses.push('q.workflow_cursor_id IS NOT NULL')
+  if (options.kind === 'workflow') clauses.push('q.workflow_cursor_record_id IS NOT NULL')
   else if (options.kind === 'run') clauses.push('q.run_record_id IS NOT NULL')
   if (options.since) {
     if (!Number.isFinite(Date.parse(options.since))) throw new Error('--since must be an ISO date')
@@ -23,7 +23,7 @@ export function listRulings(options: {
   const rows = db()
     .query(
       `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-              q.workflow_cursor_id,q.workflow_key,
+              q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,
               q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,q.answered_by,q.asked_via,
@@ -31,7 +31,7 @@ export function listRulings(options: {
               q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
               q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at
          FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id
-         LEFT JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
+         LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
         ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
         ORDER BY q.number`,
     )

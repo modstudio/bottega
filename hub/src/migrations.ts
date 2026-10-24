@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { readInstallAsset } from '../../shared/embedded-assets.ts'
 import { assetPath } from '../../shared/install-root.ts'
-import type { QuestionIdentity } from '../../shared/orch-contract.ts'
+import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
@@ -516,6 +516,10 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   try {
     d.exec('PRAGMA foreign_keys = ON')
     for (const entry of migrationJournal(folder)) {
+      if (entry.tag === '0038_workflow_cursor_uuid_key')
+        d.exec(
+          'CREATE TABLE cursor_identity_map_input(number INTEGER PRIMARY KEY,record_id TEXT NOT NULL UNIQUE)',
+        )
       executeMigrationSource(d, migrationSource(entry, folder))
     }
     const hash = canonicalSchemaHash(d)
@@ -639,12 +643,45 @@ function adoptBaseline(d: Database, folder: string): string[] {
   return [entry.tag]
 }
 
+function prepareCursorIdentityInput(
+  d: Database,
+  identities: readonly WorkflowCursorIdentityRow[],
+): void {
+  const known = new Set(identities.map((row) => row.number))
+  const referenced = [
+    ...d
+      .query<{ number: number }, []>(
+        'SELECT DISTINCT workflow_cursor_id number FROM question WHERE workflow_cursor_id IS NOT NULL',
+      )
+      .all(),
+    ...d
+      .query<{ number: number }, []>(
+        "SELECT DISTINCT item_id number FROM operator_waiting_email WHERE kind='workflow'",
+      )
+      .all(),
+  ]
+  const missing = [
+    ...new Set(referenced.map((row) => row.number).filter((n) => !known.has(n))),
+  ].sort((a, b) => a - b)
+  if (missing.length)
+    throw new Error(
+      `refusing workflow cursor UUID migration: orchestrator identity map is missing cursor numbers [${missing.join(', ')}]; ` +
+        `restore the matching orchestrator store and rerun ${PLATFORM_SLUG} machine migrate`,
+    )
+  d.exec(
+    'CREATE TABLE cursor_identity_map_input(number INTEGER PRIMARY KEY,record_id TEXT NOT NULL UNIQUE)',
+  )
+  const insert = d.query('INSERT INTO cursor_identity_map_input(number,record_id) VALUES (?,?)')
+  for (const row of identities) insert.run(row.number, row.record_id)
+}
+
 /** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
 export function applyMigrations(
   d: Database,
   folder = MIGRATIONS_FOLDER,
   backfillValues: BackfillValues = {},
   questionIdentities: readonly QuestionIdentity[] = [],
+  cursorIdentities: readonly WorkflowCursorIdentityRow[] = [],
 ): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
   d.exec('BEGIN IMMEDIATE')
@@ -709,6 +746,8 @@ export function applyMigrations(
         )
         for (const row of questionIdentities) insert.run(row.number, row.record_id)
       }
+      if (entry.tag === '0038_workflow_cursor_uuid_key')
+        prepareCursorIdentityInput(d, cursorIdentities)
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)

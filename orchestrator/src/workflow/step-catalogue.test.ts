@@ -336,9 +336,9 @@ test('promoting a stored pre-validator draft revalidates before changing product
   }
   d.query(
     `INSERT INTO step_catalogue_version
-      (record_id,catalogue_id,n,status,definition,author,reason,created_at)
+      (record_id,catalogue_record_id,n,status,definition,author,reason,created_at)
       VALUES (?,?,2,'draft',?,'legacy','pre-validator draft','2026-01-01T00:00:00.000Z')`,
-  ).run(newRecordId(), production.owner_id, JSON.stringify(invalid))
+  ).run(newRecordId(), production.owner_record_id, JSON.stringify(invalid))
 
   expect(() => promoteStepCatalogueLocal(2, 'promote legacy', 'architect', d)).toThrow(
     `step "diagnose" dispatch "${PLATFORM_SLUG} run start diagnose --key {{key}}" must include --file or a double-quoted argument`,

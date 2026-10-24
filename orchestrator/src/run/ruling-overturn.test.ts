@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { overturnRuling } from './ruling-overturn.ts'
 
@@ -56,22 +57,22 @@ describe('overturn ruling', () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
-          (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-           workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+          (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+           workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at)
-         VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,'build',
-                 'running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','fixture-workflow','default','DEV-964','','owner-session',?,?,'{}',0,'build',
+                 'running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING record_id`,
       )
-      .get() as { id: number }
+      .get(workflowVersionRecordId(db()), catalogueVersionRecordId(db())) as { record_id: string }
     const question = db()
       .query(
         `INSERT INTO question
-          (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
+          (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
            answerer_kind,answer_channel,asked_via)
          VALUES (1,'${newRecordId()}',?,'DEV-964','2026-09-20','Which way?','Old','2026-09-21',
                  'owner-session','agent','cli','workflow') RETURNING record_id`,
       )
-      .get(cursor.id) as { record_id: string }
+      .get(cursor.record_id) as { record_id: string }
 
     overturnRuling({
       questionId: question.record_id,
@@ -89,23 +90,23 @@ describe('overturn ruling', () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
-          (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-           workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+          (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+           workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at)
-         VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,'build',
-                 'running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','fixture-workflow','default','DEV-964','','owner-session',?,?,'{}',0,'build',
+                 'running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING record_id`,
       )
-      .get() as { id: number }
+      .get(workflowVersionRecordId(db()), catalogueVersionRecordId(db())) as { record_id: string }
     const question = db()
       .query(
         `INSERT INTO question
-          (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
+          (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
          VALUES (1,'${newRecordId()}',?,'DEV-964','2026-09-20','Which?','Old','2026-09-21','workflow') RETURNING record_id`,
       )
-      .get(cursor.id) as { record_id: string }
+      .get(cursor.record_id) as { record_id: string }
     db()
-      .query('UPDATE workflow_cursor SET updated_at=? WHERE id=?')
-      .run(new Date().toISOString(), cursor.id)
+      .query('UPDATE workflow_cursor SET updated_at=? WHERE record_id=?')
+      .run(new Date().toISOString(), cursor.record_id)
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
 
     expect(() =>

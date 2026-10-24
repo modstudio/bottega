@@ -25,6 +25,7 @@ import { type composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type AdvanceRow = {
   id: number
+  record_id: string
   workflow_slug: string
   project: string
   mode_slug: string
@@ -117,7 +118,7 @@ export function renderWorkflowAdvanceResult(input: {
         { mode, version: row.workflow_version, catalogueVersion: row.catalogue_version },
         cursorAutonomy(row),
       ),
-      row.id,
+      row.record_id,
       d,
     ),
     cursor: row.id,

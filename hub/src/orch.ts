@@ -63,6 +63,8 @@ import {
   RulingListSchema,
   type RunIdentity,
   RunIdentityListSchema,
+  type WorkflowCursorIdentityRow,
+  WorkflowCursorIdentityRowListSchema,
 } from '../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
@@ -326,6 +328,14 @@ export async function readRunIdentityMap(): Promise<RunIdentity[]> {
 export async function readQuestionIdentityMap(): Promise<QuestionIdentity[]> {
   return QuestionIdentityListSchema.parse(
     JSON.parse(await orchProcess(['question', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
+  )
+}
+
+export async function readWorkflowCursorIdentityMap(): Promise<WorkflowCursorIdentityRow[]> {
+  return WorkflowCursorIdentityRowListSchema.parse(
+    JSON.parse(
+      await orchProcess(['workflow', 'cursor', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS),
+    ),
   )
 }
 

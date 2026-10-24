@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
+const OBLIGATION_UUID = '00000000-0000-4000-8000-000000000011'
+const MISSING_OBLIGATION_UUID = '00000000-0000-4000-8000-000000000099'
+const ATTACHMENT_UUID = '00000000-0000-4000-8000-000000000014'
+
 import {
   catalogueFloors,
   decideCloseFloors,
@@ -311,7 +316,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
@@ -897,7 +902,7 @@ test('satisfying an open obligation requires evidence for that floor', () => {
         ...presentArtifact,
         ...passingGate,
         satisfy: {
-          id: 11,
+          id: OBLIGATION_UUID,
           found: true,
           open: true,
           abandoned: false,
@@ -906,14 +911,14 @@ test('satisfying an open obligation requires evidence for that floor', () => {
         },
       },
     }),
-  ).toMatchObject({ action: 'allow', satisfyId: 11 })
+  ).toMatchObject({ action: 'allow', satisfyId: OBLIGATION_UUID })
   expect(
     decide({
       floors: [artifact],
       evidence: {
         ...presentArtifact,
         satisfy: {
-          id: 11,
+          id: OBLIGATION_UUID,
           found: true,
           open: true,
           abandoned: false,
@@ -927,7 +932,7 @@ test('satisfying an open obligation requires evidence for that floor', () => {
 
 test('finish refuses while any obligation would remain open', () => {
   const open: OpenObligation[] = [
-    { id: 11, stepOrdinal: 2, stepSlug: 'merge', floor: 'command-exit' },
+    { id: OBLIGATION_UUID, stepOrdinal: 2, stepSlug: 'merge', floor: 'command-exit' },
   ]
   const decision = decide({
     floors: [artifact],
@@ -937,8 +942,8 @@ test('finish refuses while any obligation would remain open', () => {
   })
   expect(decision.action).toBe('refuse')
   if (decision.action === 'refuse') {
-    expect(decision.message).toContain('obligation 11')
-    expect(decision.message).toContain('--satisfies 11')
+    expect(decision.message).toContain(`obligation ${OBLIGATION_UUID}`)
+    expect(decision.message).toContain(`--satisfies ${OBLIGATION_UUID}`)
     expect(decision.message).toContain('--gate')
   }
 })
@@ -960,7 +965,7 @@ test('finish proceeds when the last open obligation is satisfied', () => {
       evidence: {
         ...passingGate,
         satisfy: {
-          id: 11,
+          id: OBLIGATION_UUID,
           found: true,
           open: true,
           abandoned: false,
@@ -969,7 +974,9 @@ test('finish proceeds when the last open obligation is satisfied', () => {
         },
       },
       finishing: true,
-      openObligations: [{ id: 11, stepOrdinal: 2, stepSlug: 'merge', floor: 'command-exit' }],
+      openObligations: [
+        { id: OBLIGATION_UUID, stepOrdinal: 2, stepSlug: 'merge', floor: 'command-exit' },
+      ],
     }).action,
   ).toBe('allow')
 })
@@ -1004,7 +1011,10 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
     address: `project/${PLATFORM_SLUG}/uuid-keys`,
   })
   expect(parseArtifactRef('run:8')).toEqual({ kind: 'run', id: '8' })
-  expect(parseArtifactRef('attached-text:14')).toEqual({ kind: 'attached-text', id: 14 })
+  expect(parseArtifactRef(`attached-text:${ATTACHMENT_UUID}`)).toEqual({
+    kind: 'attached-text',
+    id: ATTACHMENT_UUID,
+  })
   expect(parseArtifactRef('https://github.com/acme/app/pull/15')).toEqual({
     kind: 'pull-request',
     url: 'https://github.com/acme/app/pull/15',
@@ -1047,9 +1057,9 @@ test('catalogueFloors refuses an unknown kind', () => {
 test('a missing obligation is refused without a fabricated floor', () => {
   const decision = decide({
     floors: [artifact],
-    evidence: { ...presentArtifact, satisfy: { id: 99, found: false } },
+    evidence: { ...presentArtifact, satisfy: { id: MISSING_OBLIGATION_UUID, found: false } },
   })
   expect(decision.action).toBe('refuse')
   if (decision.action === 'refuse')
-    expect(decision.message).toContain('obligation 99 does not exist')
+    expect(decision.message).toContain(`obligation ${MISSING_OBLIGATION_UUID} does not exist`)
 })

@@ -10,7 +10,7 @@ import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { installRoot, isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
 import { machineId, storedMachineId } from '../../shared/machine-config.ts'
-import type { QuestionIdentity } from '../../shared/orch-contract.ts'
+import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
 import { createReadOnlyDatabaseAccess } from '../../shared/read-only-database-access.ts'
 import {
   legacyStoreRefusal,
@@ -376,6 +376,7 @@ function migrateOpenDatabase(
   d: Database,
   create: boolean,
   questionIdentities: readonly QuestionIdentity[],
+  cursorIdentities: readonly WorkflowCursorIdentityRow[] = [],
 ): MigrationResult {
   const repairCounts = () => {
     const exists = d
@@ -401,7 +402,13 @@ function migrateOpenDatabase(
     throw new Error(
       `refusing to migrate hub before carrying over the machine identity; run ${PLATFORM_SLUG} machine migrate`,
     )
-  const versions = applyMigrations(d, undefined, { machine_id: identity }, questionIdentities)
+  const versions = applyMigrations(
+    d,
+    undefined,
+    { machine_id: identity },
+    questionIdentities,
+    cursorIdentities,
+  )
   const repairs = [...repairCounts()]
     .map(([reason, count]) => ({ reason, count: count - (before.get(reason) ?? 0) }))
     .filter((row) => row.count > 0)
@@ -422,6 +429,7 @@ export function migrateDatabase(
 
 export async function migrateDatabaseWithQuestionIdentityMap(
   readQuestionIdentities: () => Promise<readonly QuestionIdentity[]>,
+  readCursorIdentities: () => Promise<readonly WorkflowCursorIdentityRow[]> = async () => [],
 ): Promise<MigrationResult> {
   const { database, create } = openMigrationDatabase()
   try {
@@ -429,7 +437,18 @@ export async function migrateDatabaseWithQuestionIdentityMap(
       database,
       readQuestionIdentities,
     )
-    return migrateOpenDatabase(database, create, questionIdentities)
+    let cursorIdentities: readonly WorkflowCursorIdentityRow[] = []
+    if (pendingMigrationTags(database).includes('0038_workflow_cursor_uuid_key')) {
+      try {
+        cursorIdentities = await readCursorIdentities()
+      } catch (error) {
+        throw new Error(
+          `refusing workflow cursor UUID migration: could not obtain the orchestrator identity map; ` +
+            `run ${PLATFORM_SLUG} machine migrate\n${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+    return migrateOpenDatabase(database, create, questionIdentities, cursorIdentities)
   } finally {
     database.close()
   }

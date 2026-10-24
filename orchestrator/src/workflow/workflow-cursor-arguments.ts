@@ -9,6 +9,7 @@ import { resolvedProductionWorkflows, showResolvedWorkflow } from './workflows.t
 
 type ArgumentCursor = {
   id: number
+  record_id: string
   project: string
   workflow_slug: string
   workflow_version: number
@@ -100,19 +101,19 @@ export function applyCursorArguments(
         }),
       ),
     )
-    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE id=?').run(
+    d.query('UPDATE workflow_cursor SET args=?,closed=?,updated_at=? WHERE record_id=?').run(
       encoded,
       JSON.stringify(trail),
       at,
-      row.id,
+      row.record_id,
     )
     row.args = encoded
     row.closed = JSON.stringify(trail)
   } else if (encoded !== row.args) {
-    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE id=?').run(
+    d.query('UPDATE workflow_cursor SET args=?,updated_at=? WHERE record_id=?').run(
       encoded,
       nowIso(),
-      row.id,
+      row.record_id,
     )
     row.args = encoded
   }

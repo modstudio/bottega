@@ -11,6 +11,8 @@ import {
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
+const hasRecordIdShape = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
 export const floorKinds = [
   'ruling',
@@ -26,7 +28,7 @@ export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact':
-    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id> | GitHub pull-request link>`',
+    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
@@ -61,14 +63,14 @@ export type ArtifactRef =
   | { kind: 'exec'; id: number }
   | { kind: 'doc'; address: string }
   | { kind: 'run'; id: string }
-  | { kind: 'attached-text'; id: number }
+  | { kind: 'attached-text'; id: string }
   | { kind: 'pull-request'; url: string }
   | { kind: 'id'; id: number }
 
 type ValidatedSatisfy =
-  | { id: number; found: false }
+  | { id: string; found: false }
   | {
-      id: number
+      id: string
       found: true
       open: boolean
       abandoned: boolean
@@ -144,7 +146,7 @@ export type ValidatedEvidence = {
 }
 
 export type OpenObligation = {
-  id: number
+  id: string
   stepOrdinal: number
   stepSlug: string
   floor: FloorKind
@@ -158,7 +160,7 @@ export type FloorDecision =
       enforcement: EnforcementMode
       refs: EvidenceRef[]
       defer?: { floor: FloorKind; reason: string }
-      satisfyId?: number
+      satisfyId?: string
     }
   | { action: 'refuse'; message: string }
 
@@ -176,7 +178,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<id> | GitHub pull-request link>'
+    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -195,12 +197,13 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (doc) return { kind: 'doc', address: doc[1]! }
   const run = /^run:(\S+)$/i.exec(trimmed)
   if (run) return { kind: 'run', id: run[1]! }
-  const attachedText = /^attached-text:(\d+)$/i.exec(trimmed)
-  if (attachedText) return { kind: 'attached-text', id: Number(attachedText[1]) }
+  const attachedText = /^attached-text:(.+)$/i.exec(trimmed)
+  if (attachedText && hasRecordIdShape(attachedText[1]!))
+    return { kind: 'attached-text', id: attachedText[1]!.toLowerCase() }
   if (githubPullRequestUrlIn(trimmed) === trimmed) return { kind: 'pull-request', url: trimmed }
   if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
   return {
-    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number, probe:<id>, exec:<id>, attached-text:<id>, or a GitHub pull-request link`,
+    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number, probe:<id>, exec:<id>, attached-text:<UUID>, or a GitHub pull-request link`,
   }
 }
 
@@ -710,7 +713,7 @@ function refuseSatisfy(satisfy: ValidatedSatisfy): FloorDecision {
   if (!satisfy.found)
     return {
       action: 'refuse',
-      message: `obligation ${satisfy.id} does not exist; pass --satisfies <obligation id> from ${PLATFORM_SLUG} workflow listing`,
+      message: `obligation ${satisfy.id} does not exist; pass a UUID from ${PLATFORM_SLUG} workflow cursors --json as --satisfies <obligation UUID>`,
     }
   if (!satisfy.cursorMatches)
     return {
@@ -767,7 +770,7 @@ function deferralOf(
 function satisfyOf(
   evidence: ValidatedEvidence,
   freshRulingAfter?: string,
-): FloorDecision | { satisfyId?: number } {
+): FloorDecision | { satisfyId?: string } {
   const satisfy = evidence.satisfy
   if (!satisfy) return {}
   if (

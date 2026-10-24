@@ -7,7 +7,7 @@ import {
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
-import { rememberHostedRecord } from '../record/install-binding.ts'
+import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { BOUND_RECORD_WRITE_REFUSAL } from '../record/record-write-authority.ts'
 import { selectProjectProfile, setLens, setProfile, showLens, showProfile } from './lenses.ts'
 

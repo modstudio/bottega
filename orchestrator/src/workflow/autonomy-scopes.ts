@@ -210,7 +210,7 @@ function workflowRulingsSnapshot(
       `SELECT autonomy FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND workflow_key=? AND state IN ('running','awaiting-ruling')
-       ORDER BY updated_at DESC,id DESC`,
+       ORDER BY updated_at DESC,number DESC`,
     )
     .all(project, launchKey) as { autonomy: string | null }[]
   return combineRulingsSnapshots(

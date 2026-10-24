@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
 import { db } from '../database/db.ts'
 import { VOIDED_SQL, voidedSql } from '../evidence/evidence-query.ts'
@@ -190,24 +191,24 @@ test('inbox keeps own questions in their existing format outside a registered pr
   expect(shown).toContain('existing format?')
 })
 test('inbox lists workflow questions with their identity and answer command', async () => {
-  db()
+  const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-1069','','orch-test-session',1,1,
+     VALUES ('${newRecordId()}',1,'fixture','fixture-workflow','default','DEV-1069','','orch-test-session',?,?,
              '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
-             '2026-10-01','2026-10-01','floors')`,
+             '2026-10-01','2026-10-01','floors') RETURNING record_id`,
     )
-    .run()
+    .get(workflowVersionRecordId(db()), catalogueVersionRecordId(db())) as { record_id: string }
   const inserted = db()
-    .query<{ number: number }, []>(
+    .query<{ number: number }, [string]>(
       `INSERT INTO question
-      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
-     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix') RETURNING number`,
+      (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix') RETURNING number`,
     )
-    .get()!
+    .get(cursor.record_id)!
 
   const shown = await inbox({ all: true })
   expect(shown).toContain('workflow fixture-workflow · fixture · mode default · step 3 fix')
@@ -232,24 +233,24 @@ test('inbox lists workflow questions with their identity and answer command', as
 })
 
 test('inbox gives no answer command for a foreign-owned workflow question', async () => {
-  db()
+  const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-1069','','foreign-session',1,1,
+     VALUES ('${newRecordId()}',1,'fixture','fixture-workflow','default','DEV-1069','','foreign-session',?,?,
              '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
-             '2026-10-01','2026-10-01','floors')`,
+             '2026-10-01','2026-10-01','floors') RETURNING record_id`,
     )
-    .run()
+    .get(workflowVersionRecordId(db()), catalogueVersionRecordId(db())) as { record_id: string }
   db()
     .query(
       `INSERT INTO question
-      (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
-     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix')`,
+      (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix')`,
     )
-    .run()
+    .run(cursor.record_id)
 
   const notice =
     'owned by session foreign-session; only that session, or the operator relaying a decision, may answer it'

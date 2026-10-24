@@ -17,7 +17,11 @@ import {
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { LocalHubAuth } from './local-auth.ts'
-import { readQuestionIdentityMap, startDashboardCapability } from './orch.ts'
+import {
+  readQuestionIdentityMap,
+  readWorkflowCursorIdentityMap,
+  startDashboardCapability,
+} from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -133,7 +137,10 @@ function registerCollectionCommands(program: Command): void {
     .command('migrate')
     .description('apply pending checksummed schema migrations')
     .action(async () => {
-      const migrated = await migrateDatabaseWithQuestionIdentityMap(readQuestionIdentityMap)
+      const migrated = await migrateDatabaseWithQuestionIdentityMap(
+        readQuestionIdentityMap,
+        readWorkflowCursorIdentityMap,
+      )
       if (!migrated.versions.length) console.log(`schema already current: ${migrated.path}`)
       else {
         console.log(`migrated ${migrated.path}`)

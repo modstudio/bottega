@@ -760,7 +760,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-auth-command.ts',
     [
       '../../../shared/record-session.ts',
-      './install-binding.ts',
+      './install-binding-write.ts',
       './record-api-client.ts',
       './record-session.ts',
     ],
@@ -834,7 +834,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record-space-membership.ts',
       '../../../shared/record-api-url.ts',
       '../database/db.ts',
-      './install-binding.ts',
+      './install-binding-write.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
       './outbox-dependency.ts',

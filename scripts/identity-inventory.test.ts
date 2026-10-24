@@ -170,8 +170,6 @@ test('real natural and undeclared references remain measured', () => {
       KEY_MANIFESTS,
     )
     expect(inventory.findings).toContain('port_ref.task_key:reference')
-    expect(inventory.findings).toContain('workflow_cursor.workflow_version:reference')
-    expect(inventory.findings).toContain('workflow_cursor.catalogue_version:reference')
   } finally {
     database.close()
   }

@@ -588,15 +588,15 @@ describe('workflow versions and project composition', () => {
     const d = database()
     const row = d
       .query(
-        `SELECT v.id,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_id=w.id
+        `SELECT v.record_id,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_record_id=w.record_id
          WHERE w.slug='flow' AND v.status='production'`,
       )
-      .get() as { id: number; definition: string }
+      .get() as { record_id: string; definition: string }
     const definition = JSON.parse(row.definition) as WorkflowDefinition
     definition.modes[0]!.steps = ['missing-compose-step']
-    d.query('UPDATE workflow_version SET definition=? WHERE id=?').run(
+    d.query('UPDATE workflow_version SET definition=? WHERE record_id=?').run(
       JSON.stringify(definition),
-      row.id,
+      row.record_id,
     )
 
     expect(() => composeWorkflow('flow', 'fixture', undefined, {}, d)).toThrow(

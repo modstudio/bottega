@@ -36,6 +36,7 @@ import {
   workflowPrint,
   workflowVersionsCommand,
 } from '../workflow/workflow-commands.ts'
+import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
@@ -304,6 +305,11 @@ function registerWorkflowRulings({ workflow, output }: WorkflowRegistration): vo
 }
 
 function registerWorkflowCursorAdmin({ workflow, output }: WorkflowRegistration): void {
+  workflow
+    .command('cursor identity-map')
+    .description('print numeric workflow cursor identities and their durable record ids as JSON')
+    .allowExcessArguments(false)
+    .action(() => log(JSON.stringify(workflowCursorIdentityMap(db()))))
   jsonOption(
     reasonOption(
       workflow

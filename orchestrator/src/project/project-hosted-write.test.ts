@@ -8,7 +8,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
-import { rememberHostedRecord } from '../record/install-binding.ts'
+import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { projectByName } from './projects.ts'
 

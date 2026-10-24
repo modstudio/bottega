@@ -11,8 +11,8 @@ export const WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES = 32 * 1024
 export const WORKFLOW_TEXT_CURSOR_MAX_BYTES = 64 * 1024
 
 export type WorkflowTextRow = {
-  id: number
-  cursorId: number
+  id: string
+  cursorId: string
   stepOrdinal: number
   stepSlug: string
   body: string
@@ -56,7 +56,7 @@ export function decideWorkflowTextAttach(input: {
 }
 
 export function attachedTextReferenceMeetsFloor(input: {
-  cursorId: number
+  cursorId: string
   stepOrdinal: number
   stepSlug: string
   attachment: WorkflowTextRow | null
@@ -77,33 +77,41 @@ export function workflowTextFacts(
   if (!needs.includes('workflow-text')) return {}
   return {
     workflowText: [...rows]
-      .sort((left, right) => left.stepOrdinal - right.stepOrdinal || left.id - right.id)
+      .sort(
+        (left, right) => left.stepOrdinal - right.stepOrdinal || left.id.localeCompare(right.id),
+      )
       .map(({ stepSlug, body }) => ({ stepSlug, body })),
   }
 }
 
 export function withWorkflowTextFacts<
   Step extends { needs: readonly string[]; facts: Record<string, unknown> },
->(step: Step, cursorId: number, d: Database): Step {
+>(step: Step, cursorId: string, d: Database): Step {
   return {
     ...step,
     facts: { ...step.facts, ...workflowTextFacts(step.needs, workflowTextRows(cursorId, d)) },
   }
 }
 
-function workflowTextRows(cursorId: number, d: Database): WorkflowTextRow[] {
+function workflowTextRows(cursorId: string, d: Database): WorkflowTextRow[] {
   return d
     .query<
-      { id: number; cursor_id: number; step_ordinal: number; step_slug: string; body: string },
-      [number]
+      {
+        id: string
+        cursor_record_id: string
+        step_ordinal: number
+        step_slug: string
+        body: string
+      },
+      [string]
     >(
-      `SELECT id,cursor_id,step_ordinal,step_slug,body
-         FROM workflow_step_text WHERE cursor_id=? ORDER BY step_ordinal,id`,
+      `SELECT record_id id,cursor_record_id,step_ordinal,step_slug,body
+         FROM workflow_step_text WHERE cursor_record_id=? ORDER BY step_ordinal,rowid`,
     )
     .all(cursorId)
     .map((row) => ({
       id: row.id,
-      cursorId: row.cursor_id,
+      cursorId: row.cursor_record_id,
       stepOrdinal: row.step_ordinal,
       stepSlug: row.step_slug,
       body: row.body,
@@ -112,6 +120,7 @@ function workflowTextRows(cursorId: number, d: Database): WorkflowTextRow[] {
 
 type AttachCursorRow = {
   id: number
+  record_id: string
   session_id: string | null
   ordinal: number
   step_slug: string
@@ -125,7 +134,7 @@ function attachSelectedWorkflowText(
   d: Database,
 ): string {
   const attachmentBytes = Buffer.byteLength(body, 'utf8')
-  const cursorBytes = workflowTextRows(row.id, d).reduce(
+  const cursorBytes = workflowTextRows(row.record_id, d).reduce(
     (total, attachment) => total + Buffer.byteLength(attachment.body, 'utf8'),
     0,
   )
@@ -138,11 +147,11 @@ function attachSelectedWorkflowText(
   })
   if (decision.action === 'refuse') throw new Error(decision.message)
   const inserted = d
-    .query<{ id: number }, [string, number, number, string, string, string]>(
-      `INSERT INTO workflow_step_text(record_id,cursor_id,step_ordinal,step_slug,body,created_at)
-       VALUES (?,?,?,?,?,?) RETURNING id`,
+    .query<{ id: string }, [string, string, number, string, string, string]>(
+      `INSERT INTO workflow_step_text(record_id,cursor_record_id,step_ordinal,step_slug,body,created_at)
+       VALUES (?,?,?,?,?,?) RETURNING record_id id`,
     )
-    .get(newRecordId(), row.id, row.ordinal + 1, row.step_slug, body, nowIso())
+    .get(newRecordId(), row.record_id, row.ordinal + 1, row.step_slug, body, nowIso())
   if (!inserted) throw new Error('workflow text was not attached; retry the attach call')
   return `attached-text:${inserted.id}`
 }
@@ -173,6 +182,6 @@ export function attachWorkflowText(
   }, d)
 }
 
-export function deleteWorkflowText(cursorId: number, d: Database): void {
-  d.query('DELETE FROM workflow_step_text WHERE cursor_id=?').run(cursorId)
+export function deleteWorkflowText(cursorId: string, d: Database): void {
+  d.query('DELETE FROM workflow_step_text WHERE cursor_record_id=?').run(cursorId)
 }

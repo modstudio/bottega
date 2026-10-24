@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { TASK_RULINGS_MAX_COUNT } from './task-rulings.ts'
@@ -63,20 +64,26 @@ describe('task ruling candidate query', () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
-          (record_id,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,
-           catalogue_version,args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
-         VALUES (?, ?, (SELECT record_id FROM project WHERE name=?),'fixture-workflow','default','DEV-960','',1,1,'{}',0,'build','running','[]',NULL,1,
-                 '2026-09-01','2026-10-05') RETURNING id`,
+          (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version_record_id,
+           catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),'fixture-workflow','default','DEV-960','',?,?,'{}',0,'build','running','[]',NULL,1,
+                 '2026-09-01','2026-10-05') RETURNING record_id`,
       )
-      .get(newRecordId(), PLATFORM_SLUG, PLATFORM_SLUG) as { id: number }
+      .get(
+        newRecordId(),
+        PLATFORM_SLUG,
+        PLATFORM_SLUG,
+        workflowVersionRecordId(db()),
+        catalogueVersionRecordId(db()),
+      ) as { record_id: string }
     db()
       .query(
         `INSERT INTO question
-        (number,record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
+        (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
                '2026-10-05T12:00:00.000Z','agent','workflow')`,
       )
-      .run(cursor.id)
+      .run(cursor.record_id)
     db().query("UPDATE project SET name='renamed-fixture' WHERE name=?").run(PLATFORM_SLUG)
 
     const selected = taskRulingsForDispatch({
@@ -89,7 +96,7 @@ describe('task ruling candidate query', () => {
     expect(selected.rulings[0]).toMatchObject({
       question: 'workflow ruling',
       ruling: 'workflow answer',
-      workflowCursorId: cursor.id,
+      workflowCursorId: cursor.record_id,
     })
     expect(selected.rulings.map((ruling) => ruling.question)).not.toContain('withdrawn')
     expect(selected.rulings.map((ruling) => ruling.question)).not.toContain('wrong key')

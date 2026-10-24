@@ -2,6 +2,7 @@
 /** Reads hosted workflow state and applies single-space or shared promotions. */
 import type { Database } from 'bun:sqlite'
 import { sessionId } from '../database/db.ts'
+import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
   applyWorkflowCatalogueRow,
@@ -72,6 +73,11 @@ type SharedWorkflowPromotionInput<Row extends WorkflowPromotionVersion> = {
   promoteSpace(spaceId: string | null): Promise<void>
 }
 
+export const sharedPromotionTargetSpaces = (
+  d: Database,
+  spaceIds: readonly string[],
+): (string | null)[] => (readRecordInstallBinding(d).bound ? [...spaceIds] : [null, ...spaceIds])
+
 async function promoteSharedWorkflowSpaces<Row extends WorkflowPromotionVersion>(
   input: SharedWorkflowPromotionInput<Row>,
 ): Promise<WorkflowPromotionSpaceDecision> {
@@ -103,14 +109,14 @@ async function promoteSharedWorkflowSpaces<Row extends WorkflowPromotionVersion>
 const storedVersions = (slug: string, d: Database): StoredPromotionVersion[] =>
   d
     .query<StoredPromotionVersion, [string]>(
-      `SELECT w.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? ORDER BY w.space_id,v.n`,
+      `SELECT w.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? ORDER BY w.space_id,v.n`,
     )
     .all(slug)
 
 const storedCatalogueVersions = (d: Database): StoredPromotionVersion[] =>
   d
     .query<StoredPromotionVersion, []>(
-      `SELECT c.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM step_catalogue_version v JOIN step_catalogue c ON c.id=v.catalogue_id WHERE c.slug='shared' ORDER BY c.space_id,v.n`,
+      `SELECT c.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' ORDER BY c.space_id,v.n`,
     )
     .all()
 
@@ -286,7 +292,7 @@ export async function promoteSharedStepCatalogue(
     n,
     `${SHARED_WORKFLOW_PROMOTION_REASON} ${reason.trim()}`,
     sourceSpace,
-    [null, ...spaceIds],
+    sharedPromotionTargetSpaces(d, spaceIds),
     versions,
     d,
     ports,
@@ -304,7 +310,7 @@ async function promoteHostedWorkflowSpace(
 ): Promise<void> {
   const target = d
     .query<{ present: number }, [string, string, number]>(
-      `SELECT 1 AS present FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND w.space_id=? AND v.n=?`,
+      `SELECT 1 AS present FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id=? AND v.n=?`,
     )
     .get(slug, spaceId, n)
   if (!target) throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${spaceId}`)
@@ -337,7 +343,7 @@ export async function promoteSharedWorkflow(
     ...snapshots.flatMap((snapshot) => snapshot.versions),
   ]
   const sharedReason = `${SHARED_WORKFLOW_PROMOTION_REASON} ${reason.trim()}`
-  const targetSpaces = [null, ...spaceIds]
+  const targetSpaces = sharedPromotionTargetSpaces(d, spaceIds)
   const workflowDecision = sharedWorkflowPromotionSpaces(versions, n, sourceSpace, targetSpaces)
   const catalogueVersions = [
     ...storedCatalogueVersions(d).filter((row) => row.spaceId === null),

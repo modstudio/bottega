@@ -1,7 +1,7 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { writeRecordSessionToken } from '../../../shared/record-session.ts'
-import { rememberHostedRecord } from './install-binding.ts'
+import { rememberHostedRecord } from './install-binding-write.ts'
 import { recordApiClient, recordApiSignIn, recordApiSignUp } from './record-api-client.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 

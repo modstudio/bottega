@@ -57,7 +57,7 @@ const importAndPromoteCurrentTree = async (d: Database) => {
   for (const { slug } of imported.workflowOutcomes.filter(({ status }) => status === 'created')) {
     const workflow = d
       .query(
-        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
+        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND v.status='draft'",
       )
       .get(slug) as { n: number }
     promoteWorkflowLocal(slug, workflow.n, 'compose current tree fixture', 'test', d)
@@ -83,7 +83,7 @@ describe('importWorkflowTree', () => {
     for (const { slug } of imported.workflowOutcomes.filter(({ status }) => status === 'created')) {
       const workflowDraft = d
         .query(
-          "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug=? AND v.status='draft'",
+          "SELECT v.n FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND v.status='draft'",
         )
         .get(slug) as { n: number }
       promoteWorkflowLocal(slug, workflowDraft.n, 'round-trip fixture', 'test', d)
@@ -154,7 +154,7 @@ describe('importWorkflowTree', () => {
     promoteStepCatalogueLocal(catalogue.n, 'compose fixture', 'test', d)
     const shipTask = d
       .query(
-        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id WHERE w.slug='ship-task' AND v.status='draft'",
+        "SELECT v.n FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug='ship-task' AND v.status='draft'",
       )
       .get() as { n: number }
     expect(imported.workflowOutcomes).toContainEqual({

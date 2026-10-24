@@ -6,6 +6,7 @@ test('maps only the exact active run named by a waiting question', () => {
   const question = {
     kind: 'question' as const,
     id: 7,
+    workflow_cursor_record_id: null,
     question_record_id: '00000000-0000-4000-8000-000000000007',
     run_number: 42,
     run_record_id: '00000000-0000-4000-8000-000000000042',
@@ -24,6 +25,7 @@ test('maps only the exact active run named by a waiting question', () => {
     ...question,
     kind: 'workflow' as const,
     id: 8,
+    workflow_cursor_record_id: '00000000-0000-4000-8000-000000000008',
     run_number: null,
     run_record_id: null,
     session_id: 'session-1',

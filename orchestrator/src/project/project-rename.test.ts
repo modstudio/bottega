@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import { projectByName, upsertProject } from './projects.ts'
@@ -238,9 +239,22 @@ function seedNameMirrors(projectId: string, otherId: string): void {
   ).run(id(), run.id, 'note', 't', 'requested', OLD, projectId)
   d.query(
     `INSERT INTO workflow_cursor
-     (record_id,project,project_record_id,workflow_slug,mode_slug,instance_id,workflow_version,catalogue_version,args,total_steps,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), OLD, projectId, 'wf', 'mode', 'inst', 1, 1, '{}', 1, 't', 't')
+     (record_id,number,project,project_record_id,workflow_slug,mode_slug,instance_id,workflow_version_record_id,catalogue_version_record_id,args,total_steps,created_at,updated_at)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    id(),
+    OLD,
+    projectId,
+    'wf',
+    'mode',
+    'inst',
+    workflowVersionRecordId(d),
+    catalogueVersionRecordId(d),
+    '{}',
+    1,
+    't',
+    't',
+  )
 }
 
 test('a local rename leaves no listed table naming the old project', () => {

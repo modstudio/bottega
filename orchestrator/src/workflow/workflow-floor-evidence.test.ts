@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   type CursorIdentity,
@@ -76,6 +77,8 @@ const ports: FloorEvidencePorts = {
   readOriginUrl: () => 'git@github.com:acme/app.git',
 }
 
+const CURSOR_RECORD_ID = '00000000-0000-4000-8000-000000000001'
+
 const database = testDatabaseFixture((d) => {
   d.query(
     'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
@@ -85,12 +88,12 @@ const database = testDatabaseFixture((d) => {
   ).run('other', '/other', 'bun', '{}')
   d.query(
     `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('${newRecordId()}','fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
+     VALUES ('${CURSOR_RECORD_ID}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','flow','default','DEV-977','','s',?,?,'{}',0,'rebase','running','[]',NULL,
              1,'2026-09-01','2026-09-01','floors')`,
-  ).run()
+  ).run(workflowVersionRecordId(d), catalogueVersionRecordId(d))
 })
 
 const setTrackerStates = (d: Database, name: string, states: Record<string, string>) => {
@@ -144,7 +147,7 @@ const gather = (
   cursorIdentity: CursorIdentity = identity,
 ) =>
   gatherValidatedEvidence({
-    cursorId: 1,
+    cursorId: CURSOR_RECORD_ID,
     identity: cursorIdentity,
     stepOrdinal: 1,
     stepSlug: 'rebase',
@@ -157,8 +160,8 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
   const d = database()
   d.query(
     `INSERT INTO question
-      (number,record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
-     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
+      (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','${CURSOR_RECORD_ID}','2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
   ).run()
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
@@ -679,8 +682,8 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
   const d = database()
   d.query(
     `INSERT INTO question
-      (number,record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
-     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
+      (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
+     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','${CURSOR_RECORD_ID}','2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
   ).run()
   d.query(
     `INSERT INTO question_mutation_audit (record_id,question_record_id,action,actor_session,at,reason)
@@ -924,21 +927,23 @@ test('an unavailable pull request read is gathered as unmerged', () => {
 })
 
 test('a missing obligation is gathered as not-found without a floor', () => {
-  expect(gather(database(), { satisfies: 99 }).satisfy).toEqual({
-    id: 99,
-    found: false,
-  })
+  expect(gather(database(), { satisfies: '00000000-0000-4000-8000-000000000099' }).satisfy).toEqual(
+    {
+      id: '00000000-0000-4000-8000-000000000099',
+      found: false,
+    },
+  )
 })
 
 test('an obligation preserves its operator ruling requirement', () => {
   const d = database()
   d.query(
     `INSERT INTO workflow_obligation
-      (record_id,cursor_id,step_ordinal,step_slug,floor,operator_ruling,floor_deferrable,reason,created_at)
-     VALUES ('${newRecordId()}',1,1,'rebase','ruling',1,1,'operator decides','2026-09-01')`,
+      (record_id,cursor_record_id,step_ordinal,step_slug,floor,operator_ruling,floor_deferrable,reason,created_at)
+     VALUES ('${CURSOR_RECORD_ID}','${CURSOR_RECORD_ID}',1,'rebase','ruling',1,1,'operator decides','2026-09-01')`,
   ).run()
 
-  expect(gather(d, { satisfies: 1 }).satisfy).toMatchObject({
+  expect(gather(d, { satisfies: '00000000-0000-4000-8000-000000000001' }).satisfy).toMatchObject({
     found: true,
     floor: { kind: 'ruling', operatorRuling: true },
   })

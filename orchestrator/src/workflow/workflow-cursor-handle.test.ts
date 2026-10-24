@@ -111,10 +111,10 @@ test('two keyless runs in one session have distinct handles and advance independ
     ports,
     first.cursor,
   )
-  expect(d.query('SELECT ordinal FROM workflow_cursor WHERE id=?').get(first.cursor)).toEqual({
+  expect(d.query('SELECT ordinal FROM workflow_cursor WHERE number=?').get(first.cursor)).toEqual({
     ordinal: 1,
   })
-  expect(d.query('SELECT ordinal FROM workflow_cursor WHERE id=?').get(second.cursor)).toEqual({
+  expect(d.query('SELECT ordinal FROM workflow_cursor WHERE number=?').get(second.cursor)).toEqual({
     ordinal: 0,
   })
   expect(() =>
@@ -279,7 +279,7 @@ test('step 1 reuses a cursor whose trail contains only an argument rebound', () 
     context,
     d,
   ).cursor!.id
-  d.query('UPDATE workflow_cursor SET closed=? WHERE id=?').run(
+  d.query('UPDATE workflow_cursor SET closed=? WHERE number=?').run(
     JSON.stringify([
       {
         event: 'argument-rebound',
@@ -355,7 +355,7 @@ test('a handle to a done or abandoned cursor never opens a replacement', () => {
       context,
       d,
     )
-    d.query('UPDATE workflow_cursor SET state=? WHERE id=?').run(state, opened.cursor)
+    d.query('UPDATE workflow_cursor SET state=? WHERE number=?').run(state, opened.cursor)
     expect(() =>
       getWorkflowStepWithCursor(
         `retired-${state}`,
@@ -379,7 +379,7 @@ test('a handle validates supplied identity and serves the active step for an ear
   const d = database()
   const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
   const opened = getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
-  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id=?").run(opened.cursor)
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(opened.cursor)
   nextWorkflowStep(
     'flow',
     'fixture',
@@ -443,7 +443,7 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
     () => {},
     opened.cursor,
   )
-  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE id=?").run(opened.cursor)
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(opened.cursor)
   nextWorkflowStep(
     'adopt-key',
     'fixture',
@@ -457,7 +457,7 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
     opened.cursor,
   )
   const adopted = d
-    .query('SELECT workflow_key,instance_id,args FROM workflow_cursor WHERE id=?')
+    .query('SELECT workflow_key,instance_id,args FROM workflow_cursor WHERE number=?')
     .get(opened.cursor) as { workflow_key: string; instance_id: string; args: string }
   expect(adopted.workflow_key).toBe('DEV-1082')
   expect(adopted.instance_id).toBe('')

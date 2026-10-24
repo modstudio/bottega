@@ -93,7 +93,7 @@ export function auditQuestionMutation(
 
 export function upsertWorkflowQuestion(
   input: {
-    cursorId: number
+    cursorId: string
     workflowKey: string
     stepOrdinal: number
     stepSlug: string
@@ -103,9 +103,9 @@ export function upsertWorkflowQuestion(
   database: Database = db(),
 ): { recordId: string; number: number } {
   const open = database
-    .query<{ record_id: string; number: number }, [number]>(
+    .query<{ record_id: string; number: number }, [string]>(
       `SELECT record_id,number FROM question
-       WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
+       WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
     )
     .get(input.cursorId)
   if (open) {
@@ -128,7 +128,7 @@ export function upsertWorkflowQuestion(
   const inserted = database
     .query<{ record_id: string; number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (record_id,number,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
+        (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
          workflow_step_ordinal,workflow_step_slug)
        VALUES (?,?,?,?,?,?, 'workflow', ?,?,?) RETURNING record_id,number`,
     )
@@ -151,7 +151,7 @@ export function upsertWorkflowQuestion(
 export function answerWorkflowQuestion(
   input: {
     questionId: string
-    cursorId: number
+    cursorId: string
     ruling: string
     basis?: string | null
     at: string
@@ -166,7 +166,7 @@ export function answerWorkflowQuestion(
     .query(
       `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
         revision=revision+1
-       WHERE record_id=? AND workflow_cursor_id=? AND ${questionOpenSql('question')}`,
+       WHERE record_id=? AND workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
     )
     .run(
       input.ruling,

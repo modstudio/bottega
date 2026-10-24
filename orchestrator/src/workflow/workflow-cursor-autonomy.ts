@@ -7,6 +7,7 @@ import type { CursorAutonomyResolution, StoredAutonomyResolution } from './auton
 import { shellWord } from './workflow-cursor-format.ts'
 export type CursorAutonomyRow = {
   id: number
+  record_id: string
   workflow_slug: string
   project: string
   mode_slug: string

@@ -11,6 +11,7 @@ import {
   promoteStepCatalogue,
   setStepCatalogue,
 } from './step-catalogue.ts'
+import { sharedPromotionTargetSpaces } from './workflow-shared-promotion-store.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000000223'
 const at = '2026-10-18T12:00:00.000Z'
@@ -258,6 +259,150 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
       )
       .get(),
   ).toEqual(localCounts)
+})
+
+test('bound catalogue promotion never backfills or promotes a NULL-space copy', async () => {
+  const local = db()
+  local.exec(
+    "INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-23') ON CONFLICT DO NOTHING",
+  )
+  const definition = productionStepCatalogue(local).definition
+  const nextN = local
+    .query<{ n: number }, []>('SELECT MAX(n)+1 n FROM step_catalogue_version')
+    .get()!.n
+  const ownerId = newRecordId()
+  const versionId = newRecordId()
+  const promoteEventId = newRecordId()
+  const nullCounts = local
+    .query(
+      `SELECT
+        (SELECT COUNT(*) FROM step_catalogue WHERE space_id IS NULL) identities,
+        (SELECT COUNT(*) FROM step_catalogue_version WHERE space_id IS NULL) versions,
+        (SELECT COUNT(*) FROM step_catalogue_event WHERE space_id IS NULL) events`,
+    )
+    .get()
+  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+    id: ownerId,
+    spaceId: SPACE,
+    slug: 'shared',
+    generation: 1,
+    createdAt: at,
+    updatedAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+    id: versionId,
+    spaceId: SPACE,
+    ownerId,
+    n: nextN,
+    status: 'draft',
+    definition: JSON.stringify(definition),
+    author: 'architect',
+    reason: 'bound promotion fixture',
+    createdAt: at,
+    promotedAt: null,
+    retiredAt: null,
+    updatedAt: at,
+  })
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami,
+    async listWorkflowCatalogue(table) {
+      if (table === 'step_catalogue')
+        return {
+          items: [
+            {
+              id: ownerId,
+              spaceId: SPACE,
+              slug: 'shared',
+              generation: 1,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'step_catalogue_version')
+        return {
+          items: [
+            {
+              id: versionId,
+              spaceId: SPACE,
+              ownerId,
+              n: nextN,
+              status: 'draft',
+              definition: JSON.stringify(definition),
+              author: 'architect',
+              reason: 'bound promotion fixture',
+              createdAt: at,
+              promotedAt: null,
+              retiredAt: null,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      return { items: [], nextCursor: null }
+    },
+    async promoteWorkflow() {
+      return {
+        identity: {
+          id: ownerId,
+          spaceId: SPACE,
+          slug: 'shared',
+          generation: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+        versions: [
+          {
+            id: versionId,
+            spaceId: SPACE,
+            ownerId,
+            n: nextN,
+            status: 'production',
+            definition: JSON.stringify(definition),
+            author: 'architect',
+            reason: 'bound promotion fixture',
+            createdAt: at,
+            promotedAt: at,
+            retiredAt: null,
+            updatedAt: at,
+          },
+        ],
+        events: [
+          {
+            id: promoteEventId,
+            spaceId: SPACE,
+            ownerVersionId: versionId,
+            event: 'promote',
+            author: 'architect',
+            reason: 'promote',
+            sessionId: null,
+            at,
+          },
+        ],
+      }
+    },
+  })
+
+  expect(await promoteStepCatalogue(nextN, 'promote')).toEqual({
+    version: nextN,
+    changedSpaces: [SPACE],
+    overrideSpaces: [],
+    pinnedSpaces: [],
+  })
+  expect(sharedPromotionTargetSpaces(local, [SPACE])).toEqual([SPACE])
+  expect(
+    local
+      .query(
+        `SELECT
+          (SELECT COUNT(*) FROM step_catalogue WHERE space_id IS NULL) identities,
+          (SELECT COUNT(*) FROM step_catalogue_version WHERE space_id IS NULL) versions,
+          (SELECT COUNT(*) FROM step_catalogue_event WHERE space_id IS NULL) events`,
+      )
+      .get(),
+  ).toEqual(nullCounts)
 })
 
 test('hosted catalogue promotion does not call the API when it removes a live reference', async () => {

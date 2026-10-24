@@ -16,6 +16,7 @@ workflows and their cursors
 - [bottega workflow catalogue show](#bottega-workflow-catalogue-show)
 - [bottega workflow catalogue versions](#bottega-workflow-catalogue-versions)
 - [bottega workflow compose](#bottega-workflow-compose)
+- [bottega workflow cursor](#bottega-workflow-cursor)
 - [bottega workflow cursors](#bottega-workflow-cursors)
 - [bottega workflow epic](#bottega-workflow-epic)
 - [bottega workflow exec](#bottega-workflow-exec)
@@ -48,6 +49,7 @@ workflows and their cursors
 - [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
 - [bottega workflow compose](./workflow.md#bottega-workflow-compose)
+- [bottega workflow cursor](./workflow.md#bottega-workflow-cursor)
 - [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
 - [bottega workflow epic](./workflow.md#bottega-workflow-epic)
 - [bottega workflow exec](./workflow.md#bottega-workflow-exec)
@@ -250,6 +252,16 @@ compose a workflow for a project and create its cursor when ready
 - `--arg <value>`: supply a workflow argument as name=value
 - `--autonomy <value>`: override an autonomy scope
 - `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+
+## bottega workflow cursor
+
+**Synopsis:** `bottega workflow cursor <identity-map>`
+
+print numeric workflow cursor identities and their durable record ids as JSON
 
 ### Related
 

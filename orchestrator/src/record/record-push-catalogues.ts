@@ -1,13 +1,13 @@
 // concern: record-push-catalogues
 /** Plans and performs the one-time null-space catalogue backfill. */
 import type { Database } from 'bun:sqlite'
-import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { replicatedRecordId } from '../../../shared/record-id.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
 import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
 import { projects } from '../project/projects.ts'
-import { activeRecordSpace } from '../project-space.ts'
+import { activeRecordSpace, cachedProjectSpaces } from '../project-space.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -40,26 +40,10 @@ type LensPlanRows = {
 const iso = () => new Date().toISOString()
 const forEachValue = <T>(values: readonly T[], use: (value: T) => void) => values.forEach(use)
 
-function replicatedId(spaceId: string, kind: string, sourceId: string): string {
-  const hex = createHash('sha256')
-    .update(`${spaceId}\0${kind}\0${sourceId}`)
-    .digest('hex')
-    .slice(0, 32)
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20)}`
-}
-
 type ProjectRoutes = ReadonlyMap<string, string | null>
 
 function cachedProjectRoutes(local: Database): Map<string, string | null> {
-  const stored = local
-    .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='record_project_spaces'")
-    .get()?.value
-  let cache: Record<string, unknown> = {}
-  try {
-    if (stored) cache = JSON.parse(stored) as Record<string, unknown>
-  } catch {
-    cache = {}
-  }
+  const cache = cachedProjectSpaces(local)
   const registered = local.query('SELECT name FROM project').all() as { name: string }[]
   return new Map(
     registered.flatMap((project) => {
@@ -173,7 +157,7 @@ function lensSpacePlan(
   return {
     dryRun: false,
     lens: lenses.map((r) => ({
-      id: replicatedId(spaceId, 'lens', String(r.record_id)),
+      id: replicatedRecordId(spaceId, 'lens', String(r.record_id)),
       spaceId,
       key: String(r.id),
       title: String(r.title),
@@ -186,9 +170,9 @@ function lensSpacePlan(
       updatedAt: now,
     })),
     lens_revision: revisions.map((r) => ({
-      id: replicatedId(spaceId, 'lens_revision', String(r.record_id)),
+      id: replicatedRecordId(spaceId, 'lens_revision', String(r.record_id)),
       spaceId,
-      lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+      lensId: replicatedRecordId(spaceId, 'lens', String(r.lens_record_id)),
       version: Number(r.version),
       priorBody: String(r.prior_body),
       reason: String(r.reason),
@@ -196,9 +180,9 @@ function lensSpacePlan(
       at: String(r.at),
     })),
     lens_profile: profiles.map((r) => ({
-      id: replicatedId(spaceId, 'lens_profile', String(r.record_id)),
+      id: replicatedRecordId(spaceId, 'lens_profile', String(r.record_id)),
       spaceId,
-      lensId: replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+      lensId: replicatedRecordId(spaceId, 'lens', String(r.lens_record_id)),
       axis: r.axis as 'framework' | 'architecture',
       name: String(r.name),
       version: Number(r.version),
@@ -207,9 +191,9 @@ function lensSpacePlan(
       updatedAt: now,
     })),
     lens_profile_revision: profileRevisions.map((r) => ({
-      id: replicatedId(spaceId, 'lens_profile_revision', String(r.record_id)),
+      id: replicatedRecordId(spaceId, 'lens_profile_revision', String(r.record_id)),
       spaceId,
-      profileId: replicatedId(spaceId, 'lens_profile', String(r.profile_record_id)),
+      profileId: replicatedRecordId(spaceId, 'lens_profile', String(r.profile_record_id)),
       version: Number(r.version),
       priorBody: String(r.prior_body),
       reason: String(r.reason),
@@ -217,11 +201,13 @@ function lensSpacePlan(
       at: String(r.at),
     })),
     project_lens_profile: inSpace.map((r) => ({
-      id: replicatedId(spaceId, 'project_lens_profile', String(r.record_id)),
+      id: replicatedRecordId(spaceId, 'project_lens_profile', String(r.record_id)),
       spaceId,
       projectId: String(r.project_record_id),
       lensId:
-        r.lens_record_id == null ? null : replicatedId(spaceId, 'lens', String(r.lens_record_id)),
+        r.lens_record_id == null
+          ? null
+          : replicatedRecordId(spaceId, 'lens', String(r.lens_record_id)),
       axis: r.axis as 'framework' | 'architecture',
       profileName: String(r.profile_name),
       selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
@@ -231,9 +217,13 @@ function lensSpacePlan(
     project_lens_profile_revision: selectionRevisions
       .filter((r) => selectionIds.has(String(r.selection_record_id)))
       .map((r) => ({
-        id: replicatedId(spaceId, 'project_lens_profile_revision', String(r.record_id)),
+        id: replicatedRecordId(spaceId, 'project_lens_profile_revision', String(r.record_id)),
         spaceId,
-        selectionId: replicatedId(spaceId, 'project_lens_profile', String(r.selection_record_id)),
+        selectionId: replicatedRecordId(
+          spaceId,
+          'project_lens_profile',
+          String(r.selection_record_id),
+        ),
         priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
         priorSelectedVersion:
           r.prior_selected_version == null ? null : Number(r.prior_selected_version),
@@ -262,11 +252,13 @@ function lensPlan(
 function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImportInput {
   const now = iso()
   const kind = (name: 'workflow' | 'step_catalogue') => {
-    const foreign = name === 'workflow' ? 'workflow_id' : 'catalogue_id'
+    const foreign = name === 'workflow' ? 'workflow_record_id' : 'catalogue_record_id'
+    const eventForeign =
+      name === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'
     const identities = (
       local.query(`SELECT * FROM ${name} WHERE space_id IS NULL`).all() as Record<string, unknown>[]
     ).map((r) => ({
-      id: replicatedId(spaceId, name, String(r.record_id)),
+      id: replicatedRecordId(spaceId, name, String(r.record_id)),
       spaceId,
       slug: String(r.slug),
       generation: 1,
@@ -276,13 +268,13 @@ function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImpo
     const versions = (
       local
         .query(
-          `SELECT v.*,i.record_id owner_record_id FROM ${name}_version v JOIN ${name} i ON i.id=v.${foreign} WHERE v.space_id IS NULL`,
+          `SELECT v.*,i.record_id owner_record_id FROM ${name}_version v JOIN ${name} i ON i.record_id=v.${foreign} WHERE v.space_id IS NULL`,
         )
         .all() as Record<string, unknown>[]
     ).map((r) => ({
-      id: replicatedId(spaceId, `${name}_version`, String(r.record_id)),
+      id: replicatedRecordId(spaceId, `${name}_version`, String(r.record_id)),
       spaceId,
-      ownerId: replicatedId(spaceId, name, String(r.owner_record_id)),
+      ownerId: replicatedRecordId(spaceId, name, String(r.owner_record_id)),
       n: Number(r.n),
       status: r.status as 'draft' | 'production' | 'retired',
       definition: String(r.definition),
@@ -296,13 +288,13 @@ function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImpo
     const events = (
       local
         .query(
-          `SELECT e.*,v.record_id version_record_id FROM ${name}_event e JOIN ${name}_version v ON v.${foreign}=e.${foreign} AND v.n=e.version_n WHERE e.space_id IS NULL`,
+          `SELECT e.*,v.record_id version_record_id FROM ${name}_event e JOIN ${name}_version v ON v.record_id=e.${eventForeign} WHERE e.space_id IS NULL`,
         )
         .all() as Record<string, unknown>[]
     ).map((r) => ({
-      id: replicatedId(spaceId, `${name}_event`, String(r.record_id)),
+      id: replicatedRecordId(spaceId, `${name}_event`, String(r.record_id)),
       spaceId,
-      ownerVersionId: replicatedId(spaceId, `${name}_version`, String(r.version_record_id)),
+      ownerVersionId: replicatedRecordId(spaceId, `${name}_version`, String(r.version_record_id)),
       event: r.event as 'set' | 'fork' | 'import' | 'promote' | 'retire',
       author: String(r.author),
       reason: String(r.reason),

@@ -65,6 +65,7 @@ test.each([
   (project, version) => {
     const row = {
       id: -1,
+      record_id: newRecordId(),
       project,
       workflow_slug: SLUG,
       workflow_version: version,

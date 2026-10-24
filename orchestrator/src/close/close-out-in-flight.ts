@@ -51,14 +51,14 @@ function lookupShipTaskCursor(
 ): CursorRow | null {
   const rows = db()
     .query(
-      `SELECT id, step_slug, workflow_slug, project, args
+      `SELECT number id, step_slug, workflow_slug, project, args
          FROM workflow_cursor
         WHERE session_id = ?
           AND project = ?
           AND workflow_slug = 'ship-task'
           AND state IN ('running','awaiting-ruling')
           AND json_extract(args, '$.branch') = ?
-        ORDER BY id`,
+        ORDER BY number`,
     )
     .all(sessionId, project, branch) as CursorRow[]
   return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? rows[0] ?? null

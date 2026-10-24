@@ -8,8 +8,8 @@ export type ClosedStep = {
   at: string
   review?: true
   evidence?: Array<{ flag: string; value: string }>
-  deferred?: { id: number; floor: string; reason: string }
-  satisfied?: number
+  deferred?: { id: string; floor: string; reason: string }
+  satisfied?: string
   outcome?: string
   skipped?: { step: string; outcome: string[] }
   reentered?: { to: string; pass: number }

@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { decidePullRequestEvidence } from './workflow-floor.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence.ts'
@@ -12,17 +13,17 @@ const database = testDatabaseFixture((d) => {
   ).run('fixture', '/fixture', 'bun', '{"trunk":"main"}')
   d.query(
     `INSERT INTO workflow_cursor
-      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('${newRecordId()}','fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
+     VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','flow','default','DEV-977','','s',?,?,'{}',0,'rebase','running','[]',NULL,
              1,'2026-09-01','2026-09-01','floors')`,
-  ).run()
+  ).run(workflowVersionRecordId(d), catalogueVersionRecordId(d))
 })
 
 const gather = (d: Database) =>
   gatherValidatedEvidence({
-    cursorId: 1,
+    cursorId: '00000000-0000-4000-8000-000000000001',
     identity: {
       project: 'fixture',
       workflowKey: 'DEV-977',

@@ -24,27 +24,24 @@ export function rememberProjectSpace(
   project: string,
   spaceId: string | null,
 ): void {
-  let spaces: Record<string, string | null> = {}
-  const stored = read(local)
-  try {
-    if (stored) spaces = JSON.parse(stored) as Record<string, string | null>
-  } catch {
-    spaces = {}
-  }
+  const spaces = cachedProjectSpaces(local)
   spaces[project] = spaceId
   write(local, JSON.stringify(spaces))
 }
 
+export function cachedProjectSpaces(local: Database): Record<string, string | null> {
+  const stored = read(local)
+  if (!stored) return {}
+  try {
+    return JSON.parse(stored) as Record<string, string | null>
+  } catch {
+    return {}
+  }
+}
+
 export function effectiveProjectSpace(local: Database, project: string | null): string | null {
   if (!project) return null
-  const stored = read(local)
-  if (!stored) return null
-  try {
-    const spaces = JSON.parse(stored) as Record<string, unknown>
-    return typeof spaces[project] === 'string' ? spaces[project] : null
-  } catch {
-    return null
-  }
+  return cachedProjectSpaces(local)[project] ?? null
 }
 
 export function rememberActiveRecordSpace(local: Database, spaceId: string): void {

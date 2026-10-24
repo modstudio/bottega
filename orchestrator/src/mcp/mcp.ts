@@ -43,11 +43,13 @@ import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   getWorkflowStepWithCursor,
-  mcpWorkflowCursorContext,
   nextWorkflowStep,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
-import { resolveWorkflowCursorMode } from '../workflow/workflow-cursor-selection.ts'
+import {
+  mcpWorkflowCursorContext,
+  resolveWorkflowCursorMode,
+} from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
 import {

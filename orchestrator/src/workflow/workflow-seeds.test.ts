@@ -24,6 +24,34 @@ const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
 })
 
+test('a bound store does not seed NULL-space workflow catalogue rows', () => {
+  const d = database()
+  d.exec(`
+    DELETE FROM workflow_event;
+    DELETE FROM workflow_version;
+    DELETE FROM workflow;
+    DELETE FROM step_catalogue_event;
+    DELETE FROM step_catalogue_version;
+    DELETE FROM step_catalogue;
+    INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-23T00:00:00.000Z');
+  `)
+
+  seedWorkflows(d)
+
+  for (const table of [
+    'workflow',
+    'workflow_version',
+    'workflow_event',
+    'step_catalogue',
+    'step_catalogue_version',
+    'step_catalogue_event',
+  ]) {
+    expect(d.query(`SELECT COUNT(*) n FROM ${table} WHERE space_id IS NULL`).get()).toEqual({
+      n: 0,
+    })
+  }
+})
+
 describe('seedMayPromote', () => {
   test('higher revision, no operator promotion → may promote (catches breaking bootstrap upgrades)', () => {
     expect(
@@ -97,11 +125,15 @@ describe('seeded step merge', () => {
 
 describe('workflow projection and seeds', () => {
   const workflowId = (d: Database, slug: string) =>
-    (d.query('SELECT id FROM workflow WHERE slug=?').get(slug) as { id: number }).id
+    (d.query('SELECT record_id FROM workflow WHERE slug=?').get(slug) as { record_id: string })
+      .record_id
   const events = (d: Database, slug: string) =>
     d
       .query(
-        'SELECT version_n,event,author,reason,session_id,at FROM workflow_event WHERE workflow_id=? ORDER BY id',
+        `SELECT event.version_n,event.event,event.author,event.reason,event.session_id,event.at
+           FROM workflow_event event
+           JOIN workflow_version version ON version.record_id=event.workflow_version_record_id
+          WHERE version.workflow_record_id=? ORDER BY event.at,event.record_id`,
       )
       .all(workflowId(d, slug)) as {
       version_n: number
@@ -115,13 +147,18 @@ describe('workflow projection and seeds', () => {
     const id = workflowId(d, slug),
       definition = JSON.stringify(showResolvedWorkflow(slug, 1, null, d).definition),
       at = '2026-01-01T00:00:00.000Z'
-    d.query('DELETE FROM workflow_event WHERE workflow_id=?').run(id)
-    d.query('DELETE FROM workflow_version WHERE workflow_id=?').run(id)
-    for (let version = 1; version <= n; version++)
+    d.query(
+      'DELETE FROM workflow_event WHERE workflow_version_record_id IN (SELECT record_id FROM workflow_version WHERE workflow_record_id=?)',
+    ).run(id)
+    d.query('DELETE FROM workflow_version WHERE workflow_record_id=?').run(id)
+    const versionIds = new Map<number, string>()
+    for (let version = 1; version <= n; version++) {
+      const versionId = newRecordId()
+      versionIds.set(version, versionId)
       d.query(
-        `INSERT INTO workflow_version (record_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?, ?,?,?,?, ?,?,?)`,
+        `INSERT INTO workflow_version (record_id,workflow_record_id,n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?, ?,?,?,?, ?,?,?)`,
       ).run(
-        newRecordId(),
+        versionId,
         id,
         version,
         version === n ? 'production' : 'retired',
@@ -132,13 +169,14 @@ describe('workflow projection and seeds', () => {
         version === n ? at : null,
         version === n ? null : at,
       )
+    }
     d.query(
-      `INSERT INTO workflow_event (record_id,workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,1,'set','seed','DEV-257 seed',NULL,?)`,
-    ).run(newRecordId(), id, at)
+      `INSERT INTO workflow_event (record_id,workflow_version_record_id,version_n,event,author,reason,session_id,at) VALUES (?,?,1,'set','seed','DEV-257 seed',NULL,?)`,
+    ).run(newRecordId(), versionIds.get(1)!, at)
     if (n > 1)
       d.query(
-        `INSERT INTO workflow_event (record_id,workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'set',?,'operator edit',NULL,?)`,
-      ).run(newRecordId(), id, n, author, at)
+        `INSERT INTO workflow_event (record_id,workflow_version_record_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'set',?,'operator edit',NULL,?)`,
+      ).run(newRecordId(), versionIds.get(n)!, n, author, at)
   }
   test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
@@ -203,11 +241,11 @@ describe('workflow projection and seeds', () => {
         }),
       }
     d.query(
-      "UPDATE step_catalogue_version SET definition=?,reason='seed r5' WHERE catalogue_id=? AND n=1",
-    ).run(JSON.stringify(legacy), catalogue.owner_id)
+      "UPDATE step_catalogue_version SET definition=?,reason='seed r5' WHERE catalogue_record_id=? AND n=1",
+    ).run(JSON.stringify(legacy), catalogue.owner_record_id)
     d.query(
-      "UPDATE step_catalogue_event SET reason='seed r5' WHERE catalogue_id=? AND author='seed'",
-    ).run(catalogue.owner_id)
+      "UPDATE step_catalogue_event SET reason='seed r5' WHERE catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?) AND author='seed'",
+    ).run(catalogue.owner_record_id)
 
     seedWorkflows(d)
 
@@ -228,10 +266,9 @@ describe('workflow projection and seeds', () => {
         ...(index === 0 ? { autonomy: 'manual', floor: ['human-ruling'] } : {}),
       })),
     }
-    d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=1').run(
-      JSON.stringify(legacy),
-      catalogue.owner_id,
-    )
+    d.query(
+      'UPDATE step_catalogue_version SET definition=? WHERE catalogue_record_id=? AND n=1',
+    ).run(JSON.stringify(legacy), catalogue.owner_record_id)
 
     let message = ''
     try {
@@ -252,20 +289,21 @@ describe('workflow projection and seeds', () => {
           return step
         }),
       }
-    d.query('UPDATE step_catalogue_version SET definition=? WHERE catalogue_id=? AND n=1').run(
-      JSON.stringify(legacy),
-      catalogue.owner_id,
-    )
+    d.query(
+      'UPDATE step_catalogue_version SET definition=? WHERE catalogue_record_id=? AND n=1',
+    ).run(JSON.stringify(legacy), catalogue.owner_record_id)
     const draft = forkStepCatalogueLocal(1, 'operator edit', 'architect', d)
     promoteStepCatalogueLocal(draft.n, 'operator promote', 'architect', d)
     d.query(
-      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
-    ).run(catalogue.owner_id)
+      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?) AND author='seed'",
+    ).run(catalogue.owner_record_id)
     const beforeVersions = resolvedStepCatalogueVersions(null, d).length,
       beforeEvents = (
         d
-          .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
-          .get(catalogue.owner_id) as { count: number }
+          .query(
+            'SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?)',
+          )
+          .get(catalogue.owner_record_id) as { count: number }
       ).count
 
     seedWorkflows(d)
@@ -273,8 +311,10 @@ describe('workflow projection and seeds', () => {
     expect(resolvedStepCatalogueVersions(null, d)).toHaveLength(beforeVersions)
     expect(
       d
-        .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
-        .get(catalogue.owner_id),
+        .query(
+          'SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?)',
+        )
+        .get(catalogue.owner_record_id),
     ).toEqual({ count: beforeEvents })
     expect(productionStepCatalogue(d).n).toBe(draft.n)
     expect(productionStepCatalogue(d).author).toBe('architect')
@@ -285,20 +325,24 @@ describe('workflow projection and seeds', () => {
       beforeVersions = resolvedStepCatalogueVersions(null, d).length,
       beforeEvents = (
         d
-          .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
-          .get(catalogue.owner_id) as { count: number }
+          .query(
+            'SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?)',
+          )
+          .get(catalogue.owner_record_id) as { count: number }
       ).count
     d.query(
-      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_id=? AND author='seed'",
-    ).run(catalogue.owner_id)
+      "UPDATE step_catalogue_event SET reason='seed r1' WHERE catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?) AND author='seed'",
+    ).run(catalogue.owner_record_id)
 
     seedWorkflows(d)
 
     expect(resolvedStepCatalogueVersions(null, d)).toHaveLength(beforeVersions)
     expect(
       d
-        .query('SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_id=?')
-        .get(catalogue.owner_id),
+        .query(
+          'SELECT COUNT(*) AS count FROM step_catalogue_event WHERE catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?)',
+        )
+        .get(catalogue.owner_record_id),
     ).toEqual({ count: beforeEvents })
   })
   test('the remaining legacy seed revision upgrades its live shape', () => {
@@ -351,7 +395,7 @@ describe('workflow projection and seeds', () => {
   test('migration renames a legacy workflow in place before seeding its new revision', () => {
     const d = database()
     const id = workflowId(d, 'fix-defect')
-    d.query("UPDATE workflow SET slug='filed-issue' WHERE id=?").run(id)
+    d.query("UPDATE workflow SET slug='filed-issue' WHERE record_id=?").run(id)
     makeLegacy(d, 'filed-issue', 2, 'architect')
     d.query("DELETE FROM orch_migrations WHERE version='0033_fix_defect_workflow'").run()
     d.exec(`PRAGMA user_version = ${migrationJournal().length - 1}`)
@@ -362,7 +406,9 @@ describe('workflow projection and seeds', () => {
     expect(d.query("SELECT COUNT(*) AS n FROM workflow WHERE slug='filed-issue'").get()).toEqual({
       n: 0,
     })
-    expect(d.query("SELECT id FROM workflow WHERE slug='fix-defect'").get()).toEqual({ id })
+    expect(d.query("SELECT record_id FROM workflow WHERE slug='fix-defect'").get()).toEqual({
+      record_id: id,
+    })
     expect(resolvedWorkflowVersions('fix-defect', null, d).map(({ n }) => n)).toEqual([1, 2, 3])
     expect(showResolvedWorkflow('fix-defect', 2, null, d).author).toBe('architect')
     expect(showResolvedWorkflow('fix-defect', 3, null, d).reason).toBe('seed r5')

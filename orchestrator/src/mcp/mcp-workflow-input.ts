@@ -21,5 +21,7 @@ export const nextWorkflowStepInputSchema = z.object({
   task: z.string().trim().min(1).optional(),
   cursor: z.number().int().positive().optional(),
   defer: z.string().trim().min(1).optional(),
-  satisfies: z.number().int().positive().optional(),
+  satisfies: z
+    .uuid({ error: 'satisfies must be an obligation UUID from the workflow cursors JSON listing' })
+    .optional(),
 })
