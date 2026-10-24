@@ -545,7 +545,7 @@ test('workflow probe and exec preserve child options after the real argv separat
     else {
       const row = db()
         .query<{ command: string; cwd: string }, []>(
-          "SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1",
+          "SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY created_at DESC,record_id DESC LIMIT 1",
         )
         .get()
       expect(row).toEqual({ command: JSON.stringify(expected.command), cwd: expected.cwd })
@@ -582,7 +582,11 @@ test('workflow probe service returns the recorded child exit code', async () => 
 
   expect(commandOutcome('probe', result)).toEqual({ exitCode: 9 })
   expect(
-    db().query("SELECT exit_code FROM probe WHERE kind='probe' ORDER BY id DESC LIMIT 1").get(),
+    db()
+      .query(
+        "SELECT exit_code FROM probe WHERE kind='probe' ORDER BY created_at DESC,record_id DESC LIMIT 1",
+      )
+      .get(),
   ).toEqual({ exit_code: 9 })
 })
 

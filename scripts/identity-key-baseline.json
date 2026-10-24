@@ -25,7 +25,6 @@
     "port_ref.task_key:reference",
     "presence:primary-key",
     "presence.current_task_key:reference",
-    "probe:primary-key",
     "project_lens_profile.selected_version:reference",
     "project_lens_profile_revision.prior_selected_version:reference",
     "question.filed_ref:reference",

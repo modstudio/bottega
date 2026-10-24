@@ -42,10 +42,12 @@ const pullRequestExit = {
   commandEvidence: 'pull-request' as const,
 }
 const pullRequestArtifact = { ...pullRequestExit, kind: 'recorded-artifact' as const }
+const EXEC_RECORD_ID = '00000000-0000-4000-8000-000000000004'
 const matchingExecEvidence = {
-  artifact: { ref: 'exec:4', exists: true },
+  artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
   exec: {
     id: 4,
+    recordId: EXEC_RECORD_ID,
     command: `${PLATFORM_SLUG} pr create`,
     argv: exec.argv,
     exitCode: 0,

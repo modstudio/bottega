@@ -195,13 +195,16 @@ test('resolves probe artifacts and task comments through injected ports', () => 
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
      VALUES ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-01')`,
   ).run()
+  const probeRecordId = d
+    .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=1')
+    .get()!.record_id
   d.query(
     `INSERT INTO landing_triage_snapshot
       (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
   const gathered = gather(d, { artifact: 'probe:1', task: 'DEV-977' })
-  expect(gathered.artifact).toEqual({ ref: 'probe:1', exists: true })
+  expect(gathered.artifact).toEqual({ ref: `probe:${probeRecordId}`, exists: true })
   expect(gathered.probe).toEqual({ id: 1, exitCode: 0 })
   expect(gathered.task).toEqual({
     key: 'DEV-977',
@@ -529,8 +532,11 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
      VALUES ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-01')`,
   ).run()
+  const matchingProbeRecordId = d
+    .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=2')
+    .get()!.record_id
   expect(gather(d, { artifact: 'probe:2' }).artifact).toEqual({
-    ref: 'probe:2',
+    ref: `probe:${matchingProbeRecordId}`,
     exists: true,
   })
 })
@@ -561,9 +567,12 @@ test('exec evidence is branch-bound and carries its exit code', () => {
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-01','exec')`,
   ).run()
+  const matchingExecRecordId = d
+    .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=2')
+    .get()!.record_id
   expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
-    artifact: { ref: 'exec:2', exists: true },
-    exec: { id: 2, command: 'true', argv: ['true'], exitCode: 0 },
+    artifact: { ref: `exec:${matchingExecRecordId}`, exists: true },
+    exec: { id: 2, recordId: matchingExecRecordId, command: 'true', argv: ['true'], exitCode: 0 },
   })
   expect(() => gather(d, { artifact: 'probe:2' })).toThrow(
     '--artifact probe:2 is recorded as exec:2',
@@ -595,6 +604,9 @@ test('exec evidence uses the post-command head that belongs to the rebased branc
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}','["git","rebase","origin/main"]','/fixture/work','rebased-tip',0,'','2026-09-01','exec')`,
   ).run()
+  const execRecordId = d
+    .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=1')
+    .get()!.record_id
 
   expect(
     gather(
@@ -607,7 +619,7 @@ test('exec evidence uses the post-command head that belongs to the rebased branc
             : { ...matchingCheckout, headIsTipOrAncestor: false },
       },
     ).artifact,
-  ).toEqual({ ref: 'exec:1', exists: true })
+  ).toEqual({ ref: `exec:${execRecordId}`, exists: true })
 })
 
 test('exec evidence refuses a post-command head outside the change', () => {

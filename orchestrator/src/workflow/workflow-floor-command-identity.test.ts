@@ -103,14 +103,14 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
     const insertExec = (path: string) =>
       (
         d
-          .query<{ id: number }, [string, string]>(
+          .query<{ number: number }, [string, string]>(
             `INSERT INTO probe
-              (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,session_id)
-             VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec','s')
-             RETURNING id`,
+              (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at,kind,session_id)
+             VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM probe),?,'/fixture/work','abc',0,?,'2026-09-01','exec','s')
+             RETURNING number`,
           )
-          .get(JSON.stringify([path, 'pr', 'create']), `opened ${url}`) as { id: number }
-      ).id
+          .get(JSON.stringify([path, 'pr', 'create']), `opened ${url}`) as { number: number }
+      ).number
     const identity: CursorIdentity = {
       project: 'fixture',
       workflowKey: 'DEV-977',

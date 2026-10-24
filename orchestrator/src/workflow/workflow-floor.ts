@@ -59,8 +59,8 @@ export type Floor = {
 export type ArtifactRef =
   | { kind: 'task'; key: string }
   | { kind: 'comment'; key: string; id: string }
-  | { kind: 'probe'; id: number }
-  | { kind: 'exec'; id: number }
+  | { kind: 'probe'; recordId: string }
+  | { kind: 'exec'; recordId: string }
   | { kind: 'doc'; address: string }
   | { kind: 'run'; id: string }
   | { kind: 'attached-text'; id: string }
@@ -107,6 +107,7 @@ export type ValidatedEvidence = {
   probe?: { id: number; exitCode: number }
   exec?: {
     id: number
+    recordId: string
     command: string
     argv: string[] | null
     commandIdentity?: BottegaCommandIdentity
@@ -189,10 +190,11 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (comment) return { kind: 'comment', key: comment[1]!.toUpperCase(), id: comment[2]! }
   const task = /^task:([^#\s]+)$/i.exec(trimmed)
   if (task) return { kind: 'task', key: task[1]!.toUpperCase() }
-  const probe = /^probe:(\d+)$/i.exec(trimmed)
-  if (probe) return { kind: 'probe', id: Number(probe[1]) }
-  const exec = /^exec:(\d+)$/i.exec(trimmed)
-  if (exec) return { kind: 'exec', id: Number(exec[1]) }
+  const probe = /^probe:(\S+)$/i.exec(trimmed)
+  if (probe && hasRecordIdShape(probe[1]!))
+    return { kind: 'probe', recordId: probe[1]!.toLowerCase() }
+  const exec = /^exec:(\S+)$/i.exec(trimmed)
+  if (exec && hasRecordIdShape(exec[1]!)) return { kind: 'exec', recordId: exec[1]!.toLowerCase() }
   const doc = /^doc:(\S+)$/i.exec(trimmed)
   if (doc) return { kind: 'doc', address: doc[1]! }
   const run = /^run:(\S+)$/i.exec(trimmed)
@@ -660,7 +662,7 @@ function commandExitFailureRefusal(
   met: Floor[],
 ): string | null {
   const exec = evidence.exec
-  if (!exec || evidence.artifact?.ref !== `exec:${exec.id}`) return null
+  if (!exec || evidence.artifact?.ref !== `exec:${exec.recordId}`) return null
   if (!met.some((floor) => floor.kind === 'recorded-artifact')) return null
   if (met.some((floor) => floor.kind === 'command-exit')) return null
   const commandExit = floors.find((floor) => floor.kind === 'command-exit')

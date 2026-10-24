@@ -104,15 +104,15 @@ function installEvidence(
         .get(recordId)!.number
     })()
   const probe =
-    d.query<{ id: number }, []>('SELECT id FROM probe LIMIT 1').get()?.id ??
+    d.query<{ number: number }, []>('SELECT number FROM probe LIMIT 1').get()?.number ??
     (
       d
-        .query<{ id: number }, []>(
-          `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
-           VALUES ('${newRecordId()}','["true"]','/tmp','abc',0,'','2026-09-01') RETURNING id`,
+        .query<{ number: number }, []>(
+          `INSERT INTO probe (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at)
+           VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM probe),'["true"]','/tmp','abc',0,'','2026-09-01') RETURNING number`,
         )
-        .get() as { id: number }
-    ).id
+        .get() as { number: number }
+    ).number
   const taskKey = key || 'DEV-822'
   d.query(
     `INSERT OR IGNORE INTO branch_landing_record

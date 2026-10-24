@@ -253,9 +253,9 @@ async function recordWorkflowCommand(
   return writeTransaction(() => {
     // head_commit is the checkout head after the command for every workflow evidence row.
     const row = d
-      .query<{ id: number }, (string | number | null)[]>(
+      .query<{ record_id: string }, (string | number | null)[]>(
         `INSERT INTO probe (record_id,command,cwd,head_commit,pre_command_head_commit,exit_code,output_tail,withheld,command_withheld,session_id,created_at,kind)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -272,7 +272,11 @@ async function recordWorkflowCommand(
         kind,
       )
     if (!row) throw new Error('probe record was not inserted')
-    return { id: row.id, withheld, outputTail: tail }
+    const numbered = d
+      .query<{ number: number }, [string]>('SELECT number FROM probe WHERE record_id=?')
+      .get(row.record_id)
+    if (!numbered) throw new Error('inserted probe record has no display number')
+    return { id: numbered.number, withheld, outputTail: tail }
   }, d)
 }
 

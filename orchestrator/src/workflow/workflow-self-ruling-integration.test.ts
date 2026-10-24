@@ -74,12 +74,12 @@ function openAtRuling(d: Database): void {
 function installProbe(d: Database): number {
   return (
     d
-      .query<{ id: number }, []>(
-        `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
-         VALUES ('${newRecordId()}','["true"]','/tmp/work','abc',0,'','2026-10-12') RETURNING id`,
+      .query<{ number: number }, []>(
+        `INSERT INTO probe (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM probe),'["true"]','/tmp/work','abc',0,'','2026-10-12') RETURNING number`,
       )
-      .get() as { id: number }
-  ).id
+      .get() as { number: number }
+  ).number
 }
 
 function selfRule(d: Database, question?: string): string {

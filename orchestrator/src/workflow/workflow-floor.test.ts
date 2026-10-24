@@ -63,9 +63,11 @@ const passingGate: ValidatedEvidence = {
 }
 const passingRun: ValidatedEvidence = { run: { id: '8', terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
+const EXEC_RECORD_ID = '00000000-0000-4000-8000-000000000004'
 const passingExec: ValidatedEvidence = {
   exec: {
     id: 4,
+    recordId: EXEC_RECORD_ID,
     command: 'true',
     argv: ['true'],
     exitCode: 0,
@@ -366,7 +368,7 @@ test('a failed exec cannot use the recorded-artifact alternative on a command-ex
     decide({
       floors: [commandExit, artifact],
       evidence: {
-        artifact: { ref: 'exec:4', exists: true },
+        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
         exec: {
           ...passingExec.exec!,
           command: `${PLATFORM_SLUG} pr create`,
@@ -386,7 +388,7 @@ test('a passing gate wins over a failed exec recorded as an artifact', () => {
       floors: [commandExit, artifact],
       evidence: {
         ...passingGate,
-        artifact: { ref: 'exec:4', exists: true },
+        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
         exec: { ...passingExec.exec!, exitCode: 1 },
       },
     }).action,
@@ -399,7 +401,7 @@ test('a passing terminal run wins over a failed exec recorded as an artifact', (
       floors: [commandExit, artifact],
       evidence: {
         ...passingRun,
-        artifact: { ref: 'exec:4', exists: true },
+        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
         exec: { ...passingExec.exec!, exitCode: 1 },
       },
     }).action,
@@ -412,7 +414,7 @@ test('an incidental failed exec does not prevent deferral of command-exit', () =
       floors: [deferrableExit],
       evidence: {
         deferReason: 'merge after landing',
-        artifact: { ref: 'exec:4', exists: true },
+        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
         exec: { ...passingExec.exec!, exitCode: 1 },
       },
     }),
@@ -427,7 +429,7 @@ test('an exec matching a nonzero expected exit satisfies command-exit', () => {
     decide({
       floors: [{ ...commandExit, expectedExitCode: 1 }, artifact],
       evidence: {
-        artifact: { ref: 'exec:4', exists: true },
+        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
         exec: { ...passingExec.exec!, exitCode: 1 },
       },
     }).action,
@@ -439,7 +441,7 @@ test('a failed exec remains valid for a recorded-artifact-only step', () => {
     decide({
       floors: [artifact],
       evidence: {
-        artifact: { ref: 'exec:4', exists: true },
+        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
         exec: {
           ...passingExec.exec!,
           command: `${PLATFORM_SLUG} pr create`,
@@ -991,8 +993,14 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
     id: '01a10c8d-164d-71e9-b8a9-a59f15256556',
   })
   expect(parseArtifactRef('task:DEV-977')).toEqual({ kind: 'task', key: 'DEV-977' })
-  expect(parseArtifactRef('probe:12')).toEqual({ kind: 'probe', id: 12 })
-  expect(parseArtifactRef('exec:13')).toEqual({ kind: 'exec', id: 13 })
+  expect(parseArtifactRef(`probe:${ATTACHMENT_UUID}`)).toEqual({
+    kind: 'probe',
+    recordId: ATTACHMENT_UUID,
+  })
+  expect(parseArtifactRef(`exec:${ATTACHMENT_UUID}`)).toEqual({
+    kind: 'exec',
+    recordId: ATTACHMENT_UUID,
+  })
   expect(parseArtifactRef(`doc:project/${PLATFORM_SLUG}/uuid-keys`)).toEqual({
     kind: 'doc',
     address: `project/${PLATFORM_SLUG}/uuid-keys`,

@@ -3,6 +3,7 @@
 import { dirname, normalize } from 'node:path'
 
 type WorkflowFloorModule = { file: string; allowed: string[] }
+export type WorkflowFloorBoundarySpec = WorkflowFloorModule & { name: string; reason: string }
 
 const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
   file,
@@ -48,6 +49,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-refusal.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/probe-identifier.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-self-ruling.ts', [
     '../../../shared/brand.ts',
     './autonomy.ts',
@@ -103,6 +108,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../review/review-identifier.ts',
     '../review/review-lineage-store.ts',
     '../run/run-identifier.ts',
+    './probe-identifier.ts',
     './workflow-floor.ts',
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',
@@ -190,4 +196,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-text.ts',
     './workflows.ts',
   ]),
+]
+
+export const workflowFloorBoundarySpecs: WorkflowFloorBoundarySpec[] = [
+  {
+    name: 'probe-identifier-boundary',
+    file: 'orchestrator/src/workflow/probe-identifier.ts',
+    allowed: ['bun:sqlite', '../../../shared/record-id.ts'],
+    reason: 'Keep probe number-or-UUID edge resolution inside the probe identity concern.',
+  },
 ]
