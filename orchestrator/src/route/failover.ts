@@ -110,6 +110,23 @@ export function chainTransport(rootId: string): TransportName | null {
   return row?.transport === 'cli' || row?.transport === 'acp' ? row.transport : null
 }
 
+export function transportTurns(rootId: string): Array<{
+  agent: string
+  transport: TransportName | null
+}> {
+  const rows = db()
+    .query(
+      `SELECT agent, transport FROM run
+      WHERE record_id = ? OR parent_run_record_id = ?
+      ORDER BY turn DESC, number DESC`,
+    )
+    .all(rootId, rootId) as Array<{ agent: string; transport: string | null }>
+  return rows.map((row) => ({
+    agent: row.agent,
+    transport: row.transport === 'cli' || row.transport === 'acp' ? row.transport : null,
+  }))
+}
+
 const detachRouting = (spec: DetachSpec) => ({
   agentExplicit: spec.agentExplicit,
   routedAgent: spec.routedAgent,

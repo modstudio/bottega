@@ -6,6 +6,7 @@ import {
   previousAttemptTaskPointer,
   type RetryPathDecision,
   renderWritingRetryPrompt,
+  retryTransport,
 } from './run-retry.ts'
 
 const writing = {
@@ -43,6 +44,15 @@ describe('retry path decision', () => {
   ])('selects the expected outcome for %#', (facts, expected) => {
     expect(decideWritingRetryWorkspace(facts)).toEqual(expected as RetryPathDecision)
   })
+})
+
+test('a retry carries the latest transport recorded for the retry agent', () => {
+  const turns = [
+    { agent: 'codex', transport: 'cli' as const },
+    { agent: 'grok', transport: 'acp' as const },
+  ]
+
+  expect(retryTransport(false, 'grok', turns)).toBe('acp')
 })
 
 test('atomic retry reuse requires the validated path, branch, and tip', () => {

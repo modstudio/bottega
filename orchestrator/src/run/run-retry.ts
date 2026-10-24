@@ -28,9 +28,11 @@ export function decideRetryConversation(input: {
 
 export function retryTransport(
   agentChanged: boolean,
-  recordedTransport: 'cli' | 'acp' | null,
+  retryAgent: string,
+  turns: Array<{ agent: string; transport: 'cli' | 'acp' | null }>,
 ): 'cli' | 'acp' | undefined {
-  return agentChanged ? undefined : (recordedTransport ?? undefined)
+  if (agentChanged) return undefined
+  return turns.find((turn) => turn.agent === retryAgent)?.transport ?? undefined
 }
 
 export function decideWritingRetryWorkspace(input: {
