@@ -7,6 +7,7 @@
  * facts; the runner supplies the facts and the adapters do the I/O.
  */
 import type { DocForm } from '../../../shared/docs.ts'
+import { parseWorkerReplyWithCount, VERIFY_CLAIM_SCHEMA } from '../contract/contract-reply.ts'
 import { FAILURE_KINDS, type FailureKind } from '../failure/failure.ts'
 
 /**
@@ -185,51 +186,21 @@ function noteActionFor(existingNote: boolean): NoteAction {
  */
 export type DriftVerdict = { kind: 'drift' } | { kind: 'clean' } | { kind: 'no-evidence' }
 
-/**
- * Recover the object from a reply, tolerating the fences and prose an agent
- * wraps JSON in. Returns null when nothing parses.
- */
-function parseReplyObject(reply: string): unknown {
-  const trimmed = reply.trim()
-  if (!trimmed) return null
-  const candidates = [trimmed]
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed)
-  if (fenced?.[1]) candidates.push(fenced[1].trim())
-  const start = trimmed.indexOf('{')
-  const end = trimmed.lastIndexOf('}')
-  if (start >= 0 && end > start) candidates.push(trimmed.slice(start, end + 1))
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate)
-    } catch {
-      /* try the next shape */
-    }
-  }
-  return null
-}
-
-/** The verify-claim verdict, or null when the reply does not carry that shape. */
-function contractVerdict(parsed: unknown): string | null {
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-  const { verdict, provenance } = parsed as Record<string, unknown>
-  if (verdict !== 'true' && verdict !== 'false' && verdict !== 'undecidable') return null
-  if (typeof provenance !== 'object' || provenance === null || Array.isArray(provenance)) {
-    return null
-  }
-  if (typeof (provenance as Record<string, unknown>).canon_source !== 'string') return null
-  return verdict
-}
+/** The verify-claim reply, as VERIFY_CLAIM_SCHEMA declares it. */
+type VerifyClaimReply = { verdict: 'true' | 'false' | 'undecidable' }
 
 /**
  * Decide from the verify-claim contract alone: `{"verdict": "true"|"false"|
- * "undecidable", "provenance": {"canon_source": ...}}`. A reply that does not
- * carry that shape is no evidence, and `undecidable` is no evidence too, so
- * only an established verdict advances the queue.
+ * "undecidable", "provenance": {"canon_source": ...}}`. The contract's own
+ * parser reads it, tolerating the fences and prose an agent wraps JSON in; this
+ * decision never re-checks that shape by hand. A reply that does not carry it
+ * is no evidence, and `undecidable` is no evidence too, so only an established
+ * verdict advances the queue.
  */
 export function decideDriftVerdict(reply: string): DriftVerdict {
-  const verdict = contractVerdict(parseReplyObject(reply))
-  if (verdict === 'false') return { kind: 'drift' }
-  if (verdict === 'true') return { kind: 'clean' }
+  const { reply: parsed } = parseWorkerReplyWithCount<VerifyClaimReply>(reply, VERIFY_CLAIM_SCHEMA)
+  if (parsed?.verdict === 'false') return { kind: 'drift' }
+  if (parsed?.verdict === 'true') return { kind: 'clean' }
   return { kind: 'no-evidence' }
 }
 

@@ -216,6 +216,13 @@ describe('decideDriftVerdict', () => {
     expect(decideDriftVerdict(contractReply)).toEqual({ kind: 'drift' })
   })
 
+  test('the last contract-valid object in a reply is the one that decides', () => {
+    const later = JSON.stringify({ verdict: 'true', provenance: { canon_source: 'live database' } })
+    expect(decideDriftVerdict(`${contractReply}\nFor reference:\n${later}`)).toEqual({
+      kind: 'clean',
+    })
+  })
+
   test('a true verdict is clean', () => {
     expect(
       decideDriftVerdict('{"verdict": "true", "provenance": {"canon_source": "mirror"}}'),

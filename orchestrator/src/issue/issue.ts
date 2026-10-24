@@ -5,12 +5,8 @@ import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../share
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
-import {
-  ISSUE_WORKER_SCHEMA,
-  type IssueWorkerReply,
-  type JsonSchema,
-  validatesSchema,
-} from '../contract/contract.ts'
+import { ISSUE_WORKER_SCHEMA, type IssueWorkerReply } from '../contract/contract.ts'
+import { type JsonSchema, validatesSchema } from '../contract/contract-reply.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
 import { type Project, projectByName } from '../project/projects.ts'
