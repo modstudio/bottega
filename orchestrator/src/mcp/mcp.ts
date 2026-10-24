@@ -313,7 +313,7 @@ export async function fileIssue(
     reporterId = `run:${worker.record_id}`
   } else if (reporter.kind === 'monitor') {
     const invocation = db()
-      .query('SELECT id FROM monitor_invocation WHERE id=?')
+      .query('SELECT record_id FROM monitor_invocation WHERE number=?')
       .get(reporter.invocationId)
     if (!invocation) throw new Error(`no monitor invocation ${reporter.invocationId}`)
     reporterId = reporter.invocationId

@@ -21,15 +21,19 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
       'UPDATE run SET repo=?,project_record_id=?,cwd=?,branch_kept=?,branch_kept_tip=? WHERE record_id=?',
     )
     .run(project, projectId, repository, branch, tip, runId)
-  const claimId = Number(
-    db()
-      .query(
-        `INSERT INTO resource_claim
+  const claimRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO resource_claim
          (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?,?,?,'branch',?,'claimed',?)`,
-      )
-      .run(newRecordId(), runId, runId, projectId, ref, nowIso()).lastInsertRowid,
-  )
+    )
+    .run(claimRecordId, runId, runId, projectId, ref, nowIso())
+  const claimId = (
+    db().query('SELECT number FROM resource_claim WHERE record_id=?').get(claimRecordId) as {
+      number: number
+    }
+  ).number
   return { runId, project, repository, branch, ref, claimId, tip }
 }
 
@@ -61,7 +65,9 @@ function linePresentation(lines: string[]): CleanupPresentation {
 }
 
 function claimState(claimId: number) {
-  return db().query('SELECT state,settled_detail FROM resource_claim WHERE id=?').get(claimId) as {
+  return db()
+    .query('SELECT state,settled_detail FROM resource_claim WHERE number=?')
+    .get(claimId) as {
     state: string
     settled_detail: string | null
   }
@@ -323,10 +329,12 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
     `would settle absent claim ${absent} worktree /absent-tree`,
     `kept: claim ${present} worktree /present-tree: resource is present`,
   ])
-  expect(db().query('SELECT id,state FROM resource_claim ORDER BY id').all()).toEqual([
-    { id: absent, state: 'claimed' },
-    { id: present, state: 'claimed' },
-  ])
+  expect(db().query('SELECT number AS id,state FROM resource_claim ORDER BY number').all()).toEqual(
+    [
+      { id: absent, state: 'claimed' },
+      { id: present, state: 'claimed' },
+    ],
+  )
 })
 
 test('reconciling an absent worktree leaves its dependent port claimed', () => {
@@ -365,7 +373,9 @@ test('reconciling an absent worktree leaves its dependent port claimed', () => {
 
   expect(
     db()
-      .query('SELECT kind,state FROM resource_claim WHERE root_run_record_id=? ORDER BY id')
+      .query(
+        'SELECT kind,state FROM resource_claim WHERE root_run_record_id=? ORDER BY claimed_at,record_id',
+      )
       .all(runId),
   ).toEqual([
     { kind: 'worktree', state: 'absent' },
@@ -413,7 +423,7 @@ test('an absent worktree does not release allocations shared with a present work
   expect(
     db()
       .query(
-        'SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_record_id=? ORDER BY id',
+        'SELECT kind,allocation_key,state FROM resource_claim WHERE root_run_record_id=? ORDER BY claimed_at,record_id',
       )
       .all(runId),
   ).toEqual([
@@ -435,15 +445,19 @@ test('a guard that changes before locked settlement leaves the claim claimed', (
   db()
     .query('UPDATE run SET repo=?,project_record_id=? WHERE record_id=?')
     .run(project, projectId, runId)
-  const claimId = Number(
-    db()
-      .query(
-        `INSERT INTO resource_claim
+  const claimRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO resource_claim
          (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?,?,?,'worktree','/absent-tree','claimed',?)`,
-      )
-      .run(newRecordId(), runId, runId, projectId, nowIso()).lastInsertRowid,
-  )
+    )
+    .run(claimRecordId, runId, runId, projectId, nowIso())
+  const claimId = (
+    db().query('SELECT number FROM resource_claim WHERE record_id=?').get(claimRecordId) as {
+      number: number
+    }
+  ).number
 
   reconcileAbsentClaims({
     dryRun: false,
@@ -464,7 +478,7 @@ test('a guard that changes before locked settlement leaves the claim claimed', (
     },
   })
 
-  expect(db().query('SELECT state FROM resource_claim WHERE id=?').get(claimId)).toEqual({
+  expect(db().query('SELECT state FROM resource_claim WHERE number=?').get(claimId)).toEqual({
     state: 'claimed',
   })
 })
@@ -478,15 +492,19 @@ test('an unregistered missing worktree probes a present ref in its owning reposi
       'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
     )
     .run(worktree, worktree, repository, runId)
-  const claimId = Number(
-    db()
-      .query(
-        `INSERT INTO resource_claim
+  const claimRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO resource_claim
          (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?, ?, NULL, 'branch', ?, 'claimed', ?)`,
-      )
-      .run(newRecordId(), runId, runId, `refs/heads/DEV-991-${runId}`, nowIso()).lastInsertRowid,
-  )
+    )
+    .run(claimRecordId, runId, runId, `refs/heads/DEV-991-${runId}`, nowIso())
+  const claimId = (
+    db().query('SELECT number FROM resource_claim WHERE record_id=?').get(claimRecordId) as {
+      number: number
+    }
+  ).number
   const refRepositories: string[] = []
 
   reconcileAbsentClaims({
@@ -507,7 +525,7 @@ test('an unregistered missing worktree probes a present ref in its owning reposi
   })
 
   expect(refRepositories).toEqual([repository])
-  expect(db().query('SELECT state FROM resource_claim WHERE id=?').get(claimId)).toEqual({
+  expect(db().query('SELECT state FROM resource_claim WHERE number=?').get(claimId)).toEqual({
     state: 'claimed',
   })
 })
@@ -521,15 +539,19 @@ test('an unregistered claim settles absent when its owning repository root is go
       'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
     )
     .run(worktree, worktree, repository, runId)
-  const claimId = Number(
-    db()
-      .query(
-        `INSERT INTO resource_claim
+  const claimRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO resource_claim
          (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
          VALUES (?, ?, ?, NULL, 'retained_ref', ?, 'claimed', ?)`,
-      )
-      .run(newRecordId(), runId, runId, `refs/orch/retained/${runId}`, nowIso()).lastInsertRowid,
-  )
+    )
+    .run(claimRecordId, runId, runId, `refs/orch/retained/${runId}`, nowIso())
+  const claimId = (
+    db().query('SELECT number FROM resource_claim WHERE record_id=?').get(claimRecordId) as {
+      number: number
+    }
+  ).number
 
   reconcileAbsentClaims({
     dryRun: false,
@@ -546,7 +568,7 @@ test('an unregistered claim settles absent when its owning repository root is go
   })
 
   expect(
-    db().query('SELECT state,settled_detail FROM resource_claim WHERE id=?').get(claimId),
+    db().query('SELECT state,settled_detail FROM resource_claim WHERE number=?').get(claimId),
   ).toEqual({
     state: 'absent',
     settled_detail: `observed absent repository ${repository}`,

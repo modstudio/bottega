@@ -1179,6 +1179,13 @@
       "when": 1793577600019,
       "tag": "0155_run_lifecycle_side_table_uuid_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "6",
+      "when": 1793577600021,
+      "tag": "0156_monitor_release_claim_uuid_keys",
+      "breakpoints": true
     }
   ]
 }

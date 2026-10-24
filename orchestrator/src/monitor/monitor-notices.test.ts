@@ -15,6 +15,7 @@ import { DB_PATH, db, SESSION_LIVE_MS } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
+  claimMonitorNotices,
   claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
 } from './monitor-notices.ts'
@@ -333,21 +334,25 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
     db()
       .query(
         `INSERT INTO monitor_invocation(record_id,started_at,finished_at,trigger,findings,errors)
-         VALUES (?,?,?, 'invoked',1,0) RETURNING id`,
+         VALUES (?,?,?, 'invoked',1,0) RETURNING record_id`,
       )
       .get(newRecordId(), '2026-10-05T12:00:00.000Z', '2026-10-05T12:00:01.000Z') as {
-      id: number
+      record_id: string
     }
-  ).id
+  ).record_id
+  const conditionRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO monitor_condition
+         (record_id,invocation_record_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
+         VALUES (?,?,'stale-run','run:7',?,1000,'detail','reported',?)`,
+    )
+    .run(conditionRecordId, invocation, '2026-10-05T11:59:59.000Z', session)
   const condition = (
-    db()
-      .query(
-        `INSERT INTO monitor_condition
-         (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
-         VALUES (?,?,'stale-run','run:7',?,1000,'detail','reported',?) RETURNING id`,
-      )
-      .get(newRecordId(), invocation, '2026-10-05T11:59:59.000Z', session) as { id: number }
-  ).id
+    db().query('SELECT number FROM monitor_condition WHERE record_id=?').get(conditionRecordId) as {
+      number: number
+    }
+  ).number
   const local = postNotice(
     {
       audience: `session:${session}`,
@@ -377,7 +382,7 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   ).resolves.toBeUndefined()
   expect(hostedCalls).toBe(0)
   expect(
-    db().query('SELECT delivered_at FROM monitor_condition WHERE id=?').get(condition),
+    db().query('SELECT delivered_at FROM monitor_condition WHERE number=?').get(condition),
   ).toEqual({
     delivered_at: expect.any(String),
   })
@@ -388,4 +393,41 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
       )
       .get(local.recordId, session),
   ).toEqual({ delivered_at: expect.any(String) })
+})
+
+test('a notice uses condition UUID to break equal invocation-time ties', () => {
+  const session = 'notice-tie-owner'
+  const startedAt = '2026-10-05T12:00:00.000Z'
+  const invocations = [
+    '01990000-0000-7000-8000-000000000012',
+    '01990000-0000-7000-8000-000000000011',
+  ]
+  for (const invocation of invocations) {
+    db()
+      .query(
+        `INSERT INTO monitor_invocation(record_id,started_at,finished_at,trigger,findings,errors)
+         VALUES (?,?,?,'invoked',1,0)`,
+      )
+      .run(invocation, startedAt, startedAt)
+  }
+  for (const [recordId, invocation, detail] of [
+    ['01990000-0000-7000-8000-000000000022', invocations[0]!, 'uuid-latest'],
+    ['01990000-0000-7000-8000-000000000021', invocations[1]!, 'inserted-later'],
+  ]) {
+    db()
+      .query(
+        `INSERT INTO monitor_condition(
+           record_id,invocation_record_id,kind,subject,condition_since,detail,action,owner_session_id
+         ) VALUES (?,?,'observation-error','run:tie','same-since',?,'reported',?)`,
+      )
+      .run(recordId, invocation, detail, session)
+  }
+  const notices = claimMonitorNotices(session)
+  const expectedNumber = (
+    db()
+      .query('SELECT number FROM monitor_condition WHERE record_id=?')
+      .get('01990000-0000-7000-8000-000000000022') as { number: number }
+  ).number
+  expect(notices).toHaveLength(1)
+  expect(notices[0]?.noticeId).toBe(`condition:${expectedNumber}`)
 })

@@ -19,7 +19,9 @@ test('release project identity backfills only an exactly matching project', () =
 
   expect(applyMigrations(database)).toContain(MIGRATION)
   expect(
-    database.query('SELECT project,project_record_id FROM release_ledger ORDER BY id').all(),
+    database
+      .query('SELECT project,project_record_id FROM release_ledger ORDER BY started_at,record_id')
+      .all(),
   ).toEqual([
     { project: 'matched', project_record_id: '01990000-0000-7000-8000-000000000001' },
     { project: 'unknown', project_record_id: null },

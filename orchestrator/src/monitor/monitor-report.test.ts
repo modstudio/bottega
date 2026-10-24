@@ -4,26 +4,44 @@ import { db } from '../database/db.ts'
 import { displayConditions, monitorHistory } from './monitor.ts'
 
 describe('operational monitor reports', () => {
-  test('marks historical human output partial when that pass had an observation error', () => {
-    const invocation = (
+  test('history uses the invocation UUID to break a shared start-time tie', () => {
+    const startedAt = '2026-09-04T00:00:00Z'
+    for (const recordId of [
+      '01990000-0000-7000-8000-000000000002',
+      '01990000-0000-7000-8000-000000000001',
+    ]) {
       db()
         .query(
-          `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
-       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,1) RETURNING id`,
+          `INSERT INTO monitor_invocation(record_id,started_at,finished_at,trigger,findings,errors)
+           VALUES (?,?,?,'backstop',0,0)`,
         )
-        .get(newRecordId()) as { id: number }
-    ).id
+        .run(recordId, startedAt, startedAt)
+    }
+    expect(monitorHistory(2).map((row) => row.record_id)).toEqual([
+      '01990000-0000-7000-8000-000000000002',
+      '01990000-0000-7000-8000-000000000001',
+    ])
+  })
+
+  test('marks historical human output partial when that pass had an observation error', () => {
+    const invocation = db()
+      .query(
+        `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
+       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,1)
+       RETURNING record_id,number`,
+      )
+      .get(newRecordId()) as { record_id: string; number: number }
     db()
       .query(
         `INSERT INTO monitor_condition
-       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       (record_id,invocation_record_id,kind,subject,condition_since,age_ms,detail,action)
        VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(
         newRecordId(),
-        invocation,
+        invocation.record_id,
         'observation-error',
-        `invocation:${invocation}:1`,
+        `invocation:${invocation.number}:1`,
         '2026-09-04T00:00:00Z',
         0,
         'docker inventory unavailable',
@@ -89,15 +107,16 @@ describe('operational monitor reports', () => {
       db()
         .query(
           `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
-       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
+       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0)
+       RETURNING record_id`,
         )
-        .get(newRecordId()) as { id: number }
-    ).id
+        .get(newRecordId()) as { record_id: string }
+    ).record_id
     const detail = 'history-detail-'.repeat(5_500)
     db()
       .query(
         `INSERT INTO monitor_condition
-       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       (record_id,invocation_record_id,kind,subject,condition_since,age_ms,detail,action)
        VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(

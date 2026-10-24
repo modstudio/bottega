@@ -112,6 +112,7 @@ export type HumanMonitorCondition = Pick<
 >
 
 export type MonitorHistoryRow = {
+  record_id: string
   id: number
   started_at: string
   trigger: string

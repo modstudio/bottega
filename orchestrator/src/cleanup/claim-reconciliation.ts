@@ -23,7 +23,8 @@ const RECONCILED_KINDS = [
 type ReconciledKind = (typeof RECONCILED_KINDS)[number]
 
 type ClaimedRow = {
-  id: number
+  id: string
+  number: number
   root_run_record_id: string
   run_record_id: string
   project_record_id: string | null
@@ -49,7 +50,7 @@ export type ClaimReconciliationObservers = {
 }
 
 type ClaimSynchronizer = (
-  row: Pick<ClaimedRow, 'id' | 'project_path' | 'worktree_path'>,
+  row: Pick<ClaimedRow, 'id' | 'number' | 'project_path' | 'worktree_path'>,
   reconcile: () => void,
 ) => void
 
@@ -80,17 +81,18 @@ const defaultObservers = (trust: GrokTrustObservation): ClaimReconciliationObser
 function claimedRows(
   database: Database,
   projectName: string | undefined,
-  claimIds?: ReadonlySet<number>,
+  claimIds?: ReadonlySet<string>,
 ): ClaimedRow[] {
   const rows = database
     .query(
-      `SELECT claim.id,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
+      `SELECT claim.record_id id,claim.number,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
               root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
               CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
                 (SELECT tree.allocation_key FROM resource_claim tree
                  WHERE tree.root_run_record_id=claim.root_run_record_id AND tree.kind='worktree'
-                 ORDER BY CASE WHEN tree.run_record_id=claim.run_record_id THEN 0 ELSE 1 END,tree.id DESC LIMIT 1)
+                 ORDER BY CASE WHEN tree.run_record_id=claim.run_record_id THEN 0 ELSE 1 END,
+                          tree.claimed_at DESC,tree.record_id DESC LIMIT 1)
               END worktree_path
        FROM resource_claim claim
        JOIN run root ON root.record_id=claim.root_run_record_id
@@ -98,7 +100,7 @@ function claimedRows(
        WHERE claim.state='claimed'
          AND claim.kind IN ('branch','retained_ref','worktree','sandbox_dir','trust_entry')
          AND (? IS NULL OR project.name=?)
-       ORDER BY claim.id`,
+       ORDER BY claim.claimed_at,claim.record_id`,
     )
     .all(projectName ?? null, projectName ?? null) as ClaimedRow[]
   return claimIds ? rows.filter((row) => claimIds.has(row.id)) : rows
@@ -135,13 +137,13 @@ function owningRepository(
   return { path: null, state: 'unknown-present' }
 }
 
-function claimedRow(database: Database, claimId: number): ClaimedRow | null {
+function claimedRow(database: Database, claimId: string): ClaimedRow | null {
   return claimedRows(database, undefined).find((row) => row.id === claimId) ?? null
 }
 
 const synchronizeClaim: ClaimSynchronizer = (row, reconcile) => {
   if (!row.project_path) return reconcile()
-  const identity = { session: sessionId(), what: `reconcile absent claim ${row.id}` }
+  const identity = { session: sessionId(), what: `reconcile absent claim ${row.number}` }
   const underCleanupLock = () => withCleanupLock(row.project_path!, identity, reconcile)
   if (!row.worktree_path) return underCleanupLock()
   return withWorktreeLease(row.project_path, row.worktree_path, identity, underCleanupLock)
@@ -307,7 +309,7 @@ function settlementDetail(
 
 function reconcileClaimUnderLock(
   database: Database,
-  claimId: number,
+  claimId: string,
   observers: ClaimReconciliationObservers,
   branch: string,
 ): ReconciliationResult | null {
@@ -331,7 +333,7 @@ function reconcileClaimUnderLock(
       database
         .query(
           `UPDATE resource_claim SET state=?,settled_at=?,settled_detail=?
-           WHERE id=? AND state='claimed'`,
+           WHERE record_id=? AND state='claimed'`,
         )
         .run(
           retained ? 'retained' : 'absent',
@@ -366,7 +368,7 @@ function completedLine(result: ReconciliationResult, label: string, branch: stri
 export function reconcileAbsentClaims(input: {
   dryRun: boolean
   project?: string
-  claimIds?: readonly number[]
+  claimIds?: readonly string[]
   presentation: CleanupPresentation
   trust: GrokTrustObservation
   database?: Database
@@ -383,7 +385,7 @@ export function reconcileAbsentClaims(input: {
   for (const row of claimedRows(database, input.project, claimIds)) {
     const initial = rulingFor(database, row, observers)
     const { ruling } = initial
-    const label = `claim ${row.id} ${row.kind} ${row.allocation_key}`
+    const label = `claim ${row.number} ${row.kind} ${row.allocation_key}`
     const branch = row.allocation_key.replace(/^refs\/heads\//, '')
     if (ruling.action === 'keep') {
       if (input.dryRun) input.presentation.log(`kept: ${label}: ${ruling.reason}`)

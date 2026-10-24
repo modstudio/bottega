@@ -3,6 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
+  checkoutRemovalAttribution,
   claimCreationDecision,
   claimDatabaseName,
   claimIndex,
@@ -40,6 +41,30 @@ function resourceRun(projectRecordId: string | null = null, parent?: string): st
 }
 
 describe('resource claim decisions', () => {
+  test('removal attribution uses UUID to break a shared settlement-time tie', () => {
+    const older = resourceRun()
+    const latest = resourceRun()
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('inserted-later', older)
+    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('uuid-latest', latest)
+    for (const [recordId, runId] of [
+      ['01990000-0000-7000-8000-000000000042', latest],
+      ['01990000-0000-7000-8000-000000000041', older],
+    ]) {
+      db()
+        .query(
+          `INSERT INTO resource_claim(
+             record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at,settled_at
+           ) VALUES (?,?,?,'worktree','/tie-tree','released','same-claimed','2026-10-05T12:00:00Z')`,
+        )
+        .run(recordId, runId, runId)
+    }
+    expect(checkoutRemovalAttribution(db(), '/tie-tree', '2026-10-05T00:00:00Z')).toEqual({
+      attribution: 'tree_removal',
+      removalSession: 'uuid-latest',
+      removalRun: latest,
+    })
+  })
+
   const releasableSandbox = {
     terminal: true,
     liveTurn: false,
@@ -356,31 +381,31 @@ describe('resource claim decisions', () => {
        (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
        VALUES (?, ?,?,?,?, 'claimed',?)`,
     )
-    const previousId = Number(
-      insert.run(newRecordId(), root, root, 'database', 'postgres:existing', nowIso())
-        .lastInsertRowid,
-    )
-    const attemptId = Number(
-      insert.run(newRecordId(), root, root, 'index', 'index:1:2', nowIso()).lastInsertRowid,
-    )
-    const databaseId = Number(
-      database
-        .query(
-          `INSERT INTO resource_claim
-           (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
-           VALUES (?, ?,?,'database','postgres:app_1','claimed',?)`,
-        )
-        .run(newRecordId(), root, root, nowIso()).lastInsertRowid,
-    )
+    const previousId = newRecordId()
+    insert.run(previousId, root, root, 'database', 'postgres:existing', nowIso())
+    const attemptId = newRecordId()
+    insert.run(attemptId, root, root, 'index', 'index:1:2', nowIso())
+    const databaseId = newRecordId()
+    database
+      .query(
+        `INSERT INTO resource_claim
+         (record_id, root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?,?,'database','postgres:app_1','claimed',?)`,
+      )
+      .run(databaseId, root, root, nowIso())
     releaseRecipeAllocationClaims(database, {
       claimIds: [attemptId, databaseId],
       settledAt: nowIso(),
       reason: 'pre failed',
     })
-    expect(database.query('SELECT id,state FROM resource_claim ORDER BY id').all()).toEqual([
-      { id: previousId, state: 'claimed' },
-      { id: attemptId, state: 'released' },
-      { id: databaseId, state: 'released' },
+    expect(
+      database
+        .query('SELECT record_id,state FROM resource_claim ORDER BY claimed_at,record_id')
+        .all(),
+    ).toEqual([
+      { record_id: previousId, state: 'claimed' },
+      { record_id: attemptId, state: 'released' },
+      { record_id: databaseId, state: 'released' },
     ])
   })
 

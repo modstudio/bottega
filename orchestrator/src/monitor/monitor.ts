@@ -350,24 +350,32 @@ export class MonitorStoreBusyError extends Error {
 function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: string) {
   try {
     const database = writableDb()
+    const recordId = newRecordId()
+    database
+      .query('INSERT INTO monitor_invocation (record_id,started_at,trigger) VALUES (?,?,?)')
+      .run(recordId, startedAt, trigger)
     const row = database
-      .query(
-        'INSERT INTO monitor_invocation (record_id,started_at,trigger) VALUES (?,?,?) RETURNING id',
+      .query<{ record_id: string; number: number }, [string]>(
+        'SELECT record_id,number FROM monitor_invocation WHERE record_id=?',
       )
-      .get(newRecordId(), startedAt, trigger) as { id: number }
-    return { database, invocation: row.id }
+      .get(recordId)
+    if (!row) throw new Error('monitor invocation was not inserted')
+    return { database, invocationRecordId: row.record_id, invocationNumber: row.number }
   } catch (error) {
     if (isDatabaseLocked(error)) throw new MonitorStoreBusyError(error)
     throw error
   }
 }
 
-function sampleMonitorHostLoad(database: ReturnType<typeof writableDb>, invocation: number) {
+function sampleMonitorHostLoad(
+  database: ReturnType<typeof writableDb>,
+  invocationRecordId: string,
+) {
   const sample = sampleHostLoad(database)
   sampleHostPressure(database, sample)
   database
-    .query('UPDATE monitor_invocation SET host_load=? WHERE id=?')
-    .run(JSON.stringify(sample), invocation)
+    .query('UPDATE monitor_invocation SET host_load=? WHERE record_id=?')
+    .run(JSON.stringify(sample), invocationRecordId)
   return sample
 }
 
@@ -541,20 +549,20 @@ function conditionsForPersistence(conditions: MonitorCondition[]): MonitorCondit
 
 function completeMonitorInvocation(
   database: ReturnType<typeof writableDb>,
-  invocation: number,
+  invocationRecordId: string,
   findings: number,
   errors: number,
 ): string {
   const finishedAt = nowIso()
   database
-    .query('UPDATE monitor_invocation SET finished_at=?, findings=?, errors=? WHERE id=?')
-    .run(finishedAt, findings, errors, invocation)
+    .query('UPDATE monitor_invocation SET finished_at=?, findings=?, errors=? WHERE record_id=?')
+    .run(finishedAt, findings, errors, invocationRecordId)
   return finishedAt
 }
 
 function persistMonitorConditions(
   database: ReturnType<typeof writableDb>,
-  invocation: number,
+  invocationRecordId: string,
   conditions: MonitorCondition[],
   observationErrorCount: number,
 ): MonitorCondition[] {
@@ -563,7 +571,7 @@ function persistMonitorConditions(
     writeTransaction(() => {
       const insert = database.query(
         `INSERT INTO monitor_condition
-        (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity,
+        (record_id,invocation_record_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity,
          owner_session_id,delivered_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
@@ -571,7 +579,7 @@ function persistMonitorConditions(
         `SELECT delivered_at FROM monitor_condition
         WHERE kind=? AND subject=? AND condition_since IS ? AND owner_session_id IS ?
           AND delivered_at IS NOT NULL
-        ORDER BY id DESC LIMIT 1`,
+        ORDER BY condition_since DESC, record_id DESC LIMIT 1`,
       )
       for (const condition of persistedConditions) {
         const owner = condition.ownerSession ?? null
@@ -587,7 +595,7 @@ function persistMonitorConditions(
         )
         insert.run(
           newRecordId(),
-          invocation,
+          invocationRecordId,
           condition.kind,
           condition.subject,
           condition.since,
@@ -602,7 +610,7 @@ function persistMonitorConditions(
       }
     }, database)
   } catch (cause) {
-    completeMonitorInvocation(database, invocation, 0, observationErrorCount + 1)
+    completeMonitorInvocation(database, invocationRecordId, 0, observationErrorCount + 1)
     throw cause
   }
   return persistedConditions
@@ -622,8 +630,11 @@ export async function monitor(
   clock = Date.now(),
 ): Promise<MonitorResult> {
   const startedAt = new Date(clock).toISOString()
-  const { database, invocation } = startMonitorInvocation(trigger, startedAt)
-  const load = sampleMonitorHostLoad(database, invocation)
+  const { database, invocationRecordId, invocationNumber } = startMonitorInvocation(
+    trigger,
+    startedAt,
+  )
+  const load = sampleMonitorHostLoad(database, invocationRecordId)
   const { conditions, errors, hostPressure } = await initialMonitorObservations(database, clock)
   const canon = monitorCanonSummary()
   type ConditionInput =
@@ -927,7 +938,7 @@ export async function monitor(
   errors.forEach((detail, index) => {
     add({
       kind: 'observation-error',
-      subject: `invocation:${invocation}:${index + 1}`,
+      subject: `invocation:${invocationNumber}:${index + 1}`,
       since: startedAt,
       detail,
       action: 'reported; no state was inferred from the unavailable observation',
@@ -938,7 +949,7 @@ export async function monitor(
   // otherwise both observe no prior delivery and create duplicate pending rows.
   const persistedConditions = persistMonitorConditions(
     database,
-    invocation,
+    invocationRecordId,
     conditions,
     errors.length,
   )
@@ -950,8 +961,11 @@ export async function monitor(
   for (const condition of unavailable) {
     const prior = database
       .query(
-        `SELECT issue_key FROM monitor_condition
-        WHERE kind=? AND subject=? AND issue_key IS NOT NULL ORDER BY id DESC LIMIT 1`,
+        `SELECT condition.issue_key FROM monitor_condition condition
+         JOIN monitor_invocation invocation
+           ON invocation.record_id=condition.invocation_record_id
+         WHERE condition.kind=? AND condition.subject=? AND condition.issue_key IS NOT NULL
+         ORDER BY invocation.started_at DESC,condition.record_id DESC LIMIT 1`,
       )
       .get(condition.kind, condition.subject) as { issue_key: string } | null
     if (prior) {
@@ -967,14 +981,14 @@ export async function monitor(
           expected:
             'The monitor needs a machine-readable detector or an established command so it can report or repair this condition without inference or direct database writes.',
           reproduce_command: `${PLATFORM_SLUG} machine monitor`,
-          environment: `monitor invocation ${invocation}; affected machine/project is named in the evidence`,
-          evidence: `monitor invocation ${invocation}; ${condition.kind} ${condition.subject}; ${condition.detail}`,
+          environment: `monitor invocation ${invocationNumber}; affected machine/project is named in the evidence`,
+          evidence: `monitor invocation ${invocationNumber}; ${condition.kind} ${condition.subject}; ${condition.detail}`,
           not_established:
             'The missing interface design and remediation policy are not established by the monitor.',
         },
         {
           kind: 'monitor',
-          invocationId: invocation,
+          invocationId: invocationNumber,
           affectedProject: condition.affectedProject ?? PLATFORM_SLUG,
         },
         PLATFORM_SLUG,
@@ -982,9 +996,9 @@ export async function monitor(
       condition.issueKey = filed.key
       database
         .query(
-          'UPDATE monitor_condition SET issue_key=? WHERE invocation_id=? AND kind=? AND subject=?',
+          'UPDATE monitor_condition SET issue_key=? WHERE invocation_record_id=? AND kind=? AND subject=?',
         )
-        .run(filed.key, invocation, condition.kind, condition.subject)
+        .run(filed.key, invocationRecordId, condition.kind, condition.subject)
     } catch (cause) {
       errors.push(
         `could not file ${condition.kind} issue: ${String((cause as Error).message ?? cause)}`,
@@ -992,9 +1006,14 @@ export async function monitor(
     }
   }
 
-  const finished = completeMonitorInvocation(database, invocation, conditions.length, errors.length)
+  const finished = completeMonitorInvocation(
+    database,
+    invocationRecordId,
+    conditions.length,
+    errors.length,
+  )
   return finish(
-    invocation,
+    invocationNumber,
     startedAt,
     finished,
     trigger,
@@ -1010,13 +1029,14 @@ export function monitorHistory(limit = 20): MonitorHistoryRow[] {
   return (
     db()
       .query(
-        `SELECT i.*, (SELECT json_group_array(json_object(
+        `SELECT i.record_id,i.number AS id,i.started_at,i.finished_at,i.trigger,i.findings,i.errors,
+         i.host_load,(SELECT json_group_array(json_object(
        'kind',c.kind,'subject',c.subject,'condition_since',c.condition_since,
        'age_ms',c.age_ms,'detail',c.detail,'action',c.action,'issue_key',c.issue_key,
        'severity',c.severity
        ,'owner_session_id',c.owner_session_id,'delivered_at',c.delivered_at
-     )) FROM monitor_condition c WHERE c.invocation_id=i.id) conditions
-       FROM monitor_invocation i ORDER BY i.id DESC LIMIT ?`,
+     )) FROM monitor_condition c WHERE c.invocation_record_id=i.record_id) conditions
+       FROM monitor_invocation i ORDER BY i.started_at DESC,i.record_id DESC LIMIT ?`,
       )
       .all(limit) as (Omit<MonitorHistoryRow, 'conditions' | 'host_load'> & {
       conditions: string | null

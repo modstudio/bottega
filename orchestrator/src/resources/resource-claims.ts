@@ -54,7 +54,7 @@ export function checkoutRemovalAttribution(
        WHERE resource_claim.kind='worktree' AND resource_claim.allocation_key=?
          AND resource_claim.state='released'
          AND datetime(resource_claim.settled_at) >= datetime(?)
-       ORDER BY resource_claim.settled_at DESC, resource_claim.id DESC LIMIT 1`,
+       ORDER BY resource_claim.settled_at DESC, resource_claim.record_id DESC LIMIT 1`,
     )
     .get(checkout, startedAt) as {
     removal_run: string
@@ -279,7 +279,7 @@ export function claimRecipePort(
       `SELECT allocation_key FROM resource_claim
        WHERE root_run_record_id=? AND kind='port' AND state='claimed'
          AND ${nameFilter}
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY claimed_at DESC,record_id DESC LIMIT 1`,
     )
     .get(...(input.name === undefined ? [input.rootRunId] : [input.rootRunId, input.name])) as {
     allocation_key: string
@@ -350,7 +350,7 @@ export function claimIndex(
     .query(
       `SELECT allocation_key FROM resource_claim
        WHERE root_run_record_id=? AND project_record_id=? AND kind='index' AND state='claimed'
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY claimed_at DESC,record_id DESC LIMIT 1`,
     )
     .get(input.rootRunId, input.projectId) as { allocation_key: string } | null
   const existingIndex = existing ? Number(existing.allocation_key.split(':').at(-1)) : null
@@ -403,7 +403,7 @@ export function claimString(
       `SELECT allocation_key FROM resource_claim
        WHERE root_run_record_id=? AND project_record_id=? AND kind='string' AND state='claimed'
          AND json_extract(identity,'$.name')=?
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY claimed_at DESC,record_id DESC LIMIT 1`,
     )
     .get(input.rootRunId, input.projectId, input.name) as { allocation_key: string } | null
   const existingValue = existing
@@ -475,7 +475,7 @@ export function claimDatabaseName(
       `SELECT allocation_key FROM resource_claim
        WHERE root_run_record_id=? AND project_record_id=? AND kind='database' AND state='claimed'
          AND json_extract(CASE WHEN json_valid(identity) THEN identity END,'$.name')=?
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY claimed_at DESC,record_id DESC LIMIT 1`,
     )
     .get(input.rootRunId, input.projectId, input.name) as { allocation_key: string } | null
   const existingSeparator = existing?.allocation_key.indexOf(':') ?? -1
@@ -534,11 +534,11 @@ export function claimDatabaseName(
 
 export function releaseRecipeAllocationClaims(
   database: Database,
-  input: { claimIds: readonly number[]; settledAt: string; reason: string },
+  input: { claimIds: readonly string[]; settledAt: string; reason: string },
 ): void {
   const update = database.query(
     `UPDATE resource_claim SET state='released',settled_at=?,settled_detail=?
-     WHERE id=? AND state='claimed' AND kind IN ('port','index','string','database')`,
+     WHERE record_id=? AND state='claimed' AND kind IN ('port','index','string','database')`,
   )
   for (const id of input.claimIds) {
     update.run(input.settledAt, `tracked creation failed: ${input.reason}`, id)
@@ -551,7 +551,7 @@ export function recipePortClaimForRun(database: Database, runId: string): number
       `SELECT allocation_key FROM resource_claim
        WHERE root_run_record_id=(SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
          AND kind='port'
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY claimed_at DESC,record_id DESC LIMIT 1`,
     )
     .get(runId) as { allocation_key: string } | null
   if (!claim) return null

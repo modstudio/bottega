@@ -41,7 +41,7 @@ export type SessionOwnershipFacts = {
   runs: readonly SessionOwnedRun[]
   branches: readonly SessionOwnedBranch[]
   heldRunResources: readonly SessionHeldRunResources[]
-  claimIds: readonly number[]
+  claims: readonly { recordId: string; number: number }[]
   landingIds: readonly string[]
   reviewIds: readonly string[]
 }
@@ -69,7 +69,7 @@ export type SessionMechanicalAction =
   | { kind: 'remove-tree'; runId: string; path: string }
   | { kind: 'ship-cleanup'; project: string; branch: string; taskKey: string | null }
   | { kind: 'prune-branch'; project: string; branch: string }
-  | { kind: 'reconcile-claims'; claimIds: readonly number[] }
+  | { kind: 'reconcile-claims'; claims: readonly { recordId: string; number: number }[] }
 
 export type SessionProcessItem =
   | { kind: 'live-run'; runId: string; number: number; status: string }
@@ -91,7 +91,7 @@ export function sessionOwnership(facts: SessionOwnershipFacts): SessionOwnership
       ...new Map(facts.branches.map((row) => [`${row.project}\0${row.branch}`, row])).values(),
     ],
     heldRunResources: facts.heldRunResources.filter((held) => roots.has(held.rootRecordId)),
-    claimIds: [...new Set(facts.claimIds)],
+    claims: [...new Map(facts.claims.map((claim) => [claim.recordId, claim])).values()],
     landingIds: [...new Set(facts.landingIds)],
     reviewIds: [...new Set(facts.reviewIds)],
   }
@@ -115,7 +115,7 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   const process: SessionProcessItem[] = []
   classifyRuns(owned.runs, owned.heldRunResources, mechanical, process)
   classifyBranches(owned.branches, mechanical, process)
-  if (owned.claimIds.length) mechanical.push({ kind: 'reconcile-claims', claimIds: owned.claimIds })
+  if (owned.claims.length) mechanical.push({ kind: 'reconcile-claims', claims: owned.claims })
   process.push(...owned.landingIds.map((landingId) => ({ kind: 'landing' as const, landingId })))
   process.push(...owned.reviewIds.map((reviewId) => ({ kind: 'review' as const, reviewId })))
   return { mechanical, process }
