@@ -4,12 +4,14 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
+import { contentionTableExists, insertContention } from './contention.ts'
 import { tryWriteContention, writeTransaction } from './db.ts'
 
 const MIGRATION_DRAIN_KEY = 'migration_drain'
 
 export type MigrationDrain = {
   migration: string
+  phase: 'draining' | 'migrating'
   pid: number
   startTime: string | null
 }
@@ -54,6 +56,7 @@ function parseMigrationDrain(value: string): MigrationDrain | null {
       (typeof parsed.startTime === 'string' || parsed.startTime === null)
       ? {
           migration: parsed.migration,
+          phase: parsed.phase === 'migrating' ? 'migrating' : 'draining',
           pid: Number(parsed.pid),
           startTime: parsed.startTime,
         }
@@ -87,9 +90,9 @@ export function activeMigrationDrain(
 }
 
 export function assertMigrationDispatchAllowed(database: Database, existingChain = false): void {
-  if (existingChain) return
   const active = activeMigrationDrain(database)
   if (!active) return
+  if (existingChain && active.marker.phase === 'draining') return
   const holder =
     active.liveness.state === 'unknown'
       ? `${active.liveness.reason}; holder pid ${active.marker.pid}`
@@ -98,10 +101,10 @@ export function assertMigrationDispatchAllowed(database: Database, existingChain
     resourceKind: 'store',
     resourceKey: 'migration-drain',
     eventKind: 'refusal',
-    cause: `refused new dispatch for ${active.marker.migration}: ${holder}`,
+    cause: `refused dispatch during ${active.marker.phase} for ${active.marker.migration}: ${holder}`,
   })
   throw new Error(
-    `refusing new dispatch while draining for migration ${active.marker.migration} (${holder}); ` +
+    `refusing dispatch while ${active.marker.phase} for migration ${active.marker.migration} (${holder}); ` +
       `re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
   )
 }
@@ -112,31 +115,37 @@ export function migrationDrainForUpdate(
     pidAlive(pid: number): boolean
     processStartTime(pid: number): string | null
   } = { pidAlive, processStartTime },
-  recordContention: typeof tryWriteContention = tryWriteContention,
 ): MigrationDrain | null {
   const marker = migrationDrain(database)
   if (!marker) return null
   const liveness = migrationDrainLiveness(marker, observe)
   if (liveness.state !== 'stale') return marker
   clearMigrationDrain(database)
-  recordContention({
-    resourceKind: 'store',
-    resourceKey: 'migration-drain',
-    eventKind: 'invalidation',
-    cause: `reclaimed stale migration drain for ${marker.migration}: ${liveness.reason}`,
-  })
+  if (contentionTableExists(database)) {
+    writeTransaction(
+      () =>
+        insertContention(database, {
+          resourceKind: 'store',
+          resourceKey: 'migration-drain',
+          eventKind: 'invalidation',
+          cause: `reclaimed stale migration drain for ${marker.migration}: ${liveness.reason}`,
+        }),
+      database,
+    )
+  }
   return null
 }
 
 export function setMigrationDrain(
   database: Database,
   migration: string,
+  phase: MigrationDrain['phase'] = 'draining',
   holder: Pick<MigrationDrain, 'pid' | 'startTime'> = {
     pid: process.pid,
     startTime: processStartTime(process.pid),
   },
 ): void {
-  const marker: MigrationDrain = { migration, ...holder }
+  const marker: MigrationDrain = { migration, phase, ...holder }
   writeTransaction(() => {
     const inserted = database
       .query('INSERT OR IGNORE INTO schema_meta(key,value) VALUES (?,?)')
@@ -148,6 +157,21 @@ export function setMigrationDrain(
           `(holder pid ${active?.pid ?? 'unknown'})`,
       )
     }
+  }, database)
+}
+
+/** Move a marker owned by this process between admission phases. */
+export function setMigrationDrainPhase(database: Database, phase: MigrationDrain['phase']): void {
+  writeTransaction(() => {
+    const marker = migrationDrain(database)
+    if (!marker || marker.pid !== process.pid) {
+      throw new Error(
+        `cannot set migration drain phase to ${phase}: marker is held by pid ${marker?.pid ?? 'unknown'}`,
+      )
+    }
+    database
+      .query('UPDATE schema_meta SET value=? WHERE key=?')
+      .run(JSON.stringify({ ...marker, phase }), MIGRATION_DRAIN_KEY)
   }, database)
 }
 

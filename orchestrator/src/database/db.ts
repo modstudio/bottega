@@ -564,6 +564,17 @@ export async function withDatabaseForMigrationStep<T>(
   }
 }
 
+/** Give a synchronous migration adapter a handle while the store is intentionally mid-journal. */
+export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Database) => T): T {
+  const database = new Database(DB_PATH, { readwrite: true, create: false })
+  try {
+    database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    return action(database)
+  } finally {
+    database.close()
+  }
+}
+
 /** One-time maintenance pass for roots whose original caller prompt remains on disk. */
 export function backfillSpecSha(): { updated: number; missing: number } {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary && !linkedWorktreeMigrationAllowed(DB_PATH))

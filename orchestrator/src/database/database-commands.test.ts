@@ -7,8 +7,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PRELOAD_RUNS } from '../../test/preload.ts'
 import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
+import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
+import { clearMigrationDrain, migrationDrain, setMigrationDrain } from './migration-drain.ts'
 import type { MigrationDrainDecision } from './migration-drain-decision.ts'
 import {
   applyMigrations,
@@ -93,13 +95,44 @@ test('migrate skips the boundary and fill when the identity contract is recorded
   ])
 })
 
+test('direct migrate keeps the migrating marker through every migration step', async () => {
+  const scenario = actions(async () => undefined, true)
+  const fenced = {
+    ...scenario.value,
+    migrationDecision: () => ({ action: 'fence' as const, migration: '0155_rebuild' }),
+    async withMigrationFence(migration: string, action: () => Promise<void>) {
+      setMigrationDrain(db(), migration, 'migrating')
+      try {
+        await action()
+      } finally {
+        clearMigrationDrain(db())
+      }
+    },
+    migrate(input?: { beforeMigration?: string }) {
+      expect(migrationDrain(db())).toMatchObject({
+        migration: '0155_rebuild',
+        phase: 'migrating',
+      })
+      return { path: '/store', versions: input ? ['0113'] : ['0114'] }
+    },
+  }
+  await migrateCommand({ log: () => {} }, fenced)
+  expect(migrationDrain(db())).toBeNull()
+})
+
 test('migrate refuses a non-additive pending range under live runs unless explicitly forced', async () => {
-  const run = { name: 'run-live', status: 'running' as const, waiting: false }
+  const run = {
+    name: 'run-live',
+    status: 'running' as const,
+    waiting: false,
+    holderPid: 4321,
+    leaseHolding: true,
+  }
   const refused = actions(async () => undefined, true)
   refused.value.inFlightRuns = async () => [run]
-  refused.value.migrationDecision = () => ({ action: 'refuse', reason: 'drain-impossible' })
+  refused.value.migrationDecision = () => ({ action: 'fence', migration: '0155_rebuild' })
   await expect(migrateCommand({ log: () => {} }, refused.value)).rejects.toThrow(
-    `run-live\ncleared by: ${PLATFORM_SLUG} machine update`,
+    `run-live (running, holder pid 4321)\ncleared by: ${PLATFORM_SLUG} machine update`,
   )
 
   const forced = actions(async () => undefined, true)
@@ -110,7 +143,9 @@ test('migrate refuses a non-additive pending range under live runs unless explic
     forceInFlight: 'emergency maintenance',
     fromOperator: true,
   })
-  expect(lines).toContain('forcing migration; these orchestrator runs will fail: run-live')
+  expect(lines).toContain(
+    'forcing migration; these orchestrator runs will fail: run-live (running, holder pid 4321)',
+  )
   expect(forced.calls).toContain('override:emergency maintenance')
 })
 
@@ -131,6 +166,42 @@ test('the in-flight override requires operator attribution and is unavailable to
   } finally {
     if (prior === undefined) delete process.env.BOTTEGA_DEPTH
     else process.env.BOTTEGA_DEPTH = prior
+  }
+})
+
+test('default migrate fences before sampling a held run lease', async () => {
+  const database = db()
+  const pending = migrationJournal().at(-1)!
+  const applied = database
+    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
+      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
+    )
+    .get(pending.when)!
+  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  const runId = randomUUID()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fence','sha',0,'','ok',?)`,
+    )
+    .run(runId, process.pid)
+  const lease = acquireRunLease(runId)
+  try {
+    await expect(migrateCommand({ log: () => {} })).rejects.toThrow(
+      `${runId} (ok, holder pid ${process.pid})`,
+    )
+    await expect(migrateCommand({ log: () => {} })).rejects.toThrow(
+      `cleared by: ${PLATFORM_SLUG} machine update`,
+    )
+    expect(migrationDrain(db())).toBeNull()
+  } finally {
+    lease.release()
+    removeFreeRunLease(runId)
+    database.query('DELETE FROM run WHERE record_id=?').run(runId)
+    database
+      .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
+      .run(applied.hash, applied.created_at, applied.version)
   }
 })
 
@@ -270,7 +341,7 @@ test('a populated pre-0117 store reaches the fence before filesystem discovery',
 test('pending conversion with a live run changes neither files nor schema', async () => {
   const fixture = pendingFenceFixture('asking', false)
   await expect(migrateCommand({ log: () => {} })).rejects.toThrow(
-    'wait for it to finish or stop it',
+    `cleared by: ${PLATFORM_SLUG} machine update`,
   )
   expect(existsSync(join(PRELOAD_RUNS, String(fixture.id)))).toBeFalse()
   expect(existsSync(join(PRELOAD_RUNS, fixture.recordId))).toBeFalse()

@@ -4,11 +4,18 @@ import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { db } from './db.ts'
 import { machineUpdateCommand } from './machine-update.ts'
-import { migrationDrain, setMigrationDrain } from './migration-drain.ts'
+import {
+  assertMigrationDispatchAllowed,
+  migrationDrain,
+  setMigrationDrain,
+} from './migration-drain.ts'
 import { migrationJournal } from './migrations.ts'
 
 test("machine update clears a dead holder's marker before deciding", async () => {
-  setMigrationDrain(db(), '0155_rebuild', { pid: 4_200_000, startTime: 'old birth' })
+  setMigrationDrain(db(), '0155_rebuild', 'draining', {
+    pid: 4_200_000,
+    startTime: 'old birth',
+  })
   const gitCalls: string[][] = []
   let migrated = false
   await machineUpdateCommand(
@@ -19,6 +26,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
       project: () => ({ name: 'migration-update-fixture', path: dir, settings: { trunk: 'main' } }),
       git: (_cwd, args) => {
         gitCalls.push(args)
+        if (args[0] === 'branch') return 'main'
         return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
       },
       migrate: () => {
@@ -28,10 +36,10 @@ test("machine update clears a dead holder's marker before deciding", async () =>
   )
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
-  expect(gitCalls.map((args) => args[0])).toEqual(['fetch', 'show', 'pull'])
+  expect(gitCalls.map((args) => args[0])).toEqual(['branch', 'fetch', 'show', 'pull'])
 })
 
-test('a non-additive update marks admission, waits for a lease, then pulls and clears', async () => {
+test('a non-additive update waits for an admitted resume, then migrates behind the fence', async () => {
   const database = db()
   const pending = migrationJournal().at(-1)!
   const applied = database
@@ -43,6 +51,7 @@ test('a non-additive update marks admission, waits for a lease, then pulls and c
   const events: string[] = []
   const lines: string[] = []
   const runId = randomUUID()
+  const resumeId = randomUUID()
   database
     .query(
       `INSERT INTO run
@@ -52,6 +61,7 @@ test('a non-additive update marks admission, waits for a lease, then pulls and c
     .run(runId)
   const lease = acquireRunLease(runId)
   let released = false
+  let sleeps = 0
   try {
     await machineUpdateCommand(
       { log: (line) => lines.push(line) },
@@ -64,6 +74,7 @@ test('a non-additive update marks admission, waits for a lease, then pulls and c
           settings: { trunk: 'main' },
         }),
         git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
           if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
           if (args[0] === 'pull') {
             expect(migrationDrain(db())?.migration).toBe(pending.tag)
@@ -72,27 +83,51 @@ test('a non-additive update marks admission, waits for a lease, then pulls and c
           return ''
         },
         sleep: async () => {
-          lease.release()
-          released = true
-          events.push('released')
+          sleeps += 1
+          if (sleeps === 1) {
+            lease.release()
+            released = true
+            assertMigrationDispatchAllowed(database, true)
+            database
+              .query(
+                `INSERT INTO run
+                 (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+                 VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-resume','sha',0,'','running')`,
+              )
+              .run(resumeId)
+            events.push('resume-admitted')
+          } else {
+            database.query("UPDATE run SET status='ok' WHERE record_id=?").run(resumeId)
+            events.push('resume-finished')
+          }
         },
-        migrate: () => events.push('migrate'),
+        migrate: () => {
+          expect(migrationDrain(db())?.phase).toBe('migrating')
+          events.push('migrate')
+        },
       },
     )
   } finally {
     if (!released) lease.release()
     removeFreeRunLease(runId)
+    database.query('DELETE FROM run WHERE record_id=?').run(resumeId)
     database
       .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
       .run(applied.hash, applied.created_at, applied.version)
   }
-  expect(events).toEqual(['released', 'pull', 'migrate'])
-  expect(lines).toContain(`draining for migration ${pending.tag}; waiting on ${runId} (ok)`)
+  expect(events).toEqual(['resume-admitted', 'resume-finished', 'pull', 'migrate'])
+  expect(lines).toContain(
+    `draining for migration ${pending.tag}; waiting on ${runId} (ok, holder pid unknown)`,
+  )
+  expect(lines).toContain(`draining for migration ${pending.tag}; waiting on ${resumeId} (running)`)
   expect(migrationDrain(db())).toBeNull()
 })
 
 test('machine update refuses a live drain with its holder named', async () => {
-  setMigrationDrain(db(), '0155_rebuild', { pid: process.pid, startTime: null })
+  setMigrationDrain(db(), '0155_rebuild', 'draining', {
+    pid: process.pid,
+    startTime: null,
+  })
   try {
     await expect(
       machineUpdateCommand(
@@ -106,11 +141,33 @@ test('machine update refuses a live drain with its holder named', async () => {
             settings: { trunk: 'main' },
           }),
           git: (_cwd, args) =>
-            args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : '',
+            args[0] === 'branch'
+              ? 'main'
+              : args[0] === 'show'
+                ? JSON.stringify({ entries: migrationJournal() })
+                : '',
         },
       ),
     ).rejects.toThrow(`holder pid ${process.pid}`)
   } finally {
     db().query("DELETE FROM schema_meta WHERE key='migration_drain'").run()
   }
+})
+
+test('machine update requires the registered landing branch in the main checkout', async () => {
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => (args[0] === 'branch' ? 'release' : ''),
+      },
+    ),
+  ).rejects.toThrow(`registered landing branch is main, but ${dir} is on release; check out main`)
 })

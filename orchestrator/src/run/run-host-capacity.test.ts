@@ -66,6 +66,25 @@ describe('run host capacity', () => {
     clearMigrationDrain(db())
   })
 
+  test('a resume already waiting for host capacity continues through the draining phase', async () => {
+    const runId = repositoryRun()
+    const blocker = repositoryRun()
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      existingChain: true,
+      env: {},
+      platform: 'linux',
+      measure: loaded,
+      sleep: async () => {
+        setMigrationDrain(db(), '0155_rebuild')
+        db().query("UPDATE run SET status='ok' WHERE record_id=?").run(blocker)
+      },
+    })
+    expect(result).toMatchObject({ outcome: 'admitted', heldOn: ['load'], drainingFor: null })
+    clearMigrationDrain(db())
+  })
+
   test('a run never counts itself as held work', async () => {
     const runId = repositoryRun()
     let slept = false

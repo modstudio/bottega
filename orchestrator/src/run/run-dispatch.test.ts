@@ -87,10 +87,10 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
 
 test('a migration drain refuses dispatch before reserving a run', async () => {
   const before = (db().query('SELECT count(*) count FROM run').get() as { count: number }).count
-  setMigrationDrain(db(), '0155_rebuild', { pid: process.pid, startTime: null })
+  setMigrationDrain(db(), '0155_rebuild', 'draining', { pid: process.pid, startTime: null })
   try {
     await expect(detach('summarize', 'migration drain fixture', { cwd: dir })).rejects.toThrow(
-      /refusing new dispatch while draining for migration 0155_rebuild .*holder pid .*re-dispatch after .* machine update finishes/,
+      /refusing dispatch while draining for migration 0155_rebuild .*holder pid .*re-dispatch after .* machine update finishes/,
     )
     const after = (db().query('SELECT count(*) count FROM run').get() as { count: number }).count
     expect(after).toBe(before)

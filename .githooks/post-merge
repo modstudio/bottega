@@ -19,7 +19,7 @@ case "$changed" in
     (cd "$root" && ./bin/bottega machine migrate)
     migrate_status=$?
     if [ "$migrate_status" -eq 75 ]; then
-      echo "post-merge: migration left for the update drain; run: cd '$root' && ./bin/bottega machine update" >&2
+      echo "post-merge: migration left for the update drain. Use './bin/bottega machine update' instead of git pull so runs can be answered or stopped before the old code moves. If the store is already behind and the named lease holders cannot finish, run: ./bin/bottega machine migrate --force-in-flight \"<reason>\" --from-operator. Checkout: $root" >&2
     elif [ "$migrate_status" -ne 0 ]; then
       echo "post-merge: migration failed; run by hand: cd '$root' && ./bin/bottega machine migrate" >&2
     fi

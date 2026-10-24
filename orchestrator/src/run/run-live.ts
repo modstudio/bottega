@@ -254,6 +254,7 @@ async function startAfterHostCapacity(input: {
         ? waitForRunHostCapacity({
             database: db(),
             runId,
+            existingChain: input.opts.resume !== undefined,
           })
         : Promise.resolve(null),
     isRunning: () =>

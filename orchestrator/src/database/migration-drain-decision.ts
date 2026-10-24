@@ -1,20 +1,16 @@
 // concern: database migration drain decision
 /** Decides whether an incoming migration range may move under orchestrator runs. */
 
-import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
 import type { MigrationJournalEntry } from './migration-compatibility.ts'
 import { inFlightMigrationCompatibility } from './migration-compatibility.ts'
 
 export type MigrationDrainDecision =
   | { action: 'apply-now' }
-  | { action: 'drain'; migration: string }
-  | { action: 'refuse'; reason: 'drain-impossible' }
+  | { action: 'fence'; migration: string }
 
 export function decideMigrationDrain(input: {
   journal: MigrationJournalEntry[]
   storeVersion: number
-  runs: MigrationInFlightRun[]
-  canDrain: boolean
 }): MigrationDrainDecision {
   const incomingVersion = input.journal.length
   if (incomingVersion <= input.storeVersion) return { action: 'apply-now' }
@@ -24,7 +20,5 @@ export function decideMigrationDrain(input: {
   ) {
     return { action: 'apply-now' }
   }
-  if (input.runs.length === 0) return { action: 'apply-now' }
-  if (!input.canDrain) return { action: 'refuse', reason: 'drain-impossible' }
-  return { action: 'drain', migration: input.journal[input.storeVersion]!.tag }
+  return { action: 'fence', migration: input.journal[input.storeVersion]!.tag }
 }

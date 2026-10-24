@@ -190,6 +190,7 @@ type RunHostWaitLoop = {
   now: () => number
   sleep: (ms: number) => Promise<void>
   measure: typeof measureHostLoad
+  existingChain: boolean
 }
 
 type WaitLoopStep = { done: false } | { done: true; result: RunHostCapacityWait | null }
@@ -238,7 +239,7 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
     )
     if (stopped.done) return stopped.result
     const drain = activeMigrationDrain(input.database)
-    if (drain) {
+    if (drain && (drain.marker.phase === 'migrating' || !input.existingChain)) {
       drainingFor = drain.marker.migration
       heldOn.add('migration')
       return finish(at, 'stopped')
@@ -270,6 +271,7 @@ export async function waitForRunHostCapacity(input: {
   now?: () => number
   sleep?: (ms: number) => Promise<void>
   measure?: typeof measureHostLoad
+  existingChain?: boolean
 }): Promise<RunHostCapacityWait | null> {
   const now = input.now ?? Date.now
   const sleep =
@@ -284,6 +286,7 @@ export async function waitForRunHostCapacity(input: {
     now,
     sleep,
     measure: input.measure ?? measureHostLoad,
+    existingChain: input.existingChain ?? false,
   })
 }
 

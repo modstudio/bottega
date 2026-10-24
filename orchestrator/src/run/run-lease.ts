@@ -11,8 +11,22 @@ import type { RunLeaseState } from './run-alive.ts'
 
 const leaseDirectory = () => join(resolveRunsDirectory(process.env), 'leases')
 
+type RunLeaseFileIdentity = { kind: 'legacy'; id: string } | { kind: 'record'; id: string }
+
+/** Parse the one run-lease file-name grammar used by migration and observation. */
+function leaseFileIdentity(name: string): RunLeaseFileIdentity | null {
+  const match =
+    /^((?:[1-9]\d*)|(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))\.lock$/i.exec(
+      name,
+    )
+  if (!match) return null
+  const id = match[1]!.toLowerCase()
+  return /^\d+$/.test(id) ? { kind: 'legacy', id } : { kind: 'record', id }
+}
+
 function legacyRunLeaseNumber(name: string): string | null {
-  return /^([1-9]\d*)\.lock$/.exec(name)?.[1] ?? null
+  const identity = leaseFileIdentity(name)
+  return identity?.kind === 'legacy' ? identity.id : null
 }
 
 function runLeaseFileName(recordId: string): string {
@@ -126,11 +140,8 @@ export function removeFreeRunLease(runId: string): 'removed' | 'held' | 'missing
 export function runLeaseIds(): string[] {
   if (!existsSync(leaseDirectory())) return []
   return readdirSync(leaseDirectory()).flatMap((name) => {
-    const match =
-      /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.lock$/i.exec(
-        name,
-      )
-    return match ? [match[1]!.toLowerCase()] : []
+    const identity = leaseFileIdentity(name)
+    return identity?.kind === 'record' ? [identity.id] : []
   })
 }
 
@@ -138,11 +149,8 @@ export function runLeaseIds(): string[] {
 export function heldRunLeaseIds(): string[] {
   if (!existsSync(leaseDirectory())) return []
   const identities = readdirSync(leaseDirectory()).flatMap((name) => {
-    const match =
-      /^((?:[1-9]\d*)|(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))\.lock$/i.exec(
-        name,
-      )
-    return match ? [match[1]!.toLowerCase()] : []
+    const identity = leaseFileIdentity(name)
+    return identity ? [identity.id] : []
   })
   return identities.filter((id) => {
     const path = join(leaseDirectory(), `${id}.lock`)

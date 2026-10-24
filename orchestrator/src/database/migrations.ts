@@ -176,6 +176,25 @@ export function migrationState(
   }
 }
 
+export type StoreJournalPosition =
+  | { state: 'positioned'; index: number }
+  | { state: 'pending-not-found'; migration: string }
+
+/** Locate the store's first pending migration in one candidate journal. */
+export function storeJournalPosition(
+  d: Database,
+  journal: MigrationJournalEntry[],
+  folder = MIGRATIONS_FOLDER,
+): StoreJournalPosition {
+  const state = migrationState(d, folder)
+  const firstPending = state.pending[0]
+  if (!firstPending) return { state: 'positioned', index: migrationJournal(folder).length }
+  const index = journal.findIndex((entry) => entry.tag === firstPending.tag)
+  return index < 0
+    ? { state: 'pending-not-found', migration: firstPending.tag }
+    : { state: 'positioned', index }
+}
+
 export function storeMigrationState(
   d: Database,
   folder = MIGRATIONS_FOLDER,
