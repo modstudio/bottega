@@ -142,8 +142,6 @@ class AssembleAdditionalContext(unittest.TestCase):
             stdout=json.dumps([{"id": hosted, "text": "hosted notice", "oneLine": "hosted"}]),
         )
         self.assertEqual(session_brief._board_start_slice(completed)[1], [hosted])
-        self.assertTrue(session_brief._transportable_notice_id(f"board:{hosted}"))
-        self.assertFalse(session_brief._transportable_notice_id("board:\u00007"))
 
     def test_board_start_slice_accepts_delivery_envelope_and_renders_warning(self):
         completed = SimpleNamespace(
@@ -497,32 +495,6 @@ class MonitorDelivery(unittest.TestCase):
     def test_rejects_invalid_shape(self):
         with self.assertRaisesRegex(ValueError, "invalid monitor notice JSON"):
             session_brief._monitor_delivery(json.dumps({"warning": "missing notices"}), "session-1")
-
-    def test_the_acknowledgements_refusals_are_read_from_its_json_result(self):
-        stdout = json.dumps(
-            {
-                "acknowledged": ["condition:1"],
-                "refused": [
-                    {
-                        "id": "other:7",
-                        "reason": (
-                            "a notice id is <source>:<identifier> "
-                            "with source condition, landing or board"
-                        ),
-                    },
-                    {"id": "landing:7", "reason": "a landing id is a version-7 UUID"},
-                ],
-            }
-        )
-        self.assertEqual(
-            session_brief._acknowledgement_refusals(stdout),
-            [
-                "other:7 (a notice id is <source>:<identifier> with source condition, landing or board)",
-                "landing:7 (a landing id is a version-7 UUID)",
-            ],
-        )
-        self.assertEqual(session_brief._acknowledgement_refusals(""), [])
-        self.assertEqual(session_brief._acknowledgement_refusals("not json"), [])
 
     def test_the_acknowledgement_asks_for_the_json_result_its_refusals_are_read_from(self):
         self.assertEqual(
