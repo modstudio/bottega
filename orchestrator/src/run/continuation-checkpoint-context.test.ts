@@ -8,6 +8,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { git, gitOk } from '../git/git-environment.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
+import type { ResumeTreePlan } from './resume-tree.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 
 test('uses the resolved continuation tree tip as the checkpoint prompt start', () => {
@@ -70,8 +71,9 @@ const temporary = mkdtempSync(join(tmpdir(), 'orch-continuation-checkpoint-'))
 const branch = 'DEV-1691-continuation'
 const commitArgs = ['-c', 'user.name=Orch Test', '-c', 'user.email=orch@example.invalid']
 
-test('a worktree mid-rebase with no checkpoint row gets the block and keeps the conversation', () => {
-  const repository = join(temporary, 'stopped-rebase')
+/** The shape run 19165 was left in: a rebase stopped with the conflict half-applied. */
+function stoppedRebaseRepository(name: string): string {
+  const repository = join(temporary, name)
   mkdirSync(repository)
   git(['init', '-b', branch], repository)
   writeFileSync(join(repository, 'tracked.ts'), 'export const tracked = "initial"\n')
@@ -84,6 +86,24 @@ test('a worktree mid-rebase with no checkpoint row gets the block and keeps the 
   writeFileSync(join(repository, 'tracked.ts'), 'export const tracked = "branch"\n')
   git([...commitArgs, 'commit', '-qam', 'branch'], repository)
   expect(gitOk(['rebase', 'side'], repository)).toBeNull()
+  return repository
+}
+
+function recreated(
+  rootId: string,
+): Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }> {
+  return {
+    action: 'recreate-on-branch',
+    branch,
+    existingBranch: branch,
+    tip: 'branch-tip',
+    tipSource: 'branch ref',
+    rootId,
+  }
+}
+
+test('a worktree mid-rebase that the turn inherits gets the block and keeps the conversation', () => {
+  const repository = stoppedRebaseRepository('stopped-rebase')
 
   const rootId = addRun({ agent: 'codex', job: 'implement' })
   const saved = continuationCheckpointContext({
@@ -109,5 +129,30 @@ test('a worktree mid-rebase with no checkpoint row gets the block and keeps the 
       treePlan: null,
     }).context,
   ).toBeNull()
+})
+
+test('a mid-rebase worktree whose turn gets a recreated tree points at the retained tree', () => {
+  const repository = stoppedRebaseRepository('stopped-rebase-recreated')
+
+  const rootId = addRun({ agent: 'codex', job: 'implement' })
+  const saved = continuationCheckpointContext({
+    database: db(),
+    rootId,
+    worktree: repository,
+    treePlan: recreated(rootId),
+  })
+
+  expect(saved.hasCheckpointRow).toBe(false)
+  expect(saved.context).toBe(
+    'CHECKPOINT RESUME\n' +
+      `The run's retained tree at ${repository} had a rebase in progress; ` +
+      'this tree starts from the branch tip without it.',
+  )
+  // No row and no recreated-tree block of its own: the operation line alone is
+  // provenance, so the turn continues its conversation rather than restarting.
+  expect(saved.hasCheckpoint).toBe(false)
+  expect(continuationResumeKind(saved.hasCheckpoint)).toBe('continue')
+
+  git(['rebase', '--abort'], repository)
   rmSync(temporary, { recursive: true, force: true })
 })

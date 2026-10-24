@@ -15,7 +15,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent, recordRunWarning } from '../events.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { renderCheckpointResumeContext } from './checkpoint-resume-context.ts'
+import {
+  type ResumedOperation,
+  renderCheckpointResumeContext,
+} from './checkpoint-resume-context.ts'
 import { decideCheckpointCommit } from './checkpoint-sequencer.ts'
 
 export type CheckpointContainment = {
@@ -325,23 +328,36 @@ export function latestCheckpoint(
  * Reads the worktree's own state rather than the run's event history, because a
  * skipped checkpoint is not the only way a tree is left partway through an
  * operation. This only shapes a resume prompt, so a state git cannot report
- * counts as no operation instead of failing the continuation.
+ * counts as no operation instead of failing the continuation. The operation is
+ * placed in the tree that holds it: a turn that runs in the recorded worktree
+ * names it here, and a turn whose own tree is recreated at the branch tip is
+ * told that the retained tree had it instead.
  */
-function worktreeSequencerOperation(worktree: string | null): SequenceKind | null {
+function worktreeSequencerOperation(
+  worktree: string | null,
+  runsInRecordedTree: boolean,
+): ResumedOperation | null {
   if (!worktree) return null
   const decision = decideCheckpointCommit(inspectCheckout(worktree).sequence)
-  return decision.action === 'skip' ? decision.operation : null
+  if (decision.action !== 'skip') return null
+  return runsInRecordedTree
+    ? { place: 'resumed-tree', kind: decision.operation }
+    : { place: 'retained-tree', kind: decision.operation, path: worktree }
 }
 
-export function checkpointResumeContext(
-  database: Database,
-  rootId: string,
-  worktree: string | null,
-  startCommit: string | null,
-  branch: string | null,
-): { context: string | null; hasCheckpointRow: boolean } {
+export function checkpointResumeContext(input: {
+  database: Database
+  rootId: string
+  /** The run's retained worktree: the tree whose state the block describes. */
+  worktree: string | null
+  /** Whether the resumed turn runs in that retained worktree or in a recreated tree. */
+  runsInRecordedTree: boolean
+  startCommit: string | null
+  branch: string | null
+}): { context: string | null; hasCheckpointRow: boolean } {
+  const { database, rootId, worktree, startCommit, branch } = input
   const checkpoint = latestCheckpoint(database, rootId)
-  const operation = worktreeSequencerOperation(worktree)
+  const operation = worktreeSequencerOperation(worktree, input.runsInRecordedTree)
   if (checkpoint && (!startCommit || !branch)) {
     const launch = database
       .query('SELECT job,launch_key FROM run WHERE record_id=?')

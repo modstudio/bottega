@@ -372,10 +372,56 @@ describe('run continuation', () => {
     expect(child.vendor_session).toBe('vendor-session')
     expect(child.parent_run_record_id).toBe(root)
     expect(child.turn).toBe(2)
+    // The rebase detached HEAD, so the child is cut a tree at the branch tip and
+    // never sees the operation: the block must not claim the rebase is in it.
     const prompt = readFileSync(child.prompt_path, 'utf8')
     expect(prompt).toStartWith(
       'CHECKPOINT RESUME\n' +
-        'A rebase is in progress in this worktree; finish or abort it before you commit.\n',
+        `The run's retained tree at ${repository} had a rebase in progress; ` +
+        'this tree starts from the branch tip without it.\n',
+    )
+    expect(prompt).not.toContain('in this worktree')
+    // No checkpoint row, so the turn continues its own session and the block is
+    // context in front of the message; the reaped-spec path below pins that.
+    expect(prompt).not.toContain('ORIGINAL SPEC')
+  })
+
+  test('a continuation with no checkpoint row survives a reaped prompt file', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      session: 'orch-test-session',
+      repo: 'continuation-fixture',
+    })
+    const { repository, branch } = stoppedRebaseRepository(root)
+    upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: repository })
+    db()
+      .query(
+        `UPDATE run SET vendor_session=?,cwd=?,worktree=?,branch=?,prompt_path=? WHERE record_id=?`,
+      )
+      .run(
+        'vendor-session',
+        repository,
+        repository,
+        branch,
+        join(dir, `reaped-prompt-${root}.prompt.txt`),
+        root,
+      )
+
+    const resumed = await continueRun(root, 'finish the rebase and land the slice', limit)
+    const child = db()
+      .query('SELECT prompt_path,vendor_session FROM run WHERE record_id=?')
+      .get(resumed.childId) as { prompt_path: string; vendor_session: string | null }
+    trackResidue(child.prompt_path)
+
+    expect(child.vendor_session).toBe('vendor-session')
+    const prompt = readFileSync(child.prompt_path, 'utf8')
+    expect(prompt).toBe(
+      'CHECKPOINT RESUME\n' +
+        `The run's retained tree at ${repository} had a rebase in progress; ` +
+        'this tree starts from the branch tip without it.\n\n' +
+        'finish the rebase and land the slice',
     )
   })
 

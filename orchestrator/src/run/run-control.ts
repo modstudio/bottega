@@ -18,7 +18,10 @@ import { outcomeOf } from '../outcome.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
-import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
+import {
+  type ContinuationCheckpointContext,
+  continuationCheckpointContext,
+} from './continuation-checkpoint-context.ts'
 import { optionalContinuationMessageBinding } from './continuation-message.ts'
 import { requireContinuationProvision } from './continuation-provision-service.ts'
 import type { ContinuationTreeDecision } from './continuation-tree-decision.ts'
@@ -444,19 +447,22 @@ function continuationLaunch(
   }
 }
 
+/** What a continuation says when the architect sent no message of their own. */
+const CONTINUE_FROM_WHERE_YOU_STOPPED =
+  'Continue from where you stopped and finish the spec. If you reached a ' +
+  'decision that is not yours, stop and ask as before.'
+
 function continuationPrompt(
   id: string,
   jobName: string,
-  checkpointContext: string | null,
+  checkpoint: ContinuationCheckpointContext,
   continuationMessage: string | undefined,
 ): string {
-  if (!checkpointContext) {
-    return (
-      continuationMessage ??
-      'Continue from where you stopped and finish the spec. If you reached a ' +
-        'decision that is not yours, stop and ask as before.'
-    )
-  }
+  const { context, hasCheckpointRow } = checkpoint
+  // Without a checkpoint row nothing was reconstructed: the conversation
+  // continues, so the block is context carried in front of the continuation
+  // message, and a reaped original prompt file is not a reason to refuse.
+  if (!hasCheckpointRow || !context) return carriedContextPrompt(context, continuationMessage)
   const rootPrompt = db().query('SELECT prompt_path FROM run WHERE record_id=?').get(id) as {
     prompt_path: string | null
   }
@@ -464,7 +470,7 @@ function continuationPrompt(
     throw new Error(`run ${id} checkpoint cannot continue: its original prompt file is unavailable`)
   }
   return renderCheckpointContinuationPrompt({
-    checkpointContext,
+    checkpointContext: context,
     originalSpec: readFileSync(rootPrompt.prompt_path, 'utf8'),
     continuationInstructions: continuationInstructionsForFreshRetry(
       Boolean(job(jobName).needs.writesRepo),
@@ -473,6 +479,16 @@ function continuationPrompt(
     ),
     message: continuationMessage,
   })
+}
+
+/** The continuation-message prompt, with the checkpoint block carried ahead of it. */
+function carriedContextPrompt(
+  checkpointContext: string | null,
+  continuationMessage: string | undefined,
+): string {
+  return [checkpointContext, continuationMessage ?? CONTINUE_FROM_WHERE_YOU_STOPPED]
+    .filter((part): part is string => Boolean(part))
+    .join('\n\n')
 }
 
 function inheritedResumeWorktree(
@@ -675,13 +691,13 @@ export async function continueRun(
   // A block naming an in-progress operation carries no checkpoint row, so it
   // must not be read as a recreated tree state: hasCheckpoint, not the block,
   // decides whether the conversation restarts.
-  const { context: checkpointContext, hasCheckpoint } = continuationCheckpointContext({
+  const checkpoint = continuationCheckpointContext({
     database: db(),
     rootId: id,
     worktree: latest.worktree,
     treePlan,
   })
-  const sessionFrom = hasCheckpoint
+  const sessionFrom = checkpoint.hasCheckpoint
     ? null
     : latest.vendor_session
       ? latest
@@ -698,10 +714,10 @@ export async function continueRun(
           vendor_session: string
           turn: number
         } | null)
-  if (!hasCheckpoint && !sessionFrom?.vendor_session) {
+  if (!checkpoint.hasCheckpoint && !sessionFrom?.vendor_session) {
     throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
   }
-  if (!hasCheckpoint && !latest.vendor_session) {
+  if (!checkpoint.hasCheckpoint && !latest.vendor_session) {
     console.error(
       `run ${id}: newest turn ${latest.record_id} recorded no session id; ` +
         `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
@@ -725,9 +741,9 @@ export async function continueRun(
     Boolean(jobNeeds.writesRepo),
     project,
   )
-  const prompt = continuationPrompt(id, row.job, checkpointContext, continuationMessage)
+  const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   refuseOversizedResumePrompt({
-    checkpointContext,
+    checkpointContext: checkpoint.context,
     agent: sessionFrom?.agent ?? latest.agent,
     job: row.job,
     prompt,
@@ -747,10 +763,10 @@ export async function continueRun(
     ...launch,
     transport: chainTransport(id) ?? undefined,
     resume: {
-      kind: continuationResumeKind(hasCheckpoint),
+      kind: continuationResumeKind(checkpoint.hasCheckpoint),
       parent: id,
-      agent: hasCheckpoint ? latest.agent : sessionFrom!.agent,
-      session: hasCheckpoint ? undefined : (sessionFrom!.vendor_session ?? undefined),
+      agent: checkpoint.hasCheckpoint ? latest.agent : sessionFrom!.agent,
+      session: checkpoint.hasCheckpoint ? undefined : (sessionFrom!.vendor_session ?? undefined),
       turn: nextTurn,
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),

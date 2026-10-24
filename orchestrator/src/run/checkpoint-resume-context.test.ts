@@ -59,7 +59,7 @@ test('names an in-progress rebase beside a checkpoint row', () => {
       branch: 'DEV-1691-sequencer',
       checkpoint,
       recentLog: '',
-      operation: 'rebase',
+      operation: { place: 'resumed-tree', kind: 'rebase' },
     }),
   ).toBe(
     'CHECKPOINT RESUME\n' +
@@ -69,6 +69,23 @@ test('names an in-progress rebase beside a checkpoint row', () => {
   )
 })
 
+test('names the retained tree, not this tree, when the turn gets a recreated one', () => {
+  const rendered = renderCheckpointResumeContext({
+    startCommit: 'branch-tip-sha',
+    branch: 'DEV-1691-sequencer',
+    checkpoint: null,
+    recentLog: '',
+    operation: { place: 'retained-tree', kind: 'rebase', path: '/trees/retained-19165' },
+  })
+
+  expect(rendered).toBe(
+    'CHECKPOINT RESUME\n' +
+      "The run's retained tree at /trees/retained-19165 had a rebase in progress; " +
+      'this tree starts from the branch tip without it.',
+  )
+  expect(rendered).not.toContain('in this worktree')
+})
+
 test('emits the block for an in-progress rebase with no checkpoint row', () => {
   expect(
     renderCheckpointResumeContext({
@@ -76,7 +93,7 @@ test('emits the block for an in-progress rebase with no checkpoint row', () => {
       branch: null,
       checkpoint: null,
       recentLog: '',
-      operation: 'rebase',
+      operation: { place: 'resumed-tree', kind: 'rebase' },
     }),
   ).toBe(
     'CHECKPOINT RESUME\n' +

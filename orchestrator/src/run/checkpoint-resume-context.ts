@@ -3,6 +3,15 @@
 
 import type { SequenceKind } from '../../../shared/git.ts'
 
+/**
+ * The unfinished git operation a resumed turn must clear, and which tree holds
+ * it: the tree the turn runs in, or the run's retained tree, which the turn
+ * starts without because its own tree was recreated at the branch tip.
+ */
+export type ResumedOperation =
+  | { place: 'resumed-tree'; kind: SequenceKind }
+  | { place: 'retained-tree'; kind: SequenceKind; path: string }
+
 export type CheckpointResumeValues = {
   startCommit: string | null
   branch: string | null
@@ -13,13 +22,19 @@ export type CheckpointResumeValues = {
   } | null
   recentLog: string
   /** The git operation the resumed worktree is partway through, if any. */
-  operation: SequenceKind | null
+  operation: ResumedOperation | null
+}
+
+/** Say where the operation is, never that it is in a tree the worker will not get. */
+function renderOperation(operation: ResumedOperation): string {
+  return operation.place === 'resumed-tree'
+    ? `A ${operation.kind} is in progress in this worktree; finish or abort it before you commit.`
+    : `The run's retained tree at ${operation.path} had a ${operation.kind} in progress; ` +
+        'this tree starts from the branch tip without it.'
 }
 
 export function renderCheckpointResumeContext(input: CheckpointResumeValues): string | null {
-  const operation = input.operation
-    ? `A ${input.operation} is in progress in this worktree; finish or abort it before you commit.`
-    : null
+  const operation = input.operation ? renderOperation(input.operation) : null
   // A worktree mid-operation is a tree state to resume from even when no
   // checkpoint was taken, because the final checkpoint skipped it.
   if (!input.checkpoint) return operation ? `CHECKPOINT RESUME\n${operation}` : null
