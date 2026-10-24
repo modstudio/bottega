@@ -19,6 +19,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   mintedBranch: 'DEV-1392-c3',
   launchKey: 'DEV-1392',
   judged: true,
+  failureKind: null,
   rootFailureKind: null,
   worktree: '/trees/1',
   ...overrides,
@@ -54,12 +55,27 @@ describe('ship cleanup decision', () => {
     ])
   })
 
-  test('keeps an unscored run artifacts and names the missing verdict', () => {
-    expect(decide([run({ judged: false })])[0]).toMatchObject({
-      artifacts: 'keep',
-      worktreeAction: 'close',
-      reason: 'run has no recorded verdict',
-    })
+  test.each([
+    [
+      'unjudged billing run',
+      { judged: false, failureKind: 'billing' },
+      {
+        artifacts: 'remove',
+        worktreeAction: 'close',
+        reason: 'provider did not serve the run (billing); nothing to judge',
+      },
+    ],
+    [
+      'unjudged truncated run',
+      { judged: false, failureKind: 'truncated' },
+      {
+        artifacts: 'keep',
+        worktreeAction: 'close',
+        reason: 'run has no recorded verdict',
+      },
+    ],
+  ] as const)('handles a terminal %s', (_case, overrides, expected) => {
+    expect(decide([run(overrides)])[0]).toMatchObject(expected)
   })
 
   test.each([
@@ -97,6 +113,34 @@ describe('ship cleanup decision', () => {
       artifacts: 'keep',
       worktreeAction: 'keep',
       reason: 'run is live (asking)',
+    })
+  })
+
+  test('keeps a provider-unserved root while a continuation turn is live', () => {
+    const decisions = decide([
+      run({
+        record_id: 'root',
+        number: 41,
+        root_record_id: 'root',
+        rootNumber: 41,
+        judged: false,
+        failureKind: 'billing',
+      }),
+      run({
+        record_id: 'turn',
+        number: 42,
+        root_record_id: 'root',
+        rootNumber: 41,
+        status: 'running',
+        startedAt: '2026-10-18T02:00:00Z',
+      }),
+    ])
+
+    expect(decisions[0]).toMatchObject({
+      scope: 'chain',
+      artifacts: 'keep',
+      worktreeAction: 'keep',
+      reason: 'run 42 is live (running)',
     })
   })
 
