@@ -403,10 +403,8 @@ function syncPulledDocRelatedSubjects(
   local.query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(recordId)
   for (const id of relatedSubjectIds)
     local
-      .query(
-        'INSERT INTO doc_related_subject (id,record_id,doc_record_id,subject_id) VALUES (?,?,?,?)',
-      )
-      .run(newRecordId(), newRecordId(), recordId, id)
+      .query('INSERT INTO doc_related_subject (record_id,doc_record_id,subject_id) VALUES (?,?,?)')
+      .run(newRecordId(), recordId, id)
 }
 
 function pulledDocParentId(local: Database, parentRecordId: string | null): string | null {

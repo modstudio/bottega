@@ -1158,6 +1158,13 @@
       "tag": "0152_foreign_key_leading_indexes",
       "compatibility": "additive",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "6",
+      "when": 1793577600017,
+      "tag": "0153_uuid_primary_keys_k8b1",
+      "breakpoints": true
     }
   ]
 }
