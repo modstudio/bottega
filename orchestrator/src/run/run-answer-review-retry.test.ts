@@ -1,0 +1,70 @@
+import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  answerRunFlags as flags,
+  answerRunHelpers as helpers,
+  insertRun as insert,
+} from '../../test/fixtures/run-answer.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
+import { trackedTestResidue } from '../../test/residue.ts'
+import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
+import { retryRun } from './run-answer.ts'
+import type { detach } from './run-dispatch.ts'
+
+const trackResidue = trackedTestResidue()
+const reviewRef = 'DEV-1702-orch-review-target'
+let priorSession: string | undefined
+
+beforeEach(() => {
+  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
+  priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+})
+
+afterEach(() => {
+  if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+})
+
+function failed(parent?: string): string {
+  const id = addRun({
+    agent: 'grok',
+    job: 'review-lens',
+    status: 'failed',
+    parent,
+    turn: parent ? 2 : 1,
+    session: 'orch-test-session',
+    repo: parent ? undefined : 'continuation-fixture',
+  })
+  const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
+  writeFileSync(prompt, 'Review the continuation.')
+  db().query('UPDATE run SET prompt_path=?,cwd=? WHERE record_id=?').run(prompt, dir, id)
+  return id
+}
+
+async function dispatchedReview(id: string): Promise<string | undefined> {
+  let review: string | undefined
+  const dispatch: typeof detach = async (_job, _prompt, spec) => {
+    review = spec.review
+    return insert('ok', 'review-lens')
+  }
+  await retryRun(id, { flags }, { ...helpers, dispatch })
+  return review
+}
+
+test('retrying a review lens dispatches with its recorded review target', async () => {
+  const root = failed()
+  db().query('UPDATE run SET review_ref=? WHERE record_id=?').run(reviewRef, root)
+
+  expect(await dispatchedReview(root)).toBe(reviewRef)
+})
+
+test('retrying a failed continuation dispatches with the root review target', async () => {
+  const root = failed()
+  db().query('UPDATE run SET review_ref=? WHERE record_id=?').run(reviewRef, root)
+
+  expect(await dispatchedReview(failed(root))).toBe(reviewRef)
+})

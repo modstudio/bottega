@@ -1016,21 +1016,6 @@ describe('retry command', () => {
     })
   })
 
-  test('retrying a review lens dispatches with its recorded review target', async () => {
-    const id = failed('review-lens')
-    const reviewRef = 'DEV-1702-orch-review-target'
-    db().query('UPDATE run SET review_ref=? WHERE record_id=?').run(reviewRef, id)
-    const dispatched: Parameters<typeof detach>[2][] = []
-    const dispatch: typeof detach = async (_job, _prompt, spec) => {
-      dispatched.push(spec)
-      return insert('ok', 'review-lens')
-    }
-
-    await retryRun(id, { flags }, { ...helpers, dispatch })
-
-    expect(dispatched[0]?.review).toBe(reviewRef)
-  })
-
   test('retry provisions a released reader from its recorded base', async () => {
     const id = failed()
     const registeredPath = process.cwd()
