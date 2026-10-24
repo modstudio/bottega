@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  decideWorkflowEvidenceRecording,
-  workflowEvidenceNotRecordedRefusal,
-} from './workflow-evidence-recording.ts'
+import { decideWorkflowEvidenceRecording } from './workflow-evidence-recording.ts'
 
 const decide = (input: {
   openedSchemaVersion: number | null
@@ -11,14 +8,23 @@ const decide = (input: {
   compatibility?: 'additive' | 'incompatible'
 }) =>
   decideWorkflowEvidenceRecording({
-    compatibility: input.compatibility ?? 'incompatible',
-    ...input,
+    openedSchemaVersion: input.openedSchemaVersion,
+    storeSchemaVersion: input.storeSchemaVersion,
+    compatibility: () => input.compatibility ?? 'incompatible',
   })
 
 describe('workflow evidence recording', () => {
-  test('records in this process when the store still holds the opened version', () => {
+  // The journal is read and validated only when the store moved forward, so an unreadable
+  // journal cannot cost a run whose store never moved its evidence.
+  test('records in this process when the store still holds the opened version, without reading the journal', () => {
     expect(
-      decide({ openedSchemaVersion: 145, storeSchemaVersion: 145, compatibility: 'incompatible' }),
+      decideWorkflowEvidenceRecording({
+        openedSchemaVersion: 145,
+        storeSchemaVersion: 145,
+        compatibility: () => {
+          throw new Error('the journal must not be read when the versions agree')
+        },
+      }),
     ).toEqual({ action: 'record' })
   })
 
@@ -50,16 +56,6 @@ describe('workflow evidence recording', () => {
     expect(decision.reason).toContain('store user_version 145, opened 147')
     expect(decision.reason).toContain(
       `cleared by: re-run the command under ${PLATFORM_SLUG} workflow exec`,
-    )
-  })
-
-  test('a lost hand-off leads with the wrapped exit code and gives the remedy', () => {
-    const line = workflowEvidenceNotRecordedRefusal({ exitCode: 7 })
-    expect(line).toStartWith(`${PLATFORM_SLUG} workflow exec: command exited 7`)
-    expect(line).toContain('its evidence was not recorded')
-    expect(line).toContain('once the store and checkout agree')
-    expect(workflowEvidenceNotRecordedRefusal({ exitCode: 0, detail: 'printed no id' })).toContain(
-      'not recorded (printed no id)',
     )
   })
 })

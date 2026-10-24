@@ -2,13 +2,10 @@
 /** Decides where a finished workflow child's evidence row is written. Must not run children or touch the store. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { InFlightMigrationCompatibility } from '../database/migration-compatibility.ts'
-
-/**
- * `workflow exec --record-evidence` is the receiving form of the hand-off: it takes
- * no child command and reads the payload as JSON on stdin.
- */
-export const RECORD_EVIDENCE_FLAG = '--record-evidence'
+import {
+  CONNECTION_SCHEMA_INVARIANT,
+  type InFlightMigrationCompatibility,
+} from '../database/migration-compatibility.ts'
 
 /**
  * What an operator does about evidence this process could not record, defined once
@@ -35,8 +32,11 @@ export function decideWorkflowEvidenceRecording(input: {
   openedSchemaVersion: number | null
   /** The store's user_version after the child exited, or null when it was not read. */
   storeSchemaVersion: number | null
-  /** The journal compatibility of the range, from `inFlightMigrationCompatibility`. */
-  compatibility: InFlightMigrationCompatibility
+  /**
+   * The journal compatibility of the range, from `inFlightMigrationCompatibility`. Asked
+   * only when the store moved forward, so equal versions never read the journal.
+   */
+  compatibility: () => InFlightMigrationCompatibility
 }): WorkflowEvidenceRecordingDecision {
   if (input.openedSchemaVersion === null) return { action: 'record' }
   if (input.storeSchemaVersion === null) return { action: 'hand-off' }
@@ -47,10 +47,10 @@ export function decideWorkflowEvidenceRecording(input: {
       reason:
         `refusing ${PLATFORM_SLUG} workflow exec evidence: the store is behind the schema this process opened ` +
         `(store user_version ${input.storeSchemaVersion}, opened ${input.openedSchemaVersion})\n` +
-        'invariant: A process records evidence only for the schema version it opened.\n' +
+        `invariant: ${CONNECTION_SCHEMA_INVARIANT}\n` +
         RECORD_AGAIN_REMEDY,
     }
-  return input.compatibility === 'additive' ? { action: 'record' } : { action: 'hand-off' }
+  return input.compatibility() === 'additive' ? { action: 'record' } : { action: 'hand-off' }
 }
 
 /**

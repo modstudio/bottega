@@ -30,7 +30,7 @@ import {
 } from '../artifact-paths.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { CONNECTION_SCHEMA_INVARIANT } from '../database/migrations.ts'
+import { CONNECTION_SCHEMA_INVARIANT } from '../database/migration-compatibility.ts'
 import { type ArtifactPathEvent, recordRunWarning, runEventsPath } from '../events.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'

@@ -6,6 +6,12 @@
  * so its redaction and tail bounding are the code that matches the store. The heads
  * travel with the output because redaction removes them from the lines it keeps.
  */
+/**
+ * `workflow exec --record-evidence` is the receiving form of the hand-off: it takes
+ * no child command and reads the payload as JSON on stdin.
+ */
+export const RECORD_EVIDENCE_FLAG = '--record-evidence'
+
 export type WorkflowEvidencePayload = {
   command: string[]
   cwd: string

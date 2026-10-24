@@ -9,6 +9,7 @@ import {
   portStaleCopyConflicts,
 } from './lens-port-migration-preflight.ts'
 import {
+  CONNECTION_SCHEMA_INVARIANT,
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
@@ -20,7 +21,6 @@ export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
 const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
-export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'

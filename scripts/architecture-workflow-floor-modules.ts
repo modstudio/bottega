@@ -147,7 +147,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     './workflow-evidence-payload.ts',
-    './workflow-evidence-recording.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',

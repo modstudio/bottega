@@ -13,18 +13,6 @@ import {
   runWorkflowCommand as workflowCommand,
 } from './workflow-store.fixture.ts'
 
-test('workflow exec refuses a missing command', async () => {
-  expect(workflowCommand(['workflow', 'exec', '--'], presentation([]))).rejects.toThrow(
-    `${PLATFORM_SLUG} workflow exec needs a command after --`,
-  )
-})
-
-test('workflow exec requires a separator before the child command', async () => {
-  expect(workflowCommand(['workflow', 'exec', '/usr/bin/true'], presentation([]))).rejects.toThrow(
-    `${PLATFORM_SLUG} workflow exec requires -- before the child command; use ${PLATFORM_SLUG} workflow exec [--cwd <dir>] -- <command…>`,
-  )
-})
-
 test('Commander refuses workflow exec without a separator before running the child', async () => {
   const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID

@@ -38,7 +38,7 @@ import {
   workflowVersionsCommand,
 } from '../workflow/workflow-commands.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
-import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-recording.ts'
+import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)

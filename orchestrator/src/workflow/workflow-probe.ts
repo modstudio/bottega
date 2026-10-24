@@ -316,9 +316,10 @@ function evidenceRecordingDecision(): WorkflowEvidenceRecordingDecision {
   return decideWorkflowEvidenceRecording({
     openedSchemaVersion: versions?.opened ?? null,
     storeSchemaVersion: versions?.store ?? null,
-    compatibility: versions
-      ? inFlightMigrationCompatibility(migrationJournal(), versions.opened, versions.store)
-      : 'incompatible',
+    compatibility: () =>
+      versions
+        ? inFlightMigrationCompatibility(migrationJournal(), versions.opened, versions.store)
+        : 'incompatible',
   })
 }
 

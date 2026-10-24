@@ -21,10 +21,10 @@ import {
   enableSchemaReload,
   writeTransaction,
 } from '../database/db.ts'
+import { CONNECTION_SCHEMA_INVARIANT } from '../database/migration-compatibility.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
-  CONNECTION_SCHEMA_INVARIANT,
   MIGRATIONS_FOLDER,
   migrationJournal,
   migrationRefusal,

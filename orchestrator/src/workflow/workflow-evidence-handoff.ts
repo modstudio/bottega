@@ -5,9 +5,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   encodeWorkflowEvidencePayload,
+  RECORD_EVIDENCE_FLAG,
   type WorkflowEvidencePayload,
 } from './workflow-evidence-payload.ts'
-import { RECORD_EVIDENCE_FLAG } from './workflow-evidence-recording.ts'
 
 export type WorkflowEvidenceHandOff =
   | { kind: 'recorded'; id: number; withheld: boolean }
