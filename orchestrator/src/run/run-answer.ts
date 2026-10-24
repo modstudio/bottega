@@ -68,6 +68,7 @@ import {
   decideRetryConversation,
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
+  retryTransport,
 } from './run-retry.ts'
 import { resolveRetryTree, resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
 import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
@@ -547,7 +548,7 @@ export async function retryRun(
         base: resumeLaunch.base,
         launchBase: row.launch_base ?? undefined,
         noFailover: !!row.no_failover,
-        transport: chainTransport(row.root_record_id) ?? undefined,
+        transport: retryTransport(agent !== row.agent, chainTransport(row.root_record_id)),
         keepTree: row.keep_tree
           ? (() => {
               const decision = keepTreeHold({

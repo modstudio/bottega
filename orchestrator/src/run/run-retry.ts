@@ -26,6 +26,13 @@ export function decideRetryConversation(input: {
   return { action: 'needs-writing-workspace' }
 }
 
+export function retryTransport(
+  agentChanged: boolean,
+  recordedTransport: 'cli' | 'acp' | null,
+): 'cli' | 'acp' | undefined {
+  return agentChanged ? undefined : (recordedTransport ?? undefined)
+}
+
 export function decideWritingRetryWorkspace(input: {
   treeExists: boolean
   treeLive: boolean
