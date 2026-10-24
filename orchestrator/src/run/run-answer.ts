@@ -16,7 +16,7 @@ import { callerIdentity, db, writableDb, writeTransaction } from '../database/db
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
-import { chainTransport, retryModelForAgent } from '../route/failover.ts'
+import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -68,6 +68,7 @@ import {
   decideRetryConversation,
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
+  retryTransport,
 } from './run-retry.ts'
 import { resolveRetryTree, resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
 import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
@@ -547,7 +548,7 @@ export async function retryRun(
         base: resumeLaunch.base,
         launchBase: row.launch_base ?? undefined,
         noFailover: !!row.no_failover,
-        transport: chainTransport(row.root_record_id) ?? undefined,
+        transport: retryTransport(agent !== row.agent, agent, transportTurns(row.root_record_id)),
         keepTree: row.keep_tree
           ? (() => {
               const decision = keepTreeHold({

@@ -26,6 +26,16 @@ export function decideRetryConversation(input: {
   return { action: 'needs-writing-workspace' }
 }
 
+export function retryTransport(
+  agentChanged: boolean,
+  retryAgent: string,
+  turns: Array<{ agent: string; transport: 'cli' | 'acp' | null }>,
+): 'cli' | 'acp' | undefined {
+  if (agentChanged) return undefined
+  // A turn that ended before its transport was recorded says nothing; look past it.
+  return turns.find((turn) => turn.agent === retryAgent && turn.transport)?.transport ?? undefined
+}
+
 export function decideWritingRetryWorkspace(input: {
   treeExists: boolean
   treeLive: boolean

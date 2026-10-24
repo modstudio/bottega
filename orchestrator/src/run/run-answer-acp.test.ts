@@ -58,3 +58,26 @@ test('retry of a named ACP review lens is not refused', async () => {
 
   await expect(retryRun(id, { flags }, { ...helpers, dispatch })).resolves.toBeUndefined()
 })
+
+test('retry with the same agent carries the chain transport', async () => {
+  const id = addRun({
+    agent: 'grok',
+    job: 'file-question',
+    status: 'failed',
+    repo: 'continuation-fixture',
+  })
+  const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
+  writeFileSync(prompt, 'What does bar.ts do?')
+  db()
+    .query("UPDATE run SET prompt_path=?,cwd=?,session_id=?,transport='acp' WHERE record_id=?")
+    .run(prompt, dir, 'orch-test-session', id)
+  const dispatched: Parameters<typeof detach>[2][] = []
+  const dispatch: typeof detach = async (job, _prompt, spec) => {
+    dispatched.push(spec)
+    return addRun({ agent: spec.agent!, job, status: 'ok', session: 'orch-test-session' })
+  }
+
+  await retryRun(id, { flags }, { ...helpers, dispatch })
+
+  expect(dispatched[0]?.transport).toBe('acp')
+})
