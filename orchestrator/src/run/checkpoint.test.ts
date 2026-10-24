@@ -142,6 +142,13 @@ test('latest checkpoint uses creation time and UUID as its deterministic tie-bre
       checkpoint_no: 2,
       task_pointer: 'later',
     })
+    // Same millisecond: only the UUID tie-break picks the greater record id.
+    database.exec(`
+      INSERT INTO run_checkpoint(record_id,run_record_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+      VALUES ('01990000-0000-7000-8000-0000000000b2','${runId}',3,'tie-greater','tie-greater',0,'2026-10-24T03:00:00.000Z'),
+             ('01990000-0000-7000-8000-0000000000b1','${runId}',4,'tie-smaller','tie-smaller',0,'2026-10-24T03:00:00.000Z');
+    `)
+    expect(latestCheckpoint(database, runId)?.commit_sha).toBe('tie-greater')
   } finally {
     database.close()
   }
