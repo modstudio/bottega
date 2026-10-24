@@ -38,15 +38,17 @@ function insertGate(input: {
   headCommit: string
   cwd?: string | null
   outputTail?: string
-}): number {
+}): string {
+  const recordId = newRecordId()
   return (
     db()
       .query(
         `INSERT INTO gate_execution
           (record_id, run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
-         VALUES ('${newRecordId()}', ?,?,?,?,0,1000,?,?,?) RETURNING id`,
+         VALUES (?, ?,?,?,?,0,1000,?,?,?) RETURNING record_id`,
       )
       .get(
+        recordId,
         input.runId,
         input.finishedAt,
         input.finishedAt,
@@ -54,8 +56,8 @@ function insertGate(input: {
         input.outputTail ?? `gate ${input.exitCode}`,
         input.headCommit,
         input.cwd ?? null,
-      ) as { id: number }
-  ).id
+      ) as { record_id: string }
+  ).record_id
 }
 
 test('recorded gate result is the most recent finished execution for the exact project commit', () => {
@@ -64,8 +66,9 @@ test('recorded gate result is the most recent finished execution for the exact p
     projectId: string,
     headCommit: string,
     finishedAt: string,
+    recordId = `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`,
   ): RecordedGateCandidate => ({
-    id,
+    recordId,
     projectId,
     headCommit,
     runId: `run-${id + 100}`,
@@ -82,12 +85,24 @@ test('recorded gate result is the most recent finished execution for the exact p
         row(1, 'project-7', 'reviewed', '2026-09-30T12:00:00.000Z'),
         row(2, 'project-8', 'reviewed', '2026-10-01T12:00:00.000Z'),
         row(3, 'project-7', 'other', '2026-10-01T13:00:00.000Z'),
-        row(4, 'project-7', 'reviewed', '2026-10-01T11:00:00.000Z'),
-        row(5, 'project-7', 'reviewed', '2026-10-01T11:00:00.000Z'),
+        row(
+          5,
+          'project-7',
+          'reviewed',
+          '2026-10-01T11:00:00.000Z',
+          '00000000-0000-4000-8000-000000000004',
+        ),
+        row(
+          4,
+          'project-7',
+          'reviewed',
+          '2026-10-01T11:00:00.000Z',
+          '00000000-0000-4000-8000-000000000005',
+        ),
       ],
       target,
-    )?.id,
-  ).toBe(5)
+    )?.recordId,
+  ).toBe('00000000-0000-4000-8000-000000000005')
   expect(
     selectRecordedGateResult([row(6, 'project-8', 'reviewed', '2026-10-01T14:00:00.000Z')], target),
   ).toBeNull()
@@ -113,7 +128,7 @@ test(`a later passing ${PLATFORM_SLUG} gate run beats a cancelled worker gate on
     cwd: readerPath,
     outputTail: 'architect passed',
   })
-  expect(recordedGateResult(reader).result?.id).toBe(passing)
+  expect(recordedGateResult(reader).result?.recordId).toBe(passing)
 })
 
 test('the only finished gate may be a row with no run', () => {
@@ -128,7 +143,7 @@ test('the only finished gate may be a row with no run', () => {
     cwd: `${readerPath}/hub`,
     outputTail: 'architect only',
   })
-  expect(recordedGateResult(reader).result?.id).toBe(passing)
+  expect(recordedGateResult(reader).result?.recordId).toBe(passing)
 })
 
 test('a row with no run is not returned for another project or an unregistered cwd', () => {
@@ -159,7 +174,7 @@ test(`formatRecordedGateResult names ${PLATFORM_SLUG} gate run when the row has 
   const formatted = formatRecordedGateResult({
     headCommit: 'abc',
     result: {
-      id: 9,
+      recordId: '00000000-0000-4000-8000-000000000009',
       projectId: 'project-1',
       headCommit: 'abc',
       runId: null,

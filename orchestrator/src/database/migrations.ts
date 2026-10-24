@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
   lensPortReferenceOrphanCounts,
   portStaleCopyConflicts,
@@ -13,6 +14,7 @@ import {
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
+import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
 import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,
@@ -917,20 +919,9 @@ function migrationOrphanCounts(d: Database, tag: string): string[] {
   if (tag === '0127_board_uuid_key') return boardReferenceOrphanCounts(d)
   if (tag === '0130_doc_uuid_key') return docReferenceOrphanCounts(d)
   if (tag === LENS_PORT_UUID_KEY_MIGRATION) return lensPortReferenceOrphanCounts(d)
-  if (tag === MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION) {
-    const count = (
-      d
-        .query(
-          `SELECT COUNT(*) n FROM monitor_condition child
-           WHERE NOT EXISTS (
-             SELECT 1 FROM monitor_invocation parent WHERE parent.id=child.invocation_id
-           )`,
-        )
-        .get() as { n: number }
-    ).n
-    return count ? [`monitor_condition.invocation_record_id=${count}`] : []
-  }
+  if (tag === MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION) return monitorReleaseClaimOrphanCounts(d)
   if (tag === WORKFLOW_UUID_KEY_MIGRATION) return workflowUuidReferenceOrphanCounts(d)
+  if (tag === '0158_gate_check_execution_uuid_keys') return gateCheckExecutionOrphanCounts(d)
   return []
 }
 
@@ -946,6 +937,8 @@ function migrationEntityLabel(tag: string): { migration: string; parent: string 
     return { migration: 'monitor', parent: 'monitor invocation' }
   if (tag === WORKFLOW_UUID_KEY_MIGRATION)
     return { migration: 'workflow/step-catalogue', parent: 'workflow row' }
+  if (tag === '0158_gate_check_execution_uuid_keys')
+    return { migration: 'gate/check execution', parent: 'gate execution' }
   return { migration: 'board', parent: 'board row' }
 }
 

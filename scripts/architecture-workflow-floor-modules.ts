@@ -97,6 +97,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/database-location.ts',
     '../database/db.ts',
     '../doc/doc-reference-read.ts',
+    '../gate/gate-identifier.ts',
     '../project/projects.ts',
     '../review/review-group.ts',
     '../review/review-identifier.ts',

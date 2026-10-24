@@ -4,7 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 export type RecordedGateCandidate = {
-  id: number
+  recordId: string
   projectId: string | null
   headCommit: string | null
   runId: string | null
@@ -16,7 +16,7 @@ export type RecordedGateCandidate = {
 }
 
 type GateExecutionRow = {
-  id: number
+  record_id: string
   project_record_id: string | null
   head_commit: string | null
   run_record_id: string | null
@@ -41,7 +41,8 @@ export function selectRecordedGateResult(
     .reduce<RecordedGateCandidate | null>((latest, candidate) => {
       if (!latest) return candidate
       const finishedOrder = candidate.finishedAt.localeCompare(latest.finishedAt)
-      return finishedOrder > 0 || (finishedOrder === 0 && candidate.id > latest.id)
+      return finishedOrder > 0 ||
+        (finishedOrder === 0 && candidate.recordId.localeCompare(latest.recordId) > 0)
         ? candidate
         : latest
     }, null)
@@ -63,7 +64,7 @@ function recordedGateCandidateFromRow(
   cwdProjectIds: ReadonlyMap<string, string | null>,
 ): RecordedGateCandidate {
   return {
-    id: row.id,
+    recordId: row.record_id,
     projectId: row.project_record_id ?? (row.cwd ? (cwdProjectIds.get(row.cwd) ?? null) : null),
     headCommit: row.head_commit,
     runId: row.run_record_id,
@@ -90,7 +91,7 @@ export function recordedGateResult(runId: string): {
 
   const rows = db()
     .query(
-      `SELECT g.id,r.project_record_id,g.head_commit,g.run_record_id,g.exit_code,g.timed_out,g.elapsed_ms,
+      `SELECT g.record_id,r.project_record_id,g.head_commit,g.run_record_id,g.exit_code,g.timed_out,g.elapsed_ms,
               g.finished_at,g.output_tail,g.cwd
        FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
        WHERE g.finished_at IS NOT NULL`,

@@ -458,12 +458,12 @@ describe('the live ask channel always answers', () => {
       expect(output).not.toContain('Full output now:')
       expect(output).not.toContain('moves to the run artifacts')
       const execution = db()
-        .query('SELECT id FROM gate_execution WHERE run_record_id=?')
+        .query('SELECT number FROM gate_execution WHERE run_record_id=?')
         .get(run) as {
-        id: number
+        number: number
       }
-      expect(output).not.toContain(`${runScratchDir(run)}/gate-${execution.id}.log`)
-      expect(output).not.toContain(`${runArtifactsDir(run)}/gate-${execution.id}.log`)
+      expect(output).not.toContain(`${runScratchDir(run)}/gate-${execution.number}.log`)
+      expect(output).not.toContain(`${runArtifactsDir(run)}/gate-${execution.number}.log`)
     } finally {
       await connection.close()
     }
@@ -534,7 +534,7 @@ describe('the live ask channel always answers', () => {
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'gate-result-fixture','/fixture','bun','{}') RETURNING record_id AS id`,
       )
-      .get() as { id: number }
+      .get() as { id: string }
     const reader = addRun({
       agent: 'codex',
       job: 'review-lens',

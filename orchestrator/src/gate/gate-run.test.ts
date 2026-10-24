@@ -87,7 +87,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
       }
     },
   })
-  expect(result).toEqual({ id: 1, exitCode: 0 })
+  expect(result).toEqual({ number: 1, exitCode: 0 })
   expect(chunks).toEqual(['ok\n'])
   expect(
     d
@@ -106,7 +106,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     cwd: repositoryPath,
     output_artifact: null,
   })
-  expect(passingGateForCommit(headCommit, repositoryPath, d).gateId).toBeNull()
+  expect(passingGateForCommit(headCommit, repositoryPath, d).gateNumber).toBeNull()
   expect(d.query('SELECT COUNT(*) count FROM check_execution').get()).toEqual({ count: 0 })
 })
 
@@ -142,12 +142,14 @@ test('inserts valid check records in the transaction with the gate row', async (
   expect(
     d
       .query(
-        `SELECT gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count
+        `SELECT gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count
            FROM check_execution`,
       )
       .get(),
   ).toEqual({
-    gate_execution_id: 1,
+    gate_execution_record_id: d
+      .query<{ record_id: string }, []>('SELECT record_id FROM gate_execution')
+      .get()!.record_id,
     check_name: 'scripts/check-file-ceiling.ts',
     category: 'file-length',
     wall_ms: 12.5,
