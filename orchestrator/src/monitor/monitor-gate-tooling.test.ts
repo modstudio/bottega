@@ -78,11 +78,22 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
   const insertGate = database.query(
     `INSERT INTO gate_execution
        (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,tooling_paths,resolved_command)
-     VALUES (?, ?,'2026-09-25T11:59:00.000Z','2026-09-25T12:00:00.000Z',
-             '2026-09-25T12:01:00.000Z',0,'["package.json"]','bun run check')`,
+     VALUES (?, ?,?,'2026-09-25T12:00:00.000Z',?,0,'["package.json"]','bun run check')`,
   )
-  insertGate.run(newRecordId(), before)
-  insertGate.run(newRecordId(), after)
+  insertGate.run(newRecordId(), before, '2026-09-25T11:58:00.000Z', '2026-09-25T12:01:00.000Z')
+  // The UUID-newer row is inserted first so the removed integer id would choose the wrong tie.
+  insertGate.run(
+    '01990000-0000-7000-8000-000000000020',
+    after,
+    '2026-09-25T11:59:00.000Z',
+    '2026-09-25T12:02:00.000Z',
+  )
+  insertGate.run(
+    '01990000-0000-7000-8000-000000000010',
+    after,
+    '2026-09-25T11:59:00.000Z',
+    '2026-09-25T12:01:00.000Z',
+  )
   const insertSnapshot = database.query(
     `INSERT INTO landing_triage_snapshot
        (record_id,project,project_record_id,branch,tip,tree,review_record_ids,patch_id,tier,lens_rounds,
@@ -108,5 +119,6 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
 
   expect(workerGateToolingConditions(database).map((condition) => condition.subject)).toEqual([
     `run:${before}`,
+    `run:${after}`,
   ])
 })

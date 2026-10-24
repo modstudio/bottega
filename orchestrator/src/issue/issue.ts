@@ -551,7 +551,7 @@ async function verifyOrHandbackFix(
   }
   await comment(
     issue.key,
-    `Independent measurements and gate execution ${gate.id} completed for run ${fixRun.record_id}; tier review is starting.`,
+    `Independent measurements and gate execution ${gate.number} completed for run ${fixRun.record_id}; tier review is starting.`,
   )
   const reviewPass = await runIssueFixReviews({ issue, fixRun, target, branchKey })
   // Findings runs record their reviews as part of terminalisation. Gathering
@@ -568,7 +568,7 @@ async function verifyOrHandbackFix(
   const extra = [
     `Coordinator before: ${before.text}`,
     `Coordinator after: ${after.text}`,
-    `Coordinator gate execution ${gate.id}: ${gate.text}`,
+    `Coordinator gate execution ${gate.number}: ${gate.text}`,
     `Review tier: ${reviewPass.tier ?? 'not selected'}; selected lenses: ${JSON.stringify(reviewPass.selectedLenses)}`,
     ...(reviewPass.reviewNotStarted ? [issueReviewStartEvidence(reviewPass.reviewNotStarted)] : []),
     ...reviewPass.results.map(issueReviewEvidence),

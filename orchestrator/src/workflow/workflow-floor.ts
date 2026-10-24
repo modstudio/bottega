@@ -97,7 +97,7 @@ export type ValidatedEvidence = {
     unfinishedReviewIds?: number[]
   }
   gate?: {
-    id: number
+    recordId: string
     finished: boolean
     exitCode: number | null
     project: string | null
@@ -693,7 +693,7 @@ function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   const refs: EvidenceRef[] = []
   if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
   if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.number) })
-  if (evidence.gate) refs.push({ flag: '--gate', value: String(evidence.gate.id) })
+  if (evidence.gate) refs.push({ flag: '--gate', value: evidence.gate.recordId })
   if (evidence.run) refs.push({ flag: '--run', value: String(evidence.run.id) })
   if (evidence.artifact) refs.push({ flag: '--artifact', value: evidence.artifact.ref })
   if (evidence.task) refs.push({ flag: '--task', value: evidence.task.key })
