@@ -206,8 +206,9 @@ export function withRunCloseOutLease<T>(
   const lease = requiredRunCloseOutLease(runId, failed)
   try {
     const result = action()
-    if (result instanceof Promise) {
-      return result.finally(() => releaseRunCloseOutLease(runId, lease))
+    // Any thenable is still running, not only a native Promise.
+    if (typeof (result as { then?: unknown } | null)?.then === 'function') {
+      return Promise.resolve(result).finally(() => releaseRunCloseOutLease(runId, lease))
     }
     releaseRunCloseOutLease(runId, lease)
     return result

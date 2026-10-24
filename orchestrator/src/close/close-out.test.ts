@@ -6,7 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { heldRunCloseOutLeaseIds } from '../run/run-lease.ts'
+import { heldRunCloseOutLeaseIds, withRunCloseOutLease } from '../run/run-lease.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,
@@ -453,6 +453,21 @@ test('a sweep close-out holds its close-out lease while persisting the outcome',
   } finally {
     db().exec('DROP TRIGGER IF EXISTS observe_close_out_lease')
   }
+})
+
+test('the coordinator still closes out under the close-out lease it already holds', () => {
+  const runId = addRun({ agent: 'codex', job: 'coordinator-close-out-lease', status: 'ok' })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run('/missing-coordinator-tree', runId)
+  withRunCloseOutLease(
+    runId,
+    () => {},
+    () => {
+      expect(closeOutRun(runId, { intent: 'terminal' }).outcome).toBe('held')
+      expect(
+        closeOutRun(runId, { intent: 'terminal', closeOutLeaseHeld: true }).outcome,
+      ).toBe('absent')
+    },
+  )
 })
 
 test('clean landing-tree close-out persists held while reporting kept', () => {
