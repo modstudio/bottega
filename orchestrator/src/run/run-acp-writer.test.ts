@@ -12,6 +12,25 @@ import {
   runRoots,
 } from './run-acp-writer.ts'
 
+// Codex's own sandbox denies loopback binding, so a review lens running this file there
+// skips the real-listener test; CI and the local gate can bind and always run it.
+const sandboxDeniesLoopbackBinding = await (async () => {
+  try {
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: () => new Response(),
+    })
+    await server.stop(true)
+    return false
+  } catch (error) {
+    // Only a sandbox's denial skips the test; any other failure must stay visible.
+    const code = (error as { code?: unknown }).code
+    if (code === 'EADDRINUSE' || code === 'EPERM' || code === 'EACCES') return true
+    throw error
+  }
+})()
+
 const tree: Worktree = {
   path: resolve('..'),
   branch: 'DEV-1530-test',
@@ -74,11 +93,14 @@ test('recorded confinement exposes sandbox roots and leaves host workers unprove
   ).toEqual(['/run/tree', '/run/scratch', '/tmp'])
 })
 
-test('a startup failure after creating the writing ACP ask endpoint closes its listener', async () => {
-  const endpoint = startAskHttpEndpoint('missing-run', 'token')
-  expect((await fetch(endpoint.url)).status).toBe(401)
+test.skipIf(sandboxDeniesLoopbackBinding)(
+  'a startup failure after creating the writing ACP ask endpoint closes its listener',
+  async () => {
+    const endpoint = startAskHttpEndpoint('missing-run', 'token')
+    expect((await fetch(endpoint.url)).status).toBe(401)
 
-  await disposeAskAfterStartup(endpoint, false)
+    await disposeAskAfterStartup(endpoint, false)
 
-  await expect(fetch(endpoint.url)).rejects.toThrow()
-})
+    await expect(fetch(endpoint.url)).rejects.toThrow()
+  },
+)
