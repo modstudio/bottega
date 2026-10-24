@@ -12,6 +12,8 @@ import {
   runRoots,
 } from './run-acp-writer.ts'
 
+// Codex's own sandbox denies loopback binding, so a review lens running this file there
+// skips the real-listener test; CI and the local gate can bind and always run it.
 const sandboxDeniesLoopbackBinding = await (async () => {
   try {
     const server = Bun.serve({
@@ -89,7 +91,7 @@ test('recorded confinement exposes sandbox roots and leaves host workers unprove
 })
 
 test.skipIf(sandboxDeniesLoopbackBinding)(
-  'a startup failure after creating the writing ACP ask endpoint closes its listener (sandbox denies loopback binding)',
+  'a startup failure after creating the writing ACP ask endpoint closes its listener',
   async () => {
     const endpoint = startAskHttpEndpoint('missing-run', 'token')
     expect((await fetch(endpoint.url)).status).toBe(401)
