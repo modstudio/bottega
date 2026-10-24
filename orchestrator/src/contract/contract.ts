@@ -5,6 +5,13 @@ import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import { progressFileInstruction } from '../run/checkpoint.ts'
+import {
+  CANON_SOURCE_SCHEMA,
+  type JsonSchema,
+  parseWorkerReplyWithCount,
+  VERIFY_CLAIM_SCHEMA,
+  validatesSchema,
+} from './contract-reply.ts'
 
 export { hasRealQuestions, realQuestions } from '../outcome.ts'
 
@@ -29,7 +36,7 @@ export { hasRealQuestions, realQuestions } from '../outcome.ts'
  * WHICH IS WHY SCHEMA SUPPORT DECIDES A LOT HERE. grok's `--json-schema`
  * constrains the model; codex's `--output-schema` is silently dropped when MCP
  * tools are active, which yields near-JSON rather than an error. The parser
- * below therefore treats the schema as a strong hint and not a guarantee: it
+ * in ./contract-reply.ts therefore treats the schema as a strong hint and not a guarantee: it
  * recovers a fenced or embedded object, because the alternative is losing a
  * completed implementation to a stray prose sentence.
  */
@@ -313,17 +320,13 @@ export type IssueWorkerReply = WorkerReply & {
 }
 
 /**
- * Which authoritative canon source was available to a review run.
+ * Which authoritative canon source was available to a run.
  *
- * Shared by both review contracts so a reader never has to translate two
- * provenance dialects. `unknown` is deliberately distinct from either source:
- * some clients expose no diagnostic and orchestrator must not invent one for them.
+ * Shared by the review and verify-claim contracts so a reader never has to
+ * translate two provenance dialects. `unknown` is deliberately distinct from
+ * either source: some clients expose no diagnostic and orchestrator must not
+ * invent one for them.
  */
-const CANON_SOURCE_SCHEMA = {
-  type: 'string',
-  enum: ['live database', 'mirror', 'unknown'],
-} as const
-
 export type CanonSource = (typeof CANON_SOURCE_SCHEMA.enum)[number]
 
 /** Generated from the architect's closed scale so prompt and triage cannot drift. */
@@ -691,22 +694,6 @@ export function missingDeclaredDeliverables(
   return missing
 }
 
-/** verify-claim keeps its verdict contract; only its provenance is added. */
-export const VERIFY_CLAIM_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['verdict', 'provenance'],
-  properties: {
-    verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] },
-    provenance: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['canon_source'],
-      properties: { canon_source: CANON_SOURCE_SCHEMA },
-    },
-  },
-} as const
-
 /**
  * The one infrastructure recovery instruction shared by repository writers and
  * readers. Keep this as one string: differing recovery language is how a
@@ -907,174 +894,10 @@ export function packResumePrompt(
   ].join('\n')
 }
 
-/**
- * Recover the worker's structured reply from whatever actually came back.
- *
- * Three fallbacks, in descending order of how well-behaved the agent was,
- * because losing a finished implementation to a formatting slip would be an
- * absurd way to fail:
- *
- *   1. the whole reply is the object (a schema-constrained agent)
- *   2. it is inside a fenced block (a model that explained itself first)
- *   3. it is the outermost braces anywhere in the text
- *
- * Returns null when nothing parses, and the caller treats THAT as its own kind
- * of failure rather than as `done`. Assuming success from an unreadable reply
- * is how a run that never touched the code gets recorded as a completed one.
- */
-export type JsonSchema = {
-  type?: string | readonly string[]
-  properties?: { readonly [key: string]: JsonSchema }
-  required?: readonly string[]
-  items?: JsonSchema
-  enum?: readonly unknown[]
-  anyOf?: readonly JsonSchema[]
-  additionalProperties?: boolean
-}
-
-export function validatesSchema(value: unknown, schema: JsonSchema): boolean {
-  if (schema.anyOf && !schema.anyOf.some((choice) => validatesSchema(value, choice))) return false
-  if (schema.enum && !schema.enum.some((item) => Object.is(item, value))) return false
-
-  const types = typeof schema.type === 'string' ? [schema.type] : schema.type
-  if (types) {
-    const matches = types.some((type) => {
-      if (type === 'null') return value === null
-      if (type === 'array') return Array.isArray(value)
-      if (type === 'object')
-        return value !== null && typeof value === 'object' && !Array.isArray(value)
-      return typeof value === type
-    })
-    if (!matches) return false
-  }
-
-  if (Array.isArray(value) && schema.items) {
-    return value.every((item) => validatesSchema(item, schema.items!))
-  }
-  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    const object = value as Record<string, unknown>
-    if (schema.required?.some((key) => !Object.hasOwn(object, key))) return false
-    // additionalProperties:false is NOT enforced here. The schema declares it
-    // so a schema-bound agent cannot invent fields, but a worker that did the
-    // work and added one stray key has not stopped doing the work, and
-    // rejecting the reply would throw a finished implementation away over a
-    // field nobody reads.
-    if (schema.properties) {
-      for (const [key, child] of Object.entries(schema.properties)) {
-        if (Object.hasOwn(object, key) && !validatesSchema(object[key], child)) return false
-      }
-    }
-  }
-  return true
-}
-
 export type ContractReply = WorkerReply | IssueWorkerReply
-export type ParsedWorkerReply = { reply: ContractReply | null; contractObjects: number }
-
-export function parseWorkerReplyWithCount(text: string): {
-  reply: WorkerReply | null
-  contractObjects: number
-}
-export function parseWorkerReplyWithCount(text: string, schema: JsonSchema): ParsedWorkerReply
-export function parseWorkerReplyWithCount(
-  text: string,
-  schema: JsonSchema = WORKER_SCHEMA,
-): ParsedWorkerReply {
-  const t = text.trim()
-
-  /**
-   * SEVERAL objects can arrive, and the LAST one is the answer.
-   *
-   * A worker under a schema narrates in the same shape it was told to reply in:
-   * one run opened with `{"status":"done","summary":"Starting by reading the
-   * canon...","files_changed":[]}` and emitted its real reply afterwards. Taking
-   * the span from the first `{` to the last `}` covers both and parses as
-   * neither, so a completed change set — three files, 150 lines — was recorded
-   * as "reply did not match the worker contract".
-   *
-   * Worse than losing it would be BELIEVING the first: it says `done` with no
-   * files, which is a confident report of having finished nothing.
-   *
-   * So the objects are scanned out by brace depth, honoring strings and
-   * escapes, and offered newest first. Depth-scanned rather than regexed
-   * because a JSON object nests, and a brace inside a summary string is not a
-   * brace.
-   */
-  const objects: string[] = []
-  let depth = 0,
-    start = -1,
-    inStr = false,
-    esc = false
-  for (let i = 0; i < t.length; i++) {
-    const ch = t[i]!
-    if (inStr) {
-      if (esc) esc = false
-      else if (ch === '\\') esc = true
-      else if (ch === '"') inStr = false
-      continue
-    }
-    if (ch === '"') {
-      inStr = true
-      continue
-    }
-    if (ch === '{') {
-      if (depth === 0) start = i
-      depth++
-      continue
-    }
-    if (ch === '}') {
-      depth--
-      if (depth === 0 && start !== -1) {
-        objects.push(t.slice(start, i + 1))
-        start = -1
-      }
-    }
-  }
-  objects.reverse()
-  const valid: ContractReply[] = []
-  for (const c of objects) {
-    try {
-      let o = JSON.parse(c)
-      // An unknown status is not a reply we can act on. Treating it as `done`
-      // would silently accept an unfinished run; treating it as unparseable
-      // sends it down the path that says so.
-      /**
-       * `blocked` is still accepted, and normalized.
-       *
-       * The word was renamed to `asking` because a "blocker" here means the
-       * opposite — an environment problem rather than a worker behaving
-       * correctly — but an agent whose schema was dropped, or which is
-       * echoing older instructions, will still say `blocked`. Rejecting the
-       * reply over a synonym would throw away a completed implementation.
-       */
-      if (o && typeof o === 'object' && !Array.isArray(o) && o.status === 'blocked') {
-        o = { ...o, status: 'asking' }
-      }
-      /**
-       * The NESTED shapes are checked too, not just `status`.
-       *
-       * `{"status":"blocked","questions":[null]}` satisfied every test here
-       * and then threw on `item.question` while run() was writing its
-       * terminal row — inside the `finally`, so the row stayed `running` for
-       * ever with no process behind it. Anything malformed is dropped rather
-       * than rejecting the whole reply: a worker that did the work and
-       * garbled one question should not lose the work, and a `blocked` reply
-       * left with no usable questions falls into the dead-end branch that
-       * already handles exactly that.
-       *
-       * Schema validation now supersedes that recovery policy: a malformed
-       * nested value rejects this candidate before any part of it is acted on.
-       */
-      if (validatesSchema(o, schema)) valid.push(o as ContractReply)
-    } catch {
-      /* try the next shape */
-    }
-  }
-  return { reply: valid[0] ?? null, contractObjects: valid.length }
-}
 
 export function parseWorkerReply(text: string): WorkerReply | null {
-  return parseWorkerReplyWithCount(text).reply as WorkerReply | null
+  return parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA).reply
 }
 
 type DialectParseResult = { reply: unknown | null; contractObjects: number }
@@ -1102,14 +925,14 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
     return {
       schema: ISSUE_WORKER_SCHEMA,
       schemaName: 'ISSUE_WORKER_SCHEMA',
-      parse: (text) => parseWorkerReplyWithCount(text, ISSUE_WORKER_SCHEMA),
+      parse: (text) => parseWorkerReplyWithCount<IssueWorkerReply>(text, ISSUE_WORKER_SCHEMA),
     }
   }
   if (j.needs.writesRepo) {
     return {
       schema: WORKER_SCHEMA,
       schemaName: 'WORKER_SCHEMA',
-      parse: (text) => parseWorkerReplyWithCount(text, WORKER_SCHEMA),
+      parse: (text) => parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA),
     }
   }
   if (j.findings) {

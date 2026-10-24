@@ -12,7 +12,6 @@ import {
   packResumePrompt,
   parseReaderReply,
   parseWorkerReply,
-  parseWorkerReplyWithCount,
   READER_SCHEMA,
   REVIEW_SCHEMA,
   readerDeliverablesInstruction,
@@ -20,9 +19,10 @@ import {
   replyFileInstruction,
   resolveReplyDialect,
   TEXT_REPLY_SCHEMA,
-  VERIFY_CLAIM_SCHEMA,
   WORKER_SCHEMA,
+  type WorkerReply,
 } from './contract.ts'
+import { parseWorkerReplyWithCount, VERIFY_CLAIM_SCHEMA } from './contract-reply.ts'
 
 test('reply contract names absolute scratch files without a shell variable', () => {
   const scratch = '/var/tmp/orch/runs/42/scratch'
@@ -238,19 +238,6 @@ test(`${PLATFORM_SLUG} run start diagnose --deliverable x returns unevidenced wh
       parseReaderReply({ deliverables: [], narrative: 'prose', files_written: null }),
     ),
   ).toEqual(['x'])
-})
-
-test('multiple contracts leave a visible note on an otherwise successful run', () => {
-  const parsed = parseWorkerReplyWithCount(
-    [
-      { ...baseWorkerReply, summary: 'real reply' },
-      { ...baseWorkerReply, summary: 'quoted contract-shaped object' },
-    ]
-      .map((value) => JSON.stringify(value))
-      .join('\n'),
-  )
-  expect(parsed.reply?.summary).toBe('quoted contract-shaped object')
-  expect(parsed.contractObjects).toBe(2)
 })
 
 describe('a worker that stops to ask is not a worker that failed', () => {
@@ -494,13 +481,14 @@ describe('a worker that narrates in its own reply shape', () => {
     expect(r?.summary).toBe('real')
   })
   test('multiple valid contract objects report their count and take the last', () => {
-    const parsed = parseWorkerReplyWithCount(
+    const parsed = parseWorkerReplyWithCount<WorkerReply>(
       [
         workerReply({ summary: 'real reply' }),
         workerReply({ summary: 'quoted contract-shaped object' }),
       ]
         .map((value) => JSON.stringify(value))
         .join('\n'),
+      WORKER_SCHEMA,
     )
     expect(parsed.reply?.summary).toBe('quoted contract-shaped object')
     expect(parsed.contractObjects).toBe(2)

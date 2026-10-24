@@ -307,6 +307,7 @@ export const modules: ArchitectureModule[] = [
     './project-mcp-scope.ts',
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
+  module('orchestrator/src/contract/contract-reply.ts', []),
   ...recipeModules,
   module('orchestrator/src/hook-tree/hook-tree.ts', [
     '../../../shared/brand.ts',
@@ -830,6 +831,38 @@ export function writeTimeArchitectureRules(): ArchitectureRule[] {
   ]
 }
 
+/** Modules that must not reach a runtime they would otherwise import freely. */
+function runtimeBoundaryRules() {
+  return [
+    {
+      name: 'import-hosted-hub-server-transitive-boundary',
+      severity: 'error' as const,
+      comment: 'Enforce the hosted hub server concern boundary.',
+      from: { path: exactArchitecturePath('hub/src/hosted.ts') },
+      to: {
+        path: [
+          'hub/src/db.ts',
+          'hub/src/db/db.ts',
+          'hub/src/orch.ts',
+          'hub/src/orch/orch.ts',
+          'bun:sqlite',
+          'node:child_process',
+        ]
+          .map(architectureDependencyPath)
+          .join('|'),
+        reachable: true,
+      },
+    },
+    {
+      name: 'contract-reply-imports-no-builtins',
+      severity: 'error' as const,
+      comment: 'The pure reply parser reaches no database, process, file system or clock.',
+      from: { path: exactArchitecturePath('orchestrator/src/contract/contract-reply.ts') },
+      to: { dependencyTypes: ['core'] },
+    },
+  ]
+}
+
 export function architectureRules() {
   const cycleFiles = [...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1)))]
   const forbidden: ArchitectureRule[] = [
@@ -932,25 +965,7 @@ export function architectureRules() {
         reachable: true,
       },
     },
-    {
-      name: 'import-hosted-hub-server-transitive-boundary',
-      severity: 'error',
-      comment: 'Enforce the hosted hub server concern boundary.',
-      from: { path: exactArchitecturePath('hub/src/hosted.ts') },
-      to: {
-        path: [
-          'hub/src/db.ts',
-          'hub/src/db/db.ts',
-          'hub/src/orch.ts',
-          'hub/src/orch/orch.ts',
-          'bun:sqlite',
-          'node:child_process',
-        ]
-          .map(architectureDependencyPath)
-          .join('|'),
-        reachable: true,
-      },
-    },
+    ...runtimeBoundaryRules(),
     ...inversions.map((entry) => ({
       name: `inversion-${entry.from.replace(/[^a-z0-9]+/gi, '-')}-${entry.to.replace(/[^a-z0-9]+/gi, '-')}`,
       severity: 'error' as const,

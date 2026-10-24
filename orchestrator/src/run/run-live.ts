@@ -18,9 +18,9 @@ import {
   type ReplyDialect,
   realQuestions,
   TEXT_REPLY_SCHEMA,
-  validatesSchema,
   type WorkerReply,
 } from '../contract/contract.ts'
+import { validatesSchema } from '../contract/contract-reply.ts'
 import { db, nowIso } from '../database/db.ts'
 import { recordRunWarning, type StreamEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'

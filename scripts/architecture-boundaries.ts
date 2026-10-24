@@ -2,6 +2,7 @@ import { dirname, normalize } from 'node:path'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
+import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
@@ -230,17 +231,8 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep confinement rulings independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
-  boundary(
-    'contract-boundary',
-    'orchestrator/src/contract/contract.ts',
-    [
-      '../../../shared/brand.ts',
-      '../jobs/jobs.ts',
-      '../outcome.ts',
-      '../review/review-vocabulary.ts',
-      '../run/checkpoint.ts',
-    ],
-    'Keep reply dialect resolution independent of lifecycle and impure transport concerns.',
+  ...contractBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
   ...databaseBoundarySpecs,
   boundary(

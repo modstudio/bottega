@@ -134,8 +134,6 @@ function docsDriftPrompt(item: { slug: string; scope: string; project: string })
     `Fetch it yourself; do not assume its contents: \`${PLATFORM_SLUG} doc show ${item.slug} --scope ${item.scope} --json\`.`,
     'Inspect the project tree you were given.',
     'Find concrete claims in the document - file paths, symbol names, shell commands, described behavior - that no longer match the current tree.',
-    'Answer with the verify-claim contract, and nothing else:',
-    '`{"verdict": "true" | "false" | "undecidable", "provenance": {"canon_source": "live database" | "mirror" | "unknown"}}`.',
     '`false` means at least one claim no longer matches the tree; `true` means every claim still matches; `undecidable` means you could not establish either.',
     'Name each stale claim, and the evidence for it (the path, symbol or command you checked and what you saw), in your final message.',
     'Reply only with that contract object, and write it to your reply file.',

@@ -1,11 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  ISSUE_WORKER_SCHEMA,
-  type IssueWorkerReply,
-  parseWorkerReplyWithCount,
-} from '../contract/contract.ts'
+import { ISSUE_WORKER_SCHEMA, type IssueWorkerReply } from '../contract/contract.ts'
+import { parseWorkerReplyWithCount } from '../contract/contract-reply.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import type { Project } from '../project/projects.ts'
 import {
