@@ -464,6 +464,11 @@ export function bindSignals() {
         if (result.error) {
           console.error(`orch: run ${checkpoint.runId} final checkpoint failed: ${result.error}`)
         }
+        if (result.skipped) {
+          console.error(
+            `orch: run ${checkpoint.runId} final checkpoint skipped: a ${result.skipped} is in progress`,
+          )
+        }
       }
       process.exit(130)
     })

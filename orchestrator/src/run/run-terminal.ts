@@ -297,6 +297,11 @@ export function checkpointTerminalWork(input: TerminalCheckpointInput): string |
   }
   if (checkpoint.error)
     console.error(`orch: run ${input.claim.id} checkpoint failed: ${checkpoint.error}`)
+  if (checkpoint.skipped) {
+    console.error(
+      `orch: run ${input.claim.id} final checkpoint skipped: a ${checkpoint.skipped} is in progress`,
+    )
+  }
   return terminalCheckpointHeader({
     created: checkpoint.created,
     commit: checkpoint.commit,

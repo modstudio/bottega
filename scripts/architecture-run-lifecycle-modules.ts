@@ -228,6 +228,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/codex-throttle.ts',
   ]),
   module('orchestrator/src/run/checkpoint-schedule.ts', []),
+  module('orchestrator/src/run/checkpoint-sequencer.ts', []),
   module('orchestrator/src/run/run-worker-brokers.ts', [
     '../focused-test/focused-test-broker.ts',
     '../gate/gate-broker.ts',

@@ -404,6 +404,11 @@ function liveCheckpointSchedule(input: {
       final: trigger === 'limit',
     })
     if (result.error) console.error(`orch: run ${input.runId} checkpoint failed: ${result.error}`)
+    if (result.skipped) {
+      console.error(
+        `orch: run ${input.runId} checkpoint skipped: a ${result.skipped} is in progress`,
+      )
+    }
     return result
   })
 }
