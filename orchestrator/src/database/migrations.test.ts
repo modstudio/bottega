@@ -109,6 +109,17 @@ test('the schema hash ignores an in-flight write probe table', () => {
   }
 })
 
+test('the schema hash includes a malformed write-probe table name', () => {
+  const database = migratedTestDatabase()
+  try {
+    const before = expectedSchemaHash()
+    database.exec(`CREATE TABLE "${WRITE_PROBE_TABLE_PREFIX}not_a_pid" (value INTEGER)`)
+    expect(canonicalSchemaHash(database)).not.toBe(before)
+  } finally {
+    database.close()
+  }
+})
+
 test('a fresh database seeds discoverable agents without machine probe claims', () => {
   const database = migratedTestDatabase()
   try {

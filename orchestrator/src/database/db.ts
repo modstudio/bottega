@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
@@ -41,7 +42,12 @@ import {
   staleWriteRefusal,
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
-import { staleWriteProbe, WRITE_PROBE_TABLE_PREFIX } from './write-probe.ts'
+import {
+  isWriteProbeTable,
+  staleWriteProbe,
+  WRITE_PROBE_TABLE_PREFIX,
+  writeProbeOwnerPid,
+} from './write-probe.ts'
 
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -211,7 +217,7 @@ function databaseWritable(d: Database): boolean {
     // write transaction against a chmod-444 main file and fail only at commit.
     d.exec('BEGIN IMMEDIATE')
     try {
-      d.exec(`CREATE TABLE "${probe}" (value INTEGER); DROP TABLE "${probe}"; COMMIT`)
+      d.exec(`CREATE TABLE IF NOT EXISTS "${probe}" (value INTEGER); DROP TABLE "${probe}"; COMMIT`)
     } catch (error) {
       try {
         d.exec('ROLLBACK')
@@ -220,8 +226,12 @@ function databaseWritable(d: Database): boolean {
       }
       throw error
     }
-    sweepWriteProbes(d)
     connectionWritable = true
+    try {
+      sweepWriteProbes(d)
+    } catch {
+      /* best effort: a later process retries stale probe cleanup */
+    }
   } catch {
     connectionWritable = false
   }
@@ -236,7 +246,11 @@ function sweepWriteProbes(d: Database): void {
        WHERE type = 'table' AND substr(name, 1, ?) = ?`,
     )
     .all(WRITE_PROBE_TABLE_PREFIX.length, WRITE_PROBE_TABLE_PREFIX) as { name: string }[]
-  const stale = tables.filter(({ name }) => staleWriteProbe(name, process.pid))
+  const stale = tables.filter(({ name }) => {
+    if (!isWriteProbeTable(name)) return false
+    const ownerPid = writeProbeOwnerPid(name)
+    return staleWriteProbe(name, process.pid, pidAlive(ownerPid))
+  })
   if (stale.length === 0) return
   d.exec('BEGIN IMMEDIATE')
   try {

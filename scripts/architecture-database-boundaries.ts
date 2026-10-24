@@ -15,6 +15,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       'shared/brand.ts',
       'shared/embedded-assets.ts',
       'shared/machine-config.ts',
+      'shared/process-identity.ts',
       'shared/record-id.ts',
       'shared/read-only-database-access.ts',
       'shared/store-access.ts',
@@ -29,6 +30,13 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
     ],
     typeOnlyAllowed: [],
     reason: 'Enforce the database concern boundary.',
+  },
+  {
+    name: 'write-probe-policy-boundary',
+    file: `${source}write-probe.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep write-probe naming and stale classification pure over observed facts.',
   },
   {
     name: 'machine-identity-store-boundary',
