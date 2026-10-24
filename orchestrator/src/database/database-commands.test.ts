@@ -116,6 +116,25 @@ test('migrate reports live and host-waiting runs before its first migration', as
   )
 })
 
+test('migrate refuses a non-additive pending range under live runs unless explicitly forced', async () => {
+  const run = { name: 'run-live', status: 'running' as const, waiting: false }
+  const refused = actions(async () => undefined, true)
+  refused.value.inFlightRuns = async () => [run]
+  refused.value.migrationDecision = () => ({ action: 'refuse', reason: 'drain-impossible' })
+  await expect(migrateCommand({ log: () => {} }, refused.value)).rejects.toThrow(
+    `run-live\ncleared by: ${PLATFORM_SLUG} machine update`,
+  )
+
+  const forced = actions(async () => undefined, true)
+  forced.value.inFlightRuns = async () => [run]
+  forced.value.migrationDecision = refused.value.migrationDecision
+  const lines: string[] = []
+  await migrateCommand({ log: (line) => lines.push(line) }, forced.value, {
+    forceInFlight: true,
+  })
+  expect(lines).toContain('forcing migration; these orchestrator runs will fail: run-live')
+})
+
 async function reportFromStoreBefore(
   beforeMigration: string,
   insert: (database: Database) => void,

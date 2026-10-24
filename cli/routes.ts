@@ -217,11 +217,12 @@ export const ROUTES = (
           owner: 'orch',
           argv: ['migrate'],
           label: 'orchestrator migrate',
-          options: { '--backfill-spec-sha': false },
+          options: { '--backfill-spec-sha': false, '--force-in-flight': false },
         },
         { owner: 'hub', argv: ['migrate'], label: 'hub migration' },
       ],
     },
+    route('machine update', 'orch', 'update', 'update the main checkout after draining runs'),
     route('machine reconcile', 'hub', 'reconcile'),
     ...[
       'health',

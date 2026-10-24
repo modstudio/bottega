@@ -103,6 +103,7 @@ const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result'] as const
 const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
   'mcp-reader-proxy',
   'migrate',
+  'update',
   'ratchet',
   ...READ_ONLY_STORE_COMMANDS,
 ])

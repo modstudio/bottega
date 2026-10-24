@@ -17,7 +17,7 @@ case "$changed" in
     # The main checkout migrates the stores resolved by its own binaries.
     unset BOTTEGA_ORCHESTRATOR_DB BOTTEGA_DEPTH
     if ! (cd "$root" && ./bin/bottega machine migrate); then
-      echo "post-merge: migration failed; run by hand: cd '$root' && ./bin/bottega machine migrate" >&2
+      echo "post-merge: migration left for the update drain; run: cd '$root' && ./bin/bottega machine update" >&2
     fi
     ;;
 esac

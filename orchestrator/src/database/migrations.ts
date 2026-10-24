@@ -209,7 +209,7 @@ export function migrationRefusal(d: Database): string | null {
   if (state.pending.length) {
     return (
       `refusing to open a store behind this binary's migration journal: ${state.pending[0]!.tag}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
+      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight)`
     )
   }
   return null

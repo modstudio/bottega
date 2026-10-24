@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import type { HostLoad } from '../gate-load.ts'
 import {
   RUN_HOST_WAIT_MAX_MS,
@@ -34,6 +35,35 @@ const repositoryRun = (repo: string | null = '/repo') => {
 }
 
 describe('run host capacity', () => {
+  test('a migration drain visibly waits and proceeds when its marker clears', async () => {
+    const runId = repositoryRun()
+    setMigrationDrain(db(), '0155_rebuild')
+    let sawWait = false
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      measure: loaded,
+      sleep: async () => {
+        sawWait = Boolean(
+          (
+            db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
+              host_wait_since: string | null
+            }
+          ).host_wait_since,
+        )
+        clearMigrationDrain(db())
+      },
+    })
+    expect(sawWait).toBe(true)
+    expect(result).toMatchObject({
+      outcome: 'admitted',
+      heldOn: ['migration'],
+      drainingFor: '0155_rebuild',
+    })
+  })
+
   test('a run never counts itself as held work', async () => {
     const runId = repositoryRun()
     let slept = false

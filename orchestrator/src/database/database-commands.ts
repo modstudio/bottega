@@ -1,8 +1,9 @@
 // concern: database
 /** Owns database maintenance command behavior. Must not know CLI grammar. */
 
-import type { Database } from 'bun:sqlite'
+import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
 import {
   type MigrationInFlightRun,
@@ -11,7 +12,8 @@ import {
 import { reconcileRun } from '../run/run-artifacts.ts'
 import { existingDatabaseMigrationRefusal } from './database-location.ts'
 import { backfillSpecSha, DB_PATH, migrateDatabase, withDatabaseForMigrationStep } from './db.ts'
-import { migrationApplied } from './migrations.ts'
+import { decideMigrationDrain } from './migration-drain-decision.ts'
+import { migrationApplied, migrationJournal } from './migrations.ts'
 import {
   applyRunFilesystemIdentityMigration,
   discoverRunFilesystemIdentityMigration,
@@ -35,12 +37,16 @@ type MigrateCommandActions = {
   contracted(): Promise<boolean>
   fill(): Promise<unknown>
   backfill(): { updated: number; missing: number }
+  migrationDecision?(runs: MigrationInFlightRun[]): ReturnType<typeof decideMigrationDrain>
 }
 
 const PROJECT_IDENTITY_CONTRACT_MIGRATION = '0115_project_identity_contract'
 const RUN_FILESYSTEM_IDENTITY_CUTOVER = '0121_run_filesystem_identity_cutover'
 
-type MigrateCommandOptions = { authorityRefusal?: () => string | null }
+type MigrateCommandOptions = {
+  authorityRefusal?: () => string | null
+  forceInFlight?: boolean
+}
 
 /** Runs only from the migration runner while its BEGIN IMMEDIATE lock is held. */
 export function applyRunFilesystemIdentityCutover(
@@ -71,6 +77,24 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
         : Promise.resolve(false),
     fill: () => withDatabaseForMigrationStep((database) => fillProjectRecordIds(database)),
     backfill: backfillSpecSha,
+    migrationDecision: (runs) => {
+      if (!existsSync(DB_PATH)) return { action: 'apply-now' }
+      const database = new Database(DB_PATH, { readwrite: false, create: false })
+      try {
+        const storeVersion = (
+          database.query('PRAGMA user_version').get() as { user_version: number }
+        ).user_version
+        return decideMigrationDrain({
+          journal: migrationJournal(),
+          storeVersion,
+          runs,
+          canDrain: false,
+          waitBoundReached: false,
+        })
+      } finally {
+        database.close()
+      }
+    },
     migrateCutover: () => {
       let files: RunFilesystemMigrationReport | undefined
       const migrated = migrateDatabase({
@@ -97,6 +121,17 @@ export async function migrateCommand(
   presentation.log(`runs in flight before migration: ${inFlight.length}`)
   for (const run of inFlight) {
     presentation.log(`  ${run.name}: ${run.waiting ? 'waiting for host capacity' : run.status}`)
+  }
+  const decision = actions.migrationDecision?.(inFlight)
+  if (decision && decision.action !== 'apply-now') {
+    const names = inFlight.map((run) => run.name).join(', ')
+    if (!options.forceInFlight) {
+      throw new Error(
+        `refusing non-additive migration while orchestrator runs are in flight: ${names}\n` +
+          `cleared by: ${PLATFORM_SLUG} machine update`,
+      )
+    }
+    presentation.log(`forcing migration; these orchestrator runs will fail: ${names}`)
   }
   const alreadyContracted = await actions.contracted()
   const before = alreadyContracted

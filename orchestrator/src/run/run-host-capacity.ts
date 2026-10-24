@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso, tryWriteContention } from '../database/db.ts'
+import { migrationDrain } from '../database/migration-drain.ts'
 import {
   decideHostCapacityAdmission,
   HOST_LOAD_RESERVATION_MS,
@@ -135,7 +136,7 @@ export function runHostCapacityQueue(
 }
 
 function waitCause(
-  heldOn: HostHoldCondition[],
+  heldOn: Array<HostHoldCondition | 'migration'>,
   outcome: RunHostCapacityWait['outcome'],
   boundReached: boolean,
 ): string {
@@ -148,9 +149,10 @@ function finishWait(input: {
   runId: string
   at: number
   started: number
-  heldOn: Set<HostHoldCondition>
+  heldOn: Set<HostHoldCondition | 'migration'>
   outcome: RunHostCapacityWait['outcome']
   boundReached?: boolean
+  drainingFor: string | null
 }): RunHostCapacityWait {
   if (input.outcome === 'stopped')
     input.database.query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(input.runId)
@@ -159,6 +161,7 @@ function finishWait(input: {
     waitedMs: input.at - input.started,
     heldOn: [...input.heldOn],
     boundReached: input.boundReached ?? false,
+    drainingFor: input.drainingFor,
   }
   tryWriteContention({
     resourceKind: 'cpu',
@@ -174,8 +177,9 @@ function finishWait(input: {
 export type RunHostCapacityWait = {
   outcome: 'admitted' | 'stopped'
   waitedMs: number
-  heldOn: HostHoldCondition[]
+  heldOn: Array<HostHoldCondition | 'migration'>
   boundReached: boolean
+  drainingFor: string | null
 }
 
 type RunHostWaitLoop = {
@@ -213,7 +217,8 @@ function admittedWaitStep(
 
 async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityWait | null> {
   const started = input.now()
-  const heldOn = new Set<HostHoldCondition>()
+  const heldOn = new Set<HostHoldCondition | 'migration'>()
+  let drainingFor: string | null = null
   let waiting = false
   const finish = (at: number, outcome: RunHostCapacityWait['outcome'], boundReached = false) =>
     finishWait({
@@ -224,6 +229,7 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       heldOn,
       outcome,
       boundReached,
+      drainingFor,
     })
   for (;;) {
     const at = input.now()
@@ -231,6 +237,20 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       finish(at, outcome),
     )
     if (stopped.done) return stopped.result
+    const drain = migrationDrain(input.database)
+    if (drain) {
+      drainingFor = drain
+      heldOn.add('migration')
+      if (!waiting) {
+        waiting = true
+        input.database
+          .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+          .run(nowIso(), input.runId)
+      }
+      if (at - started >= RUN_HOST_WAIT_MAX_MS) return finish(at, 'stopped', true)
+      await input.sleep(RUN_HOST_WAIT_POLL_MS)
+      continue
+    }
     const decision = capacityDecision({ ...input, at, started })
     const admitted = admittedWaitStep(
       decision,
