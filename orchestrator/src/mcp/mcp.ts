@@ -94,7 +94,12 @@ const reporterFields = {
     .describe(
       'Omit to derive the calling session or authenticated orchestrator worker from the environment.',
     ),
-  monitor_invocation_id: z.number().int().positive().optional(),
+  monitor_invocation_id: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("The monitor invocation's display number."),
   affected_project: z.string().trim().min(1).optional(),
   reporting_project: z
     .string()

@@ -283,6 +283,7 @@ function postDeployFacts(
 }
 
 export type ReleaseResult = {
+  /** The release ledger row's display number. */
   id: number
   project: string
   rung: string

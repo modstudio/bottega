@@ -23,7 +23,7 @@ const RECONCILED_KINDS = [
 type ReconciledKind = (typeof RECONCILED_KINDS)[number]
 
 type ClaimedRow = {
-  id: string
+  record_id: string
   number: number
   root_run_record_id: string
   run_record_id: string
@@ -50,7 +50,7 @@ export type ClaimReconciliationObservers = {
 }
 
 type ClaimSynchronizer = (
-  row: Pick<ClaimedRow, 'id' | 'number' | 'project_path' | 'worktree_path'>,
+  row: Pick<ClaimedRow, 'record_id' | 'number' | 'project_path' | 'worktree_path'>,
   reconcile: () => void,
 ) => void
 
@@ -85,7 +85,7 @@ function claimedRows(
 ): ClaimedRow[] {
   const rows = database
     .query(
-      `SELECT claim.record_id id,claim.number,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
+      `SELECT claim.record_id,claim.number,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
               project.name project_name,project.path project_path,root.repo run_repo,
               root.cwd run_cwd,root.launch_cwd,root.worktree recorded_worktree,
               CASE WHEN claim.kind='worktree' THEN claim.allocation_key ELSE
@@ -103,7 +103,7 @@ function claimedRows(
        ORDER BY claim.claimed_at,claim.record_id`,
     )
     .all(projectName ?? null, projectName ?? null) as ClaimedRow[]
-  return claimIds ? rows.filter((row) => claimIds.has(row.id)) : rows
+  return claimIds ? rows.filter((row) => claimIds.has(row.record_id)) : rows
 }
 
 function unregisteredRepositoryPath(row: ClaimedRow): string | null {
@@ -138,7 +138,7 @@ function owningRepository(
 }
 
 function claimedRow(database: Database, claimId: string): ClaimedRow | null {
-  return claimedRows(database, undefined).find((row) => row.id === claimId) ?? null
+  return claimedRows(database, undefined).find((row) => row.record_id === claimId) ?? null
 }
 
 const synchronizeClaim: ClaimSynchronizer = (row, reconcile) => {
@@ -339,7 +339,7 @@ function reconcileClaimUnderLock(
           retained ? 'retained' : 'absent',
           nowIso(),
           settlementDetail(snapshot, branch, retained),
-          row.id,
+          row.record_id,
         ).changes,
     database,
   )
@@ -397,7 +397,7 @@ export function reconcileAbsentClaims(input: {
     }
     const completed: { value: ReconciliationResult | null } = { value: null }
     synchronize(row, () => {
-      completed.value = reconcileClaimUnderLock(database, row.id, observers, branch)
+      completed.value = reconcileClaimUnderLock(database, row.record_id, observers, branch)
     })
     const result = completed.value
     if (!result) continue

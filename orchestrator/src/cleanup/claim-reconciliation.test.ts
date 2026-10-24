@@ -296,12 +296,18 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
      (record_id, root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
      VALUES (?, ?,?,?,'worktree',?,'claimed',?)`,
   )
-  const absent = Number(
-    insert.run(newRecordId(), runId, runId, projectId, '/absent-tree', nowIso()).lastInsertRowid,
-  )
-  const present = Number(
-    insert.run(newRecordId(), runId, runId, projectId, '/present-tree', nowIso()).lastInsertRowid,
-  )
+  const absentRecordId = newRecordId()
+  const presentRecordId = newRecordId()
+  insert.run(absentRecordId, runId, runId, projectId, '/absent-tree', nowIso())
+  insert.run(presentRecordId, runId, runId, projectId, '/present-tree', nowIso())
+  const claimNumber = (recordId: string) =>
+    (
+      db().query('SELECT number FROM resource_claim WHERE record_id=?').get(recordId) as {
+        number: number
+      }
+    ).number
+  const absent = claimNumber(absentRecordId)
+  const present = claimNumber(presentRecordId)
   const lines: string[] = []
   const presentation: CleanupPresentation = {
     log: (...values) => lines.push(values.join(' ')),

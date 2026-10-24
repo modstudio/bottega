@@ -148,7 +148,9 @@ test('K8b-3 refuses an orphaned monitor condition instead of dropping it', () =>
         id,record_id,invocation_id,kind,subject,detail,action
       ) VALUES (91,'01990000-0000-7000-8000-000000001703',404,'orphan','orphan','detail','action')
     `)
-    expect(() => applyMigrations(database)).toThrow('CHECK constraint failed: valid = 1')
+    expect(() => applyMigrations(database)).toThrow(
+      'refusing monitor UUID-key migration: integer references have no parent monitor invocation (monitor_condition.invocation_record_id=1)',
+    )
     expect(database.query('SELECT COUNT(*) count FROM monitor_condition').get()).toEqual({
       count: 1,
     })

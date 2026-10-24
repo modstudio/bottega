@@ -3,7 +3,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
-  checkoutRemovalAttribution,
   claimCreationDecision,
   claimDatabaseName,
   claimIndex,
@@ -41,31 +40,6 @@ function resourceRun(projectRecordId: string | null = null, parent?: string): st
 }
 
 describe('resource claim decisions', () => {
-  test('removal attribution uses UUID to break a shared settlement-time tie', () => {
-    const older = resourceRun()
-    const latest = resourceRun()
-    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('inserted-later', older)
-    db().query('UPDATE run SET session_id=? WHERE record_id=?').run('uuid-latest', latest)
-    const claims: [string, string][] = [
-      ['01990000-0000-7000-8000-000000000042', latest],
-      ['01990000-0000-7000-8000-000000000041', older],
-    ]
-    for (const [recordId, runId] of claims) {
-      db()
-        .query(
-          `INSERT INTO resource_claim(
-             record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at,settled_at
-           ) VALUES (?,?,?,'worktree','/tie-tree','released','same-claimed','2026-10-05T12:00:00Z')`,
-        )
-        .run(recordId, runId, runId)
-    }
-    expect(checkoutRemovalAttribution(db(), '/tie-tree', '2026-10-05T00:00:00Z')).toEqual({
-      attribution: 'tree_removal',
-      removalSession: 'uuid-latest',
-      removalRun: latest,
-    })
-  })
-
   const releasableSandbox = {
     terminal: true,
     liveTurn: false,

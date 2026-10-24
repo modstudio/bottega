@@ -579,7 +579,7 @@ function persistMonitorConditions(
         `SELECT delivered_at FROM monitor_condition
         WHERE kind=? AND subject=? AND condition_since IS ? AND owner_session_id IS ?
           AND delivered_at IS NOT NULL
-        ORDER BY condition_since DESC, record_id DESC LIMIT 1`,
+        ORDER BY number DESC LIMIT 1`,
       )
       for (const condition of persistedConditions) {
         const owner = condition.ownerSession ?? null

@@ -87,6 +87,7 @@ export type RecipeDatabaseNamespace = {
 export type RecipeDatabaseClaim = { allocationKey: string; state: string }
 
 export type MonitorResult = {
+  /** The monitor invocation's display number. */
   id: number
   startedAt: string
   finishedAt: string
@@ -113,6 +114,7 @@ export type HumanMonitorCondition = Pick<
 
 export type MonitorHistoryRow = {
   record_id: string
+  /** The monitor invocation's display number. */
   id: number
   started_at: string
   trigger: string

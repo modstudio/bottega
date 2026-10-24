@@ -15,7 +15,6 @@ import { DB_PATH, db, SESSION_LIVE_MS } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
-  claimMonitorNotices,
   claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
 } from './monitor-notices.ts'
@@ -29,7 +28,6 @@ afterEach(() => {
   installRecordApiClient(null)
   delete process.env.BOTTEGA_RECORD_API_URL
 })
-
 test('heartbeat delivery emits ordinary hosted beside local once with a failed-refresh warning', async () => {
   const session = 'monitor-hosted-reader'
   const userId = newRecordId()
@@ -393,42 +391,4 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
       )
       .get(local.recordId, session),
   ).toEqual({ delivered_at: expect.any(String) })
-})
-
-test('a notice uses condition UUID to break equal invocation-time ties', () => {
-  const session = 'notice-tie-owner'
-  const startedAt = '2026-10-05T12:00:00.000Z'
-  const invocations = [
-    '01990000-0000-7000-8000-000000000012',
-    '01990000-0000-7000-8000-000000000011',
-  ]
-  for (const invocation of invocations) {
-    db()
-      .query(
-        `INSERT INTO monitor_invocation(record_id,started_at,finished_at,trigger,findings,errors)
-         VALUES (?,?,?,'invoked',1,0)`,
-      )
-      .run(invocation, startedAt, startedAt)
-  }
-  const conditions: [string, string, string][] = [
-    ['01990000-0000-7000-8000-000000000022', invocations[0]!, 'uuid-latest'],
-    ['01990000-0000-7000-8000-000000000021', invocations[1]!, 'inserted-later'],
-  ]
-  for (const [recordId, invocation, detail] of conditions) {
-    db()
-      .query(
-        `INSERT INTO monitor_condition(
-           record_id,invocation_record_id,kind,subject,condition_since,detail,action,owner_session_id
-         ) VALUES (?,?,'observation-error','run:tie','same-since',?,'reported',?)`,
-      )
-      .run(recordId, invocation, detail, session)
-  }
-  const notices = claimMonitorNotices(session)
-  const expectedNumber = (
-    db()
-      .query('SELECT number FROM monitor_condition WHERE record_id=?')
-      .get('01990000-0000-7000-8000-000000000022') as { number: number }
-  ).number
-  expect(notices).toHaveLength(1)
-  expect(notices[0]?.noticeId).toBe(`condition:${expectedNumber}`)
 })

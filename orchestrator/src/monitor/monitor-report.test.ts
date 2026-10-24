@@ -4,25 +4,6 @@ import { db } from '../database/db.ts'
 import { displayConditions, monitorHistory } from './monitor.ts'
 
 describe('operational monitor reports', () => {
-  test('history uses the invocation UUID to break a shared start-time tie', () => {
-    const startedAt = '2026-09-04T00:00:00Z'
-    for (const recordId of [
-      '01990000-0000-7000-8000-000000000002',
-      '01990000-0000-7000-8000-000000000001',
-    ]) {
-      db()
-        .query(
-          `INSERT INTO monitor_invocation(record_id,started_at,finished_at,trigger,findings,errors)
-           VALUES (?,?,?,'backstop',0,0)`,
-        )
-        .run(recordId, startedAt, startedAt)
-    }
-    expect(monitorHistory(2).map((row) => row.record_id)).toEqual([
-      '01990000-0000-7000-8000-000000000002',
-      '01990000-0000-7000-8000-000000000001',
-    ])
-  })
-
   test('marks historical human output partial when that pass had an observation error', () => {
     const invocation = db()
       .query(

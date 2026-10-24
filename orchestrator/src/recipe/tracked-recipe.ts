@@ -207,11 +207,11 @@ export const trackedAllocator: TrackedAllocator = {
       if (!owner?.project_record_id) {
         throw new Error(`tracked recipe allocation for run ${input.runId} requires a project`)
       }
-      const existingClaimIds = new Set(
-        (
-          database.query('SELECT record_id FROM resource_claim').all() as { record_id: string }[]
-        ).map((row) => row.record_id),
-      )
+      const claimNumberWatermark = (
+        database.query('SELECT COALESCE(MAX(number),0) number FROM resource_claim').get() as {
+          number: number
+        }
+      ).number
       const identity = {
         rootRunId: owner.root_run_record_id,
         runId: input.runId,
@@ -243,16 +243,14 @@ export const trackedAllocator: TrackedAllocator = {
         database
           .query(
             `SELECT record_id FROM resource_claim
-             WHERE root_run_record_id=? AND run_record_id=?
+             WHERE number>? AND root_run_record_id=? AND run_record_id=?
                AND kind IN ('port','index','string','database')
-             ORDER BY record_id`,
+             ORDER BY number`,
           )
-          .all(owner.root_run_record_id, input.runId) as {
+          .all(claimNumberWatermark, owner.root_run_record_id, input.runId) as {
           record_id: string
         }[]
-      )
-        .map((row) => row.record_id)
-        .filter((recordId) => !existingClaimIds.has(recordId))
+      ).map((row) => row.record_id)
       return { allocations: { index, ports, databases, strings }, insertedClaimIds }
     })
   },
