@@ -182,9 +182,11 @@ export function setMigrationDrainPhase(database: Database, phase: MigrationDrain
   }, database)
 }
 
+/** Remove the marker only while this process holds it, never another update's. */
 export function clearMigrationDrain(database: Database): void {
-  writeTransaction(
-    () => database.query('DELETE FROM schema_meta WHERE key=?').run(MIGRATION_DRAIN_KEY),
-    database,
-  )
+  writeTransaction(() => {
+    const marker = migrationDrain(database)
+    if (marker?.pid !== process.pid) return
+    database.query('DELETE FROM schema_meta WHERE key=?').run(MIGRATION_DRAIN_KEY)
+  }, database)
 }

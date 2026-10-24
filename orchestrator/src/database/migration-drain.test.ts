@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { db } from './db.ts'
 import {
   assertMigrationDispatchAllowed,
+  clearMigrationDrain,
   migrationDrain,
   migrationDrainForUpdate,
   migrationDrainLiveness,
@@ -77,6 +78,16 @@ describe('migration drain holder', () => {
     try {
       expect(current).toEqual(replacement)
       expect(migrationDrain(db())).toEqual(replacement)
+    } finally {
+      db().query("DELETE FROM schema_meta WHERE key='migration_drain'").run()
+    }
+  })
+
+  test("clearing never removes another update's marker", () => {
+    setMigrationDrain(db(), marker.migration, 'draining', marker)
+    try {
+      clearMigrationDrain(db())
+      expect(migrationDrain(db())).toEqual(marker)
     } finally {
       db().query("DELETE FROM schema_meta WHERE key='migration_drain'").run()
     }
