@@ -6,6 +6,7 @@ import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
+  canonicalSchemaHash,
   expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
@@ -13,6 +14,7 @@ import {
   stripSqlComments,
 } from './migrations.ts'
 import { migratedTestDatabase, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
+import { WRITE_PROBE_TABLE_PREFIX } from './write-probe.ts'
 
 function applyOneMigration(database: import('bun:sqlite').Database, tag: string): string[] {
   const journal = migrationJournal()
@@ -93,6 +95,28 @@ test('embedded migrations produce the disk journal and schema hash', () => {
     expect(expectedSchemaHash()).toBe(diskHash)
   } finally {
     registerEmbeddedAssets(null)
+  }
+})
+
+test('the schema hash ignores an in-flight write probe table', () => {
+  const database = migratedTestDatabase()
+  try {
+    const before = expectedSchemaHash()
+    database.exec(`CREATE TABLE "${WRITE_PROBE_TABLE_PREFIX}12345" (value INTEGER)`)
+    expect(canonicalSchemaHash(database)).toBe(before)
+  } finally {
+    database.close()
+  }
+})
+
+test('the schema hash includes a malformed write-probe table name', () => {
+  const database = migratedTestDatabase()
+  try {
+    const before = expectedSchemaHash()
+    database.exec(`CREATE TABLE "${WRITE_PROBE_TABLE_PREFIX}not_a_pid" (value INTEGER)`)
+    expect(canonicalSchemaHash(database)).not.toBe(before)
+  } finally {
+    database.close()
   }
 })
 

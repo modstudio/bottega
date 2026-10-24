@@ -31,6 +31,11 @@ const exempt = (file: string, fingerprints: string[], reason: string): SqlExempt
 
 const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ...exempt(
+    'orchestrator/src/database/db.ts',
+    ['a6421c4bc26604dc'],
+    'write-probe cleanup interpolates a table name restricted to the numeric probe prefix',
+  ),
+  ...exempt(
     'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
     [
       '745f7343b84fd5a4',

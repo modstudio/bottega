@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
@@ -41,6 +42,12 @@ import {
   staleWriteRefusal,
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
+import {
+  isWriteProbeTable,
+  staleWriteProbe,
+  WRITE_PROBE_TABLE_PREFIX,
+  writeProbeOwnerPid,
+} from './write-probe.ts'
 
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -204,16 +211,59 @@ function openWritableHandle(): Database | null {
  */
 function databaseWritable(d: Database): boolean {
   if (connectionWritable !== null) return connectionWritable
-  const probe = `__orch_write_probe_${process.pid}`
+  const probe = `${WRITE_PROBE_TABLE_PREFIX}${process.pid}`
   try {
     // Committing the create matters: on WAL databases SQLite can prepare a
     // write transaction against a chmod-444 main file and fail only at commit.
-    d.exec(`CREATE TABLE "${probe}" (value INTEGER); DROP TABLE "${probe}";`)
+    d.exec('BEGIN IMMEDIATE')
+    try {
+      d.exec(`CREATE TABLE IF NOT EXISTS "${probe}" (value INTEGER); DROP TABLE "${probe}"; COMMIT`)
+    } catch (error) {
+      try {
+        d.exec('ROLLBACK')
+      } catch {
+        /* preserve the write-probe failure */
+      }
+      throw error
+    }
     connectionWritable = true
+    try {
+      sweepWriteProbes(d)
+    } catch {
+      /* best effort: a later process retries stale probe cleanup */
+    }
   } catch {
     connectionWritable = false
   }
   return connectionWritable
+}
+
+/** Drop probe tables whose numeric owner pid is no longer alive. */
+function sweepWriteProbes(d: Database): void {
+  const tables = d
+    .query(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND substr(name, 1, ?) = ?`,
+    )
+    .all(WRITE_PROBE_TABLE_PREFIX.length, WRITE_PROBE_TABLE_PREFIX) as { name: string }[]
+  const stale = tables.filter(({ name }) => {
+    if (!isWriteProbeTable(name)) return false
+    const ownerPid = writeProbeOwnerPid(name)
+    return staleWriteProbe(name, process.pid, pidAlive(ownerPid))
+  })
+  if (stale.length === 0) return
+  d.exec('BEGIN IMMEDIATE')
+  try {
+    for (const { name } of stale) d.exec(`DROP TABLE "${name}"`)
+    d.exec('COMMIT')
+  } catch (error) {
+    try {
+      d.exec('ROLLBACK')
+    } catch {
+      /* preserve the sweep failure */
+    }
+    throw error
+  }
 }
 
 /**

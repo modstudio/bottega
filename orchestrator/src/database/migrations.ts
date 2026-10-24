@@ -19,6 +19,7 @@ import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,
 } from './workflow-uuid-migration-preflight.ts'
+import { isWriteProbeTable } from './write-probe.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
@@ -350,14 +351,19 @@ function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`
 }
 
+const SCHEMA_VIEWS_SQL =
+  "SELECT name, sql FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+
 function schemaInventory(d: Database): SchemaInventory {
-  const tableRows = d
-    .query(
-      `SELECT name, sql FROM sqlite_master
-     WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
-     ORDER BY name`,
-    )
-    .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { name: string; sql: string }[]
+  const tableRows = (
+    d
+      .query(
+        `SELECT name, sql FROM sqlite_master
+       WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
+       ORDER BY name`,
+      )
+      .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { name: string; sql: string }[]
+  ).filter((row) => !isWriteProbeTable(row.name))
   const tables = tableRows.map((row) => row.name).sort()
   const columns: ColumnShape[] = []
   const foreignKeys: ForeignKeyShape[] = []
@@ -442,16 +448,12 @@ function schemaInventory(d: Database): SchemaInventory {
     for (const expression of checkExpressions(table.sql))
       checks.push({ table: table.name, expression })
   }
-  const views = (
-    d
-      .query(
-        `SELECT name, sql FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
-      )
-      .all() as { name: string; sql: string | null }[]
-  ).map((row) => ({
-    name: row.name,
-    sql: row.sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(row.sql))),
-  }))
+  const views = (d.query(SCHEMA_VIEWS_SQL).all() as { name: string; sql: string | null }[]).map(
+    (row) => ({
+      name: row.name,
+      sql: row.sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(row.sql))),
+    }),
+  )
   const triggers = (
     d
       .query(
