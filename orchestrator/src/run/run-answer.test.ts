@@ -1016,6 +1016,21 @@ describe('retry command', () => {
     })
   })
 
+  test('retrying a review lens dispatches with its recorded review target', async () => {
+    const id = failed('review-lens')
+    const reviewRef = 'DEV-1702-orch-review-target'
+    db().query('UPDATE run SET review_ref=? WHERE record_id=?').run(reviewRef, id)
+    const dispatched: Parameters<typeof detach>[2][] = []
+    const dispatch: typeof detach = async (_job, _prompt, spec) => {
+      dispatched.push(spec)
+      return insert('ok', 'review-lens')
+    }
+
+    await retryRun(id, { flags }, { ...helpers, dispatch })
+
+    expect(dispatched[0]?.review).toBe(reviewRef)
+  })
+
   test('retry provisions a released reader from its recorded base', async () => {
     const id = failed()
     const registeredPath = process.cwd()
@@ -1025,17 +1040,10 @@ describe('retry command', () => {
     db()
       .query('UPDATE run SET cwd=?,worktree=?,base_commit=? WHERE record_id=?')
       .run(released, released, baseCommit, id)
-    const dispatchedId = addRun({
-      agent: 'grok',
-      job: 'file-question',
-      status: 'ok',
-      session: 'orch-test-session',
-      repo: 'continuation-fixture',
-    })
     const dispatched: Parameters<typeof detach>[2][] = []
     const dispatch: typeof detach = async (_job, _prompt, spec) => {
       dispatched.push(spec)
-      return dispatchedId
+      return insert('ok')
     }
 
     await retryRun(id, { flags }, { ...helpers, dispatch })
