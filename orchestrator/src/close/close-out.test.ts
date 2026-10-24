@@ -463,9 +463,9 @@ test('the coordinator still closes out under the close-out lease it already hold
     () => {},
     () => {
       expect(closeOutRun(runId, { intent: 'terminal' }).outcome).toBe('held')
-      expect(
-        closeOutRun(runId, { intent: 'terminal', closeOutLeaseHeld: true }).outcome,
-      ).toBe('absent')
+      expect(closeOutRun(runId, { intent: 'terminal', closeOutLeaseHeld: true }).outcome).toBe(
+        'absent',
+      )
     },
   )
 })

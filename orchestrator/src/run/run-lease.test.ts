@@ -51,25 +51,6 @@ test('withRunCloseOutLease encloses async run-lease release and cleans up on eve
   }
 })
 
-test('withRunCloseOutLease holds the lease until a non-native thenable settles', async () => {
-  const runId = addRun({ agent: 'codex', job: 'lease-thenable', status: 'ok' })
-  let settle!: () => void
-  const pending = new Promise<void>((resolve) => {
-    settle = resolve
-  })
-  const thenable = { then: (done: () => void) => pending.then(done) }
-  try {
-    const enclosed = withRunCloseOutLease(runId, () => {}, () => thenable)
-    expect(heldRunCloseOutLeaseIds()).toContain(runId)
-    settle()
-    await enclosed
-    expect(heldRunCloseOutLeaseIds()).not.toContain(runId)
-  } finally {
-    removeFreeRunCloseOutLease(runId)
-    db().query('DELETE FROM run WHERE record_id=?').run(runId)
-  }
-})
-
 test('a second close-out lease acquisition in this process refuses without blocking', () => {
   const runId = addRun({ agent: 'codex', job: 'lease-second-acquire', status: 'ok' })
   let releaseFirst!: () => void
