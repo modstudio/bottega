@@ -151,6 +151,7 @@ export type ClaimInput = {
   replySchemaName: string
   carriedQuestionIds: string[]
   assertDispatchAllowed(): void
+  recordDispatchRefusal?(cause: unknown): void
 }
 
 import type { ClaimResult } from './run-claim-types.ts'
@@ -186,11 +187,20 @@ function claimableRow<T>(
   return row
 }
 
-function claimTransaction<T>(assertAllowed: () => void, claim: () => T): T {
-  return writeTransaction(() => {
-    assertAllowed()
-    return claim()
-  })
+function claimTransaction<T>(
+  assertAllowed: () => void,
+  claim: () => T,
+  recordRefusal?: (cause: unknown) => void,
+): T {
+  try {
+    return writeTransaction(() => {
+      assertAllowed()
+      return claim()
+    })
+  } catch (cause) {
+    recordRefusal?.(cause)
+    throw cause
+  }
 }
 
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
@@ -431,38 +441,42 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         transportName,
         startedByUserId,
       ) as { record_id: string; number: number }
-  const claim = claimTransaction(input.assertDispatchAllowed, () => {
-    const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
-    const claimed = { id: claimedRow.record_id, number: claimedRow.number }
-    /**
-     * A child that asked has finished that turn once its successor exists.
-     *
-     * The root is deliberately excluded here: it carries the conversation's
-     * rolled-up outcome and is routing evidence, while a child is independently
-     * excluded from routing by `parent_run_record_id IS NULL`. `ok` records what
-     * happened without fabricating a failure or an operator stop: the worker
-     * fulfilled its contract by asking, the question was ruled on, and the
-     * conversation moved to a later turn. The root's counterpart is
-     * `rollUpRootAndEnqueue`, which inherits the last turn's terminal status
-     * once the chain has ended.
-     *
-     * Match the row's own facts even though continueRun already refuses an open
-     * question. Keeping the answered-question and successor predicates here
-     * makes this write incapable of retiring a genuinely waiting turn when
-     * run() is called directly.
-     */
-    if (identity.resolveSupersededTurn) {
-      resolveSupersededTurn(db(), opts.resume!.parent, opts.resume!.turn - 1)
-    }
-    if (opts.automaticFailover && opts.retryOf !== undefined) {
-      closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
-    }
-    const recordCarry = db().query(
-      'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
-    )
-    for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
-    return claimed
-  })
+  const claim = claimTransaction(
+    input.assertDispatchAllowed,
+    () => {
+      const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
+      const claimed = { id: claimedRow.record_id, number: claimedRow.number }
+      /**
+       * A child that asked has finished that turn once its successor exists.
+       *
+       * The root is deliberately excluded here: it carries the conversation's
+       * rolled-up outcome and is routing evidence, while a child is independently
+       * excluded from routing by `parent_run_record_id IS NULL`. `ok` records what
+       * happened without fabricating a failure or an operator stop: the worker
+       * fulfilled its contract by asking, the question was ruled on, and the
+       * conversation moved to a later turn. The root's counterpart is
+       * `rollUpRootAndEnqueue`, which inherits the last turn's terminal status
+       * once the chain has ended.
+       *
+       * Match the row's own facts even though continueRun already refuses an open
+       * question. Keeping the answered-question and successor predicates here
+       * makes this write incapable of retiring a genuinely waiting turn when
+       * run() is called directly.
+       */
+      if (identity.resolveSupersededTurn) {
+        resolveSupersededTurn(db(), opts.resume!.parent, opts.resume!.turn - 1)
+      }
+      if (opts.automaticFailover && opts.retryOf !== undefined) {
+        closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
+      }
+      const recordCarry = db().query(
+        'INSERT INTO run_carried_ruling (record_id,run_record_id,question_record_id) VALUES (?,?,?)',
+      )
+      for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
+      return claimed
+    },
+    input.recordDispatchRefusal,
+  )
   const runToken = randomUUID()
   const inheritedKeepTree =
     resume.workspaceSource === 'retained'

@@ -30,7 +30,7 @@ import { decideMigrationDrain } from './migration-drain-decision.ts'
 import { migrationState, storeJournalPosition } from './migrations.ts'
 
 const MIGRATION_DRAIN_POLL_MS = 1_000
-/** Headroom after forced kill for finishRun and repository close-out to release the run lease. */
+/** Headroom after forced kill for repository close-out to release its lease. */
 const MIGRATION_TERMINALISATION_HEADROOM_MS = 5 * 60_000
 const MIGRATION_DRAIN_WAIT_MAX_MS = RUN_WALL_TIME_CEILING_MS + MIGRATION_TERMINALISATION_HEADROOM_MS
 
@@ -99,6 +99,7 @@ export async function machineUpdateCommand(
     authorityRefusal?: () => string | null
     git?: (cwd: string, args: string[]) => string
     migrate?: (cwd: string) => void
+    afterDrainPromoted?: () => void
     project?: (
       cwd: string,
       database: import('bun:sqlite').Database,
@@ -170,6 +171,7 @@ export async function machineUpdateCommand(
         withSynchronousDatabaseForMigrationStep((database) =>
           setMigrationDrainPhase(database, 'migrating'),
         )
+        deps.afterDrainPromoted?.()
         const raced = withSynchronousDatabaseForMigrationStep((database) =>
           migrationInFlightRuns(database),
         )

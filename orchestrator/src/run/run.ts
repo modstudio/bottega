@@ -20,7 +20,10 @@ import {
   workerPreamble,
 } from '../contract/contract.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { assertMigrationDispatchAllowed } from '../database/migration-drain.ts'
+import {
+  assertMigrationDispatchAllowed,
+  recordMigrationDispatchRefusal,
+} from '../database/migration-drain.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
@@ -88,7 +91,13 @@ import {
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
-import { type acquireRunLease, requiredRunLease } from './run-lease.ts'
+import {
+  type acquireRunCloseOutLease,
+  type acquireRunLease,
+  removeFreeRunCloseOutLease,
+  requiredRunCloseOutLease,
+  requiredRunLease,
+} from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
@@ -150,6 +159,34 @@ function assertConfiguredGitGuard(
 function completeStartup(): true {
   bindSignals()
   return true
+}
+
+function releaseRunCloseOutLease(
+  runId: string,
+  lease: ReturnType<typeof acquireRunCloseOutLease> | null,
+): void {
+  lease?.release()
+  removeFreeRunCloseOutLease(runId)
+}
+
+function releaseAbortedRunCloseOutLease(
+  finishCompleted: boolean,
+  runId: string,
+  lease: ReturnType<typeof acquireRunCloseOutLease> | null,
+): void {
+  if (!finishCompleted) releaseRunCloseOutLease(runId, lease)
+}
+
+function withRunCloseOutLease<T>(
+  runId: string,
+  lease: ReturnType<typeof acquireRunCloseOutLease> | null,
+  action: () => T,
+): T {
+  try {
+    return action()
+  } finally {
+    releaseRunCloseOutLease(runId, lease)
+  }
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
@@ -637,6 +674,7 @@ export async function run(opts: {
     replySchemaName,
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
+    recordDispatchRefusal: recordMigrationDispatchRefusal,
   })
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
@@ -900,6 +938,8 @@ export async function run(opts: {
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
+  let closeOutLease: ReturnType<typeof acquireRunCloseOutLease> | null = null
+  let finishCompleted = false
   const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
     srtProfile: sandboxSelection.profile,
     agent: name,
@@ -925,6 +965,10 @@ export async function run(opts: {
   const watchedCheckouts = frozenBefore
   try {
     runLease = requiredRunLease(claim.id, (cause) => {
+      error = String((cause as Error).message ?? cause)
+      failureKind = 'harness'
+    })
+    closeOutLease = requiredRunCloseOutLease(claim.id, (cause) => {
       error = String((cause as Error).message ?? cause)
       failureKind = 'harness'
     })
@@ -1068,38 +1112,42 @@ export async function run(opts: {
         mcpRuling,
         workerEvents,
       }))
+      finishCompleted = true
     } finally {
       runLease?.release()
+      releaseAbortedRunCloseOutLease(finishCompleted, claim.id, closeOutLease)
     }
   }
-  return closeRun({
-    failureKind,
-    name,
-    opts,
-    claim,
-    idleUnkillable,
-    status,
-    worktree,
-    writesJob,
-    changes,
-    artifactsPersisted,
-    idleTreePids,
-    idleTreePgid,
-    requestedJob,
-    callerCwd,
-    repoJob,
-    declaredDeliverables,
-    timeoutMinutes,
-    keepTree,
-    reason,
-    output,
-    started,
-    exitCode,
-    vendorTokens,
-    costUsd,
-    outPath,
-    contract,
-    error,
-    run,
-  })
+  return withRunCloseOutLease(claim.id, closeOutLease, () =>
+    closeRun({
+      failureKind,
+      name,
+      opts,
+      claim,
+      idleUnkillable,
+      status,
+      worktree,
+      writesJob,
+      changes,
+      artifactsPersisted,
+      idleTreePids,
+      idleTreePgid,
+      requestedJob,
+      callerCwd,
+      repoJob,
+      declaredDeliverables,
+      timeoutMinutes,
+      keepTree,
+      reason,
+      output,
+      started,
+      exitCode,
+      vendorTokens,
+      costUsd,
+      outPath,
+      contract,
+      error,
+      run,
+    }),
+  )
 }

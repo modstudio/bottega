@@ -21,6 +21,33 @@ export type MigrationDrainLiveness =
   | { state: 'stale'; reason: string }
   | { state: 'unknown'; reason: string }
 
+class MigrationDispatchRefusal extends Error {
+  readonly migrationDispatchRefusal = true
+
+  constructor(
+    message: string,
+    readonly contention: Parameters<typeof tryWriteContention>[0],
+  ) {
+    super(message)
+  }
+}
+
+/** Persist a drain refusal after a surrounding claim transaction has aborted. */
+export function recordMigrationDispatchRefusal(
+  cause: unknown,
+  opts?: { busyTimeoutMs?: number },
+): boolean {
+  if (
+    !cause ||
+    typeof cause !== 'object' ||
+    !('migrationDispatchRefusal' in cause) ||
+    !('contention' in cause)
+  )
+    return false
+  tryWriteContention((cause as MigrationDispatchRefusal).contention, opts)
+  return true
+}
+
 export function migrationDrainLiveness(
   marker: MigrationDrain,
   observe: {
@@ -97,16 +124,19 @@ export function assertMigrationDispatchAllowed(database: Database, existingChain
     active.liveness.state === 'unknown'
       ? `${active.liveness.reason}; holder pid ${active.marker.pid}`
       : `holder pid ${active.marker.pid}`
-  tryWriteContention({
+  const contention = {
     resourceKind: 'store',
     resourceKey: 'migration-drain',
     eventKind: 'refusal',
     cause: `refused dispatch during ${active.marker.phase} for ${active.marker.migration}: ${holder}`,
-  })
-  throw new Error(
+  } as const
+  const refusal = new MigrationDispatchRefusal(
     `refusing dispatch while ${active.marker.phase} for migration ${active.marker.migration} (${holder}); ` +
       `re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
+    contention,
   )
+  recordMigrationDispatchRefusal(refusal)
+  throw refusal
 }
 
 export function migrationDrainForUpdate(

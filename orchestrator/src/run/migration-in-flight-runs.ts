@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { isFreshRunHostWait } from './run-host-capacity.ts'
-import { heldRunLeaseIds } from './run-lease.ts'
+import { heldRunCloseOutLeaseIds, heldRunLeaseIds } from './run-lease.ts'
 
 export type MigrationInFlightRun = {
   name: string
@@ -11,20 +11,26 @@ export type MigrationInFlightRun = {
   waiting: boolean
   holderPid: number | null
   leaseHolding: boolean
+  closing: boolean
 }
 
 export function formatMigrationInFlightRun(run: MigrationInFlightRun): string {
   const holder = run.leaseHolding
     ? `, holder pid ${run.holderPid ?? 'unknown'}`
-    : run.holderPid
-      ? `, coordinator pid ${run.holderPid}`
-      : ''
+    : run.closing
+      ? ', closing'
+      : run.holderPid
+        ? `, coordinator pid ${run.holderPid}`
+        : ''
   return `${run.name} (${run.status}${holder})`
 }
 
 /** Names coordinators that can still touch the store, regardless of their row status. */
-export function migrationLeaseHoldingRuns(database: Database): MigrationInFlightRun[] {
-  const ids = heldRunLeaseIds()
+function migrationHeldRuns(
+  database: Database,
+  ids: string[],
+  kind: 'run' | 'close-out',
+): MigrationInFlightRun[] {
   const available = new Set(
     (database.query("SELECT name FROM pragma_table_info('run')").all() as { name: string }[]).map(
       (column) => column.name,
@@ -65,16 +71,27 @@ export function migrationLeaseHoldingRuns(database: Database): MigrationInFlight
         status: row?.status ?? 'unknown',
         waiting: row ? isFreshRunHostWait(row.status, row.host_wait_since) : false,
         holderPid: row?.pid ?? null,
-        leaseHolding: true,
+        leaseHolding: kind === 'run',
+        closing: kind === 'close-out',
       }
     })
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
+export function migrationLeaseHoldingRuns(database: Database): MigrationInFlightRun[] {
+  return migrationHeldRuns(database, heldRunLeaseIds(), 'run')
+}
+
+function migrationCloseOutHoldingRuns(database: Database): MigrationInFlightRun[] {
+  return migrationHeldRuns(database, heldRunCloseOutLeaseIds(), 'close-out')
+}
+
 /** Runs that can still acquire or currently hold an old-schema coordinator lease. */
 export function migrationInFlightRuns(database: Database): MigrationInFlightRun[] {
+  const closing = migrationCloseOutHoldingRuns(database)
   const holding = migrationLeaseHoldingRuns(database)
-  const byName = new Map(holding.map((run) => [run.name, run]))
+  const byName = new Map(closing.map((run) => [run.name, run]))
+  for (const run of holding) byName.set(run.name, run)
   const rows = database
     .query<
       {
@@ -97,6 +114,7 @@ export function migrationInFlightRuns(database: Database): MigrationInFlightRun[
       waiting: isFreshRunHostWait(row.status, row.host_wait_since),
       holderPid: existing?.holderPid ?? row.pid ?? null,
       leaseHolding: existing?.leaseHolding ?? false,
+      closing: existing?.closing ?? false,
     })
   }
   return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name))

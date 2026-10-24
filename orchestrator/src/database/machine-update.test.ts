@@ -5,11 +5,7 @@ import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { db } from './db.ts'
 import { machineUpdateCommand } from './machine-update.ts'
-import {
-  assertMigrationDispatchAllowed,
-  migrationDrain,
-  setMigrationDrain,
-} from './migration-drain.ts'
+import { migrationDrain, setMigrationDrain } from './migration-drain.ts'
 import { migrationJournal } from './migrations.ts'
 
 test("machine update clears a dead holder's marker before deciding", async () => {
@@ -88,19 +84,21 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
           if (sleeps === 1) {
             lease.release()
             released = true
-            assertMigrationDispatchAllowed(database, true)
-            database
-              .query(
-                `INSERT INTO run
-                 (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-                 VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-resume','sha',0,'','running')`,
-              )
-              .run(resumeId)
-            events.push('resume-admitted')
           } else {
             database.query("UPDATE run SET status='ok' WHERE record_id=?").run(resumeId)
             events.push('resume-finished')
           }
+        },
+        afterDrainPromoted: () => {
+          if (database.query('SELECT record_id FROM run WHERE record_id=?').get(resumeId)) return
+          database
+            .query(
+              `INSERT INTO run
+               (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+               VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-resume','sha',0,'','running')`,
+            )
+            .run(resumeId)
+          events.push('resume-admitted')
         },
         migrate: () => {
           expect(migrationDrain(db())?.phase).toBe('migrating')
@@ -224,4 +222,10 @@ test('machine update requires the registered landing branch in the main checkout
       },
     ),
   ).rejects.toThrow(`registered landing branch is main, but ${dir} is on release; check out main`)
+})
+
+test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => {
+  await expect(machineUpdateCommand({ log: () => {} })).rejects.toThrow(
+    'refusing machine update through BOTTEGA_ORCHESTRATOR_DB',
+  )
 })

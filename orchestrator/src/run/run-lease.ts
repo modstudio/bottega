@@ -33,6 +33,10 @@ function runLeaseFileName(recordId: string): string {
   return `${recordId}.lock`
 }
 
+function runCloseOutLeaseFileName(recordId: string): string {
+  return `${recordId}.close.lock`
+}
+
 export type RunLeaseMigrationCandidate = { name: string; destinationExists: boolean }
 
 export function planRunLeaseMigration(
@@ -96,16 +100,43 @@ function runLeasePath(runId: string): string {
   return join(leaseDirectory(), runLeaseFileName(row.record_id))
 }
 
+function runCloseOutLeasePath(runId: string): string {
+  const row = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+    .get(runId)
+  if (!row) throw new Error(`no run ${runId} for close-out lease`)
+  return join(leaseDirectory(), runCloseOutLeaseFileName(row.record_id))
+}
+
 /** Hold this run's coordinator lease until the returned handle is released. */
 export function acquireRunLease(runId: string): KernelLease {
   mkdirSync(leaseDirectory(), { recursive: true })
   return acquireKernelLease(runLeasePath(runId))
 }
 
+/** Hold a coordinator's close-out lease independently of conversation liveness. */
+export function acquireRunCloseOutLease(runId: string): KernelLease {
+  mkdirSync(leaseDirectory(), { recursive: true })
+  return acquireKernelLease(runCloseOutLeasePath(runId))
+}
+
 /** Acquire a required coordinator lease while reporting launch failure to its caller. */
 export function requiredRunLease(runId: string, failed: (cause: unknown) => void): KernelLease {
   try {
     return acquireRunLease(runId)
+  } catch (cause) {
+    failed(cause)
+    throw cause
+  }
+}
+
+/** Acquire a required close-out lease while reporting launch failure to its caller. */
+export function requiredRunCloseOutLease(
+  runId: string,
+  failed: (cause: unknown) => void,
+): KernelLease {
+  try {
+    return acquireRunCloseOutLease(runId)
   } catch (cause) {
     failed(cause)
     throw cause
@@ -136,6 +167,20 @@ export function removeFreeRunLease(runId: string): 'removed' | 'held' | 'missing
   }
 }
 
+/** Remove a released close-out lease file after closeRun has completed. */
+export function removeFreeRunCloseOutLease(runId: string): 'removed' | 'held' | 'missing' {
+  const path = runCloseOutLeasePath(runId)
+  if (!existsSync(path)) return 'missing'
+  const lease = tryKernelLease(path)
+  if (!lease) return existsSync(path) ? 'held' : 'missing'
+  try {
+    unlinkSync(path)
+    return 'removed'
+  } finally {
+    lease.release()
+  }
+}
+
 /** Enumerate only well-formed run lease file identities. */
 export function runLeaseIds(): string[] {
   if (!existsSync(leaseDirectory())) return []
@@ -154,6 +199,24 @@ export function heldRunLeaseIds(): string[] {
   })
   return identities.filter((id) => {
     const path = join(leaseDirectory(), `${id}.lock`)
+    const lease = tryKernelLease(path)
+    if (!lease) return existsSync(path)
+    lease.release()
+    return false
+  })
+}
+
+/** Return coordinator identities whose close-out kernel leases are held right now. */
+export function heldRunCloseOutLeaseIds(): string[] {
+  if (!existsSync(leaseDirectory())) return []
+  const suffix = '.close.lock'
+  const identities = readdirSync(leaseDirectory()).flatMap((name) => {
+    if (!name.endsWith(suffix)) return []
+    const identity = leaseFileIdentity(`${name.slice(0, -suffix.length)}.lock`)
+    return identity ? [identity.id] : []
+  })
+  return identities.filter((id) => {
+    const path = join(leaseDirectory(), runCloseOutLeaseFileName(id))
     const lease = tryKernelLease(path)
     if (!lease) return existsSync(path)
     lease.release()
