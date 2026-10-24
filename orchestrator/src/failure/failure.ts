@@ -186,7 +186,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // The login is stale. Waiting does not fix it; re-authenticating does.
   [
     'auth',
-    /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|signed in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i,
+    /\b(401|403|unauthori[sz]ed|forbidden|authentication required|not (?:logged in|signed in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i,
   ],
   /**
    * Nothing answered. The endpoint is not there at all.
