@@ -17,11 +17,11 @@ export const runResumeModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/checkpoint-resume-context.ts',
-    allowed: [],
+    allowed: ['../../../shared/git.ts'],
   },
   {
     file: 'orchestrator/src/run/continuation-checkpoint-context.ts',
-    allowed: ['bun:sqlite', './checkpoint.ts', './resume-tree.ts'],
+    allowed: ['bun:sqlite', './checkpoint.ts', './resume-tree.ts', './run-resume-kind.ts'],
   },
   {
     file: 'orchestrator/src/run/continuation-checkout.ts',

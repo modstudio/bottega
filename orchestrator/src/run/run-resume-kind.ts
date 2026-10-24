@@ -50,3 +50,17 @@ export function claimIdentity(resume: ResumeIdentityInput | undefined): ClaimIde
 export function continuationResumeKind(hasCheckpoint: boolean): ResumeKind {
   return hasCheckpoint ? 'fresh-session' : 'continue'
 }
+
+/**
+ * A CHECKPOINT RESUME block is emitted for a worktree partway through a git
+ * operation even when no checkpoint row exists, because the block names state
+ * the worker must clear. Only a row (or a tree plan that recreated the tree)
+ * means the state was reconstructed rather than continued, so the block alone
+ * never restarts the conversation.
+ */
+export function continuationHasCheckpoint(input: {
+  hasCheckpointRow: boolean
+  hasSynthesizedBlock: boolean
+}): boolean {
+  return input.hasCheckpointRow || input.hasSynthesizedBlock
+}

@@ -38,7 +38,12 @@ import { resetSandbox } from '../sandbox/sandbox.ts'
 import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import { type CheckpointContainment, checkpointRun, latestCheckpoint } from './checkpoint.ts'
+import {
+  type CheckpointContainment,
+  checkpointRun,
+  checkpointSkippedLine,
+  latestCheckpoint,
+} from './checkpoint.ts'
 import {
   closeRunChainQuestions,
   QUESTION_CLOSE_CHAIN_TERMINAL,
@@ -297,6 +302,8 @@ export function checkpointTerminalWork(input: TerminalCheckpointInput): string |
   }
   if (checkpoint.error)
     console.error(`orch: run ${input.claim.id} checkpoint failed: ${checkpoint.error}`)
+  const skipped = checkpointSkippedLine(checkpoint, { runId: input.claim.id, final: true })
+  if (skipped) console.error(skipped)
   return terminalCheckpointHeader({
     created: checkpoint.created,
     commit: checkpoint.commit,

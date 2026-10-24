@@ -13,11 +13,15 @@ export function decideCheckpoint(input: {
   return 'take'
 }
 
-export function createCheckpointSchedule<T>(take: (trigger: CheckpointTrigger) => T): {
+export type CheckpointSchedule<T> = {
   request(trigger: CheckpointTrigger): T | null
   executionStarted(): void
   executionFinished(): void
-} {
+}
+
+export function createCheckpointSchedule<T>(
+  take: (trigger: CheckpointTrigger) => T,
+): CheckpointSchedule<T> {
   let due = false
   let inFlightExecutions = 0
   const request = (trigger: CheckpointTrigger): T | null => {

@@ -22,21 +22,10 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import {
-  appendRunEvent,
-  recordRunWarning,
-  type StreamEvent,
-  teeTransportEvents,
-} from '../events.ts'
+import { recordRunWarning, type StreamEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
-import {
-  formatIdleKillError,
-  idleKillMayProceed,
-  idlePollMs,
-  shouldIdleKill,
-  terminateProcessGroup,
-} from '../idle-kill.ts'
+import { idlePollMs, terminateProcessGroup } from '../idle-kill.ts'
 import { type Job, jobIdleKillMs } from '../jobs/jobs.ts'
 import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
@@ -66,14 +55,13 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type CheckpointContainment,
   checkpointRun,
+  checkpointSkippedLine,
   DEFAULT_CHECKPOINT_MINUTES,
-  latestCheckpoint,
-  recordFailedIdlePreservation,
 } from './checkpoint.ts'
 import { createCheckpointSchedule } from './checkpoint-schedule.ts'
-import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
+import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
@@ -118,25 +106,6 @@ async function recordInitialDeliveries(
 ): Promise<void> {
   receiptWorkerMessages(runId, messageIds)
   await markRunBoardNoticesDelivered(runId, noticeIds)
-}
-
-function idleSnapshotObserver(
-  runId: string,
-  stopped: () => boolean,
-  check: (samples: ProcessSample[]) => Promise<void>,
-): (samples: ProcessSample[]) => void {
-  let inFlight = false
-  return (samples) => {
-    if (inFlight || stopped()) return
-    inFlight = true
-    void check(samples)
-      .catch((error) => {
-        console.error(`orch: run ${runId} idle check failed: ${error}`)
-      })
-      .finally(() => {
-        inFlight = false
-      })
-  }
 }
 
 function liveChildEnv(
@@ -411,6 +380,11 @@ function liveCheckpointSchedule(input: {
       final: trigger === 'limit',
     })
     if (result.error) console.error(`orch: run ${input.runId} checkpoint failed: ${result.error}`)
+    const skipped = checkpointSkippedLine(result, {
+      runId: input.runId,
+      final: trigger === 'limit',
+    })
+    if (skipped) console.error(skipped)
     return result
   })
 }
@@ -443,40 +417,6 @@ function applyRunWallDeadline(input: {
 
 async function closeWorkerNoteBroker(broker: WorkerNoteBroker | null): Promise<void> {
   if (broker) await broker.close()
-}
-
-function idleRunRow(runId: string): {
-  status: string
-  last_event_at: string | null
-  started_at: string
-} | null {
-  return db()
-    .query('SELECT status, last_event_at, started_at FROM run WHERE record_id=?')
-    .get(runId) as {
-    status: string
-    last_event_at: string | null
-    started_at: string
-  } | null
-}
-
-function runHasOpenQuestion(runId: string): boolean {
-  return Boolean(
-    db()
-      .query(
-        `SELECT 1 n FROM question WHERE run_record_id=? AND ${questionOpenSql('question')} LIMIT 1`,
-      )
-      .get(runId),
-  )
-}
-
-function recordedRunStatus(runId: string): string | null {
-  return (
-    (
-      db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
-        status: string
-      } | null
-    )?.status ?? null
-  )
 }
 
 function teeLiveTransport(
@@ -534,11 +474,13 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
   let resourceObserver: RunResourceObserver | null = null
   let timedOut = false
-  let idleKilled = false
-  let idleKillError: string | null = null
-  let idleUnkillable = false
-  let idleTreePids: number[] = []
-  let idleTreePgid: number | null = null
+  const idleKill: IdleKillState = {
+    killed: false,
+    error: null,
+    unkillable: false,
+    treePids: [],
+    treePgid: null,
+  }
   let exitCode = -1
   let output = ''
   let vendorTokens: number | null = null
@@ -722,7 +664,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     wallArmedAtMs = Date.now()
     const expireWall = () => {
       rearmWallDeadline = () => {}
-      if (idleKilled) return
+      if (idleKill.killed) return
       excludedGateMsAtTimeout = currentExcludedGateMs(
         wallArmedAtMs!,
         accruedGateMs,
@@ -755,104 +697,31 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const forcedCollect = new Promise<TransportResult>((resolve) => {
       forceCollect = resolve
     })
-    const maybeIdleKill = async (samples: ProcessSample[]) => {
-      const row = idleRunRow(claim.id)
-      if (!row) return
-      const openQuestion = runHasOpenQuestion(claim.id)
-      const idleThresholdMs = jobIdleKillMs(opts.job, process.env, boundMs)
-      const decision = shouldIdleKill({
-        lastEventAt: row.last_event_at,
-        startedAt: row.started_at,
-        pid: handle.pid,
-        asking: row.status === 'asking',
-        openQuestion,
-        alreadyTimedOut: timedOut,
-        alreadyIdleKilled: idleKilled,
-        thresholdMs: idleThresholdMs,
-        samples,
-      })
-      if (!decision.kill) return
-      idleKilled = true
-      const elapsed = Date.now() - vendorStartedAt
-      idleKillError = formatIdleKillError({
-        idleMs: decision.idleMs ?? 0,
-        reclaimedMs: Math.max(0, boundMs - elapsed),
-        boundMs,
-      })
-      const checkpoint = checkpointSchedule.request('limit')
-      const afterCheckpoint = recordedRunStatus(claim.id)
-      const askedDuringCheckpoint = afterCheckpoint === 'asking' || runHasOpenQuestion(claim.id)
-      if (askedDuringCheckpoint) {
-        idleKilled = false
-        idleKillError = null
-        appendRunEvent(claim.id, {
-          ts: nowIso(),
-          type: 'text',
-          text: 'idle kill aborted: worker asked during checkpoint',
-        })
-        return
-      }
-      const prior = latestCheckpoint(db(), checkpointRoot(opts.resume, claim.id))
-      if (!idleKillMayProceed(checkpoint, Boolean(prior))) {
-        idleKilled = false
-        idleKillError = null
-        const why = checkpoint?.error ?? 'checkpoint failed'
-        console.error(
-          `orch: run ${claim.id} idle kill aborted: ${why}; no prior checkpoint, leaving the worker for the wall`,
-        )
-        recordFailedIdlePreservation({
-          runId: claim.id,
-          scratchDir,
-          worktree: worktree?.path ?? null,
-          error: why,
-        })
-        return
-      }
-      if (checkpoint?.created || prior) {
-        db().query('UPDATE run SET work_preserved=1 WHERE record_id=?').run(claim.id)
-      }
-      void t.cancel(handle)
-      const terminated = await terminateProcessGroup(handle.pid ?? 0, {
-        direct: handle,
-      })
-      idleTreePids = terminated.pids
-      idleTreePgid = terminated.pgid
-      idleUnkillable = terminated.unkillable
-      if (terminated.unkillable) {
-        idleKillError = formatIdleKillError({
-          idleMs: decision.idleMs ?? 0,
-          reclaimedMs: Math.max(0, boundMs - elapsed),
-          boundMs,
-          unkillable: true,
-          unkillableReason: terminated.reason,
-        })
-        forceCollect?.({
-          stdout: '',
-          stderr: idleKillError,
-          raw: '',
-          parsed: null,
-          output: '',
-          tokens: null,
-          costUsd: null,
-          vendorUsage: EMPTY_VENDOR_USAGE,
-          sessionId: null,
-          stopReason: 'timeout',
-          error: idleKillError,
-          exitCode: -1,
-          pid: handle.pid ?? 0,
-          events: [],
-          asking: false,
-          failureKind: 'idle',
-          status: 'failed',
-          questions: [],
-        })
-      }
-    }
     resourceObserver = observeRunProcessTree(
       vendorPid,
       vendorStartTime,
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
-      idleSnapshotObserver(claim.id, () => timedOut || idleKilled, maybeIdleKill),
+      idleSnapshotObserver(
+        claim.id,
+        () => timedOut || idleKill.killed,
+        (samples) =>
+          performIdleKill({
+            state: idleKill,
+            runId: claim.id,
+            job: opts.job,
+            boundMs,
+            vendorStartedAtMs: vendorStartedAt,
+            timedOut,
+            samples,
+            handle,
+            cancel: () => void t.cancel(handle),
+            checkpoint: checkpointSchedule,
+            checkpointRootId: checkpointRoot(opts.resume, claim.id),
+            scratchDir,
+            worktreePath: worktree?.path ?? null,
+            forceCollect: (result) => forceCollect?.(result),
+          }),
+      ),
     )
     const throttle = firstThrottleObserver(() => void t.cancel(handle))
     const teeing = teeLiveTransport(input, handle, throttle.observe)
@@ -990,8 +859,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       transportFailureKind: collected.failureKind,
       collectedAsking: collected.asking,
       acceptedQuestions: acceptedQuestions.length > 0,
-      idleKilled,
-      idleKillError,
+      idleKilled: idleKill.killed,
+      idleKillError: idleKill.error,
       outputCeilingReached: reachedOutputCeiling,
       outputCeilingStopReason: reply?.stopReason ?? null,
       timedOut,
@@ -1008,7 +877,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       timedOut,
       excludedGateMsAtTimeout,
     )
-    if (idleKilled && derived.inputs.completedReply) {
+    if (idleKill.killed && derived.inputs.completedReply) {
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when idle-killed. ` +
           `Recorded ${acceptedQuestions.length ? 'asking' : 'ok'}.`,
@@ -1016,7 +885,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     } else if (
       timedOut &&
       derived.inputs.completedReplyAtTimeout &&
-      !idleKilled &&
+      !idleKill.killed &&
       !derived.inputs.acpVendorStop &&
       !replyFileError &&
       !collected.asking &&
@@ -1067,11 +936,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     checkpointTimer,
     resourceObserver,
     timedOut,
-    idleKilled,
-    idleKillError,
-    idleUnkillable,
-    idleTreePids,
-    idleTreePgid,
+    idleKilled: idleKill.killed,
+    idleKillError: idleKill.error,
+    idleUnkillable: idleKill.unkillable,
+    idleTreePids: idleKill.treePids,
+    idleTreePgid: idleKill.treePgid,
     exitCode,
     output,
     vendorTokens,
