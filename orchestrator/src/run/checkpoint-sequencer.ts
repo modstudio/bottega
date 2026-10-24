@@ -19,8 +19,8 @@ export type CheckpointSequenceDecision =
  * A stopped rebase, merge, cherry-pick, revert, `git am` or bisect leaves the
  * tree half-applied, so committing captures that state on the run branch; the
  * kind is carried out so the worker learns which operation to finish. A state
- * git cannot report refuses instead, because committing a tree whose state
- * nobody could read is exactly how run 19165's half-applied rebase landed.
+ * git cannot report refuses instead, because a tree whose state nobody could
+ * read may be half-applied too.
  *
  * `none` commits, and so does `residue` — a leftover pseudo-ref over a clean
  * tree. `projects.ts` reads residue the same way for the same reason: refusing
