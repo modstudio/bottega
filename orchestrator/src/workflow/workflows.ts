@@ -30,6 +30,7 @@ import {
   stepNeedsCloseState,
   workflowCompositionFactExtras,
 } from './workflow-project-facts.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
@@ -405,7 +406,7 @@ export function showResolvedWorkflow(
   project: string | null,
   d: Database = db(),
 ) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return parseVersion(versionRow(slug, n, d, spaceId))
 }
 
@@ -654,8 +655,8 @@ export function forkWorkflow(
     local: () => {
       const definition = (
         from === undefined
-          ? workflowLifecycle.production(slug, d)
-          : workflowLifecycle.show(slug, from, d)
+          ? workflowLifecycle.production(slug, d, workflowReadSpaceFor(d, null))
+          : workflowLifecycle.show(slug, from, d, workflowReadSpaceFor(d, null))
       ).definition
       return writeDraftLocal(slug, definition, reason, author, 'fork', d)
     },
@@ -690,18 +691,18 @@ function forkWorkflowLocal(
 ) {
   const definition = (
     from === undefined
-      ? workflowLifecycle.production(slug, d)
-      : workflowLifecycle.show(slug, from, d)
+      ? workflowLifecycle.production(slug, d, workflowReadSpaceFor(d, null))
+      : workflowLifecycle.show(slug, from, d, workflowReadSpaceFor(d, null))
   ).definition
   return writeDraftLocal(slug, definition, reason, author, 'fork', d)
 }
 export function resolvedWorkflowVersions(slug: string, project: string | null, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return workflowLifecycle.versions(slug, d, spaceId)
 }
 
 export function resolvedProductionWorkflows(project: string, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const exists = d
       .query(
@@ -750,7 +751,7 @@ export function workflowModeStepLists(
   d: Database = db(),
   selection: WorkflowSelection = {},
 ): WorkflowModeStepList[] {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   const workflow = selectedWorkflow(slug, selection.version, d, spaceId)
   const catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
   return workflow.definition.modes.map((mode) => ({
@@ -792,7 +793,7 @@ export function composeWorkflow(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const spaceId = effectiveProjectSpace(d, projectName)
+  const spaceId = workflowReadSpaceFor(d, projectName)
   const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
@@ -906,7 +907,7 @@ export function getWorkflowStep(
   selection: WorkflowSelection = {},
   autonomy?: WorkflowAutonomyResolution,
 ) {
-  const spaceId = effectiveProjectSpace(d, projectName)
+  const spaceId = workflowReadSpaceFor(d, projectName)
   const row = selectedWorkflow(slug, selection.version, d, spaceId),
     definition = row.definition,
     catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId),

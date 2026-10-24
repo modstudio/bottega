@@ -46,9 +46,9 @@ export function storedCanonRemovalRefusal(
   selectedTree: CanonWriteTree | undefined,
   collectCanonLintInput: CanonLintInputCollector,
 ): string | null {
-  const workflowSteps = productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body }))
   if (doc.owner) {
     const current = listDocsStore({ scope: 'canon', subject: null, owner: doc.owner })
+    const workflowSteps = productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body }))
     return canonRemovalRefusal(
       decideCanonRemoval({ current, next: withoutSlug(current, doc.slug), workflowSteps }),
     )
@@ -73,7 +73,10 @@ export function storedCanonRemovalRefusal(
       subject,
       current,
       next,
-      workflowSteps,
+      workflowSteps: productionWorkflowTree({ project: subject }).steps.map(({ slug, body }) => ({
+        slug,
+        body,
+      })),
       selectedTree,
       collectCanonLintInput,
     })

@@ -26,6 +26,7 @@ import {
   workflowsAfterReplacement,
 } from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
@@ -428,9 +429,9 @@ const compatibleCatalogue = <T extends { definition: StepCatalogueDefinition }>(
   },
 })
 export const showStepCatalogue = (n?: number, d: Database = db()) =>
-  compatibleCatalogue(lifecycle.show(CATALOGUE, n, d))
+  compatibleCatalogue(lifecycle.show(CATALOGUE, n, d, workflowReadSpaceFor(d, null)))
 export const productionStepCatalogue = (d: Database = db()) =>
-  compatibleCatalogue(lifecycle.production(CATALOGUE, d))
+  compatibleCatalogue(lifecycle.production(CATALOGUE, d, workflowReadSpaceFor(d, null)))
 export function selectedStepCatalogue(
   n: number | undefined,
   d: Database,
@@ -522,7 +523,7 @@ export const forkStepCatalogue = (
   assertCatalogueWriteAllowed('fork step catalogue')
   return applyRecordWriteAuthority({
     local: () => {
-      const source = selectedStepCatalogue(from, d, effectiveProjectSpace(d, project))
+      const source = selectedStepCatalogue(from, d, workflowReadSpaceFor(d, project))
       return lifecycle.write(CATALOGUE, source.definition, reason, author, 'fork', d)
     },
     hosted: async () => {
@@ -595,11 +596,11 @@ const retireStepCatalogueLocal = (
   d: Database = writableDb(),
 ) => lifecycle.retire(CATALOGUE, n, reason, author, d)
 export function showResolvedStepCatalogue(project: string | null, n?: number, d: Database = db()) {
-  return selectedStepCatalogue(n, d, effectiveProjectSpace(d, project))
+  return selectedStepCatalogue(n, d, workflowReadSpaceFor(d, project))
 }
 
 export function resolvedStepCatalogueVersions(project: string | null, d: Database = db()) {
-  const spaceId = effectiveProjectSpace(d, project)
+  const spaceId = workflowReadSpaceFor(d, project)
   return lifecycle.versions(CATALOGUE, d, spaceId)
 }
 

@@ -263,10 +263,10 @@ test('hosted catalogue set and promote are inert on failure and adopt hosted ids
 
 test('bound catalogue promotion never backfills or promotes a NULL-space copy', async () => {
   const local = db()
+  const definition = productionStepCatalogue(local).definition
   local.exec(
     "INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-23') ON CONFLICT DO NOTHING",
   )
-  const definition = productionStepCatalogue(local).definition
   const nextN = local
     .query<{ n: number }, []>('SELECT MAX(n)+1 n FROM step_catalogue_version')
     .get()!.n

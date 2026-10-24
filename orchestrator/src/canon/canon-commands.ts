@@ -191,7 +191,12 @@ function projectCanonImportPlan(
     trackedPaths: collected.trackedPaths,
     packageScripts: collected.packageScripts,
     sourceTexts: collected.sourceTexts,
-    workflowSteps: productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body })),
+    workflowSteps: productionWorkflowTree({ project: project.name }).steps.map(
+      ({ slug, body }) => ({
+        slug,
+        body,
+      }),
+    ),
   })
   return { plan, rows }
 }

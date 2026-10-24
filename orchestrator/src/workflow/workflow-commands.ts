@@ -10,7 +10,6 @@ import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from './autonomy.ts'
@@ -54,6 +53,7 @@ import {
   recordWorkflowProbe,
   wrappedCommandExitCode,
 } from './workflow-probe.ts'
+import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import {
   checkResolvedWorkflowRendering,
@@ -126,7 +126,7 @@ export function listWorkflowCommand(
 ): void {
   const database = db()
   const rows = listResolvedWorkflows(
-    effectiveProjectSpace(database, inspectionProjectName(options)),
+    workflowReadSpaceFor(database, inspectionProjectName(options)),
     database,
   )
   print(
@@ -749,7 +749,7 @@ export function hydrateCommand(
     )
   }
   const plan = planWorkflowHydration({
-    store: productionWorkflowTree(db(), project?.name ?? null),
+    store: productionWorkflowTree({ database: db(), project: project?.name ?? null }),
     tree: collectWorkflowTree(root),
   })
   for (const { path } of plan.writes) presentation.log(`write ${path}`)

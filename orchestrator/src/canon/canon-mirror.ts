@@ -624,7 +624,7 @@ async function mirrorProject(
           project.name,
           undefined,
           undefined,
-          productionWorkflowTree().steps,
+          productionWorkflowTree({ project: project.name }).steps,
           {},
           undefined,
           undefined,
