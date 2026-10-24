@@ -30,7 +30,9 @@ A project that keeps its own review evidence declares the command that writes it
 
 Reviews are recorded when they happen and begin incomplete. Triage is a later act by the architect: each finding becomes accepted, modified, rejected, or skipped, and a review may be completed only after every finding is triaged. Thus an untriaged review remains visible rather than becoming indistinguishable from one that never ran.
 
-A findings lens carries bounded rejected findings from every earlier completed review round on the same project branch, suppresses them while their locations are unchanged, and re-judges them only when the code changed or new evidence reopens the ruling.
+A findings lens carries bounded rejected findings from every earlier completed review round on the same project branch and on the branches it inherits review history from through a same-task `--base` lineage, suppresses them while their locations are unchanged, and re-judges them only when the code changed or new evidence reopens the ruling.
+
+A branch's review history is its own rounds plus those of the branch its minting run named as `--base`, followed transitively while both runs share a task key (`orchestrator/src/review/review-lineage.ts:branchReviewLineage`). Admission, the round budget, post-fix re-lens and rejected-finding memory all read that lineage. A commit or trunk base starts a fresh history, and so does a retry, because it rebuilds from the base and the first attempt's review read discarded code.
 
 A findings run records that incomplete review itself when its parsed reply terminalises. `bottega score` is the close-out verb: it records the score, review grades, finding triage, review completion and any pair verdict together. A pair means the same task: root runs with the same job and identical caller-prompt hash, and for findings work the same lens; their input trees must also match when both runs recorded one.
 

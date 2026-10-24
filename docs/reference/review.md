@@ -82,7 +82,7 @@ amend the disposition of a finding on a completed review
 
 **Synopsis:** `bottega review budget [--since <value>] [--json]`
 
-report branches whose eligible review rounds exceed their tier ceiling
+report review lineages whose eligible review rounds exceed their tier ceiling
 
 ### Options
 
