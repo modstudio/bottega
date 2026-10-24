@@ -588,6 +588,7 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     './review-command-cwd.ts',
     './review-group.ts',
+    './review-lineage-store.ts',
     './review-outbox.ts',
   ]),
   module('orchestrator/src/review/review-pins.ts', [

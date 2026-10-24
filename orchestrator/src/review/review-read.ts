@@ -10,6 +10,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
+import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
 
 type Flags = { flag(name: string): string | undefined }
@@ -30,13 +31,15 @@ const git: Git = (cwd, args) => {
 }
 
 export function latestArchitectRead(database: Database, project: string, branch: string) {
+  const lineage = reviewLineage(database, project, branch)
   const row = database
-    .query<{ tip: string; note: string; recorded_at: string }, [string, string]>(
+    .query<{ tip: string; note: string; recorded_at: string }, string[]>(
       `SELECT tip,note,recorded_at FROM review_read
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND branch=?
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND branch IN (${lineage.map(() => '?').join(',')})
        ORDER BY recorded_at DESC,record_id DESC LIMIT 1`,
     )
-    .get(project, branch)
+    .get(project, ...lineage)
   return row ? { tip: row.tip, note: row.note, recordedAt: row.recorded_at } : null
 }
 

@@ -30,6 +30,7 @@ import {
 } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
+import { reviewLineage } from '../review/review-lineage-store.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
@@ -78,9 +79,11 @@ function earlierReviewRejections(
   cwd: string,
   explicitBranch: string | null,
 ): ReviewFindingMemory {
+  const branch = reviewMemoryBranch(branchOf(cwd), explicitBranch)
   return {
     project,
-    branch: reviewMemoryBranch(branchOf(cwd), explicitBranch),
+    branch,
+    branchLineage: branch ? reviewLineage(db(), project, branch) : [],
     rows: reviewFindingMemoryRows(project),
   }
 }
