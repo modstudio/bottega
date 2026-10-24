@@ -35,7 +35,7 @@ function oneLine(value: string): string {
 /** Select and render rejection memory using only supplied review rows. */
 export function renderEarlierRoundRejections(input: ReviewFindingMemory): string {
   if (!input.branch) return ''
-  const branches = new Set(input.branchLineage ?? [input.branch])
+  const branches = new Set(input.branchLineage)
   const selected = input.rows
     .filter(
       (row) =>

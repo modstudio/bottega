@@ -106,6 +106,7 @@ test('reads and renders only the current same-project and same-branch rejection'
   const rendered = renderEarlierRoundRejections({
     project: PLATFORM_SLUG,
     branch: 'DEV-1373-target',
+    branchLineage: ['DEV-1373-target'],
     rows: reviewFindingMemoryRows(PLATFORM_SLUG, db()),
   })
 

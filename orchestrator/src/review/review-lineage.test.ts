@@ -32,8 +32,11 @@ test('stops before an ancestor minted for a different launch key', () => {
   ).toEqual(['branch-b'])
 })
 
-test('ends a cycle without revisiting a branch', () => {
+test('follows a qualified branch base', () => {
   expect(
-    branchReviewLineage('branch-b', [fact('branch-a', 'branch-b'), fact('branch-b', 'branch-a')]),
+    branchReviewLineage('branch-b', [
+      fact('branch-a', 'main'),
+      fact('branch-b', 'refs/heads/branch-a'),
+    ]),
   ).toEqual(['branch-b', 'branch-a'])
 })

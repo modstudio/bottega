@@ -96,6 +96,24 @@ function addEvidence(input: {
     .run(newRecordId(), review.record_id, run)
 }
 
+function addMintFact(input: {
+  branch: string
+  base: string
+  project?: string
+  launchKey?: string
+}): void {
+  const project = input.project ?? 'fixture'
+  const run = addRun({ agent: 'codex', job: 'implement', repo: project })
+  db()
+    .query(
+      `UPDATE run
+          SET branch=?,minted_branch=?,launch_base=?,launch_key=?,
+              project_record_id=(SELECT record_id FROM project WHERE name=?)
+        WHERE record_id=?`,
+    )
+    .run(input.branch, input.branch, input.base, input.launchKey ?? 'DEV-1256', project, run)
+}
+
 describe('review budget query', () => {
   test('uses yield identity and evidence eligibility without classifying absent history as zero', () => {
     addEvidence({ branch: 'over', at: '2026-10-01T00:00:00Z', patch: 'one', tier: 1 })
@@ -215,5 +233,43 @@ describe('review budget query', () => {
         withoutClassifiableRound: 0,
       },
     })
+  })
+
+  test('reports ancestor and descendant rounds as one lineage unit', () => {
+    addEvidence({
+      branch: 'DEV-1256-a',
+      at: '2026-10-01T00:00:00Z',
+      patch: 'one',
+      tier: 1,
+    })
+    addEvidence({
+      branch: 'DEV-1256-b',
+      at: '2026-10-02T00:00:00Z',
+      patch: 'two',
+      tier: 1,
+    })
+    addMintFact({ branch: 'DEV-1256-a', base: 'main' })
+    addMintFact({ branch: 'DEV-1256-b', base: 'DEV-1256-a' })
+
+    expect(reviewBudgetReport(db())).toMatchObject({
+      branches: [
+        {
+          project: 'fixture',
+          branch: 'DEV-1256-a',
+          rounds: 2,
+          tier: 1,
+        },
+      ],
+      denominators: {
+        eligibleReviewBranches: 1,
+        withRecordedTier: 1,
+        withClassifiableRound: 1,
+        exactlyAtCeiling: 0,
+        overCeiling: 1,
+        withoutRecordedTier: 0,
+        withoutClassifiableRound: 0,
+      },
+    })
+    expect(reviewBudgetForBranch(db(), 'fixture', 'DEV-1256-b', null).roundsUsed).toBe(2)
   })
 })

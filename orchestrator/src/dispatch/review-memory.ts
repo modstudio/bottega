@@ -3,7 +3,7 @@
 export type ReviewFindingMemory = {
   project: string
   branch: string | null
-  branchLineage?: readonly string[]
+  branchLineage: readonly string[]
   rows: readonly {
     project: string
     branch: string | null

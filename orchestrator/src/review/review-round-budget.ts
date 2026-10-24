@@ -99,15 +99,32 @@ export function eligibleReviewRoundRows(
 const branchKey = (project: string | null, branch: string): string =>
   JSON.stringify([project, branch])
 
+function lineageRoot(
+  database: Database,
+  roots: Map<string, string>,
+  project: string | null,
+  branch: string,
+): string {
+  const key = branchKey(project, branch)
+  const cached = roots.get(key)
+  if (cached) return cached
+  const root = project ? (reviewLineage(database, project, branch).at(-1) ?? branch) : branch
+  roots.set(key, root)
+  return root
+}
+
 function branchEvidence(
   database: Database,
   since?: string,
   target?: { project: string; branch: string },
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
+  const lineageRoots = new Map<string, string>()
   for (const row of eligibleReviewRoundRows(database, since, target)) {
     if (!row.branch) continue
-    const key = branchKey(row.run_repo, target?.branch ?? row.branch)
+    const evidenceBranch =
+      target?.branch ?? lineageRoot(database, lineageRoots, row.run_repo, row.branch)
+    const key = branchKey(row.run_repo, evidenceBranch)
     const branch = branches.get(key) ?? {
       firstReviewAt: row.recorded_at,
       tier: null,

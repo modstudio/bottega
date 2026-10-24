@@ -17,7 +17,8 @@ export function branchReviewLineage(
   const visited = new Set(lineage)
   let descendant = minted.get(branch)
   while (descendant?.launchBase) {
-    const ancestor = minted.get(descendant.launchBase)
+    const launchBase = descendant.launchBase.replace(/^refs\/heads\//, '')
+    const ancestor = minted.get(launchBase)
     if (
       !ancestor ||
       ancestor.launchKey !== descendant.launchKey ||
