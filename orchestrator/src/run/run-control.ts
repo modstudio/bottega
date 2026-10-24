@@ -425,15 +425,6 @@ function continuationTree(
   return { project, recordedTreeMatches, plan, branchSource: branchPlan.source }
 }
 
-function effectiveCheckpointContext(
-  saved: string | null,
-  plan: ResumeTreePlan | null,
-): string | null {
-  if (saved) return saved
-  if (!plan || plan.action === 'attach-recorded' || plan.action === 'refuse') return null
-  return `CHECKPOINT RESUME\nResume from retained work at ${plan.tip}.`
-}
-
 function continuationLaunch(
   inherited: ResumeLaunchOptions,
   id: string,
@@ -681,14 +672,16 @@ export async function continueRun(
     branchSource,
   } = continuationTree(id, row, latest, checkout.project)
   refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
-  const savedCheckpointContext = continuationCheckpointContext({
+  // A block naming an in-progress operation carries no checkpoint row, so it
+  // must not be read as a recreated tree state: hasCheckpoint, not the block,
+  // decides whether the conversation restarts.
+  const { context: checkpointContext, hasCheckpoint } = continuationCheckpointContext({
     database: db(),
     rootId: id,
     worktree: latest.worktree,
     treePlan,
   })
-  const checkpointContext = effectiveCheckpointContext(savedCheckpointContext, treePlan)
-  const sessionFrom = checkpointContext
+  const sessionFrom = hasCheckpoint
     ? null
     : latest.vendor_session
       ? latest
@@ -705,10 +698,10 @@ export async function continueRun(
           vendor_session: string
           turn: number
         } | null)
-  if (!checkpointContext && !sessionFrom?.vendor_session) {
+  if (!hasCheckpoint && !sessionFrom?.vendor_session) {
     throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
   }
-  if (!checkpointContext && !latest.vendor_session) {
+  if (!hasCheckpoint && !latest.vendor_session) {
     console.error(
       `run ${id}: newest turn ${latest.record_id} recorded no session id; ` +
         `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
@@ -754,10 +747,10 @@ export async function continueRun(
     ...launch,
     transport: chainTransport(id) ?? undefined,
     resume: {
-      kind: continuationResumeKind(Boolean(checkpointContext)),
+      kind: continuationResumeKind(hasCheckpoint),
       parent: id,
-      agent: checkpointContext ? latest.agent : sessionFrom!.agent,
-      session: checkpointContext ? undefined : (sessionFrom!.vendor_session ?? undefined),
+      agent: hasCheckpoint ? latest.agent : sessionFrom!.agent,
+      session: hasCheckpoint ? undefined : (sessionFrom!.vendor_session ?? undefined),
       turn: nextTurn,
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),

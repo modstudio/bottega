@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   checkpointRoot,
   claimIdentity,
+  continuationHasCheckpoint,
   continuationResumeKind,
   type ResumeKind,
   resumeFacts,
@@ -50,4 +51,22 @@ describe('resume kind', () => {
 test('continuation kind preserves vendor sessions only without checkpoint restart', () => {
   expect(continuationResumeKind(false)).toBe('continue')
   expect(continuationResumeKind(true)).toBe('fresh-session')
+})
+
+test('an emitted block restarts the conversation only when a row or a recreated tree made it', () => {
+  expect(continuationHasCheckpoint({ hasCheckpointRow: false, hasSynthesizedBlock: false })).toBe(
+    false,
+  )
+  expect(continuationHasCheckpoint({ hasCheckpointRow: true, hasSynthesizedBlock: false })).toBe(
+    true,
+  )
+  expect(continuationHasCheckpoint({ hasCheckpointRow: false, hasSynthesizedBlock: true })).toBe(
+    true,
+  )
+  // The in-progress-operation block has no row behind it, so the session is kept.
+  expect(
+    continuationResumeKind(
+      continuationHasCheckpoint({ hasCheckpointRow: false, hasSynthesizedBlock: false }),
+    ),
+  ).toBe('continue')
 })

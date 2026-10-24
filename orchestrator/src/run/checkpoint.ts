@@ -35,6 +35,13 @@ export type CheckpointContainment = {
  * checkpoint or by the worker's own commit; checkpointing never locks the worker.
  */
 
+/** Reading state or history never needs the containment a commit needs. */
+const READ_ONLY_CONTAINMENT: CheckpointContainment = {
+  gitDir: null,
+  hooksDir: null,
+  disableHooks: false,
+}
+
 const PROGRESS_FILE_NAME = 'progress.json'
 const PRESERVATION_FAILED_FILE = 'preservation-failed.json'
 export const DEFAULT_CHECKPOINT_MINUTES = 10
@@ -317,16 +324,30 @@ export function latestCheckpoint(
   } | null
 }
 
+/**
+ * Reads the worktree's own state rather than the run's event history, because a
+ * skipped checkpoint is not the only way a tree is left partway through an
+ * operation. This only shapes a resume prompt, so a state git cannot report
+ * counts as no operation instead of failing the continuation.
+ */
+function worktreeSequencerOperation(worktree: string | null): SequencerOperation | null {
+  if (!worktree) return null
+  const sequencer = sequencerMarkers(worktree, {}, READ_ONLY_CONTAINMENT)
+  if ('error' in sequencer) return null
+  const decision = decideCheckpointCommit(sequencer.markers)
+  return decision.commit ? null : decision.operation
+}
+
 export function checkpointResumeContext(
   database: Database,
   rootId: string,
   worktree: string | null,
   startCommit: string | null,
   branch: string | null,
-): string | null {
+): { context: string | null; hasCheckpointRow: boolean } {
   const checkpoint = latestCheckpoint(database, rootId)
-  if (!checkpoint) return null
-  if (!startCommit || !branch) {
+  const operation = worktreeSequencerOperation(worktree)
+  if (checkpoint && (!startCommit || !branch)) {
     const launch = database
       .query('SELECT job,launch_key FROM run WHERE record_id=?')
       .get(rootId) as {
@@ -345,12 +366,17 @@ export function checkpointResumeContext(
         worktree,
         ['log', '--oneline', '--decorate=no', '--max-count=8'],
         {},
-        {
-          gitDir: null,
-          hooksDir: null,
-          disableHooks: false,
-        },
+        READ_ONLY_CONTAINMENT,
       ).out
     : ''
-  return renderCheckpointResumeContext({ startCommit, branch, checkpoint, recentLog })
+  return {
+    context: renderCheckpointResumeContext({
+      startCommit,
+      branch,
+      checkpoint,
+      recentLog,
+      operation,
+    }),
+    hasCheckpointRow: Boolean(checkpoint),
+  }
 }
