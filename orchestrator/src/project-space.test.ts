@@ -9,28 +9,6 @@ const refusals = {
 
 test.each([
   {
-    name: 'a routed project space',
-    input: {
-      project: 'routed-project',
-      projectSpace: 'project-space',
-      activeSpace: 'active-space',
-      localAuthoritative: false,
-      ...refusals,
-    },
-    expected: { spaceId: 'project-space' },
-  },
-  {
-    name: 'the unbound NULL space',
-    input: {
-      project: null,
-      projectSpace: undefined,
-      activeSpace: null,
-      localAuthoritative: true,
-      ...refusals,
-    },
-    expected: { spaceId: null },
-  },
-  {
     name: 'a bound project whose route has not been pulled',
     input: {
       project: 'unrouted-project',

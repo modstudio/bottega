@@ -125,6 +125,22 @@ test('bound production reads use the active space without a project and the rout
   expect(projectTree.workflows[0]!.definition.title).toBe('Project-space workflow')
 })
 
+test('a bound production read refuses a project whose route has not been pulled', () => {
+  const d = database()
+  const activeSpace = newRecordId()
+  const project = 'unrouted-workflow-project'
+  const catalogue = productionStepCatalogue(d).definition
+  const workflow = productionWorkflows(d, null)[0]!.definition
+
+  seedHostedProduction(d, activeSpace, catalogue, workflow, 'Active-space workflow')
+  rememberActiveRecordSpace(d, activeSpace)
+  d.exec("INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-24T00:00:00.000Z')")
+
+  expect(() => productionWorkflowTree({ database: d, project })).toThrow(
+    `project ${project} route unknown, run \`${PLATFORM_SLUG} record sync\``,
+  )
+})
+
 const importAndPromoteCurrentTree = async (d: Database) => {
   const root = fileURLToPath(new URL('../../..', import.meta.url))
   const imported = await importWorkflowTree(
