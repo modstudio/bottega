@@ -410,10 +410,11 @@ test('a notice uses condition UUID to break equal invocation-time ties', () => {
       )
       .run(invocation, startedAt, startedAt)
   }
-  for (const [recordId, invocation, detail] of [
+  const conditions: [string, string, string][] = [
     ['01990000-0000-7000-8000-000000000022', invocations[0]!, 'uuid-latest'],
     ['01990000-0000-7000-8000-000000000021', invocations[1]!, 'inserted-later'],
-  ]) {
+  ]
+  for (const [recordId, invocation, detail] of conditions) {
     db()
       .query(
         `INSERT INTO monitor_condition(

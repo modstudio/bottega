@@ -10,10 +10,11 @@ test('release readers use UUID to break a shared start-time tie', () => {
   const projectRecordId = (
     db().query('SELECT record_id FROM project WHERE name=?').get(project) as { record_id: string }
   ).record_id
-  for (const [recordId, candidate] of [
+  const releases: [string, string][] = [
     ['01990000-0000-7000-8000-000000000032', 'uuid-latest'],
     ['01990000-0000-7000-8000-000000000031', 'inserted-later'],
-  ]) {
+  ]
+  for (const [recordId, candidate] of releases) {
     db()
       .query(
         `INSERT INTO release_ledger(

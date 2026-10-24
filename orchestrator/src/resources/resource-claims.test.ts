@@ -46,10 +46,11 @@ describe('resource claim decisions', () => {
     const latest = resourceRun()
     db().query('UPDATE run SET session_id=? WHERE record_id=?').run('inserted-later', older)
     db().query('UPDATE run SET session_id=? WHERE record_id=?').run('uuid-latest', latest)
-    for (const [recordId, runId] of [
+    const claims: [string, string][] = [
       ['01990000-0000-7000-8000-000000000042', latest],
       ['01990000-0000-7000-8000-000000000041', older],
-    ]) {
+    ]
+    for (const [recordId, runId] of claims) {
       db()
         .query(
           `INSERT INTO resource_claim(

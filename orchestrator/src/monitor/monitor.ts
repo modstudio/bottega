@@ -12,7 +12,6 @@ import { storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { sampleHostLoad } from '../host-load-sample.ts'
 import { sampleHostPressure } from '../host-pressure/host-pressure-service.ts'
-import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
 import {
   absentTreeTeardownPlan,
@@ -72,6 +71,7 @@ import {
 import { staleCustomerGuideCommandConditions } from './monitor-customer-guides.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
+import { fileUnavailableMonitorIssues } from './monitor-issue-filing.ts'
 import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import { finishMonitorResult as finish } from './monitor-result.ts'
@@ -955,56 +955,13 @@ export async function monitor(
   )
   conditions.splice(0, conditions.length, ...persistedConditions)
 
-  const unavailable = conditions.filter(
-    (c) => c.kind === 'detector-unavailable' || c.kind === 'dead-lock',
+  await fileUnavailableMonitorIssues(
+    database,
+    conditions,
+    errors,
+    invocationRecordId,
+    invocationNumber,
   )
-  for (const condition of unavailable) {
-    const prior = database
-      .query(
-        `SELECT condition.issue_key FROM monitor_condition condition
-         JOIN monitor_invocation invocation
-           ON invocation.record_id=condition.invocation_record_id
-         WHERE condition.kind=? AND condition.subject=? AND condition.issue_key IS NOT NULL
-         ORDER BY invocation.started_at DESC,condition.record_id DESC LIMIT 1`,
-      )
-      .get(condition.kind, condition.subject) as { issue_key: string } | null
-    if (prior) {
-      condition.issueKey = prior.issue_key
-      continue
-    }
-    try {
-      const filed = await fileIssue(
-        {
-          kind: 'defect',
-          title: `Monitor cannot safely handle ${condition.subject}`,
-          what_happened: `Monitor cannot safely handle ${condition.subject}: ${condition.detail}`,
-          expected:
-            'The monitor needs a machine-readable detector or an established command so it can report or repair this condition without inference or direct database writes.',
-          reproduce_command: `${PLATFORM_SLUG} machine monitor`,
-          environment: `monitor invocation ${invocationNumber}; affected machine/project is named in the evidence`,
-          evidence: `monitor invocation ${invocationNumber}; ${condition.kind} ${condition.subject}; ${condition.detail}`,
-          not_established:
-            'The missing interface design and remediation policy are not established by the monitor.',
-        },
-        {
-          kind: 'monitor',
-          invocationId: invocationNumber,
-          affectedProject: condition.affectedProject ?? PLATFORM_SLUG,
-        },
-        PLATFORM_SLUG,
-      )
-      condition.issueKey = filed.key
-      database
-        .query(
-          'UPDATE monitor_condition SET issue_key=? WHERE invocation_record_id=? AND kind=? AND subject=?',
-        )
-        .run(filed.key, invocationRecordId, condition.kind, condition.subject)
-    } catch (cause) {
-      errors.push(
-        `could not file ${condition.kind} issue: ${String((cause as Error).message ?? cause)}`,
-      )
-    }
-  }
 
   const finished = completeMonitorInvocation(
     database,
