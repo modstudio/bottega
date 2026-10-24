@@ -6,6 +6,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import {
+  assertMigrationDispatchAllowed,
+  clearMigrationDrain,
+  recordMigrationDispatchRefusal,
+  setMigrationDrain,
+} from '../database/migration-drain.ts'
 import { claimRun } from './run-claim.ts'
 
 test('a later claim records a UUID ruling identity and never resurrects a failed reservation', async () => {
@@ -103,6 +109,43 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     expect(
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
     ).toEqual({ transport_explicit: 0 })
+
+    const refusedPrompt = 'migrating fresh claim'
+    const refusalsBefore = db()
+      .query<{ count: number }, []>(
+        "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
+      )
+      .get()!.count
+    setMigrationDrain(db(), '0155_rebuild', 'migrating', {
+      pid: process.pid,
+      startTime: null,
+    })
+    try {
+      await expect(
+        claimRun({
+          ...claimInput,
+          opts: { job: 'review-lens' },
+          stamp: 'migrating-fresh-claim',
+          prompt: refusedPrompt,
+          originalPrompt: refusedPrompt,
+          carriedQuestionIds: [],
+          assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), false),
+          recordDispatchRefusal: recordMigrationDispatchRefusal,
+        }),
+      ).rejects.toThrow(/while migrating/)
+      expect(
+        db().query('SELECT record_id FROM run WHERE prompt_head=?').get(refusedPrompt),
+      ).toBeNull()
+      expect(
+        db()
+          .query<{ count: number }, []>(
+            "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
+          )
+          .get()!.count,
+      ).toBe(refusalsBefore + 1)
+    } finally {
+      clearMigrationDrain(db())
+    }
 
     const failedReservation = addRun({
       agent: '(pending)',

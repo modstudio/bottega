@@ -29,6 +29,11 @@ type ScratchCloseOutResult = {
 }
 const SEARCH_LIMIT = 10_000
 
+/** Extraction evidence belongs to the turn whose tree is being removed. */
+export function extractionRunId(row: { record_id: string }): string {
+  return row.record_id
+}
+
 function looksLikeBareRepository(treePath: string, directory: string): boolean {
   return Boolean(
     relative(treePath, directory) &&

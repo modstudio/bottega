@@ -76,6 +76,7 @@ import {
   shouldResolveTaskBranch,
   taskBranchKey,
 } from './run-claim-plan.ts'
+import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail, sha } from './run-process.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
@@ -151,6 +152,7 @@ export type ClaimInput = {
   replySchemaName: string
   carriedQuestionIds: string[]
   assertDispatchAllowed(): void
+  recordDispatchRefusal?(cause: unknown): void
 }
 
 import type { ClaimResult } from './run-claim-types.ts'
@@ -184,13 +186,6 @@ function claimableRow<T>(
   const row = reserveId ? updateReserved() : insertFresh()
   if (!row) throw new Error(`reserved run ${reserveId} is no longer claimable`)
   return row
-}
-
-function claimTransaction<T>(assertAllowed: () => void, claim: () => T): T {
-  return writeTransaction(() => {
-    assertAllowed()
-    return claim()
-  })
 }
 
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
@@ -431,7 +426,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         transportName,
         startedByUserId,
       ) as { record_id: string; number: number }
-  const claim = claimTransaction(input.assertDispatchAllowed, () => {
+  const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
     /**

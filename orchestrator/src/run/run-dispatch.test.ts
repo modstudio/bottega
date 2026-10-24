@@ -87,6 +87,11 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
 
 test('a migration drain refuses dispatch before reserving a run', async () => {
   const before = (db().query('SELECT count(*) count FROM run').get() as { count: number }).count
+  const refusalsBefore = db()
+    .query<{ count: number }, []>(
+      "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
+    )
+    .get()!.count
   setMigrationDrain(db(), '0155_rebuild', 'draining', { pid: process.pid, startTime: null })
   try {
     await expect(detach('summarize', 'migration drain fixture', { cwd: dir })).rejects.toThrow(
@@ -94,6 +99,13 @@ test('a migration drain refuses dispatch before reserving a run', async () => {
     )
     const after = (db().query('SELECT count(*) count FROM run').get() as { count: number }).count
     expect(after).toBe(before)
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
+        )
+        .get()!.count,
+    ).toBe(refusalsBefore + 1)
   } finally {
     clearMigrationDrain(db())
   }
@@ -101,6 +113,11 @@ test('a migration drain refuses dispatch before reserving a run', async () => {
 
 test('a migrating marker that wins before the detached claim refuses without a run row', async () => {
   const prompt = 'migration drain claim race fixture'
+  const refusalsBefore = db()
+    .query<{ count: number }, []>(
+      "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
+    )
+    .get()!.count
   try {
     await expect(
       detach('summarize', prompt, { cwd: dir }, undefined, undefined, () => {
@@ -111,6 +128,13 @@ test('a migrating marker that wins before the detached claim refuses without a r
       }),
     ).rejects.toThrow(/refusing dispatch while migrating for migration 0155_rebuild/)
     expect(db().query('SELECT record_id FROM run WHERE prompt_head=?').get(prompt)).toBeNull()
+    expect(
+      db()
+        .query<{ count: number }, []>(
+          "SELECT count(*) count FROM contention WHERE resource_kind='store' AND resource_key='migration-drain' AND event_kind='refusal'",
+        )
+        .get()!.count,
+    ).toBe(refusalsBefore + 1)
   } finally {
     clearMigrationDrain(db())
   }

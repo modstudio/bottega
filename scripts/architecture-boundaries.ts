@@ -182,7 +182,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../branch/branch-ref-guard.ts',
       './absent-close-out-residue.ts',
       './absent-tree-close-out.ts',
-      './close-out-adoption.ts',
+      ...['./close-out-adoption.ts', './close-out-lease.ts'],
       './close-out-questions.ts',
       './close-out-report.ts',
       './conversation-liveness.ts',

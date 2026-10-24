@@ -6,13 +6,15 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { heldRunCloseOutLeaseIds, withRunCloseOutLease } from '../run/run-lease.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,
-  extractionRunId,
   releaseRunFailoverAttempts,
 } from './close-out.ts'
 import { closeOutCommand } from './close-out-command.ts'
+import { withCloseOutLease } from './close-out-lease.ts'
+import { extractionRunId } from './reader-scratch-close-out.ts'
 
 afterEach(() => {
   mock.restore()
@@ -425,6 +427,28 @@ test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }
+})
+
+test('a sweep close-out runs its work under the close-out lease', () => {
+  const runId = addRun({ agent: 'codex', job: 'sweep-close-out-lease', status: 'ok' })
+  const held = withCloseOutLease(runId, false, () => heldRunCloseOutLeaseIds().includes(runId))
+  expect(held).toBe(true)
+  expect(heldRunCloseOutLeaseIds()).not.toContain(runId)
+})
+
+test('the coordinator still closes out under the close-out lease it already holds', () => {
+  const runId = addRun({ agent: 'codex', job: 'coordinator-close-out-lease', status: 'ok' })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run('/missing-coordinator-tree', runId)
+  withRunCloseOutLease(
+    runId,
+    () => {},
+    () => {
+      expect(closeOutRun(runId, { intent: 'terminal' }).outcome).toBe('held')
+      expect(closeOutRun(runId, { intent: 'terminal', closeOutLeaseHeld: true }).outcome).toBe(
+        'absent',
+      )
+    },
+  )
 })
 
 test('clean landing-tree close-out persists held while reporting kept', () => {

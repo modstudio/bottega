@@ -31,7 +31,13 @@ import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
-import { removeFreeRunLease, runLeaseIds, runLeaseState } from '../run/run-lease.ts'
+import {
+  removeFreeRunCloseOutLease,
+  removeFreeRunLease,
+  runCloseOutLeaseIds,
+  runLeaseIds,
+  runLeaseState,
+} from '../run/run-lease.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import {
@@ -421,7 +427,11 @@ function shouldInventoryBeforeSweep(row: SweepCandidate, dry: boolean): boolean 
 
 function sweepTerminalRunLeases(dry: boolean): void {
   if (dry) return
-  for (const runRecordId of runLeaseIds()) {
+  const leases = [
+    ...runLeaseIds().map((runRecordId) => ({ runRecordId, closeOut: false })),
+    ...runCloseOutLeaseIds().map((runRecordId) => ({ runRecordId, closeOut: true })),
+  ]
+  for (const { runRecordId, closeOut } of leases) {
     const row = db()
       .query('SELECT record_id,status FROM run WHERE record_id=?')
       .get(runRecordId) as {
@@ -429,7 +439,7 @@ function sweepTerminalRunLeases(dry: boolean): void {
       status: string
     } | null
     if (row && ['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
-      removeFreeRunLease(row.record_id)
+      ;(closeOut ? removeFreeRunCloseOutLease : removeFreeRunLease)(row.record_id)
     }
   }
 }
