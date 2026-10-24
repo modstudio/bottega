@@ -120,19 +120,17 @@ export function migrationDrainForUpdate(
   if (!marker) return null
   const liveness = migrationDrainLiveness(marker, observe)
   if (liveness.state !== 'stale') return marker
-  clearMigrationDrain(database)
-  if (contentionTableExists(database)) {
-    writeTransaction(
-      () =>
-        insertContention(database, {
-          resourceKind: 'store',
-          resourceKey: 'migration-drain',
-          eventKind: 'invalidation',
-          cause: `reclaimed stale migration drain for ${marker.migration}: ${liveness.reason}`,
-        }),
-      database,
-    )
-  }
+  writeTransaction(() => {
+    database.query('DELETE FROM schema_meta WHERE key=?').run(MIGRATION_DRAIN_KEY)
+    if (contentionTableExists(database)) {
+      insertContention(database, {
+        resourceKind: 'store',
+        resourceKey: 'migration-drain',
+        eventKind: 'invalidation',
+        cause: `reclaimed stale migration drain for ${marker.migration}: ${liveness.reason}`,
+      })
+    }
+  }, database)
   return null
 }
 

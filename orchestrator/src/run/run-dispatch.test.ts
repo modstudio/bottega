@@ -98,3 +98,20 @@ test('a migration drain refuses dispatch before reserving a run', async () => {
     clearMigrationDrain(db())
   }
 })
+
+test('a migrating marker that wins before the detached claim refuses without a run row', async () => {
+  const prompt = 'migration drain claim race fixture'
+  try {
+    await expect(
+      detach('summarize', prompt, { cwd: dir }, undefined, undefined, () => {
+        setMigrationDrain(db(), '0155_rebuild', 'migrating', {
+          pid: process.pid,
+          startTime: null,
+        })
+      }),
+    ).rejects.toThrow(/refusing dispatch while migrating for migration 0155_rebuild/)
+    expect(db().query('SELECT record_id FROM run WHERE prompt_head=?').get(prompt)).toBeNull()
+  } finally {
+    clearMigrationDrain(db())
+  }
+})

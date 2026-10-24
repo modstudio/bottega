@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { db } from './db.ts'
@@ -121,6 +122,59 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
   )
   expect(lines).toContain(`draining for migration ${pending.tag}; waiting on ${resumeId} (running)`)
   expect(migrationDrain(db())).toBeNull()
+})
+
+test('machine update clears the drain marker when the bounded wait expires', async () => {
+  const database = db()
+  const pending = migrationJournal().at(-1)!
+  const applied = database
+    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
+      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
+    )
+    .get(pending.when)!
+  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  const runId = randomUUID()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-bound','sha',0,'','ok',?)`,
+    )
+    .run(runId, process.pid)
+  const lease = acquireRunLease(runId)
+  let nowCalls = 0
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        {
+          cwd: dir,
+          authorityRefusal: () => null,
+          project: () => ({
+            name: 'migration-update-fixture',
+            path: dir,
+            settings: { trunk: 'main' },
+          }),
+          git: (_cwd, args) => {
+            if (args[0] === 'branch') return 'main'
+            return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
+          },
+          now: () => (nowCalls++ === 0 ? 0 : Number.MAX_SAFE_INTEGER),
+          sleep: async () => {},
+        },
+      ),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} machine migrate --force-in-flight "<reason>" --from-operator`,
+    )
+    expect(migrationDrain(db())).toBeNull()
+  } finally {
+    lease.release()
+    removeFreeRunLease(runId)
+    database.query('DELETE FROM run WHERE record_id=?').run(runId)
+    database
+      .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
+      .run(applied.hash, applied.created_at, applied.version)
+  }
 })
 
 test('machine update refuses a live drain with its holder named', async () => {

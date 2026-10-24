@@ -139,6 +139,7 @@ export async function detach(
   spec: DetachSpec,
   selectedAgent?: string,
   spawnCoordinator: typeof spawn = spawn,
+  beforeClaim: () => void = () => {},
 ): Promise<string> {
   assertDispatchDatabase(spec.resume !== undefined)
   /**
@@ -147,9 +148,7 @@ export async function detach(
    * run() already refuses to delegate from inside a delegated agent, but by
    * then this function has inserted a placeholder row — so a worker that tries
    * to hire someone leaves a `(pending)` row behind that nobody ever fills in
-   * and the stale sweep later marks `interrupted`. Observed: a grok worker read
-   * the `bottega run start` instructions in AGENTS.md, tried twice, and left two abandoned
-   * rows in the run table.
+   * and the stale sweep later marks `interrupted`. Two observed attempts left abandoned rows.
    *
    * They cost routing nothing, because `(pending)` is not an agent any query
    * groups by — but they are litter in the one table that is supposed to be
@@ -197,7 +196,9 @@ export async function detach(
   // A resume is claimed as a chain member in this same INSERT. One SQLite
   // statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
+  beforeClaim()
   const claimed = writeTransaction(() => {
+    assertMigrationDispatchAllowed(db(), spec.resume !== undefined)
     const identity = claimIdentity(spec.resume)
     const { projectName, projectId } = detachedProject(cwd, spec)
     refuseLiveRetryOwner(spec)

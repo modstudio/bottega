@@ -10,7 +10,7 @@ import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
-import { clearMigrationDrain, migrationDrain, setMigrationDrain } from './migration-drain.ts'
+import { migrationDrain } from './migration-drain.ts'
 import type { MigrationDrainDecision } from './migration-drain-decision.ts'
 import {
   applyMigrations,
@@ -95,31 +95,6 @@ test('migrate skips the boundary and fill when the identity contract is recorded
   ])
 })
 
-test('direct migrate keeps the migrating marker through every migration step', async () => {
-  const scenario = actions(async () => undefined, true)
-  const fenced = {
-    ...scenario.value,
-    migrationDecision: () => ({ action: 'fence' as const, migration: '0155_rebuild' }),
-    async withMigrationFence(migration: string, action: () => Promise<void>) {
-      setMigrationDrain(db(), migration, 'migrating')
-      try {
-        await action()
-      } finally {
-        clearMigrationDrain(db())
-      }
-    },
-    migrate(input?: { beforeMigration?: string }) {
-      expect(migrationDrain(db())).toMatchObject({
-        migration: '0155_rebuild',
-        phase: 'migrating',
-      })
-      return { path: '/store', versions: input ? ['0113'] : ['0114'] }
-    },
-  }
-  await migrateCommand({ log: () => {} }, fenced)
-  expect(migrationDrain(db())).toBeNull()
-})
-
 test('migrate refuses a non-additive pending range under live runs unless explicitly forced', async () => {
   const run = {
     name: 'run-live',
@@ -187,11 +162,20 @@ test('default migrate fences before sampling a held run lease', async () => {
     )
     .run(runId, process.pid)
   const lease = acquireRunLease(runId)
+  let drainAtRunReport: ReturnType<typeof migrationDrain> | undefined
   try {
-    await expect(migrateCommand({ log: () => {} })).rejects.toThrow(
+    const presentation = {
+      log(line: string) {
+        if (line.startsWith('runs in flight before migration:') && !drainAtRunReport) {
+          drainAtRunReport = migrationDrain(db())
+        }
+      },
+    }
+    await expect(migrateCommand(presentation)).rejects.toThrow(
       `${runId} (ok, holder pid ${process.pid})`,
     )
-    await expect(migrateCommand({ log: () => {} })).rejects.toThrow(
+    expect(drainAtRunReport).toMatchObject({ phase: 'migrating', migration: pending.tag })
+    await expect(migrateCommand(presentation)).rejects.toThrow(
       `cleared by: ${PLATFORM_SLUG} machine update`,
     )
     expect(migrationDrain(db())).toBeNull()

@@ -150,6 +150,7 @@ export type ClaimInput = {
   startedByUserId: string | null
   replySchemaName: string
   carriedQuestionIds: string[]
+  assertDispatchAllowed(): void
 }
 
 import type { ClaimResult } from './run-claim-types.ts'
@@ -238,8 +239,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const { promptPath, outputPath } = prepareFiles(runsDir, recordId, claimedPrompt, originalPrompt)
   // Beside the prompt it wraps; detach() may already have named that prompt path.
   /**
-   * The return contract, written to disk because that is how both agents take
-   * one: codex's `--output-schema` wants a path and grok's `--json-schema`
+   * The return contract is written to disk: codex's `--output-schema` wants a
+   * path and grok's `--json-schema`
    * wants the text, which agents.ts reads back from the same file.
    *
    * A caller's own `--schema` still wins. `bottega run start implement --schema mine.json`
@@ -424,6 +425,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         startedByUserId,
       ) as { record_id: string; number: number }
   const claim = writeTransaction(() => {
+    input.assertDispatchAllowed()
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
     const claimed = { id: claimedRow.record_id, number: claimedRow.number }
     /**
