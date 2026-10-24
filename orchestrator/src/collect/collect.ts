@@ -275,8 +275,7 @@ export function resolveFailover(
       /* terminal worker */
     }
   }
-  const settling =
-    mayStillFailOver(last) && !pending.no_failover && workerAlive
+  const settling = mayStillFailOver(last) && !pending.no_failover && workerAlive
   return { requestedId, attempts, finalId: last.record_id, settling }
 }
 

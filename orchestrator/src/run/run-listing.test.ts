@@ -723,7 +723,8 @@ describe('run listing', () => {
         startedAt: '2026-10-22T12:00:00.000Z',
         latency: 2000,
       })
-      if (failing.error) db().query('UPDATE run SET error=? WHERE record_id=?').run(failing.error, id)
+      if (failing.error)
+        db().query('UPDATE run SET error=? WHERE record_id=?').run(failing.error, id)
       const rows = (await command({ json: true, id: [String(id)] })).map(runJson) as unknown as {
         automatic_failover_watch_until: unknown
       }[]

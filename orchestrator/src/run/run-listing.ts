@@ -261,6 +261,31 @@ function automaticFailoverWatchUntil(
   return ended === null ? null : new Date(ended + RUN_HOST_WAIT_MAX_MS).toISOString()
 }
 
+/**
+ * Publish each listed run's automatic failover successor, and the instant its
+ * wait for one ends.
+ *
+ * Every listed row can be a failure awaiting a successor, so one read answers
+ * for all of them rather than one query per row. The member timing column the
+ * wait is anchored on is internal to the listing and does not reach the row.
+ */
+function withFailoverWatch(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const successorByRoot = failoverSuccessors(
+    db(),
+    rows.map((row) => String(row.record_id)),
+  )
+  return rows.map((row) => {
+    const { current_latency_ms: _currentLatencyMs, ...published } = row
+    const successor = successorByRoot.get(String(row.record_id)) ?? null
+    return {
+      ...published,
+      automatic_failover_successor:
+        successor === null ? null : { number: successor.number, agent: successor.agent },
+      automatic_failover_watch_until: automaticFailoverWatchUntil(row, successor),
+    }
+  })
+}
+
 function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown> {
   row.retry_record_id = row.retry_of_record_id ?? null
   delete row.retry_of_record_id
@@ -469,10 +494,8 @@ export async function runListingCommand(
   // Typed as the bindings SQLite actually accepts: `unknown[]` does not
   // satisfy the query signature, which is why this file never typechecked.
   const args: (string | number)[] = []
-  const jobFlag = flag('job')
-  addExactFilter(where, args, 'r.job = ?', jobFlag)
-  const agentFlag = flag('agent')
-  addExactFilter(where, args, 'r.agent = ?', agentFlag)
+  addExactFilter(where, args, 'r.job = ?', flag('job'))
+  addExactFilter(where, args, 'r.agent = ?', flag('agent'))
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
@@ -582,14 +605,10 @@ export async function runListingCommand(
   }
   // Every listed row can be a failure awaiting a successor, so one read over
   // all of them answers for all of them, rather than one query per row.
-  const successorByRoot = failoverSuccessors(
-    db(),
-    rows.map((row) => String(row.record_id)),
-  )
+  rows = withFailoverWatch(rows)
   const processSamples = processSamplesForRows(rows, processObservation.sampleProcesses)
   rows = rows.map((r) => {
     const live = r.status === 'running'
-    const successor = successorByRoot.get(String(r.record_id)) ?? null
     const lastEventAt = (r.last_event_at as string | null) ?? null
     const startedAt = String(r.current_started_at ?? r.started_at),
       observedAt = clock()
@@ -621,7 +640,6 @@ export async function runListingCommand(
       : null
     const {
       current_started_at: _currentStartedAt,
-      current_latency_ms: _currentLatencyMs,
       current_agent: _currentAgent,
       current_job: _currentJob,
       current_agent_pid: _currentAgentPid,
@@ -632,9 +650,6 @@ export async function runListingCommand(
     return {
       ...rest,
       ...(has('live') ? { live_statuses: RUN_LIVE_STATUSES } : {}),
-      automatic_failover_successor:
-        successor === null ? null : { number: successor.number, agent: successor.agent },
-      automatic_failover_watch_until: automaticFailoverWatchUntil(r, successor),
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
