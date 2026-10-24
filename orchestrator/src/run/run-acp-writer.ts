@@ -11,7 +11,8 @@ import type { CheckpointContainment } from './checkpoint.ts'
 import { provisionWriterSharedGitRoots } from './run-git-guard.ts'
 
 const WRITING_ACP_GIT_INSTRUCTION =
-  'The orchestrator checkpoints and commits this run from the host. Do not run git commands that write.'
+  'The orchestrator checkpoints and commits this run from the host. Do not run git commands that write. ' +
+  'This overrides any request in the task to commit: leave your changes in the working tree and report the commit message you intended.'
 
 export function bindContract(prompt: string, writingAcp: boolean): string {
   return writingAcp ? `${prompt}\n\n${WRITING_ACP_GIT_INSTRUCTION}` : prompt
