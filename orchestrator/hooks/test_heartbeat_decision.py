@@ -71,6 +71,53 @@ class HeartbeatDecisionTest(unittest.TestCase):
                 )
                 self.assertIn(operational["live_status_detail"], completed.stdout)
 
+    def test_completion_keeps_a_failed_root_watched_only_inside_its_window(self):
+        root = "01990000-0000-7000-8000-000000000001"
+        member = "01990000-0000-7000-8000-000000000002"
+        failed = {
+            "record_id": root,
+            "number": 7,
+            "job": "fixture",
+            "agent": "codex",
+            "status": "failed",
+            "live_member_status": "failed",
+            "live_member_id": member,
+            "live_member_number": 8,
+            "failure_kind": "contract",
+            "latency_ms": 2000,
+            "started_at": "2026-10-23T21:00:00.000Z",
+        }
+        # The listing's published window decides; the observer only holds its
+        # own observation instant against it.
+        observed_at = int(datetime(2026, 10, 23, 21, 30, tzinfo=timezone.utc).timestamp() * 1000)
+        cases = (
+            ("2026-10-23T21:45:00.000Z", root),
+            ("2026-10-23T21:15:00.000Z", ""),
+            (None, ""),
+        )
+        for watch_until, expected in cases:
+            with self.subTest(watch_until=watch_until):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(PATH.with_name("heartbeat-run-observation.py")),
+                        "completion",
+                        root,
+                        "queued,reserved,attached,running,asking",
+                    ],
+                    input=json.dumps({**failed, "automatic_failover_watch_until": watch_until}) + "\n",
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env={**os.environ, "BOTTEGA_HEARTBEAT_NOW_MS": str(observed_at)},
+                )
+                state = [
+                    line
+                    for line in completed.stdout.splitlines()
+                    if line.startswith("STATE\t")
+                ]
+                self.assertEqual(state, ["STATE\t" + expected], completed.stdout)
+
     def test_live_continuation_uses_turn_number_and_age(self):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)
@@ -397,15 +444,6 @@ esac
         )
         self.assertNotIn("inspect with", completed)
 
-    def test_a_failed_chain_without_a_successor_keeps_the_inspect_hint(self):
-        completed = self.run_failover_fixture(None)
-        self.assertEqual(
-            completed.count("FAILED 8/fixture codex contract 2.0s; inspect with 'bottega run show 8'"),
-            1,
-            completed,
-        )
-        self.assertNotIn("automatic failover", completed)
-
     def test_a_successor_started_after_the_failed_line_is_announced_once(self):
         completed = self.run_failover_fixture(None, SUCCESSOR)
         self.assertEqual(
@@ -422,8 +460,34 @@ esac
         )
         self.assertEqual(completed.count("FAILED 8/fixture"), 1, completed)
 
-    def run_failover_fixture(self, first_successor, later_successor=None):
+    def test_a_successor_appearing_on_a_degraded_tick_is_still_announced_once(self):
+        """A degraded tick announces nothing, so it must not spend the watch.
+
+        The root leaves the watch only once its FAILOVER line has been printed.
+        A tick that read the successor and then degraded has printed nothing, so
+        keeping its reading would drop the root and lose the line for good.
+        """
+        completed = self.run_failover_fixture(None, SUCCESSOR, degraded_inbox_call=3)
+        self.assertEqual(completed.count("FAILED 8/fixture"), 1, completed)
+        self.assertIn("DEGRADED", completed)
+        self.assertEqual(
+            completed.count(
+                "FAILOVER 8/fixture contract; automatic failover started run 900 on grok"
+            ),
+            1,
+            completed,
+        )
+        self.assertLess(
+            completed.index("DEGRADED"),
+            completed.index("FAILOVER 8/fixture"),
+            completed,
+        )
+
+    def run_failover_fixture(self, first_successor, later_successor=None, degraded_inbox_call=None):
         """Announce one failed chain, whose successor may exist at the first read or later.
+
+        `degraded_inbox_call` fails the inbox read on that 1-based tick, which is
+        the tick whose observation is discarded without being announced.
 
         The hook is run with the system temporary directory inside the fixture
         checkout: a restricted runner may not permit mktemp in the machine's own
@@ -479,22 +543,35 @@ esac
                 "latency_ms": 2000,
                 "started_at": started,
             }
-            first = json.dumps(
-                terminal
-                if first_successor is None
-                else {**terminal, "automatic_failover_successor": first_successor}
-            )
-            later = (
-                first
-                if later_successor is None
-                else json.dumps({**terminal, "automatic_failover_successor": later_successor})
-            )
+            # What the run listing publishes: the instant its successor stops
+            # being worth waiting for while none has claimed a row yet, and
+            # nothing once one has.
+            watch_until = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+
+            def completion_row(successor):
+                return json.dumps(
+                    {
+                        **terminal,
+                        "automatic_failover_successor": successor,
+                        "automatic_failover_watch_until": None if successor else watch_until,
+                    }
+                )
+
+            first = completion_row(first_successor)
+            later = first if later_successor is None else completion_row(later_successor)
             fake = binary / "bottega"
             fake.write_text(
                 f'''#!/bin/sh
 case "$*" in
   "board presence") exit 0 ;;
-  "question inbox --all --active --json") printf '[]\\n' ;;
+  "question inbox --all --active --json")
+    if [ -n "$FAKE_INBOX_FAIL_CALL" ]; then
+      inbox_calls=$(cat "$FAKE_INBOX_CALLS" 2>/dev/null || printf '0')
+      inbox_calls=$((inbox_calls + 1))
+      printf '%s' "$inbox_calls" >"$FAKE_INBOX_CALLS"
+      [ "$inbox_calls" != "$FAKE_INBOX_FAIL_CALL" ] || exit 1
+    fi
+    printf '[]\\n' ;;
   "run list --live --json")
     if [ -f "$FAKE_LIVE_SEEN" ]; then exit 0; else : >"$FAKE_LIVE_SEEN"; printf '%s\\n' '{live}'; fi ;;
   "run list --json --id {record_id}")
@@ -512,6 +589,8 @@ esac
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
                 "FAKE_TERMINAL_SEEN": str(checkout / "terminal-seen"),
+                "FAKE_INBOX_CALLS": str(checkout / "inbox-calls"),
+                "FAKE_INBOX_FAIL_CALL": "" if degraded_inbox_call is None else str(degraded_inbox_call),
             }
             # The hook screens every read through a mktemp file, and a confined
             # runner may deny the machine temporary directory mktemp prefers, so

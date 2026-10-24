@@ -247,6 +247,10 @@ for ((i = 1; i <= MAX; i++)); do
   completion_observed=""
   completion_rc=0
   completion_parse_rc=0
+  # This tick's watch, held back until the tick is known healthy and its
+  # announcements have been made; see the assignment after the EVENT loop.
+  completion_watch_next=""
+  completion_watch_read=0
   current_live_roots=""
   if [ "$runs_rc" -eq 0 ] && [ "$runs_parse_rc" -eq 0 ]; then
     current_live_roots=$(printf '%s\n' "$observed" | awk -F '\t' '$1 == "STATE" {print $8; exit}')
@@ -281,8 +285,9 @@ for ((i = 1; i <= MAX; i++)); do
         python3 "$ROOT/hooks/heartbeat-run-observation.py" completion \
           "$completion_request" "$live_statuses_csv" 2>/dev/null); completion_parse_rc=$?
       if [ "$completion_rc" -eq 0 ] && [ "$completion_parse_rc" -eq 0 ]; then
-        watched_failover_roots=$(printf '%s\n' "$completion_observed" | \
+        completion_watch_next=$(printf '%s\n' "$completion_observed" | \
           awk -F '\t' '$1 == "STATE" {print $2; exit}')
+        completion_watch_read=1
       fi
     fi
   fi
@@ -379,6 +384,14 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
       echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     fi
   done <<< "$completion_observed"
+  # A root leaves the watch only once its FAILOVER line has been printed or its
+  # window has closed, and this tick's announcements are what print it. A
+  # degraded tick announces nothing, so it also keeps the watch it came in
+  # with: replacing it there would drop the root whose successor just appeared,
+  # and no later tick would name it.
+  if [ "$completion_watch_read" -eq 1 ]; then
+    watched_failover_roots="$completion_watch_next"
+  fi
   previous_live_roots="$live_roots"
 
   key="$inbox_ids|$n|$ids|$landing_n|$landing_ids"

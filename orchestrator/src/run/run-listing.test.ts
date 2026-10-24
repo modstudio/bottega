@@ -667,6 +667,73 @@ describe('run listing', () => {
     }
   })
 
+  test('runs --json publishes the failover successor and watch on every row, not only requested ones', async () => {
+    const startedAt = '2026-10-22T12:00:00.000Z'
+    const failed = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      startedAt,
+      latency: 2000,
+    })
+    const successor = addRun({ agent: 'grok', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(failed, successor)
+    const waiting = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      startedAt,
+      latency: 2000,
+    })
+    const rows = (await command({ json: true })).map(runJson) as unknown as {
+      record_id: string
+      automatic_failover_successor: { number: number; agent: string } | null
+      automatic_failover_watch_until: string | null
+    }[]
+    const byRecord = new Map(rows.map((row) => [row.record_id, row]))
+    expect(byRecord.get(failed)).toMatchObject({
+      automatic_failover_successor: { number: runNumber(successor), agent: 'grok' },
+      automatic_failover_watch_until: null,
+    })
+    // No caller named this one, and its window is still what the heartbeat reads.
+    expect(byRecord.get(waiting)).toMatchObject({
+      automatic_failover_successor: null,
+      automatic_failover_watch_until: new Date(
+        Date.parse(startedAt) + 2000 + RUN_HOST_WAIT_MAX_MS,
+      ).toISOString(),
+    })
+  })
+
+  test('the failover watch closes only for a failure that can still fail over', async () => {
+    const cases: { label: string; kind: string | null; error: string | null; status?: string }[] = [
+      { label: 'a kind that never fails over', kind: 'harness', error: null },
+      { label: 'a recorded failover refusal', kind: 'contract', error: 'Failover refused: no' },
+      { label: 'a run that did not fail', kind: null, error: null, status: 'ok' },
+    ]
+    for (const failing of cases) {
+      const id = addRun({
+        agent: 'codex',
+        job: 'review-lens',
+        status: failing.status ?? 'failed',
+        ...(failing.kind ? { kind: failing.kind } : {}),
+        startedAt: '2026-10-22T12:00:00.000Z',
+        latency: 2000,
+      })
+      if (failing.error) db().query('UPDATE run SET error=? WHERE record_id=?').run(failing.error, id)
+      const rows = (await command({ json: true, id: [String(id)] })).map(runJson) as unknown as {
+        automatic_failover_watch_until: unknown
+      }[]
+      expect([failing.label, rows[0]!.automatic_failover_watch_until]).toEqual([
+        failing.label,
+        null,
+      ])
+    }
+  })
+
   test('runs --json reports amortized subscription cost and ignores a stored estimate', async () => {
     const id = addRun({
       agent: 'grok',

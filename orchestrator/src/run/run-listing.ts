@@ -3,7 +3,12 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RunIdentity } from '../../../shared/orch-contract.ts'
-import { resolveFailover } from '../collect/collect.ts'
+import {
+  type FailoverSuccessor,
+  failoverSuccessors,
+  mayStillFailOver,
+  resolveFailover,
+} from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
@@ -18,7 +23,7 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
-import { isFreshRunHostWait } from './run-host-capacity.ts'
+import { isFreshRunHostWait, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
@@ -220,29 +225,40 @@ function freshListedRunHostWait(row: Record<string, unknown>, now: number): bool
   return isFreshRunHostWait(String(row.status), (row.host_wait_since as string | null) ?? null, now)
 }
 
+/** The member's own terminal instant, the point a successor's wait starts from. */
+function terminalInstantMs(row: Record<string, unknown>): number | null {
+  const startedAt = (row.current_started_at ?? row.started_at) as string | null
+  const latency = (row.current_latency_ms ?? row.latency_ms) as number | null
+  if (!startedAt || typeof latency !== 'number') return null
+  const started = Date.parse(startedAt)
+  return Number.isFinite(started) ? started + latency : null
+}
+
 /**
- * The automatic failover successor started for this run's own conversation.
+ * Until when this failed run's automatic failover successor is worth waiting
+ * for, or null when none can still start.
  *
- * Anchored on the run the caller named rather than on the conversation's origin,
- * because a successor is itself a root that can fail and be succeeded in turn.
  * A caller that already reported the failure has no other way to learn that a
- * successor started afterwards, since the successor is a separate root and is
- * not returned by asking for this one.
+ * successor started afterwards, since the successor is a separate root that a
+ * read of this one does not return. The closing run picks that successor's
+ * agent, and its selection can wait for host capacity first — bounded by
+ * RUN_HOST_WAIT_MAX_MS — so the wait this publishes is the run's own terminal
+ * instant plus that bound. It is published whether or not it has already
+ * passed: the reader holds the clock, and a cutoff is a fact about the run.
  */
-function automaticFailoverSuccessor(recordId: string): { number: number; agent: string } | null {
-  return (
-    db()
-      .query<{ number: number; agent: string }, [string, string]>(
-        `SELECT successor.number, successor.agent FROM run successor
-          WHERE successor.automatic_failover = 1
-            AND successor.retry_of_record_id IN (
-              SELECT member.record_id FROM run member
-               WHERE member.record_id = ? OR member.parent_run_record_id = ?
-            )
-          ORDER BY successor.number LIMIT 1`,
-      )
-      .get(recordId, recordId) ?? null
-  )
+function automaticFailoverWatchUntil(
+  row: Record<string, unknown>,
+  successor: FailoverSuccessor | null,
+): string | null {
+  if (successor) return null
+  const failed = {
+    status: String(row.status),
+    failure_kind: (row.failure_kind as string | null) ?? null,
+    error: (row.error as string | null) ?? null,
+  }
+  if (!mayStillFailOver(failed)) return null
+  const ended = terminalInstantMs(row)
+  return ended === null ? null : new Date(ended + RUN_HOST_WAIT_MAX_MS).toISOString()
 }
 
 function withRetryRecordId(row: Record<string, unknown>): Record<string, unknown> {
@@ -490,6 +506,7 @@ export async function runListingCommand(
      SELECT r.record_id, r.number, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
+            current_run.latency_ms AS current_latency_ms,
             current_run.number AS live_member_number, current_run.status AS live_member_status,
             current_run.record_id AS live_member_id, current_run.record_id AS live_member_record_id,
             current_run.agent AS current_agent,
@@ -560,13 +577,19 @@ export async function runListingCommand(
           requested_record_id: requested.requested_record_id,
           requested_number: requested.requested_number,
           resolved_from: requested.requested_id === String(row.record_id) ? 'root' : 'turn',
-          automatic_failover_successor: automaticFailoverSuccessor(requested.root_id),
         })),
     )
   }
+  // Every listed row can be a failure awaiting a successor, so one read over
+  // all of them answers for all of them, rather than one query per row.
+  const successorByRoot = failoverSuccessors(
+    db(),
+    rows.map((row) => String(row.record_id)),
+  )
   const processSamples = processSamplesForRows(rows, processObservation.sampleProcesses)
   rows = rows.map((r) => {
     const live = r.status === 'running'
+    const successor = successorByRoot.get(String(r.record_id)) ?? null
     const lastEventAt = (r.last_event_at as string | null) ?? null
     const startedAt = String(r.current_started_at ?? r.started_at),
       observedAt = clock()
@@ -598,6 +621,7 @@ export async function runListingCommand(
       : null
     const {
       current_started_at: _currentStartedAt,
+      current_latency_ms: _currentLatencyMs,
       current_agent: _currentAgent,
       current_job: _currentJob,
       current_agent_pid: _currentAgentPid,
@@ -608,6 +632,9 @@ export async function runListingCommand(
     return {
       ...rest,
       ...(has('live') ? { live_statuses: RUN_LIVE_STATUSES } : {}),
+      automatic_failover_successor:
+        successor === null ? null : { number: successor.number, agent: successor.agent },
+      automatic_failover_watch_until: automaticFailoverWatchUntil(r, successor),
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),

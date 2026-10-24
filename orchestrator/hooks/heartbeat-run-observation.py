@@ -3,15 +3,20 @@
 
 import datetime
 import json
+import os
 import sys
 
-# How long a failed run with no automatic failover successor yet stays worth
-# rereading, measured from the failed run's own terminal instant. The successor
-# claims its row only after the failure is durable, and its agent selection can
-# wait for capacity first, so the successful read can land a tick or many later.
-# Bounded by RUN_HOST_WAIT_MAX_MS in orchestrator/src/run/run-host-capacity.ts,
-# which owns that wait.
-LATE_FAILOVER_WATCH_MS = 15 * 60 * 1000
+
+def observation_now_ms() -> int:
+    """The instant this observation is made.
+
+    BOTTEGA_HEARTBEAT_NOW_MS pins it so a test can judge a run's failover
+    watch against a known instant rather than the clock it happens to run on.
+    """
+    pinned = os.environ.get("BOTTEGA_HEARTBEAT_NOW_MS")
+    if pinned is not None and pinned.strip():
+        return int(pinned)
+    return int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
 
 
 def run_row(line: str) -> dict:
@@ -41,6 +46,9 @@ def run_row(line: str) -> dict:
         or not isinstance(successor.get("agent"), str)
     ):
         raise ValueError("run automatic failover successor is invalid")
+    watch_until = value.get("automatic_failover_watch_until")
+    if watch_until is not None and not isinstance(watch_until, str):
+        raise ValueError("run automatic failover watch is invalid")
     if not isinstance(value.get("live_member_id"), str):
         raise ValueError("run member id is invalid")
     if not isinstance(value.get("live_member_number"), int):
@@ -78,18 +86,21 @@ def successor_note(row: dict) -> str | None:
     return "; automatic failover started run %s on %s" % (successor["number"], successor["agent"])
 
 
-def terminal_ms(row: dict) -> int | None:
-    """The row's terminal instant, which bounds how long its successor is worth waiting for."""
-    timing = timing_row(row)
-    started_at = timing.get("started_at")
-    latency = timing.get("latency_ms")
-    if not isinstance(started_at, str) or not isinstance(latency, (int, float)):
-        return None
+def failover_watch_open(row: dict, now_ms: int) -> bool:
+    """Whether this run may still gain an automatic failover successor.
+
+    The run listing owns the window: it publishes the instant after which the
+    successor is no longer worth waiting for, and publishes nothing when none
+    can start at all. This only holds the clock against that instant.
+    """
+    until = row.get("automatic_failover_watch_until")
+    if not isinstance(until, str):
+        return False
     try:
-        started = datetime.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        watch_until = datetime.datetime.fromisoformat(until.replace("Z", "+00:00"))
     except ValueError:
-        return None
-    return int(started.timestamp() * 1000) + int(latency)
+        return False
+    return int(watch_until.timestamp() * 1000) > now_ms
 
 
 def lines() -> list[dict]:
@@ -168,14 +179,14 @@ def completion(expected_csv: str, live_statuses_csv: str) -> None:
     """Report every listed terminal run, and which of them still await a successor.
 
     The STATE row hands the caller the roots worth rereading: a failed run whose
-    automatic failover successor has not appeared yet, while the wait for one can
-    still end within LATE_FAILOVER_WATCH_MS of the run's own terminal instant.
+    automatic failover successor has not appeared yet, while the instant the run
+    listing publishes as the end of that wait is still ahead.
     """
     expected = set(filter(None, expected_csv.split(",")))
     live_statuses = set(filter(None, live_statuses_csv.split(",")))
     if not live_statuses:
         raise ValueError("live statuses unavailable")
-    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+    now_ms = observation_now_ms()
     seen, watched = set(), []
     for row in lines():
         root_id = row["record_id"]
@@ -200,10 +211,8 @@ def completion(expected_csv: str, live_statuses_csv: str) -> None:
             seconds = round(latency / 1000)
             duration = "%dm%02ds" % (seconds // 60, seconds % 60)
         note = successor_note(row) if outcome == "FAILED" else None
-        if outcome == "FAILED" and note is None:
-            ended = terminal_ms(row)
-            if ended is not None and ended + LATE_FAILOVER_WATCH_MS > now_ms:
-                watched.append(root_id)
+        if outcome == "FAILED" and failover_watch_open(row, now_ms):
+            watched.append(root_id)
         print(
             "EVENT", root_id, row["live_member_id"], row["live_member_number"], outcome,
             row["job"], row["agent"], row.get("failure_kind") or "-", duration, note or "-",
