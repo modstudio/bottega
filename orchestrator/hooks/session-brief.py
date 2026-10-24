@@ -13,6 +13,11 @@ import uuid
 from datetime import datetime, timezone
 
 from inbox_question_decision import decide_parsed_inbox_questions, parse_inbox_questions
+from notice_transport import (
+    acknowledgement_refusals,
+    refused_notice_name,
+    transportable_notice_id,
+)
 
 
 def _start(bottega, *args, env=None, cwd=None):
@@ -276,56 +281,6 @@ def _emitted_board_ids(output, board_text, board_ids):
     return list(board_ids) if board_ids and board_text and board_text in emitted_context else []
 
 
-_UNTRANSPORTABLE_NOTICE_ID = re.compile(r"[\x00-\x1f\x7f,]")
-
-
-def _transportable_notice_id(value):
-    """Whether the notice row and the comma-separated acknowledgement list can carry this id.
-
-    The notice-id grammar belongs to the acknowledgement validator
-    (markMonitorNoticesDelivered in orchestrator/src/monitor/monitor-notices.ts),
-    which accepts what it accepts and names every id it refuses. This hook passes
-    ids through and reports the refusals rather than keeping a copy of the rule.
-    What it does own is transport: a control character or a comma cannot survive
-    the trip into the acknowledgement list unchanged.
-    """
-    return (
-        isinstance(value, str)
-        and value != ""
-        and not _UNTRANSPORTABLE_NOTICE_ID.search(value)
-    )
-
-
-def _refused_notice_name(item, index):
-    token = item.get("noticeId") if isinstance(item, dict) else None
-    if isinstance(token, str):
-        text = token
-    elif token is None:
-        text = f"#{index + 1}"
-    else:
-        text = json.dumps(token)
-    return _UNTRANSPORTABLE_NOTICE_ID.sub(" ", text)[:80]
-
-
-def _acknowledgement_refusals(stdout):
-    """The names and reasons the acknowledgement refused, from its declared JSON result."""
-    try:
-        result = json.loads(stdout)
-    except Exception:
-        return []
-    refused = result.get("refused") if isinstance(result, dict) else None
-    if not isinstance(refused, list):
-        return []
-    names = []
-    for item in refused:
-        if not isinstance(item, dict):
-            continue
-        name = item.get("id") if isinstance(item.get("id"), str) else "#?"
-        reason = item.get("reason") if isinstance(item.get("reason"), str) else "unspecified"
-        names.append(f"{name} ({reason})")
-    return names
-
-
 def _monitor_delivery(stdout, owner_session):
     result = json.loads(stdout)
     if isinstance(result, list):
@@ -354,10 +309,10 @@ def _monitor_delivery(stdout, owner_session):
     delivered = []
     refused = []
     for index, item in enumerate(rows):
-        if _transportable_notice_id(item["noticeId"]):
+        if transportable_notice_id(item["noticeId"]):
             delivered.append(item)
         else:
-            refused.append(_refused_notice_name(item, index))
+            refused.append(refused_notice_name(item, index))
     return delivered, warning, refused
 
 
@@ -369,7 +324,7 @@ def _monitor_notice_command(bottega, skip_board_refresh=False):
 
 
 def _monitor_ack_command(bottega, monitor_notices):
-    """The acknowledgement call; --json selects the declared result _acknowledgement_refusals reads."""
+    """The acknowledgement call; --json selects the declared result acknowledgement_refusals reads."""
     return [
         bottega, "machine", "monitor", "--ack-notices",
         ",".join(str(item["noticeId"]) for item in monitor_notices), "--json",
@@ -1041,7 +996,7 @@ def main() -> int:
                 # consumer, so the names go to stderr rather than into the context.
                 # A refused id is left unacknowledged, so it repeats on the next claim
                 # instead of disappearing.
-                refusals = _acknowledgement_refusals(completed.stdout)
+                refusals = acknowledgement_refusals(completed.stdout)
                 if refusals:
                     print(
                         "session-brief: the monitor notice acknowledgement refused "

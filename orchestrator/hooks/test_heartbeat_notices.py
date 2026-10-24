@@ -85,6 +85,7 @@ def run_heartbeat(rows, ack_result=""):
             "heartbeat-decision.py",
             "heartbeat-run-observation.py",
             "inbox_question_decision.py",
+            "notice_transport.py",
         ):
             shutil.copy2(HOOKS / name, hooks / name)
         notices = checkout / "notices.json"
@@ -201,6 +202,29 @@ class HeartbeatNoticeTest(unittest.TestCase):
         self.assertIn("#5 (notice id is missing or not a string)", degraded[0])
         for refused in ("NUL detail", "unnamed detail"):
             self.assertNotIn(refused, emitted)
+
+    def test_an_empty_notice_id_is_named_and_the_rest_of_its_batch_is_delivered(self):
+        condition_detail = (
+            "detected (age unknown, status ok, project fixture); inspect the run deliberately."
+        )
+        rows = [
+            notice(CONDITION_ID, "worker-gate-tooling-change", "run 16709", condition_detail),
+            notice("", "board-notice", "board:7", "empty id detail"),
+        ]
+
+        lines, acked = run_heartbeat(rows)
+
+        # The empty id cannot be carried into the comma-joined list at all, so it is
+        # named and skipped while the notice beside it still goes out.
+        self.assertEqual(acked, [f"machine monitor --ack-notices {CONDITION_ID} --json"])
+        self.assertIn(f"MONITOR worker-gate-tooling-change run 16709: {condition_detail}", lines)
+        degraded = [line for line in lines if "DEGRADED" in line]
+        self.assertEqual(len(degraded), 1, lines)
+        self.assertIn(
+            "monitor notices refused 1 notice(s) and delivered the rest of the batch", degraded[0]
+        )
+        self.assertIn("(empty notice id) (notice id cannot be transported unchanged)", degraded[0])
+        self.assertNotIn("empty id detail", "\n".join(lines))
 
     def test_a_batch_refused_whole_says_that_nothing_was_delivered(self):
         rows = [notice("board:\u00007", "board-notice", "board:7", "NUL detail")]

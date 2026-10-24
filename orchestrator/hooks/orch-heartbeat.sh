@@ -111,7 +111,8 @@ ACTIVE_WATCHDOG_PID=""
 heartbeat_source_fingerprint() {
   cksum "$SCRIPT_PATH" "$ROOT/hooks/heartbeat-decision.py" \
     "$ROOT/hooks/heartbeat-run-observation.py" \
-    "$ROOT/hooks/inbox_question_decision.py" 2>/dev/null
+    "$ROOT/hooks/inbox_question_decision.py" \
+    "$ROOT/hooks/notice_transport.py" 2>/dev/null
 }
 
 heartbeat_start_fingerprint=$(heartbeat_source_fingerprint) || {
@@ -464,31 +465,20 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   monitor_reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$monitor_err")
   rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
 
-  monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" python3 -c '
-import sys, json, os, re
+  monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" STALLED_SUBJECTS="$direct_stalled_subjects" \
+    HOOKS_DIR="$ROOT/hooks" python3 -c '
+import sys, json, os
 
 # The notice-id grammar belongs to the acknowledgement validator
 # (markMonitorNoticesDelivered in orchestrator/src/monitor/monitor-notices.ts),
 # which accepts what it accepts and names every id it refuses. Copies of that rule
 # drift, so this parser passes ids through and lets the acknowledgement judge them.
-# What it does own is transport: a row is tab-separated, the acknowledgement list
-# is comma-separated, and command substitution drops NUL, so an id carrying a
-# control character or a comma cannot survive the trip unchanged and would be
-# acknowledged as a different id. Exactly that is refused here, by name.
-UNTRANSPORTABLE = re.compile(r"[\x00-\x1f\x7f,]")
+# The one rule it does own, transport, lives with the other delivery hook in
+# $ROOT/hooks/notice_transport.py, so the two cannot disagree about it.
+sys.path.insert(0, os.environ["HOOKS_DIR"])
+import notice_transport
+
 FIELDS = ("kind", "subject", "label", "detail")
-
-
-def refused_name(row, index):
-    token = row.get("noticeId") if isinstance(row, dict) else None
-    if isinstance(token, str):
-        text = token
-    elif token is None:
-        text = "#" + str(index + 1)
-    else:
-        text = json.dumps(token)
-    return UNTRANSPORTABLE.sub(" ", text)[:80]
-
 
 try:
     result = json.load(sys.stdin)
@@ -512,16 +502,16 @@ for index, row in enumerate(rows):
     # id is passed through for the acknowledgement to judge. Only the envelope
     # above turns a whole batch into a failure.
     if not isinstance(row, dict) or not isinstance(row.get("noticeId"), str):
-        print("degraded\t" + refused_name(row, index) + " (notice id is missing or not a string)")
+        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice id is missing or not a string)")
         continue
-    if UNTRANSPORTABLE.search(row["noticeId"]):
-        print("degraded\t" + refused_name(row, index) + " (notice id cannot be transported unchanged)")
+    if not notice_transport.transportable_notice_id(row["noticeId"]):
+        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice id cannot be transported unchanged)")
         continue
     if not all(isinstance(row.get(key), str) for key in FIELDS):
-        print("degraded\t" + refused_name(row, index) + " (notice fields are incomplete)")
+        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice fields are incomplete)")
         continue
     if row.get("ownerSession") != os.environ["SID"]:
-        print("degraded\t" + refused_name(row, index) + " (notice belongs to another session)")
+        print("degraded\t" + notice_transport.refused_notice_name(row, index) + " (notice belongs to another session)")
         continue
     values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
               for key in FIELDS]
@@ -635,33 +625,11 @@ print(token)
           # The acknowledgement is the owner of the notice-id grammar and names
           # every id it refused; this hook passes ids through and reports them.
           # Its --json result is the declared surface: count and name the refused
-          # entries, never a human line that could be reworded.
+          # entries, never a human line that could be reworded. The reader is the
+          # same module the parser above screens ids with.
           ack_report=""
           if [ "$ack_rc" -eq 0 ]; then
-            ack_report=$(python3 - "$ack_out" <<'PY' 2>/dev/null
-import json, sys
-
-try:
-    with open(sys.argv[1], encoding="utf-8") as report:
-        result = json.load(report)
-except Exception:
-    raise SystemExit(0)
-refused = result.get("refused") if isinstance(result, dict) else None
-if not isinstance(refused, list):
-    raise SystemExit(0)
-rows = []
-for item in refused:
-    if not isinstance(item, dict):
-        continue
-    name = item.get("id")
-    reason = item.get("reason")
-    name = name if isinstance(name, str) else "#?"
-    reason = reason if isinstance(reason, str) else "unspecified"
-    rows.append(name + " (" + reason + ")")
-if rows:
-    print(str(len(rows)) + "\t" + "; ".join(rows))
-PY
-)
+            ack_report=$(python3 "$ROOT/hooks/notice_transport.py" refusals <"$ack_out" 2>/dev/null)
           fi
           rm -f "$ack_out" "$ack_err"
           rm -rf "$CAP_DIR"
@@ -682,8 +650,10 @@ PY
             ack_failure_ticks=0
             ack_sent_count=$(printf '%s\n' "$monitor_ids" | awk -F ',' '{print NF}')
             if [ -n "$ack_report" ]; then
-              ack_refused_count=${ack_report%%$'\t'*}
-              ack_refused_names=${ack_report#*$'\t'}
+              ack_refused_row=$(printf '%s\n' "$ack_report" \
+                | awk 'NR > 1 {names = names "; "} {names = names $0} END {print NR "\t" names}')
+              ack_refused_count=${ack_refused_row%%$'\t'*}
+              ack_refused_names=${ack_refused_row#*$'\t'}
               ack_refusal_ticks=$((ack_refusal_ticks + 1))
               if [ "$ack_report" != "$prev_ack_refusal_report" ] || \
                  [ "$ack_refusal_ticks" -ge "$KEEPALIVE_TICKS" ]; then
