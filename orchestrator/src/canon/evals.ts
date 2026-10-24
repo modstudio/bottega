@@ -422,7 +422,7 @@ function lastPassSha(slug: string, agent: string): string | null {
     .query(
       `SELECT canon_sha FROM canon_eval
       WHERE slug=? AND agent=? AND pass=1 AND canon_sha<>?
-      ORDER BY at DESC LIMIT 1`,
+      ORDER BY at DESC, record_id DESC LIMIT 1`,
     )
     .get(slug, agent, EMPTY_CANON_SHA) as { canon_sha: string } | null
   return row?.canon_sha ?? null
@@ -661,7 +661,7 @@ export function latestCanonEvals(): CanonEvalLatest[] {
       `SELECT slug, agent, pass, why, canon_sha, at, run_record_id, model
        FROM (
          SELECT slug, agent, pass, why, canon_sha, at, run_record_id, model,
-                ROW_NUMBER() OVER (PARTITION BY slug,agent ORDER BY at DESC) AS recency
+                ROW_NUMBER() OVER (PARTITION BY slug,agent ORDER BY at DESC, record_id DESC) AS recency
          FROM canon_eval
        )
       WHERE recency=1
@@ -698,7 +698,7 @@ function lastKnownGoodCanonEvals(): CanonEvalKnownGood[] {
       `SELECT slug, agent, canon_sha, at
        FROM (
          SELECT slug, agent, canon_sha, at,
-                ROW_NUMBER() OVER (PARTITION BY slug,agent ORDER BY at DESC) AS recency
+                ROW_NUMBER() OVER (PARTITION BY slug,agent ORDER BY at DESC, record_id DESC) AS recency
          FROM canon_eval
          WHERE pass=1 AND canon_sha<>?
        )

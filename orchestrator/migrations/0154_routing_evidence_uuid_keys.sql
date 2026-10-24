@@ -92,6 +92,8 @@ CREATE INDEX score_run ON score(run_record_id);
 CREATE TRIGGER score_assign_number AFTER INSERT ON score
 WHEN NEW.number IS NULL
 BEGIN
+  SELECT RAISE(ABORT, 'score number counter is missing')
+   WHERE NOT EXISTS (SELECT 1 FROM entity_number_counter WHERE entity='score');
   UPDATE entity_number_counter
      SET last_number=MAX(last_number,COALESCE((SELECT MAX(number) FROM score),0))+1
    WHERE entity='score';

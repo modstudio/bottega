@@ -15,7 +15,7 @@ export function failingDefaultCanonEvals(): FailingDefaultCanonEval[] {
       `SELECT slug, agent
        FROM (
          SELECT slug, agent, pass, canon_sha,
-                ROW_NUMBER() OVER (PARTITION BY slug ORDER BY at DESC) AS recency
+                ROW_NUMBER() OVER (PARTITION BY slug ORDER BY at DESC, record_id DESC) AS recency
          FROM canon_eval
          WHERE agent=?
        )
