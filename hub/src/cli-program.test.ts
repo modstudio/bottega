@@ -1,7 +1,8 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect, spyOn, test } from 'bun:test'
 import type { Command } from 'commander'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { createHubProgram, run, usesReadOnlyStoreHandle } from './cli-program.ts'
+import { createNote } from './note.ts'
 import { createTask, showTask } from './task.ts'
 import { createTaskDocument, getTaskDocument } from './task-document.ts'
 
@@ -61,6 +62,32 @@ test('Commander binds scalar, repeatable, and presence options without losing ta
     )
     expect(getTaskDocument(document.label, {}).role).toBeNull()
   } finally {
+    if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
+  }
+})
+
+test('note list text searches the notes while --new keeps the filing remedy', async () => {
+  const hostedUrl = process.env.BOTTEGA_HOSTED_URL
+  delete process.env.BOTTEGA_HOSTED_URL
+  const stdout: string[] = []
+  const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(String(message)))
+  try {
+    await createNote({
+      text: 'zzz needle-alpha record',
+      cwd: '/fixtures/repos/workshop',
+      forceNew: true,
+    })
+    await createNote({ text: 'zzz other record', cwd: '/fixtures/repos/workshop', forceNew: true })
+    stdout.length = 0
+
+    expect(await run(createHubProgram(), ['note', 'list', 'needle-alpha'])).toBe(0)
+    expect(stdout.some((line) => line.includes('zzz needle-alpha record'))).toBeTrue()
+    expect(stdout.some((line) => line.includes('zzz other record'))).toBeFalse()
+
+    stdout.length = 0
+    expect(await run(createHubProgram(), ['note', 'list', '--new', 'list'])).toBe(1)
+  } finally {
+    log.mockRestore()
     if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
   }
 })
