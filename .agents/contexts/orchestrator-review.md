@@ -54,6 +54,8 @@ When a project's review declaration requests a second opinion at the applicable 
 
 The round ceiling and when to re-lens are always-on canon in `.agents/rules/20-build-and-buy.md`. Small and formatting findings are fixed inline in the same round, without re-review. Speculation is dropped in triage as `below-bar`; file it only when it is high or critical, or observed in a real run.
 
+A lens dispatched with `--supplementary`, such as a defect fix's blast-radius lens, is evidence that never consumes a round. Its role is recorded at dispatch (`orchestrator/src/review/review-role.ts:reviewCountsAsRound`), never inferred from the lens name, so a supplementary lens dispatched without the flag spends a round.
+
 Move the tier boundaries from the per-tier calibration as evidence accumulates.
 
 # A drain loop
