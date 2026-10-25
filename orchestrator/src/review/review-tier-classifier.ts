@@ -66,6 +66,7 @@ function fileRisk(
       tier: instructionMatch.tier,
       reason: `${path} (${instructionMatch.reason})`,
       basis: instructionMatch.basis ?? null,
+      firm: instructionMatch.firm === true,
     }
   if (isTestOrFixture(path)) return null
   const match = riskPaths?.find((entry) => entry.pattern.test(path))
