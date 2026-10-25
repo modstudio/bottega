@@ -506,7 +506,9 @@ test('a bare run number or run UUID artifact resolves through the run record', (
     exists: true,
   })
   expect(gather(d, { artifact: matching }).artifact).toEqual({ ref: matching, exists: true })
-  expect(() => gather(d, { artifact: newRecordId() })).toThrow('run number or a full run UUID')
+  const foreign = insertRun(d, { project: 'other', branch: 'other-branch', launchKey: 'DEV-1' })
+  expect(() => gather(d, { artifact: foreign })).toThrow('project is other')
+  expect(() => gather(d, { artifact: newRecordId() })).toThrow('is not a run; pass --artifact <')
 })
 
 test('a foreign probe is refused and a matching probe is allowed', () => {

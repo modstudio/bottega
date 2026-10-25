@@ -35,6 +35,7 @@ import {
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   type Floor,
+  flagForFloor,
   githubPullRequestUrlIn,
   isFloorKind,
   type OpenObligation,
@@ -491,6 +492,14 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
   return row.address
 }
 
+function resolveRunArtifactIdentifier(input: string, raw: string, d: Database): string {
+  try {
+    return resolveRunIdentifier(d, input)
+  } catch {
+    throw new Error(`--artifact ${raw} is not a run; pass ${flagForFloor('recorded-artifact')}`)
+  }
+}
+
 function resolveNumericArtifact(
   id: number,
   identity: CursorIdentity,
@@ -615,7 +624,7 @@ function resolveArtifact(
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
-    const recordId = resolveRunIdentifier(d, ref.id)
+    const recordId = resolveRunArtifactIdentifier(ref.id, raw, d)
     const run = loadRunBinding(recordId, d)
     if (!run) throw new Error(`--artifact ${raw} does not exist`)
     requireRunBinding(`--artifact ${raw}`, run, identity, binding.cursorId, d)
