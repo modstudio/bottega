@@ -5,7 +5,7 @@ import { sessionId } from '../database/db.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
-  applyWorkflowCatalogueRow,
+  applyWorkflowCatalogueRows,
   applyWorkflowWriteResponse,
 } from '../record/record-cache-workflow.ts'
 import { recordMemberships } from '../record/record-space.ts'
@@ -109,14 +109,14 @@ async function promoteSharedWorkflowSpaces<Row extends WorkflowPromotionVersion>
 const storedVersions = (slug: string, d: Database): StoredPromotionVersion[] =>
   d
     .query<StoredPromotionVersion, [string]>(
-      `SELECT w.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? ORDER BY w.space_id,v.n`,
+      `SELECT w.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND v.superseded_at IS NULL ORDER BY w.space_id,v.n`,
     )
     .all(slug)
 
 const storedCatalogueVersions = (d: Database): StoredPromotionVersion[] =>
   d
     .query<StoredPromotionVersion, []>(
-      `SELECT c.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' ORDER BY c.space_id,v.n`,
+      `SELECT c.space_id spaceId,v.n,v.status,v.author,v.definition,v.reason FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' AND v.superseded_at IS NULL ORDER BY c.space_id,v.n`,
     )
     .all()
 
@@ -271,8 +271,12 @@ async function sharedPromotionState(slug: string | null, sourceSpace: string, d:
   if (!spaceIds.includes(sourceSpace)) spaceIds.unshift(sourceSpace)
   const snapshots = await Promise.all(spaceIds.map((spaceId) => hostedSnapshot(spaceId, slug)))
   for (const snapshot of snapshots)
-    for (const table of RECORD_WORKFLOW_TABLES)
-      for (const row of snapshot.rows.get(table)!) applyWorkflowCatalogueRow(d, table, row)
+    applyWorkflowCatalogueRows(
+      d,
+      RECORD_WORKFLOW_TABLES.flatMap((table) =>
+        snapshot.rows.get(table)!.map((row) => [table, row] as const),
+      ),
+    )
   return { spaceIds, snapshots }
 }
 
@@ -310,7 +314,7 @@ async function promoteHostedWorkflowSpace(
 ): Promise<void> {
   const target = d
     .query<{ present: number }, [string, string, number]>(
-      `SELECT 1 AS present FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id=? AND v.n=?`,
+      `SELECT 1 AS present FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id=? AND v.n=? AND v.superseded_at IS NULL`,
     )
     .get(slug, spaceId, n)
   if (!target) throw new Error(`workflow "${slug}" has no version ${n} in hosted space ${spaceId}`)

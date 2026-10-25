@@ -33,7 +33,9 @@ type AdvanceRow = {
   mode_slug: string
   workflow_key: string
   workflow_version: number
+  workflow_version_record_id: string
   catalogue_version: number
+  catalogue_version_record_id: string
   args: string
   autonomy: string | null
 }
@@ -120,7 +122,13 @@ export function renderWorkflowAdvanceResult(input: {
         next.slug,
         JSON.parse(row.args),
         d,
-        { mode, version: row.workflow_version, catalogueVersion: row.catalogue_version },
+        {
+          mode,
+          version: row.workflow_version,
+          versionRecordId: row.workflow_version_record_id,
+          catalogueVersion: row.catalogue_version,
+          catalogueVersionRecordId: row.catalogue_version_record_id,
+        },
         cursorAutonomy(row, live),
       ),
       row.record_id,

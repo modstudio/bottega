@@ -440,7 +440,7 @@ export function selectedStepCatalogue(
   const suffix = n === undefined ? "AND v.status='production'" : 'AND v.n=?'
   const row = d
     .query(
-      `SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.record_id=v.catalogue_record_id WHERE i.slug=? AND i.space_id IS ? ${suffix}`,
+      `SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.record_id=v.catalogue_record_id WHERE i.slug=? AND i.space_id IS ? AND v.superseded_at IS NULL ${suffix}`,
     )
     .get(...(n === undefined ? [CATALOGUE, spaceId] : [CATALOGUE, spaceId, n])) as {
     definition: string
@@ -450,6 +450,21 @@ export function selectedStepCatalogue(
     throw new Error(
       `step catalogue has no ${n === undefined ? 'production version' : `version ${n}`}${spaceId === null ? '' : ` in hosted space ${spaceId}`}${n === undefined ? '; promote one' : ''}`,
     )
+  return compatibleCatalogue({
+    ...row,
+    definition: JSON.parse(row.definition) as StepCatalogueDefinition,
+  }) as ReturnType<typeof showStepCatalogue>
+}
+export function showPinnedStepCatalogue(
+  recordId: string,
+  d: Database,
+): ReturnType<typeof showStepCatalogue> {
+  const row = d
+    .query(
+      'SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.record_id=v.catalogue_record_id WHERE v.record_id=?',
+    )
+    .get(recordId) as ({ definition: string } & Record<string, unknown>) | null
+  if (!row) throw new Error(`pinned step catalogue version ${recordId} does not exist`)
   return compatibleCatalogue({
     ...row,
     definition: JSON.parse(row.definition) as StepCatalogueDefinition,
@@ -569,7 +584,7 @@ export const retireStepCatalogue = (
       const spaceId = await activeSpace(),
         current = d
           .query<{ n: number }, [string]>(
-            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production'`,
+            `SELECT v.n FROM step_catalogue_version v JOIN step_catalogue c ON c.record_id=v.catalogue_record_id WHERE c.slug='shared' AND c.space_id=? AND v.status='production' AND v.superseded_at IS NULL`,
           )
           .get(spaceId)
       const result = await recordApiClient().retireWorkflow!(
@@ -713,7 +728,7 @@ function cataloguePromotionPreflight(
   const current = d
     .query<{ definition: string }, [string | null]>(
       `SELECT v.definition FROM step_catalogue c JOIN step_catalogue_version v ON v.catalogue_record_id=c.record_id
-       WHERE c.slug='shared' AND c.space_id IS ? AND v.status='production'`,
+       WHERE c.slug='shared' AND c.space_id IS ? AND v.status='production' AND v.superseded_at IS NULL`,
     )
     .get(spaceId)
   const currentSequences = current
@@ -722,7 +737,7 @@ function cataloguePromotionPreflight(
   const currentWorkflowRows = d
     .query(
       `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_record_id=w.record_id
-       WHERE v.status='production' AND w.space_id IS ?`,
+       WHERE v.status='production' AND v.superseded_at IS NULL AND w.space_id IS ?`,
     )
     .all(spaceId) as { slug: string; definition: string }[]
   const rows = replacement

@@ -10,7 +10,7 @@ import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
-  'number id,record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,ordinal,step_slug,state,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
+  'number id,record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
 
 export type WorkflowCursorSelector = {
   project?: string
@@ -53,6 +53,8 @@ export type SelectableCursorRow = {
   ordinal: number
   step_slug: string
   state: CursorState
+  workflow_version_record_id: string
+  catalogue_version_record_id: string
   workflow_version: number
   catalogue_version: number
   args: string

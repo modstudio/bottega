@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso } from '../database/db.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
+import { showPinnedWorkflow } from './workflow-version-selection.ts'
 import { resolvedProductionWorkflows, showResolvedWorkflow } from './workflows.ts'
 
 type ArgumentCursor = {
@@ -13,6 +14,7 @@ type ArgumentCursor = {
   project: string
   workflow_slug: string
   workflow_version: number
+  workflow_version_record_id?: string
   args: string
   closed: string
 }
@@ -61,7 +63,10 @@ function rebindableArguments(row: ArgumentCursor, d: Database): Set<string> {
     ({ slug }) => slug === row.workflow_slug,
   )
   const definitions = [
-    showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d).definition,
+    (row.workflow_version_record_id
+      ? showPinnedWorkflow(row.workflow_version_record_id, d)
+      : showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d)
+    ).definition,
     ...(current ? [current.definition] : []),
   ]
   return new Set(

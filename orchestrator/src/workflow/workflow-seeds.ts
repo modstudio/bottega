@@ -27,7 +27,7 @@ function seedCatalogueEvent(
 ): void {
   d.query(`INSERT INTO step_catalogue_event
     (record_id,catalogue_version_record_id,version_n,event,author,reason,session_id,at)
-    VALUES (?,(SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=? AND n=?),?,?,?,?,NULL,?)`).run(
+    VALUES (?,(SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=? AND n=? AND superseded_at IS NULL),?,?,?,?,NULL,?)`).run(
     newRecordId(),
     catalogueId,
     n,
@@ -49,7 +49,7 @@ function seedWorkflowEvent(
 ): void {
   d.query(`INSERT INTO workflow_event
     (record_id,workflow_version_record_id,version_n,event,author,reason,session_id,at)
-    VALUES (?,(SELECT record_id FROM workflow_version WHERE workflow_record_id=? AND n=?),?,?,?,?,NULL,?)`).run(
+    VALUES (?,(SELECT record_id FROM workflow_version WHERE workflow_record_id=? AND n=? AND superseded_at IS NULL),?,?,?,?,NULL,?)`).run(
     newRecordId(),
     workflowId,
     n,
@@ -102,7 +102,7 @@ function seedCatalogue(d: Database, now: string): void {
     return
   const prior = d
     .query(
-      "SELECT n,definition FROM step_catalogue_version WHERE catalogue_record_id=? AND status='production'",
+      "SELECT n,definition FROM step_catalogue_version WHERE catalogue_record_id=? AND status='production' AND superseded_at IS NULL",
     )
     .get(catalogue.record_id) as { n: number; definition: string } | null
   const assembled = prior
@@ -122,12 +122,14 @@ function seedCatalogue(d: Database, now: string): void {
   const definition = JSON.stringify(assembled)
   if (prior?.definition === definition) return
   const { n: maxN } = d
-    .query('SELECT COALESCE(MAX(n),0) AS n FROM step_catalogue_version WHERE catalogue_record_id=?')
+    .query(
+      'SELECT COALESCE(MAX(n),0) AS n FROM step_catalogue_version WHERE catalogue_record_id=? AND superseded_at IS NULL',
+    )
     .get(catalogue.record_id) as { n: number }
   const n = maxN + 1
   if (prior) {
     d.query(
-      "UPDATE step_catalogue_version SET status='retired',retired_at=? WHERE catalogue_record_id=? AND status='production'",
+      "UPDATE step_catalogue_version SET status='retired',retired_at=? WHERE catalogue_record_id=? AND status='production' AND superseded_at IS NULL",
     ).run(now, catalogue.record_id)
     seedCatalogueEvent(d, catalogue.record_id, prior.n, 'retire', reason, now)
   }
@@ -158,7 +160,7 @@ function requireValidSeedCatalogue(definition: unknown): void {
 function storedCatalogueSeedRevision(d: Database, catalogueId: string): number {
   const events = d
     .query(
-      'SELECT e.reason FROM step_catalogue_event e JOIN step_catalogue_version v ON v.record_id=e.catalogue_version_record_id WHERE v.catalogue_record_id=? AND e.author=?',
+      'SELECT e.reason FROM step_catalogue_event e JOIN step_catalogue_version v ON v.record_id=e.catalogue_version_record_id WHERE v.catalogue_record_id=? AND v.superseded_at IS NULL AND e.author=?',
     )
     .all(catalogueId, BUILT_IN_WORKFLOW_AUTHOR) as { reason: string }[]
   return events.reduce((highest, { reason }) => {
@@ -171,7 +173,7 @@ function operatorPromotedCatalogue(d: Database, catalogueId: string): boolean {
   return (
     d
       .query(
-        "SELECT 1 FROM step_catalogue_event e JOIN step_catalogue_version v ON v.record_id=e.catalogue_version_record_id WHERE v.catalogue_record_id=? AND e.event='promote' AND e.author!=? LIMIT 1",
+        "SELECT 1 FROM step_catalogue_event e JOIN step_catalogue_version v ON v.record_id=e.catalogue_version_record_id WHERE v.catalogue_record_id=? AND v.superseded_at IS NULL AND e.event='promote' AND e.author!=? LIMIT 1",
       )
       .get(catalogueId, BUILT_IN_WORKFLOW_AUTHOR) != null
   )
@@ -180,7 +182,7 @@ function operatorPromotedCatalogue(d: Database, catalogueId: string): boolean {
 function storedSeedRevision(d: Database, workflowId: string): number {
   const events = d
     .query(
-      'SELECT e.reason FROM workflow_event e JOIN workflow_version v ON v.record_id=e.workflow_version_record_id WHERE v.workflow_record_id=? AND e.author=?',
+      'SELECT e.reason FROM workflow_event e JOIN workflow_version v ON v.record_id=e.workflow_version_record_id WHERE v.workflow_record_id=? AND v.superseded_at IS NULL AND e.author=?',
     )
     .all(workflowId, BUILT_IN_WORKFLOW_AUTHOR) as { reason: string }[]
   return events.reduce((highest, { reason }) => {
@@ -194,7 +196,7 @@ function operatorPromotedWorkflow(d: Database, workflowId: string): boolean {
   return (
     d
       .query(
-        "SELECT 1 FROM workflow_event e JOIN workflow_version v ON v.record_id=e.workflow_version_record_id WHERE v.workflow_record_id=? AND e.event='promote' AND e.author!=? LIMIT 1",
+        "SELECT 1 FROM workflow_event e JOIN workflow_version v ON v.record_id=e.workflow_version_record_id WHERE v.workflow_record_id=? AND v.superseded_at IS NULL AND e.event='promote' AND e.author!=? LIMIT 1",
       )
       .get(workflowId, BUILT_IN_WORKFLOW_AUTHOR) != null
   )
@@ -237,15 +239,19 @@ function seedWorkflow(d: Database, seed: (typeof seeds)[number], now: string): v
     return
   // A workflow may have no production version (a draft never promoted); then there is nothing to retire.
   const prior = d
-    .query("SELECT n FROM workflow_version WHERE workflow_record_id=? AND status='production'")
+    .query(
+      "SELECT n FROM workflow_version WHERE workflow_record_id=? AND status='production' AND superseded_at IS NULL",
+    )
     .get(workflow.record_id) as { n: number } | null
   const { n: maxN } = d
-    .query('SELECT COALESCE(MAX(n),0) AS n FROM workflow_version WHERE workflow_record_id=?')
+    .query(
+      'SELECT COALESCE(MAX(n),0) AS n FROM workflow_version WHERE workflow_record_id=? AND superseded_at IS NULL',
+    )
     .get(workflow.record_id) as { n: number }
   const n = maxN + 1
   if (prior) {
     d.query(
-      "UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_record_id=? AND status='production'",
+      "UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_record_id=? AND status='production' AND superseded_at IS NULL",
     ).run(now, workflow.record_id)
     seedWorkflowEvent(d, workflow.record_id, prior.n, 'retire', reason, now)
   }

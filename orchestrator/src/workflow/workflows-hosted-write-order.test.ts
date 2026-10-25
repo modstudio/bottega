@@ -5,7 +5,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
-import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import type { RecordWorkflowWriteResponse } from '../record/record-workflow-contract.ts'
 import {
   productionStepCatalogue,

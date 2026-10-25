@@ -98,15 +98,11 @@ function versionRow<T>(
   d: Database,
   spaceId: string | null,
 ): Row {
-  const suffix =
-    n === undefined
-      ? `ORDER BY CASE status WHEN 'production' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, n DESC LIMIT 1`
-      : `AND v.n=?`
   const found = d
     .query(
-      `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS ? ${suffix}`,
+      `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS ? AND v.superseded_at IS NULL AND (? IS NULL OR v.n=?) ORDER BY CASE status WHEN 'production' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END,n DESC LIMIT 1`,
     )
-    .get(...(n === undefined ? [slug, spaceId] : [slug, spaceId, n])) as Row | null
+    .get(slug, spaceId, n ?? null, n ?? null) as Row | null
   if (!found) throw missingVersion(config, slug, n, spaceId)
   return found
 }
@@ -119,7 +115,7 @@ function productionRow<T>(
 ): Row {
   const found = d
     .query(
-      `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS ? AND v.status='production'`,
+      `SELECT v.record_id,v.${config.foreignKey} owner_record_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.record_id=v.${config.foreignKey} WHERE i.slug=? AND i.space_id IS ? AND v.status='production' AND v.superseded_at IS NULL`,
     )
     .get(slug, spaceId) as Row | null
   if (!found)
@@ -154,7 +150,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   ) =>
     d
       .query(
-        `INSERT INTO ${config.eventTable} (record_id,${config.noun === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'},version_n,event,author,reason,session_id,at,space_id) VALUES (?,(SELECT record_id FROM ${config.versionTable} WHERE ${config.foreignKey}=? AND n=?),?,?,?,?,?, ?,NULL)`,
+        `INSERT INTO ${config.eventTable} (record_id,${config.noun === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'},version_n,event,author,reason,session_id,at,space_id) VALUES (?,(SELECT record_id FROM ${config.versionTable} WHERE ${config.foreignKey}=? AND n=? AND superseded_at IS NULL),?,?,?,?,?, ?,NULL)`,
       )
       .run(newRecordId(), ownerRecordId, n, n, kind, by, reason, sessionId(), at)
 
@@ -180,7 +176,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       if (!identity) identity = insertOwner(d, config.identityTable, slug, at)
       const max = d
         .query(
-          `SELECT COALESCE(MAX(n),0) n FROM ${config.versionTable} WHERE ${config.foreignKey}=?`,
+          `SELECT COALESCE(MAX(n),0) n FROM ${config.versionTable} WHERE ${config.foreignKey}=? AND superseded_at IS NULL`,
         )
         .get(identity.record_id) as { n: number }
       const n = max.n + 1
@@ -212,15 +208,15 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       preflight?.(target.definition, d)
       const prior = d
         .query(
-          `SELECT n FROM ${config.versionTable} WHERE ${config.foreignKey}=? AND status='production'`,
+          `SELECT n FROM ${config.versionTable} WHERE ${config.foreignKey}=? AND status='production' AND superseded_at IS NULL`,
         )
         .get(id) as { n: number } | null
       d.query(
-        `UPDATE ${config.versionTable} SET status='retired',retired_at=? WHERE ${config.foreignKey}=? AND status='production'`,
+        `UPDATE ${config.versionTable} SET status='retired',retired_at=? WHERE ${config.foreignKey}=? AND status='production' AND superseded_at IS NULL`,
       ).run(at, id)
       if (prior) event(d, id, prior.n, 'retire', by, why, at)
       d.query(
-        `UPDATE ${config.versionTable} SET status='production',promoted_at=? WHERE ${config.foreignKey}=? AND n=?`,
+        `UPDATE ${config.versionTable} SET status='production',promoted_at=? WHERE ${config.foreignKey}=? AND n=? AND superseded_at IS NULL`,
       ).run(at, id, n)
       event(d, id, n, 'promote', by, why, at)
       return show(slug, n, d)
@@ -243,7 +239,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       if (target.status === 'retired')
         throw new Error(`${config.noun} "${slug}" version ${n} is retired`)
       d.query(
-        `UPDATE ${config.versionTable} SET status='retired',retired_at=? WHERE ${config.foreignKey}=? AND n=?`,
+        `UPDATE ${config.versionTable} SET status='retired',retired_at=? WHERE ${config.foreignKey}=? AND n=? AND superseded_at IS NULL`,
       ).run(at, id, n)
       event(d, id, n, 'retire', by, why, at)
       return show(slug, n, d)
@@ -253,14 +249,14 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     const id = ownerId(config, slug, d, spaceId)
     const rows = d
       .query(
-        `SELECT n,status,author,reason,created_at,promoted_at,retired_at FROM ${config.versionTable} WHERE ${config.foreignKey}=? ORDER BY n`,
+        `SELECT n,status,author,reason,created_at,promoted_at,retired_at FROM ${config.versionTable} WHERE ${config.foreignKey}=? AND superseded_at IS NULL ORDER BY n`,
       )
       .all(id) as VersionMetadata[]
     return rows.map((version) => ({
       ...version,
       events: d
         .query(
-          `SELECT e.event,e.author,e.reason,e.session_id,e.at FROM ${config.eventTable} e JOIN ${config.versionTable} v ON v.record_id=e.${config.noun === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'} WHERE v.${config.foreignKey}=? AND e.version_n=? ORDER BY e.rowid`,
+          `SELECT e.event,e.author,e.reason,e.session_id,e.at FROM ${config.eventTable} e JOIN ${config.versionTable} v ON v.record_id=e.${config.noun === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'} WHERE v.${config.foreignKey}=? AND v.superseded_at IS NULL AND e.version_n=? ORDER BY e.rowid`,
         )
         .all(id, version.n as number),
     }))

@@ -28,6 +28,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-trail.ts',
+    './workflow-version-selection.ts',
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-adoption.ts', [

@@ -10,7 +10,7 @@ import { registerWorkflowCommands } from '../commands/workflow.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
-import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,

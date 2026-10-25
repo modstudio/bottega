@@ -59,7 +59,12 @@ export function listWorkflowCursors(
       row.mode_slug,
       JSON.parse(row.args),
       d,
-      { version: row.workflow_version, catalogueVersion: row.catalogue_version },
+      {
+        version: row.workflow_version,
+        versionRecordId: row.workflow_version_record_id,
+        catalogueVersion: row.catalogue_version,
+        catalogueVersionRecordId: row.catalogue_version_record_id,
+      },
       cursorAutonomy(row),
     )
     const open = openWorkflowObligations(row.record_id, d)

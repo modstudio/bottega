@@ -134,7 +134,9 @@ export function decideCursorCompositionInput(
     state: CursorState
     args: string
     workflow_version: number
+    workflow_version_record_id?: string
     catalogue_version: number
+    catalogue_version_record_id?: string
   } | null,
   args: Record<string, string>,
   mode: string,
@@ -148,7 +150,13 @@ export function decideCursorCompositionInput(
     selection: {
       mode,
       version: cursor.workflow_version,
+      ...(cursor.workflow_version_record_id
+        ? { versionRecordId: cursor.workflow_version_record_id }
+        : {}),
       catalogueVersion: cursor.catalogue_version,
+      ...(cursor.catalogue_version_record_id
+        ? { catalogueVersionRecordId: cursor.catalogue_version_record_id }
+        : {}),
     },
   }
 }
