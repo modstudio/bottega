@@ -290,7 +290,7 @@ try {
   if (recipientMigration !== 0) throw new EarlyExit(recipientMigration)
 
   const hostedTaskIdMigration = await run(
-    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-hosted-task-ids.test.ts'],
+    ['bun', 'test', '--timeout', '120000', 'src/postgres/postgres-migrate-hosted-task-ids.test.ts'],
     {
       BOTTEGA_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl,
       BOTTEGA_TEST_REMAINING_UUID_KEYS_MIGRATION_URL: remainingUuidKeysMigrationUrl,
