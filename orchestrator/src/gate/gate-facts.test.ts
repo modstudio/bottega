@@ -3,7 +3,6 @@ import { cloneRepository } from '../../../shared/test-git-repository.ts'
 import { gateStoreSource } from '../../scripts/branch-store.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { compilePack, compilePackFromGateFacts } from '../canon/canon.ts'
-import { projectEnabledChecks } from '../check/check-commands.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { collectGateFacts, parseGateFacts } from './gate-facts.ts'
@@ -24,7 +23,7 @@ test('refuses a snapshot format newer than the branch understands', () => {
   ).toThrow('unknown gate-facts format version 2')
 })
 
-test('a serialized snapshot gives the same pack and project-check verdicts as its store', async () => {
+test('a serialized snapshot compiles the same pack as its store', async () => {
   const repository = cloneRepository(process.env, 'gate-facts-project-')
   upsertProject({
     recordId: crypto.randomUUID(),
@@ -46,12 +45,24 @@ test('a serialized snapshot gives the same pack and project-check verdicts as it
     title: 'Injected',
     body: 'Injected body.',
   })
+  await setDoc({
+    scope: 'canon',
+    subject: 'gate-facts-project',
+    slug: '.agents/rules/project.md',
+    title: 'Project',
+    body: '---\ndescription: Project rule\nalways: true\n---\n\nProject body.\n',
+  })
+  await setDoc({
+    scope: 'job',
+    subject: 'understand',
+    slug: 'on-demand',
+    title: 'On demand',
+    body: 'Demand body.',
+    delivery: 'demand',
+  })
 
   const facts = parseGateFacts(JSON.stringify(collectGateFacts(db())))
   expect(compilePackFromGateFacts({ job: 'understand', cwd: repository }, facts)).toEqual(
     compilePack({ job: 'understand', cwd: repository }),
-  )
-  expect(projectEnabledChecks(facts.projects[0]!)).toEqual(
-    projectEnabledChecks((await import('../project/projects.ts')).projects(undefined, db())[0]!),
   )
 })

@@ -231,7 +231,7 @@ async function commentsCommand(argv: string[], presentation: Presentation): Prom
 
 type EnabledCheck = 'spelling' | 'attribution' | 'comments'
 
-export function projectEnabledChecks(project: Project): EnabledCheck[] {
+function projectEnabledChecks(project: Project): EnabledCheck[] {
   const enabled: EnabledCheck[] = []
   if (project.settings.checks?.spelling === true) enabled.push('spelling')
   if (project.settings.checks?.attribution === true) enabled.push('attribution')
