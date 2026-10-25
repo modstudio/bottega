@@ -227,6 +227,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/close/close-out-in-flight.ts', [
     'node:fs',
     '../database/db.ts',
+    '../git/git-environment.ts',
     '../landing-tree/landing-tree.ts',
     './close-out-report.ts',
   ]),
