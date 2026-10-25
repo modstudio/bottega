@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
-import { decideStoreAccess } from '../../../shared/store-access.ts'
-import { restrictedStoreActor, type StoreActorFacts, storeWriteRefusal } from './db.ts'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
+import { restrictedStoreActor, type StoreActorFacts, storeWriteRefusal } from './store-actor.ts'
 
 /** The unrestricted caller: an operator command from the main checkout, on the main store. */
 const operator: StoreActorFacts = {
@@ -56,33 +57,19 @@ test('a linked-worktree binary is restricted on the main store and free on a sto
   ).toBeFalse()
 })
 
-test('a worker is refused the shared store and still writes the temporary store its test leg mints', () => {
-  const actor = restrictedStoreActor({ ...operator, workerCaller: true })
-  expect(
-    decideStoreAccess({
-      restrictedActor: actor,
-      storePathUnderTemporaryRoot: false,
-      walOrShmSidecarPresent: false,
-    }).writesRefused,
-  ).toBeTrue()
-  expect(
-    decideStoreAccess({
-      restrictedActor: actor,
-      storePathUnderTemporaryRoot: true,
-      walOrShmSidecarPresent: false,
-    }),
-  ).toEqual({ openMode: 'read-write', writesRefused: false, migrationsRefused: false })
-})
-
 test('a refused write reports the condition that refused it and what clears it', () => {
   expect(storeWriteRefusal(true)).toContain(
     'refusing to write orchestrator rows from a worker process',
   )
   expect(storeWriteRefusal(true)).toContain(
-    'invariant: A worker writes the store only through its ask server, the one declared broker channel.',
+    'invariant: A worker writes the shared store only through its ask server, the one declared broker channel; a store under OS temporary state is not the shared store.',
   )
   expect(storeWriteRefusal(true)).toContain(
     'cleared by: ask, message or note through the worker channel',
+  )
+  // The one edit a refused worker can make for itself, named with the resolved directory.
+  expect(storeWriteRefusal(true)).toContain(
+    `set BOTTEGA_ORCHESTRATOR_DB to a scratch copy under the OS temporary directory (${resolve(tmpdir())})`,
   )
   expect(storeWriteRefusal(false)).toContain(
     'refusing to write run or project rows to the registered main store from a linked worktree',

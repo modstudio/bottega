@@ -11,11 +11,11 @@ import {
   migrationInFlightRuns,
 } from '../run/migration-in-flight-runs.ts'
 import { reconcileRun } from '../run/run-artifacts.ts'
-import { existingDatabaseMigrationRefusal } from './database-location.ts'
 import {
   backfillSpecSha,
   DB_PATH,
   migrateDatabase,
+  migrationAuthorityRefusal,
   openReadOnlyDatabase,
   tryWriteContention,
   withDatabaseForMigrationStep,
@@ -84,7 +84,7 @@ export function applyRunFilesystemIdentityCutover(
 function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): MigrateCommandActions {
   return {
     assertAuthority: () => {
-      const refusal = (options.authorityRefusal ?? existingDatabaseMigrationRefusal)()
+      const refusal = (options.authorityRefusal ?? migrationAuthorityRefusal)()
       if (refusal) throw new Error(refusal)
     },
     inFlightRuns: () =>

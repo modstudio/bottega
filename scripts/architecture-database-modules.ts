@@ -38,6 +38,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/state-directory.ts',
     '../project/project-settings.ts',
   ]),
+  module('orchestrator/src/database/store-actor.ts', ['node:os', 'node:path']),
   module('orchestrator/src/database/machine-identity-store.ts', [
     'bun:sqlite',
     '../../../shared/config-directory.ts',
