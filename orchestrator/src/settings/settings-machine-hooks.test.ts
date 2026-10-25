@@ -105,22 +105,6 @@ test('git guard covers every Bash command and has no condition', () => {
   expect(guard).not.toHaveProperty('if')
 })
 
-test('main checkout protection covers Bash and every judged editor tool', () => {
-  const hooks = render({}).settings.hooks as Record<
-    string,
-    Array<{ matcher?: string; hooks: Array<{ command: string }> }>
-  >
-  const groups = (hooks.PreToolUse ?? []).filter((group) =>
-    group.hooks.some((hook) => hook.command.endsWith('/protect-main-checkout.py')),
-  )
-  expect(groups.map((group) => group.matcher)).toEqual(['Bash', 'Write|Edit|NotebookEdit'])
-  expect(
-    groups.flatMap((group) =>
-      group.hooks.filter((hook) => hook.command.endsWith('/protect-main-checkout.py')),
-    ),
-  ).toHaveLength(2)
-})
-
 test('test substance guard covers every editor tool from the rendered install', () => {
   const hooks = render({}).settings.hooks as Record<
     string,

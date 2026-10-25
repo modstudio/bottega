@@ -15,7 +15,11 @@ import sqlite3
 import subprocess
 import sys
 
-from protect_main_checkout import MUTATING_GIT_SUBCOMMANDS, decision_for_mutations
+from protect_main_checkout import (
+    MUTATING_GIT_SUBCOMMANDS,
+    decision_for_mutations,
+    requires_clean_main,
+)
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -198,7 +202,7 @@ def git_invocation(tokens, cwd, assignments):
     if not tokens or os.path.basename(tokens[0]) != "git":
         return None
     target = real(cwd)
-    targets = [target]
+    additional_targets = []
     index = 1
     options_with_values = {"-c", "--config-env", "--exec-path", "--namespace"}
     while index < len(tokens):
@@ -207,12 +211,10 @@ def git_invocation(tokens, cwd, assignments):
             if index + 1 >= len(tokens):
                 return None
             target = resolve_git_path(tokens[index + 1], target)
-            targets.append(target)
             index += 2
             continue
         if word.startswith("-C") and word != "-C":
             target = resolve_git_path(word[2:], target)
-            targets.append(target)
             index += 1
             continue
         if word in {"--git-dir", "--work-tree"}:
@@ -220,18 +222,18 @@ def git_invocation(tokens, cwd, assignments):
                 return None
             resolved = resolve_git_path(tokens[index + 1], target)
             if word == "--git-dir":
-                targets.append(real(os.path.dirname(resolved)))
+                additional_targets.append(real(os.path.dirname(resolved)))
             else:
-                targets.append(resolved)
+                additional_targets.append(resolved)
             index += 2
             continue
         if word.startswith("--git-dir="):
             resolved = resolve_git_path(word.split("=", 1)[1], target)
-            targets.append(real(os.path.dirname(resolved)))
+            additional_targets.append(real(os.path.dirname(resolved)))
             index += 1
             continue
         if word.startswith("--work-tree="):
-            targets.append(resolve_git_path(word.split("=", 1)[1], target))
+            additional_targets.append(resolve_git_path(word.split("=", 1)[1], target))
             index += 1
             continue
         if word in options_with_values:
@@ -253,9 +255,10 @@ def git_invocation(tokens, cwd, assignments):
         return None
     if assignments.get("GIT_DIR"):
         git_dir = resolve_git_path(assignments["GIT_DIR"], target)
-        targets.append(real(os.path.dirname(git_dir)))
+        additional_targets.append(real(os.path.dirname(git_dir)))
     if assignments.get("GIT_WORK_TREE"):
-        targets.append(resolve_git_path(assignments["GIT_WORK_TREE"], target))
+        additional_targets.append(resolve_git_path(assignments["GIT_WORK_TREE"], target))
+    targets = [target, *additional_targets]
     return {"subcommand": tokens[index], "targets": list(dict.fromkeys(targets))}
 
 
@@ -308,10 +311,6 @@ def load_projects_result(db_path):
 
 def load_projects(db_path):
     return load_projects_result(db_path)[0]
-
-
-def requires_clean_main(settings):
-    return settings.get("requireCleanMain") is not False
 
 
 def target_path(payload):

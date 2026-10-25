@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 
 HOOK_PATH = Path(__file__).with_name("protect-main-checkout.py")
-POLICY_PATH = Path(__file__).with_name("protect_main_checkout.py")
 sys.path.insert(0, str(HOOK_PATH.parent))
 
 
@@ -22,31 +21,6 @@ def load(path, name):
 
 
 hook = load(HOOK_PATH, "protect_main_checkout_hook")
-policy = load(POLICY_PATH, "protect_main_checkout_policy")
-
-
-class MainCheckoutPolicyTest(unittest.TestCase):
-    def test_decision_uses_normalized_mutations_and_honors_exemptions(self):
-        main = "/registered/main"
-        protected = {"name": "protected", "path": main, "settings": {}}
-        exempt = {
-            "name": "exempt",
-            "path": main,
-            "settings": {"requireCleanMain": False},
-        }
-        mutation = {"subcommand": "reset", "target": main}
-
-        self.assertEqual(
-            policy.decision_for_mutations([mutation], [protected]),
-            {"project": protected, "root": main, "subcommand": "reset"},
-        )
-        self.assertIsNone(policy.decision_for_mutations([mutation], [exempt]))
-        self.assertIsNone(
-            policy.decision_for_mutations(
-                [{**mutation, "target": main + "/.claude/worktrees/DEV-1578"}],
-                [protected],
-            )
-        )
 
 
 class MainCheckoutHookTest(unittest.TestCase):
@@ -83,6 +57,28 @@ class MainCheckoutHookTest(unittest.TestCase):
             "database_calls": len(calls),
         }
 
+    def invoke_editor(self, path, projects=None, top=None, tracked=True):
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": path},
+            "cwd": self.main,
+        }
+        output = io.StringIO()
+        fixture = self.protected if projects is None else projects
+        with (
+            patch.object(hook, "database_path", return_value="/fixture/orchestrator.db"),
+            patch.object(hook, "load_projects", return_value=fixture),
+            patch.object(hook, "toplevel", return_value=self.main if top is None else top),
+            patch.object(hook, "tracked_in_main", return_value=tracked),
+            patch.object(sys, "stdin", io.StringIO(json.dumps(payload))),
+            redirect_stdout(output),
+        ):
+            exit_code = hook.main()
+        return {
+            "exit_code": exit_code,
+            "output": json.loads(output.getvalue()) if output.getvalue() else None,
+        }
+
     def assert_denied(self, command, cwd=None):
         result = self.invoke(command, cwd or self.main)
         self.assertEqual(result["exit_code"], 0)
@@ -104,10 +100,18 @@ class MainCheckoutHookTest(unittest.TestCase):
             ("git --work-tree /registered/main reset --hard", "/elsewhere"),
             ("git --git-dir /registered/main/.git reset --hard", "/elsewhere"),
             ("git -C/registered/main reset --hard", "/elsewhere"),
+            ("git add file", self.main),
+            ("git rm file", self.main),
+            ("git mv old new", self.main),
+            (f"git -C {self.main} reset --hard", self.worktree),
         )
         for command, cwd in cases:
             with self.subTest(command=command):
                 self.assert_denied(command, cwd)
+
+    def test_effective_git_c_directory_replaces_starting_cwd(self):
+        result = self.invoke(f"git -C {self.worktree} reset --hard", self.main)
+        self.assertIsNone(result["output"])
 
     def test_transparent_wrappers_are_denied(self):
         for command in (
@@ -166,6 +170,26 @@ class MainCheckoutHookTest(unittest.TestCase):
                 result = self.invoke("git reset --hard", self.main, error=error)
                 self.assertIsNone(result["output"])
                 self.assertIn(error, result["stderr"])
+
+    def test_tracked_editor_write_in_main_is_denied(self):
+        path = self.main + "/tracked.txt"
+        result = self.invoke_editor(path)
+        self.assertEqual(result["exit_code"], 0)
+        decision = result["output"]["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("tracked.txt", decision["permissionDecisionReason"])
+        self.assertIn(self.main + "/.claude/worktrees", decision["permissionDecisionReason"])
+
+    def test_editor_write_allows_worktree_untracked_and_exempt_paths(self):
+        cases = (
+            (self.worktree + "/tracked.txt", self.protected, self.worktree, True),
+            (self.main + "/untracked.txt", self.protected, self.main, False),
+            (self.main + "/tracked.txt", self.exempt, self.main, True),
+        )
+        for path, projects, top, tracked in cases:
+            with self.subTest(path=path, projects=projects):
+                result = self.invoke_editor(path, projects, top, tracked)
+                self.assertIsNone(result["output"])
 
 
 if __name__ == "__main__":

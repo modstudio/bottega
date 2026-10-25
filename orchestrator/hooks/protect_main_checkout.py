@@ -3,9 +3,14 @@ import os
 
 
 MUTATING_GIT_SUBCOMMANDS = {
-    "am", "apply", "checkout", "cherry-pick", "clean", "commit", "merge",
-    "rebase", "reset", "restore", "revert", "stash", "switch",
+    "add", "am", "apply", "checkout", "cherry-pick", "clean", "commit",
+    "merge", "mv", "rebase", "reset", "restore", "revert", "rm", "stash",
+    "switch",
 }
+
+
+def requires_clean_main(settings):
+    return settings.get("requireCleanMain") is not False
 
 
 def decision_for_mutations(mutations, projects):
@@ -14,7 +19,7 @@ def decision_for_mutations(mutations, projects):
         target = mutation["target"]
         for project in projects:
             settings = project.get("settings") or {}
-            if settings.get("requireCleanMain") is False:
+            if not requires_clean_main(settings):
                 continue
             root = project.get("path") or ""
             worktrees = os.path.join(root, ".claude", "worktrees")
