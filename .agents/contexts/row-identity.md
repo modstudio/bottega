@@ -6,6 +6,8 @@ paths:
   - shared/record/**
   - scripts/identity-key-manifest.ts
   - scripts/identity-key-baseline.json
+  - scripts/identity-synced-sources.ts
+  - scripts/identity-client-enumeration.ts
 ---
 
 # Key every row by a UUID
