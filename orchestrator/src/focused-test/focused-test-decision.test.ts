@@ -139,12 +139,14 @@ describe('focused test decisions', () => {
       paths: ['tests/one.test.ts'],
       affected: false,
     })
-    expect(
-      parseFocusedTestRequest({ id: 'request-1', paths: [], affected: true }),
-    ).toEqual({ id: 'request-1', paths: [], affected: true })
-    expect(() =>
-      parseFocusedTestRequest({ id: 'request-1', paths: [], affected: 'yes' }),
-    ).toThrow('affected is invalid')
+    expect(parseFocusedTestRequest({ id: 'request-1', paths: [], affected: true })).toEqual({
+      id: 'request-1',
+      paths: [],
+      affected: true,
+    })
+    expect(() => parseFocusedTestRequest({ id: 'request-1', paths: [], affected: 'yes' })).toThrow(
+      'affected is invalid',
+    )
     expect(
       parseFocusedTestResult({
         exitCode: 0,
@@ -202,8 +204,9 @@ describe('affected focused test selections', () => {
       'focusedTests.affected.command must be a non-empty string',
       'focusedTests.affected.args must be an array of strings',
     ])
-    expect(validateFocusedTestDeclaration({ command: 'runner', args: [], affected: 'yes' }).problems)
-      .toEqual(['focusedTests.affected must be an object'])
+    expect(
+      validateFocusedTestDeclaration({ command: 'runner', args: [], affected: 'yes' }).problems,
+    ).toEqual(['focusedTests.affected must be an object'])
   })
 
   test('asking for affected tests refuses when the project declares no selector', () => {
@@ -283,14 +286,24 @@ describe('affected focused test selections', () => {
       decideFocusedTestSelection({
         affected: true,
         requestedPaths: [],
-        selector: { kind: 'failed', exitCode: 3, timedOut: false, overflowed: false, stderrTail: 'no git\n' },
+        selector: {
+          kind: 'failed',
+          exitCode: 3,
+          timedOut: false,
+          overflowed: false,
+          stderrTail: 'no git\n',
+        },
       }),
     ).toEqual({
       kind: 'refuse',
       message: expect.stringContaining('exited 3; its stderr tail:\nno git'),
     })
     expect(
-      decideFocusedTestSelection({ affected: true, requestedPaths: [], selector: { kind: 'no-base' } }),
+      decideFocusedTestSelection({
+        affected: true,
+        requestedPaths: [],
+        selector: { kind: 'no-base' },
+      }),
     ).toEqual({ kind: 'refuse', message: expect.stringContaining('records no base commit') })
   })
 

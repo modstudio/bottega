@@ -189,9 +189,7 @@ function focusedTestDeclarationParts(value: unknown): {
   }
 }
 
-export function validateFocusedTestDeclaration(
-  value: unknown,
-): FocusedTestDeclarationValidation {
+export function validateFocusedTestDeclaration(value: unknown): FocusedTestDeclarationValidation {
   const parts = focusedTestDeclarationParts(value)
   return {
     runner: parts.runner.command,
@@ -393,9 +391,7 @@ const FOCUSED_TEST_NOTHING_AFFECTED =
  * that count and are appended deduplicated. A selection of nothing at all is a completed result
  * that says so rather than a runner invocation.
  */
-export function decideFocusedTestSelection(
-  input: FocusedTestSelectionInput,
-): FocusedTestSelection {
+export function decideFocusedTestSelection(input: FocusedTestSelectionInput): FocusedTestSelection {
   const requested = decideRequestedTestPaths(input.affected, input.requestedPaths)
   if (requested.kind === 'refuse') return requested
   const selected = input.affected
@@ -439,7 +435,8 @@ function decideSelectorTestPaths(selector: FocusedTestSelectorOutcome): FocusedT
         'tests of what this run changed against.',
     }
   }
-  if (selector.kind === 'failed') return { kind: 'refuse', message: selectorFailureMessage(selector) }
+  if (selector.kind === 'failed')
+    return { kind: 'refuse', message: selectorFailureMessage(selector) }
   return parseAffectedSelectorOutput(selector.stdout)
 }
 
