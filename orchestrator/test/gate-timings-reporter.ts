@@ -20,15 +20,18 @@ import type { TestPhaseTiming } from './gate-phase-timing.ts'
 
 const enabled = process.env.BOTTEGA_GATE_TIMINGS
 const testPhases: TestPhaseTiming[] = []
-let activeTestPhase: Partial<TestPhaseTiming> | undefined
+let activeTestPhase: TestPhaseTiming | undefined
 
 export function beginTestSetup(): number {
-  return enabled ? performance.now() : 0
+  if (!enabled) return 0
+  activeTestPhase = {}
+  testPhases.push(activeTestPhase)
+  return performance.now()
 }
 
 export function recordTestSetup(started: number): void {
-  if (!enabled) return
-  activeTestPhase = { setupMs: performance.now() - started }
+  if (!enabled || !activeTestPhase) return
+  activeTestPhase.setupMs = performance.now() - started
 }
 
 export function beginTestTeardown(): number {
@@ -36,9 +39,8 @@ export function beginTestTeardown(): number {
 }
 
 export function recordTestTeardown(started: number): void {
-  if (!enabled || activeTestPhase?.setupMs === undefined) return
+  if (!enabled || !activeTestPhase) return
   activeTestPhase.teardownMs = performance.now() - started
-  testPhases.push(activeTestPhase as TestPhaseTiming)
   activeTestPhase = undefined
 }
 
