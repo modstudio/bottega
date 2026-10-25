@@ -7,6 +7,7 @@
 import type { Stream } from 'node:stream'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
+import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
 
 const MCP_TOOL_LIST_TIMEOUT_MS = 8_000
 
@@ -28,10 +29,22 @@ function stdioStderrTail(stream: Stream | null | undefined): () => string {
   return () => tail.trim()
 }
 
+/**
+ * Flatten a launch failure into the one line every probe caller reports. The
+ * stderr tail is attached in this module, so the shaping lives here too: a
+ * caller that flattens again reports the same failure differently.
+ */
+export function launchFailureReason(error: unknown): string {
+  return String((error as Error)?.message ?? error)
+    .replaceAll(/\s+/g, ' ')
+    .trim()
+}
+
 /** The launch failure a caller sees, with the child's own diagnostics appended. */
 function launchFailure(error: unknown, tail: string): Error {
   const message = String((error as Error)?.message ?? error)
-  const failure = new Error(tail ? `${message}\nstderr: ${tail}` : message)
+  const diagnostic = tail ? `${message}\nstderr: ${withholdSecretShapedLines(tail)}` : message
+  const failure = new Error(launchFailureReason(diagnostic))
   failure.name = (error as Error)?.name ?? failure.name
   failure.cause = error
   return failure
