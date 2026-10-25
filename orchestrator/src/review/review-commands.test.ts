@@ -950,6 +950,7 @@ test('review tier run target uses the landing merge-base instead of its recorded
                 tier: 3,
                 reason: 'reviewed source',
                 basis: 'reviewed source evidence',
+                firm: true,
               },
             ],
             unlisted: 2,

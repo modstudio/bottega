@@ -151,7 +151,7 @@ describe('applicable review lenses', () => {
 
   test('a tier-two segnavia-shaped source change excludes its test-only lens', () => {
     const plan = applicableReviewForChange(
-      [{ path: 'packages/format/src/slots.ts', insertions: 1, deletions: 1 }],
+      [{ path: 'packages/format/src/slots.ts', insertions: 11, deletions: 0 }],
       {
         lenses: [
           { lens: 'correctness' },
