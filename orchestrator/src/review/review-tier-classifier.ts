@@ -33,6 +33,11 @@ const isOrdinaryConfig = (path: string) => {
   return kind === 'config' || (/\.json$/i.test(path) && kind !== 'generated')
 }
 
+const isTestOrFixture = (path: string) =>
+  categorizeFile(path) === 'test' ||
+  /(^|\/)fixtures?\//i.test(path) ||
+  /\.fixtures?\.[^/]+$/i.test(path)
+
 const isReviewExcluded = (path: string) => {
   if (
     path === '.claude/settings.json' ||
@@ -40,9 +45,7 @@ const isReviewExcluded = (path: string) => {
   )
     return false
   const kind = categorizeFile(path)
-  return (
-    kind === 'generated' || kind === 'test' || kind === 'docs' || /(^|\/)fixtures?\//i.test(path)
-  )
+  return kind === 'generated' || kind === 'docs' || isTestOrFixture(path)
 }
 
 /** Whether a recorded path belongs to the product surface used for review decisions. */
@@ -57,9 +60,15 @@ function fileRisk(
   riskPaths: readonly CompiledReviewRiskPath[] | undefined,
   declaredUnlisted: 0 | 1 | 2 | undefined,
 ): FileRisk | null {
-  const match =
-    AGENT_INSTRUCTION_PATHS.find((entry) => entry.pattern.test(path)) ??
-    riskPaths?.find((entry) => entry.pattern.test(path))
+  const instructionMatch = AGENT_INSTRUCTION_PATHS.find((entry) => entry.pattern.test(path))
+  if (instructionMatch)
+    return {
+      tier: instructionMatch.tier,
+      reason: `${path} (${instructionMatch.reason})`,
+      basis: instructionMatch.basis ?? null,
+    }
+  if (isTestOrFixture(path)) return null
+  const match = riskPaths?.find((entry) => entry.pattern.test(path))
   if (match)
     return { tier: match.tier, reason: `${path} (${match.reason})`, basis: match.basis ?? null }
   if (isReviewExcluded(path)) return null
