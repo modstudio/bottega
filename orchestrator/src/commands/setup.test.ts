@@ -11,8 +11,11 @@ import { drainStdout } from './support.ts'
 const priorRunId = process.env.BOTTEGA_RUN_ID
 const priorStateHome = process.env.BOTTEGA_STATE_HOME
 const priorDatabase = process.env.BOTTEGA_ORCHESTRATOR_DB
+const priorExitCode = process.exitCode
 
 afterEach(() => {
+  // Bun keeps a set exit code when it is assigned undefined, so an unset prior restores as 0.
+  process.exitCode = priorExitCode ?? 0
   if (priorRunId === undefined) delete process.env.BOTTEGA_RUN_ID
   else process.env.BOTTEGA_RUN_ID = priorRunId
   if (priorStateHome === undefined) delete process.env.BOTTEGA_STATE_HOME
