@@ -58,7 +58,10 @@ function hostedQuestionCursor(remote: ReturnType<typeof fakePostgres>, marker: u
     .split(',')
     .map((column) => column.replaceAll('"', '').trim())
   const parameters = remote.parameters.find((values) => values.includes(marker))!
-  return parameters[columns.indexOf('workflow_cursor_record_id')]
+  return {
+    columns,
+    recordId: parameters[columns.indexOf('workflow_cursor_record_id')],
+  }
 }
 
 test('a workflow question pushes only the cursor UUID', async () => {
@@ -69,32 +72,30 @@ test('a workflow question pushes only the cursor UUID', async () => {
   const remote = fakePostgres()
   const result = await syncRecord(options(local, remote))
   expect(result).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
-  expect(hostedQuestionCursor(remote, cursorId)).toBe(cursorId)
+  expect(hostedQuestionCursor(remote, cursorId)).toMatchObject({
+    columns: expect.not.arrayContaining(['workflow_cursor_id']),
+    recordId: cursorId,
+  })
   local.close()
 })
 
-test('a K7c-1 question payload is held until the client updates', async () => {
-  const { local } = workflowQuestionOutbox()
-  replaceQuestionPayload(local, (payload) => {
-    payload.workflowCursorId = null
-  })
+test('a K7c-1 question payload syncs and its cursor number is discarded', async () => {
+  for (const workflowCursorId of [null, 37]) {
+    const { cursorId, local } = workflowQuestionOutbox()
+    replaceQuestionPayload(local, (payload) => {
+      payload.workflowCursorId = workflowCursorId
+    })
 
-  expect(await syncRecord(options(local, fakePostgres()))).toMatchObject({
-    pushed: 0,
-    failed: 0,
-    pending: 1,
-    quarantined: [],
-    held: [
-      {
-        kind: 'question',
-        rows: 1,
-        reason: expect.stringContaining('unknown columns: workflowCursorId'),
-      },
-    ],
-  })
-  expect(local.query('SELECT synced_at,quarantined_at FROM outbox').get()).toEqual({
-    synced_at: null,
-    quarantined_at: null,
-  })
-  local.close()
+    const remote = fakePostgres()
+    expect(await syncRecord(options(local, remote))).toMatchObject({
+      pushed: 1,
+      failed: 0,
+      pending: 0,
+    })
+    expect(hostedQuestionCursor(remote, cursorId)).toMatchObject({
+      columns: expect.not.arrayContaining(['workflow_cursor_id']),
+      recordId: cursorId,
+    })
+    local.close()
+  }
 })
