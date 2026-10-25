@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 import { currentProjectRepository, type Project } from '../project/projects.ts'
 import { enqueuePullRequestCi } from '../record/landing-outbox.ts'
+import { isPullRequestMergeGroupRun } from './merge-group-run.ts'
 
 export type PullRequestCiAttempt = {
   workflowRunId: number
@@ -235,7 +236,6 @@ export function fetchPullRequestCiAttempts(input: {
     )
   }
   const created = `>=${pullRequest.createdAt}`
-  const queuePrefix = `gh-readonly-queue/${pullRequest.baseBranch}/pr-${pullRequest.number}-`
   const earliest = Date.parse(pullRequest.createdAt)
   const latest = Date.parse(pullRequest.mergedAt) + CI_MERGE_MARGIN_MS
   if (!Number.isFinite(earliest) || !Number.isFinite(latest)) {
@@ -255,7 +255,7 @@ export function fetchPullRequestCiAttempts(input: {
   const queueRuns = adapter
     .workflowRuns(input.cwd, input.repository, { event: 'merge_group', created })
     .filter(inWindow)
-    .filter((raw) => text(raw.head_branch, 'workflow head branch').startsWith(queuePrefix))
+    .filter((raw) => isPullRequestMergeGroupRun(raw, pullRequest.baseBranch, pullRequest.number))
   const runs = [...pullRequestRuns, ...queueRuns]
   const attempts: PullRequestCiAttempt[] = []
   const seen = new Set<number>()

@@ -100,6 +100,8 @@ function adapter(
         entryState: null,
       })),
     enqueue: () => {},
+    requeue: () => {},
+    failedMergeGroupRun: () => null,
     now: Date.now,
     wait: () => input.wait?.(),
     ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),

@@ -12,6 +12,7 @@ const initialWaitState: MergeQueueWaitState = {
   enqueueSubmitted: false,
   activeEntryObserved: false,
   dequeueObservedAt: null,
+  requeuePendingSince: null,
 }
 
 describe('merge-queue state', () => {
@@ -137,6 +138,7 @@ describe('merge-queue action', () => {
 
   test('a renewed active entry clears dequeue confirmation', () => {
     const gapState = {
+      ...initialWaitState,
       enqueueSubmitted: true,
       activeEntryObserved: true,
       dequeueObservedAt: 1,
@@ -147,15 +149,53 @@ describe('merge-queue action', () => {
     })
   })
 
-  test('failed and unknown states never complete', () => {
+  test('a failed first observation requeues once', () => {
     expect(stepMergeQueueWait(42, initialWaitState, { state: 'failed' }, 0, 20_000)).toEqual({
-      state: initialWaitState,
+      state: { ...initialWaitState, enqueueSubmitted: true, requeuePendingSince: 0 },
+      action: { action: 'requeue' },
+    })
+  })
+
+  test('a failed entry after a requeue refuses with both remedies', () => {
+    const state = { ...initialWaitState, enqueueSubmitted: true, requeuePendingSince: 0 }
+    expect(
+      stepMergeQueueWait(
+        42,
+        state,
+        { state: 'failed' },
+        MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
+        MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2,
+      ),
+    ).toEqual({
+      state,
       action: {
         action: 'refuse',
         refusal: expect.stringContaining('failed in the merge queue'),
-        remedy: expect.any(String),
+        remedy: expect.stringMatching(/push a fix.*re-run .* pr merge 42.*flaked/),
       },
     })
+  })
+
+  test('a stale failed reading after requeue waits inside the confirmation window', () => {
+    const state = { ...initialWaitState, enqueueSubmitted: true, requeuePendingSince: 1 }
+    expect(
+      stepMergeQueueWait(42, state, { state: 'failed' }, 2, MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2),
+    ).toEqual({ state, action: { action: 'wait', delay: 10_000 } })
+  })
+
+  test('a failed entry after an observed active entry refuses without requeuing', () => {
+    const state = { ...initialWaitState, activeEntryObserved: true }
+    expect(stepMergeQueueWait(42, state, { state: 'failed' }, 0, 20_000)).toEqual({
+      state,
+      action: {
+        action: 'refuse',
+        refusal: expect.stringContaining('failed in the merge queue'),
+        remedy: expect.stringContaining(`re-run ${PLATFORM_SLUG} pr merge 42`),
+      },
+    })
+  })
+
+  test('unknown states never complete', () => {
     expect(
       stepMergeQueueWait(
         42,
