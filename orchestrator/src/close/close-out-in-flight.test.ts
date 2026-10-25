@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
@@ -52,6 +53,44 @@ function heldResult(
   hold: LandingTreeHoldKind = 'landing-progress',
 ) {
   return { runId, worktree, outcome: 'held' as const, detail, hold }
+}
+
+/** A held hook tree — what `bottega tree create` records — with a real directory to inspect. */
+function hookTreeHolding(): { id: string; tree: string } {
+  const id = addRun({ agent: '(hook)', job: 'hook-tree', session: 'owner' })
+  const project = `in-flight-hook-${id}`
+  const tree = mkdtempSync(join(tmpdir(), 'close-out-hook-'))
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
+  db()
+    .query("UPDATE run SET repo=?, branch=?, worktree=?, session_id='owner' WHERE record_id=?")
+    .run(project, `DEV-1752-${id}`, tree, id)
+  return { id, tree }
+}
+
+/**
+ * Answer the adapter's gh and git inspections without running either.
+ *
+ * stderr carries a warning on every call because a warning with a clean exit is not uncommitted
+ * work: the clean-tree cases below fail if it is ever read as one.
+ */
+function mockGitAndGh(input: { statusOutput: string; headCommit: string }): void {
+  const answer = (argv: string[]): ReturnType<typeof Bun.spawnSync> => {
+    const [bin, ...args] = argv
+    const stdout =
+      bin === 'gh'
+        ? '[{"number":88,"headRefOid":"sha-head"}]'
+        : args[0] === 'status'
+          ? input.statusOutput
+          : input.headCommit
+    return {
+      exitCode: 0,
+      stdout: Buffer.from(stdout),
+      stderr: Buffer.from("git: error: couldn't create cache file (errno=Operation not permitted)"),
+      success: true,
+      exitedDueToTimeout: false,
+    } as ReturnType<typeof Bun.spawnSync>
+  }
+  spyOn(Bun, 'spawnSync').mockImplementation(answer as unknown as typeof Bun.spawnSync)
 }
 
 describe('close-out in-flight hold annotation', () => {
@@ -157,7 +196,26 @@ describe('close-out in-flight hold annotation', () => {
     expect(annotated.suppressBlock).toBe(false)
   })
 
-  test('lookupOpenPr reads an open PR number', () => {
+  test('lookupOpenPr reads an open PR number and head commit', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'close-out-pr-'))
+    mkdirSync(cwd, { recursive: true })
+    spyOn(Bun, 'spawnSync').mockImplementation((() => {
+      return {
+        exitCode: 0,
+        stdout: Buffer.from('[{"number":88,"headRefOid":"sha-head"}]'),
+        stderr: Buffer.from(''),
+        success: true,
+        exitedDueToTimeout: false,
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync)
+    try {
+      expect(lookupOpenPr(cwd, 'DEV-1594-ship')).toEqual({ ref: '#88', headOid: 'sha-head' })
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  test('lookupOpenPr reports the ref alone when gh omits the head commit', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'close-out-pr-'))
     mkdirSync(cwd, { recursive: true })
     spyOn(Bun, 'spawnSync').mockImplementation((() => {
@@ -170,9 +228,60 @@ describe('close-out in-flight hold annotation', () => {
       } as ReturnType<typeof Bun.spawnSync>
     }) as typeof Bun.spawnSync)
     try {
-      expect(lookupOpenPr(cwd, 'DEV-1594-ship')).toBe('#88')
+      expect(lookupOpenPr(cwd, 'DEV-1594-ship')).toEqual({ ref: '#88', headOid: null })
     } finally {
       rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  test('a hook tree at its open pull request head does not block', () => {
+    const { id, tree } = hookTreeHolding()
+    mockGitAndGh({ statusOutput: '', headCommit: 'sha-head' })
+    try {
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
+      )
+
+      expect(annotated.detail).toBe(
+        `in flight (#88); hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      )
+      expect(annotated.inFlightRef).toBe('#88')
+      expect(annotated.suppressBlock).toBe(true)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  test('a hook tree with uncommitted work keeps blocking', () => {
+    const { id, tree } = hookTreeHolding()
+    mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
+    try {
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
+      )
+
+      expect(annotated.detail).toBe(
+        `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>; in flight (#88)`,
+      )
+      expect(annotated.inFlightRef).toBe('#88')
+      expect(annotated.suppressBlock).toBe(false)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  test('a hook tree whose HEAD is another commit than the pull request head keeps blocking', () => {
+    const { id, tree } = hookTreeHolding()
+    mockGitAndGh({ statusOutput: '', headCommit: 'sha-tree' })
+    try {
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
+      )
+
+      expect(annotated.inFlightRef).toBe('#88')
+      expect(annotated.suppressBlock).toBe(false)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
     }
   })
 })

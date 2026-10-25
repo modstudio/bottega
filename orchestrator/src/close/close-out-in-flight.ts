@@ -3,7 +3,12 @@
 
 import { existsSync } from 'node:fs'
 import { db } from '../database/db.ts'
-import { heldTreeInFlight } from '../landing-tree/landing-tree.ts'
+import { gitResult } from '../git/git-environment.ts'
+import {
+  type HeldTreeOpenPr,
+  heldTreeInFlight,
+  type LandingTreeHoldKind,
+} from '../landing-tree/landing-tree.ts'
 import { annotateHeldTreeDetail, type CloseOutReportResult } from './close-out-report.ts'
 
 const OPEN_PR_TIMEOUT_MS = 3000
@@ -64,29 +69,62 @@ function lookupShipTaskCursor(
   return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? rows[0] ?? null
 }
 
-function parseOpenPrNumber(stdout: string): string | null {
+function parseOpenPr(stdout: string): HeldTreeOpenPr | null {
   const rows = JSON.parse(stdout || '[]') as unknown
   if (!Array.isArray(rows) || !rows[0] || typeof rows[0] !== 'object') return null
-  const number = (rows[0] as { number?: unknown }).number
+  const { number, headRefOid } = rows[0] as { number?: unknown; headRefOid?: unknown }
   if (typeof number !== 'number' || number <= 0) return null
-  return `#${number}`
+  return {
+    ref: `#${number}`,
+    headOid: typeof headRefOid === 'string' && headRefOid ? headRefOid : null,
+  }
 }
 
 export function lookupOpenPr(
   cwd: string,
   branch: string,
   timeoutMs = OPEN_PR_TIMEOUT_MS,
-): string | null {
+): HeldTreeOpenPr | null {
   if (!branch || !cwd || !existsSync(cwd) || timeoutMs <= 0) return null
   try {
     const result = Bun.spawnSync(
-      ['gh', 'pr', 'list', '--head', branch, '--state', 'open', '--json', 'number', '--limit', '1'],
+      [
+        'gh',
+        'pr',
+        'list',
+        '--head',
+        branch,
+        '--state',
+        'open',
+        '--json',
+        'number,headRefOid',
+        '--limit',
+        '1',
+      ],
       { cwd, stdout: 'pipe', stderr: 'pipe', timeout: Math.min(OPEN_PR_TIMEOUT_MS, timeoutMs) },
     )
-    return result.exitCode === 0 ? parseOpenPrNumber(result.stdout.toString()) : null
+    return result.exitCode === 0 ? parseOpenPr(result.stdout.toString()) : null
   } catch {
     return null
   }
+}
+
+/**
+ * Whether the tree holds no uncommitted tracked or untracked work.
+ *
+ * Uncommitted work is git status's own stdout. A warning on stderr with a clean exit is not work,
+ * and a failed status leaves cleanliness unestablished, which keeps the hold blocking.
+ */
+function treeIsClean(treePath: string): boolean {
+  const status = gitResult(['status', '--porcelain', '--untracked-files=all'], treePath)
+  return status.ok && status.stdout.trim() === ''
+}
+
+/** The tree's HEAD commit, or null when it cannot be read. */
+function treeHead(treePath: string): string | null {
+  const head = gitResult(['rev-parse', 'HEAD'], treePath)
+  const value = head.stdout.trim()
+  return head.ok && value ? value : null
 }
 
 function cursorFacts(row: CursorRow | null) {
@@ -107,23 +145,27 @@ function lookupCursor(run: RunLandingFacts, treePath: string): CursorRow | null 
   return lookupShipTaskCursor(run.sessionId, run.repo, run.branch, treePath)
 }
 
-function inFlightForHold(worktree: string, run: RunLandingFacts, uniqueWork: boolean) {
-  const fromCursor = heldTreeInFlight({
+function inFlightForHold(worktree: string, run: RunLandingFacts, hold: LandingTreeHoldKind) {
+  const base = {
     treePath: worktree,
     project: run.repo,
     branch: run.branch,
     cursor: cursorFacts(lookupCursor(run, worktree)),
-    openPr: null,
-    uniqueWork,
-  })
-  if (fromCursor) return fromCursor
+    hold,
+  }
+  // A landing-progress hold is in flight already, so only the ref the line prints is at stake, and
+  // a cursor that matched this tree supplies it without a pull-request lookup.
+  if (hold === 'landing-progress') {
+    const matched = heldTreeInFlight({ ...base, openPr: null, treeClean: false, treeHead: null })
+    if (matched) return matched
+  }
+  const openPr = run.branch ? lookupOpenPr(worktree, run.branch) : null
+  const compareHead = hold !== 'landing-progress' && Boolean(openPr?.headOid)
   return heldTreeInFlight({
-    treePath: worktree,
-    project: run.repo,
-    branch: run.branch,
-    cursor: null,
-    openPr: run.branch ? lookupOpenPr(worktree, run.branch) : null,
-    uniqueWork,
+    ...base,
+    openPr,
+    treeClean: compareHead ? treeIsClean(worktree) : false,
+    treeHead: compareHead ? treeHead(worktree) : null,
   })
 }
 
@@ -131,7 +173,7 @@ export function annotateHeldLandingInFlight(result: CloseOutReportResult): Close
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
   const run = lookupRun(result.runId)
   if (!run) return result
-  const inFlight = inFlightForHold(result.worktree, run, result.hold !== 'landing-progress')
+  const inFlight = inFlightForHold(result.worktree, run, result.hold ?? 'other')
   return {
     ...result,
     detail: annotateHeldTreeDetail(result.detail, inFlight),
