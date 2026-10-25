@@ -3,6 +3,7 @@
  * shared ref-guard metadata. The monitor reports what it finds; nothing here
  * drops a database or deletes a ref.
  */
+
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
@@ -15,6 +16,7 @@ import type {
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { isProjectRepository, type Project, projects } from '../project/projects.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 
@@ -92,13 +94,13 @@ export function sandboxDirectoryInventory(
       const rootId = row.parent_run_record_id ?? row.record_id
       statuses.set(rootId, [...(statuses.get(rootId) ?? []), row.status])
     }
-    const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
     return {
       ascertainable: true,
       directories,
       conversations: [...statuses].map(([rootId, values]) => ({
         rootId,
-        terminal: values.length > 0 && values.every((status) => terminal.has(status)),
+        terminal:
+          values.length > 0 && values.every((status) => TERMINAL_RUN_STATUS_SET.has(status)),
       })),
     }
   } catch (error) {

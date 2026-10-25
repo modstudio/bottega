@@ -328,6 +328,56 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     ['4ec7c53222c8a758'],
     'task identity migration executes generated transition SQL',
   ),
+  ...exempt(
+    'orchestrator/src/monitor/monitor-conditions.ts',
+    ['73fd71ea14d32d0c', '80812c74804ef1bf'],
+    'monitor condition queries compose the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/monitor/monitor.ts',
+    ['397a29677ffdc998'],
+    'monitor held-tree query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/judgment.ts',
+    ['d8333d88836e837c'],
+    'judgment terminal-run query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/branch/task-branch.ts',
+    ['820fad706f9a8db2'],
+    'branch worktree-owner query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/record/outbox-dependency.ts',
+    ['9e21290f257040fa'],
+    'outbox parent query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/health/doctor.ts',
+    ['e164643a36733784'],
+    'doctor held-tree query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/resources/resource-claims.ts',
+    ['82839696f580a0f4'],
+    'resource-claim query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/resources/resource-ownership.ts',
+    ['9563b6323d747a36'],
+    'resource-ownership terminal-run query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/cleanup/cleanup-sweep.ts',
+    ['aca4cf7a14452618'],
+    'cleanup sweep candidate query composes the shared terminal run-status fragment',
+  ),
+  ...exempt(
+    'orchestrator/src/issue/issue-dispatch.ts',
+    ['1bd51dee8679af80'],
+    'issue dispatch held-tree query composes the shared terminal run-status fragment',
+  ),
 ]
 
 function productionTypeScriptFiles(directory: string): string[] {

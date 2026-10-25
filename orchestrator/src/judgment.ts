@@ -42,6 +42,7 @@ import {
   runMutationActor,
 } from './run/run-authority.ts'
 import { enqueueRunRecord } from './run/run-outbox.ts'
+import { TERMINAL_RUN_STATUS_SQL } from './run/run-status.ts'
 import { assertAgentWorkRun } from './run/synthetic-lifecycle-job.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './score/duel.ts'
 import {
@@ -223,7 +224,7 @@ function enqueueTerminalRunRecord(
   const row = db()
     .query<{ record_id: string | null; finished_at: string }, [string]>(
       `SELECT record_id, COALESCE(last_event_at, started_at) AS finished_at FROM run
-        WHERE record_id=? AND status IN ('ok','failed','stale','stopped')`,
+        WHERE record_id=? AND status IN ${TERMINAL_RUN_STATUS_SQL}`,
     )
     .get(id)
   if (row?.record_id) enqueueRunRecord(db(), id, machineId(), row.finished_at, evidenceUnvoid)

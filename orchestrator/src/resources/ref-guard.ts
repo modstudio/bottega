@@ -28,6 +28,7 @@ import type {
   FilesystemIdentityRun,
 } from '../filesystem-identity-plan.ts'
 import { commonGitDir, gitConfigOk, linkedWorktreePaths } from '../git/git-environment.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker, worktreeNameRunId } from '../worktree/worktree-attribution.ts'
 import { resolveRefGuardHook } from './ref-guard-runtime.ts'
 import { installWorkerHooks } from './worker-hooks.ts'
@@ -270,11 +271,7 @@ function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
       status: string
       worktree: string | null
     } | null
-    if (
-      !run ||
-      run.worktree !== null ||
-      !['ok', 'failed', 'stale', 'stopped'].includes(run.status)
-    ) {
+    if (!run || run.worktree !== null || !TERMINAL_RUN_STATUS_SET.has(run.status)) {
       continue
     }
     rmSync(join(gitDir, name), { recursive: true, force: true })

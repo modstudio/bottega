@@ -121,6 +121,7 @@ export const monitorModules: MonitorModule[] = [
     '../resources/resource-ownership.ts',
     '../review/review-vocabulary.ts',
     '../run/run-artifacts.ts',
+    '../run/run-status.ts',
     '../worktree/worktree-attribution.ts',
     '../worktree/worktree-porcelain.ts',
     './database-connection-conditions.ts',

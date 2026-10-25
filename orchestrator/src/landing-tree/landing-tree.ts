@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isOperatorSession } from '../../../shared/caller-classification.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
@@ -115,7 +116,7 @@ export function landingTreeReleaseDecision(
   if (row.job !== LANDING_TREE_JOB) return { action: 'release' }
   const owner = row.sessionId ? `session ${row.sessionId}` : 'its invoking session'
   if (!row.treeExists) {
-    if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+    if (!TERMINAL_RUN_STATUS_SET.has(row.status)) {
       return keep(`landing tree held by ${owner}: conversation is ${row.status}`, 'other')
     }
     if (row.landingInFlight) {

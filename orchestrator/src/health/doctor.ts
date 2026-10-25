@@ -1,5 +1,6 @@
 // concern: doctor
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
+
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
@@ -33,6 +34,7 @@ import {
 } from '../resources/resource-claims.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import { runTaskReferenceDoctorLine } from '../run/run-task-linking.ts'
+import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import type { RuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
@@ -427,7 +429,7 @@ export async function doctorCommand(
     .query(
       `SELECT worktree, MAX(keep_tree) keep_tree, MAX(keep_tree_until) keep_tree_until,
               MIN(started_at) started_at FROM run
-      WHERE worktree IS NOT NULL AND status IN ('ok','failed','stale','stopped')
+      WHERE worktree IS NOT NULL AND status IN ${TERMINAL_RUN_STATUS_SQL}
       GROUP BY worktree`,
     )
     .all() as {
