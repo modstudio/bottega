@@ -9,6 +9,7 @@ import { cleanFixture, closeOutFixture } from '../close/reader-scratch-close-out
 import { db } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import * as dockerResources from '../resources/docker-resources.ts'
+import * as resourceOwnership from '../resources/resource-ownership.ts'
 import { candidates } from '../route/route.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
@@ -75,6 +76,18 @@ function lastRunPayload(id: string): Record<string, unknown> {
 
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+  spyOn(resourceOwnership, 'teardownTerminalRunResources').mockReturnValue({
+    complete: true,
+    errors: [],
+    removed: 0,
+    skipped: false,
+    outcome: 'nothing',
+    reason: null,
+  })
+  spyOn(dockerResources, 'resourcesForRuns').mockReturnValue({
+    ascertainable: true,
+    resources: [],
+  })
 })
 
 afterEach(() => {
@@ -446,10 +459,6 @@ test('stop and discard agree when clone removal precedes failed close-out record
   spyOn(closeOut, 'closeOutRun').mockImplementation(() => {
     rmSync(fixture.worktree, { recursive: true, force: true })
     throw new Error('recording transaction failed')
-  })
-  spyOn(dockerResources, 'resourcesForRuns').mockReturnValue({
-    ascertainable: true,
-    resources: [],
   })
   try {
     const result = await invoke('stop', fixture.id)
