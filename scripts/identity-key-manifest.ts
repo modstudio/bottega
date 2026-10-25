@@ -414,6 +414,7 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'board_receipt.reader_session',
     'contention.resource_key',
     'hosted_board_receipt_cache.reader_session',
+    'operator_notification.item_id',
     'port_ref.task_key',
     'presence.current_task_key',
     'question.workflow_key',
@@ -431,7 +432,10 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'question.task_key',
     'question_delivery.run_ref',
     'task.parent_key',
+    'task_comment.task_key',
+    'task_document.task_key',
     'task_identity_migration_repairs.task_key',
+    'task_status_event.task_key',
   ]),
   ...manifest('hosted', 'natural or encoded reference to an application row', [
     'board_receipt.reader_session',
@@ -439,6 +443,8 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'doc_revision.related_subject_ids',
     'hub_interval.task_key',
     'hub_task.parent_key',
+    'hub_task_comment.task_key',
+    'hub_task_document.task_key',
     'hub_task_status_event.task_key',
     'landing_triage_snapshot.review_ids',
     'machine_public_key.key_id',
@@ -453,9 +459,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
 ]
 
 const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
-  ...manifest('orchestrator', 'display label beside a UUID identity', [
-    'operator_notification.item_id',
-  ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
     'board_claim.holder_session',
     'board_message.author_session',
@@ -530,11 +533,6 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'task_identity_migration_repairs.old_external_id',
     'task_identity_migration_repairs.new_external_id',
   ]),
-  ...manifest('hub', 'display label beside a UUID identity', [
-    'task_comment.task_key',
-    'task_document.task_key',
-    'task_status_event.task_key',
-  ]),
   ...manifest('hosted', 'identifier issued by the harness session system', [
     'board_claim.holder_session',
     'board_message.author_session',
@@ -560,10 +558,6 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...manifest('hosted', 'identifier issued by the orchestrator run system', [
     'hub_task_comment.run_id',
     'hub_task_status_event.run_id',
-  ]),
-  ...manifest('hosted', 'display label beside a UUID identity', [
-    'hub_task_comment.task_key',
-    'hub_task_document.task_key',
   ]),
   ...manifest('hosted', 'identifier issued by GitHub Actions', ['pull_request_ci.workflow_run_id']),
   ...manifest('hosted', "identifier issued by Git's patch-id system", [

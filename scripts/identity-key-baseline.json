@@ -11,6 +11,7 @@
     "hosted_board_receipt_cache.reader_session:reference",
     "main_stack_activity:primary-key",
     "metric:primary-key",
+    "operator_notification.item_id:reference",
     "orch_migrations:primary-key",
     "orch_schema_lock:primary-key",
     "outbox:primary-key",
@@ -51,9 +52,12 @@
     "seq:primary-key",
     "setting:primary-key",
     "task.parent_key:reference",
+    "task_comment.task_key:reference",
+    "task_document.task_key:reference",
     "task_identity_claim:primary-key",
     "task_identity_migration_repairs.task_key:reference",
-    "task_identity_migration_repairs:primary-key"
+    "task_identity_migration_repairs:primary-key",
+    "task_status_event.task_key:reference"
   ],
   "hosted": [
     "board_receipt.reader_session:reference",
@@ -61,6 +65,8 @@
     "doc_revision.related_subject_ids:reference",
     "hub_interval.task_key:reference",
     "hub_task.parent_key:reference",
+    "hub_task_comment.task_key:reference",
+    "hub_task_document.task_key:reference",
     "hub_task_status_event.task_key:reference",
     "landing_triage_snapshot.review_ids:reference",
     "machine_public_key.key_id:reference",
