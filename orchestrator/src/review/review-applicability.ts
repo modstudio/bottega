@@ -30,6 +30,18 @@ export type ApplicableReview = {
 export type ReviewFunnelPlan = {
   round: ApplicableReview
   admissionRequired: ApplicableReview
+  /**
+   * Per lens, the paths changed since the reviewed tip that select it and that it has never
+   * reviewed on the branch. Only lenses the round asks for appear, so a refusal can say which
+   * path brought a lens into scope instead of reporting it as unexplained.
+   */
+  newlyTouchedPathsByLens?: Record<string, string[]>
+  /**
+   * The lenses the branch already holds a completed, tiered result for, from the same review
+   * facts the round is planned from. Carried so a refusal can say which lenses need no second
+   * run without the review concern's rule being copied outside it. Absent when none did.
+   */
+  completedLensesOnBranch?: string[]
 }
 
 export type ReviewPlan = {

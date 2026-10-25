@@ -63,10 +63,21 @@ export function reviewPlanForBudget(input: {
     delete admissionRequired.secondOpinion
     delete admissionRequired.secondOpinionBasis
   }
+  const round = reviewRoundForBudget(input.reviewPlan.round, input.budget)
+  const newlyTouchedPaths = newlyTouchedPathsForRound(
+    input.reviewPlan.newlyTouchedPathsByLens,
+    round.lenses,
+  )
   return {
     reviewPlan: {
-      round: reviewRoundForBudget(input.reviewPlan.round, input.budget),
+      round,
       admissionRequired,
+      ...(input.reviewPlan.completedLensesOnBranch?.length
+        ? { completedLensesOnBranch: input.reviewPlan.completedLensesOnBranch }
+        : {}),
+      ...(Object.keys(newlyTouchedPaths).length
+        ? { newlyTouchedPathsByLens: newlyTouchedPaths }
+        : {}),
     },
     creditedByArchitectRead: credited,
   }
@@ -177,15 +188,30 @@ export function roundLensFacts(
   }
 }
 
-function newlyTouchedLenses(input: {
+/** Per lens, the fix paths that select it and that it has never reviewed on the branch. */
+function newlyTouchedPathsByLens(input: {
   relevant: ApplicableReview
   facts: RoundLensFacts
   fixPathsByLens: Readonly<Record<string, readonly string[]>>
-}): string[] {
-  return input.relevant.lenses.filter((lens) => {
+}): Record<string, string[]> {
+  const touched: Record<string, string[]> = {}
+  for (const lens of input.relevant.lenses) {
     const reviewed = new Set(input.facts.reviewedPathsByLens[lens] ?? [])
-    return (input.fixPathsByLens[lens] ?? []).some((path) => !reviewed.has(path))
-  })
+    const paths = (input.fixPathsByLens[lens] ?? []).filter((path) => !reviewed.has(path))
+    if (paths.length) touched[lens] = paths
+  }
+  return touched
+}
+
+/** The newly-touched facts for the lenses the budgeted round still asks for. */
+function newlyTouchedPathsForRound(
+  pathsByLens: Readonly<Record<string, string[]>> | undefined,
+  lenses: readonly string[],
+): Record<string, string[]> {
+  const selected = new Set(lenses)
+  return Object.fromEntries(
+    Object.entries(pathsByLens ?? {}).filter(([lens]) => selected.has(lens)),
+  )
 }
 
 /** Apply the funnel to the repository decision about whether a later round is needed. */
@@ -195,6 +221,14 @@ export function applicableRoundLensPlan(input: {
   postFix: PostFixReviewDecision
   fixPathsByLens: Readonly<Record<string, readonly string[]>>
 }): ReviewFunnelPlan {
+  const newlyTouched =
+    input.postFix.kind === 're-lens'
+      ? newlyTouchedPathsByLens({
+          relevant: input.relevant,
+          facts: input.facts,
+          fixPathsByLens: input.fixPathsByLens,
+        })
+      : {}
   const round = (() => {
     if (input.postFix.kind === 'no-completed-round')
       return withLensReasons(
@@ -203,21 +237,14 @@ export function applicableRoundLensPlan(input: {
       )
     if (input.postFix.kind === 'no-round-needed')
       return selectReviewApplicability(input.relevant, [])
-    const newlyTouched =
-      input.postFix.kind === 're-lens'
-        ? newlyTouchedLenses({
-            relevant: input.relevant,
-            facts: input.facts,
-            fixPathsByLens: input.fixPathsByLens,
-          })
-        : []
+    const touchedLenses = Object.keys(newlyTouched)
     const lenses = roundLensPlan({
       relevantLenses: input.relevant.lenses,
       latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
-      newlyTouchedLenses: newlyTouched,
+      newlyTouchedLenses: touchedLenses,
     })
     const findings = new Set(input.facts.latestAcceptedOrModifiedLenses)
-    const touched = new Set(newlyTouched)
+    const touched = new Set(touchedLenses)
     const unidentified = input.postFix.kind === 'reviewed-tip-unidentified'
     return withLensReasons(
       selectReviewApplicability(input.relevant, lenses),
@@ -249,8 +276,15 @@ export function applicableRoundLensPlan(input: {
           : {}),
       }
     : round
+  const newlyTouchedForRound = newlyTouchedPathsForRound(newlyTouched, roundWithOpinion.lenses)
   return {
     round: roundWithOpinion,
     admissionRequired: selectReviewApplicability(input.relevant, admissionLenses),
+    ...(input.facts.completedLenses.length
+      ? { completedLensesOnBranch: [...input.facts.completedLenses] }
+      : {}),
+    ...(Object.keys(newlyTouchedForRound).length
+      ? { newlyTouchedPathsByLens: newlyTouchedForRound }
+      : {}),
   }
 }

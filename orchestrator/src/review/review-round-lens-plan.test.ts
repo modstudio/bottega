@@ -78,33 +78,42 @@ describe('round lens plan', () => {
   })
 
   test('credits only forbidden exact-tip evidence when the ceiling is exhausted', () => {
-    expect(
-      reviewPlanForBudget({
-        reviewPlan: {
-          round,
-          admissionRequired: {
-            lenses: ['correctness', 'safety'],
-            secondOpinion: 'safety',
-          },
+    const decision = reviewPlanForBudget({
+      reviewPlan: {
+        round,
+        admissionRequired: {
+          lenses: ['correctness', 'safety'],
+          secondOpinion: 'safety',
         },
-        budget: {
-          roundsUsed: 3,
-          ceiling: 3,
-          currentChangeCounted: false,
-          atCeiling: true,
-          startsNewRound: true,
-          wouldExceedCeiling: true,
+        newlyTouchedPathsByLens: {
+          safety: ['src/safety.ts'],
+          craft: ['src/craft.ts'],
         },
-        completedLenses: ['correctness'],
-        satisfiedSecondOpinionLenses: [],
-      }),
-    ).toEqual({
+        completedLensesOnBranch: ['correctness'],
+      },
+      budget: {
+        roundsUsed: 3,
+        ceiling: 3,
+        currentChangeCounted: false,
+        atCeiling: true,
+        startsNewRound: true,
+        wouldExceedCeiling: true,
+      },
+      completedLenses: ['correctness'],
+      satisfiedSecondOpinionLenses: [],
+    })
+    expect(decision).toEqual({
       reviewPlan: {
         round: { lenses: [] },
         admissionRequired: { lenses: ['correctness'] },
+        completedLensesOnBranch: ['correctness'],
       },
       creditedByArchitectRead: round,
     })
+    // The credited round is dropped, so path attributions for the lenses it selected
+    // are dropped with it; only the budgeted round's lenses could keep entries, and it has none.
+    expect(decision.reviewPlan.newlyTouchedPathsByLens).toBeUndefined()
+    expect(decision.reviewPlan.completedLensesOnBranch).toEqual(['correctness'])
   })
 
   test('an initial round lists every relevant lens', () => {
@@ -156,7 +165,11 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: {},
       }),
-    ).toEqual({ round: { lenses: [] }, admissionRequired: { lenses: ['correctness'] } })
+    ).toEqual({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['correctness'] },
+      completedLensesOnBranch: ['correctness'],
+    })
   })
 
   test('a fix touching only paths a clean scoped lens already reviewed selects nothing', () => {
@@ -177,7 +190,11 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: { safety: ['src/risky.ts'] },
       }),
-    ).toEqual({ round: { lenses: [] }, admissionRequired: { lenses: ['safety'] } })
+    ).toEqual({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['safety'] },
+      completedLensesOnBranch: ['safety'],
+    })
   })
 
   test("a fix touching a new path inside a lens's scope selects that lens", () => {
@@ -201,6 +218,8 @@ describe('round lens plan', () => {
     ).toEqual({
       round: { lenses: ['safety'], lensReasons: { safety: 'newly-touched-path' } },
       admissionRequired: { lenses: ['safety'] },
+      newlyTouchedPathsByLens: { safety: ['src/new.ts'] },
+      completedLensesOnBranch: ['safety'],
     })
   })
 
@@ -221,6 +240,7 @@ describe('round lens plan', () => {
     ).toEqual({
       round: { lenses: [] },
       admissionRequired: { lenses: ['correctness', 'safety'] },
+      completedLensesOnBranch: ['correctness', 'safety'],
     })
   })
 
@@ -253,6 +273,7 @@ describe('round lens plan', () => {
         },
       },
       admissionRequired: { lenses: [...sixLenses] },
+      completedLensesOnBranch: [...sixLenses],
     })
   })
 
@@ -369,6 +390,7 @@ describe('round lens plan', () => {
         lensReasons: { correctness: 'initial', craft: 'initial' },
       },
       admissionRequired: { lenses: ['correctness', 'craft', 'issue-blast-radius'] },
+      completedLensesOnBranch: ['issue-blast-radius'],
     })
   })
 })

@@ -16,7 +16,8 @@ const incomplete: TriageDecision = {
   missingReview: true,
   unfinishedReviewNumbers: [],
   undisposedFindings: [],
-  missingLenses: [{ lens: 'correctness', recordedOnBranch: false }],
+  missingLenses: [{ lens: 'correctness', recordedOnBranch: false, newlyTouchedPaths: [] }],
+  lensesAlreadyComplete: [],
   missingSecondOpinion: null,
   architectReadRequired: false,
   earlierReviewNumber: null,
@@ -64,7 +65,10 @@ describe('pull-request admission decision', () => {
         change,
         {
           ...ceilingGap,
-          missingLenses: [...incomplete.missingLenses, { lens: 'craft', recordedOnBranch: false }],
+          missingLenses: [
+            ...incomplete.missingLenses,
+            { lens: 'craft', recordedOnBranch: false, newlyTouchedPaths: [] },
+          ],
         },
         [ceiling],
       ).overrideId,
@@ -102,7 +106,7 @@ describe('pull-request admission decision', () => {
         change,
         {
           ...ceilingGap,
-          missingLenses: [{ lens: 'correctness', recordedOnBranch: false }],
+          missingLenses: [{ lens: 'correctness', recordedOnBranch: false, newlyTouchedPaths: [] }],
           missingSecondOpinion: null,
         },
         [ceiling],
