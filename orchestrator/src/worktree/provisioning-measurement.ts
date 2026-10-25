@@ -94,7 +94,7 @@ export function cloneProvisionRecorder(runId: string) {
   return (measurement: CloneProvisionMeasurement): void =>
     appendProvisioningPhases(runId, [
       {
-        phase: 'dependency',
+        phase: 'clone',
         name: `${measurement.path} (${measurement.mechanism})`,
         durationMs: measurement.durationMs,
       },

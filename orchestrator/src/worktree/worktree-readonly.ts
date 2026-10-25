@@ -11,7 +11,7 @@ import {
   targetGitEnvironment,
 } from '../git/git-environment.ts'
 import { projectAt, type WorktreeTool } from '../project/projects.ts'
-import { appendProvisioningPhases, cloneProvisionRecorder } from './provisioning-measurement.ts'
+import { cloneProvisionRecorder, measureProvisioningPhase } from './provisioning-measurement.ts'
 import {
   attributeWorktree,
   type RecordWorktree,
@@ -48,8 +48,7 @@ export function createReadOnlyWorktree(
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
     restoreRemoteTrackingRefs(path, remoteTrackingRefs)
-    const dependencyStarted = performance.now()
-    try {
+    measureProvisioningPhase(runId, 'dependency', 'declared dependencies', () =>
       provisionWorktree(
         repoRoot,
         path,
@@ -57,30 +56,13 @@ export function createReadOnlyWorktree(
         'the project register row',
         provisionTimeoutMs,
         cloneProvisionRecorder(runId),
-      )
-    } finally {
-      appendProvisioningPhases(runId, [
-        {
-          phase: 'dependency',
-          name: 'declared dependencies',
-          durationMs: performance.now() - dependencyStarted,
-        },
-      ])
-    }
+      ),
+    )
     attributeWorktree(worktree, runId, record)
-    const verifyStarted = performance.now()
-    try {
+    measureProvisioningPhase(runId, 'verify', 'read-only checkout', () => {
       verifyFreshWorktree(worktree)
       verifyBorrowedCheckout(path, repoRoot)
-    } finally {
-      appendProvisioningPhases(runId, [
-        {
-          phase: 'verify',
-          name: 'read-only checkout',
-          durationMs: performance.now() - verifyStarted,
-        },
-      ])
-    }
+    })
     return worktree
   } catch (error) {
     const cleanup = removeReadOnlyDirectory(worktree)
