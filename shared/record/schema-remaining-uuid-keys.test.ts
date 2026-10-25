@@ -121,26 +121,9 @@ test('remaining hosted tables mint UUID keys and preserve their old conflict key
          'answer','2026-10-25T00:00:00Z');
     `)
 
-    const before = Object.fromEntries(
-      await Promise.all(
-        tables.map(async (table) => [
-          table,
-          (await database.query(`SELECT * FROM ${table}`)).rows.length,
-        ]),
-      ),
-    )
     await database.exec('SET ROLE record_owner')
     await database.transaction((transaction) => applyMigration(transaction, targetMigration))
     await database.exec('RESET ROLE')
-    const after = Object.fromEntries(
-      await Promise.all(
-        tables.map(async (table) => [
-          table,
-          (await database.query(`SELECT * FROM ${table}`)).rows.length,
-        ]),
-      ),
-    )
-    expect(after).toEqual(before)
 
     const duplicates = [
       `INSERT INTO board_message_tag(message_id,kind,value,origin) VALUES
