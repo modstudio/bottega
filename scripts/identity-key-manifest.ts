@@ -4,7 +4,7 @@ import type {
   KeyStore,
   ManifestColumn,
 } from './identity-inventory.ts'
-import { SYNCED_SOURCES } from './identity-synced-sources.ts'
+import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
@@ -792,6 +792,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'task_status_event.task_record_id',
   ]),
 ]
+
+const SYNCED_SOURCES = SYNCED_SOURCE_DECLARATIONS
 
 export const KEY_MANIFESTS: KeyManifests = {
   values: INTEGER_VALUES,

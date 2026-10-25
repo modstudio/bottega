@@ -24,7 +24,7 @@ const writeEntries = (
 
 // A wrong source declaration is review's job; the guard cannot see it.
 // A text reference without a foreign key, such as a run naming its agent, is review's job; the guard cannot see it.
-export const SYNCED_SOURCES: SyncedSources = {
+export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ...readEntries('orchestrator', 'recordApiClientModule', [
     'RecordApiRequestError',
     'authenticatedRecordApiClient',
