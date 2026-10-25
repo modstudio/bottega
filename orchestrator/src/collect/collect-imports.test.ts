@@ -15,6 +15,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../artifact-paths.ts',
   '../close/retained-branch.ts',
   '../collect/collect.ts',
+  '../contract/contract-reply.ts',
   '../failure/failure.ts',
   '../mcp/mcp-probe.ts',
   'orch.ts',
@@ -22,6 +23,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../run-owned-paths.ts',
   '../run/question-open.ts',
   '../run/run-identifier.ts',
+  '../score/refusal-guidance.ts',
   '../collect/result-output.ts',
   '../transport/codex-throttle.ts',
 ] as const

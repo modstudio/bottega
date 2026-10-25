@@ -216,7 +216,13 @@ export function pendingForSession(sid: string | null) {
   if (!sid) return []
   return db()
     .query(
-      `SELECT r.record_id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head,
+      `SELECT r.record_id, r.agent, r.job, r.repo, r.branch, r.minted_branch,
+            COALESCE(r.label, r.prompt_head) AS prompt_head,
+            CASE WHEN EXISTS (SELECT 1 FROM run child WHERE child.parent_run_record_id=r.record_id)
+              THEN (SELECT child.output_path FROM run child
+                     WHERE child.parent_run_record_id=r.record_id
+                     ORDER BY child.turn DESC, child.number DESC LIMIT 1)
+              ELSE r.output_path END AS output_path,
             CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
        FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
       WHERE r.session_id = ? AND ${UNSCORED_WHERE}
@@ -227,7 +233,10 @@ export function pendingForSession(sid: string | null) {
     agent: string
     job: string
     repo: string | null
+    branch: string | null
+    minted_branch: string | null
     prompt_head: string
+    output_path: string | null
     rescore: number
   }[]
 }

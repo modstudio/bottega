@@ -50,6 +50,7 @@ import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { routedPromptBytes } from '../run/run-routing-input.ts'
+import { refusalScoreGuidanceForRun } from '../score/refusal-guidance.ts'
 import {
   assertAcpReady,
   classifyTransportPin,
@@ -349,7 +350,15 @@ const runNumber = (id: string) =>
   ).number
 const scoreHint = (id: string, jobName: string, parent: string | null) => {
   const number = runNumber(parent ?? id)
-  return `${PLATFORM_SLUG} score ${number} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."`
+  const refusal = refusalScoreGuidanceForRun(
+    db(),
+    parent ?? id,
+    Boolean(JOBS[jobName]?.needs.writesRepo),
+  )
+  return (
+    `${PLATFORM_SLUG} score ${number} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."` +
+    (refusal ? `\n  ${refusal}` : '')
+  )
 }
 const duration = (ms: number | null | undefined) => {
   if (ms == null) return '—'

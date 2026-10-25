@@ -23,6 +23,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { refusalScoreGuidanceForRun } from '../score/refusal-guidance.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
@@ -52,8 +53,18 @@ const scoreSuffix = (jobName: string) =>
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
-const scoreHint = (id: string, jobName: string, parent: string | null) =>
-  `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
+const scoreHint = (id: string, jobName: string, parent: string | null) => {
+  const refusal = refusalScoreGuidanceForRun(
+    db(),
+    parent ?? id,
+    Boolean(JOBS[jobName]?.needs.writesRepo),
+  )
+  return (
+    `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."` +
+    (parent ? `   # the whole conversation, not turn ${id}` : '') +
+    (refusal ? `\n  ${refusal}` : '')
+  )
+}
 const argvResumeLimit = (agentName: string) =>
   AGENTS[agentName]?.resumeArgv ? resumePromptByteLimit(AGENTS[agentName]!) : undefined
 const controlPresentation = (presentation: Presentation): RunControlPresentation => ({
