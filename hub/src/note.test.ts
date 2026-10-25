@@ -386,8 +386,34 @@ describe('suggestion notes', () => {
       expect(kept.alreadyAcknowledged).toBe(false)
       expect((await acknowledgeNote(same.note.record_id, session)).alreadyAcknowledged).toBe(true)
 
-      const promoted = await promoteNote(same.note.record_id)
+      const promoted = await promoteNote(same.note.record_id, {
+        title: 'Merged sightings worth one task',
+      })
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
+      const promotedDetail = showTask(promoted.promoted_task!, { project: 'workshop' })
+      expect(promotedDetail.task.title).toBe('Merged sightings worth one task')
+      expect(promotedDetail.task.body).toContain(same.note.text)
+      expect(promotedDetail.task.body).toContain('SIGHTINGS (2)')
+    })
+
+    test('a creating promotion refuses a missing or blank title and writes nothing', async () => {
+      const note = (
+        await createNote({
+          text: `Untitled promotion ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const before = db()
+        .query<{ count: number }, []>('SELECT count(*) count FROM task')
+        .get()!.count
+      const refusal = `${PLATFORM_SLUG} note promote ${note.label} --title "<the point>"`
+      await expect(promoteNote(note.record_id)).rejects.toThrow(refusal)
+      await expect(promoteNote(note.record_id, { title: '  ' })).rejects.toThrow(refusal)
+      expect(
+        db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count,
+      ).toBe(before)
+      expect(getNote(note.record_id).promoted_task).toBeNull()
     })
 
     test('a hub-protocol note promotion mints or links an existing local task with evidence', async () => {
@@ -398,8 +424,14 @@ describe('suggestion notes', () => {
           forceNew: true,
         })
       ).note
-      const promoted = await promoteNote(created.record_id)
+      const promoted = await promoteNote(created.record_id, {
+        title: 'Hub-owned promotion states its point',
+      })
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
+      const minted = showTask(promoted.promoted_task!, { project: 'workshop' })
+      expect(minted.task.title).toBe('Hub-owned promotion states its point')
+      expect(minted.task.body).toContain(created.text)
+      expect(minted.task.body).toContain('SIGHTINGS (1)')
 
       const another = (
         await createNote({

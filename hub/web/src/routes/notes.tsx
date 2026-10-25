@@ -4,8 +4,10 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { Dialog } from '@bottega/hub-ui/dialog'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import {
   Table,
@@ -55,20 +57,66 @@ function NotesError({ error }: { error: { message: string } | null }) {
   ) : null
 }
 
-// biome-ignore lint/complexity/noExcessiveLinesPerFunction: phone and unchanged desk renderings stay together.
-function LocalNotesPage() {
-  const phone = useMediaQuery(PHONE_QUERY)
-  const [stale, setStale] = useState(false)
-  const notes = useQuery(trpc.note.list.queryOptions({ stale }, { refetchInterval: 2_000 }))
+type PromoteTarget = { record_id: string; label: string }
+
+/**
+ * A promoted task's title states the point, so it is asked for here rather than built from the
+ * note text, which becomes the task body with its sightings.
+ */
+function PromoteNoteDialog({ note, onClose }: { note: PromoteTarget | null; onClose: () => void }) {
+  const [title, setTitle] = useState('')
   const promote = useMutation(
     trpc.note.promote.mutationOptions({
-      onSuccess: async (note) => {
-        toast.success(`Promoted to ${note.promoted_task}`)
+      onSuccess: async (promoted) => {
+        toast.success(`Promoted to ${promoted.promoted_task}`)
         await queryClient.invalidateQueries({ queryKey: trpc.note.list.queryKey() })
+        onClose()
       },
       onError: (error) => toast.error(error.message),
     }),
   )
+  const trimmed = title.trim()
+  return (
+    <Dialog
+      open={note !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+      title="Promote note"
+      description={
+        note
+          ? `${note.label} becomes a task: the title states the point, and the note text and its sightings become the body.`
+          : undefined
+      }
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (note && trimmed) promote.mutate({ id: note.record_id, title: trimmed })
+        }}
+      >
+        <label htmlFor="promote-title" className="block space-y-1">
+          <span>Title</span>
+          <Input
+            id="promote-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </label>
+        <Button variant="primary" type="submit" disabled={!trimmed || promote.isPending}>
+          {promote.isPending ? 'Promoting...' : 'Promote'}
+        </Button>
+      </form>
+    </Dialog>
+  )
+}
+
+function LocalNotesPage() {
+  const phone = useMediaQuery(PHONE_QUERY)
+  const [stale, setStale] = useState(false)
+  const [promoting, setPromoting] = useState<PromoteTarget | null>(null)
+  const notes = useQuery(trpc.note.list.queryOptions({ stale }, { refetchInterval: 2_000 }))
   const staleFilter = (
     <label htmlFor="show-stale" className="flex items-center gap-2 text-sm text-text-muted">
       <Checkbox
@@ -129,12 +177,7 @@ function LocalNotesPage() {
           onOpen={() => undefined}
           rowActions={(note) =>
             canPromote(note) ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={promote.isPending}
-                onClick={() => promote.mutate({ id: note.record_id })}
-              >
+              <Button size="sm" variant="secondary" onClick={() => setPromoting(note)}>
                 Promote
               </Button>
             ) : null
@@ -174,12 +217,7 @@ function LocalNotesPage() {
                   </TableCell>
                   <TableCell>
                     {canPromote(note) ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={promote.isPending}
-                        onClick={() => promote.mutate({ id: note.record_id })}
-                      >
+                      <Button size="sm" variant="secondary" onClick={() => setPromoting(note)}>
                         Promote
                       </Button>
                     ) : null}
@@ -197,6 +235,11 @@ function LocalNotesPage() {
           hint={`File one with ${PLATFORM_SLUG} note new.`}
         />
       )}
+      <PromoteNoteDialog
+        key={promoting?.record_id ?? 'none'}
+        note={promoting}
+        onClose={() => setPromoting(null)}
+      />
     </section>
   )
 }

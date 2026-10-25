@@ -40,6 +40,7 @@ type NoteOptions = {
   session?: string[]
   stale?: boolean
   task?: string
+  title?: string
 }
 
 const repeat = (value: string, previous: string[] = []) => [...previous, value]
@@ -186,15 +187,17 @@ function registerNoteReferenceCommands(note: Command): void {
   note
     .command('promote <reference>')
     .description('promote a note to current task work')
+    .option('--title <text>', 'title the created task')
     .option('--task <key>', 'link the note to this existing task')
     .option('--project <name>', 'resolve the note in this project')
     .action(async (noteReference, options: NoteOptions) => {
       open()
-      const row = await promoteNoteCommand(
-        reference(noteReference, options.project),
-        options.task,
-        options.task !== undefined,
-      )
+      const row = await promoteNoteCommand(reference(noteReference, options.project), {
+        task: options.task,
+        taskFlagPresent: options.task !== undefined,
+        title: options.title,
+        titleFlagPresent: options.title !== undefined,
+      })
       const project = projects().find((candidate) => candidate.name === row.project)
       const linkedDone =
         options.task !== undefined &&

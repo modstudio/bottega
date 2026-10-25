@@ -33,6 +33,7 @@ import {
 } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
+import { setPromotedTaskTitle } from './note-promoted-title.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
@@ -45,6 +46,7 @@ import {
   duplicateCandidates,
   type TaskRow,
 } from './task.ts'
+import { type Attribution, UNATTRIBUTED } from './task-attribution.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
@@ -638,17 +640,39 @@ export async function createNote(
   return { note: getNote(hosted.id), candidates }
 }
 
+/** The refusal every creating promotion carries, so no surface can create a task titled by a note. */
+export function promotionTitleRefusal(label: string): string {
+  return `${PLATFORM_SLUG} note promote ${label} --title "<the point>"`
+}
+
+/** A creating promotion names the new task's title; a linking promotion carries none. */
+export function requiredPromotionTitle(label: string, supplied: string | undefined): string {
+  const title = (supplied ?? '').trim()
+  if (!title) throw new Error(promotionTitleRefusal(label))
+  return title
+}
+
 export async function promoteNote(
   recordId: string,
-  options: { hosted?: NoteClientOptions; existingTaskKey?: string } = {},
+  options: {
+    hosted?: NoteClientOptions
+    existingTaskKey?: string
+    title?: string
+    /** The caller's machine identity, so the hosted title correction needs no ambient lookup. */
+    attribution?: Attribution
+  } = {},
 ): Promise<NoteRow> {
   const note = getNote(recordId)
   if (note.promoted_task)
     throw new Error(`note ${note.label} is already promoted to ${note.promoted_task}`)
+  const creating = options.existingTaskKey === undefined
+  const title = creating ? requiredPromotionTitle(note.label, options.title) : ''
   const project = projects().find((candidate) => candidate.name === note.project)!
   const destination = taskCreationDestination(project)
   if (destination === 'tracker' && !options.existingTaskKey)
-    throw new Error(`project ${note.project} owns task creation in its tracker`)
+    throw new Error(
+      `project ${note.project} owns task creation in its tracker; create the task there, then link it with: ${PLATFORM_SLUG} note promote ${note.label} --task <KEY>`,
+    )
   if (options.existingTaskKey) {
     const prefixes = project.settings.keyPrefixes ?? []
     const prefix = options.existingTaskKey.split('-', 1)[0]?.toUpperCase()
@@ -682,7 +706,7 @@ export async function promoteNote(
           conn,
           options.existingTaskKey!,
           row.project,
-          promotionTaskInput(row).body,
+          promotionBody(row),
           at,
         )
         conn
@@ -697,18 +721,12 @@ export async function promoteNote(
       const row = decode(noteRow(conn, note.record_id))
       if (row.promoted_task)
         throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
-      const evidence = row.anchors
-        .map(
-          (anchor, index) =>
-            `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
-        )
-        .join('\n')
       const task = createLocalTaskInTransaction(
         conn,
         {
           project: row.project,
-          title: row.text,
-          body: `${row.text}\n\nSIGHTINGS (${row.sightings})\n${evidence}`,
+          title,
+          body: promotionBody(row),
         },
         { skipDuplicateCheck: true },
       )
@@ -727,17 +745,26 @@ export async function promoteNote(
     if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
     applyHostedNote(conn, hosted.note)
   })
+  if (creating && hosted.task)
+    await setPromotedTaskTitle(hosted.task, title, {
+      hosted: hostedOptions,
+      attribution: options.attribution ?? UNATTRIBUTED,
+    })
   return getNote(note.record_id)
 }
 
-export function promotionTaskInput(note: NoteRow) {
+export function promotionTaskInput(note: NoteRow, title: string) {
+  return { title, body: promotionBody(note) }
+}
+
+function promotionBody(note: NoteRow): string {
   const evidence = note.anchors
     .map(
       (anchor, index) =>
         `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
     )
     .join('\n')
-  return { title: note.text, body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}` }
+  return `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
 }
 
 export async function dropNote(

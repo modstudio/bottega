@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
@@ -10,6 +10,7 @@ import { noteApi } from './note-api.ts'
 import { applyHostedNoteRows } from './note-cache.ts'
 import { hostedNoteChanges } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
+import { showTask } from './task.ts'
 
 const applyHostedNoteChanges = (changes: Awaited<ReturnType<typeof hostedNoteChanges>>) =>
   writeTransaction((conn) => applyHostedNoteRows(conn, changes))
@@ -124,9 +125,9 @@ describe('hosted-only note safety', () => {
         .run(id, at, at),
     )
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count
-    await expect(promoteNote(id, { hosted: unreachable })).rejects.toThrow(
-      'hosted hub is unreachable',
-    )
+    await expect(
+      promoteNote(id, { hosted: unreachable, title: 'Promotion failure' }),
+    ).rejects.toThrow('hosted hub is unreachable')
     expect(db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count).toBe(
       before,
     )
@@ -236,6 +237,183 @@ describe('hosted-only note safety', () => {
       }),
     ).toThrow(
       `note workshop#77 belongs to UUID ${existing}, not incoming UUID ${incoming}; run \`${PLATFORM_SLUG} note list\``,
+    )
+  })
+})
+
+describe('hosted promotion title correction', () => {
+  const at = '2026-10-09T00:00:00.000Z'
+  const taskId = '01990000-0000-7000-8000-000000000901'
+  const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+
+  beforeEach(resetFixtureStore)
+  afterAll(() => {
+    if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+    else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
+  })
+
+  type Seen = { host: string; path: string; space: string | null; body: unknown }
+  type PushOutcome = 'applied' | 'rejected'
+
+  /**
+   * A hosted hub whose note promote creates the task the server titles with the note text, as the
+   * served promote route does today. `options` advertises task pushes, `unpushable` does not, and
+   * `refusing` rejects the title change itself.
+   */
+  function hostedPromotionStub(note: { id: string; number: number; text: string }, title: string) {
+    const seen: Seen[] = []
+    const task = {
+      id: taskId,
+      key: 'GAM-1',
+      project: 'gamma',
+      project_name: 'gamma',
+      title,
+      status: 'open',
+      status_category: 'open',
+      parent_key: null,
+      body: title,
+      assignee: null,
+      opened_at: at,
+      closed_at: null,
+      source: 'local',
+      first_seen: at,
+      last_seen: at,
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+      next_document_number: 1,
+    }
+    const identity = (pushTables: string[], spacePush = true) =>
+      Response.json({
+        userId: 'user-1',
+        activeSpaceId: 'space-a',
+        memberships: [
+          { spaceId: 'space-a', slug: 'active', permission: 'write' },
+          { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
+        ],
+        capabilities: {
+          projectNoteCounters: true,
+          targetSpaceNotes: true,
+          spacePush,
+          spacePushTables: pushTables,
+        },
+      })
+    const promoted = () =>
+      Response.json({
+        note: {
+          id: note.id,
+          number: note.number,
+          project: 'gamma',
+          project_name: 'gamma',
+          text: note.text,
+          area: null,
+          anchors: '[]',
+          sightings: 1,
+          created_at: at,
+          last_seen_at: at,
+          stale_at: null,
+          stale_reason: null,
+          promoted_task: task.key,
+          updated_at: at,
+          deleted_at: null,
+        },
+        task,
+        comment: null,
+      })
+    const changes = (outcome: PushOutcome, body: Array<{ id: string }>) =>
+      Response.json(
+        body.map((change) =>
+          outcome === 'rejected'
+            ? { id: change.id, status: 'rejected', reason: 'title refused' }
+            : { id: change.id, status: 'applied' },
+        ),
+      )
+    const hub = (
+      identityResponse: () => Response,
+      outcome: PushOutcome,
+      record: boolean,
+    ): { baseUrl: string; token: string; fetch: typeof fetch } => ({
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: (async (input: string, init?: RequestInit) => {
+        const url = new URL(input)
+        const body = init?.body ? JSON.parse(String(init.body)) : null
+        if (record)
+          seen.push({
+            host: url.host,
+            path: url.pathname,
+            space: new Headers(init?.headers).get('x-record-space'),
+            body,
+          })
+        if (url.pathname === '/v1/tasks/identity') return identityResponse()
+        if (url.pathname.endsWith('/promote')) return promoted()
+        if (url.pathname === '/v1/changes') return changes(outcome, body as Array<{ id: string }>)
+        return Response.json({ error: 'unexpected route' }, { status: 500 })
+      }) as unknown as typeof fetch,
+    })
+    return {
+      seen,
+      task,
+      options: hub(() => identity(['hub_task']), 'applied', true),
+      unpushable: hub(() => identity(['hub_note'], false), 'applied', false),
+      refusing: hub(() => identity(['hub_task']), 'rejected', false),
+    }
+  }
+
+  function fileGammaNote(text: string) {
+    const note = { id: crypto.randomUUID(), number: 701, text }
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO note(record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+          VALUES (?,?,'gamma',?,'[]',1,?,?)`)
+        .run(note.id, note.number, note.text, at, at),
+    )
+    return note
+  }
+
+  test('a creating promotion corrects the title on the destination it wrote to', async () => {
+    process.env.BOTTEGA_HOSTED_URL = 'https://configured.example.test'
+    const note = fileGammaNote('rate limiter counts retries as new requests')
+    const stub = hostedPromotionStub(note, note.text)
+    const promoted = await promoteNote(note.id, {
+      hosted: stub.options,
+      title: 'Rate limiter counts retries',
+    })
+    expect(promoted.promoted_task).toBe('GAM-1')
+    expect(showTask('GAM-1', { project: 'gamma' }).task.title).toBe('Rate limiter counts retries')
+    expect([...new Set(stub.seen.map((seen) => seen.host))]).toEqual(['hub.example.test'])
+    expect(stub.seen.find((seen) => seen.path.endsWith('/promote'))?.space).toBe('space-gamma')
+    const pushes = stub.seen.filter((seen) => seen.path === '/v1/changes')
+    expect(pushes).toHaveLength(1)
+    expect(pushes[0]!.space).toBe('space-gamma')
+    expect(JSON.stringify(pushes[0]!.body)).toContain('Rate limiter counts retries')
+  })
+
+  test('a refused title correction raises the finish command', async () => {
+    const note = fileGammaNote('refused correction')
+    const stub = hostedPromotionStub(note, note.text)
+    const failure = (await promoteNote(note.id, {
+      hosted: stub.refusing,
+      title: 'Refused correction',
+    }).catch((cause: Error) => cause)) as Error
+    expect(failure.message).toContain('the correction was not delivered (rejected: title refused)')
+    expect(failure.message).toContain(
+      `Finish with: ${PLATFORM_SLUG} task set GAM-1 --title "Refused correction"`,
+    )
+    expect(getNote(note.id).promoted_task).toBe('GAM-1')
+    expect(showTask('GAM-1', { project: 'gamma' }).task.title).toBe('Refused correction')
+  })
+
+  test('a correction the destination cannot push raises the finish command', async () => {
+    const note = fileGammaNote('undeliverable correction')
+    const stub = hostedPromotionStub(note, note.text)
+    const failure = (await promoteNote(note.id, {
+      hosted: stub.unpushable,
+      title: 'Undeliverable correction',
+    }).catch((cause: Error) => cause)) as Error
+    expect(failure.message).toContain('the correction was not delivered (queued:')
+    expect(failure.message).toContain(
+      `Finish with: ${PLATFORM_SLUG} task set GAM-1 --title "Undeliverable correction"`,
     )
   })
 })

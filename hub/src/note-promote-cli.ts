@@ -1,14 +1,30 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { credentials, Mcp } from './mcp.ts'
-import { getNote, promoteNote, promotionTaskInput } from './note.ts'
+import {
+  getNote,
+  promoteNote,
+  promotionTaskInput,
+  promotionTitleRefusal,
+  requiredPromotionTitle,
+} from './note.ts'
 import { projects } from './projects.ts'
+import { machineAttribution } from './task-machine-attribution.ts'
 import {
   createAdvertisedTrackerTaskKey,
   taskCreationDestination,
   trackerTaskInput,
 } from './tracker-new.ts'
 
-export function promotionTaskKey(value: string | undefined, present: boolean): string | undefined {
+export type PromotionFlags = {
+  task?: string
+  taskFlagPresent: boolean
+  title?: string
+  titleFlagPresent: boolean
+}
+
+type PromotionTarget = { taskKey: string; title: undefined } | { taskKey: undefined; title: string }
+
+function promotionTaskKey(value: string | undefined, present: boolean): string | undefined {
   if (!present) return undefined
   if (!value?.trim())
     throw new Error(
@@ -17,18 +33,31 @@ export function promotionTaskKey(value: string | undefined, present: boolean): s
   return value
 }
 
-export async function promoteNoteCommand(
-  id: string,
-  suppliedTaskKey?: string,
-  taskFlagPresent = suppliedTaskKey !== undefined,
-) {
-  suppliedTaskKey = promotionTaskKey(suppliedTaskKey, taskFlagPresent)
+/**
+ * `--title` names the task a promotion creates, so it is required exactly when `--task` links no
+ * existing one; the two flags answer the same question and are refused together.
+ */
+export function promotionFlags(input: PromotionFlags): PromotionTarget {
+  const taskKey = promotionTaskKey(input.task, input.taskFlagPresent)
+  if (taskKey === undefined) {
+    if (!input.titleFlagPresent) throw new Error(promotionTitleRefusal('<LABEL>'))
+    return { taskKey: undefined, title: requiredPromotionTitle('<LABEL>', input.title) }
+  }
+  if (input.titleFlagPresent)
+    throw new Error(
+      `--title names the task a promotion creates, but --task links the existing one: ${PLATFORM_SLUG} note promote <LABEL|UUID|NUMBER> --task ${taskKey}`,
+    )
+  return { taskKey, title: undefined }
+}
+
+export async function promoteNoteCommand(id: string, flags: PromotionFlags) {
+  const target = promotionFlags(flags)
   const note = getNote(id)
   const project = projects().find((candidate) => candidate.name === note.project)
   if (!project) throw new Error(`unknown project '${note.project}'`)
-  let existingTaskKey = suppliedTaskKey
+  let existingTaskKey = target.taskKey
   let created = false
-  if (taskCreationDestination(project) === 'tracker' && !existingTaskKey) {
+  if (target.taskKey === undefined && taskCreationDestination(project) === 'tracker') {
     const tracker = project.settings.tracker!
     const env = tracker.envPrefix ?? project.settings.envPrefix
     if (!env) throw new Error(`project ${project.name} has no usable tracker configured`)
@@ -40,15 +69,16 @@ export async function promoteNoteCommand(
       existingTaskKey = await createAdvertisedTrackerTaskKey(
         client,
         project,
-        trackerTaskInput(project, promotionTaskInput(note)),
+        trackerTaskInput(project, promotionTaskInput(note, target.title)),
       )
       created = true
     } finally {
       await client.close()
     }
   }
+  const attribution = await machineAttribution()
   try {
-    return await promoteNote(id, { existingTaskKey })
+    return await promoteNote(id, { existingTaskKey, title: target.title, attribution })
   } catch (error) {
     if (!created) throw error
     throw new Error(
