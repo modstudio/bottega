@@ -31,8 +31,11 @@ function replyPath(name: string, reply: Record<string, unknown>): string {
 
 describe('refusal score guidance', () => {
   test('the shared fixture pins wording, truncation, and the scorer writing-job set', () => {
-    const writingJobs = Object.keys(JOBS).filter(jobTakesFidelity).sort()
-    expect(writingJobs).toEqual([...fixture.writingJobs].sort())
+    const declared = Object.keys(JOBS)
+      .filter((name) => JOBS[name]?.needs.writesRepo)
+      .sort()
+    expect(declared).toEqual([...fixture.writingJobs].sort())
+    expect(Object.keys(JOBS).filter(jobTakesFidelity).sort()).toEqual(declared)
     expect(refusalScoreGuidance(JSON.stringify(fixture.replies.shortRefused), 'implement')).toBe(
       fixture.expected.writing,
     )
