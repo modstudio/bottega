@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import type { AutonomyResolution, CursorAutonomyResolution } from './autonomy.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
@@ -12,13 +13,28 @@ import {
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
 } from './workflow-cursor.ts'
-import { mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
+import { combineCursorAutonomy, mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
 
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one' }
+
+const pinnedAutonomy = (): CursorAutonomyResolution => ({
+  steps: { lens: { value: 'auto', scope: 'pinned step' } },
+  stages: { review: { value: 'auto', scope: 'pinned stage' } },
+  rulings: { value: 'agent', scope: 'pinned rulings' },
+  shipTo: { value: 'trunk', scope: 'pinned ship-to' },
+  cursor: { id: 7, composeCommand: 'bottega workflow compose flow' },
+})
+
+const liveAutonomy = (): AutonomyResolution => ({
+  steps: { lens: { value: 'ask', scope: 'live step' } },
+  stages: { review: { value: 'ask', scope: 'live stage' } },
+  rulings: { value: 'user', scope: 'live rulings' },
+  shipTo: { value: 'branch', scope: 'live ship-to' },
+})
 
 const database = () => {
   const d = new Database(':memory:')
@@ -88,6 +104,61 @@ function composeShipToFlow(d: Database) {
 }
 
 describe('workflow cursor stored autonomy', () => {
+  test('combines a stricter live resolution across autonomy subjects', () => {
+    const combined = combineCursorAutonomy(pinnedAutonomy(), liveAutonomy())
+
+    expect(combined.resolution.steps.lens).toEqual({ value: 'ask', scope: 'live step' })
+    expect(combined.resolution.stages?.review).toEqual({
+      value: 'ask',
+      scope: 'live stage',
+    })
+    expect(combined.resolution.rulings).toEqual({ value: 'user', scope: 'live rulings' })
+    expect(combined.resolution.shipTo).toEqual({ value: 'branch', scope: 'live ship-to' })
+    expect(combined.looserLiveDifferences).toEqual([])
+  })
+
+  test('keeps stricter pins and reports looser live settings', () => {
+    const pinned = pinnedAutonomy()
+    pinned.steps.lens = { value: 'ask', scope: 'pinned step' }
+    pinned.stages!.review = { value: 'ask', scope: 'pinned stage' }
+    pinned.rulings = { value: 'user', scope: 'pinned rulings' }
+    const live = liveAutonomy()
+    live.steps.lens = { value: 'auto', scope: 'live step' }
+    live.stages!.review = { value: 'auto', scope: 'live stage' }
+    live.rulings = { value: 'agent', scope: 'live rulings' }
+    live.shipTo = { value: 'production', scope: 'live ship-to' }
+
+    expect(combineCursorAutonomy(pinned, live)).toEqual({
+      resolution: pinned,
+      looserLiveDifferences: [
+        { subject: 'steps.lens', pinned: 'ask', live: 'auto' },
+        { subject: 'stages.review', pinned: 'ask', live: 'auto' },
+        { subject: 'rulings', pinned: 'user', live: 'agent' },
+        { subject: 'ship-to', pinned: 'trunk', live: 'production' },
+      ],
+    })
+  })
+
+  test('keeps the pinned scope when strictness ties', () => {
+    const pinned = pinnedAutonomy()
+    const live = liveAutonomy()
+    live.steps.lens = { value: 'auto', scope: 'live step' }
+
+    expect(combineCursorAutonomy(pinned, live).resolution.steps.lens).toEqual({
+      value: 'auto',
+      scope: 'pinned step',
+    })
+  })
+
+  test('returns the pin unchanged when no live resolution is available', () => {
+    const pinned = pinnedAutonomy()
+
+    expect(combineCursorAutonomy(pinned)).toEqual({
+      resolution: pinned,
+      looserLiveDifferences: [],
+    })
+  })
+
   test('maps a legacy release resolution to ship-to', () => {
     const stored = {
       steps: {},

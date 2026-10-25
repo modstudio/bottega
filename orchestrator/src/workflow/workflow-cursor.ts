@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
-import { projectAt } from '../project/projects.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import {
   answerWorkflowQuestion,
@@ -11,28 +10,21 @@ import {
   upsertWorkflowQuestion,
 } from '../run/question-mutation.ts'
 import { questionOpenSql } from '../run/question-open.ts'
-import type { AutonomyResolution } from './autonomy.ts'
+import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
-import {
-  cursorName,
-  formatCursorOpened,
-  formatCursorResumed,
-  renderWorkflowCursorLine,
-} from './workflow-cursor-format.ts'
+import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
 import {
   refuseInvalidServe,
   refuseTerminalCursor,
   renderWorkflowAdvanceResult,
 } from './workflow-cursor-result.ts'
 import {
-  LISTED_CURSOR_COLUMNS,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
   type WorkflowCursorContext,
-  workflowCursorProjectScope,
 } from './workflow-cursor-selection.ts'
 import {
   type ClosedStep,
@@ -239,6 +231,7 @@ export function composeWorkflowWithCursor(
   d: Database = db(),
   selection: { version?: number; catalogueVersion?: number } = {},
   autonomy?: AutonomyResolution,
+  live?: LiveCursorAutonomy,
 ) {
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
@@ -257,7 +250,7 @@ export function composeWorkflowWithCursor(
     if (existing && start === 'reuse') applyCursorArguments(existing, args, d)
     const row = insertCursor(composition, context, d, autonomy)
     return {
-      ...cursorComposition(row, d),
+      ...cursorComposition(row, d, live ?? { resolution: autonomy }),
       cursor: {
         id: row.id,
         n: row.ordinal + 1,
@@ -270,7 +263,7 @@ export function composeWorkflowWithCursor(
   }, d)
 }
 
-function cursorComposition(row: CursorRow, d: Database) {
+function cursorComposition(row: CursorRow, d: Database, live?: LiveCursorAutonomy) {
   return composeWorkflow(
     row.workflow_slug,
     row.project,
@@ -278,7 +271,7 @@ function cursorComposition(row: CursorRow, d: Database) {
     JSON.parse(row.args) as Record<string, string>,
     d,
     { version: row.workflow_version, catalogueVersion: row.catalogue_version },
-    cursorAutonomy(row),
+    cursorAutonomy(row, live),
   )
 }
 
@@ -292,12 +285,13 @@ function prepareStepServe(
   d: Database,
   autonomy: AutonomyResolution | undefined,
   cursor: number | undefined,
+  live?: LiveCursorAutonomy,
 ) {
   const handled =
     cursor === undefined ? null : findCursor(project, slug, mode, args, context, d, cursor)
   const preliminary =
     handled && decideCursorStart(handled.state) === 'reuse'
-      ? cursorComposition(handled, d)
+      ? cursorComposition(handled, d, live)
       : composeWorkflow(slug, project, mode, args, d, { mode }, autonomy)
   const preliminaryStepSlug = resolveWorkflowStepReference(stepSlug, [
     { mode, steps: preliminary.steps.map((step) => step.slug) },
@@ -323,7 +317,7 @@ function prepareStepServe(
     input.effectiveArgs,
     d,
     input.selection,
-    row && input.startDecision === 'reuse' ? cursorAutonomy(row) : autonomy,
+    row && input.startDecision === 'reuse' ? cursorAutonomy(row, live) : autonomy,
   )
   const resolvedStepSlug = resolveWorkflowStepReference(stepSlug, [
     { mode, steps: composition.steps.map((step) => step.slug) },
@@ -346,6 +340,7 @@ function getWorkflowStepWithCursorImpl(
   d: Database = writableDb(),
   autonomy?: AutonomyResolution,
   cursor?: number,
+  live?: LiveCursorAutonomy,
 ) {
   const prepared = prepareStepServe(
     slug,
@@ -357,6 +352,7 @@ function getWorkflowStepWithCursorImpl(
     d,
     autonomy,
     cursor,
+    live,
   )
   let { row } = prepared
   const { opensCursor, composition, requested, index, input } = prepared
@@ -383,7 +379,7 @@ function getWorkflowStepWithCursorImpl(
       input.effectiveArgs,
       d,
       input.selection,
-      cursorAutonomy(row),
+      cursorAutonomy(row, live),
     ),
     row.record_id,
     d,
@@ -429,6 +425,7 @@ export function getWorkflowStepWithCursor(
   d: Database = writableDb(),
   autonomy?: AutonomyResolution,
   cursor?: number,
+  live?: LiveCursorAutonomy,
 ) {
   return writeTransaction(
     () =>
@@ -442,6 +439,7 @@ export function getWorkflowStepWithCursor(
         d,
         autonomy,
         cursor,
+        live ?? (autonomy ? { resolution: autonomy } : undefined),
       ),
     d,
   )
@@ -692,6 +690,7 @@ function nextWorkflowStepImpl(
   cursor?: number,
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
+  live?: LiveCursorAutonomy,
 ): string {
   const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
@@ -704,7 +703,7 @@ function nextWorkflowStepImpl(
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
   adoptWorkflowTask(row, evidence.task, d)
-  const composition = cursorComposition(row, d)
+  const composition = cursorComposition(row, d, live)
   if (!note?.trim()) {
     const step = composition.steps[row.ordinal]!
     throw new Error(
@@ -734,6 +733,7 @@ function nextWorkflowStepImpl(
     mode,
     selfRuling,
     d,
+    live,
   })
 }
 
@@ -750,6 +750,7 @@ export function nextWorkflowStep(
   cursor?: number,
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
+  live?: LiveCursorAutonomy,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
     writeTransaction(
@@ -767,6 +768,7 @@ export function nextWorkflowStep(
           cursor,
           selfRuling,
           outcome,
+          live,
         ),
       d,
     ),
@@ -973,54 +975,13 @@ export function awaitWorkflowRuling(
   d: Database = writableDb(),
   notify: typeof notifyWaitingItem = notifyWaitingItem,
   cursor?: number,
+  live?: LiveCursorAutonomy,
 ): CursorSummary & { questionId: number } {
-  const result = writeTransaction(
-    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
-    d,
-  )
+  const result = writeTransaction(() => {
+    const row = findCursor(project, slug, mode, args, context, d, cursor)
+    if (row) cursorAutonomy(row, live)
+    return awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor)
+  }, d)
   notify('workflow', result.cursorId, d)
   return result.summary
-}
-
-export type CursorListOptions = {
-  session?: string
-  all?: boolean
-  project?: string
-  cwd?: string
-}
-
-export { workflowCursorProjectScope }
-
-export function listWorkflowCursors(
-  options: CursorListOptions = {},
-  d: Database = db(),
-): Array<CursorRow & { next_slug: string; line: string }> {
-  const cwd = options.cwd ?? process.cwd()
-  const cwdProject =
-    options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
-  const project = workflowCursorProjectScope(options, cwdProject, cwd)
-  const clauses = [`state NOT IN ('done','abandoned')`]
-  const values: string[] = []
-  if (project) {
-    clauses.push('project_record_id=(SELECT record_id FROM project WHERE name=?)')
-    values.push(project)
-  }
-  if (options.session) {
-    clauses.push('session_id=?')
-    values.push(options.session)
-  }
-  const rows = d
-    .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,number`,
-    )
-    .all(...values) as CursorRow[]
-  return rows.map((row) => {
-    const open = openWorkflowObligations(row.record_id, d)
-    const listed = {
-      ...row,
-      next_slug: cursorComposition(row, d).steps[row.ordinal + 1]?.slug ?? 'finished',
-      obligations: open.map((item) => `${item.id}(${item.stepSlug}:${item.floor})`).join(','),
-    }
-    return { ...listed, line: renderWorkflowCursorLine(listed) }
-  })
 }

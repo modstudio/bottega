@@ -12,7 +12,6 @@ import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown, listDocs } from '../doc/docs.ts'
-import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
@@ -40,14 +39,13 @@ import { getReview, listReviews } from '../review/review.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
-import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   getWorkflowStepWithCursor,
-  nextWorkflowStep,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
+import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
   resolveWorkflowCursorMode,
@@ -72,6 +70,7 @@ import { registerWorkflowPrompts } from './mcp-prompts.ts'
 import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
+import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
@@ -87,9 +86,6 @@ const requiredReportField = (field: string, belongs: string) =>
     .string({ error: `${field} is required: ${belongs}` })
     .trim()
     .min(1, `${field} is required: ${belongs}`)
-
-const workflowRunEvidence = (run: string | number | undefined) =>
-  run === undefined ? undefined : resolveRunIdentifier(db(), run)
 
 const reporterFields = {
   reporter_kind: z
@@ -204,78 +200,6 @@ function registeredProject(name: string) {
   const project = projectByName(name)
   if (!project) throw new Error(`unknown project "${name}"`)
   return project
-}
-
-async function advanceWorkflow({
-  slug,
-  project,
-  mode,
-  args,
-  note,
-  outcome,
-  ruling,
-  self_ruling,
-  self_ruling_basis,
-  question,
-  review,
-  gate,
-  run,
-  artifact,
-  task,
-  defer,
-  satisfies,
-  cursor,
-}: z.infer<typeof nextWorkflowStepInputSchema>) {
-  if (self_ruling_basis !== undefined && self_ruling === undefined)
-    throw new Error(
-      'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
-    )
-  const workflowArgs = args ?? {}
-  const context = mcpWorkflowCursorContext()
-  const resolvedReview = review === undefined ? undefined : resolveReviewIdentifier(db(), review)
-  const resolvedGate = gate === undefined ? undefined : resolveGateIdentifier(db(), gate)
-  return text(
-    nextWorkflowStep(
-      slug,
-      project,
-      resolveWorkflowCursorMode(
-        slug,
-        project,
-        mode,
-        workflowArgs,
-        context,
-        'next_workflow_step',
-        'pass the mode argument',
-        undefined,
-        cursor,
-      ),
-      workflowArgs,
-      note,
-      context,
-      undefined,
-      {
-        ruling,
-        review: resolvedReview,
-        gate: resolvedGate,
-        run: workflowRunEvidence(run),
-        artifact: resolveProbeArtifact(db(), artifact),
-        task,
-        defer,
-        satisfies,
-      },
-      undefined,
-      cursor,
-      self_ruling === undefined
-        ? undefined
-        : {
-            ruling: self_ruling,
-            basis: self_ruling_basis ?? '',
-            question,
-            channel: 'mcp',
-          },
-      outcome,
-    ),
-  )
 }
 
 function registeredPair(source: string, target: string) {
@@ -553,13 +477,27 @@ export function createDocsMcpServer(): McpServer {
       const preliminaryStep = effectiveMode
         ? undefined
         : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode })
-      const resolved = await resolveProjectAutonomy(
-        project,
-        preliminary.workflow.slug,
-        preliminary.workflow.defaultPreset,
-        catalogueStepsForAutonomy(preliminaryStep ? [preliminaryStep] : preliminary.steps),
-        parseAutonomy(autonomy, 'session'),
-      )
+      const session = parseAutonomy(autonomy, 'session')
+      const live = effectiveMode
+        ? await resolveCursorLiveAutonomy({
+            slug,
+            project,
+            mode: effectiveMode,
+            args: args ?? {},
+            context,
+            cursor,
+            session,
+          })
+        : {
+            resolution: await resolveProjectAutonomy(
+              project,
+              preliminary.workflow.slug,
+              preliminary.workflow.defaultPreset,
+              catalogueStepsForAutonomy(preliminaryStep ? [preliminaryStep] : preliminary.steps),
+              session,
+            ),
+          }
+      const resolved = live.resolution
       return text(
         renderWorkflowStep(
           effectiveMode
@@ -573,6 +511,7 @@ export function createDocsMcpServer(): McpServer {
                 undefined,
                 resolved,
                 cursor,
+                live,
               )
             : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode }, resolved),
         ),
@@ -620,27 +559,37 @@ export function createDocsMcpServer(): McpServer {
     async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
       const context = mcpWorkflowCursorContext()
+      const effectiveMode = resolveWorkflowCursorMode(
+        slug,
+        project,
+        mode,
+        workflowArgs,
+        context,
+        'await_workflow_ruling',
+        'pass the mode argument',
+        undefined,
+        cursor,
+      )
+      const live = await resolveCursorLiveAutonomy({
+        slug,
+        project,
+        mode: effectiveMode,
+        args: workflowArgs,
+        context,
+        cursor,
+      })
       return text(
         awaitWorkflowRuling(
           slug,
           project,
-          resolveWorkflowCursorMode(
-            slug,
-            project,
-            mode,
-            workflowArgs,
-            context,
-            'await_workflow_ruling',
-            'pass the mode argument',
-            undefined,
-            cursor,
-          ),
+          effectiveMode,
           workflowArgs,
           question,
           context,
           undefined,
           undefined,
           cursor,
+          live,
         ),
       )
     },

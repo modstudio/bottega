@@ -263,7 +263,7 @@ function registerWorkflowAdvancement({
     .action((slug, options) => {
       const resolvedOptions =
         options.run === undefined ? options : { ...options, run: String(localRunId(options.run)) }
-      nextCommand(
+      return nextCommand(
         workflowArgv('next', slug === undefined ? [] : [slug], resolvedOptions),
         output(options),
       )

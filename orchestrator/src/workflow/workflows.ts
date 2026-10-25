@@ -870,6 +870,16 @@ export function composeWorkflow(
     needs,
     rulings: effectiveAutonomy.rulings,
     autonomyNote: autonomy?.note,
+    ...cursorAutonomyOutput(autonomy),
+  }
+}
+
+function cursorAutonomyOutput(autonomy?: WorkflowAutonomyResolution) {
+  if (!autonomy || !('cursor' in autonomy)) return {}
+  return {
+    autonomyComposeCommand: autonomy.cursor.composeCommand,
+    autonomyDifferences: autonomy.looserLiveDifferences ?? [],
+    autonomyUnavailableReason: autonomy.liveUnavailableReason,
   }
 }
 
@@ -985,6 +995,7 @@ export function getWorkflowStep(
     facts,
     body: templates.body,
     next,
+    ...cursorAutonomyOutput(autonomy),
   }
 }
 

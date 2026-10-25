@@ -53,6 +53,10 @@ export type SelectableCursorRow = {
   ordinal: number
   step_slug: string
   state: CursorState
+  workflow_version: number
+  catalogue_version: number
+  args: string
+  autonomy: string | null
 }
 
 const mismatch = (cursor: number, name: string, supplied: string, stored: string): never => {

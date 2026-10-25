@@ -2,12 +2,17 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import type { AutonomyResolution } from './autonomy.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import {
+  composeWorkflowWithCursor,
+  getWorkflowStepWithCursor,
+  nextWorkflowStep,
+} from './workflow-cursor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -43,7 +48,7 @@ const database = testDatabaseFixture((d) => {
   )
 })
 
-function resolution(d: Database) {
+function resolution(d: Database): AutonomyResolution {
   const preliminary = composeWorkflow('flow', 'fixture', 'default', args, d)
   return {
     steps: Object.fromEntries(
@@ -187,6 +192,35 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
     step_slug: 'ship-triage',
   })
   expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+})
+
+test('a live ask setting tightens a real cursor and refuses its self-ruling', () => {
+  const d = database()
+  openAtRuling(d)
+  const live = resolution(d)
+  live.steps['ship-triage'] = { value: 'ask', scope: 'hosted user' }
+
+  expect(
+    getWorkflowStepWithCursor('flow', 'fixture', 'ship-triage', args, 'default', context, d, live)
+      .resolvedAutonomy,
+  ).toEqual({ value: 'ask', scope: 'hosted user' })
+  expect(() =>
+    nextWorkflowStep(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      'agent ruled proceed',
+      context,
+      d,
+      {},
+      ports,
+      undefined,
+      { ruling: 'Proceed.', basis: 'specification line 4', channel: 'mcp' },
+      undefined,
+      { resolution: live },
+    ),
+  ).toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
 })
 
 test('self-ruling refuses a non-ruling step without changing the cursor or questions', () => {

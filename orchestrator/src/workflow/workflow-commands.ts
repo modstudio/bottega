@@ -27,12 +27,13 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
-  listWorkflowCursors,
   nextWorkflowStep,
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
+import { listWorkflowCursors } from './workflow-cursor-list.ts'
+import { resolveCursorLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import {
   cliWorkflowCursorContext,
   resolveWorkflowCursorMode,
@@ -505,13 +506,19 @@ export async function stepCommand(
   const preliminaryStep = mode
     ? undefined
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection)
-  const autonomy = await resolveProjectAutonomy(
-    project,
-    preliminary.workflow.slug,
-    preliminary.workflow.defaultPreset,
-    catalogueStepsForAutonomy(preliminaryStep ? [preliminaryStep] : preliminary.steps),
-    parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session'),
-  )
+  const session = parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session')
+  const live = mode
+    ? await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor, session })
+    : {
+        resolution: await resolveProjectAutonomy(
+          project,
+          preliminary.workflow.slug,
+          preliminary.workflow.defaultPreset,
+          catalogueStepsForAutonomy(preliminaryStep ? [preliminaryStep] : preliminary.steps),
+          session,
+        ),
+      }
+  const autonomy = live.resolution
   const step = mode
     ? getWorkflowStepWithCursor(
         slug,
@@ -523,12 +530,13 @@ export async function stepCommand(
         undefined,
         autonomy,
         cursor,
+        live,
       )
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection, autonomy)
   print(step, renderWorkflowStep(step))
 }
 
-export function nextCommand(argv: string[], print: WorkflowPrint): void {
+export async function nextCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const selfRuling = flagValue(argv, 'self-ruling')
   const basis = flagValue(argv, 'basis')
   if (basis !== undefined && selfRuling === undefined)
@@ -553,6 +561,7 @@ export function nextCommand(argv: string[], print: WorkflowPrint): void {
     undefined,
     cursor,
   )
+  const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
   const result = nextWorkflowStep(
     slug,
     project,
@@ -573,11 +582,12 @@ export function nextCommand(argv: string[], print: WorkflowPrint): void {
           channel: 'cli',
         },
     flagValue(argv, 'outcome'),
+    live,
   )
   print(result, result)
 }
 
-export function awaitCommand(argv: string[], print: WorkflowPrint): void {
+export async function awaitCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -598,6 +608,7 @@ export function awaitCommand(argv: string[], print: WorkflowPrint): void {
     undefined,
     cursor,
   )
+  const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
   const result = awaitWorkflowRuling(
     slug,
     project,
@@ -608,6 +619,7 @@ export function awaitCommand(argv: string[], print: WorkflowPrint): void {
     undefined,
     undefined,
     cursor,
+    live,
   )
   print(
     result,
@@ -806,13 +818,27 @@ export async function composeCommand(
   }
   const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
   const session = parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session')
-  const autonomy = await resolveProjectAutonomy(
-    project,
-    preliminary.workflow.slug,
-    preliminary.workflow.defaultPreset,
-    catalogueStepsForAutonomy(preliminary.steps),
-    session,
-  )
+  const context = cliWorkflowCursorContext()
+  const live = preliminary.mode
+    ? await resolveCursorLiveAutonomy({
+        slug: argv[2]!,
+        project,
+        mode: preliminary.mode.slug,
+        args,
+        context,
+        session,
+        selection,
+      })
+    : {
+        resolution: await resolveProjectAutonomy(
+          project,
+          preliminary.workflow.slug,
+          preliminary.workflow.defaultPreset,
+          catalogueStepsForAutonomy(preliminary.steps),
+          session,
+        ),
+      }
+  const autonomy = live.resolution
   const pure = composeWorkflow(argv[2]!, project, mode, args, undefined, selection, autonomy)
   const result =
     pure.mode && !pure.needs.arguments
@@ -821,10 +847,11 @@ export async function composeCommand(
           project,
           mode,
           args,
-          cliWorkflowCursorContext(),
+          context,
           undefined,
           selection,
           autonomy,
+          live,
         )
       : pure
   print(result, json ? undefined : renderWorkflowComposition(result))

@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { LiveCursorAutonomy } from './autonomy.ts'
 import { workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
@@ -18,7 +19,7 @@ import {
   type decideCursorTransition,
   stepPass,
 } from './workflow-cursor-transition.ts'
-import { renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
+import { cursorAutonomyLines, renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { type composeWorkflow, getWorkflowStep } from './workflows.ts'
@@ -97,13 +98,16 @@ export function renderWorkflowAdvanceResult(input: {
   mode: string
   selfRuling?: WorkflowSelfRulingInput
   d: Database
+  live?: LiveCursorAutonomy
 }): string {
-  const { row, composition, closed, advance, slug, project, mode, selfRuling, d } = input
+  const { row, composition, closed, advance, slug, project, mode, selfRuling, d, live } = input
   if (advance.ordinal === null) {
-    return withSelfRuling(
+    const result = withSelfRuling(
       completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
       selfRuling,
     )
+    const autonomyLines = cursorAutonomyLines(composition)
+    return autonomyLines.length ? `${autonomyLines.join('\n')}\n${result}` : result
   }
   const next = composition.steps[advance.ordinal]!
   const flow = closed.filter(isClosedStep)
@@ -116,7 +120,7 @@ export function renderWorkflowAdvanceResult(input: {
         JSON.parse(row.args),
         d,
         { mode, version: row.workflow_version, catalogueVersion: row.catalogue_version },
-        cursorAutonomy(row),
+        cursorAutonomy(row, live),
       ),
       row.record_id,
       d,
