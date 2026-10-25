@@ -1,5 +1,5 @@
 // concern: GitHub Actions API
-/** Owns this folder's gh GET and GraphQL process port. */
+/** Owns the gh process port for Actions run listings and merge-queue GraphQL. */
 
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
