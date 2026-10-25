@@ -48,9 +48,11 @@ const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
 })
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId runId workflowKey workflowCursorId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
+  'id spaceId runId workflowKey workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
 )
 const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMNS, {
+  workflowCursorRecordId: null,
+  workflowCursorId: null,
   projectId: null,
   filedRecordId: null,
   filedLabel: null,

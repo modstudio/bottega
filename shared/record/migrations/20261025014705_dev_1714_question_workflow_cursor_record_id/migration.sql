@@ -1,0 +1,1 @@
+ALTER TABLE "question" ADD COLUMN "workflow_cursor_record_id" uuid;

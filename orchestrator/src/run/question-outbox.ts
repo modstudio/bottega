@@ -14,7 +14,7 @@ type QuestionRow = Record<string, unknown> & {
   run_record_id: string | null
   project_name: string | null
   project_record_id: string | null
-  workflow_cursor_number: number | null
+  workflow_cursor_record_id: string | null
 }
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
@@ -23,7 +23,6 @@ function loadQuestion(database: Database, questionId: string): QuestionRow {
   const row = database
     .query<QuestionRow, [string]>(
       `SELECT q.*, r.record_id AS run_record_id,
-              cursor.number AS workflow_cursor_number,
               COALESCE(run_project.name, cursor.project) AS project_name,
               COALESCE(run_project.record_id, cursor_project.record_id) AS project_record_id
          FROM question q
@@ -59,7 +58,8 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     spaceId: PLATFORM_SPACE_ID,
     runId: row.run_record_id,
     workflowKey: row.workflow_key,
-    workflowCursorId: row.workflow_cursor_number,
+    workflowCursorId: null,
+    workflowCursorRecordId: row.workflow_cursor_record_id,
     projectId: row.project_record_id,
     projectName: row.project_name,
     machineId: machineId(),

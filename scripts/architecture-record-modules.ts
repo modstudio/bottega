@@ -270,7 +270,10 @@ export const recordModules: RecordModule[] = [
     './outbox-failure.ts',
     './record-value-conversions.ts',
   ]),
-  module('orchestrator/src/record/record-value-conversions.ts', []),
+  module('orchestrator/src/record/record-value-conversions.ts', [
+    '../../../shared/record-id.ts',
+    './outbox-failure.ts',
+  ]),
   module('orchestrator/src/record/record-sync-evidence-lookup.ts', []),
   module('orchestrator/src/record/record-evidence-references.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-api-invitations.ts', [
