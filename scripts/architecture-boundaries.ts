@@ -639,6 +639,7 @@ export const importBoundaries: ImportBoundary[] = [
       './project-hosted-write.ts',
       './project-record-identity.ts',
       './project-rename.ts',
+      './project-settings-patch.ts',
       './projects.ts',
       '../worktree/worktree-lifecycle.ts',
       '../worktree/worktree-template.ts',

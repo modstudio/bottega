@@ -20,6 +20,11 @@ import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './proj
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import {
+  mergeProjectSettings,
+  type SettingsPatchEffect,
+  settingsPatchEffect,
+} from './project-settings-patch.ts'
+import {
   assertProjectRename,
   assertRegisterBranches,
   assertRegisterVisibility,
@@ -475,29 +480,6 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
   if (!candidate) throw new Error(`project ${input.name} was not updated`)
 }
 
-function mergeableObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function mergeProjectSettings(
-  current: Record<string, unknown>,
-  patch: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...current }
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === null) {
-      delete out[key]
-      continue
-    }
-    const previous = out[key]
-    out[key] =
-      mergeableObject(value) && mergeableObject(previous)
-        ? mergeProjectSettings(previous, value)
-        : value
-  }
-  return out
-}
-
 function skipLegacyCreateMigration(
   project: ReturnType<typeof projectByName>,
   candidate: {
@@ -519,6 +501,29 @@ function incompleteWorktreeProblems(candidate: Parameters<typeof worktreeWarning
       warning.startsWith('has a create command but no branch template') ||
       warning.startsWith('has a create command with a {seed} placeholder but no seeds list'),
   )
+}
+
+function projectSettingsEffect(
+  settingsFlag: string | undefined,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): SettingsPatchEffect | null {
+  return settingsFlag ? settingsPatchEffect(before, after) : null
+}
+
+function printSettingsEffect(
+  effect: SettingsPatchEffect | null,
+  presentation: ProjectPresentation,
+): void {
+  if (!effect) return
+  const lines = [
+    ...effect.added.map((path) => `added ${path}`),
+    ...effect.changed.map((path) => `changed ${path}`),
+    ...effect.removed.map((path) => `removed ${path}`),
+  ]
+  for (const line of lines.length ? lines : ['settings unchanged']) {
+    presentation.log(`${' '.repeat(14)} ${line}`)
+  }
 }
 
 function writesKeyPrefixes(settingsJson: string | undefined): boolean {
@@ -603,6 +608,11 @@ async function setProjectCommand(
     retiredAt: project.retiredAt,
     settings,
   }
+  const settingsEffect = projectSettingsEffect(
+    flags.flag('settings'),
+    project.settings,
+    candidate.settings,
+  )
   const lensSpaceId = effectiveProjectSpace(db(), name)
   const malformed = validateProjectSettings(candidate.settings, candidate.path, {
     validateKeyPrefixes:
@@ -628,6 +638,7 @@ async function setProjectCommand(
     return
   }
   presentation.log(`updated ${nextName}`)
+  printSettingsEffect(settingsEffect, presentation)
   for (const warning of worktreeWarnings(projectByName(nextName)!)) {
     presentation.log(`${' '.repeat(14)} ! ${warning}`)
   }

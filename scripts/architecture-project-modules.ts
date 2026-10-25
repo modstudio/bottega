@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): ProjectModule => ({
 })
 
 export const projectModules: ProjectModule[] = [
+  module('orchestrator/src/project/project-settings-patch.ts', []),
   module('orchestrator/src/project/project-add-decision.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-project-contract.ts',

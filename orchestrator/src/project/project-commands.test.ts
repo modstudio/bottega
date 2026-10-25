@@ -392,7 +392,7 @@ test('project set validates review lenses against the project space catalogue', 
     runProject(['project', 'set', 'project-lenses'], {
       settings: JSON.stringify({ review: { lenses: [{ lens: 'set-project-only' }] } }),
     }),
-  ).resolves.toBe('updated project-lenses')
+  ).resolves.toBe('updated project-lenses\n               added review')
   await expect(
     runProject(['project', 'set', 'project-lenses'], {
       settings: JSON.stringify({ review: { lenses: [{ lens: 'set-active-only' }] } }),
@@ -407,6 +407,61 @@ test('project set validates review lenses against the project space catalogue', 
   ).rejects.toThrow(
     `unknown or disabled lens "set-project-disabled"; choose an enabled lens in record space "${projectSpace}"`,
   )
+})
+
+test('project set reports setting effects without values and reports a no-op', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'settings-effect',
+    path: '/w/settings-effect',
+    settings: {
+      checks: { spelling: true, attribution: true },
+      color: 'secret-reference',
+    },
+  })
+
+  expect(
+    await runProject(['project', 'set', 'settings-effect'], {
+      settings: JSON.stringify({
+        checks: { spelling: false, attribution: null },
+        color: null,
+        colorDark: 'another-secret-reference',
+      }),
+    }),
+  ).toBe(
+    'updated settings-effect\n' +
+      '               added colorDark\n' +
+      '               changed checks.spelling\n' +
+      '               removed checks.attribution\n' +
+      '               removed color',
+  )
+
+  expect(
+    await runProject(['project', 'set', 'settings-effect'], {
+      settings: JSON.stringify({ checks: { spelling: false } }),
+    }),
+  ).toBe('updated settings-effect\n               settings unchanged')
+})
+
+test('project set with --json emits only the existing project JSON', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'settings-json',
+    path: '/w/settings-json',
+    settings: { checks: { spelling: true } },
+  })
+
+  const output = await runProject(['project', 'set', 'settings-json'], {
+    settings: JSON.stringify({ checks: { spelling: false } }),
+    json: true,
+  })
+  expect(JSON.parse(output)).toMatchObject({
+    name: 'settings-json',
+    settings: { checks: { spelling: false } },
+  })
+  expect(output).not.toContain('changed checks.spelling')
 })
 
 test('rename writes hosted once and updates the local name and release ledger', async () => {

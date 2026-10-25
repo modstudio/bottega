@@ -44,7 +44,7 @@ test('renaming tasks accepts a simultaneous non-reserved prefix patch', async ()
     settings: { keyPrefixes: ['TASK'] },
   })
   expect(await renameTasks(JSON.stringify({ keyPrefixes: ['RENAMED'] }))).toBe(
-    'updated renamed-tasks',
+    'updated renamed-tasks\n               changed keyPrefixes',
   )
   expect(projectByName('renamed-tasks')?.settings.keyPrefixes).toEqual(['RENAMED'])
 })
