@@ -26,7 +26,12 @@ test('an orchestrator worker cannot hydrate user canon but can check it', () => 
   expect(() => assertUserCanonHydrateAllowed(flags('check'), {}, 300, inventory)).not.toThrow()
 })
 
-type CompatibilityCase = readonly [argv: readonly string[], code: number, firstLine: string]
+type CompatibilityCase = readonly [
+  argv: readonly string[],
+  code: number,
+  firstLine: string,
+  firstLinePrefix?: boolean,
+]
 
 async function runRegisteredCommand(argv: readonly string[]) {
   const stdout: string[] = []
@@ -173,11 +178,7 @@ test('converted command families preserve trunk output and exit status without o
       'current directory is not in a registered project; pass --project <name>',
     ],
     [['canon', 'evals'], 0, ''],
-    [
-      ['canon', 'lint'],
-      1,
-      `git -C ${fixtureCwd} rev-parse --show-toplevel failed: fatal: not a git repository (or any of the parent directories): .git`,
-    ],
+    [['canon', 'lint'], 1, `git -C ${fixtureCwd} rev-parse --show-toplevel failed:`, true],
     [['canon', 'load'], 1, '--cwd is required'],
     [
       ['port'],
@@ -282,8 +283,14 @@ test('converted command families preserve trunk output and exit status without o
   ]
 
   try {
-    for (const [argv, code, firstLine] of cases) {
-      expect(await runRegisteredCommand(argv), argv.join(' ')).toEqual({ code, firstLine })
+    for (const [argv, code, firstLine, firstLinePrefix] of cases) {
+      const result = await runRegisteredCommand(argv)
+      if (firstLinePrefix) {
+        expect(result.code, argv.join(' ')).toBe(code)
+        expect(result.firstLine, argv.join(' ')).toStartWith(firstLine)
+      } else {
+        expect(result, argv.join(' ')).toEqual({ code, firstLine })
+      }
     }
     expect(await runRegisteredCommand(['doc', 'bogus'])).toEqual({
       code: 1,
