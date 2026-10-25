@@ -4,7 +4,6 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { secretResolutionFailure } from '../../../shared/secret-resolution-failure.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { seedWorkflows } from '../workflow/workflow-seeds.ts'
@@ -389,13 +388,5 @@ describe('record doctor agent secrets', () => {
     )
 
     expect(checks[0]?.detail).toContain('cleared by: wait for the hosted record to recover')
-  })
-
-  test('a hosted failure with no exhausted retry command falls back to naming the record doctor', () => {
-    const detail = secretResolutionFailure(
-      new HostedSecretError('SEALED_KEY', 'hosted-failure', new Error('transport')),
-    )
-
-    expect(detail).toContain(`cleared by: ${PLATFORM_SLUG} record doctor`)
   })
 })

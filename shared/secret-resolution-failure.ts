@@ -13,7 +13,7 @@ type SecretResolutionFailureOptions = {
   unreachableDiagnostic?: string | null
 }
 
-const DEFAULT_UNREACHABLE_DIAGNOSTIC = `\nchecked by: ${PLATFORM_SLUG} record doctor`
+const DEFAULT_UNREACHABLE_DIAGNOSTIC = `checked by: ${PLATFORM_SLUG} record doctor`
 
 type HostedFailureCause = {
   constructorName: string
@@ -102,8 +102,8 @@ function configClientRemedy(
 ) {
   if (options.exhaustedRetryCommand) {
     const { unreachableDiagnostic = DEFAULT_UNREACHABLE_DIAGNOSTIC } = options
-    const diagnostic = classification.reason === 'unreachable' ? (unreachableDiagnostic ?? '') : ''
-    return `${diagnostic}\ncleared by: ${options.exhaustedRetryCommand}`
+    const diagnostic = classification.reason === 'unreachable' ? unreachableDiagnostic : null
+    return `${diagnostic ? `\n${diagnostic}` : ''}\ncleared by: ${options.exhaustedRetryCommand}`
   }
   if (classification.reason === 'unreachable') return `\ncleared by: ${PLATFORM_SLUG} record doctor`
   if (classification.reason === 'not-configured') return `\ncleared by: ${RECORD_SIGN_IN_REMEDY}`
