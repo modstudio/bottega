@@ -23,19 +23,16 @@ test('a recorded root known alive remains live when the process snapshot is empt
   ).toBe(true)
 })
 
-test('a group signal refused with EPERM falls through to the sampled descendants', async () => {
+test('a denied group signal falls through to the sampled descendants', async () => {
   const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
   const result = await terminateProcessGroup(100, {
     graceMs: 5,
     killConfirmMs: 5,
     deps: {
       kill(pid, signal) {
-        if (pid < 0) {
-          const e = new Error('kill() failed: EPERM') as NodeJS.ErrnoException
-          e.code = 'EPERM'
-          throw e
-        }
+        if (pid < 0) return 'denied'
         signals.push({ pid, signal })
+        return 'delivered'
       },
       alive: () => false,
       sample: () => [

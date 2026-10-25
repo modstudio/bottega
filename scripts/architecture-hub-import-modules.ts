@@ -10,6 +10,7 @@ export const hubImportModules = [
       'node:fs',
       'node:path',
       '../../shared/brand.ts',
+      '../../shared/process-identity.ts',
       './database/db.ts',
       './project/projects.ts',
     ],

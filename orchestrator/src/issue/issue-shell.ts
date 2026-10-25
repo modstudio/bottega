@@ -4,6 +4,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { processSignalOutcome } from '../../../shared/process-identity.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import { isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
@@ -132,8 +133,7 @@ async function killFiledIssueCommandGroup(pid: number): Promise<boolean> {
     try {
       process.kill(-pgid, FILED_ISSUE_COMMAND_KILL_SIGNAL)
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code !== 'ESRCH' && code !== 'EPERM') throw error
+      if (processSignalOutcome(error) === 'unknown') throw error
     }
   }
   const killed = await terminateProcessGroup(pid, { graceMs: 0 })

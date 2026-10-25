@@ -10,6 +10,7 @@ import {
   type PidRecordIdentity,
   pidAlive,
   pidRecordIdentity,
+  processSignalOutcome,
 } from '../../../shared/process-identity.ts'
 import type { AGENTS } from '../agent/agent-registry.ts'
 import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
@@ -311,7 +312,7 @@ function defaultKill(pid: number, signal: NodeJS.Signals | number): void {
   try {
     process.kill(pid, signal)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    if (processSignalOutcome(error) === 'unknown') throw error
   }
 }
 
@@ -327,8 +328,7 @@ function signalProcessGroup(
   try {
     kill(-pgid, signal)
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code !== 'EPERM' && code !== 'ESRCH') throw error
+    if (processSignalOutcome(error) === 'unknown') throw error
   }
 }
 

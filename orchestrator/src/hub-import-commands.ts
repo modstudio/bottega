@@ -16,6 +16,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { processSignalOutcome } from '../../shared/process-identity.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import { type Project, projectAt } from './project/projects.ts'
 
@@ -189,7 +190,7 @@ async function runInstalledJudge(
     try {
       process.kill(-child.pid, 'SIGKILL')
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      if (processSignalOutcome(error) !== 'absent') throw error
     }
   }, timeoutMs)
   let exitCode: number | null

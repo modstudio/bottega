@@ -3,7 +3,7 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { pidAlive } from '../../../shared/process-identity.ts'
+import { pidAlive, processSignalOutcome } from '../../../shared/process-identity.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
@@ -52,6 +52,44 @@ const denied = (decision: Extract<ReleaseDecision, { allowed: false }>) => ({
 
 function runSubject(subject: string): string {
   return subject
+}
+
+function signalRecordedProcess(pid: number): { ok: true } | { ok: false; action: string } {
+  try {
+    process.kill(pid, 'SIGTERM')
+    return { ok: true }
+  } catch (error) {
+    if (processSignalOutcome(error) !== 'denied') throw error
+    return {
+      ok: false,
+      action: `refused; pid ${pid} exists but this user may not signal it; rerun as the owning user`,
+    }
+  }
+}
+
+function releaseProcessRecord(
+  runId: string,
+  pid: number | null,
+  action: 'signal' | 'record-released',
+  options: Options,
+): { ok: boolean; action: string } {
+  if (!options.dryRun) {
+    if (action === 'signal' && pid) {
+      const signal = signalRecordedProcess(pid)
+      if (!signal.ok) return signal
+    }
+    writableDb()
+    db()
+      .query(
+        'UPDATE run SET pid=NULL,agent_pid=NULL,agent_pgid=NULL,agent_start_time=NULL WHERE record_id=?',
+      )
+      .run(runId)
+  }
+  const verb = options.dryRun ? 'would reclaim' : 'reclaimed'
+  return {
+    ok: true,
+    action: `${verb} process for run ${runId}; ${action === 'signal' ? 'verified identity and signal' : 'identity unverified, recorded pid as released without signaling'}`,
+  }
 }
 
 function gitLockProjects(): { name: string; gitCommonDir: string }[] {
@@ -395,20 +433,7 @@ function reclaimProcess(subject: string, options: Options) {
     signalAllowed: options.allowSignal,
   })
   if (!decision.allowed) return { ok: false, action: decision.refusal }
-  if (!options.dryRun) {
-    if (decision.action === 'signal' && row?.agent_pid) process.kill(row.agent_pid, 'SIGTERM')
-    writableDb()
-    db()
-      .query(
-        'UPDATE run SET pid=NULL,agent_pid=NULL,agent_pgid=NULL,agent_start_time=NULL WHERE record_id=?',
-      )
-      .run(runId)
-  }
-  const verb = options.dryRun ? 'would reclaim' : 'reclaimed'
-  return {
-    ok: true,
-    action: `${verb} process for run ${runId}; ${decision.action === 'signal' ? 'verified identity and signal' : 'identity unverified, recorded pid as released without signaling'}`,
-  }
+  return releaseProcessRecord(runId, row?.agent_pid ?? null, decision.action, options)
 }
 
 function reclaimStaleRun(subject: string, options: Options) {
