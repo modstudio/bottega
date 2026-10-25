@@ -56,11 +56,22 @@ if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=no)" ]];
 fi
 
 if [[ -z "$record_migrate_url" ]]; then
-  if ! record_migrate_url="$(
+  reader_stderr_file="$(mktemp "${TMPDIR:-/tmp}/bottega-hosted-secret.XXXXXX")"
+  if record_migrate_url="$(
     env -u BOTTEGA_RECORD_MIGRATE_URL \
-      bun --no-env-file "$PROJECT_ROOT/scripts/read-hosted-migrate-url.ts" 2>/dev/null
+      bun --no-env-file "$PROJECT_ROOT/scripts/read-hosted-migrate-url.ts" 2>"$reader_stderr_file"
   )"; then
-    echo "REFUSE: BOTTEGA_RECORD_MIGRATE_URL is unset; set it with \"bottega machine config secret set BOTTEGA_RECORD_MIGRATE_URL\"" >&2
+    rm -f "$reader_stderr_file"
+  else
+    reader_status=$?
+    reader_stderr="$(<"$reader_stderr_file")"
+    rm -f "$reader_stderr_file"
+    if (( reader_status == 1 )); then
+      echo "REFUSE: BOTTEGA_RECORD_MIGRATE_URL is unset; set it with \"bottega machine config secret set BOTTEGA_RECORD_MIGRATE_URL\"" >&2
+    else
+      echo "REFUSE: could not read the sealed BOTTEGA_RECORD_MIGRATE_URL" >&2
+      printf '%s\n' "$reader_stderr" >&2
+    fi
     exit 1
   fi
 fi
