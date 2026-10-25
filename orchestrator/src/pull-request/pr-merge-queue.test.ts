@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import {
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
+  MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
 } from './merge-queue-decision.ts'
@@ -50,7 +51,13 @@ function adapter(input: {
   queueStates: TestQueueObservation[]
   enqueue?: (cwd: string, number: number, headCommit: string) => void
   requeue?: (cwd: string, nodeId: string, headCommit: string) => void
-  failedMergeGroupRun?: () => { id: number; url: string; conclusion: string } | null
+  failedMergeGroupRun?: (
+    cwd: string,
+    repository: string,
+    baseBranch: string,
+    pullRequestNumber: number,
+    enqueuedAt: string,
+  ) => { id: number; url: string; conclusion: string } | null
   wait?: (milliseconds: number) => void
   now?: () => number
   landingState?: () => { remoteLandingTip: string; mergeBase: string }
@@ -87,8 +94,8 @@ function adapter(input: {
     },
     enqueue: (enqueueCwd, number, headCommit) => input.enqueue?.(enqueueCwd, number, headCommit),
     requeue: (requeueCwd, nodeId, headCommit) => input.requeue?.(requeueCwd, nodeId, headCommit),
-    failedMergeGroupRun: () =>
-      input.failedMergeGroupRun?.() ?? {
+    failedMergeGroupRun: (...args) =>
+      input.failedMergeGroupRun?.(...args) ?? {
         id: 9876,
         url: 'https://github.example/actions/runs/9876',
         conclusion: 'failure',
@@ -149,6 +156,7 @@ test('an already-queued pull request is only waited for', () => {
 test('a failed first observation makes one requeue call with the node id and head', () => {
   registerProject(['ci'])
   const requeueArguments: unknown[][] = []
+  const failedRunArguments: unknown[][] = []
   const result = mergePullRequest(
     '42',
     cwd,
@@ -161,12 +169,23 @@ test('a failed first observation makes one requeue call with the node id and hea
       requeue: (...args) => {
         requeueArguments.push(args)
       },
+      failedMergeGroupRun: (...args) => {
+        failedRunArguments.push(args)
+        return {
+          id: 9876,
+          url: 'https://github.example/actions/runs/9876',
+          conclusion: 'failure',
+        }
+      },
     }),
   )
   expect(requeueArguments).toEqual([[cwd, 'PR_node_id', 'head-commit']])
+  expect(failedRunArguments).toEqual([
+    [cwd, 'example/repository', 'main', 42, '2026-10-24T10:00:00Z'],
+  ])
   expect(result).toEqual({
     output:
-      'requeued #42 at head-commit after failure merge-group run 9876 (https://github.example/actions/runs/9876)\nqueued-merge-oid',
+      'queued-merge-oid\nrequeued #42 at head-commit after failure merge-group run 9876 (https://github.example/actions/runs/9876)',
     exitCode: 0,
   })
 })
@@ -186,7 +205,7 @@ test('a persistent failed entry refuses with the failed run and both remedies', 
         ],
         now: () => clock,
         wait: () => {
-          clock = MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+          clock = MERGE_QUEUE_REQUEUE_CONFIRM_MS
         },
       }),
     ),
@@ -218,6 +237,24 @@ test('a failed-run lookup error does not block the requeue', () => {
   expect(requeues).toBe(1)
   expect(result.output).toContain(
     'failed merge-group run could not be read: actions API unavailable',
+  )
+})
+
+test('a requeue failure refuses with the requeue, failed-run evidence, and remedy', () => {
+  registerProject(['ci'])
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: 'UNMERGEABLE' }],
+        requeue: () => {
+          throw new Error('GraphQL mutation refused')
+        },
+      }),
+    ),
+  ).toThrow(
+    `refusing merge: pull request #42 could not be requeued after failure merge-group run 9876 (https://github.example/actions/runs/9876): GraphQL mutation refused; cleared by: fix the reported forge condition, then ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 

@@ -40,6 +40,7 @@ export type MergeQueueStep = {
 const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', 'QUEUED'])
 export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
 export const MERGE_QUEUE_DEQUEUE_CONFIRM_MS = 60 * 1000
+export const MERGE_QUEUE_REQUEUE_CONFIRM_MS = 60 * 1000
 const MERGE_QUEUE_POLL_MS = 10 * 1000
 
 function failedMergeQueueStep(
@@ -55,7 +56,7 @@ function failedMergeQueueStep(
   if (
     state.requeuePendingSince !== null &&
     now < deadline &&
-    now - state.requeuePendingSince < MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+    now - state.requeuePendingSince < MERGE_QUEUE_REQUEUE_CONFIRM_MS
   ) {
     return {
       state,
@@ -64,7 +65,7 @@ function failedMergeQueueStep(
         delay: Math.min(
           MERGE_QUEUE_POLL_MS,
           deadline - now,
-          MERGE_QUEUE_DEQUEUE_CONFIRM_MS - (now - state.requeuePendingSince),
+          MERGE_QUEUE_REQUEUE_CONFIRM_MS - (now - state.requeuePendingSince),
         ),
       },
     }

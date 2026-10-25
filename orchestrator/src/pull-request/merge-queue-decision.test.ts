@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
+  MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
   stepMergeQueueWait,
@@ -185,8 +186,8 @@ describe('merge-queue action', () => {
         42,
         state,
         { state: 'failed' },
-        MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
-        MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2,
+        MERGE_QUEUE_REQUEUE_CONFIRM_MS,
+        MERGE_QUEUE_REQUEUE_CONFIRM_MS * 2,
       ),
     ).toEqual({
       state,
@@ -201,7 +202,7 @@ describe('merge-queue action', () => {
   test('a stale failed reading after requeue waits inside the confirmation window', () => {
     const state = { ...initialWaitState, enqueueSubmitted: true, requeuePendingSince: 1 }
     expect(
-      stepMergeQueueWait(42, state, { state: 'failed' }, 2, MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2),
+      stepMergeQueueWait(42, state, { state: 'failed' }, 2, MERGE_QUEUE_REQUEUE_CONFIRM_MS * 2),
     ).toEqual({ state, action: { action: 'wait', delay: 10_000 } })
   })
 

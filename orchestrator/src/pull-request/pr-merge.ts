@@ -556,7 +556,7 @@ function mergedPullRequestOutput(input: {
 }): PullRequestMergeOutcome {
   const withRequeueOutput = (outcome: PullRequestMergeOutcome): PullRequestMergeOutcome => ({
     ...outcome,
-    output: input.requeueOutput ? `${input.requeueOutput}\n${outcome.output}` : outcome.output,
+    output: input.requeueOutput ? `${outcome.output}\n${input.requeueOutput}` : outcome.output,
   })
   if (input.recordingError) {
     return withRequeueOutput({

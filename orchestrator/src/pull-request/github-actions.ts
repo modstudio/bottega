@@ -1,10 +1,17 @@
 // concern: GitHub Actions API
-/** Lists GitHub Actions workflow runs through one paged CLI port. */
+/** Owns this folder's gh GET and GraphQL process port. */
+
+import { targetGitEnvironment } from '../git/git-environment.ts'
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
 function run(cwd: string, argv: string[]): ProcessResult {
-  const result = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const result = Bun.spawnSync(argv, {
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
   return {
     exitCode: result.exitCode,
     stdout: result.stdout.toString().trim(),
@@ -12,25 +19,44 @@ function run(cwd: string, argv: string[]): ProcessResult {
   }
 }
 
-export function githubApi(cwd: string, path: string, fields: readonly string[] = []): unknown {
-  const result = run(cwd, [
-    'gh',
-    'api',
-    '--method',
-    'GET',
-    path,
-    ...fields.flatMap((field) => ['-f', field]),
-  ])
+export function githubCommand(cwd: string, argv: string[], label: string): string {
+  const result = run(cwd, ['gh', ...argv])
   if (result.exitCode !== 0) {
-    throw new Error(`gh api ${path} failed: ${result.stderr || `exit ${result.exitCode}`}`)
+    throw new Error(`${label} failed: ${result.stderr || `exit ${result.exitCode}`}`)
   }
+  return result.stdout
+}
+
+function githubJson(cwd: string, argv: string[], label: string): unknown {
+  const output = githubCommand(cwd, argv, label)
   try {
-    return JSON.parse(result.stdout)
+    return JSON.parse(output)
   } catch (cause) {
     throw new Error(
-      `gh api ${path} returned invalid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `${label} returned invalid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
     )
   }
+}
+
+export function githubApi(cwd: string, path: string, fields: readonly string[] = []): unknown {
+  return githubJson(
+    cwd,
+    ['api', '--method', 'GET', path, ...fields.flatMap((field) => ['-f', field])],
+    `gh api ${path}`,
+  )
+}
+
+export function githubGraphql(
+  cwd: string,
+  query: string,
+  fields: readonly string[],
+  label: string,
+): unknown {
+  return githubJson(
+    cwd,
+    ['api', 'graphql', '-f', `query=${query}`, ...fields.flatMap((field) => ['-f', field])],
+    label,
+  )
 }
 
 export function githubArray(value: unknown, field?: string): unknown[] {

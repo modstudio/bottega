@@ -1,47 +1,19 @@
 // concern: GitHub merge-queue adapter
 /** Reads and mutates GitHub's merge queue without owning merge policy. */
 
-import { targetGitEnvironment } from '../git/git-environment.ts'
-import { githubWorkflowRuns } from './github-actions.ts'
-import { isPullRequestMergeGroupRun } from './merge-group-run.ts'
+import { githubCommand, githubGraphql, githubWorkflowRuns } from './github-actions.ts'
+import { type FailedMergeGroupRun, failedMergeGroupRunFromRuns } from './merge-group-run.ts'
 import type { MergeQueueObservation } from './merge-queue-decision.ts'
 
-export type FailedMergeGroupRun = {
-  id: number
-  url: string
-  conclusion: string
-}
-
-function successful(cwd: string, argv: string[], label: string): string {
-  const result = Bun.spawnSync(argv, {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${result.stderr.toString().trim() || `exit ${result.exitCode}`}`,
-    )
-  }
-  return result.stdout.toString().trim()
-}
+export type { FailedMergeGroupRun } from './merge-group-run.ts'
 
 export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueObservation {
-  const output = successful(
+  const value = githubGraphql(
     cwd,
-    [
-      'gh',
-      'api',
-      'graphql',
-      '-f',
-      'query=query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state enqueuedAt}}}}',
-      '-f',
-      `id=${nodeId}`,
-    ],
+    'query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state enqueuedAt}}}}',
+    [`id=${nodeId}`],
     'merge-queue lookup',
-  )
-  let value: {
+  ) as {
     data?: {
       node?: {
         state?: unknown
@@ -49,13 +21,6 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
         mergeQueueEntry?: { state?: unknown; enqueuedAt?: unknown } | null
       } | null
     }
-  }
-  try {
-    value = JSON.parse(output) as typeof value
-  } catch (cause) {
-    throw new Error(
-      `merge-queue lookup returned invalid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
   }
   const node = value.data?.node
   const mergeCommit = node?.mergeCommit?.oid
@@ -83,80 +48,26 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
 }
 
 export function enqueuePullRequest(cwd: string, number: number, headCommit: string): void {
-  successful(
+  githubCommand(
     cwd,
-    ['gh', 'pr', 'merge', String(number), '--auto', '--match-head-commit', headCommit],
+    ['pr', 'merge', String(number), '--auto', '--match-head-commit', headCommit],
     'merge-queue enqueue',
   )
 }
 
 export function requeuePullRequest(cwd: string, nodeId: string, headCommit: string): void {
-  successful(
+  githubGraphql(
     cwd,
-    [
-      'gh',
-      'api',
-      'graphql',
-      '-f',
-      'query=mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}',
-      '-f',
-      `id=${nodeId}`,
-    ],
+    'mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}',
+    [`id=${nodeId}`],
     'merge-queue dequeue',
   )
-  successful(
+  githubGraphql(
     cwd,
-    [
-      'gh',
-      'api',
-      'graphql',
-      '-f',
-      'query=mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!){enqueuePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid}){clientMutationId}}',
-      '-f',
-      `pullRequestId=${nodeId}`,
-      '-f',
-      `expectedHeadOid=${headCommit}`,
-    ],
+    'mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!){enqueuePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid}){clientMutationId}}',
+    [`pullRequestId=${nodeId}`, `expectedHeadOid=${headCommit}`],
     'merge-queue re-enqueue',
   )
-}
-
-function failedMergeGroupRunFrom(
-  raw: unknown,
-  baseBranch: string,
-  pullRequestNumber: number,
-): (FailedMergeGroupRun & { createdAt: string }) | null {
-  if (!isPullRequestMergeGroupRun(raw, baseBranch, pullRequestNumber)) return null
-  if (raw.status !== 'completed') return null
-  if (['success', 'skipped', 'neutral'].includes(String(raw.conclusion))) return null
-  if (
-    typeof raw.conclusion !== 'string' ||
-    !Number.isSafeInteger(raw.id) ||
-    typeof raw.html_url !== 'string' ||
-    typeof raw.created_at !== 'string'
-  ) {
-    throw new Error('failed merge-group run lookup returned an unexpected run shape')
-  }
-  return {
-    id: Number(raw.id),
-    url: raw.html_url,
-    conclusion: raw.conclusion,
-    createdAt: raw.created_at,
-  }
-}
-
-export function failedMergeGroupRunFromRuns(
-  runs: readonly unknown[],
-  baseBranch: string,
-  pullRequestNumber: number,
-): FailedMergeGroupRun | null {
-  const matches = runs.flatMap((raw) => {
-    const match = failedMergeGroupRunFrom(raw, baseBranch, pullRequestNumber)
-    return match ? [match] : []
-  })
-  matches.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-  const match = matches[0]
-  return match ? { id: match.id, url: match.url, conclusion: match.conclusion } : null
 }
 
 export function githubFailedMergeGroupRun(
