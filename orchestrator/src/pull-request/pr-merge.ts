@@ -34,9 +34,9 @@ import {
   mergeQueueEnqueueFailureRemedy,
   stepMergeQueueWait,
 } from './merge-queue-decision.ts'
+import type { FailedMergeGroupRun } from './merge-group-run.ts'
 import {
   enqueuePullRequest,
-  type FailedMergeGroupRun,
   githubFailedMergeGroupRun,
   githubMergeQueueState,
   requeuePullRequest,

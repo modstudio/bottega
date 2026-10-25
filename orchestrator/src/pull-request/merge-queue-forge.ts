@@ -5,8 +5,6 @@ import { githubCommand, githubGraphql, githubWorkflowRuns } from './github-actio
 import { type FailedMergeGroupRun, failedMergeGroupRunFromRuns } from './merge-group-run.ts'
 import type { MergeQueueObservation } from './merge-queue-decision.ts'
 
-export type { FailedMergeGroupRun } from './merge-group-run.ts'
-
 export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueObservation {
   const value = githubGraphql(
     cwd,
