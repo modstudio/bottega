@@ -41,6 +41,12 @@ export const worktreeModules: WorktreeModule[] = [
     'node:path',
   ]),
   module('orchestrator/src/worktree/worktree-porcelain.ts', []),
+  module('orchestrator/src/worktree/trunk-base-choice.ts', [
+    '../project/projects.ts',
+    '../git/git-environment.ts',
+    '../git/checkout-identity.ts',
+    './worktree-caller.ts',
+  ]),
   module('orchestrator/src/worktree/worktree-caller.ts', [
     '../project/projects.ts',
     '../git/git-environment.ts',

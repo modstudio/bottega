@@ -78,7 +78,7 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
-import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
+import { resolveDispatchBase } from '../worktree/trunk-base-choice.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
@@ -296,15 +296,15 @@ export async function run(opts: {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
   }
-  const readerRef = opts.resume?.readOnlyBase ?? reviewTarget?.commit ?? opts.base ?? 'HEAD'
+  const readOnlyRef = opts.resume?.readOnlyBase ?? reviewTarget?.commit ?? opts.base ?? null
   const readOnlyBase =
     repoJob && !writesJob && !opts.resume?.worktree
-      ? resolveReadOnlyBase(
-          callerCwd,
-          readerRef,
-          opts.automaticFailover,
-          readOnlyBaseProjectPath(runProjectName ?? undefined, callerCwd),
-        )
+      ? resolveDispatchBase({
+          cwd: callerCwd,
+          ref: readOnlyRef,
+          automaticFailover: opts.automaticFailover,
+          registeredProjectPath: readOnlyBaseProjectPath(runProjectName ?? undefined, callerCwd),
+        })
       : null
   if (shouldResolveRunBase(opts.base, readOnlyBase))
     resolveRunBase({
