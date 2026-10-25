@@ -17,7 +17,7 @@ import {
   sessionLivenessEvidence,
 } from '../run/session-liveness-adapter.ts'
 
-export type SessionAdoptedRun = {
+type SessionAdoptedRun = {
   number: number
   recordId: string
   job: string
@@ -25,7 +25,7 @@ export type SessionAdoptedRun = {
   turns: number
 }
 
-export type SessionAdoptionFailure = SessionAdoptedRun & { reason: string }
+type SessionAdoptionFailure = SessionAdoptedRun & { reason: string }
 
 export type SessionAdoptionReport = {
   fromSession: string
@@ -36,7 +36,7 @@ export type SessionAdoptionReport = {
   totalTurns: number
 }
 
-export type SessionAdoptionConsent = 'standard' | 'resume-handoff'
+type SessionAdoptionConsent = 'standard' | 'resume-handoff'
 
 type Root = {
   record_id: string

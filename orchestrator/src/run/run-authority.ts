@@ -170,12 +170,17 @@ export function reauthorizeRunMutation(
 }
 
 export function auditRunMutation(
-  authority: RootAuthority,
+  authority: RootAuthority | Omit<RootAuthority, 'ownerProcess' | 'ownerProcesses'>,
   action: RunMutationAction,
   reason: string | null = null,
   database: Database = db(),
   turnId: string | null = null,
 ): void {
+  const mutationAuthority: RootAuthority = {
+    ...authority,
+    ownerProcess: 'ownerProcess' in authority ? authority.ownerProcess : 'unknown',
+    ownerProcesses: 'ownerProcesses' in authority ? authority.ownerProcesses : [],
+  }
   database
     .query(
       `INSERT INTO run_mutation_audit (record_id, run_record_id, root_run_record_id, action, actor_session, at, reason, turn_run_record_id)
@@ -188,7 +193,7 @@ export function auditRunMutation(
       action,
       authority.actor,
       nowIso(),
-      joinMutationReason(reason, adoptedMutationReason(authority)),
+      joinMutationReason(reason, adoptedMutationReason(mutationAuthority)),
       turnId,
     )
 }

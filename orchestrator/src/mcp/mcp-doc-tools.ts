@@ -140,13 +140,12 @@ function registerDocRevisionTool(server: McpServer): void {
   )
 }
 
-export function registerDocTools(
-  server: McpServer,
-  ports: {
-    selectDocWriteTree: DocWriteTreeSelector
-    collectCanonLintInput: CanonLintInputCollector
-  },
-): void {
+type DocToolPorts = {
+  selectDocWriteTree: DocWriteTreeSelector
+  collectCanonLintInput: CanonLintInputCollector
+}
+
+function registerReadDocTools(server: McpServer): void {
   server.registerTool(
     'list_docs',
     {
@@ -228,41 +227,46 @@ export function registerDocTools(
       return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },
   )
+}
+
+const setDocInputSchema = z.object({
+  scope: z.string(),
+  subject: z.string().nullable().optional(),
+  slug: z.string(),
+  title: z.string(),
+  body: z.string(),
+  delivery: z.enum(['inject', 'demand']).optional(),
+  audiences: audiencesSchema.optional(),
+  parent: z.string().trim().min(1).nullable().optional(),
+  position: z.number().int().optional(),
+  featured: z.boolean().optional(),
+  status: z.enum(DOC_STATUSES).optional(),
+  kind: z.enum(DOC_KINDS).optional(),
+  ...articleFieldSchemaShape,
+  replacement: z.string().trim().min(1).nullable().optional(),
+  force_inject: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe(
+      'Required justification when an injected document exceeds the write-time size threshold.',
+    ),
+  reason: z
+    .string({ error: 'reason is required: explain why this operator doc is changing' })
+    .trim()
+    .min(1, 'reason is required: explain why this operator doc is changing'),
+  author: z.string().trim().min(1).optional(),
+  expected_revision: z.string().trim().min(1).optional(),
+  cwd: z.string().trim().min(1).optional(),
+})
+
+function registerSetDocTool(server: McpServer, ports: DocToolPorts): void {
   server.registerTool(
     'set_doc',
     {
       description: 'Create or replace an operator document.',
-      inputSchema: z.object({
-        scope: z.string(),
-        subject: z.string().nullable().optional(),
-        slug: z.string(),
-        title: z.string(),
-        body: z.string(),
-        delivery: z.enum(['inject', 'demand']).optional(),
-        audiences: audiencesSchema.optional(),
-        parent: z.string().trim().min(1).nullable().optional(),
-        position: z.number().int().optional(),
-        featured: z.boolean().optional(),
-        status: z.enum(DOC_STATUSES).optional(),
-        kind: z.enum(DOC_KINDS).optional(),
-        ...articleFieldSchemaShape,
-        replacement: z.string().trim().min(1).nullable().optional(),
-        force_inject: z
-          .string()
-          .trim()
-          .min(1)
-          .optional()
-          .describe(
-            'Required justification when an injected document exceeds the write-time size threshold.',
-          ),
-        reason: z
-          .string({ error: 'reason is required: explain why this operator doc is changing' })
-          .trim()
-          .min(1, 'reason is required: explain why this operator doc is changing'),
-        author: z.string().trim().min(1).optional(),
-        expected_revision: z.string().trim().min(1).optional(),
-        cwd: z.string().trim().min(1).optional(),
-      }),
+      inputSchema: setDocInputSchema,
     },
     async ({
       scope,
@@ -325,6 +329,9 @@ export function registerDocTools(
       return text(setDocToolPayload(doc, body, canonTree?.root, ports.collectCanonLintInput))
     },
   )
+}
+
+function registerSetDocStatusTool(server: McpServer): void {
   server.registerTool(
     'set_doc_status',
     {
@@ -354,7 +361,9 @@ export function registerDocTools(
       )
     },
   )
+}
 
+function registerRemoveDocTool(server: McpServer, ports: DocToolPorts): void {
   server.registerTool(
     'remove_doc',
     {
@@ -388,7 +397,9 @@ export function registerDocTools(
       return text({ removed, tree: canonTree?.root })
     },
   )
+}
 
+function registerConsumeAndRevisionTools(server: McpServer): void {
   registerMcpDocConsumeTool(server)
 
   server.registerTool(
@@ -418,4 +429,12 @@ export function registerDocTools(
   )
 
   registerDocRevisionTool(server)
+}
+
+export function registerDocTools(server: McpServer, ports: DocToolPorts): void {
+  registerReadDocTools(server)
+  registerSetDocTool(server, ports)
+  registerSetDocStatusTool(server)
+  registerRemoveDocTool(server, ports)
+  registerConsumeAndRevisionTools(server)
 }

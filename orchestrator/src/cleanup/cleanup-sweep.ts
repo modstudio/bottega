@@ -355,8 +355,10 @@ function printSweepKept(
     const counts = new Map<string, number>()
     for (const row of kept) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1)
     const grouped = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    for (const [reason, n] of grouped)
-      presentation.log(`  ${String(n).padStart(String(grouped[0]![1]).length)}  ${reason}`)
+    const width = String(grouped[0]![1]).length
+    for (const [reason, n] of grouped) {
+      presentation.log(`  ${String(n).padStart(width)}  ${reason}`)
+    }
   }
   if (showRows) {
     for (const row of kept) presentation.log(`  ${row.line}`)
@@ -386,8 +388,6 @@ function reportClosedSweepRow(
           coordinatorRun: false,
           now: Date.now(),
           windowMs: UNJUDGED_OWNER_WINDOW_MS,
-          ownerProcess: 'unknown',
-          ownerProcesses: [],
         },
         'sweep',
       )

@@ -223,7 +223,14 @@ function requireAnswerAuthority(
     sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
     depthPresent: process.env.BOTTEGA_DEPTH !== undefined,
     dashboardAuthorized,
-    ...authority,
+    owner: authority.owner,
+    actor: authority.actor,
+    ownerProcess: authority.ownerProcess,
+    ownerLastSeenAt: authority.ownerLastSeenAt,
+    chainLastActivityAt: authority.chainLastActivityAt,
+    coordinatorRun: authority.coordinatorRun,
+    now: authority.now,
+    windowMs: authority.windowMs,
   })
   if (decision.kind !== 'refuse') return decision
   if (decision.code === 'operator-attribution')
@@ -380,6 +387,7 @@ type RetryRunRow = {
   branch_kept_tip: string | null
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Pre-existing retry orchestration is outside this ownership change.
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -613,6 +621,7 @@ export async function retryRun(
  * asking more expensive than guessing, and a channel that costs more than
  * guessing does not get used.
  */
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Pre-existing answer orchestration is outside this ownership change.
 export async function answerRun(
   requestedId: string,
   input: AnswerRunInput,

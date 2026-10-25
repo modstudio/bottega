@@ -8,6 +8,8 @@ import { hostedDocClient } from './doc-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { latestStoredDocAuthorSession } from './doc-revision-store.ts'
 
+export type ConsumedDoc = Doc & { already_consumed: boolean }
+
 export async function resumeBriefAuthorSession(
   doc: Doc,
   database: Database = db(),
@@ -21,9 +23,7 @@ export async function resumeBriefAuthorSession(
     (revisions
       .filter(
         (revision) =>
-          revision.op !== 'consume' &&
-          typeof revision.sessionId === 'string' &&
-          revision.sessionId,
+          revision.op !== 'consume' && typeof revision.sessionId === 'string' && revision.sessionId,
       )
       .sort((left, right) => String(right.at).localeCompare(String(left.at)))[0]?.sessionId as
       | string

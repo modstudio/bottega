@@ -2,7 +2,8 @@
 /** Applies and presents one document consume, delegating resume handoff through a port. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ConsumedDoc, consumeDoc } from './docs.ts'
+import { consumeDoc } from './docs.ts'
+import type { ConsumedDoc } from './resume-brief-author.ts'
 
 export type ConsumeDocHandoff = (doc: ConsumedDoc) => Promise<{ lines: string[] }>
 

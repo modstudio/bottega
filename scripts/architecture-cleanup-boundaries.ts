@@ -24,7 +24,6 @@ export const cleanupBoundarySpecs = [
       'bun:sqlite',
       '../../../shared/brand.ts',
       '../database/db.ts',
-      '../doc/docs.ts',
       '../doc/resume-brief-author.ts',
       '../run/session-liveness-adapter.ts',
       './session-adopt.ts',

@@ -4,8 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
-import type { ConsumedDoc } from '../doc/docs.ts'
-import { resumeBriefAuthorSession } from '../doc/resume-brief-author.ts'
+import {
+  type ConsumedDoc,
+  resumeBriefAuthorSession,
+} from '../doc/resume-brief-author.ts'
 import type { SessionProcessProbe } from '../run/session-liveness-adapter.ts'
 import { adoptSessionRuns, type SessionAdoptionReport } from './session-adopt.ts'
 
@@ -16,11 +18,7 @@ export type ResumeBriefHandoff = {
   lines: string[]
 }
 
-export async function handoffConsumedResumeBrief(
-  doc: ConsumedDoc,
-  options: { database?: Database; probe?: SessionProcessProbe; machine?: string } = {},
-): Promise<ResumeBriefHandoff> {
-  const database = options.database ?? db()
+function skippedHandoff(doc: ConsumedDoc): ResumeBriefHandoff | null {
   if (doc.scope !== 'resume')
     return {
       authorSession: null,
@@ -35,6 +33,48 @@ export async function handoffConsumedResumeBrief(
       report: null,
       lines: ['resume handoff skipped: resume brief was already consumed'],
     }
+  return null
+}
+
+function adoptionHandoff(
+  author: string,
+  report: SessionAdoptionReport,
+  command: string,
+): ResumeBriefHandoff {
+  const remaining = report.notMoved.length
+  if (report.totalRuns > 0)
+    return {
+      authorSession: author,
+      status: 'moved',
+      report,
+      lines: [
+        `resume handoff moved ${report.totalRuns} run(s) and ${report.totalTurns} turn(s) from ${author} to ${report.toSession}${remaining ? `; ${remaining} run(s) remain with ${author}; run ${command}` : ''}`,
+      ],
+    }
+  if (remaining)
+    return {
+      authorSession: author,
+      status: 'refused',
+      report,
+      lines: [
+        `resume handoff did not move runs: ${remaining} run(s) remain with ${author}; run ${command}`,
+      ],
+    }
+  return {
+    authorSession: author,
+    status: 'moved',
+    report,
+    lines: [`resume handoff: session ${author} owns no runs`],
+  }
+}
+
+export async function handoffConsumedResumeBrief(
+  doc: ConsumedDoc,
+  options: { database?: Database; probe?: SessionProcessProbe; machine?: string } = {},
+): Promise<ResumeBriefHandoff> {
+  const database = options.database ?? db()
+  const skipped = skippedHandoff(doc)
+  if (skipped) return skipped
   let author: string | null
   try {
     author = await resumeBriefAuthorSession(doc, database)
@@ -69,22 +109,7 @@ export async function handoffConsumedResumeBrief(
       `resume brief ${doc.subject}/${doc.slug} consumed by ${actor}`,
       { consent: 'resume-handoff', database, probe: options.probe, machine: options.machine },
     )
-    const remaining = report.notMoved.length
-    const moved = report.totalRuns > 0
-    return {
-      authorSession: author,
-      status: moved ? 'moved' : remaining ? 'refused' : 'moved',
-      report,
-      lines: moved
-        ? [
-            `resume handoff moved ${report.totalRuns} run(s) and ${report.totalTurns} turn(s) from ${author} to ${report.toSession}${remaining ? `; ${remaining} run(s) remain with ${author}; run ${command}` : ''}`,
-          ]
-        : remaining
-          ? [
-              `resume handoff did not move runs: ${remaining} run(s) remain with ${author}; run ${command}`,
-            ]
-          : [`resume handoff: session ${author} owns no runs`],
-    }
+    return adoptionHandoff(author, report, command)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return {
