@@ -47,6 +47,7 @@ import { nextRunNumber } from './run-number.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
+import { assertRunHasTaskOrProject, resolveNewRunLinks } from './run-task-reference.ts'
 
 function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string): string {
   const runDirectory = join(runsDir, recordId)
@@ -158,6 +159,37 @@ function detachedReviewBindings(spec: DetachSpec) {
   return [spec.resume?.continuationMessage?.sha256 ?? null, spec.reviewRole ?? null] as const
 }
 
+async function detachedRunLinks(jobName: string, cwd: string, spec: DetachSpec) {
+  const identity = claimIdentity(spec.resume)
+  const pendingRecordId = newRecordId()
+  const inheritedTaskRecordId = identity.parent_run_record_id
+    ? (db()
+        .query<{ task_record_id: string | null }, [string]>(
+          'SELECT task_record_id FROM run WHERE record_id=?',
+        )
+        .get(identity.parent_run_record_id)?.task_record_id ?? null)
+    : null
+  const detached = detachedProject(cwd, spec)
+  const links = await resolveNewRunLinks({
+    recordId: pendingRecordId,
+    job: jobName,
+    inheritedTaskRecordId,
+    projectName: detached.projectName,
+    projectRecordId: detached.projectId,
+    key: spec.key ?? null,
+    cwd,
+    launchCwd: cwd,
+    probe: Boolean(spec.probe),
+    parentRunRecordId: identity.parent_run_record_id,
+  })
+  assertRunHasTaskOrProject({
+    probe: Boolean(spec.probe),
+    taskRecordId: links.taskRecordId,
+    projectRecordId: links.projectRecordId,
+  })
+  return { identity, pendingRecordId, detached, links }
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -225,6 +257,7 @@ async function detachResolved(
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
+  const { identity, pendingRecordId, detached, links } = await detachedRunLinks(jobName, cwd, spec)
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
@@ -240,14 +273,12 @@ async function detachResolved(
   // statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
   const claimed = claimDetachedRun(beforeClaim, spec.resume !== undefined, () => {
-    const identity = claimIdentity(spec.resume)
-    const { projectName, projectId } = detachedProject(cwd, spec)
     refuseLiveRetryOwner(spec)
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
                       vendor_session, started_by_user_id, continuation_message_sha, review_role)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -258,12 +289,13 @@ async function detachResolved(
        RETURNING record_id, number`,
       )
       .get(
-        newRecordId(),
+        pendingRecordId,
         nextRunNumber(db()),
         nowIso(),
         jobName,
-        projectName,
-        projectId,
+        detached.projectName,
+        links.projectRecordId,
+        links.taskRecordId,
         null,
         createHash('sha256').update(prompt).digest('hex').slice(0, 16),
         createHash('sha256').update(prompt).digest('hex').slice(0, 16),

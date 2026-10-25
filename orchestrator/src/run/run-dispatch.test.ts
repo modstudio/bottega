@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
@@ -6,9 +6,14 @@ import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
+import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 const originalExecPath = process.env.BOTTEGA_EXEC_PATH
 const originalDepth = process.env.BOTTEGA_DEPTH
+beforeEach(() => {
+  upsertProject({ recordId: newRecordId(), name: 'dispatch-fixture', path: dir })
+  upsertProject({ recordId: newRecordId(), name: 'dispatch-repo-fixture', path: import.meta.dir })
+})
 afterEach(() => {
   mock.restore()
   if (originalExecPath === undefined) delete process.env.BOTTEGA_EXEC_PATH
@@ -59,6 +64,16 @@ test('detached MCP preflight ensures the declared project stack before probing',
 test('a detached worker starts in its recorded directory, or the fallback when that is gone', () => {
   expect(spawnCwd('/unregistered', null, false, true, '/fallback')).toBe('/unregistered')
   expect(spawnCwd('/unregistered', null, false, false, '/fallback')).toBe('/fallback')
+})
+
+test('detached dispatch refuses an unlinked non-probe before reserving a row', async () => {
+  process.env.BOTTEGA_DEPTH = '0'
+  await expect(
+    detach('summarize', 'unlinked detached fixture', { cwd: '/unregistered' }),
+  ).rejects.toThrow(RUN_REFERENCE_REFUSAL)
+  expect(
+    db().query("SELECT 1 FROM run WHERE prompt_head='unlinked detached fixture'").get(),
+  ).toBeNull()
 })
 
 test('a findings dispatch carries its resolved round role to the coordinator', async () => {

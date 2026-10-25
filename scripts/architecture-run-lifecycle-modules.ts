@@ -65,6 +65,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-liveness.ts',
     './run-number.ts',
     './run-outbox.ts',
+    './run-task-reference.ts',
   ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
@@ -140,6 +141,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-task-reference.ts', [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
+    '../project/projects.ts',
+    './run-task-linking.ts',
   ]),
   module('orchestrator/src/run/run-task-branch-resolution.ts', [
     '../branch/task-branch.ts',

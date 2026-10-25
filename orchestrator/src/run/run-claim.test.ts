@@ -12,7 +12,9 @@ import {
   recordMigrationDispatchRefusal,
   setMigrationDrain,
 } from '../database/migration-drain.ts'
+import { upsertProject } from '../project/projects.ts'
 import { claimRun } from './run-claim.ts'
+import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 test('a later claim records a UUID ruling identity and never resurrects a failed reservation', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
@@ -83,6 +85,19 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       carriedQuestionIds: [carriedQuestionRecordId],
       assertDispatchAllowed: () => {},
     }
+    await expect(
+      claimRun({
+        ...claimInput,
+        opts: { job: 'review-lens' },
+        stamp: 'unlinked-claim',
+        carriedQuestionIds: [],
+      }),
+    ).rejects.toThrow(RUN_REFERENCE_REFUSAL)
+
+    const projectRecordId = newRecordId()
+    upsertProject({ recordId: projectRecordId, name: 'claim-fixture', path: runsDir })
+    claimInput.runProjectName = 'claim-fixture'
+    claimInput.runProjectId = projectRecordId
     const claimed = await claimRun(claimInput)
 
     expect(claimed.claim.id).toBe(reserved)

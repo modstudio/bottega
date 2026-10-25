@@ -2,7 +2,9 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
+import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 test('a refusal after detach keeps the printed run queryable as failed', () => {
   const id = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
@@ -61,15 +63,18 @@ test('a post-claim startup failure records elapsed latency', () => {
   expect(row.latency_ms).toBeGreaterThanOrEqual(20)
 })
 
-test('a never-started failure is inserted and published atomically', () => {
+test('a never-started failure is inserted and published atomically', async () => {
   const id = newRecordId()
+  const projectId = newRecordId()
+  upsertProject({ recordId: projectId, name: 'never-started', path: '/tmp/caller' })
 
-  recordNeverStartedRunFailure({
+  await recordNeverStartedRunFailure({
     recordId: id,
     error: new Error('canon pack exceeded its budget'),
     job: 'understand',
     repo: null,
-    projectRecordId: null,
+    projectRecordId: projectId,
+    key: null,
     cwd: '/tmp/caller',
     promptSha: 'prompt-sha',
     specSha: 'spec-sha',
@@ -93,20 +98,15 @@ test('a never-started failure is inserted and published atomically', () => {
   })
 })
 
-test('a never-started failure insert rolls back when publication fails', () => {
-  const id = newRecordId()
-  db().exec(
-    `CREATE TEMP TRIGGER refuse_run_outbox BEFORE INSERT ON outbox
-     WHEN NEW.row_id = '${id}' BEGIN SELECT RAISE(ABORT, 'publication refused'); END`,
-  )
-
-  expect(() =>
+test('a never-started failure refuses without a task or registered project', async () => {
+  await expect(
     recordNeverStartedRunFailure({
-      recordId: id,
+      recordId: newRecordId(),
       error: 'canon pack could not compile',
       job: 'understand',
       repo: null,
       projectRecordId: null,
+      key: null,
       cwd: '/tmp/caller',
       promptSha: 'prompt-sha',
       specSha: 'spec-sha',
@@ -117,6 +117,36 @@ test('a never-started failure insert rolls back when publication fails', () => {
       startedByUserId: null,
       agentExplicit: 0,
     }),
-  ).toThrow('publication refused')
+  ).rejects.toThrow(RUN_REFERENCE_REFUSAL)
+})
+
+test('a never-started failure insert rolls back when publication fails', async () => {
+  const id = newRecordId()
+  const projectId = newRecordId()
+  upsertProject({ recordId: projectId, name: 'never-started-rollback', path: '/tmp/caller' })
+  db().exec(
+    `CREATE TEMP TRIGGER refuse_run_outbox BEFORE INSERT ON outbox
+     WHEN NEW.row_id = '${id}' BEGIN SELECT RAISE(ABORT, 'publication refused'); END`,
+  )
+
+  await expect(
+    recordNeverStartedRunFailure({
+      recordId: id,
+      error: 'canon pack could not compile',
+      job: 'understand',
+      repo: null,
+      projectRecordId: projectId,
+      key: null,
+      cwd: '/tmp/caller',
+      promptSha: 'prompt-sha',
+      specSha: 'spec-sha',
+      promptBytes: 12,
+      promptHead: 'inspect this',
+      sessionId: null,
+      mcp: 0,
+      startedByUserId: null,
+      agentExplicit: 0,
+    }),
+  ).rejects.toThrow('publication refused')
   expect(db().query('SELECT 1 FROM run WHERE record_id=?').get(id)).toBeNull()
 })

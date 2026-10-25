@@ -5,6 +5,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+import { assertRunHasTaskOrProject, resolveNewRunLinks } from './run-task-reference.ts'
 
 function enqueueFailedReservedRun(
   reserveId: string,
@@ -72,12 +73,13 @@ export function enforceRunStartupRefusal(
   throw new Error(refusalReason)
 }
 
-export function recordNeverStartedRunFailure(input: {
+export async function recordNeverStartedRunFailure(input: {
   recordId: string
   error: unknown
   job: string
   repo: string | null
   projectRecordId: string | null
+  key: string | null
   cwd: string
   promptSha: string
   specSha: string
@@ -87,7 +89,22 @@ export function recordNeverStartedRunFailure(input: {
   mcp: number
   startedByUserId: string | null
   agentExplicit: number
-}): string {
+}): Promise<string> {
+  const links = await resolveNewRunLinks({
+    recordId: input.recordId,
+    job: input.job,
+    projectName: input.repo,
+    projectRecordId: input.projectRecordId,
+    key: input.key,
+    cwd: input.cwd,
+    launchCwd: input.cwd,
+    probe: false,
+  })
+  assertRunHasTaskOrProject({
+    probe: false,
+    taskRecordId: links.taskRecordId,
+    projectRecordId: links.projectRecordId,
+  })
   const message = input.error instanceof Error ? input.error.message : String(input.error)
   const finishedAt = nowIso()
   const localMachineId = machineId()
@@ -96,10 +113,10 @@ export function recordNeverStartedRunFailure(input: {
     database
       .query(
         `INSERT INTO run
-         (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,
+         (record_id,number,started_at,agent,job,repo,project_record_id,task_record_id,cwd,prompt_sha,spec_sha,
           prompt_bytes,prompt_head,status,failure_kind,error,latency_ms,session_id,docs_injected,mcp,
           started_by_user_id,agent_explicit)
-         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?)`,
+         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?)`,
       )
       .run(
         input.recordId,
@@ -107,7 +124,8 @@ export function recordNeverStartedRunFailure(input: {
         finishedAt,
         input.job,
         input.repo,
-        input.projectRecordId,
+        links.projectRecordId,
+        links.taskRecordId,
         input.cwd,
         input.promptSha,
         input.specSha,

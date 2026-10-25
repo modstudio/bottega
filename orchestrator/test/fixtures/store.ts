@@ -22,6 +22,7 @@ export function addRun(o: {
   inputTree?: string
   headCommit?: string
   transport?: 'cli' | 'acp'
+  taskRecordId?: string
   promptBytes?: number
   promptSha?: string
   specSha?: string
@@ -31,8 +32,8 @@ export function addRun(o: {
     .query(
       `INSERT INTO run (record_id, number, started_at, agent, job, prompt_sha, spec_sha, prompt_bytes, prompt_head,
                       status, latency_ms, probe, failure_kind, parent_run_record_id, turn, session_id, stack,
-                      model, lens, repo, input_tree, head_commit, transport)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                      model, lens, repo, input_tree, head_commit, transport, task_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       recordId,
@@ -56,6 +57,7 @@ export function addRun(o: {
       o.inputTree ?? null,
       o.headCommit ?? null,
       o.transport ?? AGENTS[o.agent]?.defaultTransport ?? 'cli',
+      o.taskRecordId ?? newRecordId(),
     )
   return recordId
 }

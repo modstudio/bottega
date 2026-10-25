@@ -389,12 +389,13 @@ export async function run(opts: {
       let failedId = opts.reserveId
       if (failedId) recordRunStartupFailure(failedId, cause)
       else {
-        failedId = recordNeverStartedRunFailure({
+        failedId = await recordNeverStartedRunFailure({
           recordId: newRecordId(),
           error: cause,
           job: opts.job,
           repo: runProjectName,
           projectRecordId: runProjectId,
+          key: opts.key ?? null,
           cwd: callerCwd,
           promptSha: sha(originalPrompt),
           specSha: sha(originalPrompt),

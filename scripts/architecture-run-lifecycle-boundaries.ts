@@ -164,6 +164,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-number.ts',
       './run-resume-kind.ts',
       './run-startup-failure.ts',
+      './run-task-reference.ts',
       '../route/failover.ts',
     ],
     'Keep run-dispatch independent of transports, worktrees, routing, reviews, and the CLI.',
