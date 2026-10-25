@@ -9,7 +9,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
-import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,

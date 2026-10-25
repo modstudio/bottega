@@ -121,12 +121,22 @@ function parentPresent(
   return true
 }
 
-export function applyWorkflowCatalogueRow(
+function applyWorkflowCatalogueRow(
   local: Database,
   table: RecordWorkflowTable,
   item: Record<string, unknown>,
 ): void {
   applyWorkflowCatalogueRowWithResult(local, table, item)
+}
+
+export function applyWorkflowCatalogueRows(
+  local: Database,
+  rows: readonly (readonly [RecordWorkflowTable, Record<string, unknown>])[],
+): void {
+  writeTransaction(() => {
+    for (const [table, item] of rows) applyWorkflowCatalogueRow(local, table, item)
+    releaseSupersededVersions(local)
+  }, local)
 }
 
 function applyWorkflowCatalogueRowWithResult(

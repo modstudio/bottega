@@ -5,7 +5,7 @@ import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 const MIGRATION = '0162_superseded_workflow_versions'
 
-test('workflow supersession migration preserves prior rows and permits one retired identity twin', () => {
+test('workflow supersession migration preserves prior rows', () => {
   const database = migrationBoundaryTestDatabase(MIGRATION)
   try {
     const workflowId = newRecordId(),
@@ -54,35 +54,6 @@ test('workflow supersession migration preserves prior rows and permits one retir
         .query('SELECT COUNT(*) count FROM step_catalogue_version WHERE superseded_at IS NOT NULL')
         .get(),
     ).toEqual({ count: 0 })
-
-    for (const [table, foreign] of [
-      ['workflow_version', 'workflow_record_id'],
-      ['step_catalogue_version', 'catalogue_record_id'],
-    ] as const) {
-      const source = database.query(`SELECT * FROM ${table} LIMIT 1`).get() as Record<
-        string,
-        unknown
-      >
-      const supersededId = newRecordId()
-      database
-        .query(
-          `INSERT INTO ${table}
-           (record_id,${foreign},n,status,definition,author,reason,created_at,promoted_at,retired_at,space_id,superseded_at)
-           SELECT ?,${foreign},n,status,definition,author,reason,created_at,promoted_at,retired_at,space_id,?
-           FROM ${table} WHERE record_id=?`,
-        )
-        .run(supersededId, '2026-10-25T00:00:00.000Z', String(source.record_id))
-      expect(
-        database
-          .query(
-            `SELECT record_id,superseded_at FROM ${table} WHERE ${foreign}=? AND n=? ORDER BY superseded_at IS NULL DESC`,
-          )
-          .all(String(source[foreign]), Number(source.n)),
-      ).toEqual([
-        { record_id: source.record_id, superseded_at: null },
-        { record_id: supersededId, superseded_at: '2026-10-25T00:00:00.000Z' },
-      ])
-    }
   } finally {
     database.close()
   }

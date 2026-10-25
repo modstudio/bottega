@@ -5,7 +5,7 @@ import { sessionId } from '../database/db.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
-  applyWorkflowCatalogueRow,
+  applyWorkflowCatalogueRows,
   applyWorkflowWriteResponse,
 } from '../record/record-cache-workflow.ts'
 import { recordMemberships } from '../record/record-space.ts'
@@ -271,8 +271,12 @@ async function sharedPromotionState(slug: string | null, sourceSpace: string, d:
   if (!spaceIds.includes(sourceSpace)) spaceIds.unshift(sourceSpace)
   const snapshots = await Promise.all(spaceIds.map((spaceId) => hostedSnapshot(spaceId, slug)))
   for (const snapshot of snapshots)
-    for (const table of RECORD_WORKFLOW_TABLES)
-      for (const row of snapshot.rows.get(table)!) applyWorkflowCatalogueRow(d, table, row)
+    applyWorkflowCatalogueRows(
+      d,
+      RECORD_WORKFLOW_TABLES.flatMap((table) =>
+        snapshot.rows.get(table)!.map((row) => [table, row] as const),
+      ),
+    )
   return { spaceIds, snapshots }
 }
 

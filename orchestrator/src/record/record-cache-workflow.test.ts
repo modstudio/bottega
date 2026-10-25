@@ -10,13 +10,14 @@ import { applyMigrations, applyMigrationsBefore } from '../database/migrations.t
 import { upsertProject } from '../project/projects.ts'
 import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
+import { cursorComposition } from '../workflow/workflow-cursor.ts'
 import { selectWorkflowCursor } from '../workflow/workflow-cursor-selection.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
-import { showPinnedWorkflow } from '../workflow/workflow-version-selection.ts'
-import { productionWorkflows } from '../workflow/workflows.ts'
+import { composeWorkflow, productionWorkflows } from '../workflow/workflows.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { applyWorkflowCatalogueRow } from './record-cache-workflow.fixture.ts'
 import {
-  applyWorkflowCatalogueRow,
+  applyWorkflowCatalogueRows,
   applyWorkflowWriteResponse,
   pullWorkflowCatalogue,
 } from './record-cache-workflow.ts'
@@ -79,6 +80,21 @@ function pinCursor(
     .get(cursorId)!
   return { number: row.number, recordId: cursorId }
 }
+
+test('catalogue snapshot application rolls back all rows when one row fails', () => {
+  const local = db(),
+    space = newRecordId(),
+    workflow = identity(space, 'atomic-snapshot')
+  expect(() =>
+    applyWorkflowCatalogueRows(local, [
+      ['workflow', workflow],
+      ['workflow_version', version(space, newRecordId(), {})],
+    ]),
+  ).toThrow()
+  expect(
+    local.query('SELECT record_id FROM workflow WHERE record_id=?').get(workflow.id),
+  ).toBeNull()
+})
 
 test('workflow pull orders six durable streams, resumes pages, and holds an unresolved child', async () => {
   const local = db(),
@@ -239,13 +255,37 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
     space = newRecordId(),
     project = `replace-seed-${space}`,
     catalogue = identity(space, 'shared'),
-    catalogueVersion = version(space, catalogue.id, productionStepCatalogue(local).definition),
+    baseCatalogue = productionStepCatalogue(local).definition,
+    pinnedStep = {
+      ...baseCatalogue.steps.find((step) => step.needs.length === 0)!,
+      slug: 'pinned-only',
+      title: 'Pinned catalogue step',
+      body: 'This step exists only in the pinned catalogue.',
+    },
+    catalogueVersion = version(space, catalogue.id, {
+      ...baseCatalogue,
+      steps: [...baseCatalogue.steps, pinnedStep],
+    }),
     workflow = identity(space, 'fix-defect'),
     baseDefinition = productionWorkflows(local, null).find(
       (row) => row.slug === 'fix-defect',
     )!.definition,
+    pinnedDefinition = {
+      ...baseDefinition,
+      title: 'Pinned generation one',
+      modes: baseDefinition.modes.map((mode) =>
+        mode.slug === 'default' ? { ...mode, steps: ['pinned-only'] } : mode,
+      ),
+    },
+    replacementStep = baseCatalogue.steps.find((step) => step.needs.length === 0)!,
+    replacementDefinition = {
+      ...baseDefinition,
+      modes: baseDefinition.modes.map((mode) =>
+        mode.slug === 'default' ? { ...mode, steps: [replacementStep.slug] } : mode,
+      ),
+    },
     pinned = {
-      ...version(space, workflow.id, { ...baseDefinition, title: 'Pinned generation one' }),
+      ...version(space, workflow.id, pinnedDefinition),
       status: 'retired' as const,
       promotedAt: null,
       retiredAt: at,
@@ -257,17 +297,26 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
     },
     pinnedEvent = event(space, pinned.id),
     unpinnedEvent = event(space, unpinned.id),
+    replacementCatalogueIdentity = {
+      ...catalogue,
+      generation: 2,
+      updatedAt: '2026-10-25T01:00:00.000Z',
+    },
+    replacementCatalogueVersion = {
+      ...version(space, catalogue.id, baseCatalogue),
+      id: newRecordId(),
+    },
     replacementIdentity = { ...workflow, generation: 2, updatedAt: '2026-10-25T01:00:00.000Z' },
     replacements = [
       {
-        ...version(space, workflow.id, { ...baseDefinition, title: 'New retired' }),
+        ...version(space, workflow.id, { ...replacementDefinition, title: 'New retired' }),
         id: newRecordId(),
         status: 'retired' as const,
         promotedAt: null,
         retiredAt: at,
       },
       {
-        ...version(space, workflow.id, { ...baseDefinition, title: 'New production' }),
+        ...version(space, workflow.id, { ...replacementDefinition, title: 'New production' }),
         id: newRecordId(),
         n: 2,
       },
@@ -280,12 +329,30 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
   applyWorkflowCatalogueRow(local, 'workflow_event', pinnedEvent)
   applyWorkflowCatalogueRow(local, 'workflow_event', unpinnedEvent)
   const cursor = pinCursor(local, pinned.id, catalogueVersion.id, project)
-  upsertProject({ recordId: newRecordId(), name: project, path: `/tmp/${project}` })
+  local
+    .query('UPDATE workflow_cursor SET args=? WHERE record_id=?')
+    .run(JSON.stringify({ key: 'DEV-1728' }), cursor.recordId)
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/tmp/${project}`,
+    stack: 'bun',
+    settings: { docs: { protocol: 'orch-docs' } },
+  })
   rememberProjectSpace(local, project, space)
 
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     async listWorkflowCatalogue(table) {
+      if (table === 'step_catalogue')
+        return { items: [replacementCatalogueIdentity], nextCursor: null }
+      if (table === 'step_catalogue_version')
+        return { items: [replacementCatalogueVersion], nextCursor: null }
+      if (table === 'step_catalogue_event')
+        return {
+          items: [event(space, replacementCatalogueVersion.id)],
+          nextCursor: null,
+        }
       if (table === 'workflow') return { items: [replacementIdentity], nextCursor: null }
       if (table === 'workflow_version') return { items: replacements, nextCursor: null }
       if (table === 'workflow_event')
@@ -295,7 +362,7 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
   })
 
   expect(await pullWorkflowCatalogue(local, [space])).toEqual({
-    count: 5,
+    count: 8,
     completedSpaces: new Set([space]),
   })
   expect(
@@ -312,9 +379,11 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
     superseded_at: expect.any(String),
   })
   const selectedCursor = selectWorkflowCursor({}, cursor.number, null, local)!
-  expect(
-    showPinnedWorkflow(selectedCursor.workflow_version_record_id, local).definition.title,
-  ).toBe('Pinned generation one')
+  const pinnedComposition = cursorComposition(selectedCursor, local)
+  expect(pinnedComposition.workflow.title).toBe('Pinned generation one')
+  expect(pinnedComposition.steps.map((step) => [step.slug, step.title])).toEqual([
+    ['pinned-only', 'Pinned catalogue step'],
+  ])
   expect(
     local.query('SELECT record_id FROM workflow_version WHERE record_id=?').get(unpinned.id),
   ).toBeNull()
@@ -333,6 +402,15 @@ test('replace-seed preserves a pinned workflow version and composes the new gene
       (row) => row.slug === 'fix-defect',
     )?.definition.title,
   ).toBe('New production')
+  const freshComposition = composeWorkflow(
+    'fix-defect',
+    project,
+    'default',
+    { key: 'DEV-1728' },
+    local,
+  )
+  expect(freshComposition.workflow.title).toBe('New production')
+  expect(freshComposition.steps.some((step) => step.slug === 'pinned-only')).toBeFalse()
 })
 
 test.each(catalogueKinds)(

@@ -455,6 +455,21 @@ export function selectedStepCatalogue(
     definition: JSON.parse(row.definition) as StepCatalogueDefinition,
   }) as ReturnType<typeof showStepCatalogue>
 }
+export function showPinnedStepCatalogue(
+  recordId: string,
+  d: Database,
+): ReturnType<typeof showStepCatalogue> {
+  const row = d
+    .query(
+      'SELECT v.*,i.slug FROM step_catalogue_version v JOIN step_catalogue i ON i.record_id=v.catalogue_record_id WHERE v.record_id=?',
+    )
+    .get(recordId) as ({ definition: string } & Record<string, unknown>) | null
+  if (!row) throw new Error(`pinned step catalogue version ${recordId} does not exist`)
+  return compatibleCatalogue({
+    ...row,
+    definition: JSON.parse(row.definition) as StepCatalogueDefinition,
+  }) as ReturnType<typeof showStepCatalogue>
+}
 export const setStepCatalogue = (
   definition: unknown,
   reason: string | undefined,
