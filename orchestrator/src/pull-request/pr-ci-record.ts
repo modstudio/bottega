@@ -6,6 +6,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 import { currentProjectRepository, type Project } from '../project/projects.ts'
 import { enqueuePullRequestCi } from '../record/landing-outbox.ts'
+import { githubApi, githubArray, githubWorkflowRuns } from './github-actions.ts'
+import { isPullRequestMergeGroupRun } from './merge-group-run.ts'
 
 export type PullRequestCiAttempt = {
   workflowRunId: number
@@ -79,51 +81,12 @@ export type PullRequestCiFetchAdapter = {
   jobs(cwd: string, repository: string, runId: number, attempt: number): unknown[]
 }
 
-type ProcessResult = { exitCode: number; stdout: string; stderr: string }
-function run(cwd: string, argv: string[]): ProcessResult {
-  const result = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
-  return {
-    exitCode: result.exitCode,
-    stdout: result.stdout.toString().trim(),
-    stderr: result.stderr.toString().trim(),
-  }
-}
-
-function api(cwd: string, path: string, fields: readonly string[] = []): unknown {
-  const result = run(cwd, [
-    'gh',
-    'api',
-    '--method',
-    'GET',
-    path,
-    ...fields.flatMap((field) => ['-f', field]),
-  ])
-  if (result.exitCode !== 0) {
-    throw new Error(`gh api ${path} failed: ${result.stderr || `exit ${result.exitCode}`}`)
-  }
-  try {
-    return JSON.parse(result.stdout)
-  } catch (cause) {
-    throw new Error(
-      `gh api ${path} returned invalid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
-  }
-}
-
-function array(value: unknown, field?: string): unknown[] {
-  const selected =
-    field && value && typeof value === 'object' ? (value as Record<string, unknown>)[field] : value
-  if (!Array.isArray(selected))
-    throw new Error(`GitHub API returned an unexpected ${field ?? 'array'} shape`)
-  return selected
-}
-
 const cliPullRequestCiFetchAdapter: PullRequestCiFetchAdapter = {
   pullRequest(cwd, repository, target) {
-    const value = api(cwd, `repos/${repository}/pulls/${encodeURIComponent(target)}`) as Record<
-      string,
-      unknown
-    >
+    const value = githubApi(
+      cwd,
+      `repos/${repository}/pulls/${encodeURIComponent(target)}`,
+    ) as Record<string, unknown>
     const head = value.head as Record<string, unknown> | undefined
     const base = value.base as Record<string, unknown> | undefined
     if (
@@ -146,26 +109,16 @@ const cliPullRequestCiFetchAdapter: PullRequestCiFetchAdapter = {
     }
   },
   workflowRuns(cwd, repository, query) {
-    const values: unknown[] = []
-    for (let page = 1; ; page += 1) {
-      const fields = ['per_page=100', `page=${page}`]
-      if (query.branch) fields.push(`branch=${query.branch}`)
-      if (query.event) fields.push(`event=${query.event}`)
-      fields.push(`created=${query.created}`)
-      const batch = array(api(cwd, `repos/${repository}/actions/runs`, fields), 'workflow_runs')
-      values.push(...batch)
-      if (batch.length < 100) break
-    }
-    return values
+    return githubWorkflowRuns(cwd, repository, query)
   },
   attempt(cwd, repository, runId, attempt) {
-    return api(cwd, `repos/${repository}/actions/runs/${runId}/attempts/${attempt}`)
+    return githubApi(cwd, `repos/${repository}/actions/runs/${runId}/attempts/${attempt}`)
   },
   jobs(cwd, repository, runId, attempt) {
     const values: unknown[] = []
     for (let page = 1; ; page += 1) {
-      const batch = array(
-        api(cwd, `repos/${repository}/actions/runs/${runId}/attempts/${attempt}/jobs`, [
+      const batch = githubArray(
+        githubApi(cwd, `repos/${repository}/actions/runs/${runId}/attempts/${attempt}/jobs`, [
           'per_page=100',
           `page=${page}`,
         ]),
@@ -235,7 +188,6 @@ export function fetchPullRequestCiAttempts(input: {
     )
   }
   const created = `>=${pullRequest.createdAt}`
-  const queuePrefix = `gh-readonly-queue/${pullRequest.baseBranch}/pr-${pullRequest.number}-`
   const earliest = Date.parse(pullRequest.createdAt)
   const latest = Date.parse(pullRequest.mergedAt) + CI_MERGE_MARGIN_MS
   if (!Number.isFinite(earliest) || !Number.isFinite(latest)) {
@@ -255,7 +207,7 @@ export function fetchPullRequestCiAttempts(input: {
   const queueRuns = adapter
     .workflowRuns(input.cwd, input.repository, { event: 'merge_group', created })
     .filter(inWindow)
-    .filter((raw) => text(raw.head_branch, 'workflow head branch').startsWith(queuePrefix))
+    .filter((raw) => isPullRequestMergeGroupRun(raw, pullRequest.baseBranch, pullRequest.number))
   const runs = [...pullRequestRuns, ...queueRuns]
   const attempts: PullRequestCiAttempt[] = []
   const seen = new Set<number>()

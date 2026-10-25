@@ -72,6 +72,7 @@ function adapter(
   } = {},
 ): PullRequestMergeAdapter {
   return {
+    repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
     checks: () => input.checks ?? [],
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
@@ -98,8 +99,11 @@ function adapter(
         pullRequestState: 'MERGED',
         mergeCommit: 'merge-commit',
         entryState: null,
+        enqueuedAt: null,
       })),
     enqueue: () => {},
+    requeue: () => {},
+    failedMergeGroupRun: () => null,
     now: Date.now,
     wait: () => input.wait?.(),
     ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
@@ -366,8 +370,18 @@ test('an additive store advance during the merge-queue wait lets landing recordi
       queueState: () => {
         queuePolls++
         return queuePolls === 1
-          ? { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' }
-          : { pullRequestState: 'MERGED', mergeCommit: 'merge-commit', entryState: null }
+          ? {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: 'QUEUED',
+              enqueuedAt: '2026-10-24T10:00:00Z',
+            }
+          : {
+              pullRequestState: 'MERGED',
+              mergeCommit: 'merge-commit',
+              entryState: null,
+              enqueuedAt: null,
+            }
       },
       wait: () => migrator.exec(`PRAGMA user_version = ${next}`),
       recordLandings: () => {
@@ -403,8 +417,18 @@ test('a non-additive store advance during the merge-queue wait refuses with its 
       queueState: () => {
         queuePolls++
         return queuePolls === 1
-          ? { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' }
-          : { pullRequestState: 'MERGED', mergeCommit: 'merge-commit', entryState: null }
+          ? {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: 'QUEUED',
+              enqueuedAt: '2026-10-24T10:00:00Z',
+            }
+          : {
+              pullRequestState: 'MERGED',
+              mergeCommit: 'merge-commit',
+              entryState: null,
+              enqueuedAt: null,
+            }
       },
       wait: () => migrator.exec(`PRAGMA user_version = ${next}`),
       recordLandings: () => {
