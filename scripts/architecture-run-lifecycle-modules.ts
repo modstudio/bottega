@@ -107,6 +107,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './resume-tree.ts',
     '../sandbox/sandbox.ts',
     '../branch/task-branch.ts',
+    '../worktree/trunk-base-choice.ts',
     '../worktree/worktree.ts',
     '../worktree/worktree-caller.ts',
     '../worktree/worktree-mcp.ts',

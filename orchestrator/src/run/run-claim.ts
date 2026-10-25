@@ -42,12 +42,12 @@ import { attributedLaunchKey } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
   assertCallerAncestry,
   type CarriedWorkingState,
   carryWorkingState,
-  resolveReadOnlyBase,
   shouldAssertCallerAncestry,
 } from '../worktree/worktree-caller.ts'
 import {
@@ -702,7 +702,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               reviewTarget?.commit ??
               opts.base ??
               (writesJob && !resolvedTaskBranch
-                ? resolveReadOnlyBase(callerCwd, 'HEAD')
+                ? writerTreeBaseRef(creationTool, callerCwd, repoRoot, Boolean(opts.carry))
                 : undefined),
             record: recordWorktree,
             detached: Boolean(reviewTarget),

@@ -61,6 +61,22 @@ export function assertCallerAncestry(cwd: string, worktree: Worktree): void {
 export type CallerDrift = { callerHead: string; base: string; baseRef: string }
 
 /**
+ * The landing branch's upstream ref, as it stands locally and never fetched.
+ *
+ * ONE READER, because two callers ask this one question: `callerDrift` previews
+ * the floor a project tool would choose, and the trunk base choice compares the
+ * caller's trunk with it. A branch that configures no upstream answers
+ * `origin/<landingBranch>`, and that fallback belongs here where both paths get
+ * it.
+ */
+export function landingUpstreamRef(directory: string, landingBranch: string): string {
+  return (
+    gitOk(['rev-parse', '--abbrev-ref', `${landingBranch}@{upstream}`], directory) ??
+    `origin/${landingBranch}`
+  )
+}
+
+/**
  * Detect the ancestry mismatch before a repository run is dispatched.
  *
  * Project-owned worktree creation may choose a fresher floor than the caller's
@@ -79,8 +95,7 @@ export function callerDrift(cwd: string, baseRef?: string): CallerDrift | null {
   if (!ref && tool.create) {
     const trunk = project.settings.trunk ?? gitOk(['symbolic-ref', '--short', 'HEAD'], project.path)
     if (!trunk) return null
-    ref =
-      gitOk(['rev-parse', '--abbrev-ref', `${trunk}@{upstream}`], project.path) ?? `origin/${trunk}`
+    ref = landingUpstreamRef(project.path, trunk)
   }
   if (!ref) return null
 

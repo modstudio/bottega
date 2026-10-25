@@ -153,10 +153,23 @@ export function changesInIndex(
   if (!mergeBase && configuredTrunk) {
     throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
   }
+  // Never compare below the run's recorded base. A tree cut from the landing
+  // branch's upstream while the local trunk branch still points at the caller's
+  // HEAD has a merge-base with trunk strictly below the base it was cut from,
+  // so diffing there would attribute the remote's already-landed commits to
+  // this run. A merge-base at or above the recorded base is one the run's own
+  // base is already an ancestor of, and is the truthful lower bound.
+  // An explicit lower bound or a since-base request keeps its own meaning.
+  const mergeBaseBelowBase =
+    lowerBound === undefined &&
+    !sinceBase &&
+    mergeBase !== null &&
+    w.base !== '' &&
+    runOk(['merge-base', '--is-ancestor', w.base, mergeBase]) === null
   // Unregistered scratch repositories predate the register and do not all call
   // their initial branch `main`. Their only truthful fallback is the recorded
   // base; registered projects must resolve their declared trunk above.
-  const since = mergeBase ?? w.base
+  const since = mergeBaseBelowBase ? w.base : (mergeBase ?? w.base)
   // Raw: this is a patch, and `git apply` counts its bytes.
   const diff = runRaw(['diff', '--cached', since])
   const names = runOk(['diff', '--cached', '--name-only', since]) ?? ''
