@@ -27,7 +27,7 @@ test('a tool error keeps its structured content', () => {
 test('a probe keeps the child diagnostic but withholds a secret-shaped stderr line', () => {
   const failure = launchFailure(
     new Error('Connection closed'),
-    'starting starship upstream\nBOTTEGA_RUN_TOKEN=abc123\nlistening on the socket',
+    'starting starship upstream\nconnect failed with token=abc123\nlistening on the socket',
   )
 
   // The tail reaches a refusal, the stored run record and the Codex setup

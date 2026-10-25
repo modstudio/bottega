@@ -5,11 +5,7 @@
  * silently. Must not know run state, argv, routes, or credentials.
  */
 import { join } from 'node:path'
-import {
-  MCP_SERVER_NAME,
-  PLATFORM_SLUG,
-  WORKER_MCP_SERVER_NAME,
-} from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { listMcpToolPages, type McpToolListLaunch } from '../mcp/mcp-tool-list.ts'
 import type { ProjectMcpSelection } from './project-mcp-scope.ts'

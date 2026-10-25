@@ -39,12 +39,12 @@ test('a required server the selection did not hand over is refused, and named', 
   }
 
   // A probe list derived from the selection cannot see a server the selection
-  // never had: this is the DEV-1586 shape, where the project's primary was
-  // absent from .mcp.json and the run reviewed without its required server.
+  // never had: the project's primary was absent from .mcp.json and the run
+  // would review without its required server.
   const refusal = requiredMcpProbeRefusal(facts)!
   expect(refusal).toContain('starship: not configured in the tree')
   expect(refusal).toContain('/opt/starship/.mcp.json')
-}
+})
 
 test('a withheld required server says why the run did not get it', () => {
   const refusal = requiredMcpProbeRefusal({

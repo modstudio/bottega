@@ -213,7 +213,7 @@ test('--mcp require refuses a required server the selection never handed over', 
   )
 
   // The default required name is the project's own; no probe can see it when
-  // the selection never had it, which is the DEV-1586 hole.
+  // the selection never had it, so the gate itself must name the hole.
   expect(error).toBeInstanceOf(RequiredMcpProbeRefusalError)
   expect(error?.message).toContain('starship: not configured in the tree')
   expect(carriedRefusalFailure(error)?.failureKind).toBe('mcp_unverified')
