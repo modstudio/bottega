@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
@@ -63,10 +63,21 @@ test('setup apply reaches its state-file action without creating the destination
   try {
     const program = new Command().exitOverride()
     register(program)
-    await expect(
-      program.parseAsync(['node', PLATFORM_SLUG, 'setup', 'apply', '--yes', '--json']),
-    ).rejects.toThrow('refusing to migrate the store from a linked-worktree binary')
-    expect(existsSync(current)).toBeFalse()
+    const refusal = await program
+      .parseAsync(['node', PLATFORM_SLUG, 'setup', 'apply', '--yes', '--json'])
+      .then(
+        () => null,
+        (error: unknown) => String(error),
+      )
+    // A linked-worktree binary refuses before the move; a main-checkout binary performs it.
+    // Either way the destination is never created empty ahead of the state-file action.
+    if (refusal === null) {
+      expect(readFileSync(current, 'utf8')).toBe('legacy')
+      expect(existsSync(legacy)).toBeFalse()
+    } else {
+      expect(refusal).toContain('refusing to migrate the store from a linked-worktree binary')
+      expect(existsSync(current)).toBeFalse()
+    }
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
