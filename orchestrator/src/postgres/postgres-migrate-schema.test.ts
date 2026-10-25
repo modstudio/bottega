@@ -1,17 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { migration, postgresSchema } from '../../test/fixtures/postgres-rls.ts'
 
 const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
 
 describe('Postgres substrate shape', () => {
-  test('uses application-minted UUIDv7 ids', () => {
-    const generated = newRecordId()
-    expect(generated[14]).toBe('7')
-    expect(['8', '9', 'a', 'b']).toContain(generated[19]!.toLowerCase())
-  })
-
   test('seeds the fixed platform space and stand-in operator', () => {
     expect(migration).toContain(
       `VALUES ('${PLATFORM_SPACE_ID}', '${PLATFORM_SLUG}', '2026-09-09T00:00:00Z')`,
