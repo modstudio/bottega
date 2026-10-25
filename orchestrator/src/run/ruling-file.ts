@@ -145,7 +145,6 @@ function refusal(
   row: QuestionRow,
   authority: RootAuthority,
   decision: ReturnType<typeof fileRulingDecision>,
-  scope: string,
 ): string | null {
   if (decision.kind === 'allow') return null
   if (decision.code === 'unanswered') {
@@ -184,7 +183,7 @@ function refusal(
     )
   }
   if (decision.code === 'owner-scope') {
-    return `the owner path files rulings only at scope project; scope ${scope} is filed by the operator: pass --from-operator`
+    return `the owner path files rulings only at scope project; scope ${decision.scope} is filed by the operator: pass --from-operator`
   }
   return ownerRefusal(row, authority, decision)
 }
@@ -386,7 +385,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
       chainLastActivityAt: workflowActivity,
     })
   const decision = decideFiling(row, questionAuthority, input, requested)
-  const denied = refusal(row, questionAuthority, decision, input.scope ?? 'project')
+  const denied = refusal(row, questionAuthority, decision)
   if (denied) throw new Error(denied)
   if (decision.kind === 'allow' && decision.operator && input.channel === 'ui' && authority)
     authority = { ...authority, actor: 'operator:ui' }

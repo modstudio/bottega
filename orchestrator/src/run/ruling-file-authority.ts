@@ -24,6 +24,7 @@ export type FileRulingDecision =
         | 'owner-scope'
       owner?: string
       actor?: string
+      scope?: string
     }
 
 /** Refuse writing canon rows through --as doc; same shape as decideMcpDocWrite. */
@@ -43,6 +44,7 @@ function ownerAddress(input: {
   const subject = input.subject ?? (input.scope === 'project' ? input.runProject : undefined)
   if (input.scope === 'project' && subject === input.runProject) return null
   if (subject !== undefined && subject !== input.runProject) return 'foreign-project'
+  // scope 'settings' never reaches here: the edge validator refuses it for everyone before ownership is consulted.
   return 'owner-scope'
 }
 
@@ -69,7 +71,8 @@ export function fileRulingDecision(
     return { kind: 'refuse', code: 'overturned-without-replacement' }
   }
   if (input.filedAs !== null) return { kind: 'refuse', code: 'already-filed' }
-  if (decideCanonFiling(input.requested, input.scope ?? 'project')) {
+  const scope = input.scope ?? 'project'
+  if (decideCanonFiling(input.requested, scope)) {
     return { kind: 'refuse', code: 'canon-direct' }
   }
   const authority =
@@ -104,11 +107,11 @@ export function fileRulingDecision(
   const foreign = ownerAddress({
     operator,
     requested: input.requested,
-    scope: input.scope ?? 'project',
+    scope,
     subject: input.subject,
     runProject: input.runProject,
   })
-  if (foreign) return { kind: 'refuse', code: foreign }
+  if (foreign) return { kind: 'refuse', code: foreign, scope }
   return { kind: 'allow', operator }
 }
 
