@@ -1,5 +1,7 @@
 import type { SyncedSources } from './identity-inventory.ts'
 
+const declaredKeys = new Set<string>()
+
 const sourceEntries = (
   store: 'orchestrator' | 'hub',
   client: string,
@@ -7,10 +9,15 @@ const sourceEntries = (
   sources: readonly string[],
   reason: string,
   methods: readonly string[],
-) =>
-  Object.fromEntries(
-    methods.map((method) => [`${store}.${client}.${method}`, { store, kind, sources, reason }]),
-  )
+) => {
+  const entries = methods.map((method) => {
+    const key = `${store}.${client}.${method}`
+    if (declaredKeys.has(key)) throw new Error(`duplicate synced source declaration: ${key}`)
+    declaredKeys.add(key)
+    return [key, { store, kind, sources, reason }] as const
+  })
+  return Object.fromEntries(entries)
+}
 
 const readEntries = (store: 'orchestrator' | 'hub', client: string, methods: readonly string[]) =>
   sourceEntries(store, client, 'read', [], 'read method; no local table', methods)
@@ -114,12 +121,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'retireProjectSubject',
     ],
   ),
-  ...writeEntries(
-    'orchestrator',
-    'recordApiClient',
-    ['lens'],
-    ['ensureSpaceBuiltIns', 'upsertLens'],
-  ),
+  ...writeEntries('orchestrator', 'recordApiClient', ['lens'], ['upsertLens']),
   ...writeEntries(
     'orchestrator',
     'recordApiClient',
@@ -181,7 +183,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'recordApiClient',
     [],
     ['putSnapshot'],
-    'derived snapshot payload',
+    'no local table; snapshot payload comes from the caller',
   ),
   ...writeEntries(
     'orchestrator',
@@ -385,12 +387,48 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     ['hostedCreateReportSubscription', 'hostedUnsubscribeReportSubscription'],
   ),
   ...writeEntries('hub', 'reportClient', ['send'], ['hostedMirrorReports']),
-  ...sourceEntries('orchestrator', 'snapshot', 'snapshot', [], 'derived snapshot view', [
-    'state',
-    'blockers',
-    'health',
-    'jobs',
-  ]),
+  ...sourceEntries(
+    'orchestrator',
+    'snapshot',
+    'snapshot',
+    [
+      'agent',
+      'metric',
+      'question',
+      'review',
+      'review_finding',
+      'review_lens',
+      'run',
+      'score',
+      'spawn',
+    ],
+    'state() builds the payload from these local tables',
+    ['state'],
+  ),
+  ...sourceEntries(
+    'orchestrator',
+    'snapshot',
+    'snapshot',
+    ['blocker', 'run'],
+    'blockersPayload() builds the payload from these local tables',
+    ['blockers'],
+  ),
+  ...sourceEntries(
+    'orchestrator',
+    'snapshot',
+    'snapshot',
+    ['agent', 'contention', 'landing', 'run', 'run_mutation_audit', 'test_flake'],
+    'healthPayload() builds the payload from these local tables',
+    ['health'],
+  ),
+  ...sourceEntries(
+    'orchestrator',
+    'snapshot',
+    'snapshot',
+    [],
+    'jobsPayload() is built from the static JOBS catalogue',
+    ['jobs'],
+  ),
   ...sourceEntries(
     'orchestrator',
     'snapshot',

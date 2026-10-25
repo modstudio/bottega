@@ -316,10 +316,16 @@ export function syncedSourceRefusals(
           `${method}: synced source declaration is missing; remedy: declare it with its source tables`,
         ],
   )
+  const methods = new Set(methodInventory)
+  const stale = Object.keys(declarations).flatMap((method) =>
+    methods.has(method)
+      ? []
+      : [`${method}: synced source declaration is stale; remedy: remove the stale declaration`],
+  )
   const declared = Object.entries(declarations).flatMap(([method, declaration]) =>
     syncedDeclarationRefusals(method, declaration, infrastructure, schemas),
   )
-  return [...new Set([...missing, ...declared])].sort()
+  return [...new Set([...missing, ...stale, ...declared])].sort()
 }
 
 function syncedDeclarationRefusals(
@@ -330,9 +336,10 @@ function syncedDeclarationRefusals(
 ): string[] {
   if (declaration.kind === 'read') return []
   const empty =
-    declaration.sources.length === 0 && !/\b(?:no local table|derived)\b/i.test(declaration.reason)
+    declaration.sources.length === 0 &&
+    !/\b(?:no local table|built from)\b/i.test(declaration.reason)
       ? [
-          `${method}: an empty synced source declaration needs a reason saying no local table or derived; remedy: declare it with its source tables`,
+          `${method}: an empty synced source declaration needs a reason saying what it is built from; remedy: declare it with its source tables`,
         ]
       : []
   return [
