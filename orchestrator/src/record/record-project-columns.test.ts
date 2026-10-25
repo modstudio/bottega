@@ -8,6 +8,11 @@ import {
 } from './record-project-columns.ts'
 
 const samples = {
+  agentKeys: {
+    setting: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
+    column: 'agentKeys',
+    value: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
+  },
   visibility: { setting: 'public', column: 'visibility', value: 'public' },
   color: { setting: '#fff', column: 'color', value: '#fff' },
   colorDark: { setting: '#000', column: 'colorDark', value: '#000' },

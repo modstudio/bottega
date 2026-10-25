@@ -373,6 +373,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       '../../../shared/brand.ts',
       '../agent/agent-auth.ts',
+      '../agent/endpoint-api-key.ts',
       '../agent/agent-registry.ts',
       '../agent/agents.ts',
       '../score/agreement.ts',

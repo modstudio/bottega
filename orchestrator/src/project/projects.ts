@@ -57,6 +57,7 @@ import {
   placeholders,
   validateCreate,
 } from '../worktree/worktree-template.ts'
+import { projectAgentKeyProblems } from './project-agent-keys.ts'
 import { focusedTestsProblems } from './project-focused-tests.ts'
 import {
   requireHostedProjectPush,
@@ -706,6 +707,7 @@ export function validateProjectSettings(
     ...visibilityProblems(settings.visibility),
     ...focusedTestsProblems(settings.focusedTests),
     ...gateInputProblems(settings.gateInput),
+    ...projectAgentKeyProblems(settings.agentKeys),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
@@ -715,24 +717,6 @@ export function validateProjectSettings(
     problems.push('workerMcpServers must be an array of non-empty strings')
   if (settings.requireCleanMain !== undefined && typeof settings.requireCleanMain !== 'boolean') {
     problems.push('requireCleanMain must be a boolean')
-  }
-  if (
-    settings.agentKeys !== undefined &&
-    (settings.agentKeys === null ||
-      typeof settings.agentKeys !== 'object' ||
-      Array.isArray(settings.agentKeys) ||
-      Object.entries(settings.agentKeys).some(
-        ([agentSecret, projectSecret]) =>
-          !agentSecret.trim() ||
-          typeof projectSecret !== 'string' ||
-          !projectSecret.trim() ||
-          projectSecret !== projectSecret.trim(),
-      ) ||
-      Object.keys(settings.agentKeys).some((agentSecret) => agentSecret !== agentSecret.trim()))
-  ) {
-    problems.push(
-      'agentKeys must be an object mapping non-empty trimmed agent secret names to non-empty trimmed project secret names',
-    )
   }
   if (
     settings.mcpServer !== undefined &&

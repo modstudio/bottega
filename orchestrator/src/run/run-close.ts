@@ -6,13 +6,13 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { EffectiveEndpointApiKey } from '../agent/endpoint-api-key.ts'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import {
   billingHoldForFailure,
   type classify,
+  type EffectiveBillingKey,
   FAILOVER_REFUSAL_MARKER,
   FAILS_OVER,
   NEEDS_HUMAN,
@@ -21,7 +21,7 @@ import {
 } from '../failure/failure.ts'
 import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
-import { resolveBranchRef, stackAt } from '../project/projects.ts'
+import { projectAt, resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import {
@@ -81,8 +81,7 @@ type SuccessorOptions = {
 export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
-  endpointKey: EffectiveEndpointApiKey
-  projectName: string | null
+  endpointKey: EffectiveBillingKey
   name: string
   opts: CloseOptions
   claim: { id: string; number: number }
@@ -223,7 +222,7 @@ function notifyFailureRequiringHuman(input: {
   job: string
   idleUnkillable: boolean
   runId: string
-  endpointKey: EffectiveEndpointApiKey
+  endpointKey: EffectiveBillingKey
   projectName: string | null
 }): void {
   if (input.failureKind && NEEDS_HUMAN.includes(input.failureKind)) {
@@ -291,7 +290,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     idleUnkillable,
     runId: claim.id,
     endpointKey: input.endpointKey,
-    projectName: input.projectName,
+    projectName: projectAt(callerCwd)?.name ?? null,
   })
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Exclude this coordinator while terminating the vendor so it can route the successor.

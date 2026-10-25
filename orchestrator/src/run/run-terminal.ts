@@ -9,7 +9,6 @@ import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
-import type { EffectiveEndpointApiKey } from '../agent/endpoint-api-key.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutRemovalAttribution,
@@ -24,7 +23,12 @@ import {
 import type { ReaderReply, ReviewReply, realQuestions, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
-import { billingHoldForFailure, type classify, FAILS_OVER } from '../failure/failure.ts'
+import {
+  billingHoldForFailure,
+  type classify,
+  type EffectiveBillingKey,
+  FAILS_OVER,
+} from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -95,7 +99,7 @@ export function writeTerminalOperationalState(
   failureKind: ReturnType<typeof classify> | null,
   agent: string,
   billingHoldDetail?: string,
-  endpointKey: EffectiveEndpointApiKey = { secretName: null, source: 'agent' },
+  endpointKey: EffectiveBillingKey = { secretName: null, source: 'agent' },
 ): void {
   const hold = billingHoldForFailure(failureKind, agent, billingHoldDetail, endpointKey.source)
   if (hold) {
@@ -229,7 +233,7 @@ export type TerminalInput = {
   launchKey: string | null
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
-  endpointKey: EffectiveEndpointApiKey
+  endpointKey: EffectiveBillingKey
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
   writingAcp: boolean

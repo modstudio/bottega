@@ -16,10 +16,9 @@ type EndpointKeyRow = {
   apiKeySecret?: string | null
 }
 
-export type EndpointApiKeySource = 'agent' | 'project'
 export type EffectiveEndpointApiKey = {
   secretName: string | null
-  source: EndpointApiKeySource
+  source: 'agent' | 'project'
 }
 
 /** Pure policy: a project mapping replaces only the matching agent secret reference. */
@@ -33,6 +32,28 @@ export function decideEffectiveEndpointApiKey(
   return projectSecret
     ? { secretName: projectSecret, source: 'project' }
     : { secretName: agentSecret, source: 'agent' }
+}
+
+/** Prepare one run's endpoint row and project-aware refusal context without resolving a value. */
+export function effectiveEndpointApiKeyForRun<T extends EndpointKeyRow>(
+  row: T,
+  project?: { name: string; settings: { agentKeys?: Record<string, string> } } | null,
+): {
+  row: T
+  key: EffectiveEndpointApiKey
+  resolve(): Promise<Record<string, string>>
+} {
+  const key = decideEffectiveEndpointApiKey(row.apiKeySecret, project?.settings)
+  const effectiveRow = { ...row, apiKeySecret: key.secretName }
+  const options =
+    key.source === 'project'
+      ? { projectSecret: { project: project!.name, agentSecret: row.apiKeySecret!.trim() } }
+      : {}
+  return {
+    row: effectiveRow,
+    key,
+    resolve: () => resolveEndpointApiKeyEnv(effectiveRow, undefined, options),
+  }
 }
 
 export type EndpointApiKeyDecision =
@@ -142,4 +163,16 @@ export async function resolveEndpointApiKeyEnv(
     throw new Error(decision.refusal)
   }
   return decision.env
+}
+
+/** Check only whether a named secret resolves, without exposing its value to reporting callers. */
+export async function endpointApiKeyResolves(
+  name: string,
+  resolver: typeof readEnvValuesWithHosted = readEnvValuesWithHosted,
+): Promise<boolean> {
+  try {
+    return (await resolver([name]))[name] !== undefined
+  } catch {
+    return false
+  }
 }
