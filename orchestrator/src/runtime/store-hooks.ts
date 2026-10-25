@@ -1,8 +1,9 @@
 // concern: store-hooks
-/** Knows which database lifecycle hooks provide evidence hygiene, run liveness, and workflow seeds. Must not know CLI commands, run execution, transports, routing, or worktrees. */
+/** Knows which database lifecycle hooks provide evidence hygiene, review-round backfill, run liveness, and workflow seeds. Must not know CLI commands, run execution, transports, routing, or worktrees. */
 import { ensureMachineIdentity, registerOpenHooks } from '../database/db.ts'
 import { excludeSharedOutputRuns } from '../evidence/evidence-query.ts'
 import { seedLenses } from '../lens/lens-seeds.ts'
+import { backfillReviewRounds } from '../review/review-round-backfill.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { seedWorkflows } from '../workflow/workflow-seeds.ts'
@@ -16,7 +17,13 @@ export function registerStandardHooks(): void {
   if (registered) return
   registerOpenHooks({
     afterWritableOpen: [ensureMachineIdentity, excludeSharedOutputRuns, reapStaleRuns],
-    afterInitialize: [ensureMachineIdentity, excludeSharedOutputRuns, seedLenses, seedWorkflows],
+    afterInitialize: [
+      ensureMachineIdentity,
+      excludeSharedOutputRuns,
+      backfillReviewRounds,
+      seedLenses,
+      seedWorkflows,
+    ],
   })
   registered = true
 }

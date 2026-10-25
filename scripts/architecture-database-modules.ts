@@ -43,4 +43,13 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
   ]),
+  module('orchestrator/src/runtime/store-hooks.ts', [
+    '../database/db.ts',
+    '../evidence/evidence-query.ts',
+    '../lens/lens-seeds.ts',
+    '../review/review-round-backfill.ts',
+    '../run/run-liveness.ts',
+    '../run/shared-git-config-run.ts',
+    '../workflow/workflow-seeds.ts',
+  ]),
 ]

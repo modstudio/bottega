@@ -6,7 +6,8 @@ import { DB_PATH } from '../database/db.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { reviewCountsAsRound } from './review-role.ts'
-import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
+import type { ReviewRoundEvidenceRow } from './review-yield.ts'
 export type ReviewTierNumber = 0 | 1 | 2 | 3
 
 export type ReviewRoundBudgetDecision = {
