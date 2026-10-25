@@ -19,8 +19,12 @@ import {
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
+import {
+  type ReviewRoundBudgetDecision,
+  reviewBudgetForBranch,
+  reviewRoundBudgetDecision,
+} from '../review/review-round-budget.ts'
 import { budgetedRoundApplicabilityForChange } from '../review/review-round-lens-service.ts'
-import type { ReviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
   type AdmissionDecision,

@@ -43,22 +43,3 @@ export function completedReviewEvidenceSql(
   return `${reviewAlias}.completed_at IS NOT NULL
     AND ${reviewRunEvidenceSql(runAlias, lensAlias)}`
 }
-
-/** Every lens on the review has the four recorded grades required by review evidence. */
-export function gradedReviewLensesSql(reviewAlias = 'r'): string {
-  return `NOT EXISTS (
-    SELECT 1 FROM review_lens pending_lens
-     WHERE pending_lens.review_record_id=${reviewAlias}.record_id
-       AND (pending_lens.reproduced IS NULL OR pending_lens.coverage IS NULL
-         OR pending_lens.limits IS NULL OR pending_lens.overlap IS NULL)
-  )`
-}
-
-/** Every finding on the review has an architect disposition. */
-export function disposedReviewFindingsSql(reviewAlias = 'r'): string {
-  return `NOT EXISTS (
-    SELECT 1 FROM review_finding pending_finding
-     WHERE pending_finding.review_record_id=${reviewAlias}.record_id
-       AND pending_finding.disposition IS NULL
-  )`
-}

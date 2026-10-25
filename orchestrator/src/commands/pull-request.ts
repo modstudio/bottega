@@ -47,6 +47,26 @@ export function pullRequestCiCommandOutcome(result: {
   }
 }
 
+function createPullRequestCommand(
+  githubArgs: string[],
+  options: { overrideTriage?: string; ceilingRuling?: string; fromOperator?: boolean },
+): void {
+  validateGithubArguments(githubArgs)
+  const result = createPullRequest(
+    githubArgs,
+    {
+      overrideReason: options.overrideTriage,
+      ceilingRuling: options.ceilingRuling,
+      fromOperator: options.fromOperator,
+    },
+    process.cwd(),
+  )
+  if (result.output) log(result.output)
+  if (result.overrideId !== null) {
+    log(`pull-request triage admitted by recorded ruling ${result.overrideId}`)
+  }
+}
+
 export function register(program: Command): void {
   const pr = program.command('pr').allowExcessArguments(false)
 
@@ -56,22 +76,7 @@ export function register(program: Command): void {
     .option('--override-triage <reason>', 'admit incomplete review triage for this reason')
     .option('--ceiling-ruling <reason>', 'admit remaining review gaps at the round ceiling')
     .option('--from-operator', 'confirm the override came directly from the operator')
-    .action((githubArgs: string[], options) => {
-      validateGithubArguments(githubArgs)
-      const result = createPullRequest(
-        githubArgs,
-        {
-          overrideReason: options.overrideTriage,
-          ceilingRuling: options.ceilingRuling,
-          fromOperator: options.fromOperator,
-        },
-        process.cwd(),
-      )
-      if (result.output) log(result.output)
-      if (result.overrideId !== null) {
-        log(`pull-request triage admitted by recorded ruling ${result.overrideId}`)
-      }
-    })
+    .action(createPullRequestCommand)
 
   pr.command('merge <number-or-url>')
     .description('merge a pull request only when its head commit is proven')
