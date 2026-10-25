@@ -21,6 +21,7 @@ export type FileRulingDecision =
         | 'session-marker'
         | 'owner-mismatch'
         | 'foreign-project'
+        | 'owner-scope'
       owner?: string
       actor?: string
     }
@@ -37,11 +38,12 @@ function ownerAddress(input: {
   scope: string
   subject: string | undefined
   runProject: string | null
-}): 'foreign-project' | null {
+}): 'owner-scope' | 'foreign-project' | null {
   if (input.operator || input.requested !== 'doc') return null
   const subject = input.subject ?? (input.scope === 'project' ? input.runProject : undefined)
   if (input.scope === 'project' && subject === input.runProject) return null
-  return 'foreign-project'
+  if (subject !== undefined && subject !== input.runProject) return 'foreign-project'
+  return 'owner-scope'
 }
 
 export function fileRulingDecision(
