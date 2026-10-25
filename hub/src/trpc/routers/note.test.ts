@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { UNATTRIBUTED } from '../../task-attribution.ts'
 import { createNoteRouter } from './note.ts'
 
 const NOTE_ID = '11111111-1111-4111-8111-111111111111'
@@ -12,7 +11,6 @@ function recordingRouter() {
       calls.push({ id, title: options?.title })
       return { promoted_task: 'LOC-1' }
     }) as never,
-    machineAttribution: (async () => UNATTRIBUTED) as never,
   })
   return { calls, caller: router.createCaller({}) }
 }

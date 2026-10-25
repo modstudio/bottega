@@ -46,7 +46,6 @@ import {
   duplicateCandidates,
   type TaskRow,
 } from './task.ts'
-import type { Attribution } from './task-attribution.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
@@ -653,8 +652,6 @@ export async function promoteNote(
     hosted?: NoteClientOptions
     existingTaskKey?: string
     title?: string
-    /** The caller's machine identity, so the hosted title correction needs no ambient lookup. */
-    attribution?: Attribution
   } = {},
 ): Promise<NoteRow> {
   const note = getNote(recordId)
