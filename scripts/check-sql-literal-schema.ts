@@ -67,7 +67,6 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
       '8af00ad0d221eb05',
       '124dce990db65f45',
       '3347c6a9e054fd21',
-      '93f5fb6d946fcad0',
       '2847caa2831bb631',
     ],
     'schema introspection interpolates a quoted runtime identifier',

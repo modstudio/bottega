@@ -4,6 +4,11 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import {
+  assertMigrationForeignKeyIntegrity,
+  enterMigrationConnectionPolicy,
+  leaveMigrationConnectionPolicy,
+} from '../../../shared/migration-connection-policy.ts'
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
@@ -988,10 +993,7 @@ function applyMigrationRange(
     : journal.length
   if (boundary < 0) throw new Error(`unknown migration boundary ${beforeMigration}`)
   const allowedEntries = journal.slice(0, boundary)
-  const legacyAlterTable = (
-    d.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
-  ).legacy_alter_table
-  d.exec('PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = OFF')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
     d.exec('BEGIN IMMEDIATE')
     ensureSchemaLock(d)
@@ -1025,18 +1027,7 @@ function applyMigrationRange(
       0,
     )
     stampUserVersion(d, Math.max(readUserVersion(d), highestApplied))
-    const broken = d.query('PRAGMA foreign_key_check').all() as Array<{
-      table: string
-      rowid: number | null
-      parent: string
-      fkid: number
-    }>
-    if (broken.length) {
-      const first = broken[0]!
-      throw new Error(
-        `refusing to commit migration with a dangling foreign key: table ${first.table}, rowid ${first.rowid ?? 'NULL'}, parent ${first.parent}, fkid ${first.fkid}`,
-      )
-    }
+    assertMigrationForeignKeyIntegrity(d)
     d.exec('COMMIT')
     return versions
   } catch (error) {
@@ -1047,8 +1038,7 @@ function applyMigrationRange(
     }
     throw error
   } finally {
-    d.exec('PRAGMA foreign_keys = ON')
-    d.exec(`PRAGMA legacy_alter_table = ${legacyAlterTable}`)
+    leaveMigrationConnectionPolicy(d, connectionSettings)
   }
 }
 

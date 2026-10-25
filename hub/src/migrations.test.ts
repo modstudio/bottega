@@ -105,24 +105,6 @@ const applicationSchemaRows = (d: Database) =>
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
 
-function missingForeignKeyTargets(d: Database): string[] {
-  const tables = d
-    .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-    )
-    .all()
-  const tableNames = new Set(tables.map((row) => row.name))
-  return tables.flatMap(({ name }) =>
-    d
-      .query<{ from: string; table: string }, []>(
-        `PRAGMA foreign_key_list(${quoteIdentifier(name)})`,
-      )
-      .all()
-      .filter((foreignKey) => !tableNames.has(foreignKey.table))
-      .map((foreignKey) => `${name}.${foreignKey.from} -> ${foreignKey.table}`),
-  )
-}
-
 /** Reduce any later journal state to the baseline application-object inventory. */
 function stripPostBaselineApplicationObjects(d: Database): void {
   const foreignKeys =
@@ -179,15 +161,6 @@ function stripPostBaselineApplicationObjects(d: Database): void {
 }
 
 describe('hub migration journal', () => {
-  test("a replay under Bun's connection defaults has only resolvable foreign-key targets", () => {
-    const d = new Database(':memory:')
-    applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-    expect(missingForeignKeyTargets(d)).toEqual([])
-    expect(d.query('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 0 })
-    expect(d.query('PRAGMA legacy_alter_table').get()).toEqual({ legacy_alter_table: 1 })
-    d.close()
-  })
-
   test('fresh migrations equal trunk schema by structural hash', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())

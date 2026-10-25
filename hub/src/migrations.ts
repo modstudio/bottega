@@ -7,6 +7,11 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { readInstallAsset } from '../../shared/embedded-assets.ts'
 import { assetPath } from '../../shared/install-root.ts'
+import {
+  assertMigrationForeignKeyIntegrity,
+  enterMigrationConnectionPolicy,
+  leaveMigrationConnectionPolicy,
+} from '../../shared/migration-connection-policy.ts'
 import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
@@ -513,8 +518,8 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   const cached = expectedHashByFolder.get(folder)
   if (cached) return cached
   const d = new Database(':memory:')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
-    d.exec('PRAGMA foreign_keys = ON')
     for (const entry of migrationJournal(folder)) {
       if (entry.tag === '0038_workflow_cursor_uuid_key')
         d.exec(
@@ -526,6 +531,7 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
     expectedHashByFolder.set(folder, hash)
     return hash
   } finally {
+    leaveMigrationConnectionPolicy(d, connectionSettings)
     d.close()
   }
 }
@@ -703,20 +709,6 @@ function prepareMigrationEntry(
   if (tag === '0039_note_counter_uuid_key') assertNoteCounterProjects(d)
 }
 
-function assertForeignKeyIntegrity(d: Database): void {
-  const broken = d.query('PRAGMA foreign_key_check').all() as Array<{
-    table: string
-    rowid: number | null
-    parent: string
-    fkid: number
-  }>
-  if (!broken.length) return
-  const first = broken[0]!
-  throw new Error(
-    `refusing to commit migration with a dangling foreign key: table ${first.table}, rowid ${first.rowid ?? 'NULL'}, parent ${first.parent}, fkid ${first.fkid}`,
-  )
-}
-
 /** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
 export function applyMigrations(
   d: Database,
@@ -726,12 +718,7 @@ export function applyMigrations(
   cursorIdentities: readonly WorkflowCursorIdentityRow[] = [],
 ): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
-  const foreignKeys = (d.query('PRAGMA foreign_keys').get() as { foreign_keys: number })
-    .foreign_keys
-  const legacyAlterTable = (
-    d.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
-  ).legacy_alter_table
-  d.exec('PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = OFF')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
     d.exec('BEGIN IMMEDIATE')
     ensureSchemaLock(d)
@@ -802,7 +789,7 @@ export function applyMigrations(
     }
     applyBackfills(d, folder, backfillValues)
     stampUserVersion(d, migrationJournal(folder).length)
-    assertForeignKeyIntegrity(d)
+    assertMigrationForeignKeyIntegrity(d)
     d.exec('COMMIT')
     return versions
   } catch (error) {
@@ -813,7 +800,6 @@ export function applyMigrations(
     }
     throw error
   } finally {
-    d.exec(foreignKeys ? 'PRAGMA foreign_keys = ON' : 'PRAGMA foreign_keys = OFF')
-    d.exec(legacyAlterTable ? 'PRAGMA legacy_alter_table = ON' : 'PRAGMA legacy_alter_table = OFF')
+    leaveMigrationConnectionPolicy(d, connectionSettings)
   }
 }
