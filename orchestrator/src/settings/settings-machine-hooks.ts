@@ -18,6 +18,7 @@ const SCRIPT_FILES = [
   'no-attribution.py',
   'bun-cache-guard.py',
   'git-guard.py',
+  'protect-main-checkout.py',
   'heartbeat-remind.py',
   'board-interrupt.py',
   'score-reminder.py',
@@ -57,6 +58,12 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
+  { event: 'PreToolUse', matcher: 'Bash', script: 'protect-main-checkout.py' },
+  {
+    event: 'PreToolUse',
+    matcher: 'Write|Edit|NotebookEdit',
+    script: 'protect-main-checkout.py',
+  },
   {
     event: 'PreToolUse',
     matcher: 'Write|Edit|MultiEdit',
