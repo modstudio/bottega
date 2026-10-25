@@ -230,7 +230,11 @@ const docSpecs: readonly Spec[] = [
     'replace one document sibling order',
     [...address, o('--parent <value>'), o('--slug <value>', true), ...json],
   ],
-  ['consume [slug]', 'mark a resume document consumed', [...address, ...revision, ...json]],
+  [
+    'consume [slug]',
+    "mark a resume brief consumed and hand its author's runs to the consuming session",
+    [...address, ...revision, ...json],
+  ],
   ['rm [slug]', 'remove a document', [...address, o('--cwd <value>'), ...revision, ...json]],
   ['subjects', 'list document subjects', json],
   ['export [dir]', 'export documents to a directory', []],

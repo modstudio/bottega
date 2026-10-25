@@ -213,6 +213,65 @@ describe('open resume write decision', () => {
 })
 
 describe('resume write adapters', () => {
+  test('setDoc refuses to consume an open brief and leaves it open', async () => {
+    upsertProject({ recordId: newRecordId(), name: 'resume-set-consume', path: '/w/set-consume' })
+    const stored = await setDoc({
+      scope: 'resume',
+      subject: 'resume-set-consume',
+      slug: 'handoff',
+      title: 'Handoff',
+      body: brief(['NEXT ACTION: continue']),
+    })
+
+    await expect(
+      setDoc({
+        scope: stored.scope,
+        subject: stored.subject,
+        slug: stored.slug,
+        title: stored.title,
+        body: stored.body.replace('status: open', 'status: consumed'),
+        expectedRevision: stored.revision ?? undefined,
+      }),
+    ).rejects.toThrow(
+      `consume_doc or ${PLATFORM_SLUG} doc consume handoff --scope resume --subject resume-set-consume`,
+    )
+    expect(
+      resumeFrontmatter(getDoc(stored.scope, stored.subject, stored.slug)!.body)?.status?.value,
+    ).toBe('open')
+
+    await expect(
+      setDoc({
+        scope: 'resume',
+        subject: 'resume-set-consume',
+        slug: 'new-consumed',
+        title: 'New consumed',
+        body: brief(['NEXT ACTION: continue'], 'consumed'),
+      }),
+    ).rejects.toThrow('set_doc cannot change status to consumed')
+  })
+
+  test('setDoc still writes open briefs and rewrites already-consumed briefs', async () => {
+    upsertProject({ recordId: newRecordId(), name: 'resume-set-allowed', path: '/w/set-allowed' })
+    const open = await setDoc({
+      scope: 'resume',
+      subject: 'resume-set-allowed',
+      slug: 'allowed',
+      title: 'Allowed',
+      body: brief(['NEXT ACTION: continue']),
+    })
+    const consumed = await consumeDoc(open.scope, open.subject, open.slug)
+
+    const rewritten = await setDoc({
+      scope: consumed.scope,
+      subject: consumed.subject,
+      slug: consumed.slug,
+      title: consumed.title,
+      body: `${consumed.body}\nRewritten after consumption.\n`,
+      expectedRevision: consumed.revision ?? undefined,
+    })
+    expect(rewritten.body).toContain('Rewritten after consumption.')
+  })
+
   test('setDoc refuses an open brief with a scratch path and lists the remedy', async () => {
     upsertProject({ recordId: newRecordId(), name: 'resume-write', path: '/w/resume-write' })
     await expect(

@@ -20,7 +20,7 @@ export function registerMcpDocConsumeTool(
     'consume_doc',
     {
       description:
-        'Mark an operator document consumed by rewriting its YAML status/stamps and updated_at.',
+        "Mark a resume brief consumed and hand its author's runs to the consuming session.",
       inputSchema: z.object({
         scope: z.string(),
         subject: z.string().nullable().optional(),

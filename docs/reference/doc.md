@@ -325,7 +325,7 @@ search a project's code for a query
 
 **Synopsis:** `bottega doc consume [slug] [--scope <value>] [--subject <value>] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
 
-mark a resume document consumed
+mark a resume brief consumed and hand its author's runs to the consuming session
 
 ### Options
 
