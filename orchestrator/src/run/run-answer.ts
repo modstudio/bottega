@@ -222,6 +222,21 @@ function answerAttribution(
   return [identity, personName, answererKindFromAnsweredBy(identity)] as const
 }
 
+function answerAttributions(
+  operatorAuthorized: boolean,
+  answers: readonly AnsweredQuestion[],
+  callerSession: string | null,
+) {
+  return answers.map((answer) =>
+    answerAttribution(
+      operatorAuthorized,
+      answer,
+      callerSession,
+      rulingPersonName(answer.fromOperator),
+    ),
+  )
+}
+
 function requireAnswerAuthority(
   requestedId: string,
   channel: AnswerChannel,
@@ -877,7 +892,11 @@ export async function answerRun(
     rootRepo: row.repo,
   })
   const now = new Date(Date.now()).toISOString()
-  const personNames = answers.map((answer) => rulingPersonName(answer.fromOperator))
+  const attributions = answerAttributions(
+    authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
+    answers,
+    callerSession,
+  )
   const upd = db().query(
     `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
@@ -890,16 +909,10 @@ export async function answerRun(
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
     answers.forEach((answer, index) => {
-      const attribution = answerAttribution(
-        authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
-        answer,
-        callerSession,
-        personNames[index] ?? null,
-      )
       upd.run(
         answer.answer,
         now,
-        ...attribution,
+        ...attributions[index]!,
         input.channel,
         ownersLive ? null : now,
         answer.record_id,
