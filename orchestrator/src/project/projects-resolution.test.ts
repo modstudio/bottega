@@ -53,9 +53,12 @@ afterEach(() => {
 describe('projects are data, not code', () => {
   test('project agent key mappings contain only trimmed non-empty secret names', () => {
     expect(
-      validateProjectSettings({
-        agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
-      }),
+      validateProjectSettings(
+        {
+          agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
+        },
+        'strict',
+      ),
     ).toEqual([])
     for (const agentKeys of [
       null,
@@ -65,9 +68,10 @@ describe('projects are data, not code', () => {
       { ' AGENT': 'KEY' },
     ]) {
       expect(
-        validateProjectSettings({ agentKeys } as unknown as Parameters<
-          typeof validateProjectSettings
-        >[0]),
+        validateProjectSettings(
+          { agentKeys } as unknown as Parameters<typeof validateProjectSettings>[0],
+          'strict',
+        ),
       ).toContain(
         'agentKeys must be an object mapping non-empty trimmed agent secret names to non-empty trimmed project secret names',
       )
