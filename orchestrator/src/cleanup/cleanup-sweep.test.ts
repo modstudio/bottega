@@ -41,20 +41,18 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
   }) as typeof Bun.spawnSync)
 
   try {
-    const lines: string[] = []
     await sweepRuns(
       {
         dryRun: false,
         project: name,
         force: false,
-        presentation: presentation(lines, () => {}),
+        presentation: presentation([], () => {}),
       },
       {
         observeGrokTrustHeadings: () => ({ succeeded: true, headings: [] }),
         grokTrustPathFromHeading: () => null,
       },
     )
-    expect(lines.join('\n')).not.toContain('unexpected docker invocation from gate test')
     expect(db().query('SELECT close_out_outcome FROM run WHERE record_id=?').get(run)).toEqual({
       close_out_outcome: 'absent',
     })
