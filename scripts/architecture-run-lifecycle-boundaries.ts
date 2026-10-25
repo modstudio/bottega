@@ -221,6 +221,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-chain.ts',
       './run-coordinator-log.ts',
       './run-lease.ts',
+      './run-liveness-policy.ts',
       './run-outbox.ts',
       './question-close.ts',
       './question-open.ts',

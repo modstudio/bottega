@@ -24,6 +24,10 @@ describe('retry path decision', () => {
     [{ writesRepo: true, rulingsPresent: false, agentChanged: false }, 'continue'],
     [{ writesRepo: true, rulingsPresent: true, agentChanged: false }, 'needs-writing-workspace'],
     [{ writesRepo: true, rulingsPresent: false, agentChanged: true }, 'needs-writing-workspace'],
+    [
+      { writesRepo: true, rulingsPresent: false, agentChanged: false, neverStarted: true },
+      'regular-retry',
+    ],
   ] as const)('selects conversation path %#', (facts, action) => {
     expect(decideRetryConversation(facts)).toEqual({ action })
   })

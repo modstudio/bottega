@@ -11,7 +11,8 @@ import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runInboxCommand } from './run-inbox.ts'
-import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { reapStale } from './run-liveness.ts'
+import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
 const noSharedGitConfigCheck = () => null

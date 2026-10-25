@@ -20,10 +20,31 @@ export function decideRetryConversation(input: {
   writesRepo: boolean
   rulingsPresent: boolean
   agentChanged: boolean
+  neverStarted?: boolean
 }): RetryConversationDecision {
+  if (input.neverStarted) return { action: 'regular-retry' }
   if (!input.writesRepo) return { action: 'regular-retry' }
   if (!input.rulingsPresent && !input.agentChanged) return { action: 'continue' }
   return { action: 'needs-writing-workspace' }
+}
+
+export function retryConversationPath(
+  writesRepo: boolean,
+  rulingsPresent: boolean,
+  agent: string | undefined,
+  originalAgent: string,
+  neverStarted: boolean,
+): RetryConversationDecision {
+  return decideRetryConversation({
+    writesRepo,
+    rulingsPresent,
+    agentChanged: agent !== undefined && agent !== originalAgent,
+    neverStarted,
+  })
+}
+
+export function retryTarget(agent: string | undefined): string {
+  return agent ? ` on ${agent}` : ' through a fresh route'
 }
 
 export function retryTransport(

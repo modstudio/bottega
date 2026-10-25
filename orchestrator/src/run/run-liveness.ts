@@ -23,18 +23,12 @@ import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from 
 import { chainTerminationAtForRoot } from './run-chain.ts'
 import { coordinatorSetupError, recordedCoordinatorCause } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
+import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import {
   type RecordedRunSharedGitConfigInput,
   sharedGitConfigCheckSkipReason,
 } from './shared-git-config-check.ts'
-
-/**
- * The outer ceiling for a run and for callers waiting on one. Liveness itself
- * comes from the coordinator's kernel lease; elapsed time is not evidence that
- * a quiet worker, including one blocked on a ruling, has died.
- */
-export const STALE_AFTER_MS = 60 * 60 * 1000
 
 /** The common bound for callers following a detached run to its terminal state. */
 export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
