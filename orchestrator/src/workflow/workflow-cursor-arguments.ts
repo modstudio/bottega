@@ -5,8 +5,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso } from '../database/db.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
-import { resolvedProductionWorkflows, showResolvedWorkflow } from './workflows.ts'
-import { showPinnedWorkflow } from './workflow-version-selection.ts'
+import {
+  resolvedProductionWorkflows,
+  showPinnedWorkflow,
+  showResolvedWorkflow,
+} from './workflows.ts'
 
 type ArgumentCursor = {
   id: number

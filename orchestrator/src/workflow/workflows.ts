@@ -37,12 +37,6 @@ import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
-  selectCatalogueVersion,
-  selectWorkflowVersion,
-  type WorkflowNeeds,
-  type WorkflowSelection,
-} from './workflow-version-selection.ts'
-import {
   expandWorkflowModeSteps,
   expandWorkflowSteps,
   inspectWorkflowSteps,
@@ -57,8 +51,15 @@ import {
   resolveWorkflowStepTemplates,
   resolveWorkflowTemplate,
 } from './workflow-template.ts'
+import {
+  selectCatalogueVersion,
+  selectWorkflowVersion,
+  type WorkflowNeeds,
+  type WorkflowSelection,
+} from './workflow-version-selection.ts'
 
 export type { WorkflowDefinition } from './workflow-definition.ts'
+export { showPinnedWorkflow } from './workflow-version-selection.ts'
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>

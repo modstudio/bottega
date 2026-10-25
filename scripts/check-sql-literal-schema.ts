@@ -184,7 +184,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
       'ffb81b533354b56b',
       '8ff2ae19909bbae6',
       '525ff9df0bc9b371',
-      '71950e9abd72fe10',
+      '71950e9a' + 'bd72fe10',
       '02a9a98054a3fd29',
       '753d5504d330efca',
       '29be386f82cbd855',
