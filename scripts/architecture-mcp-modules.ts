@@ -96,6 +96,13 @@ export const mcpModules: McpModule[] = [
     '../mcp/mcp-probe.ts',
     './mcp-reader-scope.ts',
   ]),
+  module('orchestrator/src/sandbox/project-mcp-preflight.ts', [
+    '../../../shared/brand.ts',
+    'node:path',
+    '../mcp/mcp-preflight.ts',
+    '../mcp/mcp-tool-list.ts',
+    './project-mcp-scope.ts',
+  ]),
   module('orchestrator/src/sandbox/grok-reader-mcp-home.ts', [
     '../../../shared/brand.ts',
     'node:fs',
