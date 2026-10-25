@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
+import { applicableRoundLensPlan } from '../review/review-round-lens-plan.ts'
 import { reviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import {
   admissionDecision,
@@ -12,7 +13,6 @@ import {
   recordTriageOverrideForChange,
   triageRefusal,
 } from './pr-admission.ts'
-import { applicableRoundLensPlan } from '../review/review-round-lens-plan.ts'
 import { decideTriage, type TriageDecision, type TriageEvidence } from './triage-decision.ts'
 
 const ceilingChange = {
