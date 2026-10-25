@@ -29,6 +29,7 @@ function referenceFact(project: WorkflowFactProject, needs: readonly WorkflowFac
 function closeShipToFact(
   projectName: string,
   remaining: number,
+  mayMerge: boolean,
   tracker:
     | {
         states: Partial<Record<'review' | 'done', string>>
@@ -37,7 +38,13 @@ function closeShipToFact(
     | undefined,
 ) {
   if (!tracker) return {}
-  const closeAction = !remaining ? 'done' : tracker.inReview.state !== 'none' ? 'review' : 'ask'
+  const closeAction = !mayMerge
+    ? 'ask'
+    : !remaining
+      ? 'done'
+      : tracker.inReview.state !== 'none'
+        ? 'review'
+        : 'ask'
   if (closeAction === 'done' && !tracker.states.done)
     throw new Error(
       `project ${projectName} tracker is missing workflow state "done"; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
@@ -97,7 +104,7 @@ function shipToFact(
       remaining: decision.remaining,
       reachText: decision.reach.join(', ') || 'none',
       remainingText: decision.remaining.join(', ') || 'none',
-      ...closeShipToFact(project.name, decision.remaining.length, tracker),
+      ...closeShipToFact(project.name, decision.remaining.length, decision.mayMerge, tracker),
     },
   }
 }

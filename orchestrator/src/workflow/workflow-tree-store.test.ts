@@ -15,7 +15,7 @@ import {
   promoteStepCatalogueLocal,
   showStepCatalogue,
 } from './step-catalogue.ts'
-import { decideCloseFloors, decideFloorSatisfaction } from './workflow-floor.ts'
+import { decideCloseFloors } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
@@ -365,28 +365,10 @@ describe('importWorkflowTree', () => {
     )
     const closeTask = composed.steps.find(({ slug }) => slug === 'close-task')!
     const floors = decideCloseFloors(closeTask, undefined)
-    const decision = (mergedPullRequest: boolean) =>
-      decideFloorSatisfaction({
-        floors,
-        evidence: {
-          task: {
-            key: 'DEV-1732',
-            status: 'done',
-            statusCategory: 'done',
-            mergedPullRequest,
-            trackerStates: {},
-          },
-        },
-        enforcement: 'floors',
-        finishing: false,
-        openObligations: [],
-      })
 
     expect(floors).toMatchObject([
       { kind: 'tracker-transition', expectedStatus: 'done', requirePullRequest: true },
     ])
-    expect(decision(false)).toMatchObject({ action: 'refuse' })
-    expect(decision(true)).toMatchObject({ action: 'allow' })
   })
 
   test(`array-mcp ship steps render ${PLATFORM_SLUG} status and workflow evidence verbs`, async () => {

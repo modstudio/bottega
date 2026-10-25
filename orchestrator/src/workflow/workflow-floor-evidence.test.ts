@@ -908,17 +908,22 @@ test('an open PR is gathered as an unmerged tracker fact', () => {
   })
 })
 
-test('no pull request record is gathered as an unmerged tracker fact', () => {
+test('no pull request record is gathered as an unavailable tracker fact', () => {
   expect(gather(database(), { task: 'DEV-977' }).task).toEqual({
     key: 'DEV-977',
     status: 'done',
     statusCategory: 'done',
-    mergedPullRequest: false,
+    mergedPullRequest: null,
+    pullRequestUnavailable: {
+      kind: 'unrecorded',
+      reason: 'no pull request is recorded for task branch DEV-977-work',
+      branch: 'DEV-977-work',
+    },
     trackerStates: {},
   })
 })
 
-test('an unavailable pull request read is gathered as unmerged', () => {
+test('an unavailable pull request read preserves its first-line reason', () => {
   const d = database()
   d.query(
     `INSERT INTO landing_triage_snapshot
@@ -931,7 +936,7 @@ test('an unavailable pull request read is gathered as unmerged', () => {
       { task: 'DEV-977' },
       {
         viewPullRequest: () => {
-          throw new Error('gh unavailable')
+          throw new Error('gh unavailable\nsecondary detail')
         },
       },
     ).task,
@@ -939,7 +944,8 @@ test('an unavailable pull request read is gathered as unmerged', () => {
     key: 'DEV-977',
     status: 'done',
     statusCategory: 'done',
-    mergedPullRequest: false,
+    mergedPullRequest: null,
+    pullRequestUnavailable: { kind: 'read-error', reason: 'gh unavailable' },
     trackerStates: {},
   })
 })

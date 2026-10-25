@@ -139,7 +139,10 @@ export type ValidatedEvidence = {
     key: string
     status: string | null
     statusCategory: string | null
-    mergedPullRequest: boolean
+    mergedPullRequest: boolean | null
+    pullRequestUnavailable?:
+      | { kind: 'unrecorded'; reason: string; branch: string }
+      | { kind: 'read-error'; reason: string }
     trackerStates: TrackerStates
   }
   deferReason?: string
@@ -587,7 +590,7 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
       task.statusCategory !== expectedCategory)
   )
     return false
-  return !floor.requirePullRequest || task.mergedPullRequest
+  return !floor.requirePullRequest || task.mergedPullRequest === true
 }
 
 function floorIsMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?: string): boolean {
@@ -613,9 +616,16 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
   const expected = expectedCategory
     ? `${floor.expectedStatus} (category ${expectedCategory})`
     : floor.expectedStatus
-  return evidence.task
+  const unavailable =
+    floor.requirePullRequest && evidence.task?.pullRequestUnavailable
+      ? evidence.task.pullRequestUnavailable.kind === 'unrecorded'
+        ? `; pull request merge state could not be established: ${evidence.task.pullRequestUnavailable.reason}; record it with: ${PLATFORM_SLUG} tree branch landed ${evidence.task.pullRequestUnavailable.branch} --pr <number>`
+        : `; pull request merge state could not be established: ${evidence.task.pullRequestUnavailable.reason}; rerun the close when GitHub is reachable`
+      : ''
+  const expectation = evidence.task
     ? `; ${trackerReadback(evidence.task)}; expected ${expected}${pullRequest}`
     : ` reading back as ${floor.expectedStatus}${pullRequest}`
+  return `${expectation}${unavailable}`
 }
 
 function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string | null {

@@ -695,7 +695,10 @@ function gatherTask(
   const trackerStates = projectByName(identity.project, d)?.settings.tracker?.states ?? {}
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null
-  let mergedPullRequest = false
+  let mergedPullRequest: boolean | null = null
+  let pullRequestUnavailable:
+    | NonNullable<NonNullable<ValidatedEvidence['task']>['pullRequestUnavailable']>
+    | undefined
   if (number !== null) {
     try {
       const fallback = productionFloorPorts().viewPullRequest!
@@ -706,10 +709,21 @@ function gatherTask(
         identity.project,
         number,
       )
-      mergedPullRequest = view?.state === 'MERGED'
+      mergedPullRequest = view.state === 'MERGED'
     } catch (error) {
       rethrowFloorEvidencePortMiss(error)
-      mergedPullRequest = false
+      const detail = error instanceof Error ? error.message : String(error)
+      pullRequestUnavailable = {
+        kind: 'read-error',
+        reason: detail.split(/\r?\n/, 1)[0]?.trim() || 'pull request read failed',
+      }
+    }
+  } else {
+    const taskBranch = branch ?? identity.branch ?? '<branch>'
+    pullRequestUnavailable = {
+      kind: 'unrecorded',
+      reason: `no pull request is recorded for task branch ${taskBranch}`,
+      branch: taskBranch,
     }
   }
   return {
@@ -717,6 +731,7 @@ function gatherTask(
     status: task.status,
     statusCategory: task.statusCategory,
     mergedPullRequest,
+    ...(pullRequestUnavailable ? { pullRequestUnavailable } : {}),
     trackerStates,
   }
 }
