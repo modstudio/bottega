@@ -124,8 +124,12 @@ async function cliEntry(
   argv: string[],
   enterFullCli: FullCliEntry,
   invocation?: PublicCommandInvocation,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<number> {
-  const storeFree = isStoreFreeInvocation(storeFreeInvocationArgv(argv, invocation))
+  const storeFree =
+    isStoreFreeInvocation(argv, env) ||
+    (invocation !== undefined &&
+      isStoreFreeInvocation(storeFreeInvocationArgv(argv, invocation), env))
   if (argv.length === 1 && argv[0] === '--version') return versionCommand()
   if (argv[0] === 'init-db' && !storeFree) return initDatabaseCommand(argv)
   try {
@@ -141,8 +145,13 @@ async function cliEntry(
 }
 
 /** Test-only seam proving the executable entry passes store freedom into CLI loading. */
-export function runCliEntryForTest(argv: string[], enterFullCli: FullCliEntry): Promise<number> {
-  return cliEntry(argv, enterFullCli)
+export function runCliEntryForTest(
+  argv: string[],
+  enterFullCli: FullCliEntry,
+  invocation?: PublicCommandInvocation,
+  env?: NodeJS.ProcessEnv,
+): Promise<number> {
+  return cliEntry(argv, enterFullCli, invocation, env)
 }
 
 /** Structured owner output for the product front door's composite outbox listing. */

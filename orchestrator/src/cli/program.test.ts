@@ -2,6 +2,8 @@ import { expect, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CommanderError } from 'commander'
+import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
+import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import {
   MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
@@ -56,6 +58,59 @@ test('the outer CLI classifies every informational invocation without consulting
       publicPath: ['gate', 'check'],
     }),
   ).toEqual(['gate', 'check', '--enabled'])
+})
+
+test('public routes preserve every store-free owner invocation at the executable entry', async () => {
+  const routes = [
+    { argv: ['monitor', '--help'], ownerPath: ['monitor'], publicPath: ['machine', 'monitor'] },
+    {
+      argv: ['record', 'use', 'https://api.example.test'],
+      ownerPath: ['record'],
+      publicPath: ['record'],
+    },
+    { argv: ['setup'], ownerPath: ['setup'], publicPath: ['machine', 'setup'] },
+    { argv: ['setup', 'apply', '--yes'], ownerPath: ['setup'], publicPath: ['machine', 'setup'] },
+    { argv: ['setup', 'plan', '--json'], ownerPath: ['setup'], publicPath: ['machine', 'setup'] },
+    {
+      argv: ['setup', 'restore', '/backup'],
+      ownerPath: ['setup'],
+      publicPath: ['machine', 'setup'],
+    },
+    { argv: ['setup', 'facts', '--json'], ownerPath: ['setup'], publicPath: ['machine', 'setup'] },
+    {
+      argv: ['test-substance', 'judge'],
+      ownerPath: ['test-substance'],
+      publicPath: ['gate', 'test-substance'],
+    },
+    {
+      argv: ['hub-import', 'judge'],
+      ownerPath: ['hub-import'],
+      publicPath: ['gate', 'hub-import'],
+    },
+    {
+      argv: ['release', 'check', 'v0.2.0'],
+      ownerPath: ['release', 'check'],
+      publicPath: ['release', 'check'],
+    },
+    { argv: ['check', '--enabled'], ownerPath: ['check'], publicPath: ['gate', 'check'] },
+  ] satisfies Array<{ argv: string[] } & PublicCommandInvocation>
+  const env = { [FROZEN_ENV_NAMES.gateFacts]: '/tmp/facts.json' }
+
+  for (const { argv, ownerPath, publicPath } of routes) {
+    let receivedStoreFree = false
+    expect(
+      await runCliEntryForTest(
+        argv,
+        async (_args, storeFree) => {
+          receivedStoreFree = storeFree
+          return 0
+        },
+        { ownerPath, publicPath },
+        env,
+      ),
+    ).toBe(0)
+    expect(receivedStoreFree, `${publicPath.join(' ')} must remain store-free`).toBeTrue()
+  }
 })
 
 test('canon command recognition is pinned to the Commander registry', () => {
