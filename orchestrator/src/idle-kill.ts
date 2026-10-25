@@ -7,7 +7,7 @@
  * test (silence AND no CPU) and a failure kind that is not routing evidence.
  */
 
-import { pidAlive } from '../../shared/process-identity.ts'
+import { pidAlive, processSignalOutcome } from '../../shared/process-identity.ts'
 import { idleMsSince } from './events.ts'
 import {
   liveProcessTreePids,
@@ -129,8 +129,9 @@ const defaultDeps: TerminateDeps = {
   kill(pid, signal) {
     try {
       process.kill(pid, signal)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
+    } catch (error) {
+      const outcome = processSignalOutcome(error)
+      if (outcome !== 'absent' && outcome !== 'denied') throw error
     }
   },
   alive: pidAlive,

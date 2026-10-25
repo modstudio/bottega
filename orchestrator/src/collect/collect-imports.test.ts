@@ -8,6 +8,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/built-commit.ts',
   '../../../shared/embedded-assets.ts',
   '../../../shared/install-root.ts',
+  '../../../shared/process-identity.ts',
   '../../../shared/record-id.ts',
   '../../../shared/self-spawn.ts',
   '../../../shared/state-directory.ts',

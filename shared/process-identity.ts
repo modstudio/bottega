@@ -57,14 +57,25 @@ export function observeBoundedSubprocess(
   }
 }
 
-/** Test whether a recorded process exists; EPERM means it cannot be signaled but is alive. */
-export function pidAlive(pid: number | null, kill: typeof process.kill = process.kill): boolean {
+export type ProcessSignalOutcome = 'delivered' | 'absent' | 'denied' | 'unknown'
+
+/** Classify a process signal attempt from its thrown error, or lack of one. */
+export function processSignalOutcome(error?: unknown): ProcessSignalOutcome {
+  if (error === undefined) return 'delivered'
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  if (code === 'ESRCH') return 'absent'
+  if (code === 'EPERM') return 'denied'
+  return 'unknown'
+}
+
+/** Test whether a recorded process exists; denied signaling still proves it is alive. */
+export function pidAlive(pid: number | null): boolean {
   if (!pid) return false
   try {
-    kill(pid, 0)
-    return true
+    process.kill(pid, 0)
+    return processSignalOutcome() === 'delivered'
   } catch (error) {
-    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EPERM'
+    return processSignalOutcome(error) === 'denied'
   }
 }
 

@@ -1,6 +1,8 @@
 // Decisions of terminateProcessGroup's signaling path, beside idle-kill.ts; the file that owns the idle decisions is frozen.
-import { expect, test } from 'bun:test'
+import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { isGroupKillablePgid, runHasLiveDescendants, terminateProcessGroup } from './idle-kill.ts'
+
+afterEach(() => mock.restore())
 
 test('group kill is only allowed for a known pgid that is not the caller', () => {
   expect(isGroupKillablePgid(50, 1)).toBe(true)
@@ -47,4 +49,24 @@ test('a group signal refused with EPERM falls through to the sampled descendants
   expect(signals.some((row) => row.pid === 101 && row.signal === 'SIGTERM')).toBe(true)
   expect(signals.some((row) => row.pid < 0)).toBe(false)
   expect(result.exited).toBe(true)
+})
+
+test('a denied direct signal leaves the survivor reported as unkillable', async () => {
+  const kill = spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
+  })
+  const result = await terminateProcessGroup(100, {
+    graceMs: 0,
+    killConfirmMs: 0,
+    deps: {
+      alive: () => true,
+      sample: () => [{ pid: 100, ppid: 1, pgid: 100, cpu: 0, state: 'S' }],
+      selfPgid: () => 100,
+      wait: async () => {},
+    },
+  })
+
+  expect(kill).toHaveBeenCalled()
+  expect(result.unkillable).toBe(true)
+  expect(result.pids).toContain(100)
 })
