@@ -488,14 +488,14 @@ export function prepareWorkflowUuidMigration(d: Database): void {
   if (staleCopyPreflight.conflicts.length) {
     throw new Error(
       `refusing workflow UUID-key migration: bound store has NULL-space workflow rows without equivalent hosted twins (${staleCopyPreflight.conflicts.join(', ')})\n` +
-        `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} database migrate\``,
+        `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} machine migrate\``,
     )
   }
   const cursorResolutionConflicts = workflowCursorResolutionConflicts(d)
   if (cursorResolutionConflicts.length)
     throw new Error(
       `refusing workflow UUID-key migration: cursors would not resolve after NULL-space deletion (${cursorResolutionConflicts.join(', ')})\n` +
-        `cleared by: restore the named cursor's project route and hosted workflow rows, then run \`${PLATFORM_SLUG} database migrate\``,
+        `cleared by: restore the named cursor's project route and hosted workflow rows, then run \`${PLATFORM_SLUG} machine migrate\``,
     )
   for (const report of staleCopyPreflight.supersededEvents)
     console.error(`workflow UUID migration: ${report}`)
@@ -503,7 +503,7 @@ export function prepareWorkflowUuidMigration(d: Database): void {
   if (referenceConflicts.length)
     throw new Error(
       `refusing workflow UUID-key migration: structured workflow evidence names missing rows (${referenceConflicts.join(', ')})\n` +
-        `cleared by: restore or remove the named cursor's structured reference, then run \`${PLATFORM_SLUG} database migrate\``,
+        `cleared by: restore or remove the named cursor's structured reference, then run \`${PLATFORM_SLUG} machine migrate\``,
     )
   rewriteWorkflowAttachmentReferences(d)
 }

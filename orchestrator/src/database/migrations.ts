@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
   lensPortReferenceOrphanCounts,
@@ -964,11 +965,12 @@ function prepareMigrationEntry(
     if (conflicts.length) {
       throw new Error(
         `refusing lens/port UUID-key migration: bound store has NULL-space port rows without equivalent hosted twins (${conflicts.join(', ')})\n` +
-          `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} database migrate\``,
+          `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} machine migrate\``,
       )
     }
   }
   if (entry.tag === WORKFLOW_UUID_KEY_MIGRATION) prepareWorkflowUuidMigration(d)
+  if (entry.tag === '0160_agent_port_baseline_uuid_keys') assertAgentPortBaselineIdentities(d)
 }
 
 function applyMigrationRange(
