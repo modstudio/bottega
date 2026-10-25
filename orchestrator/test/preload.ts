@@ -24,7 +24,7 @@ const provisionedPostgresContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
 
 // This is the only sanctioned route past the docker shim: the Postgres runner
 // must have provisioned a container before the test preload loads.
-export function provisionedDocker(): string {
+export function provisionedPostgres(): { docker: string; container: string } {
   if (!provisionedPostgresContainer) {
     throw new Error(
       'docker is reachable only from a suite the real-Postgres runner provisioned a container for; run bun run --cwd orchestrator test:postgres',
@@ -32,7 +32,7 @@ export function provisionedDocker(): string {
   }
   const docker = Bun.which('docker', { PATH: originalPath ?? '' })
   if (!docker) throw new Error('the real docker binary was not found on the original PATH')
-  return docker
+  return { docker, container: provisionedPostgresContainer }
 }
 
 // Bun resolves executables against the PATH present at its first spawn. Install
