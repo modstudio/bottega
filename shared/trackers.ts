@@ -247,6 +247,13 @@ export type TrackerSource = {
   fetch: (m: ToolCaller) => Promise<TrackerTask[]>
   /** One closed task by key, for work the window touched but the sync skipped. */
   lookup?: (m: ToolCaller, key: string) => Promise<TrackerTask | null>
+  /**
+   * The comment ids one task's read reports, or null when that read answers
+   * without them. The member exists only for a protocol whose single-task read
+   * carries comments, so a caller can tell a task with no comments from a read
+   * that cannot report any.
+   */
+  readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
 }
 
 export class TrackerLookupUnverifiable extends Error {
@@ -339,15 +346,25 @@ const workspaceCreatedTaskKey = (result: unknown): string | undefined => {
   return nonEmptyUppercase(record.short_id)
 }
 
-function workspaceSource(
+/** The ids a tracker task read reports, or null when that read carries no comments. */
+const trackerTaskCommentIds = (reply: unknown): string[] | null => {
+  const comments = (reply as { comments?: { id?: string | number }[] } | null)?.comments
+  if (!Array.isArray(comments)) return null
+  return comments
+    .map((comment) => comment?.id)
+    .filter((id): id is string | number =>
+      typeof id === 'string' ? id.length > 0 : Number.isInteger(id),
+    )
+    .map(String)
+}
+
+/** One workspace task's assignees, resolved through the register's lookup setting. */
+function workspaceAssignees(
   project: string,
-  env: string,
-  openStatuses: string[],
-  states: TrackerSettings['states'],
   lookup: NonNullable<TrackerSettings['assigneeLookup']>,
   resolveAssignees: AssigneeResolver,
-): TrackerSource {
-  const assignees = (m: ToolCaller, refs: AssigneeRef[]) =>
+): (m: ToolCaller, refs: AssigneeRef[]) => Promise<(string | null)[]> {
+  return (m, refs) =>
     resolveAssignees(project, refs, async (id, taskKey) => {
       if (lookup === 'task-detail' && taskKey) {
         const detail = (await m.callTool(trackerWireAction('workspace-mcp', 'get'), {
@@ -361,6 +378,17 @@ function workspaceSource(
       const person = (await m.callTool('person-lookup-tool', { id })) as { name?: string | null }
       return person.name?.trim() || null
     })
+}
+
+function workspaceSource(
+  project: string,
+  env: string,
+  openStatuses: string[],
+  states: TrackerSettings['states'],
+  lookup: NonNullable<TrackerSettings['assigneeLookup']>,
+  resolveAssignees: AssigneeResolver,
+): TrackerSource {
+  const assignees = workspaceAssignees(project, lookup, resolveAssignees)
   return {
     project,
     env,
@@ -450,6 +478,13 @@ function workspaceSource(
         updatedAt: null,
         assignee: assignee ?? null,
       }
+    },
+    // The search page a lookup reads carries no comments; the descriptor's get
+    // tool answers one task with its `comments[].id`.
+    async readCommentIds(m, key) {
+      return trackerTaskCommentIds(
+        await m.callTool(trackerWireAction('workspace-mcp', 'get'), { id: key }),
+      )
     },
   }
 }

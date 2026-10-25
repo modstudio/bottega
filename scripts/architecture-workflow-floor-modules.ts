@@ -69,6 +69,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../branch/pull-request-view.ts',
     './workflow-checkout-refusal.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-floor-task-read.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-checkout-refusal.ts', []),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
     'bun:sqlite',
@@ -113,6 +114,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-refusal.ts',
     './workflow-floor-evidence-checkout.ts',
     './workflow-floor-evidence-replay.ts',
+    './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',
     './workflow-text.ts',
   ]),

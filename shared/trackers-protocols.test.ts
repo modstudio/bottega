@@ -257,6 +257,50 @@ describe('tracker status protocols', () => {
   })
 })
 
+describe('tracker comment ids', () => {
+  const replyCaller = (reply: unknown) => {
+    const calls: { name: string; args: Record<string, unknown> }[] = []
+    const caller: ToolCaller = {
+      async callTool(name, args) {
+        calls.push({ name, args })
+        return reply
+      },
+    }
+    return { caller, calls }
+  }
+
+  test('workspace-mcp reads one task comments through its declared get tool', async () => {
+    const fixture = replyCaller({
+      id: '01a0c96f-example',
+      short_id: 'STAR-6104',
+      comments: [
+        { id: '01a16517-2274-71fc-998f-2be4a598791b', body: 'first' },
+        { id: 4, body: 'second' },
+        { body: 'no id' },
+      ],
+    })
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+
+    expect(await source.readCommentIds!(fixture.caller, 'STAR-6104')).toEqual([
+      '01a16517-2274-71fc-998f-2be4a598791b',
+      '4',
+    ])
+    expect(fixture.calls).toEqual([{ name: 'get-task-tool', args: { id: 'STAR-6104' } }])
+  })
+
+  test('a read that answers without a comments array reports no ids at all', async () => {
+    const fixture = replyCaller({ id: '01a0c96f-example', short_id: 'STAR-6104' })
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+
+    expect(await source.readCommentIds!(fixture.caller, 'STAR-6104')).toBeNull()
+  })
+
+  test('a protocol whose task read carries no comments declares no comment reader', () => {
+    expect(trackerSourceFor(project('adanim', 'array-mcp'))!.readCommentIds).toBeUndefined()
+    expect(trackerSourceFor(project('stopal', 'cursor-mcp'))!.readCommentIds).toBeUndefined()
+  })
+})
+
 describe('tracker source construction', () => {
   test('workspace lookup refuses to establish absence from a full result page', async () => {
     const source = trackerSourceFor(project('starship', 'workspace-mcp'))!

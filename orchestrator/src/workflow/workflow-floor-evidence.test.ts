@@ -10,6 +10,7 @@ import {
   gatherValidatedEvidence,
   hubTaskReadRefusal,
 } from './workflow-floor-evidence.ts'
+import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 
 test(`missing ${PLATFORM_SLUG} task refusal names the fresh tracker read`, () => {
   expect(hubTaskReadRefusal('DEV-1070', 1, 'no task DEV-1070\n', '')).toBe(
@@ -795,6 +796,33 @@ test('a foreign task comment is refused and a matching comment is allowed', () =
     ref: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
     exists: true,
   })
+})
+
+test('a fresh tracker task read verifies its own comment ids and refuses another', () => {
+  const d = database()
+  const trackerComment = '01a16517-2274-71fc-998f-2be4a598791b'
+  const trackerRead = hubTaskReadFromJson('DEV-977', {
+    task: { key: 'DEV-977', status: 'done', status_category: 'done' },
+    comments: [{ id: 4 }],
+    tracker_comment_ids: [trackerComment],
+    tracker_comments_verifiable: true,
+  })
+  const readTask = () => trackerRead
+
+  expect(
+    gather(d, { artifact: `task:DEV-977#comment:${trackerComment}` }, { readTask }).artifact,
+  ).toEqual({ ref: `task:DEV-977#comment:${trackerComment}`, exists: true })
+  expect(() => gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask })).toThrow(
+    '--artifact task:DEV-977#comment:4 is not a comment on DEV-977',
+  )
+
+  const hubRead = hubTaskReadFromJson('DEV-977', {
+    task: { key: 'DEV-977', status: 'done', status_category: 'done' },
+    comments: [{ id: 4 }],
+  })
+  expect(
+    gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask: () => hubRead }).artifact,
+  ).toEqual({ ref: 'task:DEV-977#comment:4', exists: true })
 })
 
 test('a task artifact requires the fresh task key to match the cursor', () => {

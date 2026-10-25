@@ -75,7 +75,24 @@ describe('fresh tracker task read', () => {
       },
     })
     expect(observed).toEqual([task])
-    expect(result).toEqual({ trackerRead: true, commentsVerifiable: false, shown })
+    expect(result).toEqual({ trackerRead: true, commentsVerifiable: false, commentIds: [], shown })
+  })
+
+  test('reports the tracker comment ids its task read carries', async () => {
+    const commentIds = ['01a16517-2274-71fc-998f-2be4a598791b']
+    const result = await refreshTrackerTask('FIX-1', undefined, {
+      ...dependencies(async () => task),
+      sourceFor: () => ({ ...source(async () => task), readCommentIds: async () => commentIds }),
+    })
+    expect(result).toEqual({ trackerRead: true, commentsVerifiable: true, commentIds, shown })
+  })
+
+  test('a task read that carries no comments stays unverifiable', async () => {
+    const result = await refreshTrackerTask('FIX-1', undefined, {
+      ...dependencies(async () => task),
+      sourceFor: () => ({ ...source(async () => task), readCommentIds: async () => null }),
+    })
+    expect(result).toEqual({ trackerRead: true, commentsVerifiable: false, commentIds: [], shown })
   })
 
   test('refuses when the source lookup does not find the task', async () => {
