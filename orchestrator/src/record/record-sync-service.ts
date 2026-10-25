@@ -14,7 +14,6 @@ import {
 } from '../../../shared/record/schema-landing.ts'
 import {
   hostedQuestionWins,
-  questionMutationAudit as questionMutationAuditRecord,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
 import {
@@ -24,7 +23,7 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
-import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
@@ -32,6 +31,7 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
 import { assertRecordPayloadColumns } from './record-payload-columns.ts'
+import { pushQuestionAudits } from './record-question-audit.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -407,20 +407,6 @@ const questionValues = (row: Payload, projectId: string | null) => ({
   updatedAt: date(row.updatedAt),
 })
 
-type QuestionAuditPayload = {
-  action: unknown
-  actorSession: unknown
-  at: unknown
-  reason: unknown
-}
-
-function questionAudits(row: Payload): QuestionAuditPayload[] {
-  if (!Array.isArray(row.audits)) {
-    throw new OutboxRowError('question outbox audits must be an array', 'row-validation')
-  }
-  return row.audits as QuestionAuditPayload[]
-}
-
 function reviewLensValues(row: Payload) {
   return {
     ...commonReviewRecordValues(row),
@@ -624,20 +610,7 @@ const recordKinds = {
           })
           .returning({ id: questionRecord.id })
         requireOwnedUpsert(written, 'question', values.id, existingOwned)
-        for (const audit of questionAudits(row)) {
-          await drizzle({ client: tx })
-            .insert(questionMutationAuditRecord)
-            .values({
-              id: newRecordId(),
-              questionId: values.id,
-              spaceId: values.spaceId,
-              action: String(audit.action),
-              actorSession: nullableString(audit.actorSession),
-              at: date(audit.at),
-              reason: nullableString(audit.reason),
-            })
-            .onConflictDoNothing()
-        }
+        await pushQuestionAudits(tx, row, values.id, values.spaceId)
       }),
   },
   review: {
