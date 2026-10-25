@@ -6,9 +6,8 @@ import {
   resolveDeclaredFacts,
   resolveInjection,
   type SignalsSettings,
-  suppliedUnknownKeyProblems,
 } from './project-injection.ts'
-import { type Project, validateProjectSettings } from './projects.ts'
+import { type Project, suppliedUnknownKeyProblems, validateProjectSettings } from './projects.ts'
 
 const release: ReleaseSettings = {
   rungs: [
@@ -972,6 +971,31 @@ describe('project settings object modes', () => {
     expect(validateProjectSettings(uncompilablePattern, 'strict')).toEqual(refusal)
   })
 
+  test('a register read drops a tracker action or review stage this binary does not know', () => {
+    const unknownAction = {
+      tracker: {
+        protocol: 'cursor-mcp',
+        actions: { search: 'task_list', newVerb: 'tool' },
+      },
+    } as unknown as Project['settings']
+    const unknownStage = {
+      tracker: {
+        protocol: 'hub',
+        states: { review: 'review', inReview: 'review' },
+        reviewStages: { waiting: 'review', active: 'inReview', brandNew: 'review' },
+      },
+    } as unknown as Project['settings']
+
+    expect(validateProjectSettings(unknownAction, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownStage, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownAction, 'strict')).toEqual([
+      'tracker.actions: Unrecognized key: "newVerb"',
+    ])
+    expect(validateProjectSettings(unknownStage, 'strict')).toEqual([
+      'tracker.reviewStages: Unrecognized key: "brandNew"',
+    ])
+  })
+
   test('a supplied patch is refused only for the keys this binary does not know', () => {
     // Partial by construction: the stored row supplies the rest of the risk map,
     // and the tracker remedy below names no protocol for the same reason.
@@ -983,6 +1007,11 @@ describe('project settings object modes', () => {
     ).toEqual([])
     expect(suppliedUnknownKeyProblems({ review: { risk: { paths: [{ weight: 2 }] } } })).toEqual([
       expect.stringContaining(unknownKeyRefusal),
+    ])
+    // Strict-minus-strip reaches a key nested in an object the shared shape
+    // builds strict, which is where the tracker's action overrides live.
+    expect(suppliedUnknownKeyProblems({ tracker: { actions: { newVerb: 'tool' } } })).toEqual([
+      'tracker.actions: Unrecognized key: "newVerb"',
     ])
   })
 })

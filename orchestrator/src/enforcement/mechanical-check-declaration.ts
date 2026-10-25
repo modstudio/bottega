@@ -146,18 +146,31 @@ function pointIssues(
   return issues
 }
 
+/**
+ * The refusal about a category or an entry field this binary does not know
+ * depends on WHO is reading: a register write refuses one, because that is how
+ * a typo in a declaration is caught, and a register read drops it, because a
+ * newer binary may have written a category this one has never heard of and
+ * refusing there takes the whole project out of the register. The mode is
+ * spelled out here rather than shared with the register's own settings mode,
+ * which imports this grammar and so cannot be imported back without a cycle.
+ * Checks on a category and a field this binary knows are the same in both.
+ */
 export function mechanicalCheckEntryIssues(
   identifier: string,
   raw: unknown,
+  mode: 'strict' | 'strip',
 ): MechanicalCheckValidationIssue[] {
   const category = MECHANICAL_CHECK_CATEGORIES.get(identifier)
   if (!category) {
-    return [
-      mechanicalCheckIssue(
-        identifier,
-        `unknown category; choose one of: ${MECHANICAL_CHECK_CATALOGUE.map(({ id }) => id).join(', ')}`,
-      ),
-    ]
+    return mode === 'strict'
+      ? [
+          mechanicalCheckIssue(
+            identifier,
+            `unknown category; choose one of: ${MECHANICAL_CHECK_CATALOGUE.map(({ id }) => id).join(', ')}`,
+          ),
+        ]
+      : []
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return [mechanicalCheckIssue(identifier, 'entry must be an override or an opt-out object')]
@@ -173,7 +186,10 @@ export function mechanicalCheckEntryIssues(
       ),
     ]
   }
-  const unknown = keys.filter((key) => !MECHANICAL_CHECK_OVERRIDE_FIELDS.includes(key as never))
+  const unknown =
+    mode === 'strict'
+      ? keys.filter((key) => !MECHANICAL_CHECK_OVERRIDE_FIELDS.includes(key as never))
+      : []
   return [
     ...(unknown.length
       ? [mechanicalCheckIssue(identifier, `entry has unknown fields: ${unknown.sort().join(', ')}`)]

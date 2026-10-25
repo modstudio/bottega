@@ -100,7 +100,7 @@ const trackerNameSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9 _.-]*$/, 'must be a plain name: letters, digits, space, _ . -')
 
-const trackerActionsShape = Object.fromEntries(
+export const trackerActionsShape = Object.fromEntries(
   TRACKER_ACTIONS.map((action) => [
     action,
     z
@@ -112,6 +112,15 @@ const trackerActionsShape = Object.fromEntries(
   ]),
 ) as { [Action in TrackerAction]: z.ZodOptional<z.ZodString> }
 
+export const trackerReviewStagesShape = {
+  waiting: trackerNameSchema,
+  active: trackerNameSchema,
+}
+
+// The two inner objects stay strict here, which is a register writer's verdict
+// on an action or a stage this binary does not know. A register reader builds
+// its own objects over these same shapes in the mode it declares, so a row a
+// newer binary wrote is read instead of refused.
 export const trackerSettingsShape = {
   kind: trackerNameSchema.optional(),
   protocol: z.string().trim().min(1).optional(),
@@ -121,9 +130,7 @@ export const trackerSettingsShape = {
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
   states: z.record(trackerNameSchema, z.enum(['backlog', ...TASK_STATUSES])).optional(),
-  reviewStages: z
-    .strictObject({ waiting: trackerNameSchema, active: trackerNameSchema })
-    .optional(),
+  reviewStages: z.strictObject(trackerReviewStagesShape).optional(),
   actions: z.strictObject(trackerActionsShape).optional(),
 }
 

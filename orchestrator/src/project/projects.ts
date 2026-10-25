@@ -36,16 +36,14 @@ import {
 } from '../../../shared/git.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
-import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
-import { GATE_INPUTS } from '../gate/gate-decision.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
-import { autonomySettingsForStorage, validateAutonomySettings } from '../workflow/autonomy.ts'
+import { autonomySettingsForStorage } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
   resolveWorktreeLifecycle,
@@ -76,6 +74,21 @@ import type {
   StoredProjectSettings,
   WorktreeTool,
 } from './project-settings.ts'
+import {
+  autonomyProblems,
+  canonMirrorKeyProblems,
+  gateInputProblems,
+  invalidOptionalStringArray,
+  mainStackProblems,
+  managedContextProblems,
+  mcpSettingsProblems,
+  projectChecksProblems,
+  projectSearchProblems,
+  projectSpaceProblems,
+  retiredReadonlyDockerProblems,
+  reviewLensProblems,
+  visibilityProblems,
+} from './project-settings-refusals.ts'
 import {
   assertForgeVisibility,
   type ForgeVisibilityLookup,
@@ -372,7 +385,7 @@ export function setProjectRecordSpace(name: string, space: string): void {
   if (!project) throw new Error(`no project "${name}"`)
   const settings = { ...project.settings, space }
   // The row keeps every key it already held; the write only judges the space it was given.
-  const malformed = validateStoredProjectSettings(settings, 'strip', project.path)
+  const malformed = validateStoredProjectSettings(settings, project.path)
   if (malformed.length) throw new Error(malformed.join('\n'))
   writableDb()
   db()
@@ -465,104 +478,6 @@ export async function unretireWrittenProject(name: string): Promise<boolean> {
   return unretireProject(name)
 }
 
-/**
- * Refuse malformed lifecycle declarations while the operator is registering
- * them, before a worker is waiting on a vendor clone to discover the mistake.
- */
-function projectSpaceProblems(space: unknown): string[] {
-  return space !== undefined && (typeof space !== 'string' || !space.trim())
-    ? ['space must be a non-empty record space slug']
-    : []
-}
-
-function retiredReadonlyDockerProblems(worktree: unknown): string[] {
-  if (!worktree || typeof worktree !== 'object' || Array.isArray(worktree)) return []
-  return Object.hasOwn(worktree, 'readonly_docker')
-    ? [
-        'worktree.readonly_docker is retired; remove it and read the recorded gate through gate_result',
-      ]
-    : []
-}
-
-function autonomyProblems(value: unknown): string[] {
-  try {
-    validateAutonomySettings(value, 'project')
-    return []
-  } catch (error) {
-    return [error instanceof Error ? error.message : String(error)]
-  }
-}
-
-const PROJECT_CHECK_NAMES = new Set([
-  'spelling',
-  'attribution',
-  'commentTaskKeys',
-  'commentHistory',
-])
-
-function commentHistoryProblems(value: unknown): string[] {
-  if (value === undefined || typeof value === 'boolean') return []
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return ['checks.commentHistory must be a boolean or an object with phrases']
-  }
-  const config = value as Record<string, unknown>
-  const problems = Object.keys(config)
-    .filter((name) => name !== 'phrases')
-    .map((name) => `checks.commentHistory.${name} is not recognized`)
-  if (
-    !Array.isArray(config.phrases) ||
-    config.phrases.some((phrase) => typeof phrase !== 'string' || !phrase.trim())
-  ) {
-    problems.push('checks.commentHistory.phrases must be an array of non-empty strings')
-  }
-  return problems
-}
-
-function projectChecksProblems(value: unknown): string[] {
-  if (value === undefined) return []
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return ['checks must be an object']
-  }
-  const checks = value as Record<string, unknown>
-  const problems = Object.keys(checks)
-    .filter((name) => !PROJECT_CHECK_NAMES.has(name))
-    .map((name) => `checks.${name} is not a recognized check`)
-  for (const name of ['spelling', 'attribution', 'commentTaskKeys'] as const) {
-    if (checks[name] !== undefined && typeof checks[name] !== 'boolean') {
-      problems.push(`checks.${name} must be a boolean`)
-    }
-  }
-  problems.push(...commentHistoryProblems(checks.commentHistory))
-  return problems
-}
-
-function managedContextProblems(value: unknown): string[] {
-  return value === undefined || typeof value === 'boolean'
-    ? []
-    : ['managedContext must be a boolean']
-}
-
-function canonMirrorKeyProblems(value: unknown): string[] {
-  return value === undefined || (typeof value === 'string' && /^[A-Z][A-Z0-9]+-[0-9]+$/.test(value))
-    ? []
-    : ['canonMirrorKey must be a task key such as DEV-1002']
-}
-
-function projectSearchProblems(value: unknown): string[] {
-  if (value === undefined) return []
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return ['search must be an object']
-  }
-  const search = value as Record<string, unknown>
-  const problems = Object.keys(search)
-    .filter((name) => name !== 'code')
-    .map((name) => `search.${name} is not recognized`)
-  if (search.code !== undefined && typeof search.code !== 'boolean') {
-    problems.push('search.code must be a boolean')
-  }
-  return problems
-}
-
 type ProjectSettingsValidationContext = {
   validateKeyPrefixes?: boolean
   currentProjectName?: string
@@ -605,80 +520,6 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
   return problems
 }
 
-function reviewLensProblems(
-  review: ProjectSettings['review'],
-  enabledLensIds: readonly string[] | undefined,
-  enabledLensSpaceId: string | null | undefined,
-): string[] {
-  if (!review || !Array.isArray(review.lenses) || enabledLensIds === undefined) return []
-  const enabled = new Set(enabledLensIds)
-  const remedy =
-    enabledLensSpaceId === undefined
-      ? `choose an enabled lens from ${PLATFORM_SLUG} review lens list`
-      : enabledLensSpaceId === null
-        ? 'choose an enabled lens from the local catalogue (no record space)'
-        : `choose an enabled lens in record space "${enabledLensSpaceId}"`
-  const problems = review.lenses.flatMap((entry, index) =>
-    entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
-      ? [`review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; ${remedy}`]
-      : [],
-  )
-  if (review.secondOpinion && !enabled.has(review.secondOpinion.lens)) {
-    problems.push(
-      `review.secondOpinion.lens: unknown or disabled lens "${review.secondOpinion.lens}"; ${remedy}`,
-    )
-  }
-  return problems
-}
-
-function readerToolServerProblems(server: string, names: unknown): string[] {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(server)) {
-    return [`mcp.reader_tools server name ${JSON.stringify(server)} must be a plain non-empty name`]
-  }
-  if (!Array.isArray(names)) return [`mcp.reader_tools.${server} must be a list of tool names`]
-  const problems: string[] = []
-  const seen = new Set<string>()
-  for (const name of names) {
-    if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) {
-      problems.push(`mcp.reader_tools.${server} must contain plain non-empty tool names`)
-    } else if (seen.has(name)) {
-      problems.push(
-        `mcp.reader_tools.${server} contains duplicate tool name ${JSON.stringify(name)}`,
-      )
-    }
-    if (typeof name === 'string') seen.add(name)
-  }
-  return problems
-}
-
-function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
-  if (mcp === undefined) return []
-  if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) return ['mcp must be an object']
-  const problems: string[] = []
-  if (mcp.probe_tool !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(mcp.probe_tool)) {
-    problems.push('mcp.probe_tool must be a plain non-empty tool name')
-  }
-  if (!('reader_tools' in mcp)) return problems
-  const readerTools = mcp.reader_tools
-  if (!readerTools || typeof readerTools !== 'object' || Array.isArray(readerTools)) {
-    return [...problems, 'mcp.reader_tools must be a map from server names to tool-name lists']
-  }
-  for (const [server, names] of Object.entries(readerTools))
-    problems.push(...readerToolServerProblems(server, names))
-  return problems
-}
-
-function visibilityProblems(visibility: ProjectSettings['visibility']): string[] {
-  return visibility === undefined || repositoryVisibility(visibility)
-    ? []
-    : ['visibility must be public or private']
-}
-
-function gateInputProblems(gateInput: ProjectSettings['gateInput']): string[] {
-  if (gateInput === undefined || GATE_INPUTS.includes(gateInput)) return []
-  return ['gateInput must be staged, worktree, or committed']
-}
-
 export function validateProjectSettings(
   settings: ProjectSettings,
   mode: SettingsObjectMode,
@@ -698,12 +539,12 @@ export function validateProjectSettings(
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
     ...autonomyProblems(settings.autonomy),
-    ...projectChecksProblems(settings.checks),
+    ...projectChecksProblems(settings.checks, mode),
     ...managedContextProblems(settings.managedContext),
     ...canonMirrorKeyProblems(settings.canonMirrorKey),
-    ...projectSearchProblems(settings.search),
+    ...projectSearchProblems(settings.search, mode),
     ...keyPrefixProblems(settings.keyPrefixes, context),
-    ...mainStackProblems(settings.mainStack),
+    ...mainStackProblems(settings.mainStack, mode),
     ...reviewLensProblems(settings.review, context.enabledLensIds, context.enabledLensSpaceId),
     ...mcpSettingsProblems(settings.mcp),
     ...visibilityProblems(settings.visibility),
@@ -749,37 +590,6 @@ export function validateProjectSettings(
   return problems
 }
 
-function mainStackProblems(value: ProjectSettings['mainStack']): string[] {
-  if (value === undefined) return []
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return ['mainStack must be an object']
-  }
-  const keys = Object.keys(value)
-  if (keys.some((key) => key !== 'consumers' && key !== 'requiredServices'))
-    return ['mainStack contains unknown settings']
-  if (!Array.isArray(value.consumers)) return ['mainStack.consumers must be an array']
-  const allowed = new Set(['gate', 'mcp', 'worktree-create'])
-  if (value.consumers.some((consumer) => typeof consumer !== 'string' || !allowed.has(consumer))) {
-    return ['mainStack.consumers entries must be gate, mcp, or worktree-create']
-  }
-  if (new Set(value.consumers).size !== value.consumers.length) {
-    return ['mainStack.consumers entries must be unique']
-  }
-  if (invalidOptionalStringArray(value.requiredServices)) {
-    return ['mainStack.requiredServices must be an array of non-empty service names']
-  }
-  if (value.requiredServices?.some((service) => !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(service))) {
-    return ['mainStack.requiredServices entries must be plain service names']
-  }
-  if (
-    value.requiredServices &&
-    new Set(value.requiredServices).size !== value.requiredServices.length
-  ) {
-    return ['mainStack.requiredServices entries must be unique']
-  }
-  return []
-}
-
 function trackedRecipeProblems(worktree: WorktreeTool | undefined, projectPath?: string): string[] {
   const problems: string[] = []
   if (worktree?.recipePath !== undefined && typeof worktree.recipePath !== 'string') {
@@ -806,31 +616,62 @@ function trackedRecipeProblems(worktree: WorktreeTool | undefined, projectPath?:
   return problems
 }
 
-function invalidOptionalStringArray(value: unknown): boolean {
-  return (
-    value !== undefined &&
-    (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !entry.trim()))
-  )
-}
-
-/** Validate a stored row without re-refusing its unchanged legacy create string. */
+/**
+ * Validate a stored row without re-refusing its unchanged legacy create string.
+ *
+ * A stored row is ALWAYS read in strip mode, whatever the caller is about to
+ * write: the register is written by one binary and read by another, so a key a
+ * newer binary wrote is the ordinary case and refusing it here takes the whole
+ * project, and every workflow that needs it, out of the register at once.
+ */
 export function validateStoredProjectSettings(
   settings: ProjectSettings,
-  mode: SettingsObjectMode,
   projectPath?: string,
 ): string[] {
   const legacy = 'worktree.create is a shell string; migrate it (DEV-308)'
-  return validateProjectSettings(settings, mode, projectPath).filter(
+  return validateProjectSettings(settings, 'strip', projectPath).filter(
     (problem) => !(typeof settings.worktree?.create === 'string' && problem === legacy),
   )
 }
 
 /**
- * The keys a register write must refuse out of what it supplied, beside the
- * validators the update commands already call. Exported from here because those
- * commands may not reach the injection grammar directly.
+ * The keys a register write must still refuse out of what its caller supplied.
+ *
+ * Every other issue is judged on the row the write produces, because a patch is
+ * partial and the stored row completes it: `--settings '{"tracker":{"reviewStages":…}}'`
+ * is a complete tracker once merged, and refusing it for the keys it did not
+ * mention would refuse the remedy every refusal message prints. Only a key this
+ * binary does not know is settled by the supplied object alone, and strip mode
+ * reports everything strict mode reports except those, so the difference between
+ * the two modes over the same supplied object is exactly them — over the whole
+ * settings grammar, which is why this lives beside it rather than in the
+ * injection module that owns only part of it.
  */
-export { suppliedUnknownKeyProblems } from './project-injection.ts'
+export function suppliedUnknownKeyProblems(supplied: Record<string, unknown>): string[] {
+  const settings = supplied as ProjectSettings
+  const dropped = new Set(validateProjectSettings(settings, 'strip'))
+  return validateProjectSettings(settings, 'strict').filter((problem) => !dropped.has(problem))
+}
+
+/**
+ * The problems one register write must refuse: the row it produces, read in
+ * strip mode so a key a newer binary wrote survives the update, plus the keys
+ * its caller supplied, which only strict mode settles. Both update commands
+ * ask this, so the split between the two modes is decided in one place.
+ */
+export function validateRegisterWrite(input: {
+  merged: ProjectSettings
+  supplied?: Record<string, unknown>
+  projectPath?: string
+  context?: ProjectSettingsValidationContext
+}): string[] {
+  return [
+    ...new Set([
+      ...validateProjectSettings(input.merged, 'strip', input.projectPath, input.context),
+      ...(input.supplied ? suppliedUnknownKeyProblems(input.supplied) : []),
+    ]),
+  ]
+}
 
 export type RegisterBranchCheck = {
   head: string | null

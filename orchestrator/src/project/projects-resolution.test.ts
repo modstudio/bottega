@@ -20,6 +20,7 @@ import {
   retiredProjectRefusal,
   retireProject,
   stackAt,
+  suppliedUnknownKeyProblems,
   unretireProject,
   upsertProject,
   validateProjectSettings,
@@ -527,5 +528,78 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     expect(live?.path).toBe('/w/restored-next')
     expect(live?.stack).toBe('node')
     expect(live?.retiredAt).toBeNull()
+  })
+})
+
+/**
+ * The register is written by one binary and read by another, so a settings name
+ * this binary does not know is a read's ordinary case and a write's typo.
+ */
+describe('an unknown settings name is judged by which side is reading', () => {
+  const asSettings = (settings: Record<string, unknown>) =>
+    settings as unknown as Parameters<typeof validateProjectSettings>[0]
+  const unknownCheck = asSettings({ checks: { spelling: true, brandNewCheck: true } })
+  const unknownHistoryField = asSettings({
+    checks: { commentHistory: { phrases: ['used to'], tone: 'warm' } },
+  })
+  const unknownSearchField = asSettings({ search: { code: true, docs: true } })
+  const unknownMainStackKey = asSettings({ mainStack: { consumers: ['gate'], health: 'http' } })
+
+  test('a read drops a name this binary does not know', () => {
+    expect(validateProjectSettings(unknownCheck, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownHistoryField, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownSearchField, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownMainStackKey, 'strip')).toEqual([])
+  })
+
+  test('a write refuses the same name with the text it always printed', () => {
+    expect(validateProjectSettings(unknownCheck, 'strict')).toEqual([
+      'checks.brandNewCheck is not a recognized check',
+    ])
+    expect(validateProjectSettings(unknownHistoryField, 'strict')).toEqual([
+      'checks.commentHistory.tone is not recognized',
+    ])
+    expect(validateProjectSettings(unknownSearchField, 'strict')).toEqual([
+      'search.docs is not recognized',
+    ])
+    expect(validateProjectSettings(unknownMainStackKey, 'strict')).toEqual([
+      'mainStack contains unknown settings',
+    ])
+  })
+
+  test('a check on a name or a value this binary knows is the same in either mode', () => {
+    expect(validateProjectSettings(asSettings({ checks: { spelling: 'yes' } }), 'strip')).toEqual([
+      'checks.spelling must be a boolean',
+    ])
+    expect(validateProjectSettings(asSettings({ search: { code: 'yes' } }), 'strip')).toEqual([
+      'search.code must be a boolean',
+    ])
+    expect(
+      validateProjectSettings(asSettings({ mainStack: { consumers: ['unknown'] } }), 'strip'),
+    ).toEqual(['mainStack.consumers entries must be gate, mcp, or worktree-create'])
+  })
+
+  test('a supplied patch is refused only for the names this binary does not know', () => {
+    expect(suppliedUnknownKeyProblems({ checks: { brandNewCheck: true } })).toEqual([
+      'checks.brandNewCheck is not a recognized check',
+    ])
+    expect(suppliedUnknownKeyProblems({ search: { docs: true } })).toEqual([
+      'search.docs is not recognized',
+    ])
+    expect(suppliedUnknownKeyProblems({ mainStack: { health: 'http' } })).toEqual([
+      'mainStack contains unknown settings',
+    ])
+    expect(
+      suppliedUnknownKeyProblems({ mechanicalChecks: { brandNewCheck: { tool: 'probe' } } }),
+    ).toEqual([expect.stringContaining('unknown category')])
+    expect(
+      suppliedUnknownKeyProblems({
+        mechanicalChecks: { spelling: { tool: 'typos', newField: 1 } },
+      }),
+    ).toEqual([expect.stringContaining('entry has unknown fields: newField')])
+    // A partial patch is judged on the keys it names, never on the ones it left
+    // out for the stored row to complete.
+    expect(suppliedUnknownKeyProblems({ checks: { spelling: true } })).toEqual([])
+    expect(suppliedUnknownKeyProblems({ mainStack: { consumers: ['mcp'] } })).toEqual([])
   })
 })

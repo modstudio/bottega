@@ -16,6 +16,8 @@ import {
   type TrackerAction,
   type TrackerProtocol,
   type TrackerSettings,
+  trackerActionsShape,
+  trackerReviewStagesShape,
   trackerSettingsShape,
 } from '../../../shared/trackers.ts'
 import { mechanicalCheckEntryIssues } from '../enforcement/mechanical-check-declaration.ts'
@@ -239,17 +241,18 @@ const testSubstanceSchema = (mode: SettingsObjectMode) =>
 
 const mechanicalChecksRemedy = `set with: ${PLATFORM_SLUG} project set <project> --settings '{"mechanicalChecks":{"<category>":{"tool":"<command>"}}}'`
 
-const mechanicalChecksSchema = z.record(z.string(), z.unknown()).superRefine((entries, context) => {
-  for (const [identifier, raw] of Object.entries(entries)) {
-    for (const issue of mechanicalCheckEntryIssues(identifier, raw)) {
-      context.addIssue({
-        code: 'custom',
-        path: issue.path,
-        message: `${issue.message}; ${mechanicalChecksRemedy}`,
-      })
+const mechanicalChecksSchema = (mode: SettingsObjectMode) =>
+  z.record(z.string(), z.unknown()).superRefine((entries, context) => {
+    for (const [identifier, raw] of Object.entries(entries)) {
+      for (const issue of mechanicalCheckEntryIssues(identifier, raw, mode)) {
+        context.addIssue({
+          code: 'custom',
+          path: issue.path,
+          message: `${issue.message}; ${mechanicalChecksRemedy}`,
+        })
+      }
     }
-  }
-})
+  })
 
 const gateSchema = z.string().trim().min(1)
 const trunkSchema = z.string().trim().min(1)
@@ -259,6 +262,10 @@ const trackerSchema = (mode: SettingsObjectMode) =>
   objectIn(mode)({
     ...trackerSettingsShape,
     protocol: z.enum(TRACKER_PROTOCOLS),
+    // The shared shape fixes these two inner objects strict, so a reader
+    // overrides them with the same fields in the mode it declares.
+    reviewStages: objectIn(mode)(trackerReviewStagesShape).optional(),
+    actions: objectIn(mode)(trackerActionsShape).optional(),
   }).superRefine((tracker, context) => {
     refuseHubActionOverrides(tracker, context)
     refuseNonCursorProjectId(tracker, context)
@@ -602,7 +609,7 @@ export function validateProjectInjectionSettings(
     ['signals', signalsSchema(mode)],
     ['review', reviewSchema(mode)],
     ['testSubstance', testSubstanceSchema(mode)],
-    ['mechanicalChecks', mechanicalChecksSchema],
+    ['mechanicalChecks', mechanicalChecksSchema(mode)],
     ['gate', gateSchema],
     ['trunk', trunkSchema],
   ] as const) {
@@ -632,23 +639,4 @@ export function validateProjectInjectionSettings(
     }
   }
   return problems
-}
-
-/**
- * The keys a register write must still refuse out of what its caller supplied.
- *
- * Every other issue is judged on the row the write produces, because a patch is
- * partial and the stored row completes it: `--settings '{"tracker":{"reviewStages":…}}'`
- * is a complete tracker once merged, and refusing it for the keys it did not
- * mention would refuse the remedy every refusal message prints. Only a key this
- * binary does not know is settled by the supplied object alone, and strip mode
- * reports everything strict mode reports except those, so the difference between
- * the two modes over the same supplied object is exactly them.
- */
-export function suppliedUnknownKeyProblems(supplied: Record<string, unknown>): string[] {
-  const settings = supplied as ValidatedInjectionSettings
-  const dropped = new Set(validateProjectInjectionSettings(settings, 'strip'))
-  return validateProjectInjectionSettings(settings, 'strict').filter(
-    (problem) => !dropped.has(problem),
-  )
 }

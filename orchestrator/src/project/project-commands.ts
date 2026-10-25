@@ -41,10 +41,10 @@ import {
   retiredProjectByName,
   retireWrittenProject,
   sniffStack,
-  suppliedUnknownKeyProblems,
   unretireWrittenProject,
   upsertProject,
   validateProjectSettings,
+  validateRegisterWrite,
   worktreeWarnings,
   writeHostedProject,
 } from './projects.ts'
@@ -386,16 +386,18 @@ function validatedFillCandidate(current: Project, input: FillAbsentProjectInput)
   }
   const settings = fillAbsentSettings(current, input)
   const lensSpaceId = effectiveProjectSpace(db(), current.name)
-  const malformed = [
-    ...validateProjectSettings(settings, 'strip', current.path, {
+  const malformed = validateRegisterWrite({
+    merged: settings,
+    supplied: input.fill.settings,
+    projectPath: current.path,
+    context: {
       validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
       currentProjectName: current.name,
       register: projects(),
       enabledLensIds: enabledLensIds(lensSpaceId),
       enabledLensSpaceId: lensSpaceId,
-    }),
-    ...suppliedUnknownKeyProblems(input.fill.settings),
-  ]
+    },
+  })
   if (malformed.length) throw new Error(malformed.join('\n'))
   const candidate = {
     ...current,
@@ -617,8 +619,11 @@ async function setProjectCommand(
   const lensSpaceId = effectiveProjectSpace(db(), name)
   // The patch's own keys are refused strictly; the row it merges into is read
   // in strip mode, so a key a newer binary wrote survives the update.
-  const malformed = [
-    ...validateProjectSettings(candidate.settings, 'strip', candidate.path, {
+  const malformed = validateRegisterWrite({
+    merged: candidate.settings,
+    supplied: settingsPatch,
+    projectPath: candidate.path,
+    context: {
       validateKeyPrefixes:
         writesKeyPrefixes(settingsPatch) ||
         (nextName !== name && candidate.settings.keyPrefixes !== undefined),
@@ -627,9 +632,8 @@ async function setProjectCommand(
       register: projects(),
       enabledLensIds: enabledLensIds(lensSpaceId),
       enabledLensSpaceId: lensSpaceId,
-    }),
-    ...(settingsPatch ? suppliedUnknownKeyProblems(settingsPatch) : []),
-  ].filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
+    },
+  }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
   if (malformed.length) throw new Error(malformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))

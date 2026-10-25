@@ -486,6 +486,51 @@ test('project set keeps a stored key this binary does not know', async () => {
   })
 })
 
+test('project set keeps a check name and a tracker verb this binary does not know', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  const storedSettings = {
+    checks: { spelling: true, brandNewCheck: true },
+    tracker: { protocol: 'cursor-mcp', actions: { search: 'task_list', newVerb: 'tool' } },
+  } as unknown as Project['settings']
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'settings-newer-names',
+    path: '/w/settings-newer-names',
+    settings: storedSettings,
+  })
+
+  const listed = JSON.parse(await runProject(['project', 'list'], { json: true })) as {
+    name: string
+    problems: string[]
+  }[]
+  expect(listed.find((row) => row.name === 'settings-newer-names')?.problems).toEqual([])
+
+  await runProject(['project', 'set', 'settings-newer-names'], {
+    settings: JSON.stringify({ gate: 'bun run check' }),
+  })
+  expect(projectByName('settings-newer-names')?.settings).toMatchObject({
+    gate: 'bun run check',
+    checks: { spelling: true, brandNewCheck: true },
+    tracker: { actions: { search: 'task_list', newVerb: 'tool' } },
+  })
+
+  await expect(
+    runProject(['project', 'set', 'settings-newer-names'], {
+      settings: JSON.stringify({ checks: { brandNewCheck: true } }),
+    }),
+  ).rejects.toThrow('checks.brandNewCheck is not a recognized check')
+  await expect(
+    runProject(['project', 'set', 'settings-newer-names'], {
+      settings: JSON.stringify({ tracker: { actions: { newVerb: 'tool' } } }),
+    }),
+  ).rejects.toThrow('tracker.actions: Unrecognized key: "newVerb"')
+  expect(projectByName('settings-newer-names')?.settings).toMatchObject({
+    gate: 'bun run check',
+    checks: { spelling: true, brandNewCheck: true },
+    tracker: { actions: { search: 'task_list', newVerb: 'tool' } },
+  })
+})
+
 test('project set refuses non-object settings without changing stored settings', async () => {
   installRecordApiClient(createMemoryRecordApiClient())
   upsertProject({
