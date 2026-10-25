@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { listHostedNotes } from './hosted-note-list.ts'
 
@@ -26,8 +27,8 @@ beforeAll(async () => {
     INSERT INTO hub_note_acknowledgement
       (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
     VALUES ('${id(1616)}','${spaceId}','${PLATFORM_NAME}','${projectId}','${id(1613)}','session','${at}',1,'${at}','${at}');
-    INSERT INTO seq(space_id,project_id,name,next)
-    VALUES ('${spaceId}','${projectId}','note',4);
+    INSERT INTO seq(id,space_id,project_id,name,next)
+    VALUES ('${newRecordId()}','${spaceId}','${projectId}','note',4);
     SET ROLE record_actor;
   `)
 })

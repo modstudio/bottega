@@ -239,7 +239,7 @@ export const project = pgTable.withRLS(
 export const seq = pgTable.withRLS(
   'seq',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     spaceId: spaceIdentity(),
     projectId: uuid('project_id')
       .notNull()

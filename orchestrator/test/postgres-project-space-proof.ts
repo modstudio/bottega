@@ -228,8 +228,9 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
          (id,space_id,ref_id,source_project_id,commits,paths,note,updated_at)
          VALUES ('${portRefSource}','${source}','${portRef}','${otherProject}',
           '["abc123"]','["proof.ts"]','proof',now());
-       INSERT INTO seq(space_id,project_id,name,next) VALUES
-         ('${source}','${project}','task:MOVE',2),('${source}','${otherProject}','task:STAY',2);
+       INSERT INTO seq(id,space_id,project_id,name,next) VALUES
+         ('${newRecordId()}','${source}','${project}','task:MOVE',2),
+         ('${newRecordId()}','${source}','${otherProject}','task:STAY',2);
        INSERT INTO hub_task
          (id,space_id,project_name,key,project,source,first_seen,last_seen,created_at,updated_at)
          VALUES ('${newRecordId()}','${source}','move-proof','${task}','move-proof','local',now(),now(),now(),now());
@@ -927,7 +928,8 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
       )
       expect(inserted.code, inserted.stderr).toBe(0)
       input.admin(
-        `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${source}','${project}');`,
+        `INSERT INTO public_doc_space (id, space_id, project_id)
+         VALUES ('${newRecordId()}','${source}','${project}');`,
       )
       const dry = await moveRecordProjectSpace({
         url: input.actorUrl,

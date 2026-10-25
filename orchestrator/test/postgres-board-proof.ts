@@ -2,7 +2,7 @@ import { beforeAll, expect, test } from 'bun:test'
 
 export { registerBoardApiProofs } from './postgres-board-api-proof.ts'
 
-import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
+import { newRecordId, RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import type { PsqlResult } from './fixtures/postgres-rls.ts'
 
 type BoardProofInput = {
@@ -143,15 +143,15 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
          scope_project_ids,recipient_user_ids,shared_space_reach)
       VALUES ('${IDS.sharedReply}','${IDS.userB}','reply','${IDS.sharedSpace}','reply',false,
         now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);
-      INSERT INTO board_message_tag (message_id,kind,value,origin)
-      VALUES ('${IDS.scopedA}','topic','${IDS.tag}','sender');
-      INSERT INTO board_message_tag (message_id,kind,value,origin)
-      VALUES ('${IDS.sharedSpace}','topic','shared-space','sender');
+      INSERT INTO board_message_tag (id,message_id,kind,value,origin)
+      VALUES ('${newRecordId()}','${IDS.scopedA}','topic','${IDS.tag}','sender');
+      INSERT INTO board_message_tag (id,message_id,kind,value,origin)
+      VALUES ('${newRecordId()}','${IDS.sharedSpace}','topic','shared-space','sender');
       INSERT INTO board_receipt
-        (message_id,reader_user_id,reader_session,audience_at_posting,delivered_at)
+        (id,message_id,reader_user_id,reader_session,audience_at_posting,delivered_at)
       VALUES
-        ('${IDS.scopedA}','${IDS.userA}','operator',true,now()),
-        ('${IDS.scopedA}','${IDS.userB}','worker-chain',true,now());
+        ('${newRecordId()}','${IDS.scopedA}','${IDS.userA}','operator',true,now()),
+        ('${newRecordId()}','${IDS.scopedA}','${IDS.userB}','worker-chain',true,now());
       INSERT INTO board_claim
         (id,project_id,subject_kind,subject_value,holder_user_id,duration_ms,taken_at,
          renewed_at,lapses_at)
@@ -224,8 +224,8 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       IDS.userF,
       [],
       `INSERT INTO board_receipt
-       (message_id,reader_user_id,reader_session,audience_at_posting)
-       VALUES ('${IDS.sharedSpace}','${IDS.userF}','unrelated',false);`,
+       (id,message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${newRecordId()}','${IDS.sharedSpace}','${IDS.userF}','unrelated',false);`,
     )
     expect(receipt.code).not.toBe(0)
     const reply = actor(
@@ -272,8 +272,8 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       IDS.userB,
       [IDS.spaceA, IDS.spaceC],
       `INSERT INTO board_receipt
-         (message_id,reader_user_id,reader_session,audience_at_posting)
-       VALUES ('${IDS.sharedSpace}','${IDS.userB}','shared-reader',true);
+         (id,message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${newRecordId()}','${IDS.sharedSpace}','${IDS.userB}','shared-reader',true);
        INSERT INTO board_message
          (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
           scope_project_ids,recipient_user_ids,shared_space_reach)
@@ -374,8 +374,8 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       input,
       IDS.userB,
       [IDS.spaceA],
-      `INSERT INTO board_message_tag (message_id,kind,value,origin)
-       VALUES ('${IDS.scopedA}','topic','foreign','sender');`,
+      `INSERT INTO board_message_tag (id,message_id,kind,value,origin)
+       VALUES ('${newRecordId()}','${IDS.scopedA}','topic','foreign','sender');`,
     )
     expect(insertTag.code).not.toBe(0)
     const deleteTag = actor(
@@ -586,8 +586,8 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       IDS.userB,
       [IDS.spaceA],
       `INSERT INTO board_receipt
-       (message_id,reader_user_id,reader_session,audience_at_posting)
-       VALUES ('${IDS.scopedA}','${IDS.userC}','other',true);`,
+       (id,message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${newRecordId()}','${IDS.scopedA}','${IDS.userC}','other',true);`,
     )
     expect(otherReader.code).not.toBe(0)
     const invisible = actor(
@@ -595,8 +595,8 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       IDS.userB,
       [IDS.spaceA],
       `INSERT INTO board_receipt
-       (message_id,reader_user_id,reader_session,audience_at_posting)
-       VALUES ('${IDS.authorOnly}','${IDS.userB}','own',false);`,
+       (id,message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${newRecordId()}','${IDS.authorOnly}','${IDS.userB}','own',false);`,
     )
     expect(invisible.code).not.toBe(0)
   })

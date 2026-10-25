@@ -123,11 +123,11 @@ realPostgres('RLS proof against real Postgres', () => {
          'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()),
         ('${ids.RUN_B}', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', now(), 'proof', 'proof',
          'b', 1, 'b', false, 'ok', 1, false, false, false, now(), now());
-      INSERT INTO seq (space_id, project_id, name, next) VALUES
-        ('${ids.SPACE_A}', '${ids.PROJECT_A}', 'task:DEV', 446),
-        ('${ids.SPACE_A}', '${ids.PROJECT_A}', 'dev', 21),
-        ('${ids.SPACE_A}', '${ids.PROJECT_A2}', 'task:DEV', 12),
-        ('${ids.SPACE_B}', '${ids.PROJECT_B}', 'task:DEV', 9);
+      INSERT INTO seq (id, space_id, project_id, name, next) VALUES
+        ('${newRecordId()}', '${ids.SPACE_A}', '${ids.PROJECT_A}', 'task:DEV', 446),
+        ('${newRecordId()}', '${ids.SPACE_A}', '${ids.PROJECT_A}', 'dev', 21),
+        ('${newRecordId()}', '${ids.SPACE_A}', '${ids.PROJECT_A2}', 'task:DEV', 12),
+        ('${newRecordId()}', '${ids.SPACE_B}', '${ids.PROJECT_B}', 'task:DEV', 9);
       INSERT INTO review
         (id, space_id, project_id, machine_id, recorded_at, created_at, updated_at)
       VALUES
@@ -835,8 +835,8 @@ realPostgres('RLS proof against real Postgres', () => {
       RECORD_OWNER_ROLE,
       'owner-password',
       ids.SPACE_A,
-      `INSERT INTO seq (space_id, project_id, name, next)
-       VALUES ('${ids.SPACE_A}', '${ids.PROJECT_A}', NULL, 1);`,
+      `INSERT INTO seq (id, space_id, project_id, name, next)
+       VALUES ('${newRecordId()}', '${ids.SPACE_A}', '${ids.PROJECT_A}', NULL, 1);`,
     )
     expect(inserted.code).not.toBe(0)
     expect(inserted.stderr).toContain('null value in column "name"')

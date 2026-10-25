@@ -1,5 +1,5 @@
 import { beforeAll, expect, test } from 'bun:test'
-import { RECORD_ACTOR_ROLE, RECORD_PUBLIC_ROLE } from '../../shared/record/schema.ts'
+import { newRecordId, RECORD_ACTOR_ROLE, RECORD_PUBLIC_ROLE } from '../../shared/record/schema.ts'
 import { getRecordDoc, upsertRecordDoc } from '../src/record/record-docs.ts'
 import {
   clearPublicDocProject,
@@ -104,8 +104,8 @@ export function registerPublicDocProofs(input: {
     )
     expect(input.admin('SELECT count(*) FROM public_doc_space;')).toBe('0')
     input.admin(`
-      INSERT INTO public_doc_space (space_id, project_id)
-      VALUES ('${privateSpaceId}', '${privateProjectId}');
+      INSERT INTO public_doc_space (id, space_id, project_id)
+      VALUES ('${newRecordId()}', '${privateSpaceId}', '${privateProjectId}');
     `)
     await expect(clearPublicDocProject(privateTarget)).rejects.toThrow(
       'not a member of record space',
@@ -252,7 +252,8 @@ export function registerPublicDocProofs(input: {
     expect(docWrite.stderr).toContain('permission denied for table doc')
 
     const designationWrite = asPublic(
-      `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${privateSpaceId}', '${privateProjectId}'); ROLLBACK;`,
+      `INSERT INTO public_doc_space (id, space_id, project_id)
+       VALUES ('${newRecordId()}', '${privateSpaceId}', '${privateProjectId}'); ROLLBACK;`,
     )
     expect(designationWrite.code).not.toBe(0)
     expect(designationWrite.stderr).toContain('permission denied for table public_doc_space')
@@ -280,7 +281,8 @@ export function registerPublicDocProofs(input: {
     const write = input.psql(
       RECORD_ACTOR_ROLE,
       'actor-password',
-      `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${privateSpaceId}', '${privateProjectId}');`,
+      `INSERT INTO public_doc_space (id, space_id, project_id)
+       VALUES ('${newRecordId()}', '${privateSpaceId}', '${privateProjectId}');`,
     )
     expect(write.code).not.toBe(0)
     expect(write.stderr).toContain('permission denied for table public_doc_space')

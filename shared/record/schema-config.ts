@@ -141,7 +141,7 @@ export const configSecret = pgTable.withRLS(
 export const secretDekWrap = pgTable.withRLS(
   'secret_dek_wrap',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     spaceId: spaceIdentity(),
     dekId: uuid('dek_id').notNull(),
     recipientKeyId: text('recipient_key_id').notNull(),
@@ -171,7 +171,7 @@ export const secretDekWrap = pgTable.withRLS(
 export const machinePublicKey = pgTable.withRLS(
   'machine_public_key',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     spaceId: spaceIdentity(),
     keyId: text('key_id').notNull(),
     publicKey: bytea('public_key').notNull(),
