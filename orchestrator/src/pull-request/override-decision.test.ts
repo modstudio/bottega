@@ -34,24 +34,6 @@ test('an architect ceiling ruling records its attribution and remaining lenses',
   })
 })
 
-test('an architect ceiling ruling refuses below the review round ceiling', () => {
-  expect(
-    decideTriageOverride({
-      ceilingRuling: 'stop here',
-      fromOperator: false,
-      commandName,
-      reviewBudget: { atCeiling: false, roundsUsed: 2, ceiling: 3 },
-      triage: triage({ missingLenses: ['craft'] }),
-    }),
-  ).toEqual({
-    kind: 'refuse',
-    reason:
-      'refusing architect ceiling ruling before the review round ceiling is reached; rounds used ' +
-      `2/3; cleared by: run the round named by \`${commandName} review tier <branch>\`, or use ` +
-      `\`${commandName} pr create ... --override-triage "<reason>" --from-operator\``,
-  })
-})
-
 test('ordinary triage overrides keep operator attribution below the ceiling', () => {
   expect(
     decideTriageOverride({

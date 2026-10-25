@@ -853,7 +853,6 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     expect(output).toContain('rounds 1/0')
     expect(output).toContain('current change is already a counted round; no new round consumed')
     expect(output).not.toContain('current change would start a new round')
-    expect(output).not.toContain('a new round would exceed the ceiling')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

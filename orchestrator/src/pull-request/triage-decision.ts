@@ -67,7 +67,9 @@ function missingLensNames(decision: TriageDecision): string[] {
   if (decision.complete) return []
   return normalizeMissingLensNames([
     ...decision.missingLenses.map(({ lens }) => lens),
-    ...(decision.missingSecondOpinion ? [decision.missingSecondOpinion.lens] : []),
+    ...(decision.missingSecondOpinion
+      ? [`second-opinion:${decision.missingSecondOpinion.lens}`]
+      : []),
   ])
 }
 

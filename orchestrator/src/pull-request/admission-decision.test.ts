@@ -84,6 +84,32 @@ describe('pull-request admission decision', () => {
     ).toBeNull()
   })
 
+  test('a missing second-opinion ruling does not admit a missing primary lens', () => {
+    const ceiling = override({
+      recordId: 'ceiling-ruling',
+      attribution: 'architect-ceiling',
+      missingLenses: ['second-opinion:correctness'],
+    })
+    const ceilingGap = {
+      ...incomplete,
+      noCompleteReviewRound: false,
+      missingLenses: [],
+      missingSecondOpinion: { lens: 'correctness', firstRunId: 'run-1' },
+    }
+    expect(decideAdmission(change, ceilingGap, [ceiling]).overrideId).toBe('ceiling-ruling')
+    expect(
+      decideAdmission(
+        change,
+        {
+          ...ceilingGap,
+          missingLenses: [{ lens: 'correctness', recordedOnBranch: false }],
+          missingSecondOpinion: null,
+        },
+        [ceiling],
+      ).overrideId,
+    ).toBeNull()
+  })
+
   test.each([
     ['an older tip', { tip: 'tip-old', tree: 'tree-old' }],
     ['another project', { project: 'other' }],
