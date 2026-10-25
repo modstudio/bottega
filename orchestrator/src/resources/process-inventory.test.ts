@@ -193,6 +193,40 @@ test('an environment that was not read stays unknown on the inventory row', () =
   expect(joinRunMarker([candidate], new Map())[0]!.runMarker).toBe('unknown')
 })
 
+test('each inventory row carries the marker read for its own pid', () => {
+  const row: OrphanCandidate = {
+    pid: 42,
+    ppid: 1,
+    pgid: 42,
+    cpu: 0,
+    command: 'vite',
+    ageSeconds: 5,
+    startTime: 'birth',
+    cwd: '/trees/gone',
+    cwdVerified: true,
+    missingTree: '/trees/gone',
+    project: 'app',
+    match: 'cwd',
+  }
+  const parent = { ...row, pid: 42, ppid: 1 }
+  const child = { ...row, pid: 43, ppid: 42 }
+  // The evidence map is keyed by each candidate's own pid: keying the join on
+  // the parent's pid would hand a run's proof to a process that never carried
+  // it, and one marker for every row would read as proof for all of them.
+  expect(
+    joinRunMarker(
+      [parent, child],
+      new Map([
+        [42, 'present'],
+        [43, 'absent'],
+      ]),
+    ),
+  ).toEqual([
+    { ...parent, runMarker: 'present' },
+    { ...child, runMarker: 'absent' },
+  ])
+})
+
 test('marks a cwd verified only when the process birth still matches the ps snapshot', () => {
   expect(joinProcessCwd('/tmp/tree', 'birth-a', 'birth-a')).toEqual({
     cwd: '/tmp/tree',

@@ -30,7 +30,8 @@ export type OrphanCandidate = ProcessFact & {
  * the run's recorded process group — its `agent_pgid` paired with the worktree
  * it used — which `orphansWithOwnershipEvidence` folds into this field before
  * any decision, so a consumer downstream of that entry point reads 'present'
- * for either proof.
+ * for either proof. Automatic reclaim enforces the fold by accepting only the
+ * branded `OwnedOrphanProcess` that entry point returns.
  */
 export type RunMarkerEvidence = 'present' | 'absent' | 'unknown'
 export type OrphanProcess = OrphanCandidate & { runMarker: RunMarkerEvidence }

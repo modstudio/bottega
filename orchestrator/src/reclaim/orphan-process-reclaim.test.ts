@@ -4,6 +4,7 @@ import type { OrphanProcess, ProcessFact } from '../resources/process-inventory.
 import {
   applyRunProcessGroupEvidence,
   automaticOrphanReclaimDecision,
+  type OwnedOrphanProcess,
   orphanProcessReverification,
   orphanSignalPlan,
   signalFreshOrphanPlan,
@@ -37,7 +38,7 @@ test('orphan process reclamation requires unchanged birth, command, and missing 
   })
 })
 
-const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
+const orphanRow = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
   pid: 42,
   ppid: 1,
   pgid: 42,
@@ -53,6 +54,14 @@ const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
   runMarker: 'present',
   ...overrides,
 })
+
+/**
+ * A decision input, i.e. a row the ownership fold has branded. Production folds
+ * the recorded run process groups in through `orphansWithOwnershipEvidence`;
+ * here the fold adds none, so the row carries only what the test set.
+ */
+const orphan = (overrides: Partial<OrphanProcess> = {}): OwnedOrphanProcess =>
+  applyRunProcessGroupEvidence([orphanRow(overrides)], [])[0]!
 
 test('automatic reclaim requires cwd evidence, age, non-platform command, and no live run', () => {
   expect(automaticOrphanReclaimDecision(orphan(), new Set())).toEqual({ reclaim: true })
@@ -117,21 +126,6 @@ test('a candidate in a recorded run process group is run residue whatever its en
       ],
     )[0]!.runMarker,
   ).toBe('absent')
-})
-
-test('enrichment decides an unknown environment by the recorded group, and keeps one outside it', () => {
-  const runs = [{ worktree: '/trees/gone', agentPgid: 42 }]
-  const inGroup = applyRunProcessGroupEvidence([orphan({ runMarker: 'unknown' })], runs)[0]!
-  expect(automaticOrphanReclaimDecision(inGroup, new Set())).toEqual({ reclaim: true })
-  const outside = applyRunProcessGroupEvidence(
-    [orphan({ runMarker: 'unknown', pgid: 7 })],
-    runs,
-  )[0]!
-  expect(outside.runMarker).toBe('unknown')
-  expect(automaticOrphanReclaimDecision(outside, new Set())).toEqual({
-    reclaim: false,
-    reason: 'process environment could not be read to prove a run started it',
-  })
 })
 
 test('an existing reason still wins over missing ownership evidence', () => {

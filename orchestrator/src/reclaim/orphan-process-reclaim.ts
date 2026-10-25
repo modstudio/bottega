@@ -60,18 +60,41 @@ const platformProcess = (command: string) => {
   return words.includes(PLATFORM_SLUG) || /orchestrator\/src\//.test(command)
 }
 
+declare const ownershipEvidenceBrand: unique symbol
+
+/**
+ * An orphan whose ownership proof has been folded in.
+ *
+ * The mark is type-level only — the row is the same object at runtime — and
+ * `applyRunProcessGroupEvidence` is the one function that produces it, so only
+ * `orphansWithOwnershipEvidence` hands rows to the decision below.
+ */
+export type OwnedOrphanProcess = OrphanProcess & { readonly [ownershipEvidenceBrand]: true }
+
+const ownedOrphan = (orphan: OrphanProcess): OwnedOrphanProcess => orphan as OwnedOrphanProcess
+
 /**
  * Whether to reclaim an orphan process without being asked, from its own row.
  *
  * Ownership proof — positive evidence that a run started the process — has two
- * routes: the environment names in `shared/run-process-marker.ts`, which the
- * inventory reads into `orphan.runMarker`, and the run's own recorded process
- * group, its `agent_pgid` with the worktree it used, which
- * `orphansWithOwnershipEvidence` folds into that same field before any caller
- * decides. A process with neither proof is left alone.
+ * routes, and the decision reads them as one fact in `orphan.runMarker`:
+ *
+ * - the environment names in `shared/run-process-marker.ts`. The delegation
+ *   marker reaches the children the harness spawns for a run; the
+ *   worker-environment gate withholds it from the gate and focused-test
+ *   children the host brokers start, which carry the run-process marker
+ *   instead. Host recipe steps and `sudo` as-user recipe steps carry neither,
+ *   so a process a run started there has no environment proof and automatic
+ *   reclaim keeps it, for an operator to reclaim by hand.
+ * - the run's own recorded process group, its `agent_pgid` with the worktree it
+ *   used, which folds into that same field.
+ *
+ * Only the fold produces an `OwnedOrphanProcess`, so this decision is never
+ * asked to judge the inventory's environment reading alone. A process with
+ * neither proof is left alone.
  */
 export function automaticOrphanReclaimDecision(
-  orphan: OrphanProcess,
+  orphan: OwnedOrphanProcess,
   liveWorktrees: ReadonlySet<string>,
   removedByCurrentCleanup = false,
 ): { reclaim: true } | { reclaim: false; reason: string } {
@@ -112,11 +135,14 @@ export type RecordedRunProcessGroup = { worktree: string | null; agentPgid: numb
  * a platform whose ps prints no environment at all. A gate or focused-test
  * child leads its own group, so the run-process marker the broker stamps on it
  * is what covers that one instead.
+ *
+ * Every row it returns is branded `OwnedOrphanProcess`: the fold has run, even
+ * when no recorded group matched.
  */
 export function applyRunProcessGroupEvidence(
   orphans: readonly OrphanProcess[],
   runs: readonly RecordedRunProcessGroup[],
-): OrphanProcess[] {
+): OwnedOrphanProcess[] {
   const groups = new Map<string, Set<number>>()
   for (const run of runs) {
     if (run.worktree === null || run.agentPgid === null) continue
@@ -128,9 +154,11 @@ export function applyRunProcessGroupEvidence(
   // A group that covers this orphan's tree upgrades it to the same 'present'
   // the environment route writes, so both proofs share one field and one meaning.
   return orphans.map((orphan) =>
-    groups.get(resolve(orphan.missingTree))?.has(orphan.pgid)
-      ? { ...orphan, runMarker: 'present' }
-      : orphan,
+    ownedOrphan(
+      groups.get(resolve(orphan.missingTree))?.has(orphan.pgid)
+        ? { ...orphan, runMarker: 'present' }
+        : orphan,
+    ),
   )
 }
 
@@ -138,11 +166,13 @@ export function applyRunProcessGroupEvidence(
  * Attach the ownership proof the inventory does not itself carry.
  *
  * The inventory reads the environment route; this adds the run's recorded
- * process group. It is the one entry point for that proof, and every caller of
- * automaticOrphanReclaimDecision goes through it, so no decision is made on
- * orphans that carry only the environment reading.
+ * process group. It is the one entry point for that proof, and the decision it
+ * feeds accepts nothing else, so no decision is made on orphans that carry only
+ * the environment reading.
  */
-export function orphansWithOwnershipEvidence(orphans: readonly OrphanProcess[]): OrphanProcess[] {
+export function orphansWithOwnershipEvidence(
+  orphans: readonly OrphanProcess[],
+): OwnedOrphanProcess[] {
   return applyRunProcessGroupEvidence(orphans, recordedRunProcessGroups())
 }
 
