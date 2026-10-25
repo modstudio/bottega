@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  affectedSelectorPathRefusal,
   decideFocusedTestEligibility,
   decideFocusedTestPathFacts,
   decideFocusedTestRequest,
@@ -10,7 +11,6 @@ import {
   FOCUSED_TEST_MAX_PATHS,
   FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES,
   focusedTestInvocation,
-  focusedTestRunPathRefusal,
   hasFocusedTestRunner,
   normalizeAffectedTestPaths,
   normalizeFocusedTestPaths,
@@ -380,22 +380,11 @@ describe('affected focused test selections', () => {
     ).toEqual({ kind: 'refuse', message: expect.stringContaining('supervising run closed') })
   })
 
-  test('a path that cannot run is refused against the side that named it', () => {
-    expect(
-      focusedTestRunPathRefusal({
-        source: 'selector',
-        message: 'focused test path "gone.test.ts" does not exist',
-      }),
-    ).toBe(
+  test('a path the selector printed that cannot run is refused against the selector', () => {
+    expect(affectedSelectorPathRefusal('focused test path "gone.test.ts" does not exist')).toBe(
       'the affected-test selector (focusedTests.affected) printed a path run_tests cannot run: ' +
         'focused test path "gone.test.ts" does not exist',
     )
-    expect(
-      focusedTestRunPathRefusal({
-        source: 'worker',
-        message: 'focused test path "gone.test.ts" does not exist',
-      }),
-    ).toBe('focused test path "gone.test.ts" does not exist')
   })
 
   test('the union names the selector part of it and nothing the worker asked for', () => {

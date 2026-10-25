@@ -24,20 +24,19 @@ import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.ts'
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
+  affectedSelectorPathRefusal,
   boundedFocusedTestOutputTail,
   decideFocusedTestSelection,
   decideFocusedTestSelectorOutcome,
   declaredFocusedTestCommands,
   FOCUSED_TEST_CLOSE_REASON,
   FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES,
-  type FocusedTestPathSource,
   type FocusedTestRequest,
   type FocusedTestResult,
   type FocusedTestSelection,
   type FocusedTestSelector,
   type FocusedTestSelectorOutcome,
   focusedTestInvocation,
-  focusedTestRunPathRefusal,
   parseFocusedTestRequest,
 } from './focused-test-decision.ts'
 import {
@@ -331,31 +330,22 @@ async function runFocusedTestSelector(input: {
 }
 
 /**
- * The refusal a path that cannot run earns, or null when every selected path is usable. A path the
- * project's own selector printed is refused as a refusal that names the selector and the path; the
- * paths the call named for itself are held to the facts the runner has always held them to.
+ * The refusal a path the project's selector printed earns when it cannot run, or null when every
+ * path it printed is usable. Only the selector's own paths are turned into a refusal here: the
+ * paths this call named for itself are held to the same facts through the union check the runner
+ * has always been preceded by, so a path a worker named keeps failing as it always has.
  */
 function unusableSelectedPath(input: {
   selection: FocusedTestRunSelection
   worktree: string
 }): { kind: 'refuse'; message: string } | null {
-  const fromSelector = new Set(input.selection.selectorPaths)
-  const groups: Array<{ source: FocusedTestPathSource; paths: string[] }> = [
-    { source: 'selector', paths: [...fromSelector] },
-    { source: 'worker', paths: input.selection.paths.filter((path) => !fromSelector.has(path)) },
-  ]
-  for (const group of groups) {
-    if (!group.paths.length) continue
-    try {
-      validateFocusedTestRunPaths(group.paths, input.worktree)
-    } catch (error) {
-      return {
-        kind: 'refuse',
-        message: focusedTestRunPathRefusal({
-          source: group.source,
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      }
+  if (!input.selection.selectorPaths.length) return null
+  try {
+    validateFocusedTestRunPaths(input.selection.selectorPaths, input.worktree)
+  } catch (error) {
+    return {
+      kind: 'refuse',
+      message: affectedSelectorPathRefusal(error instanceof Error ? error.message : String(error)),
     }
   }
   return null
@@ -431,6 +421,7 @@ async function runFocusedTestSelection(input: {
     return input.request.paths
   }
   if (selection.note) input.record(`\n${selection.note}\n`)
+  validateFocusedTestRunPaths(selection.paths, input.plan.worktree)
   await runFocusedTestProcess({
     invocation: focusedTestInvocation(input.plan.runner, selection.paths, input.plan.worktree),
     worktree: input.plan.worktree,

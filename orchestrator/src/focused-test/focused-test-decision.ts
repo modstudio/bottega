@@ -449,20 +449,13 @@ export function decideFocusedTestSelectorOutcome(input: {
   return input.cancelled ? { kind: 'closed' } : input.outcome
 }
 
-/** Which of a call's paths named a path that cannot run. */
-export type FocusedTestPathSource = 'worker' | 'selector'
-
 /**
- * The refusal a selected path that cannot run earns. A path the project's own selector printed
- * names the register key that produced it; a path this call named keeps the path's own message.
+ * The refusal a path the project's own selector printed earns when it cannot be run. The message
+ * names the register key that produced the path, because the condition is that declaration and not
+ * a broker failure.
  */
-export function focusedTestRunPathRefusal(input: {
-  source: FocusedTestPathSource
-  message: string
-}): string {
-  return input.source === 'selector'
-    ? `the affected-test selector (focusedTests.affected) printed a path run_tests cannot run: ${input.message}`
-    : input.message
+export function affectedSelectorPathRefusal(message: string): string {
+  return `the affected-test selector (focusedTests.affected) printed a path run_tests cannot run: ${message}`
 }
 
 function decideRequestedTestPaths(
