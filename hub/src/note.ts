@@ -33,7 +33,6 @@ import {
 } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
-import { setPromotedTaskTitle } from './note-promoted-title.ts'
 import { type NotePromotionAnchor, notePromotionBody } from './note-promotion-body.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
@@ -47,7 +46,7 @@ import {
   duplicateCandidates,
   type TaskRow,
 } from './task.ts'
-import { type Attribution, UNATTRIBUTED } from './task-attribution.ts'
+import type { Attribution } from './task-attribution.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
@@ -742,11 +741,6 @@ export async function promoteNote(
     if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
     applyHostedNote(conn, hosted.note)
   })
-  if (creating && hosted.task && hosted.task.title !== title)
-    await setPromotedTaskTitle(hosted.task, title, {
-      hosted: hostedOptions,
-      attribution: options.attribution ?? UNATTRIBUTED,
-    })
   return getNote(note.record_id)
 }
 
