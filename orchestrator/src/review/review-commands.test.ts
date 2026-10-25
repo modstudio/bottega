@@ -612,6 +612,7 @@ test('the architect read credits a never-reviewed tier-three path lens at the ce
     expect(change.reviewPlan).toEqual({
       round: { lenses: [] },
       admissionRequired: { lenses: ['correctness'] },
+      completedLensesOnBranch: ['correctness'],
     })
     const withoutRead = admissionDecision(change, db())
     expect(withoutRead.complete).toBeFalse()
@@ -655,6 +656,7 @@ test('the architect read credits an owed second opinion at the ceiling', () => {
     expect(change.reviewPlan).toEqual({
       round: { lenses: [] },
       admissionRequired: { lenses: ['correctness'] },
+      completedLensesOnBranch: ['correctness'],
     })
     const withoutRead = admissionDecision(change, db())
     expect(withoutRead.complete).toBeFalse()

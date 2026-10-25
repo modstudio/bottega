@@ -236,18 +236,6 @@ export function decideSecondOpinion(
   return selection.complete ? { complete: true } : selection
 }
 
-/** Lenses the branch already holds a completed, tiered result for, in review order. */
-function completedBranchLenses(branchReviewGroups: readonly TriageReviewGroup[]): string[] {
-  return [
-    ...new Set(
-      branchReviewGroups
-        .flatMap(({ reviews }) => reviews)
-        .filter((review) => review.completedAt !== null && review.tier !== null)
-        .flatMap((review) => review.lensIdentities),
-    ),
-  ]
-}
-
 function undisposedReviewFindings(review: TriageReviewRow) {
   return review.findings
     .filter(({ disposition }) => disposition === null)
@@ -434,7 +422,7 @@ function incompleteTriageDecision(input: {
   hasFunnelPlan: boolean
   roundLenses: readonly string[]
   newlyTouchedPathsByLens: Readonly<Record<string, string[]>>
-  completedBranchLenses: readonly string[]
+  completedLensesOnBranch: readonly string[]
 }): Exclude<TriageDecision, { complete: true }> {
   const { exact, composed, exactRead, finalTierRaised, hasCompletedBranchReview, hasFunnelPlan } =
     input
@@ -469,7 +457,7 @@ function incompleteTriageDecision(input: {
       ...missing,
       newlyTouchedPaths: [...(input.newlyTouchedPathsByLens[missing.lens] ?? [])].sort(),
     })),
-    lensesAlreadyComplete: input.completedBranchLenses.filter(
+    lensesAlreadyComplete: input.completedLensesOnBranch.filter(
       (lens) => !input.roundLenses.includes(lens),
     ),
     missingSecondOpinion: coverageGaps.missingSecondOpinion,
@@ -570,6 +558,6 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     hasFunnelPlan: evidence.reviewPlan !== undefined,
     roundLenses: reviewPlan.round.lenses,
     newlyTouchedPathsByLens: reviewPlan.newlyTouchedPathsByLens ?? {},
-    completedBranchLenses: completedBranchLenses(evidence.branchReviewGroups),
+    completedLensesOnBranch: reviewPlan.completedLensesOnBranch ?? [],
   })
 }

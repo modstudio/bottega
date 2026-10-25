@@ -72,6 +72,9 @@ export function reviewPlanForBudget(input: {
     reviewPlan: {
       round,
       admissionRequired,
+      ...(input.reviewPlan.completedLensesOnBranch?.length
+        ? { completedLensesOnBranch: input.reviewPlan.completedLensesOnBranch }
+        : {}),
       ...(Object.keys(newlyTouchedPaths).length
         ? { newlyTouchedPathsByLens: newlyTouchedPaths }
         : {}),
@@ -277,6 +280,9 @@ export function applicableRoundLensPlan(input: {
   return {
     round: roundWithOpinion,
     admissionRequired: selectReviewApplicability(input.relevant, admissionLenses),
+    ...(input.facts.completedLenses.length
+      ? { completedLensesOnBranch: [...input.facts.completedLenses] }
+      : {}),
     ...(Object.keys(newlyTouchedForRound).length
       ? { newlyTouchedPathsByLens: newlyTouchedForRound }
       : {}),

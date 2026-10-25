@@ -582,6 +582,85 @@ test('a lens a fix brought into scope names that path and the lenses already com
   expect(message).not.toContain('applicable lens correctness')
 })
 
+test('a lens the round asks to run again is not also reported as already complete', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1469-relens-lens',
+    tip: 'tip',
+    group: { patchId: 'patch', pathSet: ['branch/tree.ts', 'src/a.ts'] },
+    tier: 3,
+  } as PullRequestChange
+  // The branch completed both correctness and craft earlier. The fix resolved a correctness
+  // finding, so the round asks for correctness again, and touched a path in teardown-safety's
+  // scope, so that lens becomes applicable now.
+  const earlier = {
+    reviewRecordId: 'review-4',
+    reviewNumber: 4,
+    recordedAt: '2026-09-25T00:00:00Z',
+    completedAt: '2026-09-25T01:00:00Z',
+    tier: 3 as const,
+    role: 'round' as const,
+    patchId: 'patch-before-fix',
+    pathSet: '["src/a.ts"]',
+    lensIdentities: ['correctness', 'craft'],
+    lenses: [
+      { recordId: 'lens-1', lens: 'correctness', graded: true },
+      { recordId: 'lens-2', lens: 'craft', graded: true },
+    ],
+    findings: [{ recordId: 'finding-1', ordinal: 1, lens: 'correctness', disposition: 'accepted' }],
+  }
+  const reviewPlan = applicableRoundLensPlan({
+    relevant: { lenses: ['correctness', 'craft', 'teardown-safety'] },
+    facts: {
+      reviewedPathsByLens: { correctness: ['src/a.ts'], craft: ['src/a.ts'] },
+      completedLenses: ['correctness', 'craft'],
+      satisfiedSecondOpinionLenses: [],
+      latestAcceptedOrModifiedLenses: ['correctness'],
+    },
+    postFix: {
+      kind: 're-lens',
+      reviewNumber: 4,
+      reviewedTip: 'reviewed-tip',
+      fixPaths: ['branch/tree.ts'],
+      tierThreePaths: ['branch/tree.ts'],
+      applicability: { lenses: ['teardown-safety'] },
+    },
+    fixPathsByLens: { 'teardown-safety': ['branch/tree.ts'] },
+  })
+  expect(reviewPlan.round).toEqual({ lenses: ['correctness', 'teardown-safety'] })
+  expect(reviewPlan.completedLensesOnBranch).toEqual(['correctness', 'craft'])
+  const decision = decideTriage({
+    patchId: 'patch',
+    pathSet: '["branch/tree.ts","src/a.ts"]',
+    tip: 'tip',
+    tier: 3,
+    applicableReview: { lenses: ['correctness', 'craft', 'teardown-safety'] },
+    reviewPlan,
+    branchOwnerSession: 'owner-session',
+    reviews: [],
+    branchReviewGroups: [{ reviews: [earlier] }],
+    reads: [],
+  })
+  expect(decision).toMatchObject({
+    complete: false,
+    missingLenses: [
+      { lens: 'correctness', recordedOnBranch: true, newlyTouchedPaths: [] },
+      { lens: 'teardown-safety', recordedOnBranch: false, newlyTouchedPaths: ['branch/tree.ts'] },
+    ],
+  })
+  if (decision.complete) throw new Error('expected incomplete triage')
+  expect(decision.lensesAlreadyComplete).not.toContain('correctness')
+  expect(decision.lensesAlreadyComplete).not.toContain('teardown-safety')
+  expect(decision.lensesAlreadyComplete).toEqual(['craft'])
+
+  const message = triageRefusal(change, decision)
+  expect(message).toContain('applicable lens correctness has no recorded result for this change')
+  expect(message).not.toContain('do not need to run again: correctness')
+  expect(message).toContain(
+    'lenses that completed on an earlier change group and do not need to run again: craft',
+  )
+})
+
 test('a generic no-round refusal prints beside the unfinished-review remedy, with no lens line', () => {
   const change = {
     project: { name: 'fixture' },

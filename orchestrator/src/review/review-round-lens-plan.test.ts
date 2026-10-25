@@ -156,7 +156,11 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: {},
       }),
-    ).toEqual({ round: { lenses: [] }, admissionRequired: { lenses: ['correctness'] } })
+    ).toEqual({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['correctness'] },
+      completedLensesOnBranch: ['correctness'],
+    })
   })
 
   test('a fix touching only paths a clean scoped lens already reviewed selects nothing', () => {
@@ -177,7 +181,11 @@ describe('round lens plan', () => {
         },
         fixPathsByLens: { safety: ['src/risky.ts'] },
       }),
-    ).toEqual({ round: { lenses: [] }, admissionRequired: { lenses: ['safety'] } })
+    ).toEqual({
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['safety'] },
+      completedLensesOnBranch: ['safety'],
+    })
   })
 
   test("a fix touching a new path inside a lens's scope selects that lens", () => {
@@ -202,6 +210,7 @@ describe('round lens plan', () => {
       round: { lenses: ['safety'], lensReasons: { safety: 'newly-touched-path' } },
       admissionRequired: { lenses: ['safety'] },
       newlyTouchedPathsByLens: { safety: ['src/new.ts'] },
+      completedLensesOnBranch: ['safety'],
     })
   })
 
@@ -222,6 +231,7 @@ describe('round lens plan', () => {
     ).toEqual({
       round: { lenses: [] },
       admissionRequired: { lenses: ['correctness', 'safety'] },
+      completedLensesOnBranch: ['correctness', 'safety'],
     })
   })
 
@@ -254,6 +264,7 @@ describe('round lens plan', () => {
         },
       },
       admissionRequired: { lenses: [...sixLenses] },
+      completedLensesOnBranch: [...sixLenses],
     })
   })
 
@@ -370,6 +381,7 @@ describe('round lens plan', () => {
         lensReasons: { correctness: 'initial', craft: 'initial' },
       },
       admissionRequired: { lenses: ['correctness', 'craft', 'issue-blast-radius'] },
+      completedLensesOnBranch: ['issue-blast-radius'],
     })
   })
 })

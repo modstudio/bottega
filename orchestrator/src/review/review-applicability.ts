@@ -36,6 +36,12 @@ export type ReviewFunnelPlan = {
    * path brought a lens into scope instead of reporting it as unexplained.
    */
   newlyTouchedPathsByLens?: Record<string, string[]>
+  /**
+   * The lenses the branch already holds a completed, tiered result for, from the same review
+   * facts the round is planned from. Carried so a refusal can say which lenses need no second
+   * run without the review concern's rule being copied outside it. Absent when none did.
+   */
+  completedLensesOnBranch?: string[]
 }
 
 export type ReviewPlan = {
