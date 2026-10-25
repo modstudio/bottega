@@ -171,12 +171,14 @@ export type DispatchBaseInput = {
 /**
  * The commit a new tree starts from.
  *
- * The read-only path and the writer path both reach the substitution through
- * here — the writer through `writerTreeBaseRef` — rather than resolving the
- * implicit HEAD themselves, so it happens once and every other case is resolved
- * in exactly the directory and from exactly the ref it was resolved in before.
- * The chosen upstream is named on stderr so a run never silently starts
- * somewhere other than the caller's checkout.
+ * The read-only path, and the writer path through `writerTreeBaseRef`, reach
+ * the substitution through here rather than resolving the implicit HEAD
+ * themselves, so it happens once. A case it does not apply to either falls
+ * through to the caller's own HEAD, resolved in exactly the directory and from
+ * exactly the ref it was resolved in before, or — where the lifecycle named a
+ * base of its own — never arrives here at all. The chosen upstream is named on
+ * stderr so a run never silently starts somewhere other than the caller's
+ * checkout.
  */
 export function resolveNewTreeBase(input: DispatchBaseInput): string {
   const choice = chooseTrunkBase(trunkBaseFacts(input))
