@@ -86,10 +86,12 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/run/run-authority.ts',
     [
       '../../../shared/record-id.ts',
+      '../../../shared/brand.ts',
       '../caller-classification.ts',
       '../database/db.ts',
       '../issue/issue-queue.ts',
       './run-mutation-owner.ts',
+      './session-liveness-adapter.ts',
       'bun:sqlite',
     ],
     'Enforce the run-authority concern boundary.',

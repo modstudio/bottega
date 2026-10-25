@@ -332,6 +332,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'score pending',
   'score recalibrate',
   'session',
+  'session adopt',
   'session close-out',
   'session help',
   'task',

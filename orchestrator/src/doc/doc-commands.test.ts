@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
@@ -20,6 +21,7 @@ import {
   type PortPair,
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
+import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
 import {
   docCommand,
   formatDocSearchRefresh,
@@ -106,6 +108,7 @@ async function command(args: string[], stdin = '') {
       await docCommand(args[1] ?? 'list', args, flags, presentation, {
         selectDocWriteTree,
         collectCanonLintInput,
+        consumeResumeHandoff: resumeBriefHandoff,
       })
     else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
     else if (args[0] === 'review') {
@@ -690,5 +693,52 @@ describe('scoped operator docs', () => {
     const before = getDoc('global', null, 'taken')!
     expect((await consumeDoc('global', null, 'taken')).already_consumed).toBe(true)
     expect(getDoc('global', null, 'taken')).toEqual(before)
+  })
+
+  test(`${PLATFORM_SLUG} doc consume hands a resume author's run to the successor and prints the move`, async () => {
+    const project = 'consume-handoff-project'
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: '/w/consume-handoff-project',
+      settings: {},
+    })
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'command-brief-author'
+    try {
+      await setDoc({
+        scope: 'resume',
+        subject: project,
+        slug: 'command-handoff',
+        title: 'Command handoff',
+        body: `---\nstatus: open\nepic: DEV-1722\nproject: ${project}\nwritten: 2026-10-24T00:00:00.000Z\n---\n\nNEXT ACTION: continue\n`,
+      })
+      const root = addRun({
+        agent: 'codex',
+        job: 'implement',
+        status: 'running',
+        session: 'command-brief-author',
+      })
+      process.env.CLAUDE_CODE_SESSION_ID = 'command-brief-consumer'
+
+      const result = await command([
+        'doc',
+        'consume',
+        'command-handoff',
+        '--scope',
+        'resume',
+        '--subject',
+        project,
+      ])
+
+      expect(result.code).toBe(0)
+      expect(result.out).toContain('resume handoff moved 1 run(s)')
+      expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
+        session_id: 'command-brief-consumer',
+      })
+    } finally {
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    }
   })
 })

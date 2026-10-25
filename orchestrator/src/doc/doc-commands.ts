@@ -23,11 +23,11 @@ import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
+import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
-  consumeDoc,
   diffDocRevisions,
   docSubjects,
   exportDocs,
@@ -76,6 +76,7 @@ type DocCommandPorts = {
     cwd?: string
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
+  consumeResumeHandoff: ConsumeDocHandoff
 }
 
 function revisionAuthorName(author: string, user: ReturnType<typeof cachedSignedInRecordUser>) {
@@ -657,10 +658,6 @@ async function handledReadOrRevisionDocCommand(
   )
 }
 
-function docConsumeUsage(): string {
-  return `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`
-}
-
 async function handledWriteDocCommand(
   sub: string,
   argv: string[],
@@ -673,6 +670,165 @@ async function handledWriteDocCommand(
     (await handleSetDocCommand(sub, argv, flags, presentation, address, ports)) ||
     (await handleReorderDocCommand(sub, flags, presentation, address))
   )
+}
+
+async function handleRemoveDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+  ports: DocCommandPorts,
+): Promise<boolean> {
+  if (sub !== 'rm') return false
+  const slug = argv[2]
+  const reason = flags.flag('reason')
+  if (!slug || !address.scope || !reason?.trim())
+    throw new Error(
+      `${PLATFORM_SLUG} doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]`,
+    )
+  const canonTree = commandDocWriteTree(address.scope, address.subject, flags, presentation, ports)
+  const removed = await removeDoc(
+    address.scope,
+    address.subject,
+    slug,
+    {
+      reason,
+      author: flags.flag('author'),
+      expectedRevision: flags.flag('expect'),
+      canonTree,
+      collectCanonLintInput: ports.collectCanonLintInput,
+    },
+    address.owner,
+  )
+  presentation.log(
+    flags.has('json')
+      ? JSON.stringify({ removed, tree: canonTree?.root })
+      : removed
+        ? `removed ${address.scope}/${address.subject ?? '_'}/${slug}`
+        : `no ${address.scope} doc "${slug}"`,
+  )
+  return true
+}
+
+async function handleSubjectsOrTransferDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+): Promise<boolean> {
+  if (sub === 'subjects') {
+    const subjects = docSubjects()
+    if (flags.has('json')) presentation.log(JSON.stringify(subjects))
+    else
+      for (const [name, names] of Object.entries(subjects))
+        presentation.log(`${name.padEnd(8)} ${names.join(', ') || '(none)'}`)
+    return true
+  }
+  if (sub !== 'export' && sub !== 'import') return false
+  const dir = argv[2]
+  if (!dir) throw new Error(`${PLATFORM_SLUG} doc ${sub} <dir>`)
+  const reason = flags.flag('reason')
+  if (sub === 'import' && !reason?.trim())
+    throw new Error(`${PLATFORM_SLUG} doc import <dir> --reason TEXT [--author NAME]`)
+  const count =
+    sub === 'export'
+      ? exportDocs(dir)
+      : await importDocs(dir, { reason: reason!, author: flags.flag('author') })
+  presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
+  return true
+}
+
+function handleHistoryOutput(
+  sub: string,
+  revisions: ReturnType<typeof listDocRevisions>,
+  flags: DocFlags,
+  presentation: DocPresentation,
+): boolean {
+  if (sub !== 'history') return false
+  if (flags.has('json')) {
+    const user = cachedSignedInRecordUser()
+    presentation.log(
+      JSON.stringify(
+        revisions.map((revision) => ({
+          ...revision,
+          authorName: revisionAuthorName(revision.author, user),
+        })),
+      ),
+    )
+  } else
+    for (const revision of revisions)
+      presentation.log(
+        `${revision.number}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
+      )
+  return true
+}
+
+async function handleHistoryDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  owner: string | null,
+): Promise<boolean> {
+  if (!['history', 'diff', 'restore'].includes(sub)) return false
+  const scope = argv[2]
+  const rawSubject = argv[3]
+  const slug = argv[4]
+  if (!scope || rawSubject === undefined || !slug)
+    throw new Error(
+      `${PLATFORM_SLUG} doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`,
+    )
+  const subject = rawSubject === '-' ? null : rawSubject
+  if (flags.has('user') && (scope !== 'canon' || subject !== null))
+    throw new Error('--user history address must be canon -')
+  const revisions = listDocRevisions(scope, subject, slug, owner)
+  if (handleHistoryOutput(sub, revisions, flags, presentation)) return true
+  if (sub === 'diff') {
+    const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
+    const b = argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : revisions[0]?.record_id
+    if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
+    const ids = new Set(revisions.map((revision) => revision.record_id))
+    if (!ids.has(a) || !ids.has(b))
+      throw new Error(`doc diff revisions must belong to ${scope}/${subject ?? '_'}/${slug}`)
+    presentation.write(diffDocRevisions(a, b, owner))
+    return true
+  }
+  const revision = argv[5]
+  const reason = flags.flag('reason')
+  if (!revision || !reason?.trim())
+    throw new Error(
+      `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
+    )
+  const restored = await restoreDoc(
+    scope,
+    subject,
+    slug,
+    resolveDocRevisionIdentifier(db(), revision),
+    { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
+    owner,
+  )
+  presentation.log(
+    flags.has('json') ? JSON.stringify(restored) : `restored ${scope}/${subject ?? '_'}/${slug}`,
+  )
+  return true
+}
+
+function handleResumesDocCommand(
+  sub: string,
+  flags: DocFlags,
+  presentation: DocPresentation,
+): boolean {
+  if (sub !== 'resumes') return false
+  const result = listOpenResumes(flags.flag('cwd') ?? presentation.cwd())
+  if (flags.has('json')) presentation.log(JSON.stringify(result))
+  else {
+    for (const row of result.open)
+      presentation.log(`${row.slug.padEnd(24)} ${row.title.padEnd(24)} ${row.age}`)
+    for (const row of result.unreadable)
+      presentation.error(`unreadable resume brief ${row.slug}: ${row.reason}`)
+  }
+  return true
 }
 
 export async function docCommand(
@@ -691,165 +847,22 @@ export async function docCommand(
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (await handledReadOrRevisionDocCommand(sub, argv, flags, presentation, address)) return
   if (await handledWriteDocCommand(sub, argv, flags, presentation, address, ports)) return
-  if (sub === 'consume') {
-    const slug = argv[2]
-    if (!slug || !scope) throw new Error(docConsumeUsage())
-    const result = await consumeDoc(scope, subject, slug, {
-      reason: flag('reason') ?? 'consumed by session',
-      author: flag('author'),
-      expectedRevision: flag('expect'),
-    })
-    if (has('json')) {
-      presentation.log(JSON.stringify(result))
-      return
-    }
-    presentation.log(
-      result.already_consumed
-        ? `already consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`
-        : `consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`,
-    )
-    return
-  }
-  if (sub === 'rm') {
-    const slug = argv[2]
-    const reason = flag('reason')
-    if (!slug || !scope || !reason?.trim())
-      throw new Error(
-        `${PLATFORM_SLUG} doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]`,
-      )
-    const canonTree = commandDocWriteTree(scope, subject, flags, presentation, ports)
-    const removed = await removeDoc(
+  if (
+    await handleDocConsumeCommand({
+      sub,
+      argv,
       scope,
       subject,
-      slug,
-      {
-        reason,
-        author: flag('author'),
-        expectedRevision: flag('expect'),
-        canonTree,
-        collectCanonLintInput: ports.collectCanonLintInput,
-      },
-      owner,
-    )
-    if (has('json')) {
-      presentation.log(JSON.stringify({ removed, tree: canonTree?.root }))
-      return
-    }
-    presentation.log(
-      removed ? `removed ${scope}/${subject ?? '_'}/${slug}` : `no ${scope} doc "${slug}"`,
-    )
+      flags,
+      log: presentation.log,
+      handoff: ports.consumeResumeHandoff,
+    })
+  )
     return
-  }
-  if (sub === 'subjects') {
-    const subjects = docSubjects()
-    if (has('json')) {
-      presentation.log(JSON.stringify(subjects))
-      return
-    }
-    for (const [name, names] of Object.entries(subjects)) {
-      presentation.log(`${name.padEnd(8)} ${names.join(', ') || '(none)'}`)
-    }
-    return
-  }
-  if (sub === 'export' || sub === 'import') {
-    const dir = argv[2]
-    if (!dir) throw new Error(`${PLATFORM_SLUG} doc ${sub} <dir>`)
-    const reason = flag('reason')
-    if (sub === 'import' && !reason?.trim())
-      throw new Error(`${PLATFORM_SLUG} doc import <dir> --reason TEXT [--author NAME]`)
-    const count =
-      sub === 'export'
-        ? exportDocs(dir)
-        : await importDocs(dir, { reason: reason!, author: flag('author') })
-    presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
-    return
-  }
-  if (sub === 'history' || sub === 'diff' || sub === 'restore') {
-    const addressScope = argv[2]
-    const rawAddressSubject = argv[3]
-    const slug = argv[4]
-    if (!addressScope || rawAddressSubject === undefined || !slug) {
-      throw new Error(
-        `${PLATFORM_SLUG} doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`,
-      )
-    }
-    const addressSubject = rawAddressSubject === '-' ? null : rawAddressSubject
-    if (has('user') && (addressScope !== 'canon' || addressSubject !== null)) {
-      throw new Error('--user history address must be canon -')
-    }
-    const revisions = listDocRevisions(addressScope, addressSubject, slug, owner)
-    if (sub === 'history') {
-      if (has('json')) {
-        const user = cachedSignedInRecordUser()
-        presentation.log(
-          JSON.stringify(
-            revisions.map((revision) => ({
-              ...revision,
-              authorName: revisionAuthorName(revision.author, user),
-            })),
-          ),
-        )
-      } else
-        for (const revision of revisions) {
-          presentation.log(
-            `${revision.number}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
-          )
-        }
-      return
-    }
-    if (sub === 'diff') {
-      const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
-      const b = argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : revisions[0]?.record_id
-      if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
-      const addressIds = new Set(revisions.map((revision) => revision.record_id))
-      if (!addressIds.has(a) || !addressIds.has(b)) {
-        throw new Error(
-          `doc diff revisions must belong to ${addressScope}/${addressSubject ?? '_'}/${slug}`,
-        )
-      }
-      presentation.write(diffDocRevisions(a, b, owner))
-      return
-    }
-    const revisionIdentifier = argv[5]
-    const reason = flag('reason')
-    if (!revisionIdentifier || !reason?.trim()) {
-      throw new Error(
-        `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
-      )
-    }
-    const restored = await restoreDoc(
-      addressScope,
-      addressSubject,
-      slug,
-      resolveDocRevisionIdentifier(db(), revisionIdentifier),
-      {
-        reason,
-        author: flag('author'),
-        expectedRevision: flag('expect'),
-      },
-      owner,
-    )
-    presentation.log(
-      has('json')
-        ? JSON.stringify(restored)
-        : `restored ${addressScope}/${addressSubject ?? '_'}/${slug}`,
-    )
-    return
-  }
-  if (sub === 'resumes') {
-    const result = listOpenResumes(flag('cwd') ?? presentation.cwd())
-    if (has('json')) {
-      presentation.log(JSON.stringify(result))
-      return
-    }
-    for (const r of result.open) {
-      presentation.log(`${r.slug.padEnd(24)} ${r.title.padEnd(24)} ${r.age}`)
-    }
-    for (const r of result.unreadable) {
-      presentation.error(`unreadable resume brief ${r.slug}: ${r.reason}`)
-    }
-    return
-  }
+  if (await handleRemoveDocCommand(sub, argv, flags, presentation, address, ports)) return
+  if (await handleSubjectsOrTransferDocCommand(sub, argv, flags, presentation)) return
+  if (await handleHistoryDocCommand(sub, argv, flags, presentation, owner)) return
+  if (handleResumesDocCommand(sub, flags, presentation)) return
   throw new Error(
     `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | reorder | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )

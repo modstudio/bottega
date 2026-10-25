@@ -157,8 +157,9 @@ describe('scoped operator docs', () => {
       subject: 'known',
       slug: 'done',
       title: 'Consumed',
-      body: resumeBody('consumed', '2026-09-03T11:50:00.000Z'),
+      body: resumeBody('open', '2026-09-03T11:50:00.000Z'),
     })
+    await consumeDoc('resume', 'known', 'done')
     await setDoc({
       scope: 'resume',
       subject: 'known',
@@ -534,7 +535,7 @@ describe('scoped operator docs', () => {
     )
   })
 
-  test('setDoc accepts open and consumed resume status, including quoted forms', async () => {
+  test('setDoc accepts open forms and rewrites already-consumed forms', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'known',
@@ -552,13 +553,25 @@ describe('scoped operator docs', () => {
       ['single-quoted-consumed', "'consumed'", 'consumed'],
     ] as const
     for (const [slug, written, resolved] of accepted) {
-      const doc = await setDoc({
+      const initial = await setDoc({
         scope: 'resume',
         subject: 'known',
         slug,
         title: slug,
-        body: resumeBody(written),
+        body: resumeBody(resolved === 'consumed' ? 'open' : written),
       })
+      const consumed = resolved === 'consumed' ? await consumeDoc('resume', 'known', slug) : initial
+      const doc =
+        resolved === 'consumed'
+          ? await setDoc({
+              scope: 'resume',
+              subject: 'known',
+              slug,
+              title: slug,
+              body: resumeBody(written),
+              expectedRevision: consumed.revision ?? undefined,
+            })
+          : initial
       expect(parseResumeFrontmatter(doc.body)?.status).toBe(resolved)
     }
   })

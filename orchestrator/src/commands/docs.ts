@@ -10,6 +10,7 @@ import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
+import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
 import { actionCommand, collect, log, optionFlags, values, write, writeStdout } from './support.ts'
 
 type Flags = { has(name: string): boolean }
@@ -144,7 +145,11 @@ async function runDoc(verb: string, args: string[], command: Command): Promise<v
         process.exitCode = code
       },
     },
-    { selectDocWriteTree, collectCanonLintInput },
+    {
+      selectDocWriteTree,
+      collectCanonLintInput,
+      consumeResumeHandoff: resumeBriefHandoff,
+    },
   )
 }
 
@@ -225,7 +230,11 @@ const docSpecs: readonly Spec[] = [
     'replace one document sibling order',
     [...address, o('--parent <value>'), o('--slug <value>', true), ...json],
   ],
-  ['consume [slug]', 'mark a resume document consumed', [...address, ...revision, ...json]],
+  [
+    'consume [slug]',
+    "mark a resume brief consumed and hand its author's runs to the consuming session",
+    [...address, ...revision, ...json],
+  ],
   ['rm [slug]', 'remove a document', [...address, o('--cwd <value>'), ...revision, ...json]],
   ['subjects', 'list document subjects', json],
   ['export [dir]', 'export documents to a directory', []],

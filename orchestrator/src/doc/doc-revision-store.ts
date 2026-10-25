@@ -1,6 +1,7 @@
 // concern: local-doc-revisions
 /** Owns local revision ordering and compare-and-set facts. Must not know hosted transport or CLI. */
 
+import type { Database } from 'bun:sqlite'
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
@@ -95,6 +96,20 @@ export function currentDocRevision(
     )
     .get(scope, subject, owner, slug) as { record_id: string } | null
   return row?.record_id ?? null
+}
+
+export function latestStoredDocAuthorSession(
+  recordId: string,
+  database: Database = db(),
+): string | null {
+  const row = database
+    .query<{ session_id: string }, [string]>(
+      `SELECT session_id FROM doc_revision
+       WHERE doc_record_id=? AND session_id IS NOT NULL AND op <> 'consume'
+       ORDER BY number DESC LIMIT 1`,
+    )
+    .get(recordId)
+  return row?.session_id ?? null
 }
 
 export function insertLocalRevision(

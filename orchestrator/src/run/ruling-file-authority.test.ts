@@ -16,6 +16,7 @@ const decide = (overrides: Partial<Parameters<typeof fileRulingDecision>[0]> = {
     coordinatorRun: false,
     now: 1_000,
     windowMs: 200,
+    ownerProcess: 'unknown',
     fromOperator: false,
     channel: 'cli',
     sessionIdPresent: true,

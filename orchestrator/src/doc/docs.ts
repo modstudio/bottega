@@ -58,7 +58,7 @@ import {
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
-import { resumeRestoreRefusal, resumeWriteRefusal } from './doc-resume-write.ts'
+import * as rw from './doc-resume-write.ts'
 import {
   docSubjects,
   validateDocSubject,
@@ -93,6 +93,7 @@ function assertLocalRestoreCommands(revision: DocRevision, audiences: DocAudienc
 }
 
 export type { Doc, DocRevision, DocRevisionMetadata }
+export type ConsumedDoc = Doc & { already_consumed: boolean }
 
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
 import {
@@ -124,15 +125,15 @@ export type { DocWriteContext } from './doc-article-fields.ts'
 function assertSetDocAllowed(input: DocWriteInput): void {
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope !== 'resume') return
-  const refusal = resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body))
+  const refusal = rw.resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body))
   if (refusal) throw new Error(refusal)
 }
 
 function assertRestoredDocWriteAllowed(input: Parameters<typeof assertDocWriteAllowed>[0]): void {
   assertDocWriteAllowed(input)
   if (input.scope !== 'resume') return
-  const refusal = resumeRestoreRefusal(
-    resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)),
+  const refusal = rw.resumeRestoreRefusal(
+    rw.resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)),
   )
   if (refusal) throw new Error(refusal)
 }
@@ -471,6 +472,9 @@ async function setDocWithOp(
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
   assertSetDocAllowed(input)
+  const prior = getDoc(input.scope, input.subject, input.slug, input.owner ?? null)
+  const refusal = rw.resumeConsumptionWriteRefusal(input, prior?.body ?? null)
+  if (refusal) throw new Error(refusal)
   return setDocWithOp(input)
 }
 
@@ -660,7 +664,7 @@ export async function consumeDoc(
   subject: string | null,
   slug: string,
   context: DocWriteContext,
-): Promise<Doc & { already_consumed: boolean }> {
+): Promise<ConsumedDoc> {
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)

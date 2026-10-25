@@ -3,6 +3,7 @@
  * Knows root ownership, adoption, and mutation audit. Must not know routing, transports, CLI adapters, worktrees, or reviews.
  */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
@@ -20,6 +21,12 @@ import {
   reauthorizeAdoptedMutation,
   runMutationOwnerDecision,
 } from './run-mutation-owner.ts'
+import {
+  formatSessionLivenessEvidence,
+  type SessionLivenessEvidence,
+  type SessionProcessEvidence,
+  sessionLivenessEvidence,
+} from './session-liveness-adapter.ts'
 
 const RUN_MUTATION_ACTIONS = [
   'adopt',
@@ -53,6 +60,8 @@ export type RootAuthority = {
   coordinatorRun: boolean
   now: number
   windowMs: number
+  ownerProcess: 'dead' | 'live' | 'unknown'
+  ownerProcesses: SessionProcessEvidence[]
 }
 
 /** Build the authority shape used only to record an ownership transfer already authorized by its caller. */
@@ -67,6 +76,8 @@ function auditOnlyRootAuthority(rootId: string, actor: string): RootAuthority {
     coordinatorRun: false,
     now: 0,
     windowMs: 0,
+    ownerProcess: 'unknown',
+    ownerProcesses: [],
   }
 }
 
@@ -74,14 +85,13 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
   const row = database
     .query(
       `SELECT requested.record_id run_record_id, root.record_id root_id, root.session_id owner,
-              root.job, root.label, seen.last_seen,
+              root.job, root.label,
               (SELECT COALESCE(turn.last_event_at,turn.started_at)
                  FROM run turn
                 WHERE turn.record_id=root.record_id OR turn.parent_run_record_id=root.record_id
                 ORDER BY turn.turn DESC,turn.number DESC LIMIT 1) chain_last_activity
        FROM run requested
        JOIN run root ON root.record_id = COALESCE(requested.parent_run_record_id, requested.record_id)
-       LEFT JOIN session_seen seen ON seen.session_id=root.session_id
       WHERE requested.record_id = ?`,
     )
     .get(runId) as {
@@ -90,26 +100,45 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
     owner: string | null
     job: string
     label: string | null
-    last_seen: string | null
     chain_last_activity: string
   } | null
   if (!row) throw new Error(`no run ${runId}`)
+  const actor = sessionId()
+  const liveness =
+    row.owner && row.owner !== actor
+      ? sessionLivenessEvidence(database, row.owner, actor)
+      : { ownerProcess: 'unknown' as const, candidates: [], ownerLastSeenAt: null }
   return {
     runId: row.run_record_id,
     rootId: row.root_id,
     owner: row.owner,
-    actor: sessionId(),
-    ownerLastSeenAt: row.last_seen === null ? null : Date.parse(row.last_seen),
+    actor,
+    ownerLastSeenAt: liveness.ownerLastSeenAt,
     chainLastActivityAt: Date.parse(row.chain_last_activity),
     coordinatorRun: filedIssueLoopRun({ id: row.root_id, job: row.job, label: row.label }) !== null,
     now: Date.now(),
     windowMs: RUN_MUTATION_WINDOW_MS,
+    ownerProcess: liveness.ownerProcess,
+    ownerProcesses: liveness.candidates,
   }
 }
 
-function adoptedMutationReason(authority: RootAuthority): string | null {
+export function adoptedMutationReason(
+  owner: string | null,
+  actor: string | null,
+  liveness: Pick<SessionLivenessEvidence, 'ownerProcess' | 'candidates'>,
+): string {
+  if (liveness.ownerProcess === 'dead' && liveness.candidates.length)
+    return `adopted from dead owner ${owner} (pids ${liveness.candidates.map(({ pid }) => pid).join(', ')} gone or reused) by ${actor}`
+  return `adopted from gone owner ${owner} by ${actor}`
+}
+
+function authorityAdoptionReason(authority: RootAuthority): string | null {
   if (runMutationOwnerDecision(authority) !== 'adopt') return null
-  return `adopted from gone owner ${authority.owner} by ${authority.actor}`
+  return adoptedMutationReason(authority.owner, authority.actor, {
+    ownerProcess: authority.ownerProcess,
+    candidates: authority.ownerProcesses,
+  })
 }
 
 export function runMutationActor(runId: string): RootAuthority {
@@ -124,7 +153,9 @@ function refuseRunMutation(authority: RootAuthority, action: RunMutationAction |
   }
   throw new Error(
     `run ${authority.runId} is owned by session ${authority.owner}; ` +
-      `current session ${authority.actor} cannot ${action} it (owner active within the window)`,
+      `current session ${authority.actor} cannot ${action} it (owner active within the window; ` +
+      `owner process ${authority.ownerProcess}, ${formatSessionLivenessEvidence({ candidates: authority.ownerProcesses, ownerLastSeenAt: authority.ownerLastSeenAt })}); ` +
+      `run ${PLATFORM_SLUG} session adopt ${authority.owner} --reason "<why>"`,
   )
 }
 
@@ -151,12 +182,17 @@ export function reauthorizeRunMutation(
 }
 
 export function auditRunMutation(
-  authority: RootAuthority,
+  authority: RootAuthority | Omit<RootAuthority, 'ownerProcess' | 'ownerProcesses'>,
   action: RunMutationAction,
   reason: string | null = null,
   database: Database = db(),
   turnId: string | null = null,
 ): void {
+  const mutationAuthority: RootAuthority = {
+    ...authority,
+    ownerProcess: 'ownerProcess' in authority ? authority.ownerProcess : 'unknown',
+    ownerProcesses: 'ownerProcesses' in authority ? authority.ownerProcesses : [],
+  }
   database
     .query(
       `INSERT INTO run_mutation_audit (record_id, run_record_id, root_run_record_id, action, actor_session, at, reason, turn_run_record_id)
@@ -169,7 +205,7 @@ export function auditRunMutation(
       action,
       authority.actor,
       nowIso(),
-      joinMutationReason(reason, adoptedMutationReason(authority)),
+      joinMutationReason(reason, authorityAdoptionReason(mutationAuthority)),
       turnId,
     )
 }

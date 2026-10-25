@@ -126,13 +126,7 @@ function decideFiling(
     filedAs: row.filed_as,
     requested,
     scope: input.scope,
-    owner: authority.owner,
-    actor: authority.actor,
-    ownerLastSeenAt: authority.ownerLastSeenAt,
-    chainLastActivityAt: authority.chainLastActivityAt,
-    coordinatorRun: authority.coordinatorRun,
-    now: authority.now,
-    windowMs: authority.windowMs,
+    ...authority,
     fromOperator: input.fromOperator,
     channel: input.channel,
     sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
@@ -374,6 +368,8 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     coordinatorRun: false,
     now: Date.now(),
     windowMs: RUN_MUTATION_WINDOW_MS,
+    ownerProcess: 'unknown' as const,
+    ownerProcesses: [],
   }
   let adoptionReason: string | null = null
   if (row.run_record_id === null)

@@ -55,7 +55,7 @@ Leave out what is recorded elsewhere or does not change the next step:
 
 **Handoff material.** A brief names no scratch location: no session scratchpad, temporary directory or run artifact. A scratchpad is private to its session, and run output ages out after `KEEP_RUN_FILES_DAYS`. Before the brief is written, anything the next session needs beyond it goes on the epic's task as a task document (`bottega task doc new`). That includes a specification to build from, a survey or run result to build on, measurements still to take, and landing steps. The brief names that document by its task-document reference.
 
-**Resuming.** The SessionStart hook lists open briefs; it does not inject a body. The agent reads the list, asks which (or offers the single one), fetches it with `get_doc`, then marks it consumed with `set_doc` — flipping `status` and stamping `consumed`. Declining must not consume anything.
+**Resuming.** The SessionStart hook lists open briefs; it does not inject a body. The agent reads the list, asks which (or offers the single one), fetches it with `get_doc`, then consumes it with `consume_doc` (or `bottega doc consume`), which flips `status`, stamps `consumed` and hands the author's runs to the consuming session, reporting any runs it could not move; `set_doc` refuses that flip. Declining must not consume anything.
 
 # Projects are rows, not literals
 

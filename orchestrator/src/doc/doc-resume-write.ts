@@ -1,12 +1,29 @@
 // concern: doc-resume-write
-/** Decides whether an open resume brief has the metadata and durable handoff shape it requires. */
+/** Decides whether a resume brief write preserves its required shape and consumption handoff. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ResumeFrontmatter, resumeFrontmatter } from './doc-resume-frontmatter.ts'
+import {
+  parseResumeFrontmatter,
+  type ResumeFrontmatter,
+  type resumeFrontmatter,
+} from './doc-resume-frontmatter.ts'
 
 export type OpenResumeViolation = {
   offendingText: string
   remedy: string
+}
+
+export function resumeConsumptionWriteRefusal(
+  input: { scope: string; subject?: string | null; slug: string; body: string },
+  priorBody: string | null,
+): string | null {
+  if (input.scope !== 'resume' || parseResumeFrontmatter(input.body)?.status !== 'consumed')
+    return null
+  if (priorBody && parseResumeFrontmatter(priorBody)?.status === 'consumed') return null
+  return (
+    `refusing resume document write: set_doc cannot change status to consumed unless the stored brief is already consumed\n` +
+    `cleared by: consume it with MCP consume_doc or ${PLATFORM_SLUG} doc consume ${input.slug} --scope resume --subject ${input.subject ?? '<subject>'}, which marks it consumed and hands its author's runs to this session`
+  )
 }
 
 const ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/

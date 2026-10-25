@@ -15,6 +15,7 @@ const decide = (overrides: Partial<Parameters<typeof answerAuthorityDecision>[0]
     coordinatorRun: false,
     now: 1_000,
     windowMs: 200,
+    ownerProcess: 'unknown',
     ...overrides,
   })
 

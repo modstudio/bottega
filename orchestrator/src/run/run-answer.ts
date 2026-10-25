@@ -225,6 +225,7 @@ function requireAnswerAuthority(
     dashboardAuthorized,
     owner: authority.owner,
     actor: authority.actor,
+    ownerProcess: authority.ownerProcess,
     ownerLastSeenAt: authority.ownerLastSeenAt,
     chainLastActivityAt: authority.chainLastActivityAt,
     coordinatorRun: authority.coordinatorRun,
