@@ -37,6 +37,7 @@ import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
 import {
   ceilingTriageFacts,
   decideTriage,
+  type MissingLens,
   type TriageDecision,
   type TriageReviewGroup,
 } from './triage-decision.ts'
@@ -234,6 +235,26 @@ export function admissionDecision(
   return decideAdmission(admissionChange(change), triage, overridesForChange(change, database))
 }
 
+/** The line refusing one applicable lens, naming the path a fix used to bring it into scope. */
+function missingLensLine(change: PullRequestChange, missing: MissingLens): string {
+  const condition = missing.recordedOnBranch
+    ? 'has no recorded result for this change'
+    : 'has no recorded result on this branch'
+  const [firstPath, ...otherPaths] = missing.newlyTouchedPaths
+  const scope = firstPath
+    ? `, brought into scope by ${firstPath}${otherPaths.length ? ` (+${otherPaths.length} more paths)` : ''}`
+    : ''
+  return `applicable lens ${missing.lens} ${condition}${scope}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${missing.lens} "Review ${change.branch} with ${missing.lens}."`
+}
+
+/** The line naming the lenses an earlier change group already completed, or null when none did. */
+function alreadyCompleteLensesLine(
+  decision: Exclude<TriageDecision, { complete: true }>,
+): string | null {
+  if (!decision.missingLenses.length || !decision.lensesAlreadyComplete.length) return null
+  return `lenses that completed on an earlier change group and do not need to run again: ${decision.lensesAlreadyComplete.join(', ')}`
+}
+
 export function triageRefusal(
   change: PullRequestChange,
   decision: Exclude<TriageDecision, { complete: true }>,
@@ -256,23 +277,9 @@ export function triageRefusal(
       `findings without a disposition: ${decision.undisposedFindings.map((finding) => `${finding.reviewNumber}/${finding.ordinal}`).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `${PLATFORM_SLUG} review triage ${finding.reviewNumber} ${finding.ordinal} <disposition>`).join('; ')}`,
     )
   }
-  for (const { lens, recordedOnBranch, newlyTouchedPaths } of decision.missingLenses) {
-    const condition = recordedOnBranch
-      ? 'has no recorded result for this change'
-      : 'has no recorded result on this branch'
-    const [firstPath, ...otherPaths] = newlyTouchedPaths
-    const scope = firstPath
-      ? `, brought into scope by ${firstPath}${otherPaths.length ? ` (+${otherPaths.length} more paths)` : ''}`
-      : ''
-    lines.push(
-      `applicable lens ${lens} ${condition}${scope}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
-    )
-  }
-  if (decision.missingLenses.length && decision.lensesAlreadyComplete.length) {
-    lines.push(
-      `lenses that completed on an earlier change group and do not need to run again: ${decision.lensesAlreadyComplete.join(', ')}`,
-    )
-  }
+  lines.push(...decision.missingLenses.map((missing) => missingLensLine(change, missing)))
+  const alreadyComplete = alreadyCompleteLensesLine(decision)
+  if (alreadyComplete) lines.push(alreadyComplete)
   if (decision.missingSecondOpinion) {
     const { lens, firstRunId } = decision.missingSecondOpinion
     lines.push(

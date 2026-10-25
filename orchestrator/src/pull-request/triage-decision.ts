@@ -40,6 +40,14 @@ type TriageSnapshot = {
   readRecordId: string | null
 }
 
+/** One applicable lens the change group has no completed result for. */
+export type MissingLens = {
+  lens: string
+  recordedOnBranch: boolean
+  /** Paths changed since the reviewed tip that select this lens and that it never reviewed. */
+  newlyTouchedPaths: string[]
+}
+
 export type TriageDecision =
   | { complete: true; snapshot: TriageSnapshot }
   | {
@@ -48,12 +56,7 @@ export type TriageDecision =
       missingReview: boolean
       unfinishedReviewNumbers: number[]
       undisposedFindings: { reviewNumber: number; ordinal: number }[]
-      missingLenses: {
-        lens: string
-        recordedOnBranch: boolean
-        /** Paths changed since the reviewed tip that select this lens and that it never reviewed. */
-        newlyTouchedPaths: string[]
-      }[]
+      missingLenses: MissingLens[]
       /**
        * Lenses with a completed result on the branch that this round does not ask to run again,
        * so a refusal can say they need no second run.

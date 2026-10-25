@@ -12,6 +12,7 @@ import {
   recordTriageOverrideForChange,
   triageRefusal,
 } from './pr-admission.ts'
+import { applicableRoundLensPlan } from '../review/review-round-lens-plan.ts'
 import { decideTriage, type TriageDecision, type TriageEvidence } from './triage-decision.ts'
 
 const ceilingChange = {
@@ -531,17 +532,32 @@ test('a lens a fix brought into scope names that path and the lenses already com
     lenses: [{ recordId: 'lens-1', lens: 'correctness', graded: true }],
     findings: [],
   }
+  const reviewPlan = applicableRoundLensPlan({
+    relevant: { lenses: ['correctness', 'teardown-safety'] },
+    facts: {
+      reviewedPathsByLens: { correctness: ['src/a.ts'] },
+      completedLenses: ['correctness'],
+      satisfiedSecondOpinionLenses: [],
+      latestAcceptedOrModifiedLenses: [],
+    },
+    postFix: {
+      kind: 're-lens',
+      reviewNumber: 4,
+      reviewedTip: 'reviewed-tip',
+      fixPaths: ['branch/tree.ts'],
+      tierThreePaths: ['branch/tree.ts'],
+      applicability: { lenses: ['teardown-safety'] },
+    },
+    fixPathsByLens: { 'teardown-safety': ['branch/tree.ts'] },
+  })
+  expect(reviewPlan.round).toEqual({ lenses: ['teardown-safety'] })
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["branch/tree.ts","src/a.ts"]',
     tip: 'tip',
     tier: 3,
     applicableReview: { lenses: ['correctness', 'teardown-safety'] },
-    reviewPlan: {
-      round: { lenses: ['teardown-safety'] },
-      admissionRequired: { lenses: ['correctness', 'teardown-safety'] },
-      newlyTouchedPathsByLens: { 'teardown-safety': ['branch/tree.ts'] },
-    },
+    reviewPlan,
     branchOwnerSession: 'owner-session',
     reviews: [],
     branchReviewGroups: [{ reviews: [earlier] }],
