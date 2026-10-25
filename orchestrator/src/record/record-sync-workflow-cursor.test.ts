@@ -7,7 +7,7 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { syncRecord } from './record-sync.ts'
 
-test('a workflow question pushes the cursor display number to the hosted bigint', async () => {
+function workflowQuestionOutbox() {
   const local = migratedTestDatabase()
   const cursor = local
     .query<{ record_id: string }, [string, string, string, string]>(
@@ -30,13 +30,64 @@ test('a workflow question pushes the cursor display number to the hosted bigint'
     .run(MACHINE_ID)
 
   enqueueQuestionRecord(local, question.record_id)
-  const payload = JSON.parse(
+  return { cursorId: cursor.record_id, local }
+}
+
+function questionPayload(local: ReturnType<typeof migratedTestDatabase>) {
+  return JSON.parse(
     local.query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'").get()!
       .payload,
   ) as Record<string, unknown>
-  expect(payload.workflowCursorId).toBe(37)
+}
 
-  const result = await syncRecord(options(local, fakePostgres()))
+function replaceQuestionPayload(
+  local: ReturnType<typeof migratedTestDatabase>,
+  mutate: (payload: Record<string, unknown>) => void,
+) {
+  const payload = questionPayload(local)
+  mutate(payload)
+  local.query("UPDATE outbox SET payload=? WHERE kind='question'").run(JSON.stringify(payload))
+}
+
+test('a workflow question pushes the cursor UUID and leaves the hosted bigint null', async () => {
+  const { cursorId, local } = workflowQuestionOutbox()
+  const payload = questionPayload(local)
+  expect(payload.workflowCursorRecordId).toBe(cursorId)
+  expect(payload.workflowCursorId).toBeNull()
+
+  const remote = fakePostgres()
+  const result = await syncRecord(options(local, remote))
   expect(result).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  const questionParameters = remote.parameters.find((parameters) => parameters.includes(cursorId))!
+  const cursorIndex = questionParameters.indexOf(cursorId)
+  expect(questionParameters[cursorIndex - 1]).toBeNull()
+  local.close()
+})
+
+test('an older question payload stores a null cursor UUID', async () => {
+  const { local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    delete payload.workflowCursorRecordId
+    payload.workflowCursorId = 37
+  })
+
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  const questionParameters = remote.parameters.find((parameters) => parameters.includes(37n))!
+  const cursorIndex = questionParameters.indexOf(37n)
+  expect(questionParameters[cursorIndex + 1]).toBeNull()
+  local.close()
+})
+
+test('a question payload may omit the legacy cursor number', async () => {
+  const { local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    delete payload.workflowCursorId
+  })
+
+  expect(await syncRecord(options(local, fakePostgres()))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   local.close()
 })

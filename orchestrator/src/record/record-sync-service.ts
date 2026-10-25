@@ -54,7 +54,7 @@ import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
-import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
+import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -363,46 +363,48 @@ function reviewValues(row: Payload, projectId: string | null) {
   }
 }
 
-function questionValues(row: Payload, projectId: string | null) {
-  return {
-    id: String(row.id),
-    spaceId: String(row.spaceId),
-    runId: nullableString(row.runId),
-    workflowKey: nullableString(row.workflowKey),
-    workflowCursorId: nullableBigint(row.workflowCursorId),
-    projectId,
-    machineId: String(row.machineId),
-    revision: Number(row.revision),
-    askedAt: date(row.askedAt),
-    question: String(row.question),
-    options: jsonString(row.options),
-    recommendation: nullableString(row.recommendation),
-    why: nullableString(row.why),
-    askedVia: nullableString(row.askedVia),
-    answer: nullableString(row.answer),
-    answerBasis: nullableString(row.answerBasis),
-    answeredAt: nullableDate(row.answeredAt),
-    answeredBy: nullableString(row.answeredBy),
-    answererKind: nullableString(row.answererKind),
-    answerChannel: nullableString(row.answerChannel),
-    awaitingOperatorAt: nullableDate(row.awaitingOperatorAt),
-    relayedBy: nullableString(row.relayedBy),
-    overturnedAt: nullableDate(row.overturnedAt),
-    overturnedBy: nullableString(row.overturnedBy),
-    overturnReason: nullableString(row.overturnReason),
-    replacement: nullableString(row.replacement),
-    filedAs: nullableString(row.filedAs),
-    filedRef: nullableString(row.filedRef),
-    filedRecordId: nullableString(row.filedRecordId),
-    filedLabel: nullableString(row.filedLabel),
-    filedAt: nullableDate(row.filedAt),
-    closedAt: nullableDate(row.closedAt),
-    closeReason: nullableString(row.closeReason),
-    withheldFields: jsonString(row.withheldFields),
-    createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
-  }
-}
+const questionValues = (row: Payload, projectId: string | null) => ({
+  id: String(row.id),
+  spaceId: String(row.spaceId),
+  runId: nullableString(row.runId),
+  workflowKey: nullableString(row.workflowKey),
+  workflowCursorId: nullableBigint(row.workflowCursorId),
+  workflowCursorRecordId: nullableUuid(
+    row.workflowCursorRecordId,
+    'question.workflowCursorRecordId',
+  ),
+  projectId,
+  machineId: String(row.machineId),
+  revision: Number(row.revision),
+  askedAt: date(row.askedAt),
+  question: String(row.question),
+  options: jsonString(row.options),
+  recommendation: nullableString(row.recommendation),
+  why: nullableString(row.why),
+  askedVia: nullableString(row.askedVia),
+  answer: nullableString(row.answer),
+  answerBasis: nullableString(row.answerBasis),
+  answeredAt: nullableDate(row.answeredAt),
+  answeredBy: nullableString(row.answeredBy),
+  answererKind: nullableString(row.answererKind),
+  answerChannel: nullableString(row.answerChannel),
+  awaitingOperatorAt: nullableDate(row.awaitingOperatorAt),
+  relayedBy: nullableString(row.relayedBy),
+  overturnedAt: nullableDate(row.overturnedAt),
+  overturnedBy: nullableString(row.overturnedBy),
+  overturnReason: nullableString(row.overturnReason),
+  replacement: nullableString(row.replacement),
+  filedAs: nullableString(row.filedAs),
+  filedRef: nullableString(row.filedRef),
+  filedRecordId: nullableString(row.filedRecordId),
+  filedLabel: nullableString(row.filedLabel),
+  filedAt: nullableDate(row.filedAt),
+  closedAt: nullableDate(row.closedAt),
+  closeReason: nullableString(row.closeReason),
+  withheldFields: jsonString(row.withheldFields),
+  createdAt: date(row.createdAt),
+  updatedAt: date(row.updatedAt),
+})
 
 type QuestionAuditPayload = {
   action: unknown

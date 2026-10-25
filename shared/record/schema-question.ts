@@ -17,6 +17,7 @@ export const question = pgTable.withRLS(
     runId: uuid('run_id').references(() => run.id),
     workflowKey: text('workflow_key'),
     workflowCursorId: bigint('workflow_cursor_id', { mode: 'bigint' }),
+    workflowCursorRecordId: uuid('workflow_cursor_record_id'),
     projectId: uuid('project_id').references(() => project.id),
     machineId: uuid('machine_id')
       .notNull()
