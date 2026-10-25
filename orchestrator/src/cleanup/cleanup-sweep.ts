@@ -38,6 +38,7 @@ import {
   runLeaseIds,
   runLeaseState,
 } from '../run/run-lease.ts'
+import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import {
@@ -1019,5 +1020,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
+  const runLinks = await sweepRunTaskLinks(dry)
+  options.presentation[runLinks.kind](runLinks.line)
   if (cleanupFailed) options.presentation.setExitCode(1)
 }

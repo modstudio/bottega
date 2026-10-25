@@ -32,6 +32,7 @@ import {
   RESOURCE_CLAIM_MIGRATION,
 } from '../resources/resource-claims.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
+import { runTaskReferenceDoctorLine } from '../run/run-task-linking.ts'
 import type { RuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
@@ -238,6 +239,7 @@ export async function doctorCommand(
   if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
     log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
   }
+  log(await runTaskReferenceDoctorLine())
   const { harnessHealth } = await import('./health.ts')
   const costlyFailures = harnessHealth()
     .classes.filter((row) => row.count > 0)

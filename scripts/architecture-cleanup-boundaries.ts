@@ -168,6 +168,7 @@ export const cleanupBoundarySpecs = [
       '../run/run-artifacts.ts',
       '../run/run-authority.ts',
       '../run/run-lease.ts',
+      '../run/run-task-linking.ts',
       '../run/synthetic-lifecycle-job.ts',
       '../sandbox/grok-trust.ts',
       '../worktree/worktree-attribution.ts',
