@@ -20,6 +20,12 @@ import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './proj
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import {
+  mergeProjectSettings,
+  parseSettingsPatch,
+  type SettingsPatchEffect,
+  settingsPatchEffect,
+} from './project-settings-patch.ts'
+import {
   assertProjectRename,
   assertRegisterBranches,
   assertRegisterVisibility,
@@ -475,29 +481,6 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
   if (!candidate) throw new Error(`project ${input.name} was not updated`)
 }
 
-function mergeableObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function mergeProjectSettings(
-  current: Record<string, unknown>,
-  patch: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...current }
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === null) {
-      delete out[key]
-      continue
-    }
-    const previous = out[key]
-    out[key] =
-      mergeableObject(value) && mergeableObject(previous)
-        ? mergeProjectSettings(previous, value)
-        : value
-  }
-  return out
-}
-
 function skipLegacyCreateMigration(
   project: ReturnType<typeof projectByName>,
   candidate: {
@@ -521,24 +504,46 @@ function incompleteWorktreeProblems(candidate: Parameters<typeof worktreeWarning
   )
 }
 
-function writesKeyPrefixes(settingsJson: string | undefined): boolean {
-  if (!settingsJson) return false
-  try {
-    const patch = JSON.parse(settingsJson)
-    return Boolean(patch && typeof patch === 'object' && Object.hasOwn(patch, 'keyPrefixes'))
-  } catch {
-    return false
+function patchedProjectSettings(project: Project, json: string | undefined) {
+  if (json === undefined) {
+    return { settings: project.settings, patch: undefined, before: null }
+  }
+  const patch = parseSettingsPatch(json)
+  return {
+    settings: mergeProjectSettings(project.settings, patch) as Project['settings'],
+    patch,
+    before: listedProjectJson(project).settings,
   }
 }
 
-function writesVisibility(settingsJson: string | undefined): boolean {
-  if (!settingsJson) return false
-  try {
-    const patch = JSON.parse(settingsJson)
-    return Boolean(patch && typeof patch === 'object' && Object.hasOwn(patch, 'visibility'))
-  } catch {
-    return false
+function persistedSettingsEffect(
+  before: Record<string, unknown> | null,
+  project: Project,
+): SettingsPatchEffect | null {
+  return before ? settingsPatchEffect(before, listedProjectJson(project).settings) : null
+}
+
+function printSettingsEffect(
+  effect: SettingsPatchEffect | null,
+  presentation: ProjectPresentation,
+): void {
+  if (!effect) return
+  const lines = [
+    ...effect.added.map((path) => `added ${path}`),
+    ...effect.changed.map((path) => `changed ${path}`),
+    ...effect.removed.map((path) => `removed ${path}`),
+  ]
+  for (const line of lines.length ? lines : ['settings unchanged']) {
+    presentation.log(`${' '.repeat(14)} ${line}`)
   }
+}
+
+function writesKeyPrefixes(patch: Record<string, unknown> | undefined): boolean {
+  return Boolean(patch && Object.hasOwn(patch, 'keyPrefixes'))
+}
+
+function writesVisibility(patch: Record<string, unknown> | undefined): boolean {
+  return Boolean(patch && Object.hasOwn(patch, 'visibility'))
 }
 
 function verifyAndRecordVisibility(candidate: Project): void {
@@ -546,8 +551,11 @@ function verifyAndRecordVisibility(candidate: Project): void {
   if (repository) candidate.settings.visibilityRepository = repository
 }
 
-function verifyWrittenVisibility(settingsJson: string | undefined, candidate: Project): void {
-  if (writesVisibility(settingsJson)) verifyAndRecordVisibility(candidate)
+function verifyWrittenVisibility(
+  patch: Record<string, unknown> | undefined,
+  candidate: Project,
+): void {
+  if (writesVisibility(patch)) verifyAndRecordVisibility(candidate)
 }
 
 async function persistSetProject(
@@ -584,15 +592,11 @@ async function setProjectCommand(
     )
   const project = projectByName(name)
   if (!project) throw new Error(`no project "${name}"`)
-  let settings = project.settings
-  if (flags.flag('settings')) {
-    try {
-      const patch = JSON.parse(flags.flag('settings')!)
-      settings = mergeProjectSettings(settings, patch) as typeof settings
-    } catch (error) {
-      throw new Error(`--settings must be JSON: ${error}`)
-    }
-  }
+  const {
+    settings,
+    patch: settingsPatch,
+    before: settingsBefore,
+  } = patchedProjectSettings(project, flags.flag('settings'))
   const nextName = flags.flag('name') ?? name
   const candidate = {
     recordId: project.recordId,
@@ -606,7 +610,7 @@ async function setProjectCommand(
   const lensSpaceId = effectiveProjectSpace(db(), name)
   const malformed = validateProjectSettings(candidate.settings, candidate.path, {
     validateKeyPrefixes:
-      writesKeyPrefixes(flags.flag('settings')) ||
+      writesKeyPrefixes(settingsPatch) ||
       (nextName !== name && candidate.settings.keyPrefixes !== undefined),
     currentProjectName: name,
     projectNameAfterWrite: nextName,
@@ -618,17 +622,19 @@ async function setProjectCommand(
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
-  verifyWrittenVisibility(flags.flag('settings'), candidate)
+  verifyWrittenVisibility(settingsPatch, candidate)
   const previousTrunk = typeof project.settings.trunk === 'string' ? project.settings.trunk : null
   const destination = await hostedProjectDestination(candidate.name, candidate.settings)
   await refuseHostedProjectSpaceChange(project, candidate.settings, destination)
   await persistSetProject(name, nextName, previousTrunk, candidate, destination?.destinationSpaceId)
+  const persistedProject = projectByName(nextName)!
   if (flags.has('json')) {
-    presentation.log(JSON.stringify(listedProjectJson(projectByName(nextName)!)))
+    presentation.log(JSON.stringify(listedProjectJson(persistedProject)))
     return
   }
   presentation.log(`updated ${nextName}`)
-  for (const warning of worktreeWarnings(projectByName(nextName)!)) {
+  printSettingsEffect(persistedSettingsEffect(settingsBefore, persistedProject), presentation)
+  for (const warning of worktreeWarnings(persistedProject)) {
     presentation.log(`${' '.repeat(14)} ! ${warning}`)
   }
 }

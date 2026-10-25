@@ -482,7 +482,10 @@ const projectSpecs: readonly Spec[] = [
     [
       o('--name <value>'),
       o('--stack <value>'),
-      o('--settings <value>'),
+      [
+        '--settings <value>',
+        'apply a JSON Merge Patch: objects merge; arrays and values replace; null removes a key; omitted keys are kept',
+      ],
       o('--path <value>'),
       o('--canon'),
       o('--no-canon'),

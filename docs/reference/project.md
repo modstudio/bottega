@@ -163,7 +163,7 @@ update a registered project
 
 - `--name <value>`: set the project or profile name
 - `--stack <value>`: set the project stack
-- `--settings <value>`: set project settings from JSON
+- `--settings <value>`: apply a JSON Merge Patch: objects merge; arrays and values replace; null removes a key; omitted keys are kept
 - `--path <value>`: set the project checkout path
 - `--canon`: enable canon for the project
 - `--no-canon`: disable canon for the project
