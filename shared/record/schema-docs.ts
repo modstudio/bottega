@@ -11,9 +11,9 @@ import {
   jsonb,
   pgPolicy,
   pgTable,
-  primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
@@ -179,11 +179,12 @@ export const doc = pgTable.withRLS(
 export const publicDocSpace = pgTable(
   'public_doc_space',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     spaceId: uuid('space_id').notNull(),
     projectId: uuid('project_id').notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.spaceId, table.projectId] }),
+    unique('public_doc_space_space_project_unique').on(table.spaceId, table.projectId),
     foreignKey({
       columns: [table.spaceId],
       foreignColumns: [space.id],

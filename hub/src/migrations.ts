@@ -675,6 +675,34 @@ function prepareCursorIdentityInput(
   for (const row of identities) insert.run(row.number, row.record_id)
 }
 
+/** Refuse a note-counter rebuild that would narrow a legacy nullable project key. */
+function assertNoteCounterProjects(d: Database): void {
+  const invalidProjects = d
+    .query<{ rowid: number; project: string | null }, []>(
+      `SELECT rowid,project FROM note_counter
+       WHERE project IS NULL OR trim(project)=''
+       ORDER BY rowid`,
+    )
+    .all()
+  if (!invalidProjects.length) return
+  const rows = invalidProjects
+    .map((row) => `rowid=${row.rowid} project=${row.project === null ? '<NULL>' : '<empty>'}`)
+    .join(', ')
+  throw new Error(
+    `refusing note counter UUID migration: note_counter.project is NULL or empty for rows [${rows}]\n` +
+      `cleared by: repair the named note counters, then run \`${PLATFORM_SLUG} machine migrate\``,
+  )
+}
+
+function prepareMigrationEntry(
+  d: Database,
+  tag: string,
+  cursorIdentities: readonly WorkflowCursorIdentityRow[],
+): void {
+  if (tag === '0038_workflow_cursor_uuid_key') prepareCursorIdentityInput(d, cursorIdentities)
+  if (tag === '0039_note_counter_uuid_key') assertNoteCounterProjects(d)
+}
+
 /** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
 export function applyMigrations(
   d: Database,
@@ -746,8 +774,7 @@ export function applyMigrations(
         )
         for (const row of questionIdentities) insert.run(row.number, row.record_id)
       }
-      if (entry.tag === '0038_workflow_cursor_uuid_key')
-        prepareCursorIdentityInput(d, cursorIdentities)
+      prepareMigrationEntry(d, entry.tag, cursorIdentities)
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)

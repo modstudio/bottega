@@ -306,8 +306,8 @@ test('real board reader run labels remain measured as row references', () => {
     database
       .query(
         `INSERT INTO hosted_board_receipt_cache
-         (message_id,reader_session,audience_at_posting,pending_sync)
-         VALUES ('01990000-0000-7000-8000-000000001214','run:42',0,0)`,
+         (record_id,message_id,reader_session,audience_at_posting,pending_sync)
+         VALUES ('01990000-0000-7000-8000-000000001213','01990000-0000-7000-8000-000000001214','run:42',0,0)`,
       )
       .run()
     expect(database.query('SELECT reader_session FROM hosted_board_receipt_cache').get()).toEqual({

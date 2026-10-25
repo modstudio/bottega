@@ -241,8 +241,8 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
   db()
     .query(
       `INSERT INTO hosted_board_receipt_cache
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       VALUES (?,?,1,?,NULL,0)`,
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES ('01990000-0000-7000-8000-000000001805',?,?,1,?,NULL,0)`,
     )
     .run(message.id, session, new Date(clock - 500).toISOString())
 

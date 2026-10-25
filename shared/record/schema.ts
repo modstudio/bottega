@@ -7,7 +7,6 @@ import {
   jsonb,
   pgPolicy,
   pgTable,
-  primaryKey,
   text,
   timestamp,
   unique,
@@ -240,6 +239,7 @@ export const project = pgTable.withRLS(
 export const seq = pgTable.withRLS(
   'seq',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     spaceId: spaceIdentity(),
     projectId: uuid('project_id')
       .notNull()
@@ -248,7 +248,7 @@ export const seq = pgTable.withRLS(
     next: bigint({ mode: 'bigint' }).notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.spaceId, table.projectId, table.name] }),
+    unique('seq_space_project_name_unique').on(table.spaceId, table.projectId, table.name),
     foreignKey({
       columns: [table.spaceId, table.projectId],
       foreignColumns: [project.spaceId, project.id],

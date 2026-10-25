@@ -30,7 +30,9 @@ export async function hostedBoardStatus(
     const message = await loadHostedBoardMessage(tx, input.id)
     if (!message) throw new RecordBoardError(`board message ${input.id} not found`, 404)
     const rows = (await tx`
-      SELECT * FROM board_receipt
+      SELECT message_id, reader_user_id, reader_session, audience_at_posting,
+        delivered_at, acknowledged_at
+      FROM board_receipt
       WHERE message_id=${input.id}::uuid
       ORDER BY reader_user_id, reader_session
     `) as Record<string, unknown>[]
@@ -66,7 +68,8 @@ export async function putHostedBoardReceipt(
       ON CONFLICT (message_id, reader_user_id, reader_session) DO UPDATE SET
         delivered_at = COALESCE(board_receipt.delivered_at, EXCLUDED.delivered_at),
         acknowledged_at = COALESCE(board_receipt.acknowledged_at, EXCLUDED.acknowledged_at)
-      RETURNING *
+      RETURNING message_id, reader_user_id, reader_session, audience_at_posting,
+        delivered_at, acknowledged_at
     `
     if (!rows[0])
       throw new RecordBoardError(`board receipt for ${input.messageId} was not stored`, 409)
