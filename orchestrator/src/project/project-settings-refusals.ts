@@ -33,6 +33,10 @@ function unknownKeyProblems(
   return mode === 'strict' ? keys.filter((key) => !known(key)) : []
 }
 
+/**
+ * Refuse malformed lifecycle declarations while the operator is registering
+ * them, before a worker is waiting on a vendor clone to discover the mistake.
+ */
 export function projectSpaceProblems(space: unknown): string[] {
   return space !== undefined && (typeof space !== 'string' || !space.trim())
     ? ['space must be a non-empty record space slug']
