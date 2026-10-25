@@ -60,21 +60,28 @@ def main() -> int:
         return 0
     text = command
     cwd = payload.get("cwd") or os.getcwd()
+    unreadable_paths = []
     for match in FILE_FLAG.finditer(command):
         path = match.group(1).strip("'\"")
         try:
-            with open(os.path.join(cwd, os.path.expanduser(path)), encoding="utf-8", errors="replace") as fh:
+            expanded_path = os.path.expandvars(os.path.expanduser(path))
+            with open(os.path.join(cwd, expanded_path), encoding="utf-8", errors="replace") as fh:
                 text += "\n" + fh.read()
         except OSError as error:
-            deny(f"Cannot inspect message file {path}: {error}")
-            return 0
+            unreadable_paths.append(f"{path}: {error}")
     hit = markers.search(text)
-    if not hit:
+    if hit:
+        deny(
+            "AI attribution is not allowed in commits or pull requests "
+            f"(matched: {hit.group(0)!r}). Remove the trailer and retry."
+        )
         return 0
-    deny(
-        "AI attribution is not allowed in commits or pull requests "
-        f"(matched: {hit.group(0)!r}). Remove the trailer and retry."
-    )
+    if unreadable_paths:
+        warning = (
+            "Allowing command, but the text in these message files was not checked for attribution: "
+            + "; ".join(unreadable_paths)
+        )
+        print(json.dumps({"systemMessage": warning}))
     return 0
 
 
