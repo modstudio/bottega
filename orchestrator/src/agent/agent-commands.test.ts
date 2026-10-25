@@ -140,6 +140,74 @@ test('a successful registration probe does not clear a billing hold', async () =
   }
 })
 
+test('an exhausted OpenRouter probe does not record cooldown-clearing success', async () => {
+  const name = 'openrouter-budget-probe-test'
+  const output: string[] = []
+  let exitCode = 0
+  try {
+    await agentCommand(
+      [
+        'agent',
+        'add',
+        name,
+        '--harness',
+        'goose',
+        '--backend',
+        'vendor',
+        '--model',
+        'fixture-model',
+        '--base-url',
+        'https://openrouter.ai/api/v1',
+        '--api-key-secret',
+        'OPENROUTER_FIXTURE_KEY',
+      ],
+      { log: () => {}, setExitCode: () => {} },
+    )
+    const prior = db().query("SELECT probe_result FROM agent WHERE name='codex'").get() as {
+      probe_result: string
+    }
+    await agentCommand(
+      ['agent', 'probe', name],
+      {
+        log: (value) => output.push(value),
+        setExitCode: (code) => {
+          exitCode = code
+        },
+      },
+      {
+        probeAgent: async () => ({
+          ...JSON.parse(prior.probe_result),
+          ok: false,
+          budget: {
+            kind: 'exhausted',
+            limitUsd: 250,
+            usedUsd: 250.02,
+            resetInterval: 'weekly',
+            resetsAt: '2026-10-26T00:00:00.000Z',
+            refusal:
+              "the OpenRouter key's weekly limit of $250 is used ($250.02); it resets at 2026-10-26T00:00:00.000Z; raise the key's limit in OpenRouter Keys settings",
+          },
+        }),
+      },
+    )
+
+    expect(exitCode).toBe(1)
+    expect(JSON.parse(output[0]!)).toMatchObject({
+      ok: false,
+      budget: {
+        kind: 'exhausted',
+        refusal:
+          "the OpenRouter key's weekly limit of $250 is used ($250.02); it resets at 2026-10-26T00:00:00.000Z; raise the key's limit in OpenRouter Keys settings",
+      },
+    })
+    expect(
+      db().query("SELECT COUNT(*) count FROM run WHERE agent=? AND job='agent-probe'").get(name),
+    ).toEqual({ count: 0 })
+  } finally {
+    removeAgent(name)
+  }
+})
+
 test('agent add persists job, concurrency, and metered-routing flags', async () => {
   const output: string[] = []
   try {

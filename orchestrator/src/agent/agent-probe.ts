@@ -31,6 +31,11 @@ import {
 } from './agent-writing-probe.ts'
 import type { Caps } from './capabilities.ts'
 import { localReachable } from './model-host.ts'
+import {
+  checkOpenRouterKeyBudget,
+  isOpenRouterKeyBudgetAgent,
+  openRouterKeyBudgetRefusal,
+} from './openrouter-key-budget.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
@@ -172,6 +177,39 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
 /** Prove capabilities before routing spends a worktree discovering them. */
 export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment }
 
+async function withOpenRouterKeyBudget(
+  row: AgentRow,
+  result: RegistrationProbeResult,
+): Promise<RegistrationProbeResult> {
+  const endpoint = { baseUrl: row.base_url, apiKeySecret: row.api_key_secret }
+  if (!isOpenRouterKeyBudgetAgent(endpoint)) return result
+  const budget = await checkOpenRouterKeyBudget(endpoint)
+  if (budget.kind === 'exhausted') {
+    return {
+      ...result,
+      ok: false,
+      budget: { ...budget, refusal: openRouterKeyBudgetRefusal(budget) },
+    }
+  }
+  if (budget.kind === 'unknown') {
+    return {
+      ...result,
+      budget: { ...budget, detail: 'OpenRouter key budget could not be checked' },
+    }
+  }
+  return { ...result, budget }
+}
+
+async function recordBudgetProbe(
+  name: string,
+  row: AgentRow,
+  result: RegistrationProbeResult,
+): Promise<RegistrationProbeResult> {
+  const checked = await withOpenRouterKeyBudget(row, result)
+  recordAgentProbe(name, checked)
+  return checked
+}
+
 /**
  * Whether a stored probe already answers every capability the declared jobs
  * need. A stored result whose MCP turn was skipped carries no MCP verdict, so
@@ -306,7 +344,7 @@ export async function probeAgent(
       mcpProbeRequired,
     )
   )
-    return previous as RegistrationProbeResult
+    return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
   if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
   const agent = rowAgent(row)
@@ -449,6 +487,5 @@ export async function probeAgent(
     writingPolicy.jobSuccess &&
     (!needs.resumable || resumingPolicy.jobSuccess) &&
     (contextTokens !== null || !row.base_url)
-  recordAgentProbe(name, result)
-  return result
+  return recordBudgetProbe(name, row, result)
 }

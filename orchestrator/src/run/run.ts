@@ -7,6 +7,10 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
+import {
+  applyOpenRouterBudgetToAuthFailure,
+  checkOpenRouterKeyBudget,
+} from '../agent/openrouter-key-budget.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
@@ -1014,6 +1018,13 @@ export async function run(opts: {
           askLoopback,
           ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
         }))
+        if (failureKind === 'auth') {
+          ;({ failureKind, error } = applyOpenRouterBudgetToAuthFailure(
+            failureKind,
+            error,
+            await checkOpenRouterKeyBudget(a),
+          ))
+        }
       } finally {
         const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
         try {

@@ -498,5 +498,16 @@ export type RegistrationProbeResult = {
   >
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null
+  budget?:
+    | { kind: 'spendable' }
+    | { kind: 'unknown'; detail: string }
+    | {
+        kind: 'exhausted'
+        limitUsd: number
+        usedUsd: number
+        resetInterval: string
+        resetsAt: string | null
+        refusal: string
+      }
   attempts?: { harness: string; result: unknown }[]
 }

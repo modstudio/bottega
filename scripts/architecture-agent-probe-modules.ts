@@ -15,6 +15,7 @@ export const agentProbeModules = [
     '../../../shared/record-remedies.ts',
     '../../../shared/secret-resolution-failure.ts',
   ]),
+  module('orchestrator/src/agent/openrouter-key-budget.ts', ['./endpoint-api-key.ts']),
   module('orchestrator/src/agent/agent-probe.ts', [
     '../../../shared/config-directory.ts',
     '../../../shared/record-id.ts',
@@ -31,6 +32,7 @@ export const agentProbeModules = [
     './agent-writing-probe.ts',
     './agent-resume-probe.ts',
     './agent-probe-turn.ts',
+    './openrouter-key-budget.ts',
   ]),
   module('orchestrator/src/agent/agent-writing-probe.ts', [
     './agent-capability-probe-policy.ts',
