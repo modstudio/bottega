@@ -11,6 +11,7 @@ import {
 import { type ChangeGroup, reviewsForTriage, serializePathSet } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
 import {
+  currentReviewRoundIdentity,
   type ReviewRoundBudgetDecision,
   type ReviewTierNumber,
   reviewBudgetForBranch,
@@ -21,7 +22,6 @@ import {
   reviewPlanForBudget,
   roundLensFacts,
 } from './review-round-lens-plan.ts'
-import { reviewRoundIdentity } from './review-yield.ts'
 
 /** Assemble the round plan from the current change, branch review history, and project declaration. */
 export function roundApplicabilityForChange(input: {
@@ -91,12 +91,11 @@ export function budgetedRoundApplicabilityForChange(
   const project = knownIdentity ? input.group.project : input.project
   const branch = knownIdentity ? input.group.branch : input.branch
   const currentRoundIdentity = knownIdentity
-    ? reviewRoundIdentity({
-        launch_key: null,
+    ? currentReviewRoundIdentity({
         branch,
-        patch_id: input.group.patchId,
-        path_set: serializePathSet(input.group.pathSet),
-      }).identity
+        patchId: input.group.patchId,
+        pathSet: serializePathSet(input.group.pathSet),
+      })
     : null
   const branchBudget = reviewBudgetForBranch(input.database, project, branch, currentRoundIdentity)
   const reviewBudget = reviewRoundBudgetDecision({
