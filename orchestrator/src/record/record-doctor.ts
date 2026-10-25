@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
+import { resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
@@ -236,10 +236,15 @@ const DOCTOR_TRANSIENT_REMEDY = {
   unreachableDiagnostic: null,
 }
 
+/** The detail for a name that did not resolve, naming which of the two empties the store held. */
+function unresolvedAgentSecretDetail(name: string, sealedEmpty: boolean): string {
+  return `permanent: secret ${sealedEmpty ? 'is sealed empty' : 'is not set'}\ncleared by: ${PLATFORM_SLUG} machine config secret set ${name}`
+}
+
 /** Resolve each distinct enabled-agent secret once without exposing its value. */
 export async function agentSecretChecks(
   agents: ReadonlyArray<Pick<Agent, 'enabled' | 'apiKeySecret'>>,
-  resolver: typeof readEnvValuesWithHosted = readEnvValuesWithHosted,
+  resolver: typeof resolveEnvValuesWithHosted = resolveEnvValuesWithHosted,
 ): Promise<RecordDoctorCheck[]> {
   const names = [
     ...new Set(
@@ -252,21 +257,22 @@ export async function agentSecretChecks(
   return Promise.all(
     names.map(async (name): Promise<RecordDoctorCheck> => {
       try {
-        const resolved = (await resolver([name]))[name]
+        const { values, sealedEmpty } = await resolver([name])
+        const resolved = values[name]
         const remedy = `\ncleared by: ${PLATFORM_SLUG} machine config secret set ${name}`
-        return resolved !== undefined
-          ? resolved.length > 0
-            ? { name: `agent API key secret ${name}`, status: 'pass', section: 'customer' }
-            : {
-                name: `agent API key secret ${name}`,
-                status: 'fail',
-                detail: `permanent: secret is set but empty${remedy}`,
-                section: 'customer',
-              }
+        if (resolved === undefined)
+          return {
+            name: `agent API key secret ${name}`,
+            status: 'fail',
+            detail: unresolvedAgentSecretDetail(name, sealedEmpty.includes(name)),
+            section: 'customer',
+          }
+        return resolved.length > 0
+          ? { name: `agent API key secret ${name}`, status: 'pass', section: 'customer' }
           : {
               name: `agent API key secret ${name}`,
               status: 'fail',
-              detail: `permanent: secret is not set${remedy}`,
+              detail: `permanent: secret is set but empty${remedy}`,
               section: 'customer',
             }
       } catch (error) {
