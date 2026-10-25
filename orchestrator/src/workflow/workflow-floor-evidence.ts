@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
+import { docAddressBelongsToProject } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
@@ -468,9 +468,7 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
     throw new Error(
       `${flag} does not exist; use doc:<scope>/<subject-or-_>/<slug> or doc:<document-UUID>`,
     )
-  const scoped =
-    row.projectName === identity.project ||
-    (docScopeHasProjectSubject(row.scope) && row.subject === identity.project)
+  const scoped = docAddressBelongsToProject(row, identity.project)
   if (!scoped)
     throw new Error(
       `${flag} is scoped to ${row.projectName ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,

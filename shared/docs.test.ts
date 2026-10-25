@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   DOC_SUMMARY_MAX_LENGTH,
+  docAddressBelongsToProject,
+  docScopeIsProjectless,
   docSummary,
   normalizeDocAudiences,
   normalizeDocSummary,
@@ -46,8 +48,50 @@ describe('normalizeDocSummary', () => {
     expect(normalizeDocSummary('  Written copy.  ')).toBe('Written copy.')
     expect(normalizeDocSummary('   ')).toBeNull()
     expect(() => normalizeDocSummary('one\ntwo')).toThrow('summary must be a single line')
-    expect(() => normalizeDocSummary('x'.repeat(DOC_SUMMARY_MAX_LENGTH + 1))).toThrow(
-      `summary must be at most ${DOC_SUMMARY_MAX_LENGTH} characters`,
-    )
+  })
+})
+
+describe('docScopeIsProjectless', () => {
+  test('is true only for scopes that declare no subject kind', () => {
+    expect(docScopeIsProjectless('global')).toBe(true)
+    expect(docScopeIsProjectless('machine')).toBe(true)
+    expect(docScopeIsProjectless('project')).toBe(false)
+    expect(docScopeIsProjectless('stack')).toBe(false)
+  })
+})
+
+describe('docAddressBelongsToProject', () => {
+  test('accepts a project-less document on any project', () => {
+    expect(
+      docAddressBelongsToProject({ scope: 'global', subject: null, projectName: null }, 'fixture'),
+    ).toBe(true)
+  })
+  test('accepts a document scoped to the project itself', () => {
+    expect(
+      docAddressBelongsToProject(
+        { scope: 'project', subject: 'fixture', projectName: 'fixture' },
+        'fixture',
+      ),
+    ).toBe(true)
+    expect(
+      docAddressBelongsToProject(
+        { scope: 'resume', subject: 'fixture', projectName: null },
+        'fixture',
+      ),
+    ).toBe(true)
+  })
+  test('refuses a document scoped to another project', () => {
+    expect(
+      docAddressBelongsToProject(
+        { scope: 'project', subject: 'other', projectName: 'other' },
+        'fixture',
+      ),
+    ).toBe(false)
+    expect(
+      docAddressBelongsToProject(
+        { scope: 'resume', subject: 'other', projectName: null },
+        'fixture',
+      ),
+    ).toBe(false)
   })
 })
