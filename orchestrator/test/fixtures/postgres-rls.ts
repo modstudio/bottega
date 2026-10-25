@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { provisionedDocker } from '../preload.ts'
 
 const container = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
 const recordFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record')
@@ -40,7 +41,7 @@ export function psql(user: string, password: string, source: string): PsqlResult
   if (!container) throw new Error('BOTTEGA_TEST_POSTGRES_CONTAINER is required')
   const result = Bun.spawnSync(
     [
-      'docker',
+      provisionedDocker(),
       'exec',
       '-i',
       '-e',

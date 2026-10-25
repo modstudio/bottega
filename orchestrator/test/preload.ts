@@ -20,6 +20,21 @@ import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/te
 
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
+const provisionedPostgresContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+
+// This is the only sanctioned route past the docker shim: the Postgres runner
+// must have provisioned a container before the test preload loads.
+export function provisionedDocker(): string {
+  if (!provisionedPostgresContainer) {
+    throw new Error(
+      'docker is reachable only from a suite the real-Postgres runner provisioned a container for; run bun run --cwd orchestrator test:postgres',
+    )
+  }
+  const docker = Bun.which('docker', { PATH: originalPath ?? '' })
+  if (!docker) throw new Error('the real docker binary was not found on the original PATH')
+  return docker
+}
+
 // Bun resolves executables against the PATH present at its first spawn. Install
 // the suite shims before even the preload's repository discovery command.
 export const cleanDockerBin = join(dir, 'clean-docker-bin')
