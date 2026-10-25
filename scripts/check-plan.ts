@@ -136,6 +136,7 @@ export const ROOT_TEST_FILES = [
   'scripts/architecture-cruise.test.ts',
   'scripts/architecture-hub-data.test.ts',
   'scripts/architecture-ui-layers.test.ts',
+  'scripts/architecture-undeclared-modules.test.ts',
   'scripts/architecture-violation-baseline.test.ts',
   'scripts/check-hub-ui-styles.test.ts',
   'scripts/check-launchd-templates.test.ts',

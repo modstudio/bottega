@@ -474,7 +474,7 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-hub-packages.ts'),
     staticCheck('scripts/check-hub-ui-styles.ts'),
     staticCheck('scripts/check-storybook.ts'),
-    staticCheck('scripts/check-architecture.ts'),
+    staticCheck('scripts/check-architecture.ts', [qualityMode]),
     staticCheck('scripts/check-review-boundary.ts'),
     staticCheck('scripts/check-outcome-boundary.ts'),
     staticCheck('scripts/check-contract-boundary.ts'),
