@@ -16,4 +16,7 @@ Every table's primary key is a UUID minted when its row is created, and every re
 
 An auto-incrementing integer may stand beside the key as a label a person reads, such as a note or cursor number, or as a local ordering sequence. It is never a primary key or a foreign key, and it never leaves the machine as a reference.
 
+A readable natural key may stand beside a UUID reference as a display label when `scripts/identity-key-manifest.ts` declares it with its sibling; nothing may resolve the row through the label.
+
 A table whose rows never leave the machine, and that no synced row references, may keep another key only when `scripts/identity-key-manifest.ts` declares it with that reason. A declared table that starts syncing loses the exemption. `scripts/check-identity-inventory.ts` refuses any key that `scripts/identity-key-baseline.json` does not already hold, and that baseline only shrinks.
+

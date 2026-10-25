@@ -13,10 +13,11 @@ type KeyColumn = {
   required: boolean
   primaryKey: boolean
   foreignKey: boolean
-  foreignTable: string | null
+  foreignTargets: { table: string; column: string }[]
 }
 export type KeyTable = { name: string; columns: KeyColumn[]; primaryKey: string[] }
 export type ManifestColumn = { store: KeyStore; column: string; reason: string }
+export type DisplayLabel = ManifestColumn & { sibling: string }
 export type InfrastructureIdentity = { store: KeyStore; table: string; reason: string }
 type SyncedSource = {
   store: Exclude<KeyStore, 'hosted'>
@@ -28,6 +29,7 @@ export type SyncedSources = Readonly<Record<string, SyncedSource>>
 export type KeyInventory = { findings: string[]; values: string[]; infrastructure: string[] }
 export type KeyManifests = {
   values: readonly ManifestColumn[]
+  displayLabels: readonly DisplayLabel[]
   references: readonly ManifestColumn[]
   externalIdentifiers: readonly ManifestColumn[]
   uuids: readonly ManifestColumn[]
@@ -43,6 +45,7 @@ export type SyncedSchemaFact = {
 
 type StoreManifests = {
   values: Map<string, string>
+  displayLabels: Map<string, DisplayLabel>
   references: Map<string, string>
   externalIdentifiers: Map<string, string>
   uuids: Map<string, string>
@@ -58,6 +61,7 @@ export function classifyKeyInventory(
   allManifests: KeyManifests,
 ): KeyInventory {
   const manifests = keyManifests(store, allManifests)
+  validateDisplayLabels(store, tables, manifests)
   const seen = {
     values: new Set<string>(),
     references: new Set<string>(),
@@ -80,6 +84,11 @@ function keyManifests(store: KeyStore, manifests: KeyManifests): StoreManifests 
     )
   return {
     values: selected(manifests.values),
+    displayLabels: new Map(
+      manifests.displayLabels
+        .filter((entry) => entry.store === store)
+        .map((entry) => [entry.column, entry]),
+    ),
     references: selected(manifests.references),
     externalIdentifiers: selected(manifests.externalIdentifiers),
     uuids: selected(manifests.uuids),
@@ -144,6 +153,7 @@ function classifyKeyColumn(
   if (externalIdentifier) seen.externalIdentifiers.add(address)
   const explicitReference = manifests.references.has(address)
   if (explicitReference) seen.references.add(address)
+  const displayLabel = manifests.displayLabels.has(address)
   const shapedReference =
     (column.type === 'integer' || column.type === 'text') && REFERENCE_NAME.test(column.name)
   const shapedProjectName =
@@ -155,11 +165,13 @@ function classifyKeyColumn(
     !uuid &&
     !externalIdentifier &&
     !explicitReference &&
+    !displayLabel &&
     !manifests.values.has(address)
   )
     throw new Error(`${store} reference-shaped column ${address} is not classified`)
   const reference =
-    column.foreignKey || (!externalIdentifier && shapedReference) || explicitReference
+    !displayLabel &&
+    (column.foreignKey || (!externalIdentifier && shapedReference) || explicitReference)
   if (manifests.values.has(address)) seen.values.add(address)
   if (column.type === 'integer')
     classifyIntegerColumn(store, address, column, reference, manifests.values, seen.values)
@@ -207,6 +219,7 @@ function validateKeyManifests(
   )
   const kinds = [
     ['value', manifests.values],
+    ['display label', manifests.displayLabels],
     ['reference', manifests.references],
     ['external identifier', manifests.externalIdentifiers],
     ['UUID', manifests.uuids],
@@ -235,6 +248,69 @@ function validateKeyManifests(
     new Set(tables.map((table) => table.name)),
     manifests.infrastructure,
   )
+}
+
+function validateDisplayLabels(
+  store: KeyStore,
+  tables: readonly KeyTable[],
+  manifests: StoreManifests,
+): void {
+  const columns = new Map(
+    tables.flatMap((table) =>
+      table.columns.map((column) => [`${table.name}.${column.name}`, column] as const),
+    ),
+  )
+  for (const entry of manifests.displayLabels.values())
+    validateDisplayLabel(store, entry, tables, columns, manifests)
+}
+
+function validateDisplayLabel(
+  store: KeyStore,
+  entry: DisplayLabel,
+  tables: readonly KeyTable[],
+  columns: ReadonlyMap<string, KeyColumn>,
+  manifests: StoreManifests,
+): void {
+  const name = `${store} display label ${entry.column}`
+  const table = entry.column.slice(0, entry.column.lastIndexOf('.'))
+  if (!entry.reason.trim())
+    throw new Error(`${name} needs a reason; remedy: provide a non-empty reason`)
+  if (!columns.has(entry.column))
+    throw new Error(`${name} is stale; remedy: name a column that exists in the store schema`)
+  if (!entry.sibling.startsWith(`${table}.`))
+    throw new Error(
+      `${name} sibling ${entry.sibling} is on another table; remedy: name a sibling on ${table}`,
+    )
+  const sibling = columns.get(entry.sibling)
+  if (!sibling)
+    throw new Error(
+      `${name} sibling ${entry.sibling} does not exist; remedy: name an existing sibling column`,
+    )
+  if (!isUuidReference(entry.sibling, sibling, tables, columns, manifests.uuids))
+    throw new Error(
+      `${name} sibling ${entry.sibling} is not a UUID reference; remedy: name a UUID column or a foreign key to a UUID primary key`,
+    )
+}
+
+function isUuidReference(
+  address: string,
+  column: KeyColumn,
+  tables: readonly KeyTable[],
+  columns: ReadonlyMap<string, KeyColumn>,
+  uuids: ReadonlyMap<string, string>,
+): boolean {
+  if (column.type === 'uuid') return true
+  if (uuids.has(address)) return true
+  return column.foreignTargets.some((target) => {
+    const foreignTable = tables.find(({ name }) => name === target.table)
+    if (foreignTable?.primaryKey.length !== 1 || foreignTable.primaryKey[0] !== target.column)
+      return false
+    const primaryKey = columns.get(`${foreignTable.name}.${foreignTable.primaryKey[0]}`)
+    return Boolean(
+      primaryKey &&
+        (primaryKey.type === 'uuid' || uuids.has(`${primaryKey.table}.${primaryKey.name}`)),
+    )
+  })
 }
 
 function validateManifestEntries(
@@ -390,7 +466,7 @@ export function sqliteSyncedSchemaFacts(
     table: table.name,
     foreignTables: [
       ...new Set(
-        table.columns.flatMap((column) => (column.foreignTable ? [column.foreignTable] : [])),
+        table.columns.flatMap((column) => column.foreignTargets.map((target) => target.table)),
       ),
     ].sort(),
   }))
@@ -408,12 +484,9 @@ export function readSqliteKeyTables(database: Database): KeyTable[] {
         `PRAGMA table_info('${name}')`,
       )
       .all()
-    const foreignKeys = new Map(
-      database
-        .query<{ from: string; table: string }, []>(`PRAGMA foreign_key_list('${name}')`)
-        .all()
-        .map((foreignKey) => [foreignKey.from, foreignKey.table]),
-    )
+    const foreignKeys = database
+      .query<{ from: string; table: string; to: string }, []>(`PRAGMA foreign_key_list('${name}')`)
+      .all()
     return {
       name,
       primaryKey: columns
@@ -426,8 +499,10 @@ export function readSqliteKeyTables(database: Database): KeyTable[] {
         type: /INT/i.test(column.type) ? 'integer' : column.type.toLowerCase(),
         required: column.notnull === 1 || column.pk > 0,
         primaryKey: column.pk > 0,
-        foreignKey: foreignKeys.has(column.name),
-        foreignTable: foreignKeys.get(column.name) ?? null,
+        foreignKey: foreignKeys.some((foreignKey) => foreignKey.from === column.name),
+        foreignTargets: foreignKeys
+          .filter((foreignKey) => foreignKey.from === column.name)
+          .map((foreignKey) => ({ table: foreignKey.table, column: foreignKey.to })),
       })),
     }
   })
@@ -447,11 +522,23 @@ export function hostedKeyTablesFromModules(modules: readonly SchemaModule[]): Ke
         ...config.primaryKeys.flatMap((primaryKey) => primaryKey.columns),
       ]
       const primaryNames = new Set(primaryColumns.map((column) => column.name))
-      const foreignNames = new Set(
-        config.foreignKeys.flatMap((foreignKey) =>
-          foreignKey.reference().columns.map((column) => column.name),
-        ),
-      )
+      const foreignColumns = config.foreignKeys.flatMap((foreignKey) => {
+        const reference = foreignKey.reference()
+        return reference.columns.flatMap((column, index) => {
+          const foreignColumn = reference.foreignColumns[index]
+          return foreignColumn
+            ? [
+                {
+                  name: column.name,
+                  target: {
+                    table: getTableConfig(reference.foreignTable).name,
+                    column: foreignColumn.name,
+                  },
+                },
+              ]
+            : []
+        })
+      })
       return {
         name: config.name,
         primaryKey: [...primaryNames],
@@ -466,8 +553,10 @@ export function hostedKeyTablesFromModules(modules: readonly SchemaModule[]): Ke
                 : column.getSQLType(),
           required: column.notNull,
           primaryKey: primaryNames.has(column.name),
-          foreignKey: foreignNames.has(column.name),
-          foreignTable: null,
+          foreignKey: foreignColumns.some((foreignColumn) => foreignColumn.name === column.name),
+          foreignTargets: foreignColumns
+            .filter((foreignColumn) => foreignColumn.name === column.name)
+            .map((foreignColumn) => foreignColumn.target),
         })),
       }
     })
