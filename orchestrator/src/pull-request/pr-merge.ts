@@ -26,6 +26,7 @@ import {
   type MergeProofInput,
   type PullRequestCheck,
 } from './merge-decision.ts'
+import type { FailedMergeGroupRun } from './merge-group-run.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
@@ -34,7 +35,6 @@ import {
   mergeQueueEnqueueFailureRemedy,
   stepMergeQueueWait,
 } from './merge-queue-decision.ts'
-import type { FailedMergeGroupRun } from './merge-group-run.ts'
 import {
   enqueuePullRequest,
   githubFailedMergeGroupRun,
