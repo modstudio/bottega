@@ -7,9 +7,7 @@ import { enqueueReview } from '../review/review-outbox.ts'
 test('standard after-initialize hooks backfill classifiable rounds and re-enqueue them once', () => {
   const project = newRecordId()
   db()
-    .query(
-      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'adanim','/adanim','{}')",
-    )
+    .query("INSERT INTO project (record_id,name,path,settings) VALUES (?,'adanim','/adanim','{}')")
     .run(project)
   const addReview = (
     number: number,
@@ -79,9 +77,11 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
       .get(first),
   ).toEqual({ count: 2 })
   expect(
-    db().query<{ count: number }, [string]>(
-      "SELECT count(*) AS count FROM outbox WHERE kind='review' AND row_id=?",
-    ).get(supplementary),
+    db()
+      .query<{ count: number }, [string]>(
+        "SELECT count(*) AS count FROM outbox WHERE kind='review' AND row_id=?",
+      )
+      .get(supplementary),
   ).toEqual({ count: 1 })
   expect(db().query('SELECT round FROM review WHERE record_id=?').get(unclassifiable)).toEqual({
     round: null,
